@@ -6,35 +6,25 @@ import (
 	"time"
 )
 
-// The global advisory database: the published advisories every account on the
-// instance can read, whatever repository drafted them.
-//
-// A repository advisory is private while it is drafted and belongs to the
-// repository's security team; publishing it moves it into this database,
-// where it is public. That is the whole visibility rule, and it is why these
-// lookups take no viewer: the caller has already been told the answer is
-// public. Anything that has not been published is unreachable from here.
+// The global advisory database: the published advisories every account can
+// read. Publishing a drafted repository advisory moves it here, where it is
+// public; these lookups take no viewer because unpublished advisories are
+// unreachable from here.
 
 // GlobalAdvisoryFilter narrows a global-advisory listing. A zero filter
 // matches every published advisory.
 type GlobalAdvisoryFilter struct {
-	// GHSAID and CVEID select one advisory by identifier.
 	GHSAID string
 	CVEID  string
-	// Ecosystem and Package narrow to advisories with a vulnerability in
-	// that ecosystem and/or against that package.
+	// Ecosystem and Package narrow to advisories with a matching vulnerability.
 	Ecosystem string
 	Package   string
 	// Severities, when non-empty, keeps only advisories at one of them.
-	Severities []string
-	// PublishedSince and UpdatedSince keep only advisories at or after the
-	// given instant.
+	Severities     []string
 	PublishedSince *time.Time
 	UpdatedSince   *time.Time
-	// IncludeWithdrawn keeps withdrawn advisories in the result. They stay
-	// addressable by GHSA ID either way — a client that asks for a specific
-	// withdrawn advisory is told it was withdrawn rather than that it never
-	// existed — but they leave the browse listing.
+	// IncludeWithdrawn keeps withdrawn advisories in the browse listing. They
+	// stay addressable by GHSA ID regardless.
 	IncludeWithdrawn bool
 }
 
@@ -61,10 +51,8 @@ func (st *Store) ListGlobalAdvisoriesFiltered(filter GlobalAdvisoryFilter) []*Se
 	return snapshotSlice(matched)
 }
 
-// GetGlobalAdvisoryByGHSA returns one published advisory by its GHSA ID, as a
-// detached snapshot, or nil when the instance has published none with that
-// ID. A drafted advisory is deliberately invisible here: the global database
-// is public, and a draft is not.
+// GetGlobalAdvisoryByGHSA returns one published advisory by its GHSA ID as a
+// detached snapshot, or nil. Drafted advisories are invisible here.
 func (st *Store) GetGlobalAdvisoryByGHSA(ghsaID string) *SecurityAdvisory {
 	if ghsaID == "" {
 		return nil
@@ -79,15 +67,9 @@ func (st *Store) GetGlobalAdvisoryByGHSA(ghsaID string) *SecurityAdvisory {
 	return nil
 }
 
-// SnapshotAllRepos returns every repository on the instance as detached
-// snapshots (STORE-021).
-//
-// It exists for the two instance-wide sweeps this vertical performs — deriving
-// alerts when an advisory is published, and finding the repositories an
-// advisory's event concerns. Both walk every repository and then do
-// substantial work per repository, which must not happen under the store
-// lock; taking a snapshot first is what lets the lock be released before any
-// of it runs.
+// SnapshotAllRepos returns every repository as detached snapshots (STORE-021).
+// The two instance-wide advisory sweeps do substantial per-repo work that must
+// not run under the store lock, so they snapshot first and release it.
 func (st *Store) SnapshotAllRepos() []*Repo {
 	st.Mu.RLock()
 	repos := make([]*Repo, 0, len(st.Repos))
@@ -99,11 +81,9 @@ func (st *Store) SnapshotAllRepos() []*Repo {
 	return snapshotSlice(repos)
 }
 
-// GlobalSecurityVulnerability pairs one vulnerability with the advisory that
-// declares it. Query.securityVulnerabilities enumerates the pairs rather than
-// the advisories, because one advisory can name several vulnerable packages
-// and a client filtering by package wants the matching entry, not the whole
-// advisory.
+// GlobalSecurityVulnerability pairs one vulnerability with its advisory.
+// Query.securityVulnerabilities enumerates pairs, not advisories, so a client
+// filtering by package gets the matching entry rather than the whole advisory.
 type GlobalSecurityVulnerability struct {
 	Advisory      *SecurityAdvisory
 	Vulnerability SecurityAdvisoryVulnerability
@@ -132,8 +112,7 @@ func (st *Store) ListGlobalVulnerabilities(filter GlobalAdvisoryFilter) []Global
 }
 
 // AdvisoryWithdrawnAt reports when an advisory was withdrawn, or nil when it
-// stands. Withdrawal is recorded as a state change rather than its own
-// timestamp, so the update that made the change is when it happened.
+// stands. Withdrawal has no timestamp of its own, so UpdatedAt stands in.
 func AdvisoryWithdrawnAt(advisory *SecurityAdvisory) *time.Time {
 	if advisory == nil || advisory.State != "withdrawn" {
 		return nil
@@ -143,8 +122,7 @@ func AdvisoryWithdrawnAt(advisory *SecurityAdvisory) *time.Time {
 }
 
 // advisoryIsGlobal reports whether an advisory has reached the public
-// database: published (or published and later withdrawn), with a publication
-// date to be ordered by.
+// database: published or withdrawn, with a publication date.
 func advisoryIsGlobal(advisory *SecurityAdvisory) bool {
 	if advisory == nil || advisory.PublishedAt == nil {
 		return false
@@ -152,7 +130,6 @@ func advisoryIsGlobal(advisory *SecurityAdvisory) bool {
 	return advisory.State == "published" || advisory.State == "withdrawn"
 }
 
-// advisoryMatchesGlobalFilter applies every narrowing the filter declares.
 func advisoryMatchesGlobalFilter(advisory *SecurityAdvisory, filter GlobalAdvisoryFilter) bool {
 	if !filter.IncludeWithdrawn && advisory.State == "withdrawn" {
 		return false
@@ -191,9 +168,8 @@ func advisoryMatchesGlobalFilter(advisory *SecurityAdvisory, filter GlobalAdviso
 	return false
 }
 
-// advisorySeverityIn reports whether severity is one of the wanted ones,
-// comparing case-insensitively so a GraphQL CRITICAL and a REST "critical"
-// select the same advisories.
+// advisorySeverityIn compares case-insensitively so a GraphQL CRITICAL and a
+// REST "critical" select the same advisories.
 func advisorySeverityIn(severity string, wanted []string) bool {
 	for _, candidate := range wanted {
 		if strings.EqualFold(severity, candidate) {
@@ -203,9 +179,8 @@ func advisorySeverityIn(severity string, wanted []string) bool {
 	return false
 }
 
-// sortAdvisoriesByPublication orders advisories newest publication first,
-// with the database id breaking ties so the order — and therefore every
-// connection cursor derived from it — is stable across requests.
+// sortAdvisoriesByPublication orders advisories newest publication first, id
+// breaking ties so connection cursors are stable across requests.
 func sortAdvisoriesByPublication(advisories []*SecurityAdvisory) {
 	sort.Slice(advisories, func(i, j int) bool {
 		left, right := advisories[i], advisories[j]
@@ -216,10 +191,8 @@ func sortAdvisoriesByPublication(advisories []*SecurityAdvisory) {
 	})
 }
 
-// SortAdvisoriesByUpdate orders advisories by update time, newest first when
-// descending. It is the ordering SecurityAdvisoryOrder's UPDATED_AT field
-// names, kept beside its PUBLISHED_AT sibling so the two cannot drift on
-// their tiebreak.
+// SortAdvisoriesByUpdate orders advisories by update time, the UPDATED_AT
+// field of SecurityAdvisoryOrder.
 func SortAdvisoriesByUpdate(advisories []*SecurityAdvisory, ascending bool) {
 	sort.SliceStable(advisories, func(i, j int) bool {
 		left, right := advisories[i], advisories[j]

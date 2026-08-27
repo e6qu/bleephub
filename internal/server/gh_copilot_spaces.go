@@ -1,9 +1,7 @@
 package bleephub
 
-// GitHub Copilot Spaces REST surface, in both its organization-scoped
-// (/orgs/{org}/copilot-spaces…) and user-scoped
-// (/users/{username}/copilot-spaces…) flavors: space CRUD, collaborator
-// management, and attached resources.
+// GitHub Copilot Spaces REST surface, in organization-scoped and user-scoped
+// flavors.
 
 import (
 	"context"
@@ -38,10 +36,8 @@ func (s *Server) registerGHCopilotSpacesRoutes() {
 
 var copilotSpaceRoleRank = map[string]int{"reader": 1, "writer": 2, "admin": 3}
 
-// copilotSpaceOwner resolves the owner coordinates from the request
-// path: {org} for the organization flavor, {username} for the user
-// flavor. Writes a 404 and returns ok=false when the owner account does
-// not exist.
+// copilotSpaceOwner resolves the owner from {org} or {username}, writing 404
+// when the account does not exist.
 func (s *Server) copilotSpaceOwner(w http.ResponseWriter, r *http.Request) (ownerType, ownerLogin string, ok bool) {
 	if org := r.PathValue("org"); org != "" {
 		if s.store.GetOrg(org) == nil {
@@ -58,11 +54,9 @@ func (s *Server) copilotSpaceOwner(w http.ResponseWriter, r *http.Request) (owne
 	return "User", username, true
 }
 
-// copilotSpaceRole computes the caller's effective role on a space:
-// space creators, user-space owners, and organization owners are
-// admins; collaborator grants (directly or via team membership) and the
-// space's base role fill in the rest. An empty role means the space is
-// invisible to the caller.
+// copilotSpaceRole computes the caller's effective role: space creators,
+// user-space owners, and org owners are admins; collaborator grants and the
+// base role fill in the rest. Empty means the space is invisible to the caller.
 func (s *Server) copilotSpaceRole(ctx context.Context, user *store.User, space *store.CopilotSpace) string {
 	ctx = contextWithUser(ctx, user)
 	if user == nil {
@@ -81,9 +75,8 @@ func (s *Server) copilotSpaceRole(ctx context.Context, user *store.User, space *
 		}
 	}
 	if space.OwnerType == "Organization" {
-		// Installation tokens have a bot identity rather than an organization
-		// membership. Their installation reach and Copilot Spaces grant are
-		// the two halves of access.
+		// Installation tokens have a bot identity, not org membership; reach plus
+		// the Copilot Spaces grant are the two halves of access.
 		if token := ghInstallationTokenFromContext(ctx); token != nil && s.viewerReachesOrg(ctx, space.OwnerLogin) {
 			if hasPerm(token.Permissions, store.ScopeCopilotSpaces, store.PermWrite) {
 				return "admin"
@@ -133,9 +126,8 @@ func copilotUserSpaceCredentialSupported(ctx context.Context) bool {
 	return true
 }
 
-// lookupCopilotSpace resolves the owner and {space_number} to a space
-// visible to the caller, writing 401/404 on failure. minRole gates the
-// operation: a caller who can see the space but lacks the role gets 403.
+// lookupCopilotSpace resolves the space visible to the caller, writing
+// 401/404, and 403 when the caller's role is below minRole.
 func (s *Server) lookupCopilotSpace(w http.ResponseWriter, r *http.Request, minRole string) (*store.CopilotSpace, *store.User) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -162,7 +154,7 @@ func (s *Server) lookupCopilotSpace(w http.ResponseWriter, r *http.Request, minR
 	}
 	role := s.copilotSpaceRole(r.Context(), user, space)
 	if role == "" {
-		// Spaces the caller has no access to stay hidden, like private repos.
+		// A space the caller cannot access stays hidden, like a private repo.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil
 	}
@@ -225,8 +217,7 @@ func copilotSpaceResourceJSON(res *store.CopilotSpaceResource) map[string]interf
 	return map[string]interface{}{
 		"id":            res.ID,
 		"resource_type": res.ResourceType,
-		// Chat attachments (uploaded files, media) are not part of the
-		// REST create surface, so no resource carries an attachment.
+		// Chat attachments are not part of the REST create surface.
 		"copilot_chat_attachment_id": nil,
 		"metadata":                   res.Metadata,
 		"created_at":                 res.CreatedAt.Format(time.RFC3339),
@@ -281,9 +272,8 @@ func (s *Server) copilotSpaceCollaboratorJSON(c *store.CopilotSpaceCollaborator,
 	}
 }
 
-// validCopilotSpaceBaseRole checks the base role against the flavor's
-// enum: organization spaces allow reader/writer/admin/no_access, user
-// spaces only reader/no_access.
+// validCopilotSpaceBaseRole checks the base role: org spaces allow
+// reader/writer/admin/no_access, user spaces only reader/no_access.
 func validCopilotSpaceBaseRole(ownerType, role string) bool {
 	switch role {
 	case "reader", "no_access":
@@ -315,10 +305,9 @@ func cloneCopilotSpaceResources(resources []*store.CopilotSpaceResource) []*stor
 	return out
 }
 
-// applyCopilotSpaceResourceAttributes implements the nested create/update
-// contract used by the official space endpoints. It validates a complete
-// working copy first, so one invalid member cannot partially mutate the
-// existing space.
+// applyCopilotSpaceResourceAttributes applies the nested create/update
+// contract, validating a full working copy first so one invalid member cannot
+// partially mutate the space.
 func (s *Server) applyCopilotSpaceResourceAttributes(space *store.CopilotSpace, attributes []copilotSpaceResourceAttribute) string {
 	resources := cloneCopilotSpaceResources(space.Resources)
 	nextID := space.NextResourceID
@@ -399,8 +388,6 @@ func (s *Server) handleListCopilotSpaces(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	// Cursor pagination over space numbers, matching the endpoint's
-	// per_page/before/after parameters.
 	q := r.URL.Query()
 	perPage := 30
 	if v := q.Get("per_page"); v != "" {
@@ -602,9 +589,8 @@ func (s *Server) handleListCopilotSpaceCollaborators(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, map[string]interface{}{"collaborators": out})
 }
 
-// resolveCopilotSpaceActor resolves an actor_type + actor_identifier
-// pair (username / team slug, or a numeric ID) against the store. Teams
-// must belong to the organization that owns the space.
+// resolveCopilotSpaceActor resolves an actor_type + actor_identifier (login /
+// slug or numeric id). Teams must belong to the space's organization.
 func (s *Server) resolveCopilotSpaceActor(space *store.CopilotSpace, actorType, identifier string) (userID, teamID int, ok bool) {
 	switch actorType {
 	case "User":
@@ -687,8 +673,7 @@ func (s *Server) handleAddCopilotSpaceCollaborator(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusCreated, s.copilotSpaceCollaboratorJSON(collab, space, s.baseURL(r)))
 }
 
-// copilotSpaceActorFromPath resolves the {actor_type}/{actor_identifier}
-// path segments, writing a 404 when the actor does not resolve.
+// copilotSpaceActorFromPath resolves the path actor, writing 404 on miss.
 func (s *Server) copilotSpaceActorFromPath(w http.ResponseWriter, r *http.Request, space *store.CopilotSpace) (userID, teamID int, ok bool) {
 	actorType := r.PathValue("actor_type")
 	if actorType != "User" && actorType != "Team" {
@@ -770,11 +755,8 @@ func (s *Server) handleListCopilotSpaceResources(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, map[string]interface{}{"resources": out})
 }
 
-// validateCopilotSpaceResource checks the metadata a resource type
-// requires: repository-backed types must reference an existing
-// repository (plus a file path, or an issue / pull request number where
-// applicable), and free text must carry the text itself. Returns a
-// non-empty field name on failure.
+// validateCopilotSpaceResource checks a resource type's required metadata,
+// returning a non-empty field name on failure.
 func (s *Server) validateCopilotSpaceResource(resourceType string, metadata map[string]interface{}) string {
 	requireRepo := func() string {
 		id, ok := metadata["repository_id"].(float64)
@@ -869,8 +851,8 @@ func (s *Server) handleCreateCopilotSpaceResource(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusCreated, copilotSpaceResourceJSON(res))
 }
 
-// copilotSpaceResourceFromPath resolves {space_resource_id}, writing a
-// 404 when the resource does not exist on the space.
+// copilotSpaceResourceFromPath resolves {space_resource_id}, writing 404 when
+// absent.
 func copilotSpaceResourceFromPath(w http.ResponseWriter, r *http.Request, space *store.CopilotSpace) *store.CopilotSpaceResource {
 	id, err := strconv.Atoi(r.PathValue("space_resource_id"))
 	if err == nil {

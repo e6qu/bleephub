@@ -4,14 +4,9 @@ import { Box, Button } from "./ui.js";
 import { MutationError } from "./MutationError.js";
 import { ghFetch, ghSend } from "../api.js";
 
-/**
- * The set-a-temporary-interaction-limit control GitHub exposes under a repo's,
- * an org's, and a user's Moderation settings. The three scopes share one REST
- * shape — GET returns `{ limit? }`, PUT `{ limit, expiry }` sets it, DELETE
- * clears it — so this one card serves the org and user scopes (the repo scope
- * has its own tab). The API calls are defined inline against `path` to keep the
- * app entry chunk flat.
- */
+// Temporary interaction limit. All scopes share one REST shape at `path`:
+// GET `{ limit? }`, PUT `{ limit, expiry }` sets, DELETE clears. Serves the org
+// and user scopes (repo has its own tab). Calls inline to keep the entry chunk flat.
 export function InteractionLimitsCard({
   path,
   queryKey,

@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// RepoActivity is one recorded ref update served by the repository activity
-// and events APIs. Records are written on every git receive-pack ref command,
-// so the surfaces expose real pushes — empty when nothing was ever pushed.
+// RepoActivity is one recorded ref update served by the repo activity and
+// events APIs, written on every git receive-pack ref command.
 type RepoActivity struct {
 	ID           int       `json:"id"`
 	RepoID       int       `json:"repo_id"`
@@ -21,9 +20,9 @@ type RepoActivity struct {
 	Timestamp    time.Time `json:"timestamp"`
 }
 
-// RepoTrafficBucket accumulates one repository's clone traffic for one UTC
-// day. Actors holds the distinct cloner identities (login, or remote host for
-// anonymous clones) so unique counts are counted, never estimated.
+// RepoTrafficBucket accumulates one repository's clone traffic for one UTC day.
+// Actors holds distinct cloner identities (login, or remote host for anonymous
+// clones) so uniques are counted, not estimated.
 type RepoTrafficBucket struct {
 	RepoID int             `json:"repo_id"`
 	Day    string          `json:"day"` // YYYY-MM-DD, UTC
@@ -35,7 +34,6 @@ func repoTrafficKey(repoID int, day string) string {
 	return strconv.Itoa(repoID) + ":" + day
 }
 
-// RecordRepoActivity appends a ref-update record for a repository.
 func (st *Store) RecordRepoActivity(repoID int, ref, before, after string, actorID int, activityType string) *RepoActivity {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -84,11 +82,9 @@ func (st *Store) RecordRepoClone(repoID int, actor string) {
 		st.RepoCloneTraffic[key] = b
 	}
 	b.Count++
-	// Bound the distinct-actor set. Anonymous clones record the remote host, so
-	// on a public repo an attacker (or a large IPv6 range) could otherwise grow
-	// this map without limit and re-serialize the whole bucket on every request.
-	// GitHub's traffic API reports uniques as a count, so once the cap is hit we
-	// keep counting clones but stop accumulating new identities.
+	// Bound the distinct-actor set: anonymous clones record the remote host, so
+	// an attacker could otherwise grow this map without limit. Past the cap keep
+	// counting clones but stop accumulating identities (uniques stay a count).
 	const maxTrafficActors = 10000
 	if b.Actors[actor] || len(b.Actors) < maxTrafficActors {
 		b.Actors[actor] = true
@@ -166,9 +162,8 @@ func (st *Store) ListTeamsForRepo(fullName string) []*Team {
 	return snapshotTeams(out)
 }
 
-// LookupUserByEmail returns the user whose email matches case-insensitively,
-// or nil. Git commit signatures carry emails, not logins; this is how commit
-// authors resolve to real accounts.
+// LookupUserByEmail returns the user whose email matches case-insensitively, or
+// nil. Git commit signatures carry emails, not logins, so this resolves authors.
 func (st *Store) LookupUserByEmail(email string) *User {
 	if email == "" {
 		return nil
@@ -183,10 +178,9 @@ func (st *Store) LookupUserByEmail(email string) *User {
 	return nil
 }
 
-// ResolveUserBySignature maps a git commit signature to a real account: by
-// email first (GitHub's rule), then by the signature name matching a login or
-// a profile display name (the two names bleephub's own generated commits
-// carry). Returns nil when no account matches.
+// ResolveUserBySignature maps a git signature to an account: email first
+// (GitHub's rule), then name matching a login or profile display name. Returns
+// nil when nothing matches.
 func (st *Store) ResolveUserBySignature(name, email string) *User {
 	if u := st.LookupUserByEmail(email); u != nil {
 		return u
@@ -209,9 +203,8 @@ func (st *Store) ResolveUserBySignature(name, email string) *User {
 	return nil
 }
 
-// ListAssignableUsers returns the users GitHub considers assignable for a
-// repository's issues: the owning user, direct collaborators, and — for
-// org-owned repositories — active organization members. Ordered by login.
+// ListAssignableUsers returns the users assignable to a repo's issues — owner,
+// direct collaborators, and (for org repos) active org members — ordered by login.
 func (st *Store) ListAssignableUsers(repo *Repo) []*User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

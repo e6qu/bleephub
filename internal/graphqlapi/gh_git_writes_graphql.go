@@ -11,11 +11,10 @@ import (
 )
 
 // The git-write mutations: createRef, updateRef, deleteRef, mergeBranch,
-// createCommitOnBranch and revertPullRequest. Each performs its work through
-// the Repos seam, which is the same branch-protection, secret-scanning and
-// push machinery the REST git-database routes run — a ref moved through
-// GraphQL must be indistinguishable from one moved through REST, or the two
-// surfaces would disagree about what a protected branch refuses.
+// createCommitOnBranch and revertPullRequest. Each works through the Repos
+// seam — the same branch-protection, secret-scanning and push machinery the
+// REST git-database routes run — so a ref moved through GraphQL is
+// indistinguishable from one moved through REST.
 
 func init() {
 	for name, rule := range map[string]mutationRule{
@@ -34,10 +33,8 @@ func init() {
 	}
 }
 
-// mutationTargetRef resolves a Ref global id to the repository whose reference
-// it names. The ref itself may or may not exist — existence is the resolver's
-// question; authorization only needs the repository the caller must have
-// standing on.
+// mutationTargetRef resolves a Ref global id to its repository. Ref existence
+// is the resolver's question; authz only needs the repository.
 func mutationTargetRef(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
@@ -51,7 +48,7 @@ func mutationTargetRef(key string) func(*Resolver, map[string]interface{}) mutat
 }
 
 // mutationTargetCommittableBranch resolves createCommitOnBranch's branch input
-// — a Ref id, or a repositoryNameWithOwner — to the repository being written.
+// (a Ref id or a repositoryNameWithOwner) to the repository being written.
 func mutationTargetCommittableBranch(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		branch, _ := input[key].(map[string]interface{})
@@ -75,9 +72,8 @@ func mutationTargetCommittableBranch(key string) func(*Resolver, map[string]inte
 	}
 }
 
-// committableBranch answers the repository and fully-qualified branch name a
-// CommittableBranch input addresses, for the resolver's own use after the
-// policy row has already authorized the repository.
+// committableBranch answers the repository and qualified branch name a
+// CommittableBranch input addresses, for use after the policy row authorized it.
 func (s *Resolver) committableBranch(branch map[string]interface{}) (*store.Repo, string, error) {
 	if nodeID, _ := branch["id"].(string); nodeID != "" {
 		prefix, repoID, qualified, ok := store.ParseGitObjectNodeID(nodeID)
@@ -103,8 +99,7 @@ func (s *Resolver) committableBranch(branch map[string]interface{}) (*store.Repo
 	return repo, "refs/heads/" + branchName, nil
 }
 
-// refPayloadSource renders the Ref member a git-write payload carries, or nil
-// when the reference does not survive the write (a deleted ref has no Ref).
+// refPayloadSource renders the Ref member a git-write payload carries.
 func (s *Resolver) refPayloadSource(repo *store.Repo, qualifiedName, oid string) interface{} {
 	source := s.decorateRefSource(repo, gitRefSource(repo.FullName, qualifiedName, oid))
 	source["__typename"] = "Ref"
@@ -287,8 +282,7 @@ func (s *Resolver) addGitWriteMutationsToSchema(mutationType *graphql.Object) {
 			if err != nil {
 				return nil, err
 			}
-			// An already-merged head answers a payload with no merge commit,
-			// the same fact REST's 204 states.
+			// An already-merged head answers no merge commit (REST's 204).
 			var mergeCommit interface{}
 			if oid != "" {
 				mergeCommit = s.commitPayloadSource(repo, oid)
@@ -455,10 +449,8 @@ func (s *Resolver) addGitWriteMutationsToSchema(mutationType *graphql.Object) {
 				force, _ := update["force"].(bool)
 
 				current, currentErr := stor.Reference(plumbing.ReferenceName(refName))
-				// beforeOid, when the client supplies it, is the head it saw:
-				// a reference that has moved since is refused rather than
-				// silently overwritten, which is the whole reason the field
-				// exists.
+				// beforeOid is the head the client saw; a reference that has
+				// moved since is refused rather than silently overwritten.
 				if beforeOid := str(update["beforeOid"]); beforeOid != "" {
 					if currentErr != nil {
 						return nil, fmt.Errorf("%s does not exist but beforeOid was supplied", refName)
@@ -544,8 +536,7 @@ func (s *Resolver) addGitWriteMutationsToSchema(mutationType *graphql.Object) {
 	})
 }
 
-// str reads a string member of a decoded GraphQL input, treating an absent or
-// null member as the empty string the way every optional String input behaves.
+// str reads a string member of a decoded input, treating absent/null as "".
 func str(v interface{}) string {
 	s, _ := v.(string)
 	return strings.TrimSpace(s)

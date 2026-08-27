@@ -4,20 +4,20 @@ bleephub speaks the same REST + GraphQL surface as GitHub Enterprise Server (`/a
 
 ## The mental model — `--hostname`, not a base URL
 
-`gh` does **not** take a base-URL argument. It identifies a target by **hostname** and derives the URLs from it using a fixed rule:
+`gh` takes no base-URL argument. It identifies a target by **hostname** and derives the URLs from a fixed rule:
 
 | Host | API base | GraphQL |
 |---|---|---|
 | `github.com` | `https://api.github.com/` | `https://api.github.com/graphql` |
 | anything else | `https://<host>/api/v3/` | `https://<host>/api/graphql` |
 
-So when you run `gh auth login --hostname localhost --with-token`, `gh` writes a record to `~/.config/gh/hosts.yml` under the key `localhost` and from that point on builds every API call as `https://localhost/api/v3/...`. bleephub serves both `/api/v3/` and `/api/graphql` — that's the entire wiring story.
+Run `gh auth login --hostname localhost --with-token` and `gh` writes a record to `~/.config/gh/hosts.yml` under the key `localhost`, then builds every API call as `https://localhost/api/v3/...`. bleephub serves both `/api/v3/` and `/api/graphql` — that's the entire wiring story.
 
 Three consequences:
 
-- **`gh` is HTTPS-only against any non-`github.com` host.** Plain HTTP on `:5555` will not work. Run Bleephub with `BPH_TLS_CERT` + `BPH_TLS_KEY` (the Docker harness does this; the [bare-metal recipe](../README.md#quick-start--bleephub--gh-command-line-interface-in-5-steps) does too).
-- **`gh auth login --hostname` accepts a bare hostname only.** Current `gh` (verified on 2.92.0) rejects `host:port` with `error parsing hostname: invalid hostname`, so the login flow requires bleephub on `:443`. If you can't (or don't want to) bind 443, skip `gh auth login` entirely: `export GH_HOST=localhost:8443` + `export GH_ENTERPRISE_TOKEN=<token>` — the runtime accepts a port in `GH_HOST` and the env token replaces the hosts.yml entry. The variable must be `GH_ENTERPRISE_TOKEN`: gh reads `GH_TOKEN` only for `github.com`, and sends nothing to other hosts when only `GH_TOKEN` is set (bleephub answers `401 Bad credentials`).
-- **macOS trust comes only from the keychain.** `gh` is a Go binary, and Go on darwin ignores `SSL_CERT_FILE`/`SSL_CERT_DIR` — the self-signed cert MUST be added to the system keychain (`sudo security add-trusted-cert …`, see the quick start). On Linux the usual CA-store mechanisms work.
+- **`gh` is HTTPS-only against any non-`github.com` host.** Plain HTTP on `:5555` will not work. Run Bleephub with `BPH_TLS_CERT` + `BPH_TLS_KEY` (the Docker harness and the [bare-metal recipe](../README.md#quick-start--bleephub--gh-command-line-interface-in-5-steps) both do this).
+- **`gh auth login --hostname` accepts a bare hostname only.** Current `gh` (verified on 2.92.0) rejects `host:port` with `error parsing hostname: invalid hostname`, so the login flow requires bleephub on `:443`. To avoid binding 443, skip `gh auth login`: `export GH_HOST=localhost:8443` + `export GH_ENTERPRISE_TOKEN=<token>` — the runtime accepts a port in `GH_HOST` and the env token replaces the hosts.yml entry. Use `GH_ENTERPRISE_TOKEN`, not `GH_TOKEN`: gh reads `GH_TOKEN` only for `github.com` and sends nothing to other hosts when only `GH_TOKEN` is set (bleephub answers `401 Bad credentials`).
+- **macOS trust comes only from the keychain.** `gh` is a Go binary, and Go on darwin ignores `SSL_CERT_FILE`/`SSL_CERT_DIR` — add the self-signed cert to the system keychain (`sudo security add-trusted-cert …`, see the quick start). On Linux the usual CA-store mechanisms work.
 
 ## One-time auth
 
@@ -40,9 +40,9 @@ echo "$TOKEN" | gh auth login --hostname localhost --with-token
 export GH_HOST=localhost
 ```
 
-Other tokens (OAuth user, installation server-to-server) can be minted via the OAuth flow or the real GitHub endpoint `POST /api/v3/app/installations/{installation_id}/access_tokens` (JWT-authenticated) — use the resulting token in place of `$TOKEN` on the `gh auth login` line.
+Mint other tokens (OAuth user, installation server-to-server) via the OAuth flow or the real GitHub endpoint `POST /api/v3/app/installations/{installation_id}/access_tokens` (JWT-authenticated), then use the result in place of `$TOKEN` on the `gh auth login` line.
 
-That's it. `gh` is now authenticated against bleephub.
+`gh` is now authenticated against bleephub.
 
 Setup and full teardown (server, cert material, keychain trust, gh wiring) are
 idempotent shell blocks in the quick start — see
@@ -51,7 +51,7 @@ and its **Teardown** section.
 
 ## Supported commands
 
-These work natively (no `gh api` workaround needed) and are each exercised by the `make gh-test` harness (`test/run-gh-test.sh`):
+These work natively (no `gh api` workaround) and are each exercised by the `make gh-test` harness (`test/run-gh-test.sh`):
 
 | Command | Endpoint(s) |
 |---|---|
@@ -84,9 +84,8 @@ These work natively (no `gh api` workaround needed) and are each exercised by th
 ## Documented but not exercised by the harness
 
 The server routes and resolvers backing these verbs exist, but the `make gh-test`
-suite does not assert on the verb itself, so they are documented rather than
-harness-verified. Treat them as implemented-but-unverified until a harness
-assertion covers them.
+suite does not assert on the verb itself. Treat them as implemented-but-unverified
+until a harness assertion covers them.
 
 | Command | Endpoint(s) | Status |
 |---|---|---|
@@ -123,11 +122,11 @@ gh api /.well-known/jwks                                       # JWKS for cloud-
 | `ghs_` | `POST /app/installations/{id}/access_tokens` | Installation-scoped perms | Server-to-server |
 | `ghr_` | Paired with `gho_` / `ghu_` | — | Refresh token (6 month TTL) |
 
-`requirePerm(scope, level)` enforces permissions on write-class endpoints. PATs bypass; `ghs_` / `ghu_` / `gho_` get checked against their respective scope tables. See the [Authentication, Apps, and events](../specs/BLEEPHUB_GITHUB_API_PARITY.md#authentication-apps-and-events) section of the parity audit for how installation-token permissions and selected-repository downscoping are enforced.
+`requirePerm(scope, level)` enforces permissions on write-class endpoints. PATs bypass; `ghs_` / `ghu_` / `gho_` are checked against their respective scope tables. For how installation-token permissions and selected-repository downscoping are enforced, see the [Authentication, Apps, and events](../specs/BLEEPHUB_GITHUB_API_PARITY.md#authentication-apps-and-events) section of the parity audit.
 
 ## Body coercion
 
-bleephub accepts both typed and string-coerced JSON booleans/integers — what `gh api -f` sends (string `"false"`) gets coerced to bool `false` server-side, exactly as Rails does on real GH. `gh api -F` (typed) also works. Don't substitute one form for the other; bleephub accepts what real GH accepts.
+bleephub accepts both typed and string-coerced JSON booleans/integers — `gh api -f` sends string `"false"`, which coerces to bool `false` server-side, exactly as Rails does on real GH. `gh api -F` (typed) also works. Don't substitute one form for the other; bleephub accepts what real GH accepts.
 
 ## Testing your gh setup end-to-end
 
@@ -142,16 +141,16 @@ gh issue close 1 --repo admin/bleephub-test
 gh issue list --repo admin/bleephub-test --state closed
 ```
 
-For a comprehensive smoke test, run [`make gh-test`](../Makefile), which spins up Bleephub + the official `gh` binary in Docker with TLS and exercises the full gh-CLI assertion suite (repos, issues, PRs, reactions, releases, runs, apps, OAuth). It runs in CI as the `GitHub CLI compatibility` job.
+For a comprehensive smoke test, run [`make gh-test`](../Makefile): it spins up Bleephub + the official `gh` binary in Docker with TLS and exercises the full gh-CLI assertion suite (repos, issues, PRs, reactions, releases, runs, apps, OAuth). It runs in CI as the `GitHub CLI compatibility` job.
 
 ## When things go wrong
 
-- **`gh auth login` keeps asking for credentials.** Make sure you used `--with-token` and the token is non-empty. `GH_ENTERPRISE_TOKEN` also works as an env fallback (not `GH_TOKEN` — that's read for `github.com` only).
-- **`gh` is hitting `github.com` instead of bleephub.** You forgot `--hostname <bleephub-host>` on `gh auth login`, or `GH_HOST` isn't exported. `gh` only routes to bleephub if the hostname is in `~/.config/gh/hosts.yml` AND either `GH_HOST` matches it or every command passes `--hostname` explicitly.
-- **`gh auth login` fails with `dial tcp [::1]:443: connection refused` / `x509: cannot validate ...`.** bleephub is on a plain-HTTP port, or its cert isn't trusted. `gh` is HTTPS-only — run bleephub with `BPH_TLS_CERT` + `BPH_TLS_KEY` and trust the CA system-wide. If you can't bind to `:443`, skip `gh auth login` (it rejects `host:port`) and use `GH_HOST=localhost:8443` + `GH_ENTERPRISE_TOKEN` instead.
+- **`gh auth login` keeps asking for credentials.** Use `--with-token` with a non-empty token. `GH_ENTERPRISE_TOKEN` also works as an env fallback (not `GH_TOKEN` — that's read for `github.com` only).
+- **`gh` is hitting `github.com` instead of bleephub.** You forgot `--hostname <bleephub-host>` on `gh auth login`, or `GH_HOST` isn't exported. `gh` routes to bleephub only if the hostname is in `~/.config/gh/hosts.yml` AND either `GH_HOST` matches it or every command passes `--hostname` explicitly.
+- **`gh auth login` fails with `dial tcp [::1]:443: connection refused` / `x509: cannot validate ...`.** bleephub is on a plain-HTTP port, or its cert isn't trusted. `gh` is HTTPS-only — run bleephub with `BPH_TLS_CERT` + `BPH_TLS_KEY` and trust the CA system-wide. To avoid binding `:443`, skip `gh auth login` (it rejects `host:port`) and use `GH_HOST=localhost:8443` + `GH_ENTERPRISE_TOKEN`.
 - **`gh repo list` returns empty / 404.** GraphQL queries depend on the `repositoryOwner` resolver — confirm your bleephub binary is current.
 - **`gh issue view` returns "fragment cannot be spread"-style errors.** Should be impossible (the `IssueOrPullRequest` union is wired). File a [BUGS.md](../BUGS.md) entry if seen.
 - **`gh api -f` returns 400.** Should not happen (`flexBool`/`flexInt` decoders handle string-coerced inputs). File a bug.
-- **TLS errors.** When using `BPH_TLS_CERT` with a self-signed cert, either trust the CA system-wide (the Docker harness does this) or pass `--insecure` to `gh api`.
+- **TLS errors.** With `BPH_TLS_CERT` and a self-signed cert, either trust the CA system-wide (the Docker harness does this) or pass `--insecure` to `gh api`.
 
-See also: the [Executable inventory](../specs/BLEEPHUB_GITHUB_API_PARITY.md#executable-inventory) section of the parity audit, backed by [`specs/parity-inventory.json`](../specs/parity-inventory.json) — the machine-readable per-endpoint inventory.
+See also the [Executable inventory](../specs/BLEEPHUB_GITHUB_API_PARITY.md#executable-inventory) section of the parity audit, backed by [`specs/parity-inventory.json`](../specs/parity-inventory.json) — the machine-readable per-endpoint inventory.

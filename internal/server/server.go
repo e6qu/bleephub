@@ -33,8 +33,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Server is the bleephub HTTP server implementing the GitHub Actions
-// runner service API (GHES-style endpoints).
+// Server is the bleephub HTTP server.
 type Server struct {
 	addr                   string
 	mux                    *http.ServeMux
@@ -45,21 +44,15 @@ type Server struct {
 	artifactStore          *store.ArtifactStore
 	metrics                *Metrics
 	maxConcurrentWorkflows int
-	// injectedByteStore, when set by a ServerOption before persistence wiring,
-	// overrides the env-derived object byte store. It lets a test stand up a
-	// fully persistent server (BLEEPHUB_PERSIST=true) with an in-memory object
-	// store instead of requiring a live S3/MinIO endpoint.
+	// injectedByteStore, set by a ServerOption before persistence wiring,
+	// overrides the env-derived object byte store so a test can run a persistent
+	// server with an in-memory store instead of a live S3/MinIO endpoint.
 	injectedByteStore store.ActionsByteStore
-	// localByteStore is the byte store used when no object storage is
-	// configured: filesystem-backed under the data directory, or in-process
-	// when there is no data directory. Git LFS is served from it so a
-	// deployment that never set BLEEPHUB_OBJECT_S3_BUCKET still has working
-	// LFS, which real GitHub always does.
+	// localByteStore backs byte content when no object storage is configured
+	// (filesystem under the data dir, or in-process). Git LFS is served from it.
 	localByteStore store.ActionsByteStore
-	// actions is the extracted Actions execution engine (ARCH-002). It owns
-	// workflow submission/dispatch, the broker queue, concurrency admission,
-	// scheduling, and the checks/webhook event loop; the server reaches it
-	// exclusively through its exported surface.
+	// actions is the extracted Actions execution engine (ARCH-002), reached only
+	// through its exported surface.
 	actions           *actions.Engine
 	registryUploadsMu sync.Mutex
 	registryUploads   map[string]*containerRegistryUpload
@@ -68,19 +61,18 @@ type Server struct {
 	rateLimitsMu      sync.Mutex
 	rateLimits        map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
 	routePatterns     []string                  // every pattern registered via route(), for fidelity enumeration
-	externalURL       string                    // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
+	externalURL       string                    // BLEEPHUB_EXTERNAL_URL; overrides request-Host URL derivation
 	// observedOrigin is the origin of the most recently served request, used to
-	// render absolute hypermedia in payloads built outside a request (webhook
-	// deliveries) when no external URL is configured. See hypermedia.go.
+	// render absolute hypermedia in out-of-request payloads (webhook deliveries)
+	// when no external URL is configured.
 	observedOrigin        observedOriginBox
 	pagesJekyllExecutable string
 	identity              identityConfig
 	identityStateKey      []byte // random per-process HMAC key for OAuth state cookies
 	build                 BuildInfo
-	// clockNow is injected by deterministic tests and simulators. Production
-	// leaves it nil and currentTime uses the process clock. clockMu makes
-	// replacing a test clock safe while owned background workers are winding
-	// down; tests replace it through the synchronized helper in _test.go.
+	// clockNow is injected by deterministic tests/simulators; production leaves
+	// it nil. clockMu keeps replacing a test clock safe while owned workers wind
+	// down.
 	clockMu            sync.RWMutex
 	clockNow           func() time.Time
 	webhookClientsOnce sync.Once
@@ -88,20 +80,15 @@ type Server struct {
 	webhookPoolOnce    sync.Once
 	webhookPool        *webhookDispatcher
 	// responseObserver, when set before ListenAndServe, sees every
-	// request/response pair in the handler chain. The test harness
-	// assigns it (same package) to validate /api/v3 response shapes
-	// against the vendored GitHub OpenAPI description; nil costs nothing.
+	// request/response pair; the test harness uses it to validate /api/v3 shapes
+	// against the vendored OpenAPI description. nil costs nothing.
 	responseObserver func(req *http.Request, status int, header http.Header, body []byte)
-	// background tracks the goroutines the server itself starts, so shutdown
-	// can wait for them instead of returning while they still run. A goroutine
-	// that outlives the process it belongs to keeps writing to a store nobody
-	// is reading and holds the listener it was told to release.
+	// background tracks the goroutines the server starts so shutdown waits for
+	// them rather than leaving them writing to an unread store.
 	background sync.WaitGroup
-	// lifetime is cancelled when the server stops serving. Work a request
-	// starts but does not wait for — the compaction that follows a push —
-	// derives its context from this one rather than from the request, whose
-	// context ends with the response, so shutdown can tell it to stop instead
-	// of waiting out its own timeout.
+	// lifetime is cancelled when the server stops serving. Work a request starts
+	// but does not wait for (post-push compaction) derives from this, not the
+	// request context, so shutdown can stop it.
 	lifetime      context.Context
 	stopServing   context.CancelFunc
 	gitCompaction *gitCompactionScheduler
@@ -119,9 +106,7 @@ func (s *Server) currentTime() time.Time {
 	return time.Now().UTC()
 }
 
-// goBackground runs fn as an owned goroutine: shutdown waits for it. Every
-// goroutine the server starts for its own lifetime goes through here, so
-// "which goroutines are still running" has an answer.
+// goBackground runs fn as an owned goroutine that shutdown waits for.
 func (s *Server) goBackground(fn func()) {
 	s.background.Add(1)
 	go func() {
@@ -131,8 +116,6 @@ func (s *Server) goBackground(fn func()) {
 }
 
 // BuildInfo identifies the immutable application artifact serving a request.
-// Identity and deployment validators can use it without knowing how or where
-// Bleephub is deployed.
 type BuildInfo struct {
 	Version     string
 	Commit      string
@@ -149,11 +132,9 @@ func WithBuildInfo(info BuildInfo) ServerOption {
 	}
 }
 
-// serverConstruction contains the dependency/configuration values needed to
-// build the complete in-memory server state. Production and tests deliberately
-// share newServerState: a test server may choose not to register every route,
-// but it must not exercise a structurally different six-field Server that
-// production can never create.
+// serverConstruction holds the values newServerState needs to build complete
+// server state. Production and tests share it so a test never exercises a
+// structurally different Server production can't create.
 type serverConstruction struct {
 	byteStore              store.ActionsByteStore
 	dataDir                string
@@ -192,21 +173,18 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 		build:                  construction.build,
 	}
 	s.store.ActionsArtifacts = s.artifactStore
-	// Route the store's own error logging through the configured structured
-	// logger (level filter + telemetry bridge) instead of the stdlib default.
+	// Route the store's error logging through the structured logger.
 	s.store.Logger = logger
 	s.actions = s.newActionsEngine()
-	// The GraphQL resolver is part of complete server state, exactly like the
-	// Actions engine: every constructed server — production or test fixture —
-	// can serve POST /api/graphql, and a fixture that registers routes without
-	// the full NewServer path no longer panics on a nil resolver (ARCH-003).
+	// Build the GraphQL resolver here (like the Actions engine) so every
+	// constructed server can serve POST /api/graphql without a nil resolver.
 	s.graphql = s.newGraphQLResolver()
 	return s
 }
 
-// newActionsEngine wires the Actions engine to this server's store and
-// injected seams. Re-invoked by NewServer when a test-injected byte store
-// replaces the artifact store before anything has run.
+// newActionsEngine wires the Actions engine to this server's store and injected
+// seams. Re-invoked by NewServer when a test-injected byte store replaces the
+// artifact store before anything runs.
 func (s *Server) newActionsEngine() *actions.Engine {
 	return actions.NewEngine(actions.Config{
 		Store:     s.store,
@@ -216,8 +194,7 @@ func (s *Server) newActionsEngine() *actions.Engine {
 		Addr:      s.addr,
 		Events:    s,
 		// GITHUB_TOKEN minting stays in the auth layer: mint and verify share
-		// the runner MAC key (auth.go), and signature drift would break every
-		// runner job at lease time.
+		// the runner MAC key, and signature drift would break every job.
 		MintJobToken: func(scopeID string, wf *store.Workflow, jd *store.JobDef) string {
 			return makeJobJWT(scopeID, wf.RepoFullName, s.resolveJobTokenPermissions(wf, jd))
 		},
@@ -226,8 +203,7 @@ func (s *Server) newActionsEngine() *actions.Engine {
 		},
 		Now: s.currentTime,
 		Go:  s.goBackground,
-		// The engine's minute tick carries the server-side housekeeping that
-		// rode the schedule dispatcher before the extraction.
+		// Server-side housekeeping on the engine's minute tick.
 		OnScheduleTick: []func(time.Time){
 			func(now time.Time) {
 				if err := s.store.ReapExpiredLoginSessions(now); err != nil {
@@ -242,9 +218,8 @@ func (s *Server) newActionsEngine() *actions.Engine {
 
 // reconcileOrgInvitationsSafely runs the org-invitation state machine on a
 // background tick so a GET never has to (STORE-034). A durable write failure
-// panics through the Must* helpers; the background goroutine has no recover
-// middleware, so catch it here, reload durable state, and continue rather than
-// letting a transient persist error kill the dispatcher.
+// panics through the Must* helpers; this goroutine has no recover middleware,
+// so catch it, reload durable state, and continue.
 func (s *Server) reconcileOrgInvitationsSafely(now time.Time) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -261,28 +236,24 @@ func (s *Server) reconcileOrgInvitationsSafely(now time.Time) {
 	s.store.ReconcileAllOrgInvitations(now)
 }
 
-// route registers a handler AND records its "METHOD /path" pattern so the
-// registered surface can be enumerated and validated directly (e.g. against
-// GitHub's API definition) rather than inferred by probing the catch-all
-// fallback. The catch-all is intentionally NOT registered through here, so a
-// route that should exist but doesn't is a visible gap in RegisteredRoutes(),
-// never silently swallowed by the fallback.
+// route registers a handler and records its "METHOD /path" pattern so the
+// registered surface can be enumerated directly (e.g. against GitHub's API
+// definition). The catch-all is deliberately not registered here, so a missing
+// route is a visible gap in RegisteredRoutes() rather than swallowed by it.
 func (s *Server) route(pattern string, handler http.HandlerFunc) {
 	s.routePatterns = append(s.routePatterns, pattern)
 	if strings.Contains(pattern, " /ui-data/") {
 		handler = s.authenticateUIData(handler)
 	}
-	// /api/v3 routes are instrumented so served requests feed the API
-	// insights stats (gh_api_insights.go); other patterns pass through.
+	// /api/v3 routes feed the API insights stats; others pass through.
 	s.mux.HandleFunc(pattern, s.nameSpan(pattern, s.instrumentAPIRoute(pattern,
 		s.enforceEnterpriseIPAllowList(pattern, s.enforceFineGrainedPATResource(pattern,
 			s.refuseInstallationTokenOnUserRoutes(pattern, handler))))))
 }
 
-// nameSpan replaces the coarse "bleephub" span name otelhttp assigns before
-// routing with the matched route template, and records it as the http.route
-// attribute. Naming by template (not raw path) keeps span cardinality bounded
-// while still telling which operation was served. A no-op when tracing is off.
+// nameSpan renames the otelhttp span to the matched route template and records
+// it as http.route; naming by template (not raw path) bounds span cardinality.
+// A no-op when tracing is off.
 func (s *Server) nameSpan(pattern string, next http.HandlerFunc) http.HandlerFunc {
 	_, path, hasMethod := strings.Cut(pattern, " ")
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -297,21 +268,17 @@ func (s *Server) nameSpan(pattern string, next http.HandlerFunc) http.HandlerFun
 }
 
 // routeDispatch registers a dispatcher whose mux pattern is a wildcard Go's
-// ServeMux cannot disambiguate into the real GitHub endpoint shapes it
-// serves (e.g. `/releases/{p1}/{p2}` covering both `/releases/tags/{tag}`
-// and `/releases/{release_id}/assets`). The mux matches dispatchPattern,
-// while routePatterns records the real endpoints, so RegisteredRoutes()
-// enumerates the operations a caller can actually use instead of the
-// routing implementation detail.
+// ServeMux can't disambiguate (e.g. `/releases/{p1}/{p2}` covering both
+// `/releases/tags/{tag}` and `/releases/{release_id}/assets`). The mux matches
+// dispatchPattern while routePatterns records the real endpoints, so
+// RegisteredRoutes() enumerates usable operations, not the routing detail.
 func (s *Server) routeDispatch(dispatchPattern string, handler http.HandlerFunc, servedPatterns ...string) {
 	s.routePatterns = append(s.routePatterns, servedPatterns...)
 	s.mux.HandleFunc(dispatchPattern, s.nameSpan(dispatchPattern, s.instrumentAPIRoute(dispatchPattern, s.enforceFineGrainedPATResource(dispatchPattern, handler))))
 }
 
 // authenticateUIData gives every browser-only adapter the same credential
-// semantics. Previously individual handlers had to remember to authenticate
-// themselves; package views did not, so both browser sessions and bearer-based
-// browser tests reached them with an empty context and failed 401.
+// semantics, so a handler need not authenticate itself.
 func (s *Server) authenticateUIData(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := s.authenticateRequest(r)
@@ -333,50 +300,25 @@ func (s *Server) authenticateUIData(next http.HandlerFunc) http.HandlerFunc {
 
 // NewServer creates a bleephub server with all routes registered.
 //
-// Honors the persistence-related env vars:
-//   - BLEEPHUB_DATA_DIR     — directory for SQLite DB state.
-//   - BLEEPHUB_PERSIST      — when "true", enables SQLite-backed state.
-//
-// Operator-requested persistence that fails to open logs a fatal error and exits.
-//
-// When persistence is enabled, the full metadata surface persists: users,
-// tokens, apps (incl. credentials + webhook config), OAuth apps,
-// installations (incl. selected repos), installation / user-to-server /
-// refresh tokens, repos, orgs, teams, memberships, issues, labels,
-// milestones, comments, issue events, pull requests, PR reviews + review comments,
-// hooks (incl. secrets) + deliveries, app hook deliveries, repo secrets
-// (incl. values), check suites/runs/prefs, workflow files, releases,
-// deployments + statuses + environments (incl. reviewers/wait timer),
-// reactions, Projects v2, user SSH/GPG keys, Pages, branch protection,
-// the audit log, and marketplace plans.
+// Env vars: BLEEPHUB_DATA_DIR (SQLite state directory) and BLEEPHUB_PERSIST
+// ("true" enables SQLite-backed state). Persistence that fails to open is fatal.
 //
 // Persistence requires durable git storage (BLEEPHUB_GIT_DIR or
-// BLEEPHUB_S3_BUCKET): reloading repo metadata against in-memory git
-// storage would resurrect every repo empty, so that combination is a
-// startup error rather than a silent degraded mode.
+// BLEEPHUB_S3_BUCKET) and object-backed byte storage (BLEEPHUB_OBJECT_S3_BUCKET);
+// reloading repo metadata against in-memory git would resurrect every repo
+// empty, and SQLite persists metadata only, not byte content — so either
+// combination is a startup error, not a silent degraded mode.
 //
-// Persistence also requires BLEEPHUB_OBJECT_S3_BUCKET for service byte
-// content: GitHub Actions artifacts, dependency caches, runner logs, release
-// assets, GitHub Packages files, GitHub Container Registry blobs, GitHub
-// CodeQL database archives, CodeQL variant-analysis query packs, and artifact
-// attestation bundles, and published GitHub Pages archives. SQLite persists only Bleephub metadata; byte content
-// must be backed by object storage so a restarted service does not advertise
-// durable records whose bytes lived only in memory or local development files.
-//
-// Workflow run history is persisted; in-flight runs are marked terminal
-// cancelled on reload because the runner dispatch state is process-local.
-// Browser sessions are persisted so sign-in survives replacement and remains
-// consistent across replicas. Agent connections and the OIDC signing key
-// (gh_misc_endpoints.go oidcKey) remain process-local; consumers must re-fetch
-// the JWKS after key rotation, as they do against real GitHub.
+// In-flight workflow runs reload as cancelled (runner dispatch is
+// process-local); browser sessions persist. Agent connections and the OIDC
+// signing key stay process-local, so consumers re-fetch the JWKS after rotation.
 func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Server {
 	maxWF := 10
 	if v := os.Getenv("BLEEPHUB_MAX_WORKFLOWS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			maxWF = n
 		} else {
-			// Don't silently fall back to the default: an operator who set an
-			// invalid value wants to know it was ignored.
+			// Warn rather than silently defaulting an invalid value.
 			logger.Warn().Str("value", v).Int("using", maxWF).
 				Msg("ignoring invalid BLEEPHUB_MAX_WORKFLOWS (want a positive integer)")
 		}
@@ -398,16 +340,14 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	for _, option := range options {
 		option(s)
 	}
-	// A test may inject an in-memory object byte store so a persistent server
-	// needs no live S3 endpoint. It replaces the env-derived store here, before
-	// persistence validation and wiring read it.
+	// A test-injected byte store replaces the env-derived one here, before
+	// persistence validation reads it.
 	if s.injectedByteStore != nil {
 		byteStore = s.injectedByteStore
 		s.artifactStore = store.NewArtifactStoreWithByteStore(dataDir, byteStore)
-		// The engine and the store captured the replaced artifact store at
-		// construction; re-point both before anything runs — leaving
-		// store.ActionsArtifacts on the discarded instance would silently
-		// diverge the two access paths (ACT-099).
+		// Re-point the engine and store at the replaced artifact store; leaving
+		// store.ActionsArtifacts on the discarded one diverges the two access
+		// paths (ACT-099).
 		s.store.ActionsArtifacts = s.artifactStore
 		s.actions = s.newActionsEngine()
 	}
@@ -423,8 +363,6 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		s.store.PackageDataDir = dataDir
 	}
 
-	// Wire persistence. BLEEPHUB_PERSIST=true enables SQLite and fails loud
-	// on open failure.
 	persist := store.MustNewPersistence()
 	if persist != nil {
 		if err := validatePersistentServerStorage(byteStore != nil); err != nil {
@@ -439,19 +377,17 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		s.logger.Info().Str("dialect", persist.Dialect.Name).Str("data_dir", dataDir).Msg("bleephub persistence enabled")
 	}
 
-	// Seed default user only if the store didn't load one from disk.
+	// Seed the default user only if none loaded from disk.
 	if s.store.LookupUserByLogin("admin") == nil {
 		s.store.SeedDefaultUser()
 	}
-	// Seed pre-registered GitHub Apps from config (BLEEPHUB_SEED_APPS /
-	// BLEEPHUB_SEED_APPS_FILE) so a coordinate-only consumer can hold a fixed
-	// app id + private key + org, exactly as it would against real GitHub.
+	// Seed pre-registered GitHub Apps (BLEEPHUB_SEED_APPS / _FILE) so a
+	// coordinate-only consumer can hold a fixed app id + key + org.
 	if err := s.seedConfiguredApps(); err != nil {
 		logger.Fatal().Err(err).Msg("failed to seed configured GitHub Apps")
 	}
-	// The instance's own enterprise account. It names the same enterprise the
-	// /api/v3/enterprises/{enterprise} settings surface is keyed on, so the
-	// REST settings and the GraphQL account describe one enterprise.
+	// The instance's own enterprise account, keyed on the same enterprise the
+	// REST settings and GraphQL account describe.
 	s.seedPrimaryEnterprise()
 	s.registerRoutes()
 	return s
@@ -699,11 +635,9 @@ func (s *Server) registerRoutes() {
 
 	// UI dashboard
 	s.registerUIAPIRoutes()
-	// registerUI mounts /ui/ AND the root redirect to it, but only in the
-	// UI-embedded build. Under -tags noui nothing serves /ui/, so advertising a
-	// redirect to it from / handed callers a 307 into a guaranteed 404 for a
-	// route the server claimed to have (CORE-012); the noui stub registers
-	// neither.
+	// registerUI mounts /ui/ and the root redirect only in the UI-embedded
+	// build; the noui stub registers neither (a redirect to an unserved /ui/
+	// would 307 into a guaranteed 404, CORE-012).
 	s.registerUI()
 
 	// Catch-all: tries smart HTTP git protocol, then logs unmatched
@@ -711,7 +645,6 @@ func (s *Server) registerRoutes() {
 }
 
 func (s *Server) handleCatchAll(w http.ResponseWriter, r *http.Request) {
-	// Try smart HTTP git protocol
 	if s.tryHandleGitRequest(w, r) {
 		return
 	}
@@ -726,8 +659,7 @@ func (s *Server) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Raw file contents, the target of every download_url/raw_url the REST
-	// surface advertises.
+	// Raw file contents (download_url/raw_url targets).
 	if s.tryHandleRawRequest(w, r) {
 		return
 	}
@@ -744,12 +676,10 @@ func (s *Server) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-// handleHealth is the unauthenticated liveness probe. It deliberately carries
-// no build identity or enterprise slug: /health is reachable anonymously
-// (internalAuthMiddleware exempts it), so exposing the exact commit SHA and the
-// tenant slug here handed any caller a fingerprint (CORE-016). Build identity
-// now lives behind the authenticated internal status endpoint, and dependency
-// readiness is covered by /ready.
+// handleHealth is the anonymous liveness probe. It carries no build identity or
+// enterprise slug: exposing the commit SHA and tenant slug on an anonymous
+// endpoint is a fingerprint (CORE-016). Build identity lives behind the
+// authenticated internal status endpoint.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "ok",
@@ -792,8 +722,7 @@ func (s *Server) handleInternalStatus(w http.ResponseWriter, r *http.Request) {
 		"jobs_by_status":    jobsByStatus,
 		"connected_runners": sessions,
 		"uptime_seconds":    int(time.Since(s.metrics.StartedAt).Seconds()),
-		// Build identity lives here, behind site-admin internal auth, rather
-		// than on the anonymous /health probe (CORE-016).
+		// Build identity lives here, behind site-admin auth, not on /health (CORE-016).
 		"enterprise_slug": s.enterpriseSlug(),
 		"version":         s.build.Version,
 		"commit":          s.build.Commit,
@@ -836,37 +765,26 @@ func (s *Server) handleInternalStorage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListenAndServe starts the HTTP server (crash-only, no graceful shutdown).
-// ListenAndServe runs the server until ctx is cancelled, then drains.
-//
-// The drain is bounded because this server has long-poll routes by design —
-// the runner's broker holds a request open waiting for work — so waiting for
-// every connection to close would mean never shutting down. Requests still in
-// flight past the bound are cut, which is the honest trade: a container that
-// refuses to stop is killed anyway, and then nothing drains at all.
+// ListenAndServe runs the server until ctx is cancelled, then drains. The drain
+// is bounded: long-poll routes (the runner broker) would otherwise never let
+// every connection close. Requests past the bound are cut.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	if err := s.startGitSSH(ctx); err != nil {
 		return err
 	}
-	// Adopt the storage layer's "loose tier is full" signal. It is installed
-	// here rather than at construction because it is process-global while a
-	// Server is not: a test process stands up many servers, and a handler
-	// belonging to one of them could otherwise run a compaction on behalf of
-	// another that has already shut down. Only a server that actually serves
-	// takes ownership, and it gives it back below.
+	// Adopt the storage layer's "loose tier is full" signal here, not at
+	// construction: the handler is process-global but a Server is not, and a
+	// test process stands up many. Only a serving server owns it, and hands it
+	// back below.
 	gitstore.SetCompactionRequestHandler(func(repo string, stor gitStorage.Storer) {
 		s.scheduleGitCompaction(repo, stor)
 	})
 	defer gitstore.SetCompactionRequestHandler(nil)
 	s.actions.Start(ctx)
-	// Migration exports a previous process was in the middle of are re-run
-	// before the listener opens: nothing else claims them, and a migration
-	// left "exporting" by a process that is gone would otherwise never finish.
+	// Re-run migration exports a dead process left "exporting"; nothing else
+	// claims them.
 	s.resumeMigrationExports()
-	// The same for the GitHub Enterprise Importer's migrations, which move
-	// data in rather than out: a repository or organization migration a dead
-	// process left mid-flight is requeued and re-driven here, because nothing
-	// else ever will and an unfinished migration is a half-populated target.
+	// Likewise requeue GEI (data-in) migrations left mid-flight.
 	s.resumeGEIMigrations()
 	handler := s.requestHandler()
 
@@ -874,29 +792,23 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		Addr:           s.addr,
 		Handler:        handler,
 		MaxHeaderBytes: 1 << 20,
-		// Bound only the header read (slowloris protection). A fixed
-		// ReadTimeout/WriteTimeout caps the WHOLE body, which cuts off large
-		// git push/pull + artifact uploads/downloads under load.
+		// Bound only the header read (slowloris); a fixed Read/WriteTimeout caps
+		// the whole body and cuts off large git pushes and artifact transfers.
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		// net/http logs connection-level errors to the standard logger by
-		// default, which bypasses zerolog's level filter and the telemetry
-		// bridge entirely. Route them through the server's own logger.
+		// Route net/http's connection-level errors through the structured logger
+		// instead of the stdlib default.
 		ErrorLog: newStdLogBridge(s.logger),
 	}
 
-	// Resolve addr for log output
 	host, port, _ := net.SplitHostPort(s.addr)
 	if host == "" {
 		host = "localhost"
 	}
 
-	// TLS support via environment variables.
-	//
-	// The pair is all-or-nothing. Treating a half-configured pair as "no TLS"
-	// silently serves plaintext on the port the operator believes is encrypted
-	// — a typo, an unmounted secret or a half-finished rotation becomes a
-	// downgrade nobody is told about. Refuse to start instead.
+	// TLS is all-or-nothing: treating a half-configured pair as "no TLS" would
+	// silently serve plaintext on a port the operator believes is encrypted, so
+	// refuse to start instead.
 	certFile := os.Getenv("BPH_TLS_CERT")
 	keyFile := os.Getenv("BPH_TLS_KEY")
 	if (certFile == "") != (keyFile == "") {
@@ -905,9 +817,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 	serveErr := make(chan error, 1)
 	if certFile != "" {
-		// Fail on an unreadable cert here rather than at the first handshake,
-		// so a bad path is a startup error and not an outage discovered by a
-		// client.
+		// Fail on an unreadable cert at startup, not at the first handshake.
 		if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
 			return fmt.Errorf("load TLS keypair: %w", err)
 		}
@@ -925,16 +835,12 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 
 	s.logger.Info().Msg("shutting down")
-	// Owned work that a request started but did not wait for is told to stop
-	// before the wait below, so shutdown is bounded by the grace period rather
-	// than by whatever timeout that work set for itself.
+	// Stop owned work before the drain so shutdown is bounded by the grace
+	// period, not by whatever timeout that work set itself.
 	s.stopServing()
 	drain, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 	err := srv.Shutdown(drain)
-	// Whatever the listeners did, the owned goroutines get their chance to
-	// notice ctx and finish; a goroutine still running after this is a bug in
-	// its own ownership, not something to wait indefinitely for.
 	s.background.Wait()
 	if err != nil {
 		return fmt.Errorf("shutdown: %w", err)
@@ -942,10 +848,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	return nil
 }
 
-// requestHandler is the one production HTTP pipeline. In-process tests use it
-// too, so authentication, prefix routing, replica refresh, recovery, logging,
-// response observation, and telemetry cannot silently diverge from the live
-// listener.
+// requestHandler is the one production HTTP pipeline; in-process tests use it
+// too, so the middleware chain cannot diverge from the live listener.
 func (s *Server) requestHandler() http.Handler {
 	inner := s.originMiddleware(s.prefixStripMiddleware(s.replicaRefreshMiddleware(s.internalAuthMiddleware(s.repoRedirectMiddleware(s.mux)))))
 	ghWrapped := s.ghHeadersMiddleware(inner)
@@ -953,32 +857,27 @@ func (s *Server) requestHandler() http.Handler {
 	if s.responseObserver != nil {
 		observed = s.observeMiddleware(ghWrapped)
 	}
-	// Compression sits outside the observer so the shape validator (and the
-	// ETag layer inside ghHeadersMiddleware) keep seeing identity bytes; only
-	// the wire representation is gzipped.
+	// Compression sits outside the observer so the shape validator and ETag
+	// layer keep seeing identity bytes; only the wire is gzipped.
 	compressed := compressionMiddleware(observed)
 	bounded := s.requestBodyLimitMiddleware(compressed)
 	secured := s.securityHeadersMiddleware(bounded)
-	// slowBodyGuard sits outermost, around otelhttp, so its ResponseController
-	// resolves to the base net/http response writer (whose SetReadDeadline
-	// coordinates with the server's connection management) without depending on
-	// every inner response-writer wrapper implementing Unwrap.
+	// slowBodyGuard sits outermost so its ResponseController resolves to the
+	// base net/http writer (whose SetReadDeadline coordinates with connection
+	// management) without relying on every inner wrapper implementing Unwrap.
 	return slowBodyGuard(bodyReadInactivityTimeout,
 		otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(secured))), "bleephub"))
 }
 
-// bodyReadInactivityTimeout bounds how long a single request-body read may
-// stall. It is a *sliding* inactivity deadline (reset before every read), not a
-// total cap: a client uploading a large git pack or artifact keeps making
-// progress and never trips it, while a slow-body Slowloris that trickles or
-// stalls the body is dropped. A fixed http.Server.ReadTimeout would instead cap
-// the whole body — cutting off legitimate large git pushes and artifact uploads
-// — which is exactly why the server leaves ReadTimeout/WriteTimeout unset and
-// closes only the header-read blind spot here (CORE-010).
+// bodyReadInactivityTimeout is a sliding per-read deadline (reset before every
+// read), not a total cap: a client making steady progress on a large git pack
+// never trips it, while a slow-body Slowloris is dropped. A fixed ReadTimeout
+// would cap the whole body, so the server leaves it unset and closes only the
+// header-read blind spot here (CORE-010).
 const bodyReadInactivityTimeout = 60 * time.Second
 
-// slowBodyGuard wraps each request body so a stalled or trickled body read trips
-// a sliding inactivity deadline on the underlying connection.
+// slowBodyGuard wraps each request body so a stalled read trips a sliding
+// inactivity deadline on the connection.
 func slowBodyGuard(idle time.Duration, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil && r.Body != http.NoBody {
@@ -988,8 +887,7 @@ func slowBodyGuard(idle time.Duration, next http.Handler) http.Handler {
 	})
 }
 
-// inactivityDeadlineBody resets a read deadline before every Read, so a client
-// making steady progress never trips it while a stalled one is cut off.
+// inactivityDeadlineBody resets a read deadline before every Read.
 type inactivityDeadlineBody struct {
 	rc   *http.ResponseController
 	body io.ReadCloser
@@ -997,28 +895,22 @@ type inactivityDeadlineBody struct {
 }
 
 func (b *inactivityDeadlineBody) Read(p []byte) (int, error) {
-	// Best-effort: on a transport that does not support read deadlines
-	// SetReadDeadline returns an error and the guard degrades to the
-	// header/idle timeouts already configured on http.Server.
+	// Best-effort: on a transport without read deadlines this errors and the
+	// guard degrades to the configured header/idle timeouts.
 	_ = b.rc.SetReadDeadline(time.Now().Add(b.idle))
 	return b.body.Read(p)
 }
 
 func (b *inactivityDeadlineBody) Close() error { return b.body.Close() }
 
-// uiContentSecurityPolicy locks the bundled single-page app down to its own
-// origin. The build emits only external, crossorigin module scripts (no inline
-// script), so 'self' is sufficient for script-src; 'unsafe-inline' is allowed
-// for styles because React renders inline style attributes, and 'wasm-unsafe-eval'
-// covers the crypto bundle if it uses WebAssembly. Avatars/emoji may be remote
-// images, so img-src also permits https:. frame-ancestors 'none' + the DENY
-// header below block clickjacking of the authenticated UI.
+// uiContentSecurityPolicy locks the SPA to its own origin: 'self' suffices for
+// script-src (no inline script), 'unsafe-inline' for styles (React inline
+// styles), 'wasm-unsafe-eval' for the crypto bundle, https: img-src for remote
+// avatars, and frame-ancestors 'none' against clickjacking.
 //
-// form-action is deliberately NOT restricted: the sign-out form POSTs to
-// /auth/logout and the server then redirects the browser cross-origin to the
-// OIDC provider's end_session endpoint. Chromium applies form-action to that
-// post-submission redirect chain, so 'self' would break federated (shauth)
-// logout. The SPA's own forms only ever target same-origin endpoints anyway.
+// form-action is deliberately unrestricted: the sign-out form redirects
+// cross-origin to the OIDC end_session endpoint, and Chromium applies
+// form-action to that redirect chain, so 'self' would break federated logout.
 const uiContentSecurityPolicy = "default-src 'self'; " +
 	"script-src 'self' 'wasm-unsafe-eval'; " +
 	"style-src 'self' 'unsafe-inline'; " +
@@ -1030,11 +922,9 @@ const uiContentSecurityPolicy = "default-src 'self'; " +
 	"base-uri 'self'; " +
 	"frame-ancestors 'none'"
 
-// securityHeadersMiddleware sets baseline response security headers on every
-// response — including the /ui/ SPA, which otherwise shipped none. Handlers that
-// need stricter values (the identity pages, the Pages sandbox) set their own
-// Content-Security-Policy / Referrer-Policy afterwards and win, since they run
-// after this middleware.
+// securityHeadersMiddleware sets baseline security headers on every response.
+// Handlers needing stricter values (identity pages, Pages sandbox) run after
+// this and win.
 func (s *Server) securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -1043,9 +933,8 @@ func (s *Server) securityHeadersMiddleware(next http.Handler) http.Handler {
 		if r.TLS != nil {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
-		// The bundled SPA (and its /ui-data adapters) get a CSP and a framing
-		// lock. Other surfaces — JSON API, Pages sandbox, identity pages —
-		// keep the headers their handlers set.
+		// The SPA (and its /ui-data adapters) get a CSP and framing lock; other
+		// surfaces keep the headers their handlers set.
 		if strings.HasPrefix(r.URL.Path, "/ui") {
 			h.Set("X-Frame-Options", "DENY")
 			h.Set("Content-Security-Policy", uiContentSecurityPolicy)
@@ -1056,13 +945,10 @@ func (s *Server) securityHeadersMiddleware(next http.Handler) http.Handler {
 
 const maxStructuredRequestBody = 32 << 20
 
-// requestBodyLimitMiddleware bounds structured request bodies at the shared
-// production pipeline. Byte-transfer protocols (Git, artifacts, packages and
-// registry uploads) deliberately keep their route-specific streaming limits;
-// applying one whole-request timeout or cap to them would truncate legitimate
-// large transfers. JSON and form handlers have no reason to accept an
-// unbounded body, and MaxBytesReader returns GitHub's ordinary 413 response
-// rather than letting a slow or malicious peer consume memory indefinitely.
+// requestBodyLimitMiddleware bounds structured (JSON/form) request bodies with
+// MaxBytesReader (a 413 on overflow). Byte-transfer protocols (Git, artifacts,
+// packages, registry uploads) keep their route-specific streaming limits, since
+// a whole-request cap would truncate legitimate large transfers.
 func (s *Server) requestBodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0]))
@@ -1074,10 +960,8 @@ func (s *Server) requestBodyLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// shutdownGrace bounds the drain. Long enough for an ordinary request or a
-// git push to finish, short enough that a container stop does not escalate to
-// SIGKILL — Docker and Kubernetes both default to ten seconds, so anything
-// larger is theatre unless the operator raises theirs too.
+// shutdownGrace bounds the drain: long enough for an ordinary request or git
+// push, short enough to stay under Docker/Kubernetes' 10s SIGKILL default.
 const shutdownGrace = 8 * time.Second
 
 func presenceLabel(v string) string {
@@ -1101,15 +985,9 @@ func (s *Server) adminHostMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// internalAuthMiddleware gates the operator-facing /internal/* surface — the
-// sim-control + dashboard endpoints that have no GitHub API equivalent
-// (job/workflow submission + status under /internal/exec, app/oauth-app
-// management, and the dashboard aggregations). These are NOT part of the
-// GitHub-compatible /api/ surface, so they live here rather than under
-// /api/v3/. They require a valid token (the UI sends the admin token as a
-// Bearer credential); the resolved user is injected into the request context
-// so management handlers can attribute ownership via ghUserFromContext.
-// /health stays open for liveness probes.
+// internalAuthMiddleware gates the operator-facing /internal/* surface (no
+// GitHub API equivalent). It requires a valid token and injects the resolved
+// user into the context for ghUserFromContext. /health stays open for probes.
 func (s *Server) internalAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/internal/") {
@@ -1126,17 +1004,11 @@ func (s *Server) internalAuthMiddleware(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "Requires authentication"})
 			return
 		}
-		// Site admin, for the whole /internal/ prefix rather than per route
-		// table. Ten routes are registered outside registerMgmtRoutes —
-		// /internal/exec/*, /internal/metrics, /internal/status,
-		// /internal/storage, POST /internal/orgs — and gating one table left
-		// those open to any account holding any token. handleSubmitJob does no
-		// authorization of its own and dispatches a container to the runner
-		// fleet, so that gap was arbitrary code execution for the
-		// lowest-privileged account on the instance.
-		//
-		// The prefix is an operator surface, not a naming convention, so the
-		// check belongs here where nothing can be registered around it.
+		// Require site admin for the whole /internal/ prefix. Gating a single
+		// route table would leave routes registered outside it (e.g.
+		// /internal/exec/*, which dispatches containers to the runner fleet
+		// without its own authz) open to any token holder — arbitrary code
+		// execution. The check belongs here where nothing registers around it.
 		if !user.SiteAdmin {
 			writeJSON(w, http.StatusForbidden, map[string]string{"message": "Must be a site admin"})
 			return
@@ -1165,10 +1037,9 @@ func (s *Server) replicaRefreshMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// internalTokenUser resolves the user for a token recognized on the internal
-// surface: any PAT in the store (which includes the seeded admin token).
-// Returns nil when absent/unknown. ghs_/gho_/ghu_ installation/OAuth tokens
-// are intentionally not accepted here — the internal surface is operator-only.
+// internalTokenUser resolves the user for a PAT on the internal surface, or nil.
+// Installation/OAuth tokens (ghs_/gho_/ghu_) are not accepted: the surface is
+// operator-only.
 func (s *Server) internalTokenUser(r *http.Request) *store.User {
 	scheme, cred := authScheme(r.Header.Get("Authorization"))
 	var tok string
@@ -1185,14 +1056,12 @@ func (s *Server) internalTokenUser(r *http.Request) *store.User {
 	return user
 }
 
-// prefixStripMiddleware removes any path segments before the known API
-// prefixes. The runner prepends the tenant URL path to every call, so a
-// request arrives as /owner/repo/_apis/... rather than /_apis/... — which
-// is why a refused runner call logs the stripped path.
+// prefixStripMiddleware removes path segments before the known API prefixes:
+// the runner prepends the tenant URL path, so a call arrives as
+// /owner/repo/_apis/... rather than /_apis/....
 func (s *Server) prefixStripMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		// Strip everything before /_apis/ or /api/
 		for _, prefix := range []string{"/_apis/", "/api/"} {
 			if idx := strings.Index(path, prefix); idx > 0 {
 				r.URL.Path = path[idx:]
@@ -1218,10 +1087,9 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// withTraceContext stamps the active request span's trace_id/span_id onto a log
-// event so the OTel logs bridge reconstructs the record's trace context and the
-// line correlates with its trace (CORE-007). A spanless context leaves evt
-// unchanged.
+// withTraceContext stamps the active span's trace_id/span_id onto a log event
+// so the line correlates with its trace (CORE-007). A spanless context is a
+// no-op.
 func withTraceContext(evt *zerolog.Event, ctx context.Context) *zerolog.Event {
 	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
 		return evt.Str("trace_id", sc.TraceID().String()).Str("span_id", sc.SpanID().String())
@@ -1239,27 +1107,16 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-// writeJSON marshals v as JSON and writes it to w.
-// writeJSON is the response choke point for essentially every handler.
+// writeJSON marshals the body before writing the status, so an unencodable
+// value becomes a 500 rather than a committed 200 with a truncated body.
+// Content-Length is left to net/http, since some handlers write further bytes
+// after calling this.
 //
-// The body is marshalled before the status is written, so a value that cannot
-// be encoded — an unsupported type, a NaN, a cycle — becomes a 500 instead of a
-// 200 with a truncated body and no record of what happened. Previously the
-// encoder wrote straight to the ResponseWriter and its error was discarded, so
-// the status line had already been committed by the time anything could fail.
-//
-// Content-Length is deliberately left to net/http: a handful of handlers write
-// further bytes after calling this, and declaring a length here would make
-// those responses malformed.
-// checkIfMatch enforces optimistic concurrency on a mutating request (STORE-016).
-// When the request carries If-Match, the current resource's strong ETag — the
-// same content hash a GET of it returns (writeJSON's `"sha256(body)"`) — must
-// match, or the write is rejected 412 Precondition Failed so a client holding a
-// stale copy cannot silently clobber a concurrent update. An absent If-Match is
-// unconditional, exactly as GitHub treats it. `current` is the resource's
-// present JSON representation (the value a GET would return); call this after
-// loading it and before mutating. Returns false when it has already written the
-// 412, so the caller returns immediately.
+// checkIfMatch enforces optimistic concurrency (STORE-016): an If-Match must
+// equal the resource's strong ETag (writeJSON's sha256(body)) or the write is
+// rejected 412, so a stale client cannot clobber a concurrent update. An absent
+// If-Match is unconditional. Pass the present JSON representation; returns false
+// once it has written the 412.
 func checkIfMatch(w http.ResponseWriter, r *http.Request, current interface{}) bool {
 	ifMatch := r.Header.Get("If-Match")
 	if ifMatch == "" {
@@ -1314,12 +1171,9 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	_, _ = w.Write(append(body, '\n'))
 }
 
-// writeJSONCreated writes a 201 Created response carrying a Location header
-// pointing at the newly created resource, mirroring GitHub's REST behaviour.
-// GitHub attaches Location to every resource-creating 201, so callers pass the
-// canonical API URL of the new resource (typically the same value as the JSON
-// body's "url" field). The header must be set before writeJSON, since that
-// function commits the status line and body in one shot.
+// writeJSONCreated writes a 201 with a Location header pointing at the new
+// resource (typically the body's "url"). Location is set before writeJSON,
+// which commits status and body in one shot.
 func writeJSONCreated(w http.ResponseWriter, location string, v interface{}) {
 	if location != "" {
 		w.Header().Set("Location", location)
@@ -1327,10 +1181,8 @@ func writeJSONCreated(w http.ResponseWriter, location string, v interface{}) {
 	writeJSON(w, http.StatusCreated, v)
 }
 
-// jsonStringField pulls a string field back out of a JSON-shaped map built by a
-// handler. It is used to feed writeJSONCreated a Location from the same map that
-// becomes the response body, keeping the header and the "url" field in lockstep
-// without handlers having to recompute the URL twice.
+// jsonStringField reads a string field from a JSON-shaped map, feeding
+// writeJSONCreated a Location from the same map that becomes the body.
 func jsonStringField(v interface{}, key string) string {
 	m, ok := v.(map[string]interface{})
 	if !ok {
@@ -1340,19 +1192,11 @@ func jsonStringField(v interface{}, key string) string {
 	return s
 }
 
-// recoverMiddleware turns a panicking handler into a 500 instead of a silently
-// aborted connection.
-//
-// Without it, net/http's per-connection recover catches the panic, writes
-// nothing, and closes the connection: the client sees a truncated read, and
-// there is no zerolog record, no span error and no metric. It sits inside the
-// otelhttp handler so the span is still open and can record the error, and
-// outside everything else so a panic anywhere below is caught.
-//
-// This bounds the blast radius of a panic; it does not make one harmless. A
-// handler that panics while holding the store lock still leaves it held, and
-// the recovery cannot release it — the fix for that is the lock discipline
-// itself, not this middleware.
+// recoverMiddleware turns a panicking handler into a 500 (net/http's own
+// recover writes nothing and drops the connection with no record). It sits
+// inside otelhttp so the span can record the error, and outside everything else
+// so any panic below is caught. It bounds blast radius but does not make a
+// panic harmless: a handler that panics holding the store lock still leaks it.
 func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -1360,8 +1204,7 @@ func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 			if recovered == nil {
 				return
 			}
-			// A client that hung up mid-write is not a server fault; the
-			// standard library uses this sentinel for exactly that.
+			// A client that hung up mid-write is not a server fault.
 			if recovered == http.ErrAbortHandler {
 				panic(recovered)
 			}
@@ -1389,8 +1232,7 @@ func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// newStdLogBridge adapts zerolog to the *log.Logger net/http wants for
-// ErrorLog, so connection-level errors reach the same sink as everything else.
+// newStdLogBridge adapts zerolog to the *log.Logger net/http wants for ErrorLog.
 func newStdLogBridge(logger zerolog.Logger) *stdlog.Logger {
 	return stdlog.New(stdLogWriter{logger: logger}, "", 0)
 }
@@ -1402,15 +1244,10 @@ func (w stdLogWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// redactedQuery renders a query string with every value replaced unless the
-// parameter is on a small allowlist of names known to carry no secret.
-//
-// The allowlist is deliberately the inverted default. This server implements
-// OAuth and the device flow, so an unhandled or mistyped request can carry
-// `code`, `client_secret`, `access_token` or `device_code` in the query — and
-// anything logged here also reaches the telemetry backend through the log
-// bridge. Redacting a known-secret denylist would mean every parameter added
-// later is disclosed until someone remembers to add it.
+// redactedQuery replaces every query value unless its name is on a small
+// no-secret allowlist. The allowlist is inverted by design: OAuth/device-flow
+// params (code, client_secret, access_token, device_code) reach telemetry
+// through the log bridge, and a denylist would leak every param added later.
 func redactedQuery(u *url.URL) string {
 	values := u.Query()
 	if len(values) == 0 {

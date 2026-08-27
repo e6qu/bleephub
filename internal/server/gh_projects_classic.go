@@ -10,31 +10,27 @@ import (
 )
 
 func (s *Server) registerGHProjectsClassicRoutes() {
-	// Project-level
 	s.route("GET /api/v3/repos/{owner}/{repo}/projects", s.handleListProjectsClassic)
 	s.route("POST /api/v3/repos/{owner}/{repo}/projects", s.handleCreateProjectClassic)
 	s.route("GET /api/v3/projects/{project_id}", s.handleGetProjectClassic)
 	s.route("PATCH /api/v3/projects/{project_id}", s.handleUpdateProjectClassic)
 	s.route("DELETE /api/v3/projects/{project_id}", s.handleDeleteProjectClassic)
 
-	// Column-level: two real GitHub path shapes share the two-segment slot
-	// after /projects/ — Go's mux cannot distinguish them, so dispatch.
+	// Two GitHub path shapes share the two-segment slot after /projects/;
+	// Go's mux can't distinguish them, so dispatch by segment.
 	s.route("GET /api/v3/projects/{p1}/{p2}", s.handleProjectTwoSegDispatch("GET"))
 	s.route("POST /api/v3/projects/{p1}/{p2}", s.handleProjectTwoSegDispatch("POST"))
 	s.route("PATCH /api/v3/projects/{p1}/{p2}", s.handleProjectTwoSegDispatch("PATCH"))
 	s.route("DELETE /api/v3/projects/{p1}/{p2}", s.handleProjectTwoSegDispatch("DELETE"))
 
-	// Column moves are unambiguous.
 	s.route("POST /api/v3/projects/columns/{column_id}/moves", s.handleMoveProjectColumn)
 
-	// Card-level: two real GitHub path shapes share the two-segment slot
-	// after /projects/columns/ — Go's mux cannot distinguish them, so dispatch.
+	// Same two-segment ambiguity after /projects/columns/; dispatch by segment.
 	s.route("GET /api/v3/projects/columns/{p1}/{p2}", s.handleColumnTwoSegDispatch("GET"))
 	s.route("POST /api/v3/projects/columns/{p1}/{p2}", s.handleColumnTwoSegDispatch("POST"))
 	s.route("PATCH /api/v3/projects/columns/{p1}/{p2}", s.handleColumnTwoSegDispatch("PATCH"))
 	s.route("DELETE /api/v3/projects/columns/{p1}/{p2}", s.handleColumnTwoSegDispatch("DELETE"))
 
-	// Card moves are unambiguous.
 	s.route("POST /api/v3/projects/columns/cards/{card_id}/moves", s.handleMoveProjectCard)
 }
 
@@ -162,7 +158,7 @@ func (s *Server) handleCreateProjectClassic(w http.ResponseWriter, r *http.Reque
 	proj := s.store.CreateProjectClassic(repo, user.ID, body.Name, body.Body, body.State)
 	s.recordAuditEvent("project.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "project_id": proj.ID})
 	projJSON := projectClassicToJSON(proj, s.store, s.baseURL(r), repo.FullName)
-	// `project` (created) fires so `on: project` workflows run (ACT-026).
+	// Fire `project` so `on: project` workflows run (ACT-026).
 	s.emitWebhookEvent(repo.FullName, "project", "created", map[string]interface{}{
 		"action":     "created",
 		"project":    projJSON,
@@ -705,9 +701,7 @@ func projectColumnURL(c *store.ProjectColumn, baseURL string) string {
 }
 
 // projectCardToJSON renders a classic project card. It reports false when the
-// card's column has been deleted concurrently: deleting a column cascades to
-// its cards, so such a card has left the URL space and has no column_url or
-// project_url to report.
+// card's column was concurrently deleted (a card with no column_url/project_url).
 func projectCardToJSON(c *store.ProjectCard, st *store.Store, baseURL string) (map[string]interface{}, bool) {
 	var creator map[string]interface{}
 	var contentURL interface{}

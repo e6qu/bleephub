@@ -12,9 +12,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// User-account surface: profile updates, email addresses, account
-// interaction limits, GitHub Marketplace purchases, billing usage
-// reports, profile hovercards, and cross-repository issue listing.
+// User-account surface: profile, emails, interaction limits, Marketplace
+// purchases, billing usage, hovercards, and cross-repository issue listing.
 
 func (s *Server) registerGHUserSurfaceRoutes() {
 	s.route("PATCH /api/v3/user", s.handleUpdateAuthenticatedUser)
@@ -26,8 +25,7 @@ func (s *Server) registerGHUserSurfaceRoutes() {
 	s.route("GET /api/v3/user/public_emails", s.handleListPublicUserEmails)
 	s.route("PATCH /api/v3/user/email/visibility", s.handleSetUserEmailVisibility)
 
-	// SSH signing keys (single-key read; list/create/delete live in
-	// gh_misc_endpoints.go).
+	// SSH signing keys single read; list/create/delete live in gh_misc_endpoints.go.
 	s.route("GET /api/v3/user/ssh_signing_keys/{ssh_signing_key_id}", s.handleGetMySSHSigningKey)
 
 	// Account interaction limits.
@@ -117,7 +115,7 @@ func (s *Server) handleGetUserByAccountID(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Looking up your own account yields the private view, as on GET /user.
+	// Your own account yields the private view, as on GET /user.
 	if viewer := ghUserFromContext(r.Context()); viewer != nil && viewer.ID == user.ID {
 		writeJSON(w, http.StatusOK, s.privateUserJSON(user))
 		return
@@ -125,9 +123,8 @@ func (s *Server) handleGetUserByAccountID(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, s.fullUserJSON(user, s.baseURL(r)))
 }
 
-// privateUserJSON renders GitHub's `private-user` schema — the
-// authenticated user's own account view. The private counters and
-// two_factor_authentication are derived live from store state.
+// privateUserJSON renders GitHub's `private-user` schema, the authenticated
+// user's own account view, with private counters derived live from store state.
 func (s *Server) privateUserJSON(u *store.User) map[string]interface{} {
 	out := s.fullUserJSON(u, s.publicOrigin())
 	out["user_view_type"] = "private"
@@ -143,8 +140,8 @@ func (s *Server) privateUserJSON(u *store.User) map[string]interface{} {
 
 // ─── Email addresses ─────────────────────────────────────────────────────
 
-// userEmailJSON renders one email address in GitHub's `email` schema.
-// An unset visibility is null on the wire.
+// userEmailJSON renders one address in GitHub's `email` schema; unset
+// visibility is null on the wire.
 func userEmailJSON(e store.UserEmail) map[string]interface{} {
 	return map[string]interface{}{
 		"email":      e.Email,
@@ -154,9 +151,8 @@ func userEmailJSON(e store.UserEmail) map[string]interface{} {
 	}
 }
 
-// decodeEmailsBody decodes the flexible request body GitHub accepts for
-// POST/DELETE /user/emails: {"emails": [...]}, a bare JSON array, or a
-// single JSON string.
+// decodeEmailsBody decodes the flexible body GitHub accepts for POST/DELETE
+// /user/emails: {"emails": [...]}, a bare array, or a single string.
 func decodeEmailsBody(r *http.Request) ([]string, bool) {
 	var raw json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
@@ -298,9 +294,6 @@ func (s *Server) handleGetMySSHSigningKey(w http.ResponseWriter, r *http.Request
 
 // ─── Account interaction limits ──────────────────────────────────────────
 
-// interactionLimitExpiry maps GitHub's interaction-expiry enum to the
-// moment the restriction lapses.
-
 func (s *Server) handleGetUserInteractionLimits(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -425,8 +418,8 @@ func (s *Server) userMarketplacePurchaseJSON(p *store.MarketplacePurchase, plan 
 	}
 }
 
-// marketplacePlanJSON renders the full marketplace-listing-plan schema.
-// The plan number is its listing identifier, which bleephub keys by ID.
+// marketplacePlanJSON renders the marketplace-listing-plan schema; the plan
+// number is its ID.
 func marketplacePlanJSON(p *store.MarketplacePlan, baseURL string) map[string]interface{} {
 	planURL := baseURL + "/api/v3/marketplace_listing/plans/" + strconv.Itoa(p.ID)
 	return map[string]interface{}{
@@ -494,8 +487,6 @@ func (s *Server) handleGetUserHovercard(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"contexts": contexts})
 }
 
-// ActiveOrgLoginsForUser returns the logins of organizations where the
-// user holds an active membership, sorted alphabetically.
 // ─── GET /user/issues ────────────────────────────────────────────────────
 
 func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request) {
@@ -576,14 +567,13 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 
 // ─── Enhanced billing platform usage reports ─────────────────────────────
 
-// billingTimeFilter holds parsed year/month/day query parameters.
 type billingTimeFilter struct {
 	year, month, day int
 }
 
-// parseBillingTimeFilter reads year/month/day query params. A missing
-// year defaults to the current year; when defaultMonth is set, a missing
-// month defaults to the current month.
+// parseBillingTimeFilter reads year/month/day query params. A missing year
+// defaults to the current year; with defaultMonth, a missing month to the
+// current month.
 func parseBillingTimeFilter(r *http.Request, defaultMonth bool, now time.Time) (billingTimeFilter, error) {
 	q := r.URL.Query()
 	now = now.UTC()
@@ -619,8 +609,8 @@ func (f billingTimeFilter) matches(t time.Time) bool {
 	return true
 }
 
-// resolveBillingUser authorizes the billing report request: only the
-// account owner or a site administrator can read a user's usage.
+// resolveBillingUser authorizes the request: only the account owner or a site
+// admin may read a user's usage.
 func (s *Server) resolveBillingUser(w http.ResponseWriter, r *http.Request) *store.User {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
@@ -748,10 +738,8 @@ func (s *Server) handleUserBillingUsageSummary(w http.ResponseWriter, r *http.Re
 	})
 }
 
-// handleUserBillingAICreditUsage and handleUserBillingPremiumRequestUsage
-// report metered AI-credit and premium-request usage. bleephub models no
-// AI-credit-consuming or premium-request-consuming products, so the
-// faithful report carries zero usage items.
+// handleUserBillingAICreditUsage and handleUserBillingPremiumRequestUsage report
+// zero usage: no AI-credit- or premium-request-consuming products are modeled.
 func (s *Server) handleUserBillingAICreditUsage(w http.ResponseWriter, r *http.Request) {
 	s.writeEmptyModelUsageReport(w, r)
 }

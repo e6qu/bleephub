@@ -1,16 +1,9 @@
 package store
 
-// Contribution aggregation for the GraphQL User.contributionsCollection
-// surface (GQL contributions). The GraphQL layer renders these raw materials
-// into the ContributionsCollection type graph; everything here is computed
-// from real store data — issues, pull requests, reviews, repositories, and the
-// git commit history — so the counts a client reads are the store's own
-// activity rather than a fabricated number.
-//
-// The computation composes the store's public, individually-locked readers
-// (ListEveryRepo, ListIssues, ListPullRequests, ListPullRequestReviews,
-// CountCommentsFor, GitStorageForRepoID) rather than holding st.Mu itself, so
-// it never deadlocks against them and always reads committed snapshots.
+// Contribution aggregation for GraphQL User.contributionsCollection, computed
+// from real store data. It composes the store's individually-locked readers
+// rather than holding st.Mu itself, so it never deadlocks against them and
+// always reads committed snapshots.
 
 import (
 	"sort"
@@ -21,23 +14,19 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// ContributionDayKey is a calendar day rendered as "2006-01-02" (UTC), the key
-// the contribution calendar buckets activity by.
+// ContributionDayKey is a calendar day rendered as "2006-01-02" (UTC).
 type ContributionDayKey = string
 
-// CommitContributionDay is one repository's commits by the user on one UTC day
-// — the unit GitHub's CreatedCommitContribution represents.
+// CommitContributionDay is one repository's commits by the user on one UTC day.
 type CommitContributionDay struct {
 	RepoID     int
 	Date       time.Time // midnight UTC of the day
 	Count      int
-	OccurredAt time.Time // the latest commit time on that day, for occurredAt
+	OccurredAt time.Time // latest commit time on that day
 }
 
-// ContributionData is everything the GraphQL ContributionsCollection needs,
-// computed for one user over one window. Slices of store records are detached
-// snapshots (the List* readers return snapshots); the GraphQL layer renders
-// them into contribution source maps.
+// ContributionData is everything GraphQL's ContributionsCollection needs for
+// one user over one window. Record slices are detached snapshots.
 type ContributionData struct {
 	UserID   int
 	User     *User
@@ -49,10 +38,9 @@ type ContributionData struct {
 	Issues       []*Issue
 	PullRequests []*PullRequest
 	Reviews      []*PullRequestReview
-	ReviewRepoID map[int]int // review.ID -> repository ID (for grouping/rendering)
+	ReviewRepoID map[int]int // review.ID -> repository ID
 	Repos        []*Repo     // repositories the user created in the window
 
-	// Commit contributions.
 	CommitDays   []CommitContributionDay
 	TotalCommits int
 
@@ -62,43 +50,38 @@ type ContributionData struct {
 	ReposWithPRs     map[int]bool
 	ReposWithReviews map[int]bool
 
-	// Comment counts for the window's issues/PRs, keyed by record ID. Used for
-	// the popular* selection and the excludePopular argument.
+	// Comment counts for the window's issues/PRs, keyed by record ID; drive the
+	// popular* selection and the excludePopular argument.
 	IssueComments map[int]int
 	PRComments    map[int]int
 
-	// The user's all-time first issue / pull request / repository. GitHub's
-	// first*Contribution fields return these only when they fall inside the
-	// window; they are surfaced here so the GraphQL layer can apply that test.
+	// The user's all-time first issue/PR/repository. GraphQL's
+	// first*Contribution surfaces these only when they fall inside the window.
 	FirstIssue *Issue
 	FirstPR    *PullRequest
 	FirstRepo  *Repo
 
-	// The window's most-commented issue and pull request (popular*).
+	// The window's most-commented issue and pull request.
 	PopularIssue *Issue
 	PopularPR    *PullRequest
 
-	// Per-day contribution counts for the calendar (commits + issues opened +
-	// pull requests opened + reviews submitted), keyed by "2006-01-02" (UTC).
+	// Per-day contribution counts (commits + issues/PRs opened + reviews
+	// submitted), keyed by "2006-01-02" (UTC).
 	DayCounts map[ContributionDayKey]int
 
-	// Distinct years, most recent first, in which the user has any all-time
-	// contribution (issues/PRs/repos/reviews, plus window commits).
+	// Distinct years with any all-time contribution, most recent first.
 	ContributionYears []int
 
-	// Whether the user has any activity before the window's start.
 	HasActivityInThePast bool
 }
 
-// ContributionDate renders a time as the calendar day key the aggregate uses.
+// ContributionDate renders a time as its calendar day key.
 func ContributionDate(t time.Time) ContributionDayKey {
 	return t.UTC().Format("2006-01-02")
 }
 
-// ComputeContributions aggregates the user's real contributions over
-// [from, to]. When orgID is non-zero the aggregate is restricted to
-// repositories owned by that organization (GitHub's
-// contributionsCollection(organizationID:)).
+// ComputeContributions aggregates the user's contributions over [from, to]. A
+// non-zero orgID restricts the aggregate to that organization's repositories.
 func (st *Store) ComputeContributions(userID int, from, to time.Time, orgID int) *ContributionData {
 	data := &ContributionData{
 		UserID:           userID,
@@ -135,9 +118,7 @@ func (st *Store) ComputeContributions(userID int, from, to time.Time, orgID int)
 			continue
 		}
 
-		// Repositories created by the user (ownership is the creation record
-		// the store keeps; forks are included exactly as GitHub counts created
-		// repositories).
+		// Repositories created by the user (forks included, as GitHub counts them).
 		if orgID == 0 && repo.OwnerType == "User" && repo.OwnerID == userID {
 			years[repo.CreatedAt.UTC().Year()] = true
 			if data.FirstRepo == nil || repo.CreatedAt.Before(data.FirstRepo.CreatedAt) {
@@ -151,7 +132,6 @@ func (st *Store) ComputeContributions(userID int, from, to time.Time, orgID int)
 			}
 		}
 
-		// Issues opened by the user.
 		for _, issue := range st.ListIssues(repo.ID, "all") {
 			if issue.AuthorID != userID {
 				continue
@@ -171,8 +151,6 @@ func (st *Store) ComputeContributions(userID int, from, to time.Time, orgID int)
 			}
 		}
 
-		// Pull requests opened by the user, and the reviews the user submitted
-		// on the repository's pull requests.
 		for _, pr := range st.ListPullRequests(repo.ID, "all") {
 			if pr.AuthorID == userID {
 				years[pr.CreatedAt.UTC().Year()] = true
@@ -210,7 +188,6 @@ func (st *Store) ComputeContributions(userID int, from, to time.Time, orgID int)
 			}
 		}
 
-		// Commits authored by the user on the repository's default branch.
 		st.accumulateCommitContributions(data, repo, user, from, to, years, bumpDay)
 	}
 
@@ -239,8 +216,8 @@ func (st *Store) ComputeContributions(userID int, from, to time.Time, orgID int)
 	return data
 }
 
-// accumulateCommitContributions walks a repository's default branch and folds
-// the user's commits in the window into the aggregate, grouped by day.
+// accumulateCommitContributions folds the user's in-window commits on the
+// repository's default branch into the aggregate, grouped by day.
 func (st *Store) accumulateCommitContributions(data *ContributionData, repo *Repo, user *User, from, to time.Time, years map[int]bool, bumpDay func(time.Time, int)) {
 	storer, _ := st.GitStorageForRepoID(repo.ID)
 	if storer == nil {
@@ -258,7 +235,6 @@ func (st *Store) accumulateCommitContributions(data *ContributionData, repo *Rep
 	if err != nil {
 		return
 	}
-	// dayCounts groups this repository's in-window authored commits by day.
 	dayCounts := map[string]int{}
 	dayLatest := map[string]time.Time{}
 	dayDate := map[string]time.Time{}
@@ -279,7 +255,6 @@ func (st *Store) accumulateCommitContributions(data *ContributionData, repo *Rep
 			dayLatest[key] = when
 		}
 		if _, ok := dayDate[key]; !ok {
-			// midnight UTC of the day the square represents.
 			u := when.UTC()
 			dayDate[key] = time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
 		}
@@ -304,9 +279,8 @@ func (st *Store) accumulateCommitContributions(data *ContributionData, repo *Rep
 }
 
 // commitAuthoredBy reports whether a git signature is the given user's, using
-// the same email-then-name attribution ResolveUserBySignature applies, but
-// scoped to one account so a foreign commit is rejected with a single map
-// lookup rather than a full user scan.
+// the same email-then-name attribution as ResolveUserBySignature but scoped to
+// one account.
 func (st *Store) commitAuthoredBy(user *User, sig object.Signature) bool {
 	if sig.Email != "" {
 		if strings.EqualFold(sig.Email, user.Email) {
@@ -317,13 +291,12 @@ func (st *Store) commitAuthoredBy(user *User, sig object.Signature) bool {
 				return true
 			}
 		}
-		// The address belongs to some other account: it is not this user's.
+		// An address owned by another account is not this user's.
 		if owner := st.LookupUserByEmail(sig.Email); owner != nil {
 			return owner.ID == user.ID
 		}
 	}
-	// No account owns the address; fall back to the display name, matching the
-	// login or the account name.
+	// No account owns the address; fall back to the display name.
 	if sig.Name == "" {
 		return false
 	}
@@ -365,8 +338,8 @@ func sortReviewsBySubmission(reviews []*PullRequestReview) {
 	})
 }
 
-// mostCommented returns the record with the greatest comment count, breaking
-// ties toward the earliest record, or nil when the slice is empty.
+// mostCommented returns the record with the greatest comment count, ties
+// broken toward the earliest.
 func mostCommented[T any](items []T, metric func(T) (int, time.Time)) T {
 	var best T
 	var bestCount int

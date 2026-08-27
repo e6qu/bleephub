@@ -6,7 +6,7 @@ The runner-server protocol uses GitHub Enterprise Server-style `/_apis/` paths o
 
 ## Reference adaptors
 
-Bleephub is paired with the external GitHub-compatible tools that drive it. Anything these tools do against `github.com` or a GitHub Enterprise Server instance must work against Bleephub.
+Bleephub is paired with the external GitHub-compatible tools that drive it. Anything they do against `github.com` or GitHub Enterprise Server must work against Bleephub.
 
 | Adaptor | Min version | What it proves |
 |---|---|---|
@@ -17,11 +17,11 @@ Bleephub is paired with the external GitHub-compatible tools that drive it. Anyt
 | [GitHub REST API spec](https://docs.github.com/en/rest) | 2022-11-28 | The authoritative reference for paths, request bodies, response envelopes, and `Link`-header pagination. |
 | [GitHub GraphQL schema](https://docs.github.com/en/graphql/reference) | 2022-11-28 | The `IssueOrPullRequest` union, connection shapes, enum values. |
 
-The audit artifact mapping Bleephub's coverage to GitHub-real shapes (per-route and per-field) lives at [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md).
+The audit artifact mapping Bleephub's coverage to GitHub-real shapes (per-route and per-field) lives in [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md).
 
 ## Quick start — Bleephub + `gh` CLI in 5 steps
 
-`gh` is HTTPS-only against any non-`github.com` host, and it identifies the target by **hostname** (no base URL flag). The `--hostname` argument on `gh auth login` is what wires it up; once that and `GH_HOST` are set, every `gh` command builds `https://<host>/api/v3/...` automatically and bleephub serves it.
+`gh` is HTTPS-only against any non-`github.com` host and identifies the target by **hostname** (no base URL flag). The `--hostname` argument on `gh auth login` wires it up; once that and `GH_HOST` are set, every `gh` command builds `https://<host>/api/v3/...` automatically and bleephub serves it.
 
 ```bash
 # 1. Build (UI first so the Go binary embeds it; skip the user
@@ -79,16 +79,16 @@ gh release create v1.0.0 --repo admin/demo --title "v1"
 To bind the real `:443` instead (lets you use `gh auth login --hostname localhost`
 and a persistent `~/.config/gh/hosts.yml` entry, since the no-port hostname is
 the only shape `gh auth login` accepts): run step 3 with `--addr :443` under
-`sudo`, in its own foreground terminal — `sudo … &` backgrounds the process
-before the password prompt, so the server never actually starts and the next
+`sudo`, in its own foreground terminal. `sudo … &` backgrounds the process
+before the password prompt, so the server never starts and the next
 `gh` call fails with `connection refused` on 443.
 
 ### Teardown
 
 Removes everything the quick start created, including the keychain trust.
 Safe to run in any state — each step tolerates the artifact already being
-gone (so a half-cleaned setup, e.g. after a /tmp-era cert purge, still
-tears down fully):
+gone, so a half-cleaned setup (e.g. after a /tmp-era cert purge) still
+tears down fully:
 
 ```bash
 BPH_TLS_DIR="$HOME/.bleephub/tls"
@@ -115,7 +115,7 @@ unset GH_HOST GH_ENTERPRISE_TOKEN
 gh auth logout --hostname localhost 2>/dev/null   # only if you used the :443 login flow
 ```
 
-For an end-to-end smoke that wraps all five steps inside Docker (TLS, CA trust, gh CLI, harness) run [`make gh-test`](#integration-tests). The supported commands, endpoints without native verbs, token prefixes, body coercion, and troubleshooting are documented below.
+For an end-to-end smoke that wraps all five steps inside Docker (TLS, CA trust, gh CLI, harness), run [`make gh-test`](#integration-tests). Supported commands, endpoints without native verbs, token prefixes, body coercion, and troubleshooting are documented below.
 
 ### Bleephub UI
 
@@ -123,12 +123,11 @@ The Go binary embeds the React single-page application at `/ui/` via `go embed` 
 
 - `https://localhost:8443/ui/` (or `https://localhost/ui/` on the `:443` variant) — the Bleephub dashboard, styled to feel like GitHub without copying it verbatim: a top header bar carries the primary navigation and a light/dark toggle (light by default, as on github.com). Pages: **Overview**, **Repos** (GitHub-style repo list → per-repo **Code** / **Issues** / **Pull requests** tabs, plus Commits / Releases / Webhooks / Secrets / Environments), **Workflows** (files + runs, with a per-run detail page showing the job table and the per-job log viewer), **Runners**, **Apps** (GitHub Apps registry + installations + permissions form + Privacy Enhanced Mail key viewer), **OAuth** (OAuth Apps registry + tokens), **Metrics**.
 - Auth: a deployment configured with Shauth sends an unauthenticated direct or
-  app-catalog launch through Shauth automatically. It never displays or asks
-  for a Bleephub API token. Standalone
-  development without Shauth retains the local and GitHub-compatible token
-  paths. The `/internal/*` operator endpoints require the authenticated browser
-  session or an accepted operator token; `/health` stays open for liveness
-  probes.
+  app-catalog launch through Shauth automatically, and never displays or asks
+  for a Bleephub API token. Standalone development without Shauth retains the
+  local and GitHub-compatible token paths. The `/internal/*` operator endpoints
+  require the authenticated browser session or an accepted operator token;
+  `/health` stays open for liveness probes.
 
 ### Shauth SSO
 
@@ -163,13 +162,13 @@ Every fetch Bleephub itself initiates — webhook delivery and repository source
 import — refuses any target that is not a public address: loopback, link-local
 (including the `169.254.169.254` instance-metadata endpoint), RFC1918,
 carrier-grade NAT and IPv6 unique-local space, and any scheme other than
-`http`/`https`. For webhook delivery the address is checked when the hook is
-configured and again against the address actually dialed, and redirects are not
-followed. Source import is checked at request time only — its fetch runs
+`http`/`https`. Webhook delivery checks the address when the hook is
+configured and again against the address actually dialed, and does not follow
+redirects. Source import is checked at request time only — its fetch runs
 through go-git, whose transport is chosen from a process-global registry, so
-there is no per-fetch dial hook to check the address a second time. Loopback is
+there is no per-fetch dial hook to re-check the address. Loopback is
 the one non-public range permitted — delivering to a service on the same host
-is a legitimate on-prem/dev target — and there is no switch to relax any of the
+is a legitimate on-prem/dev target — and no switch relaxes the
 rest: the cloud metadata endpoint and other private space stay refused
 unconditionally.
 
@@ -214,7 +213,7 @@ For day-to-day hacking, use the convenience script instead of the manual build s
 ./scripts/local-dev.sh clean          # remove local data, logs, PID files
 ```
 
-The script compiles the current source, starts the server and UI, and prints the endpoints, admin token, data directory, and log paths. Data, git storage, logs, and the process ID file live under `.local/bleephub/` in the repo root by default (override with `BLEEPHUB_DATA_DIR` / `BLEEPHUB_GIT_DIR`). The default admin token is the same non-personal-access-token-shaped value used in the quick start above.
+The script compiles the current source, starts the server and UI, and prints the endpoints, admin token, data directory, and log paths. Data, git storage, logs, and the process ID file live under `.local/bleephub/` in the repo root by default (override with `BLEEPHUB_DATA_DIR` / `BLEEPHUB_GIT_DIR`). The default admin token is the same non-personal-access-token-shaped value used in the quick start.
 
 ## What it implements
 
@@ -471,7 +470,7 @@ Every merge to `main` publishes immutable twelve-character commit-SHA tags to Gi
 | Server | `ghcr.io/e6qu/bleephub:<tag>` | `ghcr.io/e6qu/bleephub:<tag>-amd64`, `ghcr.io/e6qu/bleephub:<tag>-arm64` |
 | GitHub Actions runner | `ghcr.io/e6qu/bleephub-runner:<tag>` | `ghcr.io/e6qu/bleephub-runner:<tag>-amd64`, `ghcr.io/e6qu/bleephub-runner:<tag>-arm64` |
 
-The runner image packages the official GitHub Actions runner. It configures itself from a real Bleephub registration URL and token, then starts the official runner process:
+The runner image packages the official GitHub Actions runner. It configures itself from a real Bleephub registration URL and token, then starts the runner process:
 
 ```bash
 docker run --rm \
@@ -514,7 +513,7 @@ Shauth source rather than an implicit network image.
 
 ### OpenAPI fidelity gates (hermetic)
 
-Two unit-test gates validate bleephub against the vendored GitHub OpenAPI description (`third_party/github-openapi.json.gz`, refreshed via `scripts/update-github-openapi.sh`):
+Two unit-test gates validate bleephub against the vendored GitHub OpenAPI description (`third_party/github-openapi.json.gz`, refreshed by `scripts/update-github-openapi.sh`):
 
 - **Route definitions** (`gh_api_definition_test.go`) — every registered `/api/v3` route must exist in the description, *or* in one of three ledgers in that file. `describedOutsideDotcom` names, per route, the official GitHub description that documents it (Enterprise Cloud, Enterprise Server 3.21, 3.13 or 2.22); the citation is checked against the vendored route index (`third_party/github-openapi-routes.txt.gz`), so a wrong citation fails the gate. `uncitedRoutes` is a shrink-only ledger of routes that **no** official description carries, each with the correction where one is known — outstanding parity defects, not allowances; `maxUncitedRoutes` ratchets its size and an entry whose route is no longer registered fails the gate. `dispatchRoutes` holds wildcard patterns that fan out to several real endpoints.
 - **Response-shape ratchet** (`openapi_shape_validator_test.go`) — an observer on the shared test server validates every 2xx `/api/v3` JSON response member-by-member against the documented response schema. A response whose status the description does not document, or documents without a body, is reported (`undocumented-status` / `undocumented-body`) rather than skipped. Violations are gated against [`internal/server/openapi-violation-allowlist.txt`](internal/server/openapi-violation-allowlist.txt) — the only copy, enforced by `TestViolationAllowlistIsSingleCopy` and resolved relative to the package directory. Each block states either a checked citation into an official description or, where there is none, that the member is unverified and the emitter is what has to change; only `/meta`'s `installed_version` is currently in the first category.

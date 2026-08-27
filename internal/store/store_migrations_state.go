@@ -1,17 +1,14 @@
 package store
 
-// The export-migration state machine and the repository lock it holds.
+// The export-migration state machine and its repository locks.
 //
-// A migration is created "pending". A worker claims it into "exporting", does
-// the export, and lands it in "exported" or "failed". Every transition is a
-// compare-and-set under the store lock, so two workers racing for the same
-// migration cannot both claim it and a finished migration cannot be re-entered.
+// pending -> exporting -> exported|failed. Every transition is a compare-and-set
+// under the store lock, so two workers cannot both claim one migration and a
+// finished migration cannot be re-entered.
 //
-// The lock a migration takes on its repositories is stored on the migration
-// itself rather than on the repository: a repository is locked because some
-// migration says so, and releasing the last such migration releases the
-// repository. Storing a boolean on the repository instead would make
-// "unlocked" depend on nobody forgetting to clear it.
+// A repository's lock lives on the migration holding it, not on the repository:
+// the repo is locked while some migration says so, and releasing the last such
+// migration unlocks it.
 //
 // STORE-021: every getter here returns a detached snapshot.
 
@@ -21,10 +18,9 @@ import (
 	"strings"
 )
 
-// migrationLockOwnerLogin is the account whose repositories a migration's
-// short-name lock keys belong to. GitHub's unlock operation names a repository
-// by its short name, which is unique only within an owner, so the owner has to
-// come from the migration.
+// migrationLockOwnerLoginLocked resolves the owner whose repositories a
+// migration's short-name lock keys belong to. Short names are unique only within
+// an owner, so the owner must come from the migration.
 func (st *Store) migrationLockOwnerLoginLocked(userID int, orgLogin string) string {
 	if orgLogin != "" {
 		return orgLogin
@@ -35,13 +31,9 @@ func (st *Store) migrationLockOwnerLoginLocked(userID int, orgLogin string) stri
 	return ""
 }
 
-// RepoLockedForMigration reports whether any migration still holds a lock on
-// the repository with this full name.
-//
-// This is the predicate the write path asks. It is deliberately a question
-// about the repository rather than about one migration: two overlapping
-// migrations may both lock a repository, and it stays locked until the last of
-// them releases it.
+// RepoLockedForMigration reports whether any migration still locks the
+// repository with this full name. It stays locked until the last of any
+// overlapping migrations releases it.
 func (st *Store) RepoLockedForMigration(fullName string) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -62,10 +54,9 @@ func (st *Store) RepoLockedForMigration(fullName string) bool {
 			return true
 		}
 	}
-	// A GEI repository migration started with lockSource freezes its source
-	// for as long as it runs. It is asked here rather than through a second
-	// predicate because the write path must not have to know which of the two
-	// migration families froze a repository — one question, one answer.
+	// A GEI repository migration with lockSource freezes its source while it
+	// runs. Checked here so the write path asks one question regardless of which
+	// migration family froze the repo.
 	for _, m := range st.RepositoryMigrations {
 		if m.SourceRepoLock != "" && !GEIMigrationTerminal(m.State) && strings.EqualFold(m.SourceRepoLock, fullName) {
 			return true
@@ -75,7 +66,7 @@ func (st *Store) RepoLockedForMigration(fullName string) bool {
 }
 
 // ListMigrationLockedRepos returns the full names of every repository a
-// migration currently locks, ordered by the migration's repository list.
+// migration currently locks.
 func (st *Store) ListMigrationLockedRepos(scope MigrationScope, id int) []string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -105,8 +96,7 @@ func (st *Store) ListMigrationLockedRepos(scope MigrationScope, id int) []string
 	return out
 }
 
-// migrationCommonLocked returns a pointer to the live MigrationCommon of the
-// named migration, or nil. Callers hold st.Mu.
+// migrationCommonLocked returns the live MigrationCommon, or nil. Callers hold st.Mu.
 func (st *Store) migrationCommonLocked(scope MigrationScope, id int) *MigrationCommon {
 	switch scope {
 	case UserMigrationScope:
@@ -121,8 +111,7 @@ func (st *Store) migrationCommonLocked(scope MigrationScope, id int) *MigrationC
 	return nil
 }
 
-// persistMigrationLocked writes the named migration through. Callers hold
-// st.Mu.
+// persistMigrationLocked writes the migration through. Callers hold st.Mu.
 func (st *Store) persistMigrationLocked(scope MigrationScope, id int) {
 	switch scope {
 	case UserMigrationScope:
@@ -149,10 +138,9 @@ func (st *Store) GetMigrationCommon(scope MigrationScope, id int) *MigrationComm
 	return &snapshot
 }
 
-// ClaimMigrationForExport moves a pending migration into "exporting" and
-// reports whether this caller is the one that claimed it. A migration already
-// exporting, exported or failed is not claimable, so a worker restarted
-// alongside a running one cannot export the same migration twice.
+// ClaimMigrationForExport moves a pending migration into "exporting" and reports
+// whether this caller claimed it. Only pending migrations are claimable, so two
+// workers cannot export the same migration twice.
 func (st *Store) ClaimMigrationForExport(scope MigrationScope, id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -166,10 +154,9 @@ func (st *Store) ClaimMigrationForExport(scope MigrationScope, id int) bool {
 	return true
 }
 
-// ResetMigrationToPending returns an "exporting" migration to "pending". It is
-// how a process that died mid-export leaves its work claimable again: at boot
-// nothing is exporting, because no worker is running, so any migration still
-// recorded as exporting is the remains of a previous process.
+// ResetMigrationToPending returns an "exporting" migration to "pending". Run at
+// boot: any migration still "exporting" is the remains of a process that died
+// mid-export, and this makes its work claimable again.
 func (st *Store) ResetMigrationToPending(scope MigrationScope, id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -183,8 +170,7 @@ func (st *Store) ResetMigrationToPending(scope MigrationScope, id int) bool {
 	return true
 }
 
-// CompleteMigrationExport records a successful export: where its bytes are,
-// how many there are and what they hash to.
+// CompleteMigrationExport records a successful export's archive key, size, and hash.
 func (st *Store) CompleteMigrationExport(scope MigrationScope, id int, archiveKey string, size int64, sha256Hex string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -204,10 +190,8 @@ func (st *Store) CompleteMigrationExport(scope MigrationScope, id int, archiveKe
 	return true
 }
 
-// FailMigrationExport records why an export could not be produced. The
-// repositories stay locked: GitHub does not release them on failure either,
-// because the operator may want to retry against the same frozen state, and
-// the unlock operation is theirs to call.
+// FailMigrationExport records why an export failed. Repositories stay locked, as
+// on GitHub: the operator may retry the frozen state and owns the unlock call.
 func (st *Store) FailMigrationExport(scope MigrationScope, id int, reason string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -222,9 +206,8 @@ func (st *Store) FailMigrationExport(scope MigrationScope, id int, reason string
 	return true
 }
 
-// ClearMigrationArchive marks the archive deleted and forgets where its bytes
-// were, returning the key so the caller can delete them from the byte store.
-// It returns "" when the migration has no archive to delete.
+// ClearMigrationArchive marks the archive deleted and returns its key so the
+// caller can delete the bytes, or "" when there is no archive.
 func (st *Store) ClearMigrationArchive(scope MigrationScope, id int) (string, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -248,9 +231,8 @@ type UnfinishedMigration struct {
 	ID    int
 }
 
-// ListUnfinishedMigrations returns every migration not yet in a terminal
-// state, oldest first within each family. The server calls it at boot to
-// resume work a previous process left behind.
+// ListUnfinishedMigrations returns every non-terminal migration, oldest first
+// within each family. Called at boot to resume a previous process's work.
 func (st *Store) ListUnfinishedMigrations() []UnfinishedMigration {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -274,9 +256,8 @@ func (st *Store) ListUnfinishedMigrations() []UnfinishedMigration {
 	return out
 }
 
-// MigrationArchiveObjectKey is where an export migration's bytes live in the
-// object byte store. The guid is in the key so a deleted migration's id being
-// reissued can never address the previous migration's archive.
+// MigrationArchiveObjectKey locates an export migration's bytes. The guid is in
+// the key so a reissued id can never address a deleted migration's archive.
 func MigrationArchiveObjectKey(scope MigrationScope, id int, guid string) string {
 	return fmt.Sprintf("migrations/%s/%d-%s.tar.gz", scope, id, guid)
 }

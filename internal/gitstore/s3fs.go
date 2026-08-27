@@ -31,20 +31,18 @@ type S3FS struct {
 	sharedV  *s3Shared
 }
 
-// s3Shared is the state one filesystem and every chroot derived from it hold in
+// s3Shared is state one filesystem and every chroot derived from it hold in
 // common, alongside the staging namespace and the key locks.
 type s3Shared struct {
 	mu sync.Mutex
-	// sizes memoizes the byte length of content-addressed pack artefacts. The
-	// name of such a key contains the hash of its own contents, so a remembered
-	// size can never go stale, and remembering it turns the HEAD that opens a
-	// packfile into a one-off rather than a per-handle cost.
+	// sizes memoizes the byte length of content-addressed pack artefacts. Such a
+	// key names the hash of its own contents, so a remembered size never goes
+	// stale and spares a per-handle HEAD.
 	sizes map[string]int64
-	// objects holds the per-repository object membership index consulted before
-	// any loose-object read.
+	// objects holds the per-repository membership index consulted before any
+	// loose-object read.
 	objects map[string]*repoObjectIndex
-	// chunkSize is the extent size the pack read path uses, resolved once so
-	// that opening a packfile does not consult the environment.
+	// chunkSize is the pack read path's extent size, resolved once.
 	chunkSize int64
 }
 
@@ -87,8 +85,8 @@ func (f *S3FS) forgetObjectSize(key string) {
 	delete(shared.sizes, key)
 }
 
-// Client exposes the underlying S3 client for object-byte stores that share
-// this filesystem's connection.
+// Client exposes the underlying S3 client to object-byte stores sharing this
+// filesystem's connection.
 func (f *S3FS) Client() *s3.Client { return f.client }
 
 // Bucket reports the bucket this filesystem stores objects in.
@@ -97,10 +95,9 @@ func (f *S3FS) Bucket() string { return f.bucket }
 // Prefix reports the key prefix all of this filesystem's objects live under.
 func (f *S3FS) Prefix() string { return f.prefix }
 
-// GitObjectLocker grants exclusive use of one object-store key across every
-// replica. Amazon S3 has no advisory locking, so go-git's compare-and-set on
-// refs and its packed-refs rewrite borrow the same durable store that already
-// serializes the rest of the shared state.
+// GitObjectLocker grants exclusive use of one object-store key across replicas.
+// S3 has no advisory locking, so go-git's ref compare-and-set and packed-refs
+// rewrite borrow the durable store that already serializes shared state.
 type GitObjectLocker interface {
 	AcquireLock(name, owner string, ttl time.Duration) (bool, error)
 	ReleaseLock(name, owner string) error
@@ -111,9 +108,8 @@ var (
 	gitObjectLockerV  GitObjectLocker
 )
 
-// SetGitObjectLocker installs the durable lock manager. Until one is
-// installed there is no shared durable state, so no other replica can be
-// writing the same objects and the process-local lock is the whole lock.
+// SetGitObjectLocker installs the durable lock manager. Until one is installed
+// there is no shared durable state, so the process-local lock is the whole lock.
 func SetGitObjectLocker(l GitObjectLocker) {
 	gitObjectLockerMu.Lock()
 	defer gitObjectLockerMu.Unlock()
@@ -126,9 +122,8 @@ func currentGitObjectLocker() GitObjectLocker {
 	return gitObjectLockerV
 }
 
-// ClearGitObjectLocker uninstalls l if it is the currently installed lock
-// manager. A closed locker cannot arbitrate git object locks; leaving it
-// installed would fail every ref update.
+// ClearGitObjectLocker uninstalls l if it is the currently installed manager. A
+// closed locker left installed would fail every ref update.
 func ClearGitObjectLocker(l GitObjectLocker) {
 	gitObjectLockerMu.Lock()
 	defer gitObjectLockerMu.Unlock()
@@ -143,7 +138,7 @@ const (
 	gitObjectLockPoll = 50 * time.Millisecond
 )
 
-// s3KeyLocks serializes writers of one bucket-absolute object key inside this
+// s3KeyLocks serializes writers of one bucket-absolute object key within this
 // process. Entries are reference counted so an idle key costs nothing.
 type s3KeyLocks struct {
 	mu    sync.Mutex
@@ -230,10 +225,8 @@ func NewS3FS(ctx context.Context, endpoint, bucket, prefix string) (*S3FS, error
 	}, nil
 }
 
-// bleephubS3Region selects the real AWS region for durable Git and service
-// bytes. BLEEPHUB_S3_REGION is an explicit storage coordinate; ECS supplies
-// AWS_REGION automatically, and the final default preserves local simulator
-// compatibility.
+// bleephubS3Region selects the AWS region: explicit BLEEPHUB_S3_REGION, then
+// ECS-supplied AWS_REGION, then a local-simulator default.
 func bleephubS3Region() string {
 	if region := strings.TrimSpace(os.Getenv("BLEEPHUB_S3_REGION")); region != "" {
 		return region
@@ -256,10 +249,9 @@ func (f *S3FS) Open(filename string) (billy.File, error) {
 	if state := f.activeFile(filename); state != nil {
 		return &s3File{fs: f, name: filename, state: state}, nil
 	}
-	// A pack or index is opened, seeked and closed once per object decoded, so
-	// reading it whole would transfer the entire pack for every object in it.
-	// These keys are read through ranges instead, which is only sound because
-	// their names are content addresses: see isImmutablePackKey.
+	// A pack or index is opened once per object decoded, so read it through
+	// ranges rather than whole. Sound only because its name is a content
+	// address: see isImmutablePackKey.
 	if isImmutablePackKey(filename) {
 		file := newS3RangeFile(f, filename)
 		if err := file.open(); err != nil {
@@ -331,10 +323,10 @@ func (f *S3FS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File
 	return sf, nil
 }
 
-// The staging map is shared by a filesystem and every chroot derived from it,
-// so entries are keyed by the bucket-absolute object key. A chroot-relative
-// key such as "config" names a different object in every repository, and one
-// repository's reader would otherwise be handed another repository's bytes.
+// activeFile looks up the staging entry. The staging map is shared across every
+// chroot, so it is keyed by the bucket-absolute key: a chroot-relative name like
+// "config" names a different object per repository and would otherwise cross the
+// streams.
 func (f *S3FS) activeFile(filename string) *s3FileState {
 	active := f.activeFiles()
 	active.mu.Lock()
@@ -442,16 +434,15 @@ func (f *S3FS) Rename(oldpath, newpath string) error {
 		Key:    aws.String(srcKey),
 	})
 	if err == nil {
-		// dotgit lands a loose object by renaming a temporary file onto its
-		// final name, so this is where the object index learns that this
-		// process created it.
+		// dotgit lands a loose object by renaming a temp file onto its final
+		// name, so the object index learns of the write here.
 		f.noteLooseRemoved(oldpath)
 		f.noteLooseWrite(newpath)
 	}
 	if err != nil {
-		// A rename that returns an error must leave the destination absent.
-		// Otherwise a caller retry observes two names and may treat the copy as
-		// a committed move. Report both failures if compensation also fails.
+		// A failed rename must leave the destination absent, or a retry sees two
+		// names and may treat the copy as a committed move. Report both failures
+		// if compensation also fails.
 		_, rollbackErr := f.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: aws.String(f.bucket),
 			Key:    aws.String(dstKey),
@@ -559,9 +550,8 @@ func (f *S3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 		entriesByName[info.name] = info
 	}
 
-	// S3 cannot list an object until its upload completes. Billy users,
-	// notably go-git, expect the filesystem namespace to include an open file,
-	// so merge the process-wide staging namespace into the remote listing.
+	// S3 cannot list an object until its upload completes, but go-git expects an
+	// open file to appear in the namespace, so merge the staging namespace in.
 	active := f.activeFiles()
 	active.mu.Lock()
 	for key, state := range active.files {
@@ -642,9 +632,9 @@ func (f *S3FS) Root() string {
 }
 
 // CopyRepoPrefix copies every object under oldFull's prefix to newFull's,
-// leaving the source intact. STORE-013 runs this outside the store lock so both
-// prefixes coexist during the copy and readers at the old name keep working;
-// the caller purges the old prefix after swapping metadata under the lock.
+// leaving the source intact. STORE-013 runs it outside the store lock so both
+// prefixes coexist and readers at the old name keep working; the caller purges
+// the old prefix after swapping metadata under the lock.
 func (f *S3FS) CopyRepoPrefix(oldFull, newFull string) error {
 	oldPrefix := f.key(oldFull) + "/"
 	newPrefix := f.key(newFull) + "/"
@@ -684,9 +674,9 @@ func (f *S3FS) CopyRepoPrefix(oldFull, newFull string) error {
 	return nil
 }
 
-// RenameRepoPrefix moves an object prefix in place (copy then delete). It is the
-// single-shot form used when the move is fast enough to hold the store lock; the
-// live-repo path uses CopyRepoPrefix + DeleteRepoPrefix around the metadata swap.
+// RenameRepoPrefix moves an object prefix (copy then delete). Single-shot form
+// for a move fast enough to hold the store lock; the live-repo path uses
+// CopyRepoPrefix + DeleteRepoPrefix around the metadata swap.
 func (f *S3FS) RenameRepoPrefix(oldFull, newFull string) error {
 	if err := f.CopyRepoPrefix(oldFull, newFull); err != nil {
 		return err
@@ -755,11 +745,10 @@ type s3File struct {
 	lockOwner string
 }
 
-// s3FileState is a request-lifetime staging buffer for one active object
-// write. go-git concurrently reads a packfile while it streams the pack into
-// it, which Amazon S3 cannot expose until a completed object exists. Readers
-// of a live writer share this buffer; after its writer closes, the completed
-// bytes are committed to S3 and all subsequent reads use S3 directly.
+// s3FileState is a request-lifetime staging buffer for one active object write.
+// go-git reads a packfile while streaming it, which S3 cannot expose until a
+// completed object exists, so readers of a live writer share this buffer; after
+// the writer closes, the bytes are committed and later reads go to S3 directly.
 type s3FileState struct {
 	data  []byte
 	dirty bool
@@ -784,7 +773,7 @@ func (sf *s3File) Write(p []byte) (n int, err error) {
 	sf.state.mu.Lock()
 	defer sf.state.mu.Unlock()
 	sf.state.dirty = true
-	// Writing past the end zero-fills the gap, matching os.File semantics.
+	// Writing past the end zero-fills the gap, matching os.File.
 	if sf.pos > len(sf.state.data) {
 		sf.state.data = append(sf.state.data, make([]byte, sf.pos-len(sf.state.data))...)
 	}
@@ -847,10 +836,9 @@ func (sf *s3File) Seek(offset int64, whence int) (int64, error) {
 	return int64(sf.pos), nil
 }
 
-// Close flushes and then releases any lock this handle holds. go-git relies on
-// that ordering: it takes the lock, writes, and lets the deferred Close both
-// commit the bytes and drop the lock, so the next writer cannot observe a
-// half-written object.
+// Close flushes, then releases any lock this handle holds. go-git relies on that
+// order — flush before unlock — so the next writer never observes a half-written
+// object.
 func (sf *s3File) Close() error {
 	sf.mu.Lock()
 	if sf.closed {
@@ -860,9 +848,8 @@ func (sf *s3File) Close() error {
 	sf.closed = true
 	var err error
 	if sf.writer {
-		// The staging entry is dropped even when the flush fails: leaving it
-		// behind would serve the bytes of a write that never landed to every
-		// later reader of the same key.
+		// Drop the staging entry even when the flush fails, or later readers of
+		// the key would be served the bytes of a write that never landed.
 		err = sf.flush()
 		sf.fs.removeActiveFile(sf.name, sf.state)
 	}
@@ -901,9 +888,9 @@ func (sf *s3File) flush() error {
 	return nil
 }
 
-// Lock takes exclusive ownership of this object key. go-git relies on it for
-// the compare-and-set behind every ref update and for the packed-refs rewrite;
-// two concurrent pushes that both believed they held it would lose refs.
+// Lock takes exclusive ownership of this object key. go-git uses it for the
+// compare-and-set behind every ref update and the packed-refs rewrite; two
+// pushes both believing they held it would lose refs.
 func (sf *s3File) Lock() error {
 	sf.lockMu.Lock()
 	defer sf.lockMu.Unlock()

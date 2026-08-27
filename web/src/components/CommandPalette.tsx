@@ -15,14 +15,8 @@ import {
   OrganizationIcon,
 } from "./octicons.js";
 
-/**
- * ⌘K / Ctrl-K "jump to" command palette, mirroring github.com's global
- * navigator. Static destinations are always available and filter by substring;
- * a non-empty query additionally searches repositories and users/orgs. The list
- * is a combobox+listbox: ↑/↓ move the active option, Enter navigates, Esc
- * closes. Focus opens on the input, is trapped in the dialog, and is restored
- * to the opener on close.
- */
+// ⌘K "jump to" palette. combobox+listbox: ↑/↓ move, Enter navigates, Esc
+// closes; focus opens on the input, is trapped, and restores to the opener.
 
 type CmdItem = {
   id: string;
@@ -40,8 +34,7 @@ function staticTargets(viewerLogin?: string): CmdItem[] {
   if (viewerLogin) {
     items.push({ id: "s-profile", label: "Your profile", sublabel: viewerLogin, icon: <PeopleIcon size={16} />, to: `/ui/${viewerLogin}`, group: "Go to" });
   }
-  // Viewer-scoped like the header quick links: signed in, Issues / Pull
-  // requests jump to "yours" via search qualifiers.
+  // Signed in, Issues/Pull requests jump to "yours" via search qualifiers.
   const issuesQ = viewerLogin ? `is:issue author:${viewerLogin}` : "is:issue";
   const pullsQ = viewerLogin ? `is:pr author:${viewerLogin}` : "is:pr";
   items.push(
@@ -75,7 +68,6 @@ export function CommandPalette({
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Reset query/selection each time the palette opens.
   useEffect(() => {
     if (open) {
       setQ("");
@@ -84,7 +76,6 @@ export function CommandPalette({
     }
   }, [open]);
 
-  // Debounce the query that drives the network searches.
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q.trim()), 180);
     return () => clearTimeout(t);
@@ -135,7 +126,7 @@ export function CommandPalette({
     setActive((a) => (items.length === 0 ? 0 : Math.min(a, items.length - 1)));
   }, [items.length]);
 
-  // Open: focus the input, trap Tab, restore focus on close.
+  // Focus the input on open; restore focus to the opener on close.
   useEffect(() => {
     if (!open) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
@@ -165,12 +156,12 @@ export function CommandPalette({
       e.preventDefault();
       go(items[active]);
     } else if (e.key === "Tab") {
-      // Single-input dialog: keep focus trapped on the input.
+      // Trap focus on the single input.
       e.preventDefault();
     }
   };
 
-  // Group the flat list for display while preserving the keyboard index.
+  // Group for display while preserving the flat keyboard index.
   const groups: { name: string; items: { item: CmdItem; index: number }[] }[] = [];
   items.forEach((item, index) => {
     let g = groups.find((x) => x.name === item.group);

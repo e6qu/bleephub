@@ -106,23 +106,20 @@ func (st *Store) DeleteCampaign(orgLogin string, number int) {
 	}
 }
 
-// RepoBelongsToOrg reports whether the repository lives under the org's
-// namespace.
+// RepoBelongsToOrg reports whether the repository lives under the org's namespace.
 func (st *Store) RepoBelongsToOrg(repo *Repo, orgLogin string) bool {
 	owner, _, _ := strings.Cut(repo.FullName, "/")
 	return owner == orgLogin
 }
 
-// GetCodeScanningAlertForCampaign returns the repo's code scanning alert by
-// number, or nil.
+// GetCodeScanningAlertForCampaign returns the repo's code scanning alert by number, or nil.
 func (st *Store) GetCodeScanningAlertForCampaign(repoKey string, number int) *CodeScanningAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return st.CodeScanningAlertsByRepo[repoKey][number]
 }
 
-// CampaignAlertCounts derives open/closed counts from the current states of
-// the campaign's linked code scanning alerts.
+// CampaignAlertCounts derives open/closed counts from the states of the campaign's linked alerts.
 func (st *Store) CampaignAlertCounts(c *Campaign) (open, closed int) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

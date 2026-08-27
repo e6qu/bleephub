@@ -27,8 +27,7 @@ import (
 )
 
 // repoSignature returns the default author/committer signature for
-// bleephub-generated commits. Matches the GitHub web UI's behavior for
-// auto_init and web-based file creation.
+// bleephub-generated commits.
 func repoSignature(name, email string) *object.Signature {
 	return &object.Signature{
 		Name:  name,
@@ -37,10 +36,9 @@ func repoSignature(name, email string) *object.Signature {
 	}
 }
 
-// syncRepoHeadToDefaultBranch points the repository's stored git HEAD at the
-// default branch its row now records. Every handler that moves default_branch
-// calls it, so the ref advertisement — and therefore the branch a clone checks
-// out — follows the change.
+// syncRepoHeadToDefaultBranch points the stored git HEAD at the default branch
+// the repo row records, so the clone checkout branch follows a default_branch
+// change. Every handler that moves default_branch must call it.
 func (s *Server) syncRepoHeadToDefaultBranch(owner, name string) {
 	repo := s.store.GetRepo(owner, name)
 	if repo == nil {
@@ -52,19 +50,12 @@ func (s *Server) syncRepoHeadToDefaultBranch(owner, name string) {
 	}
 }
 
-// worktreeHeadStorer keeps go-git's worktree machinery out of the
-// repository's HEAD.
-//
-// Worktree.Checkout(&CheckoutOptions{Hash: …}) replaces HEAD with a DETACHED
-// hash reference naming the commit it checked out, and Worktree.Commit then
-// advances whatever HEAD names. On a bare server-side repository that is pure
-// corruption: HEAD is the symbolic reference the clone protocol advertises the
-// default branch from, and a detached HEAD makes go-git advertise no
-// symref=HEAD:… capability at all — which is what left clients guessing the
-// checkout branch by matching HEAD's object id against the ref list. The
-// commit helpers set the branch reference themselves, so the worktree's HEAD
-// bookkeeping is scratch state; hold it in memory and let every other
-// reference through to the real storage.
+// worktreeHeadStorer keeps go-git's worktree machinery out of the repository's
+// real HEAD. Worktree.Checkout detaches HEAD to a hash reference, which on a
+// bare server repo would drop the symref=HEAD:… clone advertisement and leave
+// clients guessing the checkout branch. The commit helpers set branch refs
+// themselves, so HEAD bookkeeping is scratch state: hold it in memory and pass
+// every other reference through to real storage.
 type worktreeHeadStorer struct {
 	gitStorage.Storer
 	head *plumbing.Reference
@@ -73,8 +64,8 @@ type worktreeHeadStorer struct {
 func newWorktreeHeadStorer(stor gitStorage.Storer) *worktreeHeadStorer {
 	return &worktreeHeadStorer{
 		Storer: stor,
-		// git.Open rejects a storer with no HEAD; a detached zero hash is the
-		// placeholder the first Checkout immediately replaces.
+		// git.Open rejects a storer with no HEAD; the first Checkout replaces
+		// this placeholder.
 		head: plumbing.NewHashReference(plumbing.HEAD, plumbing.ZeroHash),
 	}
 }
@@ -102,25 +93,19 @@ func (s *worktreeHeadStorer) CheckAndSetReference(next, old *plumbing.Reference)
 	return s.Storer.CheckAndSetReference(next, old)
 }
 
-// initRepoWithFiles creates the first commit on a freshly created repo,
-// populating it with the supplied files and pointing the given branch at
-// the resulting commit. It is used for auto_init and for the contents
-// PUT endpoint when the caller creates the first file in an empty repo.
-// initEmptyRepoWithFiles is the API-facing first-commit operation. Unlike the
-// lower-level root-branch builder, it rejects initialization once any branch
-// exists, including when a concurrent request won the race on a different
-// branch.
+// initEmptyRepoWithFiles is the API-facing first-commit operation. It rejects
+// initialization once any branch exists, including when a concurrent request
+// won the race on a different branch.
 func initEmptyRepoWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature) (plumbing.Hash, error) {
 	return commitRootBranchWithFiles(stor, branch, message, files, sig, true, nil)
 }
 
 func commitRootBranchWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature, requireEmpty bool, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
 	fs := memfs.New()
-	// Build the unborn-branch commit in an isolated storer. go-git's
-	// Worktree.Commit advances refs/heads/master as a side effect, which
-	// would expose a provisional ref in the destination and let concurrent
-	// first-commit requests overwrite each other before our atomic
-	// initialization boundary.
+	// Build the unborn-branch commit in an isolated storer: Worktree.Commit
+	// advances refs/heads/master as a side effect, which would expose a
+	// provisional ref before the atomic initialization boundary and let
+	// concurrent first-commit requests overwrite each other.
 	source := memory.NewStorage()
 	repo, err := git.Init(source, fs)
 	if err != nil {
@@ -162,9 +147,8 @@ func commitRootBranchWithFiles(stor gitStorage.Storer, branch, message string, f
 	return commitHash, nil
 }
 
-// createFileCommit adds or updates a single file on the given branch and
-// returns the new commit hash. It preserves the existing tree, sets the
-// commit parent to the current branch HEAD, and updates the branch ref.
+// createFileCommit adds or updates a single file on the branch and returns the
+// new commit hash.
 func createFileCommit(stor gitStorage.Storer, branch, path, content, message string, sig *object.Signature) (plumbing.Hash, error) {
 	return createFileCommitExpected(stor, branch, path, content, message, sig, plumbing.ZeroHash)
 }
@@ -221,8 +205,8 @@ func createFileCommitExpectedGuarded(stor gitStorage.Storer, branch, path, conte
 	return commitHash, nil
 }
 
-// deleteFileCommit removes a single file on the given branch and returns the
-// new commit hash. It returns an error if the file does not exist.
+// deleteFileCommit removes a single file on the branch and returns the new
+// commit hash, erroring if the file does not exist.
 func deleteFileCommit(stor gitStorage.Storer, branch, path, message string, sig *object.Signature, expectedParent plumbing.Hash, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
 	fs := memfs.New()
 	repo, err := git.Open(newWorktreeHeadStorer(stor), fs)
@@ -307,9 +291,8 @@ func writeFileToWorktree(fs billy.Filesystem, wt *git.Worktree, path, body strin
 	return nil
 }
 
-// ensureRepoInitialized creates git storage for a repo that does not yet
-// have any. It is used by org repo creation, which historically registered
-// the Repo row before allocating storage.
+// initRepoFiles writes the initial README/.gitignore/LICENSE commit for a
+// freshly created repo.
 func (s *Server) initRepoFiles(ctx context.Context, repo *store.Repo, branch, description, gitignoreTemplate, licenseTemplate string, includeReadme bool) error {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
@@ -396,24 +379,19 @@ func (s *Server) registerGHGitDataRoutes() {
 		s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleDeleteRef)))
 }
 
-// requireRepoAdmin resolves the repository named in the path and admits only a
-// credential that administers it. A repository the caller cannot read — or one
-// that does not exist, which includes a case-variant spelling of a real one —
-// is 404, so the answer never confirms what is there.
-//
-// Handlers must take the returned *Repo as the scope key rather than
-// re-deriving one from the path values: a path-derived key addresses a scope no
-// other code path reads.
+// requireRepoAdmin resolves the path repository and admits only a credential
+// that administers it; an unreadable or nonexistent repo (including a
+// case-variant spelling) is 404. Handlers must use the returned *Repo as the
+// scope key, never a path-derived one.
 func (s *Server) requireRepoAdmin(w http.ResponseWriter, r *http.Request) (*store.Repo, bool) {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
-	// The scope is secrets, not administration: every caller of this is a
-	// repository-secret handler, and GitHub grants those at secrets:write while
-	// still demanding repository admin of a human. Naming administration here
-	// would refuse an app GitHub allows.
+	// Gate on secrets, not administration: GitHub grants repo-secret handlers at
+	// secrets:write while still demanding admin of a human, so naming
+	// administration here would refuse an app GitHub allows.
 	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecrets, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return nil, false
@@ -437,10 +415,8 @@ func (s *Server) requireRepoPush(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// refUpdateIsFastForward reports whether moving a ref from current to target
-// discards nothing the ref already reaches, which is true exactly when target
-// descends from current. A target that is not a commit — a tag, a tree, a blob
-// — can never descend from one, so it is not a fast forward.
+// refUpdateIsFastForward reports whether target descends from current. A target
+// that is not a commit can never descend from one, so it is not a fast forward.
 func refUpdateIsFastForward(stor storer.Storer, current, target plumbing.Hash) (bool, error) {
 	if current == target {
 		return true, nil
@@ -476,8 +452,8 @@ func (s *Server) gitDataContext(w http.ResponseWriter, r *http.Request) (owner, 
 	return
 }
 
-// refuseOversizedBlob writes the refusal POST /git/blobs documents for content
-// past its size ceiling.
+// refuseOversizedBlob writes the refusal POST /git/blobs documents for
+// over-ceiling content.
 func refuseOversizedBlob(w http.ResponseWriter) {
 	store.WriteGHValidationError(w, "Blob", "content", "too_large")
 }
@@ -491,10 +467,9 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 		Content  *string `json:"content"`
 		Encoding string  `json:"encoding"`
 	}
-	// The blob body is a whole file, so it gets its own cap, and an over-cap
-	// body is refused the way this operation documents a refusal — 422
-	// Validation Failed with Blob/content/too_large. The generic 413 is not one
-	// of the statuses the description lists (403, 404, 409, 422).
+	// The blob body is a whole file with its own cap; an over-cap body is a 422
+	// Blob/content/too_large, not the generic 413 (not among this operation's
+	// documented statuses).
 	if !decodeJSONBodyOversizeAware(w, r, maxBlobJSONBodyBytes, &req, refuseOversizedBlob) {
 		return
 	}
@@ -519,16 +494,14 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// GitHub refuses to create a blob past the same 100 MB ceiling its read
-	// side serves, whatever the transport allowed.
+	// Refuse a blob past the 100 MB read-side ceiling regardless of transport.
 	if int64(len(data)) > gitBlobMaxFileBytes {
 		refuseOversizedBlob(w)
 		return
 	}
 
-	// Push protection scans the DECODED bytes — a base64 upload must not slip
-	// a blocked secret past the same scanner the contents and git/refs writes
-	// use. This operation is one of exactly two GitHub documents the
+	// Scan the DECODED bytes so a base64 upload can't slip a blocked secret past
+	// the scanner. This is one of two operations GitHub documents the
 	// repository-rule-violation-error on, at 422.
 	if ph := s.createSecretScanningPushProtectionPlaceholder(repo, secretScanningContentMatches(string(data))); ph != nil {
 		writeSecretScanningRuleViolation(w, http.StatusUnprocessableEntity, ph)
@@ -746,9 +719,8 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 }
 
 // flattenTreeForCreate keeps empty directory entries while reducing populated
-// subtrees to leaf paths. The shared merge flattener intentionally drops all
-// tree entries, which would silently discard a valid empty tree supplied to
-// the Git data API.
+// subtrees to leaf paths, unlike the shared merge flattener which drops all
+// tree entries and would discard a valid empty tree.
 func flattenTreeForCreate(stor gitStorage.Storer, tree *object.Tree) (map[string]object.TreeEntry, error) {
 	out := map[string]object.TreeEntry{}
 	var walk func(*object.Tree, string) error
@@ -800,8 +772,8 @@ func deleteTreePath(files map[string]object.TreeEntry, target string) bool {
 	return found
 }
 
-// A new nested path replaces a blob/submodule at any ancestor, matching
-// GitHub's "entries overwrite base_tree at the same path" behavior.
+// deleteTreePathAncestors drops any blob/submodule at an ancestor of a new
+// nested path, matching GitHub's "entries overwrite base_tree" behavior.
 func deleteTreePathAncestors(files map[string]object.TreeEntry, target string) {
 	for parent := path.Dir(target); parent != "." && parent != "/"; parent = path.Dir(parent) {
 		delete(files, parent)
@@ -819,10 +791,9 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 		Parents   []string   `json:"parents"`
 		Author    *gitPerson `json:"author"`
 		Committer *gitPerson `json:"committer"`
-		// The documented request body carries the caller's detached PGP
-		// signature; GitHub writes it into the created commit's gpgsig header.
-		// Accepting the field and dropping it wrote an object that no longer
-		// matched what the caller signed, silently.
+		// The caller's detached PGP signature; write it into the commit's gpgsig
+		// header. Dropping it would produce an object that no longer matches what
+		// the caller signed.
 		Signature string `json:"signature"`
 	}
 	if !decodeJSONBody(w, r, &req) {
@@ -878,10 +849,8 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 		Message:      req.Message,
 		TreeHash:     treeHash,
 		ParentHashes: parentHashes,
-		// git's gpgsig header is newline-terminated, and that is the form
-		// GitHub echoes back in verification.signature. Normalizing on the way
-		// in keeps the create response byte-identical to a later read of the
-		// stored object.
+		// Normalize to git's newline-terminated gpgsig form so the create
+		// response matches a later read of the stored object byte-for-byte.
 		PGPSignature: terminatedSignature(req.Signature),
 	}
 	hash, err := encodeCommit(stor, commit)
@@ -986,9 +955,8 @@ func (s *Server) handleGetTag(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, gitTagToJSON(s.baseURL(r), owner+"/"+repoName, sha, tag))
 }
 
-// buildRefLifecyclePayload assembles the shared body of GitHub's `create` and
-// `delete` webhook events so `on: create` / `on: delete` workflows fire for
-// branch and tag creation/deletion (ACT-026).
+// buildRefLifecyclePayload assembles the shared body of the `create` and
+// `delete` webhook events for branch and tag lifecycle (ACT-026).
 func buildRefLifecyclePayload(repo *store.Repo, fullRef plumbing.ReferenceName, sender *store.User, baseURL string) map[string]interface{} {
 	refType := "tag"
 	if fullRef.IsBranch() {
@@ -1157,17 +1125,10 @@ func gitCommitToJSON(baseURL, fullName, sha string, c *object.Commit) map[string
 
 // --- signature verification ---------------------------------------------
 //
-// GitHub reports four things about a commit or tag signature: whether it
-// verified, why, and — when one is present — the armored signature and the
-// payload it covers. bleephub keeps no GPG/SSH keyring, so it can echo a
-// signature but cannot check one against a registered key. That is precisely
-// the state GitHub calls "unknown_key": the object carries a well-formed
-// signature and no key on file matches it. Reporting "unsigned" for a signed
-// object (what these renderers did unconditionally) is a false statement about
-// the object; reporting "valid" without checking anything would be a worse
-// one. Verifying for real needs a key store — GPG keys per user, the
-// /user/gpg_keys surface behind it — which is a feature, not a rendering fix,
-// so "unknown_key" stays until that exists.
+// bleephub keeps no GPG/SSH keyring, so a signed object is reported as
+// "unknown_key" (well-formed signature, no key on file) — "unsigned" would be
+// false and "valid" unchecked would be worse. Real verification needs a
+// per-user key store, so "unknown_key" stays until that exists.
 
 // gitCommitVerificationJSON renders the `verification` member of a commit.
 func gitCommitVerificationJSON(c *object.Commit) map[string]interface{} {
@@ -1226,9 +1187,9 @@ func signedVerificationJSON(signature, payload string) map[string]interface{} {
 	}
 }
 
-// gitObjectSigningPayload returns the object's canonical text with the
-// signature header removed — the bytes the signature is taken over, which is
-// what GitHub echoes in verification.payload.
+// gitObjectSigningPayload returns the object's canonical text with the signature
+// header removed — the bytes the signature covers, echoed in
+// verification.payload.
 func gitObjectSigningPayload(encode func(plumbing.EncodedObject) error) (string, error) {
 	obj := &plumbing.MemoryObject{}
 	if err := encode(obj); err != nil {

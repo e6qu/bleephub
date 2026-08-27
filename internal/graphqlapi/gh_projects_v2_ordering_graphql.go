@@ -10,16 +10,12 @@ import (
 
 // Projects v2 — the ordering and filtering arguments its connections take.
 //
-// Every ProjectV2 connection on GitHub accepts an `orderBy`, and the items
-// connection additionally accepts `archivedStates` and a `query` search. A
-// connection that declares none of them is not merely less capable: a client
-// that passes one gets a validation error for an unknown argument and the
-// whole request fails, so the arguments have to exist before they can be
-// honoured.
+// Every ProjectV2 connection accepts an `orderBy`; the items connection also
+// accepts `archivedStates` and a `query`. A client passing an undeclared
+// argument gets a validation error, so the arguments must exist to be honoured.
 
 // projectV2OrderInputFor builds one of GitHub's ProjectV2 ordering inputs: a
-// direction plus an enum of the orderable fields. Each is memoized under its
-// own name, because a schema may declare a name once.
+// direction plus an enum of the orderable fields, memoized by name.
 func (s *Resolver) projectV2OrderInputFor(name, fieldEnumName string, fields ...string) *graphql.InputObject {
 	if s.graphqlTypes.projectV2OrderInputs == nil {
 		s.graphqlTypes.projectV2OrderInputs = map[string]*graphql.InputObject{}
@@ -86,14 +82,9 @@ func orderedConnectionArgs(order *graphql.InputObject) graphql.FieldConfigArgume
 	return args
 }
 
-// projectV2ApplyItemFilters narrows a project's items the way GitHub's items
-// connection does before paginating: by archived state, then by the free-text
-// `query`.
-//
-// The archived default is the schema's — [NOT_ARCHIVED] — so an archived item
-// stays out of a listing that did not ask for it. Returning archived items by
-// default would make `gh project item-list` show work somebody deliberately
-// filed away.
+// projectV2ApplyItemFilters narrows a project's items before paginating: by
+// archived state, then by the free-text `query`. The archived default is the
+// schema's [NOT_ARCHIVED], so an archived item stays out unless asked for.
 func projectV2ApplyItemFilters(st *store.Store, items []*store.ProjectV2Item, args map[string]interface{}) []*store.ProjectV2Item {
 	states := map[string]bool{}
 	if raw, ok := args["archivedStates"].([]interface{}); ok && len(raw) > 0 {
@@ -124,8 +115,8 @@ func projectV2ApplyItemFilters(st *store.Store, items []*store.ProjectV2Item, ar
 	return kept
 }
 
-// projectV2ItemSearchText is what the items connection's `query` matches on:
-// the title the item shows, which is the draft's title or the content's.
+// projectV2ItemSearchText is what `query` matches on: the item's title (the
+// draft's or the content's).
 func projectV2ItemSearchText(st *store.Store, item *store.ProjectV2Item) string {
 	switch item.ContentType {
 	case "Issue":
@@ -142,7 +133,6 @@ func projectV2ItemSearchText(st *store.Store, item *store.ProjectV2Item) string 
 	return ""
 }
 
-// argString reads a string argument, tolerating its absence.
 func argString(args map[string]interface{}, key string) string {
 	value, _ := args[key].(string)
 	return value
@@ -160,9 +150,8 @@ func projectV2OrderDirection(args map[string]interface{}) (field string, descend
 	return field, direction == "DESC"
 }
 
-// projectV2SortNodes applies an orderBy over already-rendered connection
-// nodes, using the source-map key each orderable field reads. Nodes carry the
-// values the order names, so ordering does not need a second store pass.
+// projectV2SortNodes applies an orderBy over already-rendered connection nodes,
+// using the source-map key each orderable field reads.
 func projectV2SortNodes(nodes []map[string]interface{}, args map[string]interface{}, keys map[string]string) {
 	field, descending := projectV2OrderDirection(args)
 	key, ok := keys[field]

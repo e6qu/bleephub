@@ -7,10 +7,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Legacy ID-addressed team endpoints (/teams/{team_id}/…). These are
-// aliases of the slug-addressed /orgs/{org}/teams/{team_slug}/…
-// surface: the numeric ID resolves to the same store entities and the
-// handlers run the same logic, so both surfaces always agree.
+// Legacy ID-addressed team endpoints (/teams/{team_id}/…), aliases of the
+// slug-addressed /orgs/{org}/teams/{team_slug}/… surface running the same logic.
 
 func (s *Server) registerGHLegacyTeamRoutes() {
 	s.route("GET /api/v3/teams/{team_id}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleLegacyGetTeam))
@@ -38,8 +36,7 @@ func (s *Server) registerGHLegacyTeamRoutes() {
 	s.route("DELETE /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleLegacyRemoveTeamRepo))
 }
 
-// resolveLegacyTeam resolves the numeric {team_id} path parameter to the
-// team and its organization, writing a 404 when either doesn't resolve.
+// resolveLegacyTeam resolves {team_id} to its team and org, 404ing otherwise.
 func (s *Server) resolveLegacyTeam(w http.ResponseWriter, r *http.Request) (*store.Team, *store.Org) {
 	id, err := strconv.Atoi(r.PathValue("team_id"))
 	if err != nil {
@@ -59,9 +56,8 @@ func (s *Server) resolveLegacyTeam(w http.ResponseWriter, r *http.Request) (*sto
 	return team, org
 }
 
-// resolveLegacyTeamForMember resolves {team_id} and additionally
-// requires the caller to be an active member of the owning org — team
-// structure is invisible to non-members, matching the slug surface.
+// resolveLegacyTeamForMember also requires the caller to be an active org
+// member: team structure is invisible to non-members, matching the slug surface.
 func (s *Server) resolveLegacyTeamForMember(w http.ResponseWriter, r *http.Request) (*store.Team, *store.Org, *store.User) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -79,8 +75,8 @@ func (s *Server) resolveLegacyTeamForMember(w http.ResponseWriter, r *http.Reque
 	return team, org, user
 }
 
-// legacyTeamMembershipJSON renders the documented `team-membership`
-// members (url, role, state) with the legacy ID-addressed URL.
+// legacyTeamMembershipJSON renders the team-membership shape with the legacy
+// ID-addressed URL.
 func legacyTeamMembershipJSON(baseURL string, teamID int, login string, role store.TeamRole, state store.MembershipState) map[string]interface{} {
 	return map[string]interface{}{
 		"url":   baseURL + "/api/v3/teams/" + strconv.Itoa(teamID) + "/memberships/" + login,
@@ -194,10 +190,8 @@ func (s *Server) handleLegacyCheckTeamMember(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleLegacyAddTeamMember — PUT /api/v3/teams/{team_id}/members/{username}.
-// Unlike the memberships endpoint, the legacy add-member call never
-// invites: the target must already be an active member of the owning
-// organization (422 otherwise).
+// handleLegacyAddTeamMember never invites: the target must already be an active
+// org member (422 otherwise), unlike the memberships endpoint.
 func (s *Server) handleLegacyAddTeamMember(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -273,8 +267,7 @@ func (s *Server) handleLegacyGetTeamMembership(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, legacyTeamMembershipJSON(s.baseURL(r), team.ID, target.Login, role, state))
 }
 
-// handleLegacyPutTeamMembership — PUT /api/v3/teams/{team_id}/memberships/{username}.
-// Same semantics as the slug-addressed membership PUT: a non-member of
+// handleLegacyPutTeamMembership matches the slug membership PUT: a non-member of
 // the org gets a pending org invitation alongside the team membership.
 func (s *Server) handleLegacyPutTeamMembership(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -349,8 +342,7 @@ func (s *Server) handleLegacyDeleteTeamMembership(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleLegacyListTeamRepos — GET /api/v3/teams/{team_id}/repos. The
-// legacy list serves the minimal-repository shape.
+// handleLegacyListTeamRepos serves the minimal-repository shape.
 func (s *Server) handleLegacyListTeamRepos(w http.ResponseWriter, r *http.Request) {
 	team, org, _ := s.resolveLegacyTeamForMember(w, r)
 	if team == nil {

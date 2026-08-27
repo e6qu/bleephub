@@ -8,22 +8,14 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// gh_issue_fields_graphql.go completes GitHub's field surface on the
-// conversation and metadata object types — Issue, Discussion, DiscussionComment,
-// Milestone, Label — and the small reaction/metadata types. Every field is
-// backed by the real store where the data exists (labels, milestones,
-// participants, linked branches, reactions, discussion answers, duplicate/
-// dependency links) and answers GitHub's zero value (false / empty connection /
-// null) only where bleephub genuinely does not model the data. The shared
-// renderers (issueToGQL, labelToGQL, milestoneToGQL, discussionCommentToGQL)
-// carry the store ids these resolvers read; nothing here fabricates data.
-//
-// The types are enriched from one entry point, enrichConversationTypes, called
-// late in initGraphQLSchema so every type these fields name — ProjectV2, the
-// timeline family, IssueComment, Repository — is already assembled.
+// Completes the field surface on the conversation and metadata types (Issue,
+// Discussion, DiscussionComment, Milestone, Label) and small reaction types.
+// Store-backed where data exists; GitHub's zero value only where bleephub does
+// not model the data. Entry point enrichConversationTypes runs late, after
+// every type these fields name is assembled.
 
-// enrichConversationTypes adds the remaining GitHub fields to the conversation
-// and metadata types. It runs after every family it references is built.
+// enrichConversationTypes adds the remaining fields to the conversation and
+// metadata types.
 func (s *Resolver) enrichConversationTypes(userType, repoType *graphql.Object) {
 	s.enrichIssueType(userType)
 	s.enrichMilestoneType()
@@ -33,8 +25,7 @@ func (s *Resolver) enrichConversationTypes(userType, repoType *graphql.Object) {
 
 // --- shared small helpers --------------------------------------------------
 
-// emptyGQLConnection is a well-formed empty Relay connection: the truthful
-// answer for a connection whose subject exists but has no members.
+// emptyGQLConnection is a well-formed empty Relay connection.
 func emptyGQLConnection() map[string]interface{} {
 	return map[string]interface{}{
 		"nodes":      []map[string]interface{}{},
@@ -59,21 +50,14 @@ func srcStr(src map[string]interface{}, key string) string {
 	return v
 }
 
-// commentCannotUpdateReasonEnum is GitHub's CommentCannotUpdateReason. The
-// viewerCannotUpdateReasons fields resolve to a subset of these.
 func (s *Resolver) commentCannotUpdateReasonEnum() *graphql.Enum {
 	return s.graphQLEnum("CommentCannotUpdateReason",
 		"ARCHIVED", "DENIED", "INSUFFICIENT_ACCESS", "LOCKED",
 		"LOGIN_REQUIRED", "MAINTENANCE", "VERIFIED_EMAIL_REQUIRED")
 }
 
-// sharedAssigneeConnectionType returns the AssigneeConnection type (memoized),
-// shared by Issue and PullRequest. Its node union carries the User type
-// (bleephub assigns only users).
 // sharedAssigneeUnion returns the Assignee union (memoized). GitHub's Assignee
-// is Bot|Mannequin|Organization|User; bleephub assigns users and organizations,
-// the two concrete types it models. The timeline's AssignedEvent.assignee and
-// the Assignable connection both name this one union.
+// is Bot|Mannequin|Organization|User; bleephub models only User and Organization.
 func (s *Resolver) sharedAssigneeUnion() *graphql.Union {
 	if s.graphqlTypes.assignee != nil {
 		return s.graphqlTypes.assignee
@@ -116,9 +100,8 @@ func (s *Resolver) sharedAssigneeConnectionType(userType *graphql.Object) *graph
 	return s.graphqlTypes.assigneeConnection
 }
 
-// sharedHovercardType returns the Hovercard type (memoized), shared by Issue and
-// PullRequest. bleephub computes no relationship contexts, so its HovercardContext
-// interface carries no implementors and the contexts list is always empty.
+// sharedHovercardType returns the Hovercard type (memoized). bleephub computes no
+// relationship contexts, so its contexts list is always empty.
 func (s *Resolver) sharedHovercardType() *graphql.Object {
 	if s.graphqlTypes.hovercard != nil {
 		return s.graphqlTypes.hovercard
@@ -143,9 +126,8 @@ func (s *Resolver) sharedHovercardType() *graphql.Object {
 	return s.graphqlTypes.hovercard
 }
 
-// cannotUpdateReasons is the real reason list for a viewer that cannot update a
-// subject: empty when they can, LOGIN_REQUIRED when anonymous, else
-// INSUFFICIENT_ACCESS.
+// cannotUpdateReasons: empty when the viewer can update, LOGIN_REQUIRED when
+// anonymous, else INSUFFICIENT_ACCESS.
 func cannotUpdateReasons(viewer *store.User, canUpdate bool) []interface{} {
 	if canUpdate {
 		return []interface{}{}
@@ -171,13 +153,10 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 		"COLLABORATOR", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR",
 		"MANNEQUIN", "MEMBER", "NONE", "OWNER")
 
-	// Assignee/Hovercard are shared with PullRequest; use the memoized builders
-	// so the schema holds one instance of each.
 	assigneeConn := s.sharedAssigneeConnectionType(userType)
 	hovercardType := s.sharedHovercardType()
 
-	// IssueDependenciesSummary — bleephub does not model issue dependencies, so
-	// the counts are a truthful zero.
+	// IssueDependenciesSummary — zero: bleephub does not model issue dependencies.
 	depsSummary := graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueDependenciesSummary",
 		Fields: graphql.Fields{
@@ -188,8 +167,7 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 		},
 	})
 
-	// PinnedIssueComment — the type must exist because Issue.pinnedIssueComment
-	// names it; bleephub does not pin issue comments, so the field resolves null.
+	// PinnedIssueComment — resolves null: bleephub does not pin issue comments.
 	pinnedIssueComment := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PinnedIssueComment",
 		Fields: graphql.Fields{
@@ -203,9 +181,8 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 		},
 	})
 
-	// PendingIssueSuggestion union + one member. bleephub has no pending
-	// suggestions, so Issue.pendingSuggestions resolves null; the union must
-	// still be a valid type.
+	// PendingIssueSuggestion union + one member. Resolves null (no pending
+	// suggestions), but the union must still be a valid type.
 	pendingLabelSuggestion := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PendingLabelSuggestion",
 		Fields: graphql.Fields{
@@ -224,13 +201,11 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 		},
 	})
 
-	// projectCards uses the classic ProjectCardConnection the classic-project
-	// surface already mints (bleephub uses ProjectsV2, so the connection is
-	// empty). Sharing that type keeps one ProjectCardConnection in the schema.
+	// projectCards reuses the classic ProjectCardConnection; served empty
+	// (bleephub uses ProjectsV2).
 	projectCardConn := s.projectClassicCardConnectionType()
 
-	// The deprecated timeline connection. Its union names a single existing
-	// member; the connection resolves empty (the modern field is timelineItems).
+	// Deprecated timeline connection; resolves empty (modern field is timelineItems).
 	timelineItem := graphql.NewUnion(graphql.UnionConfig{
 		Name:  "IssueTimelineItem",
 		Types: []*graphql.Object{s.graphqlTypes.issueComment},
@@ -245,10 +220,8 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 			"node":   &graphql.Field{Type: timelineItem},
 		},
 	})
-	// AddCommentPayload.timelineEdge (assembled earlier, with the issue
-	// mutations) names this same edge instance; attach it now that the edge
-	// exists. bleephub's addComment returns the comment directly, so the
-	// alternate timeline-edge view resolves null.
+	// Attach the edge to AddCommentPayload.timelineEdge now that it exists;
+	// resolves null (addComment returns the comment directly).
 	s.stashNamedObject(timelineItemEdge)
 	if payload := s.namedObject("AddCommentPayload"); payload != nil {
 		payload.AddFieldConfig("timelineEdge", &graphql.Field{
@@ -273,7 +246,7 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 		"SUBSCRIBED_TO_THREAD_TYPE", "UNAVAILABLE")
 	threadFormAction := s.graphQLEnum("ThreadSubscriptionFormAction", "NONE", "SUBSCRIBE", "UNSUBSCRIBE")
 
-	// permission closures shared by the viewerCan* family.
+	// Permission closures shared by the viewerCan* family.
 	viewer := func(p graphql.ResolveParams) *store.User { return s.ghUserFromContext(p.Context) }
 	repoOf := func(src map[string]interface{}) *store.Repo {
 		return s.store.GetRepoByID(srcInt(src, "repoID"))
@@ -355,8 +328,7 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 		},
 		"createdViaEmail":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean), Resolve: falseResolver},
 		"includesCreatedEdit": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean), Resolve: falseResolver},
-		// bleephub records no per-issue edit history, so editor/lastEditedAt are
-		// null and userContentEdits is a real empty connection.
+		// No per-issue edit history: editor/lastEditedAt null, userContentEdits empty.
 		"editor":       &graphql.Field{Type: actor, Resolve: nilResolver},
 		"lastEditedAt": &graphql.Field{Type: dateTime, Resolve: nilResolver},
 		"publishedAt": &graphql.Field{
@@ -511,14 +483,11 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 		issueType.AddFieldConfig(name, f)
 	}
 
-	// projectsV2 / projectV2 reach the issue's owning account's projects, the
-	// same set the repository's Projects tab lists. Reuse the ProjectV2 owner
-	// machinery so these resolve real projects.
 	s.addIssueProjectV2Fields(issueType)
 }
 
-// addIssueProjectV2Fields wires Issue.projectsV2 and Issue.projectV2 through the
-// issue's repository owner, matching how Repository.projectsV2 resolves.
+// addIssueProjectV2Fields wires Issue.projectsV2 / Issue.projectV2 through the
+// issue's repository owner, as Repository.projectsV2 resolves.
 func (s *Resolver) addIssueProjectV2Fields(issueType *graphql.Object) {
 	projectType := s.projectV2GraphQLTypes()
 	connection := s.gqlConnectionType("ProjectV2", projectType)
@@ -561,9 +530,8 @@ func (s *Resolver) addIssueProjectV2Fields(issueType *graphql.Object) {
 	})
 }
 
-// issueParticipants renders the users participating in an issue conversation:
-// the author, the assignees, and every comment author, in first-seen order and
-// deduplicated — GitHub's participants set.
+// issueParticipants renders the author, assignees and comment authors, in
+// first-seen order and deduplicated.
 func (s *Resolver) issueParticipants(issueID int) []map[string]interface{} {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
@@ -592,8 +560,8 @@ func (s *Resolver) issueParticipants(issueID int) []map[string]interface{} {
 	return nodes
 }
 
-// assigneeNodesFromSource extracts the already-rendered assignee user maps the
-// issue source carries under "assignees".
+// assigneeNodesFromSource extracts the rendered assignee user maps the issue
+// source carries under "assignees".
 func assigneeNodesFromSource(src map[string]interface{}) []map[string]interface{} {
 	conn, _ := src["assignees"].(map[string]interface{})
 	nodes, _ := conn["nodes"].([]map[string]interface{})
@@ -618,8 +586,7 @@ func withArg(args graphql.FieldConfigArgument, name string, t graphql.Input) gra
 func falseResolver(graphql.ResolveParams) (interface{}, error) { return false, nil }
 func nilResolver(graphql.ResolveParams) (interface{}, error)   { return nil, nil }
 
-// rendered renders a possibly-nil store record with a renderer that
-// dereferences it, or returns a nil map when the record is absent.
+// rendered applies render to a store record, or returns nil when it is absent.
 func rendered[T any](record *T, render func(*T) map[string]interface{}) map[string]interface{} {
 	if record == nil {
 		return nil

@@ -63,9 +63,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// MergeStateStatus carries real GitHub's full value set; bleephub derives
-	// CLEAN/DIRTY/UNKNOWN from the PR's stored mergeability (the only merge
-	// gates it models).
+	// MergeStateStatus declares GitHub's full value set, but only
+	// CLEAN/DIRTY/UNKNOWN are derived (from the PR's stored mergeability).
 	mergeStateStatusEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "MergeStateStatus",
 		Values: graphql.EnumValueConfigMap{
@@ -80,9 +79,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// Repository.viewerDefaultMergeMethod names the same enum, so it comes
-	// from the shared table rather than a second type with the same name
-	// (which graphql-go rejects).
+	// Shared: Repository.viewerDefaultMergeMethod names the same enum.
 	pullRequestMergeMethodEnum := s.sharedEnum("PullRequestMergeMethod", "MERGE", "SQUASH", "REBASE")
 
 	pullRequestReviewDecisionEnum := graphql.NewEnum(graphql.EnumConfig{
@@ -94,20 +91,15 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// Shared connection/label/reaction types come from the registry — PRs and
-	// issues expose the same Label/UserConnection/ReactionGroup types, exactly
-	// as GitHub's schema does.
+	// Shared with issues, from the registry.
 	prLabelConnectionType := s.gqlLabelConnectionType()
 	prAssigneeConnectionType := s.gqlUserConnectionType(userType)
 	prReactionGroupType := s.gqlReactionGroupType()
 
 	// --- Commit + status-check rollup types ---
-	// gh selects PR check state through the commits connection:
-	//   statusCheckRollup: commits(last:1){nodes{commit{statusCheckRollup{
-	//     contexts(first:100){nodes{...on StatusContext, ...on CheckRun}}}}}}
-	// and the merge path's lastCommit pseudo-field as commits(last:1){nodes
-	// {commit{oid}}}. CheckRun nodes are backed by the real checks store and
-	// StatusContext nodes are backed by the real REST commit-status store.
+	// gh selects PR check state through commits(last:1){commit{statusCheckRollup
+	// {contexts{...on StatusContext, ...on CheckRun}}}}. CheckRun nodes come from
+	// the checks store, StatusContext nodes from the REST commit-status store.
 	statusContextType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "StatusContext",
 		Interfaces: []*graphql.Interface{s.gqlRequirableByPullRequestInterface()},
@@ -121,17 +113,10 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// Bearing GitHub's real type names: CheckRun.checkSuite is a non-null
-	// CheckSuite whose workflowRun/workflow expose the subset gh CLI
-	// selects, plus the identity members the checks mutation payloads
-	// select. statusCheckRollupSourceLocked always embeds a checkSuite
-	// source map (with a null workflowRun when the run has no recorded
-	// suite), satisfying the non-null contract.
 	// WorkflowRun and Workflow are minted here as the minimal shells the
 	// CheckSuite rollup references, then registered so addActionsFamilyFields
-	// (gh_actions_fields_graphql.go) can finish them with GitHub's full field
-	// set on the same objects. The `workflow`/`name` members below are the two
-	// the rollup source (checkSuiteWorkflowRunSourceLocked) already populates.
+	// finishes them with the full field set on the same objects. Only the
+	// members the rollup source populates are declared here.
 	workflowFileType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Workflow",
 		Fields: graphql.Fields{
@@ -294,10 +279,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// One Commit type serves the pull-request commit lists and the git object
-	// graph, exactly as GitHub has a single Commit. The git-graph members
-	// (tree, parents, history, author, …) live with the object graph; the two
-	// fields below are the check-rollup surface the pull-request queries add.
+	// One Commit type serves the PR commit lists and the git object graph. The
+	// git-graph members live with the object graph; the two below are the
+	// check-rollup surface the PR queries add.
 	commitType := s.gqlCommitType()
 	commitType.AddFieldConfig("authors", &graphql.Field{
 		Type: graphql.NewNonNull(gitActorConnectionType),
@@ -312,8 +296,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if authors, ok := c["authors"]; ok && authors != nil {
 				return authors, nil
 			}
-			// A commit reached through the object graph carries its git author
-			// rather than a pre-rendered connection.
+			// A commit from the object graph carries its git author, not a
+			// pre-rendered connection.
 			nodes := []interface{}{}
 			if author, ok := c["author"].(map[string]interface{}); ok {
 				nodes = append(nodes, author)
@@ -322,8 +306,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 	commitType.AddFieldConfig("statusCheckRollup", &graphql.Field{
-		// Null when no checks exist for the commit — matches real
-		// GitHub for a commit with no statuses or check runs.
+		// Null when the commit has no statuses or check runs.
 		Type: statusCheckRollupType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			c, ok := p.Source.(map[string]interface{})
@@ -357,10 +340,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					return n["commit"], nil
 				},
 			},
-			// Identity and hypermedia. The renderer carries nodeID ("PRC_"+sha)
-			// and, on the pull-request path, prID/resourcePath/url; fall back to
-			// deriving from the embedded commit's oid so a timeline-sourced node
-			// (which carries only nodeID + commit) still answers non-null.
+			// Fall back to the embedded commit's oid so a timeline-sourced node
+			// (only nodeID + commit) still answers these non-null fields.
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -427,10 +408,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"authorAssociation": &graphql.Field{Type: graphql.NewNonNull(commentAuthorAssociationEnum)},
 			"createdAt":         &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"updatedAt":         &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			// gh's reviews fragment selects submittedAt, commit{oid}, and
-			// reactionGroups. Bleephub reviews are submitted on creation, so
-			// submittedAt == createdAt; commit is the PR head the review was
-			// recorded against (same derivation as REST's commit_id).
+			// Reviews are submitted on creation, so submittedAt == createdAt;
+			// commit is the PR head the review was recorded against (REST's
+			// commit_id).
 			"submittedAt": &graphql.Field{
 				Type: dateTime,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -475,19 +455,15 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 
 	// --- Review request types ---
-	// gh's reviewRequests fragment unions `...on User`, `...on Bot` (Copilot
-	// as reviewer), and `...on Team`. Bot and Team exist so the fragments
-	// type-check; bleephub currently stores user review requests.
+	// gh's reviewRequests fragment unions User/Bot/Team. Bot and Team exist so
+	// the fragments type-check; only user review requests are stored.
 	botType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Bot",
 		Fields: graphql.Fields{
 			"id":    &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
 			"login": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			// A Bot is an app account; its avatar/hypermedia derive from its
-			// login, its databaseId from its numeric id. bleephub stores user
-			// review requests rather than Copilot/app reviewers, so a Bot source
-			// does not currently arise; these read the source where a renderer
-			// would supply it and otherwise derive from the login so the
+			// No Bot source currently arises; these read the source where a
+			// renderer would supply it, else derive from the login so the
 			// non-null fields never abort.
 			"databaseId": &graphql.Field{
 				Type: graphql.Int,
@@ -537,15 +513,11 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Name: "Team",
 		Fields: graphql.Fields{
 			"id": &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-			// Nullable (real GitHub: String!) — graphql-go enforces the
-			// strict SameResponseShape merge rule, so Team.name must match
-			// User.name's nullability for gh's `...on User{name}` +
-			// `...on Team{name}` requestedReviewer selection to validate.
-			// GitHub's validator is laxer; the value is never null here.
+			// Nullable (GitHub: String!) to satisfy graphql-go's stricter
+			// SameResponseShape merge rule against User.name; never null here.
 			"name": &graphql.Field{Type: graphql.String},
 			"slug": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			// The shared Organization type (registered by addOrgFieldsToSchema,
-			// which runs before this family) — not a private login-only fork.
+			// The shared Organization type, not a login-only fork.
 			"organization": &graphql.Field{
 				Type: graphql.NewNonNull(s.graphqlTypes.organization),
 			},
@@ -613,10 +585,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 
 	// --- PR Comment connection ---
-	// Real GitHub serves PR conversation comments as IssueComment (PRs are
-	// issues internally); the shared IssueCommentConnection from the registry
-	// keeps gh CLI's merged Issue|PullRequest `comments` fragments on one
-	// type. The nodes are commentToGQLLocked source maps.
+	// PR conversation comments are IssueComment (PRs are issues internally), so
+	// the shared IssueCommentConnection serves gh's merged Issue|PullRequest
+	// `comments` fragments. Nodes are commentToGQLLocked maps.
 	prCommentConnectionType := s.gqlIssueCommentConnectionType()
 
 	// --- PR Review thread types ---
@@ -675,8 +646,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"line":       &graphql.Field{Type: graphql.Int},
 			"comments": &graphql.Field{
 				Type: graphql.NewNonNull(prReviewCommentConnectionType),
-				// The official field is a connection with relay args; the SPA
-				// queries comments(first: N) and errored without them.
+				// The SPA queries comments(first: N) and errored without the args.
 				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					thread, ok := p.Source.(map[string]interface{})
@@ -710,8 +680,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 
 	// --- Auto-merge request type ---
-	// Named local (rather than inline) so its back-reference to PullRequest can
-	// be attached once pullRequestType exists.
+	// Local so its PullRequest back-reference can be attached once that exists.
 	autoMergeRequestType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "AutoMergeRequest",
 		Fields: graphql.Fields{
@@ -725,10 +694,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 
 	// --- Changed-file types ---
-	// The per-reviewer viewed-file marks are a real store model
-	// (Store.PullRequestViewedFiles), so viewerViewedState answers VIEWED for a
-	// file the viewer has marked and UNVIEWED otherwise; DISMISSED (a file
-	// changed since last viewed) is not tracked.
+	// viewerViewedState is VIEWED for a file the viewer marked, else UNVIEWED;
+	// DISMISSED (changed since last viewed) is not tracked.
 	fileViewedStateEnum := s.sharedEnum("FileViewedState", "DISMISSED", "UNVIEWED", "VIEWED")
 	changedFileType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PullRequestChangedFile",
@@ -770,9 +737,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	// --- PullRequest type ---
 	pullRequestType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PullRequest",
-		// Closable and Assignable are claimed here for the same memoization
-		// reason Issue claims them: a timeline ClosedEvent or AssignedEvent
-		// resolves its subject through those two interfaces.
+		// Closable and Assignable are claimed so a timeline ClosedEvent or
+		// AssignedEvent can resolve its subject through them.
 		Interfaces: []*graphql.Interface{
 			nodeInterface, s.gqlLockableInterface(), s.gqlLabelableInterface(),
 			s.graphqlTypes.reactable, s.uniformResourceLocatableInterface(),
@@ -908,10 +874,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					return repaginateConnection(pr["reviewThreads"], p.Args), nil
 				},
 			},
-			// ProjectV2 items — gh pr view fetches PullRequest.projectItems
-			// as a second round-trip (api.ProjectsV2ItemsForPullRequest).
-			// Returns the real items the PR was added to via
-			// addProjectV2ItemById.
+			// The real items the PR was added to via addProjectV2ItemById.
 			"projectItems": &graphql.Field{
 				Type: s.projectV2ItemConnectionType(),
 				Args: relayConnectionArgs(),
@@ -929,10 +892,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					return paginateGQLMaps(nodes, p.Args), nil
 				},
 			},
-			// PR.milestone — real GH PRs are issues internally so they
-			// share the Milestone table. pullRequestToGQL embeds the
-			// resolved milestone map in pr["milestone"] (or nil when the
-			// PR has no milestone assigned).
+			// pullRequestToGQL embeds the resolved milestone map (or nil).
 			"milestone": &graphql.Field{
 				Type: milestoneType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -947,11 +907,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					return m, nil
 				},
 			},
-			// gh reads check state and the lastCommit field through
-			// commits(last:1){nodes{commit{...}}} — GitHub's PullRequest has
-			// no top-level statusCheckRollup field; gh aliases the commits
-			// connection instead. The nodes carry the same real git commits
-			// the REST surface reports.
+			// gh reads check state through commits(last:1){commit{...}};
+			// PullRequest has no top-level statusCheckRollup. Nodes carry the
+			// same real git commits the REST surface reports.
 			"commits": &graphql.Field{
 				Type: graphql.NewNonNull(prCommitConnectionType),
 				Args: relayConnectionArgs(),
@@ -994,10 +952,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					return pr["headRepository"], nil
 				},
 			},
-			// The repository the pull request was opened against, as distinct
-			// from headRepository (the fork it came from). gh's shared project
-			// item fragment selects it, so its absence failed validation for
-			// every `gh project` subcommand, not just the ones reading it.
+			// The repository opened against, distinct from headRepository (the
+			// fork). gh's shared project-item fragment selects it.
 			"repository": &graphql.Field{
 				Type: graphql.NewNonNull(repoType),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -1047,16 +1003,14 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				},
 			},
 			"autoMergeRequest": &graphql.Field{
-				// The armed auto-merge request, or null — the value real
-				// GitHub returns when auto-merge isn't enabled on the PR.
+				// The armed auto-merge request, or null when not enabled.
 				Type: autoMergeRequestType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, _, err := pullRequestAndRepoFromGQLSource(p.Source, s.store)
 					if err != nil {
 						return nil, err
 					}
-					// A typed nil map inside the interface would make
-					// graphql-go descend into the null object.
+					// A typed-nil map would make graphql-go descend into it.
 					if request := autoMergeRequestToGQL(pr, s.store); request != nil {
 						return request, nil
 					}
@@ -1065,7 +1019,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			},
 			"baseRefOid": &graphql.Field{Type: graphql.NewNonNull(gitObjectID)},
 			"fullDatabaseId": &graphql.Field{
-				// BigInt scalar on real GitHub — serializes as a string.
+				// BigInt scalar — serializes as a string.
 				Type: s.graphQLStringScalar("BigInt"),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, ok := p.Source.(map[string]interface{})
@@ -1094,8 +1048,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					nodes := make([]map[string]interface{}, 0, len(files))
 					for _, file := range files {
 						node := pullRequestChangedFileToGQL(file)
-						// The pull request id travels with each node so
-						// viewerViewedState can consult the viewed-files store.
+						// prID travels with each node for viewerViewedState.
 						node["prID"] = pr.ID
 						nodes = append(nodes, node)
 					}
@@ -1103,9 +1056,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				},
 			},
 			"closingIssuesReferences": &graphql.Field{
-				// The shared IssueConnection — the nodes are full issueToGQL
-				// maps already, so the connection type from Repository.issues
-				// serves them unchanged.
+				// The shared IssueConnection; nodes are full issueToGQL maps.
 				Type: s.gqlIssueConnectionType(issueType),
 				Args: graphql.FieldConfigArgument{
 					"first": &graphql.ArgumentConfig{Type: graphql.Int},
@@ -1140,10 +1091,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					return nil, nil
 				},
 			},
-			// latestReviews — the newest review per author, derived from the
-			// same review store as `reviews`. Shares PullRequestReviewConnection
-			// with `reviews`, as GitHub's schema does; repaginateConnection
-			// synthesizes the pageInfo the connection type requires.
+			// The newest review per author. Shares PullRequestReviewConnection
+			// with `reviews`; repaginateConnection synthesizes the pageInfo.
 			"latestReviews": &graphql.Field{
 				Type: prReviewConnectionType,
 				Args: relayConnectionArgs(),
@@ -1165,9 +1114,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					return pr["mergeStateStatus"], nil
 				},
 			},
-			// gh pr status selects baseRef{branchProtectionRule{...}}; the
-			// shared Ref type serves it, with the rule resolved eagerly from
-			// the typed branch-protection model and embedded in the source map.
+			// gh pr status selects baseRef{branchProtectionRule{...}}; the rule
+			// is resolved eagerly and embedded in the source map.
 			"baseRef": &graphql.Field{
 				Type: s.gqlRefType(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -1196,9 +1144,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// The PullRequest back-references on types minted before pullRequestType
-	// existed. Each resolves the enclosing pull request from the "prID" its
-	// source carries.
+	// PullRequest back-references for types minted before pullRequestType,
+	// resolving from the "prID" the source carries.
 	prBackRef := func() *graphql.Field {
 		return &graphql.Field{
 			Type: graphql.NewNonNull(pullRequestType),
@@ -1220,8 +1167,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	s.graphqlTypes.pullRequest = pullRequestType
 	s.graphqlTypes.pullRequestReview = prReviewType
 	s.graphqlTypes.pullRequestReviewComment = prReviewCommentType
-	// The thread object is memoized for the same reason: the pull-request
-	// mutation surface's addPullRequestReviewThread payload returns it.
+	// Memoized: the addPullRequestReviewThread payload returns it.
 	s.graphqlTypes.pullRequestReviewThread = prReviewThreadType
 	// Both are members of PullRequestTimelineItems, which is assembled later.
 	s.graphqlTypes.pullRequestCommit = pullRequestCommitType
@@ -1230,9 +1176,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	s.addReactableFields(prReviewType, "pull_request_review")
 	s.addReactableFields(prReviewCommentType, "pull_request_review_comment")
 
-	// Complete the GitHub GraphQL surface of the three pull-request types
-	// (see gh_pulls_fields_graphql.go): every remaining field, each backed by
-	// the real store/git data or answering the truthful zero.
+	// Complete the three pull-request types' remaining fields
+	// (gh_pulls_fields_graphql.go).
 	s.addPullRequestSurfaceFields(prSurfaceDeps{
 		pullRequest:          pullRequestType,
 		review:               prReviewType,
@@ -1285,10 +1230,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"labels":      &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
 			"headRefName": &graphql.ArgumentConfig{Type: graphql.String},
 			"baseRefName": &graphql.ArgumentConfig{Type: graphql.String},
-			// gh sends orderBy as literal enum names — `orderBy: {field:
-			// CREATED_AT, direction: DESC}` — so field/direction must be
-			// enums (string-typed inputs fail validation), exactly like the
-			// issues connection's IssueOrder.
+			// gh sends orderBy as literal enum names, so field/direction must be
+			// enums (string inputs fail validation), like IssueOrder.
 			"orderBy": &graphql.ArgumentConfig{Type: s.graphqlTypes.issueOrder},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -1300,7 +1243,6 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			prs := s.store.ListPullRequests(repoID, "")
 
-			// Filter by states
 			if states, ok := p.Args["states"].([]interface{}); ok && len(states) > 0 {
 				stateMap := make(map[string]bool)
 				for _, st := range states {
@@ -1315,7 +1257,6 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				prs = filtered
 			}
 
-			// Filter by labels
 			if labelNames, ok := p.Args["labels"].([]interface{}); ok && len(labelNames) > 0 {
 				var names []string
 				for _, ln := range labelNames {
@@ -1330,7 +1271,6 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				prs = filtered
 			}
 
-			// Filter by headRefName
 			if head, ok := p.Args["headRefName"].(string); ok && head != "" {
 				var filtered []*store.PullRequest
 				for _, pr := range prs {
@@ -1341,7 +1281,6 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				prs = filtered
 			}
 
-			// Filter by baseRefName
 			if base, ok := p.Args["baseRefName"].(string); ok && base != "" {
 				var filtered []*store.PullRequest
 				for _, pr := range prs {
@@ -1401,7 +1340,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			pr := s.store.GetPullRequestByNumber(repoID, number)
 			if pr == nil {
-				// Real GitHub returns a typed NOT_FOUND error, not bare null.
+				// Typed NOT_FOUND, not bare null.
 				return nil, &ghNotFoundError{
 					message: fmt.Sprintf("Could not resolve to a PullRequest with the number of %d.", number),
 				}
@@ -1410,8 +1349,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// fix — issueOrPullRequest as a real Issue|PullRequest union so
-	// gh CLI's `gh issue view <N>` `...on Issue` + `...on PullRequest`
+	// A real Issue|PullRequest union so gh's `...on Issue`/`...on PullRequest`
 	// fragments type-check.
 	issueOrPRUnion := graphql.NewUnion(graphql.UnionConfig{
 		Name:        "IssueOrPullRequest",
@@ -1441,7 +1379,6 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			repoID, _ := repo["databaseId"].(int)
 			number, _ := intArg(p.Args, "number")
 
-			// Issue first; if not found, fall through to PR.
 			if issue := s.store.GetIssueByNumber(repoID, number); issue != nil {
 				result := issueToGQL(issue, s.store)
 				result["__typename"] = "Issue"
@@ -1452,20 +1389,17 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				result["__typename"] = "PullRequest"
 				return result, nil
 			}
-			// Real GitHub returns a typed NOT_FOUND error, not bare null.
+			// Typed NOT_FOUND, not bare null.
 			return nil, &ghNotFoundError{
 				message: fmt.Sprintf("Could not resolve to an issue or pull request with the number of %d.", number),
 			}
 		},
 	})
 
-	// --- Query.search (ISSUE type) ---
-	// gh pr status sends search(query:$q, type:ISSUE, first:$limit) with
-	// `repo: state:open is:pr author:/review-requested:` qualifiers, and
-	// gh issue/pr list filters send search(type:$type, last:$limit,
-	// after:$after, query:$query). SearchType deliberately declares ONLY
-	// ISSUE: gh introspects the enum and opts into ISSUE_ADVANCED only when
-	// present, so omitting it keeps gh on the plain ISSUE backend.
+	// --- Query.search ---
+	// SearchType omits ISSUE_ADVANCED deliberately: gh introspects the enum and
+	// opts into it only when present, so omitting it keeps gh on the plain
+	// ISSUE backend.
 	searchTypeEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "SearchType",
 		Values: graphql.EnumValueConfigMap{
@@ -1489,8 +1423,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			return issueType
 		},
 	})
-	// TextMatch highlighting is not modelled, so SearchResultItemEdge.textMatches
-	// is always empty; the types exist so the (real GitHub) field type-checks.
+	// TextMatch highlighting is unmodeled, so textMatches is always empty; the
+	// types exist so the field type-checks.
 	textMatchHighlightType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "TextMatchHighlight",
 		Fields: graphql.Fields{
@@ -1520,11 +1454,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			},
 		},
 	})
-	// Per-kind result counts. bleephub's search resolves ISSUE and REPOSITORY
-	// kinds only, so a search never returns code/discussion/user/wiki matches
-	// and those counts are a truthful zero. issueSearchType (bleephub does one
-	// lexical pass, not a typed lexical/semantic/hybrid engine) and
-	// lexicalFallbackReason are the truthful null.
+	// Search resolves only ISSUE and REPOSITORY kinds, so
+	// code/discussion/user/wiki counts are zero, and issueSearchType /
+	// lexicalFallbackReason (one lexical pass, no typed engine) are null.
 	searchCountField := func(sourceKey string) *graphql.Field {
 		return &graphql.Field{
 			Type: graphql.NewNonNull(graphql.Int),
@@ -1605,9 +1537,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			case "REPOSITORY":
 				items := s.searchRepositories(p.Context, q, viewer)
 				connection := paginateGQLItems(items, p.Args)
-				// issueCount and repositoryCount each count their own kind, so
-				// the one this search did not look for is zero rather than the
-				// match count under a different name.
+				// Each count is its own kind; the unsearched one is zero.
 				connection["repositoryCount"] = connection["totalCount"]
 				connection["totalCount"] = 0
 				return connection, nil
@@ -1677,8 +1607,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if pr == nil {
 				return nil, fmt.Errorf("pull request creation failed")
 			}
-			// A pull request opened here collects its CODEOWNERS reviewers
-			// exactly as one opened through REST does.
+			// Collect CODEOWNERS reviewers, as REST does.
 			s.autoRequestCodeOwners(repo, pr, user)
 			if updated := s.store.GetPullRequest(pr.ID); updated != nil {
 				pr = updated
@@ -1810,8 +1739,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if wasReady && user != nil {
 				s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "convert_to_draft", "", 0)
 			}
-			// The timeline event is `convert_to_draft`; the webhook action
-			// GitHub ships is spelled `converted_to_draft`.
+			// Timeline event `convert_to_draft`, webhook action `converted_to_draft`.
 			s.emitPullRequestAction(s.store.GetPullRequest(pr.ID), user, "converted_to_draft", wasReady)
 			return map[string]interface{}{
 				"pullRequest":      pullRequestToGQL(s.store.GetPullRequest(pr.ID), s.store),
@@ -1874,12 +1802,10 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	mergePRInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "MergePullRequestInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"pullRequestId":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
-			"mergeMethod":    &graphql.InputObjectFieldConfig{Type: pullRequestMergeMethodEnum},
-			"commitHeadline": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"commitBody":     &graphql.InputObjectFieldConfig{Type: graphql.String},
-			// gh sets authorEmail (--author-email) and expectedHeadOid
-			// (--match-head-commit).
+			"pullRequestId":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"mergeMethod":      &graphql.InputObjectFieldConfig{Type: pullRequestMergeMethodEnum},
+			"commitHeadline":   &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"commitBody":       &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"authorEmail":      &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"expectedHeadOid":  &graphql.InputObjectFieldConfig{Type: gitObjectID},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
@@ -1890,9 +1816,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Name: "MergePullRequestPayload",
 		Fields: graphql.Fields{
 			"pullRequest": &graphql.Field{Type: pullRequestType},
-			// The Actor who performed the merge — the viewer this mutation ran as.
-			"actor": &graphql.Field{Type: s.graphqlTypes.actor},
-			// gh's PullRequestMerge mutation selects only clientMutationId.
+			"actor":       &graphql.Field{Type: s.graphqlTypes.actor},
 			"clientMutationId": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -1931,11 +1855,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				return nil, gqlMissingNodeType("Repository")
 			}
 
-			// expectedHeadOid is gh's --match-head-commit interlock: the client
-			// names the commit it reviewed, and a head that has moved since
-			// must refuse rather than merge code nobody looked at. A head that
-			// cannot be resolved at all refuses too — an unverifiable
-			// interlock is not a satisfied one.
+			// expectedHeadOid (--match-head-commit): a moved or unresolvable
+			// head refuses rather than merge code nobody reviewed.
 			if expected, ok := input["expectedHeadOid"].(string); ok && expected != "" {
 				head := s.prHeadSha(repo, pr)
 				if head == "" || !strings.EqualFold(head, expected) {
@@ -1944,12 +1865,10 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				}
 			}
 
-			// Required status checks are evaluated unconditionally, as the REST
-			// merge does, and not only through canMergePullRequest — that one
-			// sits behind branch protection's admin bypass, so relying on it
-			// alone would let an admin merge a red pull request through GraphQL
-			// that REST refuses. Both gates run before the single call into
-			// completePullRequestMerge below; there is no other path to it.
+			// Evaluate required checks unconditionally, not only via
+			// canMergePullRequest (which sits behind branch protection's admin
+			// bypass) — otherwise an admin could merge a red PR through GraphQL
+			// that REST refuses.
 			if headSha := s.prHeadSha(repo, pr); headSha != "" {
 				if missing := s.missingRequiredChecks(repo, pr.BaseRefName, headSha); len(missing) > 0 {
 					//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
@@ -1970,7 +1889,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			}
 			commitHeadline, _ := input["commitHeadline"].(string)
 			commitBody, _ := input["commitBody"].(string)
-			// authorEmail names the address recorded on the merge commit.
+			// authorEmail is the merge commit's recorded address.
 			merger := *user
 			if v, ok := input["authorEmail"].(string); ok && v != "" {
 				merger.Email = v
@@ -1996,11 +1915,10 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 
 	// --- enablePullRequestAutoMerge / disablePullRequestAutoMerge ---
-	// Auto-merge arms a merge that runs later, through the same REST-shared
-	// merge gate, once the base branch's blocking conditions clear. GitHub
-	// only lets it be armed while something actually blocks the merge — a
-	// PR that could merge right now is refused with "Pull request is in
-	// clean status" — so an enable can never race a green check.
+	// Auto-merge arms a merge that runs later through the REST-shared merge gate.
+	// It can only arm while something blocks the merge — a PR that could merge
+	// now is refused ("Pull request is in clean status") — so an enable never
+	// races a green check.
 	enableAutoMergeInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "EnablePullRequestAutoMergeInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -2051,8 +1969,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if v, ok := input["mergeMethod"].(string); ok && v != "" {
 				method = v
 			}
-			// GitHub refuses an explicit merge method the repository has
-			// disabled, exactly as the REST merge endpoint does.
+			// Refuse an explicit merge method the repository has disabled, as
+			// the REST merge endpoint does.
 			var disallowed string
 			switch {
 			case method == "MERGE" && !repo.AllowMergeCommit:
@@ -2067,8 +1985,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			}
 
 			headSha := s.prHeadSha(repo, pr)
-			// The same interlock mergePullRequest honours: the client names
-			// the commit it reviewed, and a moved head refuses.
+			// The same moved-head interlock mergePullRequest honours.
 			if expected, ok := input["expectedHeadOid"].(string); ok && expected != "" {
 				if headSha == "" || !strings.EqualFold(headSha, expected) {
 					//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
@@ -2076,9 +1993,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				}
 			}
 
-			// Auto-merge only arms while a blocking condition exists. A PR
-			// the caller could merge right now is refused, so there is no
-			// armed-after-green race to poll for.
+			// Only arms while a blocking condition exists; a PR mergeable now
+			// is refused, so there is no armed-after-green race.
 			checksClean := headSha == "" || len(s.missingRequiredChecks(repo, pr.BaseRefName, headSha)) == 0
 			if mergeable, _ := s.canMergePullRequest(p.Context, repo, pr); mergeable && checksClean {
 				//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
@@ -2156,10 +2072,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 
 	// --- addPullRequestReview (gh pr review) ---
-	// gh submits reviews via mutation PullRequestReviewAdd($input:
-	// AddPullRequestReviewInput!){addPullRequestReview(input:$input)
-	// {clientMutationId}} with pullRequestId + event + body. Mapped onto the
-	// same review store as REST POST .../pulls/{n}/reviews.
+	// Mapped onto the same review store as REST POST .../pulls/{n}/reviews.
 	pullRequestReviewEventEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "PullRequestReviewEvent",
 		Values: graphql.EnumValueConfigMap{
@@ -2170,11 +2083,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// The draft line-comment / thread inputs GitHub's AddPullRequestReviewInput
-	// declares (the bulk form of leaving review comments). Declared for schema
-	// completeness; the resolver reads pullRequestId/event/body, so a draft
-	// comment array is accepted and currently ignored, as the SDL's deprecation
-	// note anticipates.
+	// The draft line-comment / thread inputs, declared for schema completeness;
+	// the resolver reads only pullRequestId/event/body, so a draft comment
+	// array is accepted and ignored.
 	diffSideForReview := s.sharedEnum("DiffSide", "LEFT", "RIGHT")
 	draftReviewCommentInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "DraftPullRequestReviewComment",
@@ -2212,8 +2123,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Name: "AddPullRequestReviewPayload",
 		Fields: graphql.Fields{
 			"pullRequestReview": &graphql.Field{Type: prReviewType},
-			// The created review as a connection edge; bleephub's addPullRequestReview
-			// returns the review directly, so this alternate edge view is null.
+			// addPullRequestReview returns the review directly, so this alternate
+			// edge view is null.
 			"reviewEdge": &graphql.Field{
 				Type:    s.simpleEdgeType("PullRequestReviewEdge", prReviewType),
 				Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
@@ -2265,8 +2176,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if review == nil {
 				return nil, fmt.Errorf("review creation failed")
 			}
-			// An approval can be the required review an armed auto-merge was
-			// waiting for.
+			// An approval can release an armed auto-merge.
 			if state == "APPROVED" {
 				s.maybeAutoMerge(pr.ID)
 			}
@@ -2331,9 +2241,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 
 	// --- submitPullRequestReview (submit a pending review) ---
-	// Matches github's signature: pullRequestId and pullRequestReviewId are both
-	// nullable (submit by review id, or by PR id to submit the viewer's pending
-	// review); event is required.
+	// Both id args are nullable: submit by review id, or by PR id (the viewer's
+	// pending review); event is required.
 	submitPRReviewInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "SubmitPullRequestReviewInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -2365,7 +2274,6 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if reviewNodeID != "" {
 				review = store.FindReviewByNodeID(s.store, reviewNodeID)
 			} else if prNodeID, _ := input["pullRequestId"].(string); prNodeID != "" {
-				// Submit the viewer's own pending review on the given PR.
 				if pr := store.FindPullRequestByNodeID(s.store, prNodeID); pr != nil && user != nil {
 					review = s.store.PendingReviewForAuthor(pr.ID, user.ID)
 				}
@@ -2373,13 +2281,11 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if review == nil {
 				return nil, gqlMissingNode("PullRequestReview", reviewNodeID)
 			}
-			// Only a pending review can be submitted, and DISMISS is not a submit
-			// action (it is its own mutation).
+			// Only a pending review can be submitted; DISMISS is its own mutation.
 			if !s.store.SubmitPullRequestReview(review.ID, event) {
 				return nil, fmt.Errorf("cannot submit a review that is not pending")
 			}
-			// An approval can be the required review an armed auto-merge was
-			// waiting for.
+			// An approval can release an armed auto-merge.
 			if event == "APPROVE" {
 				s.maybeAutoMerge(review.PRID)
 			}
@@ -2422,8 +2328,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if !s.store.DismissPullRequestReview(review.ID, message) {
 				return nil, fmt.Errorf("review dismissal failed")
 			}
-			// Dismissing a blocking CHANGES_REQUESTED review can clear the
-			// condition an armed auto-merge was waiting for.
+			// Dismissing a blocking CHANGES_REQUESTED review can release an
+			// armed auto-merge.
 			s.maybeAutoMerge(review.PRID)
 			return map[string]interface{}{
 				"pullRequestReview": prReviewToGQL(s.store.GetPullRequestReview(review.ID), s.store),
@@ -2452,8 +2358,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Name: "UpdatePullRequestPayload",
 		Fields: graphql.Fields{
 			"pullRequest": &graphql.Field{Type: pullRequestType},
-			// The Actor who performed the update — the viewer this mutation ran as.
-			"actor": &graphql.Field{Type: s.graphqlTypes.actor},
+			"actor":       &graphql.Field{Type: s.graphqlTypes.actor},
 		},
 	})
 
@@ -2488,9 +2393,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				return nil, err
 			}
 
-			// The node finders hand back the live row, which UpdatePullRequest
-			// mutates in place; take a detached snapshot for the before-values
-			// the webhook fan-out diffs against.
+			// FindPullRequestByNodeID returns the live row; snapshot the
+			// before-values the webhook fan-out diffs against.
 			before := s.store.GetPullRequest(pr.ID)
 			if before == nil {
 				return nil, gqlMissingNodeType("PullRequest")
@@ -2517,9 +2421,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			})
 
 			updated := s.store.GetPullRequest(pr.ID)
-			// This mutation is the only route to a pull request's assignees
-			// and milestone, so it owns the assigned/unassigned and
-			// milestoned/demilestoned actions.
+			// The only route to a PR's assignees and milestone, so it owns the
+			// assigned/unassigned and milestoned/demilestoned actions.
 			change := store.SubjectChange{
 				LabelsFrom:    before.LabelIDs,
 				LabelsTo:      labelIDs,
@@ -2538,9 +2441,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				change.BaseRefFrom = &before.BaseRefName
 			}
 			user := s.ghUserFromContext(p.Context)
-			// The retitle and the retarget are github timeline events, recorded
-			// here as well as on the REST PATCH so the pull request's history
-			// does not depend on which client made the edit.
+			// Record retitle/retarget timeline events here as well as on the
+			// REST PATCH, so history is client-independent.
 			if user != nil {
 				if change.TitleFrom != nil {
 					s.store.RecordIssueOrPREvent(repo.ID, updated.Number, user.ID, "renamed", map[string]interface{}{
@@ -2564,11 +2466,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 
 	// Issue.closedByPullRequestsReferences — the reverse of
-	// PullRequest.closingIssuesReferences: the pull requests whose body closes
-	// this issue (github.com's issue "Development" section). Registered here,
-	// where both issueType and prConnectionType exist, to avoid schema-ordering
-	// issues (issues are built before pulls). includeClosedPrs=false narrows to
-	// open PRs.
+	// PullRequest.closingIssuesReferences. Registered here, where both types
+	// exist (issues are built before pulls).
 	issueType.AddFieldConfig("closedByPullRequestsReferences", &graphql.Field{
 		Type: prConnectionType,
 		Args: graphql.FieldConfigArgument{
@@ -2608,9 +2507,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 // emitPullRequestAction delivers one `pull_request` webhook action for a
 // GraphQL-driven change. Draft toggling and auto-merge arming have no REST
-// endpoint, so these resolvers are the only site that can emit them, and gh
-// drives close/reopen here too — a workflow `on: pull_request` must fire the
-// same either way. A no-op mutation emits nothing: callers pass changed=false.
+// endpoint, so these resolvers are their only emit site. A no-op mutation
+// (changed=false) emits nothing.
 func (s *Resolver) emitPullRequestAction(pr *store.PullRequest, user *store.User, action string, changed bool) {
 	if !changed || pr == nil || user == nil {
 		return
@@ -2622,10 +2520,8 @@ func (s *Resolver) emitPullRequestAction(pr *store.PullRequest, user *store.User
 	s.emitWebhookEvent(repo.FullName, "pull_request", action, s.buildPullRequestPayload(repo, pr, user, action))
 }
 
-// closedByPullRequestsForIssue returns the pull requests in the issue's repo
-// whose body's closing keywords reference this issue (the reverse of
-// closingIssuesForPullRequest). When includeClosed is false, only open PRs are
-// returned.
+// closedByPullRequestsForIssue returns the PRs whose body's closing keywords
+// reference this issue; includeClosed=false narrows to open PRs.
 func closedByPullRequestsForIssue(st *store.Store, repo *store.Repo, issue *store.Issue, includeClosed bool) []*store.PullRequest {
 	var out []*store.PullRequest
 	for _, pr := range st.ListPullRequests(repo.ID, "all") {
@@ -2664,8 +2560,7 @@ func pullRequestAndRepoFromGQLSource(src interface{}, st *store.Store) (*store.P
 	return pr, repo, nil
 }
 
-// autoMergeRequestToGQL renders a PR's armed auto-merge request in the
-// AutoMergeRequest shape, or nil when auto-merge is off.
+// autoMergeRequestToGQL renders a PR's armed auto-merge request, or nil when off.
 func autoMergeRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interface{} {
 	if pr == nil || pr.AutoMerge == nil {
 		return nil
@@ -2794,13 +2689,11 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	// Author
 	var author map[string]interface{}
 	if u := store.ActorUserLocked(st, pr.AuthorID); u != nil {
 		author = userToGraphQL(u)
 	}
 
-	// MergedBy
 	var mergedBy map[string]interface{}
 	if pr.MergedByID > 0 {
 		if u, ok := st.Users[pr.MergedByID]; ok {
@@ -2808,7 +2701,6 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 		}
 	}
 
-	// Labels
 	labelNodes := make([]map[string]interface{}, 0)
 	for _, lid := range pr.LabelIDs {
 		if l, ok := st.Labels[lid]; ok {
@@ -2816,7 +2708,6 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 		}
 	}
 
-	// Assignees
 	assigneeNodes := make([]map[string]interface{}, 0)
 	for _, aid := range pr.AssigneeIDs {
 		if u, ok := st.Users[aid]; ok {
@@ -2824,7 +2715,7 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 		}
 	}
 
-	// Reviews (inline to avoid deadlock)
+	// Inlined (not prReviewToGQL) to avoid re-locking st.Mu.
 	prReviews := st.PRReviewsByPR[pr.ID]
 	reviewNodes := make([]map[string]interface{}, 0, len(prReviews))
 	for _, r := range prReviews {
@@ -2849,28 +2740,24 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 		return ca < cb
 	})
 
-	// Derive review decision
 	var reviewDecision interface{}
 	if rd := deriveReviewDecisionLocked(st, pr.ID); rd != "" {
 		reviewDecision = rd
 	}
 
-	// Conversation comments (real GitHub: PRs and Issues share the same
-	// comment table; bleephub mirrors that via Comment.ParentType).
+	// PRs and Issues share the comment table (Comment.ParentType).
 	prCommentNodes := make([]map[string]interface{}, 0)
 	for _, c := range st.Comments {
 		if c.ParentType == "pull_request" && c.IssueID == pr.ID {
 			prCommentNodes = append(prCommentNodes, commentToGQLLocked(c, st))
 		}
 	}
-	// st.Comments is a map, so iteration order is nondeterministic; sort for
-	// stable cursor pagination (oldest first, like GitHub's comments feed).
+	// st.Comments iteration order is nondeterministic; sort oldest-first for
+	// stable cursors.
 	sortGQLNodesByCreatedAt(prCommentNodes)
 
-	// Review threads — inline file-line review comments grouped by thread.
 	reviewThreadNodes := reviewThreadsForGraphQL(st.PRReviewComments.ListThreads(pr.ID), st)
 
-	// URL
 	repo := st.Repos[pr.RepoID]
 	url, resourcePath := "", ""
 	if repo != nil {
@@ -2890,8 +2777,7 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 		mergedAt = pr.MergedAt.Format(time.RFC3339)
 	}
 
-	// mergeStateStatus from the stored mergeability — the only merge gate
-	// bleephub models (no protected branches / required checks in GraphQL).
+	// mergeStateStatus from the stored mergeability, the only modeled gate.
 	mergeStateStatus := "UNKNOWN"
 	switch pr.Mergeable {
 	case "MERGEABLE":
@@ -2900,10 +2786,9 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 		mergeStateStatus = "DIRTY"
 	}
 
-	// interface{}, not map[string]interface{}: a nil map assigned into an
-	// interface-typed member is not a nil interface, and GraphQL would then
-	// complete a non-null Repository.id off an empty shell instead of
-	// answering null for a head repository that no longer exists.
+	// interface{}, not map: a nil map boxed into an interface is not a nil
+	// interface, so GraphQL would complete a non-null Repository.id off an empty
+	// shell instead of answering null for a vanished head repository.
 	var headRepository interface{}
 	headRepo := store.PullRequestHeadRepoLocked(st, pr)
 	if headRepo != nil {
@@ -3050,9 +2935,8 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 			"nodes":      reviewThreadNodes,
 			"totalCount": len(reviewThreadNodes),
 		},
-		// Surface-completion keys (gh_pulls_fields_graphql.go). authorID drives
-		// the viewer* permission fields; the rest carry real data the renderer
-		// already has under the lock.
+		// Surface-completion keys (gh_pulls_fields_graphql.go); authorID drives
+		// the viewer* permission fields.
 		"authorID":           pr.AuthorID,
 		"authorAssociation":  authorAssociationForRepoLocked(st, pr.RepoID, pr.AuthorID),
 		"statusCheckRollup":  statusCheckRollupSourceLocked(st, repoFullName, sha),
@@ -3068,13 +2952,8 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 	}
 }
 
-// reviewThreadsForGraphQL renders ReviewThread + PRReviewComment
-// records as the GraphQL source map shape expected by the
-// PullRequestReviewThread / PullRequestReviewComment types below.
-// Caller must hold st.mu.RLock.
-// prReviewCommentToGQL renders a store PR review comment as its GraphQL source
-// map (matching the PullRequestReviewComment type's field keys). Self-locking;
-// used by the Reactable subject resolver.
+// prReviewCommentToGQL renders a store PR review comment as its
+// PullRequestReviewComment source map. Self-locking.
 func prReviewCommentToGQL(c *store.PRReviewComment, st *store.Store) map[string]interface{} {
 	var author map[string]interface{}
 	if u := st.GetUserByID(c.AuthorID); u != nil {
@@ -3133,9 +3012,7 @@ func reviewThreadsForGraphQL(threads []*store.ReviewThread, st *store.Store) []m
 				"state":      "SUBMITTED",
 			})
 		}
-		// The thread's path/line and diff-position metadata track the root
-		// comment; the parent/repo linkage and the viewer-facing flags let the
-		// PullRequestReviewThread surface resolve from the real record.
+		// The thread's path/line/diff metadata track the root comment.
 		var threadPath string
 		var threadLine, originalLine, originalStartLine, startLine, startDiffSide interface{}
 		diffSide := "RIGHT"
@@ -3247,10 +3124,8 @@ func (s *Resolver) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved 
 	}, nil
 }
 
-// prMilestoneToGQLLocked returns the GraphQL source map for the PR's
-// milestone, or nil when the PR has no milestone or the referenced
-// milestone has been deleted. Real GitHub shares the Milestone table
-// between Issues and PRs; bleephub mirrors that.
+// prMilestoneToGQLLocked returns the PR's milestone source map, or nil when it
+// has none or the milestone was deleted.
 func prMilestoneToGQLLocked(pr *store.PullRequest, st *store.Store) interface{} {
 	if pr.MilestoneID == 0 {
 		return nil
@@ -3271,8 +3146,7 @@ func prMilestoneToGQLLocked(pr *store.PullRequest, st *store.Store) interface{} 
 	}
 }
 
-// deriveReviewDecisionLocked derives the review decision from reviews.
-// Must be called while holding st.mu.RLock().
+// deriveReviewDecisionLocked derives the review decision. Caller holds st.mu.RLock.
 func deriveReviewDecisionLocked(st *store.Store, prID int) string {
 	latest := map[int]*store.PullRequestReview{}
 	for _, review := range st.PRReviewsByPR[prID] {
@@ -3323,10 +3197,9 @@ func prHasAllLabels(st *store.Store, pr *store.PullRequest, labelNames []string)
 	return true
 }
 
-// prReviewSourceLocked builds the GraphQL source map for a single PR review.
-// Caller must hold st.mu.RLock. submittedAt mirrors createdAt (bleephub
-// reviews are submitted on creation) and commit carries the PR head the
-// review was recorded against — the same oid REST's commit_id reports.
+// prReviewSourceLocked builds a single PR review's source map. Caller holds
+// st.mu.RLock. submittedAt mirrors createdAt (reviews are submitted on
+// creation); commit is the PR head the review was recorded against.
 func prReviewSourceLocked(r *store.PullRequestReview, st *store.Store) map[string]interface{} {
 	var reviewAuthor map[string]interface{}
 	if u, ok := st.Users[r.AuthorID]; ok {
@@ -3363,11 +3236,8 @@ func prReviewSourceLocked(r *store.PullRequestReview, st *store.Store) map[strin
 	}
 }
 
-// requestedReviewerTypeName maps a requestedReviewer source map to its union
-// member name via the __typename discriminator the producers set. Defaults to
-// User (the only reviewer kind currently produced), so the RequestedReviewer
-// union resolves the right member instead of blindly reporting User for a Bot
-// or Team.
+// requestedReviewerTypeName maps a requestedReviewer source to its union member
+// via the __typename discriminator, defaulting to User.
 func requestedReviewerTypeName(source interface{}) string {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -3391,14 +3261,11 @@ func pullRequestReviewRequestNodesLocked(pr *store.PullRequest, st *store.Store)
 			reviewer["__typename"] = "User"
 			nodes = append(nodes, map[string]interface{}{
 				"requestedReviewer": reviewer,
-				// Identity + back-reference. bleephub stores a review request as
-				// a reviewer id on the pull request, not a first-class row with
-				// its own numeric key, so databaseId is genuinely null and the
-				// node id is synthesised from the pull request and reviewer.
+				// A review request is a reviewer id, not a first-class row, so
+				// databaseId is null and the node id is synthesised.
 				"nodeID": fmt.Sprintf("RR_%s_%d", pr.NodeID, id),
 				"prID":   pr.ID,
-				// bleephub does not derive review requests from a CODEOWNERS
-				// file, so none is a code-owner request.
+				// Review requests are not derived from CODEOWNERS here.
 				"asCodeOwner": false,
 			})
 		}
@@ -3424,16 +3291,14 @@ func gitCommitToGQLLocked(c *object.Commit, st *store.Store, repoFullName string
 	}
 }
 
-// botLoginFromSource reads a Bot source's login (its username), or "" when a
-// source did not supply one.
+// botLoginFromSource reads a Bot source's login, or "".
 func botLoginFromSource(n map[string]interface{}) string {
 	login, _ := n["login"].(string)
 	return login
 }
 
-// botTimestampFromSource returns a Bot source's stored timestamp for the named
-// key, or the epoch when a source (which does not currently arise) carries
-// none — a serialisable value for the non-null DateTime field.
+// botTimestampFromSource returns a Bot source's timestamp for key, or the epoch
+// (a serialisable value for the non-null DateTime field).
 func botTimestampFromSource(n map[string]interface{}, key string) string {
 	if v, ok := n[key].(string); ok && v != "" {
 		return v
@@ -3441,10 +3306,8 @@ func botTimestampFromSource(n map[string]interface{}, key string) string {
 	return time.Unix(0, 0).UTC().Format(time.RFC3339)
 }
 
-// prCommitSourceByOID renders the Commit at the given sha of a pull request's
-// git storage as a GraphQL Commit source map, or nil when the sha is empty or
-// the commit object cannot be loaded (a truthful null rather than a fabricated
-// Commit). Used by the merge-queue entry's base/head commit fields.
+// prCommitSourceByOID renders the Commit at oid from a PR's git storage, or nil
+// when the sha is empty or the object cannot be loaded.
 func (s *Resolver) prCommitSourceByOID(repo *store.Repo, pr *store.PullRequest, oid string) map[string]interface{} {
 	if oid == "" {
 		return nil
@@ -3466,8 +3329,7 @@ func (s *Resolver) prCommitSourceByOID(repo *store.Repo, pr *store.PullRequest, 
 	return gitCommitToGQLLocked(commit, s.store, repoFullName)
 }
 
-// prCommitOID returns the head commit sha carried on a PullRequestCommit source
-// map (under its embedded "commit"), or "" when absent.
+// prCommitOID returns a PullRequestCommit source's embedded commit sha, or "".
 func prCommitOID(n map[string]interface{}) string {
 	commit, _ := n["commit"].(map[string]interface{})
 	oid, _ := commit["oid"].(string)
@@ -3475,8 +3337,7 @@ func prCommitOID(n map[string]interface{}) string {
 }
 
 // prCommitFallbackPath derives a PullRequestCommit resourcePath from the
-// embedded commit when the renderer did not supply one (the timeline path
-// carries no pull-request number).
+// embedded commit when the renderer supplied none.
 func prCommitFallbackPath(n map[string]interface{}) string {
 	commit, _ := n["commit"].(map[string]interface{})
 	repoFullName, _ := commit["repoFullName"].(string)
@@ -3488,8 +3349,7 @@ func prCommitFallbackPath(n map[string]interface{}) string {
 }
 
 // prCommitNode wraps a rendered commit source as a PullRequestCommit source,
-// carrying the identity and hypermedia the PullRequestCommit type resolves
-// (nodeID, prID for the back-reference, and the pull/N/commits/SHA path).
+// carrying nodeID, prID and the pull/N/commits/SHA path.
 func prCommitNode(commit map[string]interface{}, prID int, repoFullName string, prNumber int, sha string) map[string]interface{} {
 	resourcePath := ""
 	if repoFullName != "" && sha != "" {
@@ -3504,14 +3364,10 @@ func prCommitNode(commit map[string]interface{}, prID int, repoFullName string, 
 	}
 }
 
-// gitActorSourceLocked renders a git signature as GitActor for a caller that
-// already holds st.Mu (the pull-request renderers do).
-//
-// The "user" member is null unless the signature's email belongs to an
-// account: GitHub answers a commit signed by an address it does not know with
-// a null GitActor.user, and optionalObject keeps the miss an untyped nil
-// rather than a User shell whose non-null id would abort the query (see
-// gql_optional_source.go).
+// gitActorSourceLocked renders a git signature as GitActor. Caller holds st.Mu.
+// The "user" member is null unless the signature's email belongs to an account;
+// optionalObject keeps the miss an untyped nil so a User shell's non-null id
+// cannot abort the query.
 func gitActorSourceLocked(st *store.Store, signature object.Signature) map[string]interface{} {
 	return map[string]interface{}{
 		"name":  signature.Name,
@@ -3549,11 +3405,9 @@ func prReviewToGQL(r *store.PullRequestReview, st *store.Store) map[string]inter
 	return prReviewSourceLocked(r, st)
 }
 
-// statusCheckRollupSourceLocked builds Commit.statusCheckRollup from the real
-// checks and commit-status stores for (repoKey, sha): one StatusContext node
-// per latest REST status context and one CheckRun node per stored check run.
-// Returns nil when neither store has data, matching real GitHub for a commit
-// with no statuses or check runs. Caller must hold st.mu.RLock.
+// statusCheckRollupSourceLocked builds Commit.statusCheckRollup for (repoKey,
+// sha): one StatusContext per REST status context, one CheckRun per stored run.
+// Returns nil when neither store has data. Caller holds st.mu.RLock.
 func statusCheckRollupSourceLocked(st *store.Store, repoKey, sha string) interface{} {
 	if repoKey == "" {
 		return nil
@@ -3589,17 +3443,14 @@ func statusCheckRollupSourceLocked(st *store.Store, repoKey, sha string) interfa
 		}
 		nodes = append(nodes, map[string]interface{}{
 			"__typename": "StatusContext",
-			// The repository key travels with the node so isRequired can ask
-			// the branch protection of the pull request it is given about.
+			// repoKey travels with the node for isRequired.
 			"repoKey":     repoKey,
 			"context":     status.Context,
 			"state":       statusState,
 			"targetUrl":   nilStr(status.TargetURL),
 			"createdAt":   status.CreatedAt.Format(time.RFC3339),
 			"description": nilStr(status.Description),
-			// Identity, authorship and the commit sha travel with the node so
-			// StatusContext.{id,creator,avatarUrl,commit,updatedAt} resolve from
-			// the same real commit-status record the REST surface serves.
+			// Identity/authorship/sha for StatusContext.{id,creator,commit,…}.
 			"nodeID":    status.NodeID,
 			"creatorID": status.CreatorID,
 			"updatedAt": status.UpdatedAt.Format(time.RFC3339),
@@ -3624,9 +3475,8 @@ func statusCheckRollupSourceLocked(st *store.Store, repoKey, sha string) interfa
 		case "failure", "timed_out", "cancelled", "startup_failure":
 			anyFailed = true
 		}
-		// checkSuite is CheckSuite! — always embed a source map; a run with no
-		// recorded suite carries a null workflowRun, like GitHub's stand-alone
-		// check runs.
+		// checkSuite is non-null, so always embed a source map (a run with no
+		// recorded suite carries a null workflowRun).
 		suiteSource := checkSuiteGraphQLSourceLocked(st, st.CheckSuites[cr.SuiteID])
 		nodes = append(nodes, checkRunGraphQLSource(cr, repoKey, conclusion, completedAt, suiteSource))
 	}
@@ -3641,8 +3491,7 @@ func statusCheckRollupSourceLocked(st *store.Store, repoKey, sha string) interfa
 
 	return map[string]interface{}{
 		"state": state,
-		// repoKey/sha travel with the rollup so StatusCheckRollup.{id,commit}
-		// resolve against the real commit they summarise.
+		// repoKey/sha for StatusCheckRollup.{id,commit}.
 		"repoKey": repoKey,
 		"sha":     sha,
 		"contexts": map[string]interface{}{
@@ -3709,8 +3558,8 @@ func stateCountNodes(states []string, counts map[string]int) []interface{} {
 	return out
 }
 
-// checkRunGraphQLSource renders one check run as the CheckRun source shape
-// the rollup connection and the checks mutation payloads share.
+// checkRunGraphQLSource renders one check run as the CheckRun source shared by
+// the rollup connection and the checks mutation payloads.
 func checkRunGraphQLSource(cr *store.CheckRun, repoKey string, conclusion, completedAt interface{}, suiteSource map[string]interface{}) map[string]interface{} {
 	source := map[string]interface{}{
 		"__typename":  "CheckRun",
@@ -3728,8 +3577,8 @@ func checkRunGraphQLSource(cr *store.CheckRun, repoKey string, conclusion, compl
 		"summary":     nil,
 		"text":        nil,
 		"checkSuite":  suiteSource,
-		// Identity the residual CheckRun fields (annotations, permalink,
-		// repository, resourcePath, url) in gh_actions_fields_graphql.go
+		// Keys the residual CheckRun fields (in gh_actions_fields_graphql.go)
+		// resolve from.
 		"checkRunID": cr.ID,
 		"headSHA":    cr.HeadSHA,
 	}
@@ -3745,23 +3594,20 @@ func checkRunGraphQLSource(cr *store.CheckRun, repoKey string, conclusion, compl
 }
 
 func checkSuiteGraphQLSourceLocked(st *store.Store, suite *store.CheckSuite) map[string]interface{} {
-	// workflowRun defaults to an untyped nil: a typed-nil map would pass
-	// graphql-go's isNullish check and then fail WorkflowRun.workflow's
-	// non-null contract on a nil source map.
+	// workflowRun is untyped nil: a typed-nil map passes graphql-go's isNullish
+	// check and then fails WorkflowRun.workflow's non-null contract.
 	source := map[string]interface{}{
 		"workflowRun": nil,
-		// CheckRun.checkSuite is non-null, so a run whose recorded suite is
-		// gone still answers a shell that satisfies the payload's own
-		// non-null members rather than discarding the whole subtree.
+		// A shell so a run whose recorded suite is gone still satisfies
+		// CheckRun.checkSuite's non-null members.
 		"id":         "",
 		"databaseId": nil,
 		"status":     "QUEUED",
 		"conclusion": nil,
 		"createdAt":  time.Time{}.Format(time.RFC3339),
 		"updatedAt":  time.Time{}.Format(time.RFC3339),
-		// Identity the residual CheckSuite fields (app, branch, commit,
-		// repository, checkRuns, matchingPullRequests, resourcePath, url) in
-		// gh_actions_fields_graphql.go resolve their real records from.
+		// Keys the residual CheckSuite fields (in gh_actions_fields_graphql.go)
+		// resolve their records from.
 		"suiteID":       int64(0),
 		"repoKey":       "",
 		"headSHA":       "",
@@ -3800,10 +3646,8 @@ func checkSuiteWorkflowRunSourceLocked(st *store.Store, suite *store.CheckSuite)
 			return workflowRunGQLSourceLocked(st, wf)
 		}
 	}
-	// The suite records a run id but the run record is gone (pruned/restarted).
-	// Answer the minimal run shell the CheckSuite.workflowRun contract needs:
-	// its non-null members resolve, its lazy ones (file, checkSuite) fall to
-	// truthful nulls/empties.
+	// The suite records a run id but the run is gone (pruned/restarted); answer
+	// the minimal run shell CheckSuite.workflowRun's non-null members need.
 	if suite.WorkflowName == "" {
 		return nil
 	}
@@ -3834,14 +3678,11 @@ func checkSuiteWorkflowRunSourceLocked(st *store.Store, suite *store.CheckSuite)
 	}
 }
 
-// searchIssuesAndPRs evaluates the issue-search query string gh sends to
-// Query.search (type: ISSUE) against the real issue/PR stores. Supported
-// qualifiers are evaluated for real: repo:, state:/is:/type:, author:,
-// assignee:, label:, mentions:, involves: (author OR assignee OR commenter).
-// review-requested: is evaluated from the pull request's durable reviewer
-// graph. A qualifier bleephub cannot evaluate at all yields honest empty
-// results (never an over-matching ignore). Bare keywords match title/body
-// substrings.
+// searchIssuesAndPRs evaluates Query.search (type: ISSUE) against the issue/PR
+// stores. Supported qualifiers (repo:, state:/is:/type:, author:, assignee:,
+// label:, mentions:, involves:, review-requested:) are evaluated for real;
+// bare keywords match title/body substrings. An unsupported qualifier yields
+// empty results, never an over-matching ignore.
 func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlConnItem {
 	type searchSpec struct {
 		repos      []string // repo full names; empty = all
@@ -3863,10 +3704,9 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlCon
 	boolPtr := func(b bool) *bool { return &b }
 
 	for _, tok := range strings.Fields(query) {
-		// The advanced-search syntax gh builds may group qualifiers with
-		// parentheses and OR; strip the punctuation and treat the qualifier
-		// tokens individually (single-valued groups, which is what gh emits
-		// for these commands, evaluate identically).
+		// gh's advanced-search syntax may group qualifiers with parens and OR;
+		// strip the punctuation (gh emits single-valued groups, which evaluate
+		// identically to individual tokens).
 		tok = strings.Trim(tok, "()")
 		if tok == "" || strings.EqualFold(tok, "OR") || strings.EqualFold(tok, "AND") {
 			continue
@@ -3946,11 +3786,9 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlCon
 	}
 
 	s.store.Mu.RLock()
-	// Real GitHub search only returns results from repositories the
-	// authenticated viewer can access; a private repo the viewer can't read
-	// must never contribute issues/PRs. Mirror canReadRepoAsUser's logic inline
-	// (the store RLock is already held here, so we access its maps directly
-	// rather than calling the helpers, which take the lock themselves).
+	// Search returns results only from repositories the viewer can access.
+	// canReadRepoAsUser's logic is inlined because the RLock is already held
+	// (the helpers take the lock themselves).
 	repoReadable := func(repo *store.Repo) bool {
 		if repo == nil {
 			return false
@@ -4150,12 +3988,10 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlCon
 	}
 	s.store.Mu.RUnlock()
 
-	// Render outside the lock (the toGQL converters take it themselves),
-	// newest-first across both entity kinds.
-	// Collect lightweight, lazily-rendered items and sort by date. The
-	// expensive issueToGQL/pullRequestToGQL rendering runs only for the items
-	// pagination keeps, so search(first:1) over a large instance renders one
-	// node, not every match (GQL-026).
+	// Render outside the lock (the toGQL converters take it themselves).
+	// Collect lazily-rendered items and sort by date, so the expensive
+	// issueToGQL/pullRequestToGQL runs only for the items pagination keeps
+	// (GQL-026).
 	type dated struct {
 		created time.Time
 		updated time.Time
@@ -4201,8 +4037,7 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlCon
 	return items
 }
 
-// clientMutationID echoes back the optional Relay clientMutationId from a
-// mutation input (nil when absent/empty), for payloads that expose it.
+// clientMutationID echoes back the input's clientMutationId, nil when absent.
 func clientMutationID(input map[string]interface{}) interface{} {
 	if v, ok := input["clientMutationId"].(string); ok && v != "" {
 		return v

@@ -19,11 +19,9 @@ func (s *Server) registerGHNotificationsRoutes() {
 	s.route("PUT /api/v3/notifications/threads/{thread_id}/subscription", s.handleSetThreadSubscription)
 	s.route("DELETE /api/v3/notifications/threads/{thread_id}/subscription", s.handleDeleteThreadSubscription)
 
-	// The web inbox's Saved (bookmark) flag and reviewable Done list exist only
-	// on github.com — neither is a public REST operation — so they live under
-	// the browser-only /ui-data namespace. The Done set reuses the REST
-	// mark-done state (DELETE thread above); done threads are retained, not
-	// deleted, which is what makes the Done view listable.
+	// The web inbox's Saved flag and Done list are not public REST operations, so
+	// they live under /ui-data. Done reuses the REST mark-done state (DELETE
+	// thread above): done threads are retained, not deleted, so the view is listable.
 	s.route("GET /ui-data/notifications", s.handleUIListNotifications)
 	s.route("PUT /ui-data/notifications/threads/{thread_id}/saved", s.handleSaveThread)
 	s.route("DELETE /ui-data/notifications/threads/{thread_id}/saved", s.handleUnsaveThread)
@@ -91,11 +89,8 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 	writeNotificationThreads(w, r, threads)
 }
 
-// writeNotificationThreads renders a notification thread page, advertising the
-// newest thread's UpdatedAt as Last-Modified and short-circuiting a matching
-// conditional GET with a 304 (REST-031). Threads are sorted newest-first, so
-// the page-one client (the polling case) sees the exact global modification
-// time.
+// writeNotificationThreads advertises the newest thread's UpdatedAt as
+// Last-Modified and short-circuits a matching conditional GET with 304 (REST-031).
 func writeNotificationThreads(w http.ResponseWriter, r *http.Request, threads []*store.NotificationThread) {
 	var newest time.Time
 	out := make([]map[string]interface{}, len(threads))
@@ -277,8 +272,8 @@ func (s *Server) handleSetThreadSubscription(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// github documents only `ignored` on this PUT — subscribing is implied by the
-	// request itself, so a thread is subscribed unless it is explicitly ignored.
+	// GitHub documents only `ignored` on this PUT: a thread is subscribed unless
+	// explicitly ignored.
 	sub := &store.ThreadSubscription{
 		Subscribed: !body.Ignored,
 		Ignored:    body.Ignored,
@@ -340,9 +335,8 @@ func threadSubscriptionToJSON(sub *store.ThreadSubscription, url string) map[str
 	}
 }
 
-// handleUIListNotifications serves the web-only inbox views: ?view=saved lists
-// the viewer's bookmarked threads, ?view=done the threads marked done. Items
-// are REST thread shapes plus a simulator-only `saved` flag.
+// handleUIListNotifications serves the web-only inbox views (?view=saved,
+// ?view=done) as REST thread shapes plus a simulator-only `saved` flag.
 func (s *Server) handleUIListNotifications(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -372,8 +366,7 @@ func (s *Server) handleUIListNotifications(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleSaveThread implements PUT /ui-data/notifications/threads/{id}/saved:
-// bookmark the thread for the viewer (the web inbox's Saved view).
+// handleSaveThread bookmarks the thread for the viewer (the web inbox's Saved view).
 func (s *Server) handleSaveThread(w http.ResponseWriter, r *http.Request) {
 	s.setThreadSaved(w, r, true)
 }
@@ -391,8 +384,8 @@ func (s *Server) setThreadSaved(w http.ResponseWriter, r *http.Request, saved bo
 	}
 
 	threadID := r.PathValue("thread_id")
-	// Resolving via notificationThread enforces the viewer's repository reach:
-	// a thread in a repository they cannot read does not exist for them.
+	// Resolving via notificationThread enforces repository reach: a thread the
+	// viewer cannot read does not exist for them.
 	if s.notificationThread(r, user, threadID) == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -401,9 +394,7 @@ func (s *Server) setThreadSaved(w http.ResponseWriter, r *http.Request, saved bo
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleDeleteThread implements DELETE /notifications/threads/{thread_id}
-// ("Mark a thread as done"): the thread is dismissed from the user's
-// notification list.
+// handleDeleteThread marks a thread as done, dismissing it from the user's list.
 func (s *Server) handleDeleteThread(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {

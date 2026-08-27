@@ -13,11 +13,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// secretScanningMaxFileBytes bounds how much of a single git blob is read into
-// memory when scanning for secrets. A committed file can be arbitrarily large,
-// so an unbounded io.ReadAll here is a memory-exhaustion risk; secrets are short
-// and live near the top of config files, so capping the scanned prefix loses
-// nothing real (GitHub likewise skips very large files).
+// secretScanningMaxFileBytes caps how much of a git blob is read into memory
+// when scanning; an unbounded read is a memory-exhaustion risk, and secrets are
+// short and live near the top of config files.
 const secretScanningMaxFileBytes = 5 << 20 // 5 MiB
 
 type secretScanningPattern struct {

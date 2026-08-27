@@ -64,9 +64,8 @@ export function RepoListPage({
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
   });
 
-  // "Find a repository…" must not silently search only the loaded page: while
-  // a search is active, walk every page (capped) with the current filters and
-  // match against the full set.
+  // Search must cover all repos, not just the loaded page: while active, walk
+  // every page (capped) with the current filters and match the full set.
   const searching = filter.trim() !== "";
   const searchQ = useQuery({
     queryKey: [...queryKey, "search-walk", filters],

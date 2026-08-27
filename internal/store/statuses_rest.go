@@ -2,10 +2,8 @@ package store
 
 import "strings"
 
-// CommitStatusState is a commit status's state. normalizeStatusState collapses
-// any client input to exactly one of these four, so typing the field (and the
-// normalizer's return) propagates that guarantee instead of discarding it at
-// the boundary. A typed string marshals to JSON identically to a plain string.
+// CommitStatusState is a commit status's state; normalizeStatusState collapses
+// any client input to one of the four values.
 type CommitStatusState string
 
 func computeCombinedState(statuses []*CommitStatus) string {
@@ -27,9 +25,8 @@ func computeCombinedState(statuses []*CommitStatus) string {
 	return "success"
 }
 
-// maxCommitStatusesPerRef bounds the number of statuses retained per repo+sha.
-// Real GitHub rejects more than 1000 statuses on a single sha; matching that
-// keeps a spammed ref from growing the store without limit.
+// maxCommitStatusesPerRef bounds statuses per repo+sha, matching GitHub's 1000
+// cap on a single sha.
 const maxCommitStatusesPerRef = 1000
 
 func normalizeStatusState(state string) CommitStatusState {

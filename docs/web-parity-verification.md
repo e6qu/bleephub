@@ -1,16 +1,16 @@
 # Web UI GitHub-parity — verification
 
-The bleephub web SPA (`web/src`, served at `/ui/`) is at verified github.com parity
-across four dimensions. This note makes "done" reproducible: each dimension lists
-what it means and the exact command that proves it green. It is the close-out of the
-multi-round parity campaign (ledger prefix `WEB-` in [`../BUGS.md`](../BUGS.md)).
+The bleephub web SPA (`web/src`, served at `/ui/`) has verified github.com parity
+across four dimensions. Each dimension below states what it means and the exact
+command that proves it green. This closes out the multi-round parity campaign
+(ledger prefix `WEB-` in [`../BUGS.md`](../BUGS.md)).
 
 ## The four dimensions
 
 1. **Nav / structural parity** — every github.com surface (repo tabs + Settings
    sections, org pages + settings, user profile tabs, user Settings, enterprise,
    global create/user menus) has a place in the UI, and every write control the
-   server backs is reachable. No dead controls: a listed affordance actually works.
+   server backs is reachable. No dead controls: every listed affordance works.
 2. **Light / dark with zero hardcoded-color leaks** — all color comes from
    theme-aware CSS custom properties; no `var(--x)` resolves undefined; no non-brand
    hex leaks across themes.
@@ -18,7 +18,7 @@ multi-round parity campaign (ledger prefix `WEB-` in [`../BUGS.md`](../BUGS.md))
    behaviours axe cannot see: focus trap / focus-in / focus-restore / Escape on
    overlays, roving tabindex, no keyboard traps, `prefers-reduced-motion` honored,
    and screen-reader announcements for async outcomes (errors, loading, result counts).
-4. **ARIA** — controls are labeled; dialogs/combobox/listbox/menu/tablist roles are
+4. **ARIA** — controls are labeled; dialog/combobox/listbox/menu/tablist roles are
    correct; live regions convey dynamic state.
 
 ## Reference-quality primitives
@@ -60,7 +60,7 @@ cd web && SERVER_BIN=../bleephub-server bun run test:e2e -- a11y-theme-sweep
 
 Deep-link integrity: the SPA handler (`internal/server/ui_embed.go`) serves
 `index.html` for every `/ui/*` path, so hard refreshes and deep links load on all
-routes — the a11y sweep exercises this by navigating each route with a fresh load.
+routes. The a11y sweep exercises this by navigating each route with a fresh load.
 
 ## Known non-parity items (owner decisions, not open gaps)
 
@@ -69,4 +69,4 @@ routes — the a11y sweep exercises this by navigating each route with a fresh l
   application layer importing it and never the reverse. Done.
 - **WEB-016 / WEB-017** — `@bleephub/ui-core`'s operator-shell exports (~1,500 lines)
   are a maintained, tested library surface the SPA does not mount. Owner decision
-  (2026-08-10): keep the library, do not prune.
+  (2026-08-10): keep the library; do not prune.

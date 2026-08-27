@@ -1,7 +1,7 @@
 package store
 
-// GetDependabotRepositoryAccessDefaultLevel returns the org's default
-// repository access level for Dependabot updates ("public" until changed).
+// GetDependabotRepositoryAccessDefaultLevel returns the org's default access
+// level for Dependabot updates ("public" until changed).
 func (st *Store) GetDependabotRepositoryAccessDefaultLevel(orgLogin string) string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -11,8 +11,6 @@ func (st *Store) GetDependabotRepositoryAccessDefaultLevel(orgLogin string) stri
 	return "public"
 }
 
-// SetDependabotRepositoryAccessDefaultLevel stores the org's default
-// repository access level for Dependabot updates.
 func (st *Store) SetDependabotRepositoryAccessDefaultLevel(orgLogin, level string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

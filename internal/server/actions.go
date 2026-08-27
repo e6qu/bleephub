@@ -72,21 +72,14 @@ func (ac *ActionCache) Put(key string, entry *ActionCacheEntry) {
 }
 
 func (s *Server) registerActionRoutes() {
-	// Tarball proxy — serves cached action tarballs. This streams repository
-	// content, so it takes the job's runtime token and resolves the action
-	// repository's visibility before it serves a byte. The runner presents
-	// that token as basic auth here, which is why the gate is not the plain
-	// bearer one the rest of the runner protocol uses.
+	// Streams repository content, so it takes the job runtime token (presented
+	// as basic auth) and resolves the action repo's visibility before serving.
 	s.route("GET /_apis/v1/actions/tarball/{owner}/{repo}/{ref...}", s.requireActionArchiveToken(s.handleActionTarball))
 }
 
 // handleActionDownloadInfo returns tarball URLs for requested actions, each
-// with the credential the runner is to present when it fetches one.
-//
-// The archive download is made by a plain HTTP client that has no credential
-// of its own: it sends the token named here, and nothing at all when the
-// response names none. So the answer carries a job runtime token for the plan
-// the caller already authenticated as, with the expiry that token really has.
+// carrying a job runtime token for the plan the caller authenticated as; the
+// runner's plain HTTP client presents that token when it fetches an archive.
 func (s *Server) handleActionDownloadInfo(w http.ResponseWriter, r *http.Request) {
 	serverURL := s.baseURL(r)
 
@@ -134,7 +127,7 @@ func (s *Server) handleActionDownloadInfo(w http.ResponseWriter, r *http.Request
 
 		tarballURL := fmt.Sprintf("%s/_apis/v1/actions/tarball/%s/%s",
 			serverURL, a.NameWithOwner, a.Ref)
-		zipballURL := tarballURL // runner uses tarball, but we provide both
+		zipballURL := tarballURL
 
 		actions[key] = map[string]interface{}{
 			"nameWithOwner":         a.NameWithOwner,
@@ -173,7 +166,7 @@ func (s *Server) resolveActionSha(nameWithOwner, ref string) string {
 }
 
 // handleActionTarball serves a cached action tarball or builds it from a
-// bleephub-hosted repository. Repositories absent from bleephub fail loudly.
+// bleephub-hosted repository. Repositories absent from bleephub 404.
 func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repo := r.PathValue("repo")
@@ -185,9 +178,8 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nameWithOwner := owner + "/" + repo
-	// Resolve the action's repository before anything is served, including a
-	// cache hit: a private repository's tree only goes to a job entitled to
-	// it. Repositories bleephub does not host are 404, never a passthrough.
+	// Resolve visibility before serving anything, cache hits included: a private
+	// repo's tree only goes to a job scoped to it.
 	actionRepo := s.store.GetRepo(owner, repo)
 	if actionRepo == nil {
 		http.Error(w, "action repository "+nameWithOwner+" is not hosted in bleephub", http.StatusNotFound)
@@ -217,9 +209,8 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Actions hosted on bleephub serve from their own git storage.
-	// Repositories that are not present locally fail loudly instead of
-	// reaching out to github.com behind the runner's back.
+	// Serve from local git storage; never reach out to github.com behind the
+	// runner's back.
 	if entry, err := s.localActionTarball(owner, repo, ref); err == nil && entry != nil {
 		entry.FetchedAt = s.currentTime()
 		s.actionCache.Put(key, entry)
@@ -237,9 +228,9 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "action repository "+nameWithOwner+" is not hosted in bleephub", http.StatusNotFound)
 }
 
-// localActionTarball builds a GitHub-layout tarball (single top-level
-// "<owner>-<repo>-<sha>/" directory, like codeload's) from a repo hosted
-// on this server. (nil, nil) means the repo is not hosted in bleephub.
+// localActionTarball builds a codeload-layout tarball (single top-level
+// "<owner>-<repo>-<sha>/" directory) from a locally hosted repo. (nil, nil)
+// means the repo is not hosted in bleephub.
 func (s *Server) localActionTarball(owner, repo, ref string) (*ActionCacheEntry, error) {
 	stor := s.store.GetGitStorage(owner, repo)
 	if stor == nil {

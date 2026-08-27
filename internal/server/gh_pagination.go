@@ -11,7 +11,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// PaginationParams holds parsed pagination query parameters.
 type PaginationParams struct {
 	Page    int
 	PerPage int
@@ -56,7 +55,7 @@ func invalidRESTPaginationQuery(r *http.Request) string {
 	return ""
 }
 
-// parsePagination extracts page/per_page from query string with GitHub defaults.
+// parsePagination reads page/per_page with GitHub defaults (page 1, 30, cap 100).
 func parsePagination(r *http.Request) PaginationParams {
 	p := PaginationParams{Page: 1, PerPage: 30}
 	if v := r.URL.Query().Get("page"); v != "" {
@@ -85,9 +84,8 @@ func paginateAndLink[T any](w http.ResponseWriter, r *http.Request, items []T) [
 		lastPage = (total + pp.PerPage - 1) / pp.PerPage
 	}
 
-	// Guard against integer overflow from an attacker-supplied page: a very
-	// large page makes (page-1)*perPage wrap negative, which would produce an
-	// out-of-range slice expression. Compute in int64 and clamp.
+	// A very large page makes (page-1)*perPage wrap negative and panic the slice.
+	// Compute in int64 and clamp.
 	start64 := int64(pp.Page-1) * int64(pp.PerPage)
 	var start int
 	switch {
@@ -111,21 +109,14 @@ func paginateAndLink[T any](w http.ResponseWriter, r *http.Request, items []T) [
 	return page
 }
 
-// searchResultWindow is the number of search results GitHub lets a client page
-// through. total_count reports the full match count, but the API refuses to
-// serve anything past the first 1,000 results ("Only the first 1000 search
-// results are available"), so the pagination links must stop there too —
-// otherwise a client following rel="next" walks into a 422.
+// searchResultWindow caps pagination: GitHub serves nothing past the first
+// 1,000 search results, so the links must stop there or rel="next" walks a
+// client into a 422.
 const searchResultWindow = 1000
 
-// setSearchLinkHeader sets the Link header of a search response.
-//
-// Search answers with an object ({total_count, incomplete_results, items}), not
-// a bare array, so it cannot use paginateAndLink: the handler has already
-// sliced the page into the envelope and only the header is left to emit. The
-// rel targets are otherwise built exactly as every other collection's are, so
-// octokit.paginate, go-github's resp.NextPage and `gh --paginate` walk search
-// results the same way they walk an issue list.
+// setSearchLinkHeader sets the Link header of a search response. Search returns
+// an envelope rather than a bare array, so it emits the header itself instead of
+// via paginateAndLink; the rel targets are built identically.
 func setSearchLinkHeader(w http.ResponseWriter, r *http.Request, page, perPage, totalCount int) {
 	reachable := totalCount
 	if reachable > searchResultWindow {
@@ -146,13 +137,10 @@ func buildLinkHeader(r *http.Request, page, perPage, lastPage int) string {
 		return ""
 	}
 
-	// GitHub emits absolute pagination targets, and clients (octokit, gh)
-	// auto-follow the Link header WITH the Authorization header attached. The
-	// host therefore must not come from a client-supplied X-Forwarded-Host: a
-	// spoofed value would redirect the follow-up request — credentials and all —
-	// to an attacker's host. Derive the host from the request's own Host header.
-	// X-Forwarded-Proto only selects http/https on that same host (no exfil), so
-	// it is still honored for correctness behind a TLS-terminating proxy.
+	// Security: clients auto-follow these absolute targets with Authorization
+	// attached, so the host must come from the request's own Host, never a
+	// spoofable X-Forwarded-Host. X-Forwarded-Proto only picks http/https on that
+	// same host, so it stays honored behind a TLS-terminating proxy.
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -163,9 +151,8 @@ func buildLinkHeader(r *http.Request, page, perPage, lastPage int) string {
 	base := (&url.URL{Scheme: scheme, Host: r.Host, Path: r.URL.Path}).String()
 	q := r.URL.Query()
 	q.Del("page")
-	// GitHub only carries per_page into the Link targets when the client actually
-	// sent it (echoing the resolved/clamped value); an unset per_page stays absent
-	// from the rel URLs rather than being materialized to the default.
+	// Carry per_page into the rel targets only when the client sent it (echoing
+	// the clamped value); an unset per_page stays absent, as GitHub does.
 	clientSentPerPage := r.URL.Query().Get("per_page") != ""
 	q.Del("per_page")
 

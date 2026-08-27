@@ -5,18 +5,12 @@ import { Button, DialogActions, Modal } from "./ui.js";
 export interface ConfirmActionOptions {
   title?: string;
   confirmLabel?: string;
-  /**
-   * Type-to-confirm: when set, the confirm button stays disabled until the
-   * user types this exact text (GitHub's "please type owner/repo to confirm"
-   * pattern for destructive actions). Optional and additive — existing call
-   * sites that omit it keep the plain two-button dialog.
-   */
+  /** When set, confirm stays disabled until the user types this exact text. */
   expectedText?: string;
 }
 
-// Browser confirm() is synchronous, unstyleable, and inconsistent for screen
-// readers. This shared modal preserves focus, traps keyboard navigation, and
-// makes destructive confirmation an awaitable application primitive.
+// Awaitable modal replacing browser confirm(), which is unstyleable and poor
+// for screen readers.
 export function confirmAction(
   message: string,
   options: ConfirmActionOptions = {},

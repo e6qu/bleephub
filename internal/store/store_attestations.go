@@ -11,11 +11,9 @@ import (
 	"time"
 )
 
-// Artifact attestations. Uploaded Sigstore bundles are stored verbatim
-// and round-tripped byte-for-byte; the subject digests and predicate
-// type the list endpoints key on are extracted from the bundle's DSSE
-// envelope payload (an in-toto statement), exactly the association real
-// GitHub derives.
+// Artifact attestations. Sigstore bundles are stored and round-tripped verbatim;
+// the subject digests and predicate type the list endpoints key on are extracted
+// from the bundle's DSSE envelope payload (an in-toto statement).
 
 // Attestation is one uploaded artifact attestation.
 type Attestation struct {
@@ -29,9 +27,9 @@ type Attestation struct {
 	CreatedAt      time.Time       `json:"created_at"`
 }
 
-// ParseSigstoreBundleSubjects decodes the DSSE envelope payload inside
-// a Sigstore bundle and returns the in-toto statement's subject digests
-// (as "algorithm:hex") and predicate type.
+// ParseSigstoreBundleSubjects decodes a Sigstore bundle's DSSE envelope payload
+// and returns the in-toto statement's subject digests ("algorithm:hex") and
+// predicate type.
 func ParseSigstoreBundleSubjects(bundle json.RawMessage) (subjects []string, predicateType string, err error) {
 	var b struct {
 		DsseEnvelope struct {
@@ -73,9 +71,8 @@ func ParseSigstoreBundleSubjects(bundle json.RawMessage) (subjects []string, pre
 	return subjects, stmt.PredicateType, nil
 }
 
-// attestationPredicateMatches applies the predicate_type filter. The
-// filter accepts the shorthands GitHub documents (provenance, sbom,
-// release) or a verbatim predicate type URI.
+// attestationPredicateMatches applies the predicate_type filter, accepting
+// GitHub's shorthands (provenance, sbom, release) or a verbatim predicate URI.
 func attestationPredicateMatches(filter, predicateType string) bool {
 	switch filter {
 	case "":
@@ -125,8 +122,7 @@ func (st *Store) CreateAttestation(repoID int, bundle json.RawMessage, subjects 
 	return a, nil
 }
 
-// cloneAttestation returns a copy safe to hand outside the store lock
-// (STORE-021): Bundle and SubjectDigests are the only reference fields.
+// cloneAttestation detaches a copy for use outside the store lock (STORE-021).
 func cloneAttestation(a *Attestation) *Attestation {
 	if a == nil {
 		return nil
@@ -148,7 +144,7 @@ func (st *Store) GetAttestation(id int) *Attestation {
 	return cloneAttestation(st.Attestations[id])
 }
 
-// hasSubjectDigest reports whether the attestation covers the digest.
+// HasSubjectDigest reports whether the attestation covers the digest.
 func (a *Attestation) HasSubjectDigest(digest string) bool {
 	digest = strings.ToLower(digest)
 	for _, d := range a.SubjectDigests {
@@ -159,9 +155,8 @@ func (a *Attestation) HasSubjectDigest(digest string) bool {
 	return false
 }
 
-// ListAttestations returns the attestations across the given repos that
-// cover subjectDigest (any digest when empty) and pass the
-// predicate-type filter, sorted ascending by ID.
+// ListAttestations returns attestations across the given repos that cover
+// subjectDigest (any when empty) and pass the predicate-type filter, sorted by ID.
 func (st *Store) ListAttestations(repoIDs map[int]bool, subjectDigest, predicateType string) []*Attestation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -200,7 +195,7 @@ func (st *Store) ReadAttestationBundle(ctx context.Context, a *Attestation) (jso
 	return append(json.RawMessage(nil), a.Bundle...), nil
 }
 
-// DeleteAttestation removes an attestation by ID. Returns true if it existed.
+// DeleteAttestation removes an attestation by ID, returning true if it existed.
 func (st *Store) DeleteAttestation(id int) (bool, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -228,8 +223,7 @@ func (st *Store) deleteAttestationBundleLocked(a *Attestation) error {
 	return nil
 }
 
-// RepoIDsOwnedBy returns the IDs of every repository whose owner
-// segment matches login (an organization or user account name).
+// RepoIDsOwnedBy returns the IDs of every repository owned by login.
 func (st *Store) RepoIDsOwnedBy(login string) map[int]bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

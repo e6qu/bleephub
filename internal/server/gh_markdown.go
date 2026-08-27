@@ -19,35 +19,24 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// GitHub Markdown rendering API (POST /markdown and POST /markdown/raw).
-//
-// `markdown` mode renders CommonMark plus the GitHub Flavored Markdown
-// syntax extensions GitHub applies to all API rendering (tables,
-// strikethrough, autolinks). `gfm` mode additionally renders hard line
-// breaks and, mirroring GitHub's html-pipeline, links @mentions of existing
-// users and #number references to existing issues/pull requests in the
-// `context` repository — GitHub only links references that resolve.
+// GitHub Markdown rendering API. `markdown` mode renders CommonMark + GFM
+// extensions; `gfm` mode adds hard line breaks and links @mentions and
+// #number references that resolve in the `context` repository.
 
 var (
-	// markdownModeRenderer (= store.MarkdownModeRenderer — ARCH-003) matches
-	// GitHub's `markdown` mode; the renderer itself lives in internal/store so
-	// the GraphQL resolver layer renders discussion bodies identically.
+	// markdownModeRenderer lives in internal/store (ARCH-003) so the GraphQL
+	// resolver layer renders discussion bodies identically.
 	markdownModeRenderer = store.MarkdownModeRenderer
-	// gfmModeRenderer matches GitHub's `gfm` mode: full GFM plus hard wraps.
-	gfmModeRenderer = goldmark.New(
+	gfmModeRenderer      = goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithRendererOptions(ghtml.WithHardWraps()),
 	)
-	// markdownSanitizer is the allowlist HTML sanitizer applied to every
-	// rendered document before it is served as text/html. goldmark already
-	// escapes raw HTML (no WithUnsafe), but it does NOT strip dangerous URL
-	// schemes such as javascript: or data: from link and image destinations —
-	// so `[x](javascript:alert(1))` would otherwise render an executable link.
-	// The UGC policy allows exactly the element/attribute set GitHub's
-	// html-pipeline produces, restricts URLs to safe schemes, and drops event
-	// handlers, matching GitHub's own markdown output sanitization. `class` is
-	// re-permitted because the reference linkifier emits user-mention /
-	// issue-link classes and fenced code carries language-* hints.
+	// markdownSanitizer allowlists the element/attribute set GitHub's
+	// html-pipeline produces and drops unsafe URL schemes and event handlers.
+	// goldmark escapes raw HTML but does NOT strip javascript:/data: URLs from
+	// link/image destinations, so this is what makes `[x](javascript:alert(1))`
+	// safe. `class` is re-permitted for the linkifier's mention/issue classes
+	// and fenced-code language-* hints.
 	markdownSanitizer = newMarkdownSanitizer()
 )
 
@@ -109,10 +98,7 @@ func (s *Server) handleRenderMarkdownRaw(w http.ResponseWriter, r *http.Request)
 func writeRenderedHTML(w http.ResponseWriter, rendered string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	// Enforce the allowlist sanitizer at the response boundary itself: the only
-	// bytes written as text/html are those the policy has stripped of unsafe
-	// URL schemes, event handlers, and disallowed elements. Sanitizing here (in
-	// addition to renderMarkdown) keeps this sink safe no matter which caller
+	// Sanitize at the response boundary so this sink is safe whichever caller
 	// produced the HTML.
 	// deepcode ignore XSS: The bytes are allowlist-sanitized by bluemonday (markdownSanitizer), which strips javascript:/data: URLs, inline event handlers, and disallowed elements — GitHub's own approach. Snyk's go/XSS only credits stdlib HTML-escaping, which would defeat markdown rendering. Verified by TestMarkdownSanitizesDangerousSchemes.
 	_, _ = w.Write([]byte(markdownSanitizer.Sanitize(rendered)))
@@ -131,26 +117,18 @@ func (s *Server) renderMarkdown(text, mode, context, baseURL string) (string, er
 	if mode == "gfm" {
 		rendered = s.linkifyGFMReferences(rendered, context, baseURL)
 	}
-	// Sanitize at the render boundary so the request-derived markdown can never
-	// reach the text/html response with an executable URL scheme or attribute.
 	return markdownSanitizer.Sanitize(rendered), nil
 }
 
 var (
-	// mentionRefRe finds @login candidates; group 1 is the leading boundary
-	// (start of text or a non-word, non-dot character), group 2 the login.
+	// group 1 is the leading boundary, group 2 the login / number.
 	mentionRefRe = regexp.MustCompile(`(^|[^0-9A-Za-z_.])@([A-Za-z0-9][A-Za-z0-9-]{0,38})`)
-	// issueRefRe finds #number candidates; group 1 is the boundary, group 2
-	// the issue/pull-request number.
-	issueRefRe = regexp.MustCompile(`(^|[^0-9A-Za-z_.])#([0-9]+)`)
+	issueRefRe   = regexp.MustCompile(`(^|[^0-9A-Za-z_.])#([0-9]+)`)
 )
 
-// linkifyGFMReferences post-processes rendered HTML the way GitHub's
-// html-pipeline does: it walks the document and replaces @mention and
-// #number references inside plain text — skipping text already inside
-// <a>, <code>, and <pre> — with links, but only when the mention resolves
-// to a real user and the number resolves to a real issue or pull request
-// in the context repository.
+// linkifyGFMReferences links @mention and #number references in plain text
+// (skipping <a>, <code>, <pre>), but only when the mention resolves to a real
+// user and the number to a real issue or PR in the context repository.
 func (s *Server) linkifyGFMReferences(rendered, context, baseURL string) string {
 	var contextRepo *store.Repo
 	if owner, name, found := strings.Cut(context, "/"); found {
@@ -196,8 +174,8 @@ func (s *Server) linkifyGFMReferences(rendered, context, baseURL string) string 
 	return out.String()
 }
 
-// linkifyTextNode replaces mention/issue references in a single text node
-// with anchor elements, splicing the replacement nodes in place.
+// linkifyTextNode replaces mention/issue references in one text node with
+// anchor elements, splicing the replacements in place.
 func (s *Server) linkifyTextNode(parent, textNode *xhtml.Node, contextRepo *store.Repo, baseURL string) {
 	type ref struct {
 		start, end int // bounds of the replaced token (@login / #n)
@@ -246,8 +224,8 @@ func (s *Server) linkifyTextNode(parent, textNode *xhtml.Node, contextRepo *stor
 	if len(refs) == 0 {
 		return
 	}
-	// Matches come from two independent scans over disjoint token shapes, so
-	// they never overlap; order them by position for in-order splicing.
+	// The two scans cover disjoint token shapes and never overlap; order by
+	// position for in-order splicing.
 	for i := 1; i < len(refs); i++ {
 		for j := i; j > 0 && refs[j].start < refs[j-1].start; j-- {
 			refs[j], refs[j-1] = refs[j-1], refs[j]

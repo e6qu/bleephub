@@ -1,15 +1,9 @@
 package graphqlapi
 
 // The enterprise account read surface: Enterprise and everything reachable
-// from it — the owner-only policy view (EnterpriseOwnerInfo), billing,
-// members, organizations, administrators, invitations, support entitlements,
-// the SAML identity provider binding and the IP allow list.
-//
-// Authorization is decided per field against the viewer's role in *this*
-// enterprise, which store.EffectiveEnterpriseRole answers. A principal with
-// no role in an enterprise reads its public profile and nothing else: no
-// member roll, no organization list, no policy, no billing. That is what
-// keeps one enterprise's data out of another enterprise's members' hands.
+// from it. Authorization is per field against the viewer's role in *this*
+// enterprise (store.EffectiveEnterpriseRole); a principal with no role reads
+// only the public profile.
 
 import (
 	"context"
@@ -23,7 +17,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// enterpriseToGraphQL renders an enterprise as a resolver source map.
 func enterpriseToGraphQL(e *store.Enterprise) map[string]interface{} {
 	if e == nil {
 		return nil
@@ -55,14 +48,12 @@ func enterpriseToGraphQL(e *store.Enterprise) map[string]interface{} {
 	}
 }
 
-// htmlEscapeText renders a profile field's plain text as HTML body content.
 func htmlEscapeText(v string) string {
 	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
 	return replacer.Replace(v)
 }
 
-// enterpriseFromSource resolves the live enterprise row behind a rendered
-// source map.
+// enterpriseFromSource resolves the live enterprise row behind a source map.
 func (s *Resolver) enterpriseFromSource(source interface{}) *store.Enterprise {
 	m, ok := source.(map[string]interface{})
 	if !ok {
@@ -72,8 +63,6 @@ func (s *Resolver) enterpriseFromSource(source interface{}) *store.Enterprise {
 	return s.store.GetEnterpriseByID(id)
 }
 
-// viewerEnterpriseRole is the one authorization question the enterprise
-// surface asks.
 func (s *Resolver) viewerEnterpriseRole(p graphql.ResolveParams, e *store.Enterprise) store.EnterpriseRole {
 	if e == nil {
 		return ""
@@ -94,19 +83,16 @@ func (s *Resolver) viewerIsEnterpriseMember(p graphql.ResolveParams, e *store.En
 }
 
 // enterpriseForbidden is the refusal a non-member gets for enterprise-private
-// data. It is the same answer whether the enterprise has no such data or the
-// viewer may not see it, so the field cannot become an oracle for another
-// enterprise's membership.
+// data. Same answer whether the data is absent or hidden, so it cannot become a
+// membership oracle.
 func enterpriseForbidden() error {
 	return &ghForbiddenError{message: "You must be a member of the enterprise to view this information."}
 }
 
 // --- enums -----------------------------------------------------------------
 
-// sharedEnum memoizes an enum by name so two families that both name the same
-// GitHub enum share one type object. graphql-go rejects a schema carrying two
-// distinct types with one name, so any enum more than one family needs has to
-// come from here.
+// sharedEnum memoizes an enum by name; graphql-go rejects two distinct types
+// with one name, so any enum more than one family needs must come from here.
 func (s *Resolver) sharedEnum(name string, values ...string) *graphql.Enum {
 	if s.graphqlTypes.enums == nil {
 		s.graphqlTypes.enums = map[string]*graphql.Enum{}
@@ -161,15 +147,13 @@ func (s *Resolver) ipAllowListUserLevelEnforcementEnum() *graphql.Enum {
 
 // --- shared connection builders -------------------------------------------
 
-// enterpriseConnection renders an already-built node list as a connection,
-// honoring the Relay window arguments.
+// enterpriseConnection renders a node list as a Relay connection.
 func enterpriseConnection(nodes []map[string]interface{}, args map[string]interface{}) map[string]interface{} {
 	return paginateGQLMaps(nodes, args)
 }
 
 // enterpriseEdgeAndConnectionTypes mints the {Name}Edge/{Name}Connection pair
-// GitHub publishes for a node type, with any extra edge fields the schema
-// declares on that edge (a membership role, for instance).
+// for a node type, with any extra edge/connection fields the schema declares.
 func (s *Resolver) enterpriseEdgeAndConnectionTypes(connectionName, edgeName string, nodeType graphql.Output, extraEdgeFields graphql.Fields, extraConnectionFields graphql.Fields) *graphql.Object {
 	edgeFields := graphql.Fields{
 		"node":   &graphql.Field{Type: nodeType},
@@ -193,9 +177,8 @@ func (s *Resolver) enterpriseEdgeAndConnectionTypes(connectionName, edgeName str
 
 // --- the enterprise family -------------------------------------------------
 
-// addEnterpriseFieldsToSchema assembles the enterprise account read surface
-// and hangs it off Query and User. It returns the Enterprise object so the
-// mutation family and the Node dispatcher can name it.
+// addEnterpriseFieldsToSchema assembles the enterprise read surface onto Query
+// and User and returns the Enterprise object.
 func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *graphql.Object, nodeInterface *graphql.Interface, actorInterface *graphql.Interface) *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
@@ -233,8 +216,7 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 				},
 			},
 			// billingEmail and securityContactEmail are administrative
-			// contacts, not public profile: only the people who administer
-			// the enterprise (and its billing managers) may read them.
+			// contacts: only owners and billing managers may read them.
 			"billingEmail": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -266,9 +248,8 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 	})
 	s.graphqlTypes.enterprise = enterpriseType
 
-	// The extra connection surface (gh_enterprise_fields_graphql.go). It is
-	// built here, before the outside-collaborator edge, because that edge's
-	// repositories field names EnterpriseRepositoryInfoConnection.
+	// Build before the outside-collaborator edge, whose repositories field
+	// names EnterpriseRepositoryInfoConnection.
 	extras := s.buildEnterpriseExtraTypes(enterpriseType, userType, nodeInterface)
 
 	enterpriseUserAccountType := s.addEnterpriseUserAccountType(enterpriseType, userType, orgType, nodeInterface, actorInterface, dateTime, uri)
@@ -302,8 +283,7 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 				"orderBy": &graphql.ArgumentConfig{Type: s.gqlRepositoryOrderInput()},
 			}),
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				// The enterprise-org repositories a specific outside collaborator
-				// can reach are not aggregated on this instance.
+				// Not aggregated on this instance.
 				return enterpriseConnection(nil, p.Args), nil
 			},
 		}}, nil)
@@ -377,8 +357,7 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 		},
 	})
 
-	// User.enterprises — how `viewer { enterprises { … } }` finds the
-	// enterprises an account belongs to.
+	// User.enterprises
 	enterpriseConnectionType := s.enterpriseEdgeAndConnectionTypes("EnterpriseConnection", "EnterpriseEdge", enterpriseType, nil, nil)
 	userType.AddFieldConfig("enterprises", &graphql.Field{
 		Type: enterpriseConnectionType,
@@ -389,8 +368,7 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 			source, _ := p.Source.(map[string]interface{})
 			dbID, _ := source["databaseId"].(int)
 			viewer := s.ghUserFromContext(p.Context)
-			// An account's enterprise memberships are its own business: only
-			// the account itself sees them.
+			// Only the account itself sees its enterprise memberships.
 			if viewer == nil || viewer.ID != dbID {
 				return enterpriseConnection(nil, p.Args), nil
 			}
@@ -450,9 +428,8 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 		},
 	})
 
-	// The by-token invitation lookups. bleephub does not model an emailed
-	// invitation token (invitations are addressed by invitee, not by an opaque
-	// token), so no invitation is resolvable this way and the field is null.
+	// bleephub addresses invitations by invitee, not by an opaque token, so
+	// these by-token lookups never resolve.
 	queryType.AddFieldConfig("enterpriseAdministratorInvitationByToken", &graphql.Field{
 		Type: adminInvitationType,
 		Args: graphql.FieldConfigArgument{
@@ -474,10 +451,8 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 
 	s.addEnterpriseExtraFields(enterpriseType, ownerInfoType, identityProviderType, enterpriseUserAccountType, extras)
 
-	// Second pass: the identity/team/invitation completion fields that name
-	// types built above (the invitation, external-identity and server
-	// installation nodes) and cross-family types (Organization, User, the
-	// OrganizationIdentityProvider the account surface later memoizes).
+	// Second pass: identity/team/invitation completion fields that name types
+	// built above and cross-family types (Organization, User, ...).
 	s.addEnterpriseIdentityCompletionFields(orgType, userType, nodeInterface, certificate, extras)
 
 	s.graphqlTypes.enterpriseUserAccount = enterpriseUserAccountType
@@ -504,9 +479,8 @@ func enterpriseMembershipTypeMatches(membershipType string, role store.Enterpris
 }
 
 // lookupEnterpriseInvitation answers the two invitation root fields. An
-// invitation is visible to its invitee and to the enterprise's owners; to
-// anybody else it does not exist, so the field cannot be used to enumerate
-// who has been invited where.
+// invitation is visible only to its invitee and the enterprise's owners; to
+// anyone else it does not exist.
 func (s *Resolver) lookupEnterpriseInvitation(p graphql.ResolveParams, slug, userLogin, kind, role string) interface{} {
 	e := s.store.GetEnterprise(slug)
 	if e == nil {
@@ -551,8 +525,8 @@ func (s *Resolver) enterpriseOrganizationNodes(e *store.Enterprise) []map[string
 	return nodes
 }
 
-// enterpriseMemberUsers returns the users who are members of an enterprise,
-// paired with the role each holds, ordered by login.
+// enterpriseMemberUsers returns an enterprise's members paired with each one's
+// role, ordered by login.
 func (s *Resolver) enterpriseMemberUsers(e *store.Enterprise) ([]*store.User, map[int]store.EnterpriseRole) {
 	roles := map[int]store.EnterpriseRole{}
 	if e == nil {
@@ -600,9 +574,8 @@ func (s *Resolver) enterpriseMemberNodes(e *store.Enterprise, args map[string]in
 	query, _ := args["query"].(string)
 	roleFilter, _ := args["role"].(string)
 	deployment, _ := args["deployment"].(string)
-	// bleephub is one deployment: every member of the enterprise has an
-	// account on this server, so a SERVER filter matches all of them and a
-	// CLOUD filter matches none.
+	// bleephub is one (server) deployment: SERVER matches every member,
+	// CLOUD matches none.
 	if deployment == "CLOUD" {
 		return nil
 	}
@@ -654,9 +627,9 @@ func sourceValue(p graphql.ResolveParams, key string) (interface{}, error) {
 	return source[key], nil
 }
 
-// edgeValue reads a key from a connection edge's source map. paginateGQLMaps
-// builds an edge as {"node": …, "cursor": …}; an extra edge field GitHub
-// declares (a role, say) is carried on the node and read back through here.
+// edgeValue reads a key from a connection edge's source map. Edges are built as
+// {"node", "cursor"}, so an extra edge field is carried on the node and read
+// back through here.
 func edgeValue(p graphql.ResolveParams, key string) (interface{}, error) {
 	edge, ok := p.Source.(map[string]interface{})
 	if !ok {
@@ -682,10 +655,8 @@ func mergeArgs(maps ...graphql.FieldConfigArgument) graphql.FieldConfigArgument 
 	return out
 }
 
-// enterprisePolicyRefusal is the resolver-layer half of enterprise policy
-// enforcement: it reads the policy governing a repository and refuses when the
-// named setting is DISABLED for this viewer. An enterprise owner is exempt,
-// which is the same rule the REST handlers apply.
+// enterprisePolicyRefusal refuses when the named setting is DISABLED by the
+// policy governing a repository. Enterprise owners are exempt, as in REST.
 func (s *Resolver) enterprisePolicyRefusal(p graphql.ResolveParams, repo *store.Repo, setting func(store.EnterprisePolicy) string, message string) error {
 	policy, enterprise := s.store.EnterprisePolicyForRepo(repo)
 	if s.store.EnterprisePolicyForbids(enterprise, setting(policy), s.ghUserFromContext(p.Context)) {
@@ -694,11 +665,10 @@ func (s *Resolver) enterprisePolicyRefusal(p graphql.ResolveParams, repo *store.
 	return nil
 }
 
-// enterpriseOrganizationProjectsRefusal is the organization-scoped half of
-// enterprise policy enforcement: it refuses creating a project under an
-// organization whose enterprise has turned organization projects off. A
-// project owned by a personal account is not an organization project, so the
-// policy says nothing about it.
+// enterpriseOrganizationProjectsRefusal refuses creating a project under an
+// organization whose enterprise has disabled organization projects. A
+// personal-account project is not an organization project, so the policy is
+// silent on it.
 func (s *Resolver) enterpriseOrganizationProjectsRefusal(p graphql.ResolveParams, ownerType string, ownerID int) error {
 	if ownerType != "Organization" {
 		return nil
@@ -711,10 +681,9 @@ func (s *Resolver) enterpriseOrganizationProjectsRefusal(p graphql.ResolveParams
 }
 
 // enterpriseNodeByID resolves the enterprise family's Node implementors for
-// Query.node / Query.nodes, applying each one's visibility rule: an
-// enterprise's public profile is resolvable by anyone, while an invitation is
-// its invitee's and its enterprise's owners' to see, and an IP allow list
-// entry is its owner's.
+// Query.node/nodes, applying each one's visibility rule: an enterprise profile
+// is public, an invitation is its invitee's and owners' to see, an IP allow
+// list entry is its owner's.
 func (s *Resolver) enterpriseNodeByID(ctx context.Context, nodeID string) interface{} {
 	viewer := s.ghUserFromContext(ctx)
 	if e := store.FindEnterpriseByNodeID(s.store, nodeID); e != nil {
@@ -738,9 +707,8 @@ func (s *Resolver) enterpriseNodeByID(ctx context.Context, nodeID string) interf
 	return nil
 }
 
-// viewerAdministersIPAllowListOwner reports whether the viewer may read an
-// allow-list entry: the owning enterprise's owners, or the owning
-// organization's.
+// viewerAdministersIPAllowListOwner reports whether the viewer administers the
+// entry's owning enterprise or organization.
 func (s *Resolver) viewerAdministersIPAllowListOwner(viewer *store.User, ownerType string, ownerID int) bool {
 	if viewer == nil {
 		return false
@@ -749,8 +717,8 @@ func (s *Resolver) viewerAdministersIPAllowListOwner(viewer *store.User, ownerTy
 		return s.store.IsEnterpriseOwner(ownerID, viewer)
 	}
 	if ownerType != store.IPAllowListOwnerOrganization {
-		// A user's own allow list is not an IpAllowListOwner in GitHub's schema
-		// and has no global id, so no GraphQL read resolves to one.
+		// A user's own allow list is not an IpAllowListOwner and has no global
+		// id, so no GraphQL read resolves to one.
 		return false
 	}
 	org := s.store.GetOrgByID(ownerID)

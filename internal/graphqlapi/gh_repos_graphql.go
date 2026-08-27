@@ -15,8 +15,8 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// addRepoFieldsToSchema adds repository types, queries, and mutations to the schema.
-// Called from initGraphQLSchema after userType and queryType are created.
+// addRepoFieldsToSchema adds repository types, queries, and mutations to the
+// schema, after userType and queryType exist.
 func (s *Resolver) addRepoFieldsToSchema(
 	userType, queryType *graphql.Object,
 	nodeInterface *graphql.Interface,
@@ -24,9 +24,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	gitSSHRemote := s.graphQLStringScalar("GitSSHRemote")
-	// Registered in the shared enum table so a later family naming
-	// RepositoryVisibility (the enterprise outside-collaborator filter) reuses
-	// this one type instead of minting a second with the same name.
+	// Shared enum table: a later family naming RepositoryVisibility reuses this
+	// one type instead of minting a duplicate.
 	repositoryVisibilityEnum := s.sharedEnum("RepositoryVisibility", "PUBLIC", "PRIVATE", "INTERNAL")
 	repoType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Repository",
@@ -35,9 +34,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 			s.uniformResourceLocatableInterface(),
 			s.starrableInterface(),
 			s.subscribableInterface(),
-			// ProjectOwner (classic projects) is declared at construction for
-			// the reason the User type declares it: graphql-go memoizes an
-			// object's interface list on first read.
+			// Declared at construction: graphql-go memoizes an object's
+			// interface list on first read.
 			s.projectOwnerInterfaceType(),
 			// RepositoryInfo, the shared repository-shape interface
 			// RepositoryInvitation.repository returns.
@@ -82,9 +80,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 		},
 	})
 
-	// The Ref and GitObject types point back at Repository, so the repository
-	// type is registered — and the fields that reference them installed —
-	// after it exists.
+	// Ref and GitObject point back at Repository, so register the repository
+	// type before installing fields that reference them.
 	s.graphqlTypes.repository = repoType
 	refType := s.gqlRefType()
 	s.addGitObjectFieldsToRepository(repoType)
@@ -106,10 +103,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 	})
 
 	// --- Repository fields gh CLI selects (clone/create/view --json) ---
-	// gh's `GitHubRepo` query (repo clone, pr create) selects hasWikiEnabled
-	// and parent{...repo}; `gh repo view --json` exposes the wider static set
-	// below. Fields backed by repository settings or implemented repository
-	// features resolve from the same store state as the REST repository shape.
+	// These resolve from the same store state as the REST repository shape.
 
 	repoType.AddFieldConfig("hasWikiEnabled", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
@@ -241,8 +235,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 		},
 	})
 	repoType.AddFieldConfig("watchers", &graphql.Field{
-		// Real GitHub: watchers: UserConnection! — the same shared connection
-		// type the assignee surfaces use, backed by the subscription store.
+		// watchers: UserConnection! — the shared connection type, backed by
+		// the subscription store.
 		Type: graphql.NewNonNull(s.gqlUserConnectionType(userType)),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			r, ok := p.Source.(map[string]interface{})
@@ -271,8 +265,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 		},
 	})
 	repoType.AddFieldConfig("stargazers", &graphql.Field{
-		// Real GitHub: stargazers: StargazerConnection! — the Starrable
-		// member, backed by the same star store PUT /user/starred writes.
+		// stargazers: StargazerConnection! — backed by the same star store
+		// PUT /user/starred writes.
 		Type: graphql.NewNonNull(s.gqlStargazerConnectionType()),
 		Args: s.stargazerConnectionArgs(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -292,8 +286,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 		},
 	})
 	repoType.AddFieldConfig("licenseInfo", &graphql.Field{
-		// Real GitHub: licenseInfo: License — the same full License type
-		// Query.license serves, resolved from the vendored license catalog.
+		// licenseInfo: License — resolved from the vendored license catalog.
 		Type: s.gqlLicenseType(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			r, ok := p.Source.(map[string]interface{})
@@ -307,9 +300,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 			if license := graphQLLicenseJSON(key); license != nil {
 				return license, nil
 			}
-			// A stored license key outside the vendored catalog still resolves
-			// (License's non-null contract needs body/id/etc.) from the repo's
-			// recorded metadata.
+			// A license key outside the vendored catalog still resolves from the
+			// repo's recorded metadata (License's non-null contract needs body/id/etc.).
 			name, ok := r["licenseName"].(string)
 			if !ok || name == "" {
 				return nil, fmt.Errorf("repository source missing licenseName")
@@ -326,8 +318,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 	})
 	languageType := s.gqlLanguageType()
 	repoType.AddFieldConfig("primaryLanguage", &graphql.Field{
-		// Backed by Repo.Language (settable via the REST repo surface);
-		// null when unset, exactly like a language-less repo on GitHub.
+		// Backed by Repo.Language; null when unset.
 		Type: languageType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			r, ok := p.Source.(map[string]interface{})
@@ -478,8 +469,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 		},
 	})
 	repoType.AddFieldConfig("isEmpty", &graphql.Field{
-		// Real value: true until the repo's git storage has a resolvable
-		// HEAD commit (matches GitHub's "repository is empty" semantics).
+		// True until the repo's git storage has a resolvable HEAD commit.
 		Type: graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			r, ok := p.Source.(map[string]interface{})
@@ -526,11 +516,9 @@ func (s *Resolver) addRepoFieldsToSchema(
 	})
 	s.graphqlTypes.repositoryConnection = repoConnectionType
 
-	// Enums that real GitHub exposes — gh CLI sends these by name (CREATED_AT, DESC,
-	// PUBLIC, OWNER, ...) not as strings. The schema must declare them so gh's
-	// `gh repo list`, `gh issue list`, etc. type-check.
-	// Registered in the shared enum table: Repository.forks and the account
-	// surface's other repository connections name the same three types.
+	// Enums gh CLI sends by name (CREATED_AT, DESC, PUBLIC, OWNER, ...), so the
+	// schema must declare them. Shared enum table: other repository connections
+	// name the same three types.
 	repositoryPrivacyEnum := s.sharedEnum("RepositoryPrivacy", "PUBLIC", "PRIVATE")
 	repositoryAffiliationEnum := s.sharedEnum("RepositoryAffiliation",
 		"OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER")
@@ -538,13 +526,9 @@ func (s *Resolver) addRepoFieldsToSchema(
 	repositoryOrderInput := s.gqlRepositoryOrderInput()
 
 	// --- Releases (gh release list / view / download / delete) ---
-	// `gh release list` queries releases(first:$perPage, orderBy:{field:
-	// CREATED_AT, direction:$direction}, after:$endCursor) with $direction
-	// typed OrderDirection — the enum above must keep that exact name.
-	// `gh release view/download/delete` additionally resolve draft releases
-	// via release(tagName:){databaseId,isDraft}. Both are backed by the real
-	// release store. The immutable field is derived from the repository and
-	// organization immutable-release settings that the REST surface persists.
+	// gh release list needs $direction typed OrderDirection — that enum must keep
+	// its exact name. Backed by the real release store; immutable derives from the
+	// repo and org immutable-release settings the REST surface persists.
 	releaseType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Release",
 		Interfaces: []*graphql.Interface{s.graphqlTypes.reactable},
@@ -679,9 +663,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 
 			rel := s.store.Releases.GetByTag(repoID, tagName)
 			if rel == nil {
-				// Real GitHub resolves a missing release(tagName:) to plain
-				// null — gh's draft-release lookup keys on the null, not on
-				// a NOT_FOUND error.
+				// A missing release(tagName:) resolves to null, not NOT_FOUND —
+				// gh's draft-release lookup keys on the null.
 				return nil, nil
 			}
 			latestID := 0
@@ -710,9 +693,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 		},
 	})
 
-	// RepositoryOwner declares these fields directly. Keeping one field
-	// definition for the interface and both implementors prevents the subtle
-	// argument/signature drift that breaks gh and Octokit introspection.
+	// One field definition shared by the interface and both implementors, to
+	// prevent argument/signature drift that breaks gh and Octokit introspection.
 	ownerRepositoriesField := &graphql.Field{
 		Type: graphql.NewNonNull(repoConnectionType),
 		Args: graphql.FieldConfigArgument{
@@ -774,7 +756,6 @@ func (s *Resolver) addRepoFieldsToSchema(
 				}
 			}
 
-			// Filter by privacy
 			if _, hasPrivacy := p.Args["privacy"]; hasPrivacy {
 				if _, hasVisibility := p.Args["visibility"]; hasVisibility {
 					return nil, fmt.Errorf("privacy and visibility cannot be combined")
@@ -797,7 +778,6 @@ func (s *Resolver) addRepoFieldsToSchema(
 				repos = filtered
 			}
 
-			// Filter by isFork
 			if isFork, ok := p.Args["isFork"].(bool); ok {
 				var filtered []*store.Repo
 				for _, r := range repos {
@@ -890,7 +870,6 @@ func (s *Resolver) addRepoFieldsToSchema(
 	userType.AddFieldConfig("repository", ownerRepositoryField)
 	s.graphqlTypes.repositoryOwner.AddFieldConfig("repository", ownerRepositoryField)
 
-	// Add repository query to queryType
 	queryType.AddFieldConfig("repository", &graphql.Field{
 		Type: repoType,
 		Args: graphql.FieldConfigArgument{
@@ -902,13 +881,10 @@ func (s *Resolver) addRepoFieldsToSchema(
 			name, _ := p.Args["name"].(string)
 			repo := s.store.GetRepo(owner, name)
 			// A private repo the viewer can't read must look identical to a
-			// missing one: real GitHub returns null data + a NOT_FOUND error
-			// rather than leaking the repo's existence or contents. This
-			// mirrors the REST handler's read gate.
+			// missing one, or existence leaks. Mirrors the REST read gate.
 			if repo == nil || (repo.Private && !s.viewerCanReadRepo(p.Context, repo)) {
-				// Real GitHub pairs the null with a typed NOT_FOUND error —
-				// gh CLI keys on errors[].type to report "repository not
-				// found" instead of decoding an empty object.
+				// The typed NOT_FOUND error gh CLI keys on to report
+				// "repository not found".
 				return nil, &ghNotFoundError{
 					message: fmt.Sprintf("Could not resolve to a Repository with the name '%s/%s'.", owner, name),
 				}
@@ -917,8 +893,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 		},
 	})
 
-	// `repositoryOwner(login)` is the interface real GitHub exposes for "user or
-	// organization that owns repos". gh CLI's `gh repo list <login>` queries it.
+	// repositoryOwner(login): the user-or-organization interface
+	// `gh repo list <login>` queries.
 	queryType.AddFieldConfig("repositoryOwner", &graphql.Field{
 		Type: s.graphqlTypes.repositoryOwner,
 		Args: graphql.FieldConfigArgument{
@@ -941,7 +917,6 @@ func (s *Resolver) addRepoFieldsToSchema(
 		},
 	})
 
-	// Build mutation type
 	createRepoInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "CreateRepositoryInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -951,11 +926,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 			"description":      &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"hasIssuesEnabled": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 			"hasWikiEnabled":   &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
-			// Declaration-only members of GitHub's CreateRepositoryInput.
-			// homepageUrl: URI, teamId: ID (the team granted access), template:
-			// Boolean (mark the new repo as a template). The createRepository
-			// resolver does not yet act on them; they are declared so the input's
-			// shape matches GitHub's and a client naming them is not rejected.
+			// Declaration-only members of GitHub's CreateRepositoryInput; the
+			// resolver does not act on them, but the input's shape must match GitHub's.
 			"homepageUrl": &graphql.InputObjectFieldConfig{Type: s.graphQLStringScalar("URI")},
 			"teamId":      &graphql.InputObjectFieldConfig{Type: graphql.ID},
 			"template":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
@@ -1095,20 +1067,15 @@ func graphQLRepositoryAffiliations(value interface{}) []string {
 // --- Mutation authorization ---
 //
 // Every mutation reaches the schema through registerMutation, which refuses a
-// name graphqlMutationAuthz does not cover. Authorization therefore lives in
-// one table rather than in twenty-odd hand-written checks, and a mutation added
-// without deciding who may call it fails at schema build instead of shipping
-// open to any signed-in account.
+// name graphqlMutationAuthz does not cover. A mutation added without a policy
+// row fails at schema build instead of shipping open to any signed-in account.
 
 // mutationRule decides whether the credential behind a request may perform one
-// mutation on whatever its input names. There is an implementation per resource
-// class rather than one universal shape: a repository and a project have
-// different owners and different questions to ask, and bending the repository
-// lookups over a project would answer the wrong one.
+// mutation on whatever its input names. One implementation per resource class:
+// a repository and a project have different owners and different questions.
 type mutationRule interface {
-	// check reports a malformed policy row. It runs once, while the schema is
-	// being assembled, so a row missing its lookup is a build failure rather
-	// than a mutation that quietly authorizes nothing.
+	// check reports a malformed policy row at schema-assembly time, so a row
+	// missing its lookup is a build failure rather than a silent authorize-nothing.
 	check() error
 	authorize(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) error
 }
@@ -1135,13 +1102,8 @@ type mutationTarget struct {
 
 // repoCreationRule is the policy for createRepository, the one mutation that
 // names no existing repository: the entitlement is over the account the
-// repository would belong to.
-//
-// An authenticated viewer used to be the whole test, on the reasoning that the
-// resolver decided the owner for itself. It did — but it decided it from the
-// bearer, so a user-to-server token of an app installed nowhere created
-// repositories on its bearer's account where the same app's installation token
-// was refused.
+// repository would belong to, checked against the credential's grant (not just
+// an authenticated viewer).
 type repoCreationRule struct{}
 
 func (repoCreationRule) check() error { return nil }
@@ -1160,9 +1122,9 @@ func (repoCreationRule) authorize(s *Resolver, p graphql.ResolveParams, input ma
 	return nil
 }
 
-// createRepositoryOwner resolves the account a createRepository input names. The
-// policy row and the resolver both call it, so the owner the entitlement is
-// checked against is by construction the owner the repository is created under.
+// createRepositoryOwner resolves the account a createRepository input names.
+// The policy row and resolver both call it, so the entitlement is checked
+// against the same owner the repository is created under.
 func (s *Resolver) createRepositoryOwner(p graphql.ResolveParams, input map[string]interface{}) (store.AccountKind, string, error) {
 	user := s.ghUserFromContext(p.Context)
 	ownerID, _ := input["ownerId"].(string)
@@ -1181,17 +1143,12 @@ func (s *Resolver) createRepositoryOwner(p graphql.ResolveParams, input map[stri
 
 // repoRule is the policy for a mutation whose subject belongs to a repository.
 type repoRule struct {
-	// scope is the fine-grained permission an app must have been granted to
-	// perform this mutation at all, and it is per-row because GitHub grants
-	// issue triage at issues:write and pull-request triage at
-	// pull_requests:write. One scope for the whole table would refuse apps
-	// GitHub allows.
-	scope store.PermScope
-	// scopeFor, when set, derives the required scope from the mutation input
-	// instead of the fixed scope above. Reactions need this because one
-	// mutation (addReaction) spans subjects GitHub gates on different grants —
-	// an issue reaction needs issues:write, a pull-request reaction
+	// scope is the fine-grained permission an app must hold, per-row because
+	// GitHub grants issue triage at issues:write and PR triage at
 	// pull_requests:write.
+	scope store.PermScope
+	// scopeFor, when set, derives the scope from the input. addReaction needs
+	// this: an issue reaction needs issues:write, a PR reaction pull_requests:write.
 	scopeFor func(s *Resolver, input map[string]interface{}) store.PermScope
 	level    mutationLevel
 	// authorMayAct admits the author of the targeted content whatever their
@@ -1216,13 +1173,9 @@ func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[stri
 	if target.repo == nil || !s.viewerCanReadRepo(p.Context, target.repo) {
 		return target.missing
 	}
-	// The credential half is asked first and is never relaxed by authorship.
-	// Every mutation here is a write on its scope, whatever standing on the
-	// repository it then needs, so an app that was not granted that scope may
-	// not perform it — the author exemption speaks to who the bearer is, and an
-	// app's grant is not a fact about the bearer. Ordering these the other way
-	// round let a bearer who had merely filed the issue retitle it through an
-	// app installed nowhere.
+	// The credential half is asked first and never relaxed by authorship: the
+	// author exemption speaks to the bearer, not to an app's grant. Ordering it
+	// the other way let an author retitle an issue through an app installed nowhere.
 	scope := r.scope
 	if r.scopeFor != nil {
 		scope = r.scopeFor(s, input)
@@ -1247,11 +1200,9 @@ func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[stri
 	return nil
 }
 
-// issueTransferRule is the policy for transferIssue, the one repository
-// mutation whose input names two repositories: GitHub requires write on both
-// the repository the issue lives in and the repository it moves to, so the
-// rule is two repoRule checks — either refusal stands alone, and a bearer with
-// push on only one side is refused before the resolver runs.
+// issueTransferRule is the policy for transferIssue, whose input names two
+// repositories: it runs two repoRule checks, refusing a bearer with push on
+// only one side before the resolver runs.
 type issueTransferRule struct{}
 
 func (issueTransferRule) check() error { return nil }
@@ -1265,36 +1216,26 @@ func (issueTransferRule) authorize(s *Resolver, p graphql.ResolveParams, input m
 	return destination.authorize(s, p, input)
 }
 
-// graphqlMutationAuthz is the whole authorization policy of the mutation
-// surface.
+// graphqlMutationAuthz is the whole authorization policy of the mutation surface.
 //
-// Each row names two independent things. The scope is the permission an app
-// must hold to perform the mutation at all, and it follows GitHub's grouping —
-// issues, pull requests, discussions and repository administration are separate
-// grants, and an app given one of them has not been given the others. The level
-// is the standing the bearer needs on the repository, which follows the same
-// reasoning resourceCapabilityFor applies to the REST routes: opening an issue,
-// commenting, proposing a pull request and reviewing one are how outside
-// contributors participate and need only read, while editing, closing, merging,
-// moderating and deleting need push, and destroying a repository or somebody
-// else's discussion needs admin.
+// Each row names a scope (the app grant: issues, pull requests, discussions and
+// repository administration are separate) and a level (the bearer's standing on
+// the repo). Participation — opening/commenting/reviewing — needs read; editing,
+// closing, merging and moderating need push; destroying needs admin.
 var graphqlMutationAuthz = map[string]mutationRule{
 	"createRepository": repoCreationRule{},
 	"deleteRepository": repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 
-	// Comments on a pull request are stored and served as issue comments, and
-	// GitHub gates the issue-comment endpoints on Issues however the subject was
-	// opened, so addComment and the comment moderation mutations are scopeIssues
-	// even where the subject resolves to a pull request.
+	// PR comments are stored and gated as issue comments, so addComment and the
+	// moderation mutations are scopeIssues even for a pull-request subject.
 	"createIssue": repoRule{scope: store.ScopeIssues, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	"addComment":  repoRule{scope: store.ScopeIssues, level: mutationReadRepo, target: mutationTargetIssueOrPullRequest("subjectId")},
 	"closeIssue":  repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
 	"reopenIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
 	"updateIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("id")},
 
-	// GitHub gates pinning at triage; this lattice has no triage level, so
-	// push is the nearest stricter standing. No author exemption: pinning is
-	// curation of the repository's issues list, not of your own content.
+	// Pinning is triage; with no triage level, push is the nearest. No author
+	// exemption: it is curation of the issues list, not your own content.
 	"pinIssue":   repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 	"unpinIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 	// Deleting an issue is GitHub's one admin-gated issue mutation — even the
@@ -1302,11 +1243,8 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"deleteIssue":   repoRule{scope: store.ScopeIssues, level: mutationAdminRepo, target: mutationTargetIssue("issueId")},
 	"transferIssue": issueTransferRule{},
 
-	// Linking a branch to an issue writes a reference into the repository, so
-	// the grant it needs is contents rather than issues; unlinking only removes
-	// the association and leaves the branch, so it is an issues write. Neither
-	// admits the issue's author on standing alone: an author with no write
-	// access cannot create a branch in the repository.
+	// Linking a branch writes a ref into the repo, so it needs contents;
+	// unlinking only removes the association, so it is an issues write.
 	"createLinkedBranch": repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 	"deleteLinkedBranch": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetLinkedBranch("linkedBranchId")},
 
@@ -1326,12 +1264,9 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"addUpvote":    repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetVotable("subjectId")},
 	"removeUpvote": repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetVotable("subjectId")},
 
-	// Labels. GitHub serves an issue's and a pull request's labels through the
-	// one /issues/{number}/labels surface and gates both on Issues, so these
-	// three are scopeIssues whichever kind the labelableId turns out to name.
-	// Labeling is curation of the repository's triage state rather than of
-	// your own content, so there is no author exemption: it is push, exactly
-	// as updateIssue treats its labelIds argument.
+	// Labels. An issue's and a PR's labels share one /issues/{n}/labels surface
+	// gated on Issues, so these are scopeIssues whichever kind labelableId names.
+	// Labeling is triage curation: push, no author exemption.
 	"addLabelsToLabelable":      repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: labelableMutationTarget("labelableId")},
 	"removeLabelsFromLabelable": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: labelableMutationTarget("labelableId")},
 	"clearLabelsFromLabelable":  repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: labelableMutationTarget("labelableId")},
@@ -1351,16 +1286,15 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"markPullRequestReadyForReview": repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
 	"convertPullRequestToDraft":     repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
 	"mergePullRequest":              repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
-	// Auto-merge arms/disarms a deferred merge of the base branch, so both
-	// sides demand the same standing as mergePullRequest itself: push.
+	// Auto-merge arms/disarms a deferred merge, so both sides demand push, like
+	// mergePullRequest.
 	"enablePullRequestAutoMerge":  repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
 	"disablePullRequestAutoMerge": repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
 	"resolveReviewThread":         repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
 	"unresolveReviewThread":       repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
 
-	// Projects v2. A project belongs to a user or an organization, not to a
-	// repository, so write is the owner-scoped predicate the REST surface uses:
-	// the owning user themself, or an active member of the owning org.
+	// Projects v2. A project belongs to a user or org, not a repo, so write is
+	// owner-scoped: the owning user, or an active member of the owning org.
 	"createProjectV2":               projectRule{target: projectTargetOwner("ownerId")},
 	"addProjectV2ItemById":          projectRule{target: projectTargetProject("projectId")},
 	"deleteProjectV2Item":           projectRule{target: projectTargetProject("projectId")},
@@ -1399,13 +1333,9 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"updateProjectV2View":       projectRule{target: projectTargetView("viewId")},
 	"deleteProjectV2View":       projectRule{target: projectTargetView("viewId")},
 
-	// Dismissing a Dependabot alert is a write on the repository's security
-	// events, which is the same entitlement PATCH
-	// /repos/{o}/{r}/dependabot/alerts/{n} demands: the security_events scope
-	// at write, and push standing on the repository (what resourceCapabilityFor
-	// resolves that level to, security events deliberately not being an
-	// administers-resource scope). Routing the GraphQL mutation through a
-	// weaker rule would make it the way around the REST gate.
+	// Dismissing a Dependabot alert writes the repo's security events:
+	// security_events scope at write, push standing on the repo — the same
+	// PATCH /repos/{o}/{r}/dependabot/alerts/{n} demands.
 	"dismissRepositoryVulnerabilityAlert": repoRule{
 		scope:  store.ScopeSecurityEvents,
 		level:  mutationPushRepo,
@@ -1419,11 +1349,9 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"deleteProjectV2Workflow":     projectRule{target: projectTargetWorkflow("workflowId")},
 }
 
-// projectCopyRule is the policy for copyProjectV2, the one project mutation
-// whose input names two accounts: the project being copied and the owner the
-// copy lands under. GitHub requires standing on both — a bearer who can read a
-// template but write nowhere may not mint a project, and a bearer who can
-// write to an account may not copy a project they cannot see.
+// projectCopyRule is the policy for copyProjectV2, whose input names two
+// accounts: the project copied and the owner it lands under. Standing is
+// required on both — read on the source, write on the destination.
 type projectCopyRule struct{}
 
 func (projectCopyRule) check() error { return nil }
@@ -1515,14 +1443,9 @@ func unwrapGraphQLType(value graphql.Type) graphql.Type {
 	}
 }
 
-// assertMutationsAuthorized fails schema construction unless every field on the
-// mutation type went through registerMutation and carries a policy row.
-//
-// The registrar prevents the omission and this catches it, and they fail at
-// different moments: a family that adds a mutation without a row cannot start,
-// and a family that bypasses the registrar entirely — a new file, a merge that
-// resurrects an AddFieldConfig call — cannot either. Coverage stops depending
-// on each author remembering the convention.
+// assertMutationsAuthorized fails schema construction unless every mutation
+// field went through registerMutation and carries a policy row — the backstop
+// for a mutation that bypasses the registrar entirely.
 func assertMutationsAuthorized(mutationType *graphql.Object) {
 	guardedMutations.mu.Lock()
 	guarded := guardedMutations.byType[mutationType]
@@ -1556,20 +1479,17 @@ func externalURL(path string) string {
 	return path
 }
 
-// gqlMissingNode is the answer a mutation gives for a node it cannot reach,
-// shaped like the NOT_FOUND errors[] entry real GitHub returns so gh CLI
-// reports "not found" instead of decoding an empty payload.
+// gqlMissingNode is the NOT_FOUND errors[] entry a mutation returns for a node
+// it cannot reach, so gh CLI reports "not found" rather than decoding empty.
 func gqlMissingNode(typeName, nodeID string) error {
 	return &ghNotFoundError{
 		message: fmt.Sprintf("Could not resolve to a %s with the global id of '%s'.", typeName, nodeID),
 	}
 }
 
-// gqlMissingNodeType is gqlMissingNode for mutation paths that resolve a nested
-// node (or have already consumed the offending id) and know only the type. It
+// gqlMissingNodeType is gqlMissingNode for paths that know only the type. It
 // still returns a NOT_FOUND-typed error so a client can distinguish "no such
-// object" from a transport failure — the type stamp is what GitHub carries and
-// what these paths previously dropped by returning a bare fmt.Errorf.
+// object" from a transport failure.
 func gqlMissingNodeType(typeName string) error {
 	article := "a"
 	if len(typeName) > 0 {
@@ -1606,8 +1526,7 @@ func mutationTargetIssue(key string) func(*Resolver, map[string]interface{}) mut
 }
 
 // mutationTargetLinkedBranch resolves a linked branch's global id to the
-// repository of the issue that carries the link, which is the repository the
-// caller has to have standing on to unlink it.
+// repository of the issue that carries the link.
 func mutationTargetLinkedBranch(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
@@ -1653,9 +1572,7 @@ func mutationTargetIssueOrPullRequest(key string) func(*Resolver, map[string]int
 }
 
 // mutationTargetLockable covers lockLockable / unlockLockable, whose subject is
-// any Lockable: an issue, a pull request, or a discussion. It extends the
-// issue-or-PR resolution with the discussion case so a discussion node ID
-// resolves to its repository for authorization.
+// any Lockable: an issue, pull request, or discussion.
 func mutationTargetLockable(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	issueOrPR := mutationTargetIssueOrPullRequest(key)
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
@@ -1784,9 +1701,8 @@ func mutationTargetReviewThread(key string) func(*Resolver, map[string]interface
 	}
 }
 
-// mutationTargetReview resolves a pull-request review node id (PRR_…) to the
-// repo of the review's pull request, authorizing the review-lifecycle mutations
-// (submit/dismiss) the same way the other pull-request mutations are gated.
+// mutationTargetReview resolves a review node id (PRR_…) to the repo of its
+// pull request, for the submit/dismiss lifecycle mutations.
 func mutationTargetReview(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
@@ -1805,12 +1721,9 @@ func mutationTargetReview(key string) func(*Resolver, map[string]interface{}) mu
 	}
 }
 
-// repoToGraphQL converts a Repo to a map for GraphQL resolvers. It reads the
-// repo's mutable fields (description, topics, timestamps) directly, so the
-// caller must pass either a private snapshot (st.snapRepo) or a repo it holds
-// the store lock over — never the live shared pointer off-lock, which would
-// race a concurrent UpdateRepo. Under-lock callers (the *Locked GraphQL paths)
-// pass the live pointer; off-lock resolvers pass a snapshot.
+// repoToGraphQL converts a Repo to a resolver map. It reads mutable fields
+// directly, so the caller must pass a snapshot or a repo it holds the store
+// lock over — never the live shared pointer off-lock, which races UpdateRepo.
 func repoToGraphQL(st *store.Store, repo *store.Repo) map[string]interface{} {
 	return repoToGraphQLWithOrg(repo, st.GetOrgByID)
 }
@@ -1886,10 +1799,8 @@ func graphQLInputBool(input map[string]interface{}, key string) (bool, bool) {
 		}
 		return *b, true
 	default:
-		// graphql-go validates public requests before resolver execution. Keep
-		// this store-facing helper total as well: a direct resolver test or a
-		// future decoder must not turn an invalid optional value into a
-		// process panic.
+		// Keep this helper total: a direct resolver test or future decoder must
+		// not turn an invalid optional value into a panic.
 		return false, false
 	}
 }
@@ -1923,9 +1834,8 @@ func releaseToGQL(rel *store.Release, latestID int, repoFullName string, immutab
 	if rel.Name != "" {
 		name = rel.Name
 	}
-	// updatedAt: the store does not track release edit times, so the honest
-	// value is the publish time when published, else the creation time — the
-	// most recent moment the record is known to reflect.
+	// updatedAt: no release edit times are stored, so use the publish time
+	// when published, else creation time.
 	updatedAt := rel.CreatedAt.Format(time.RFC3339)
 	if rel.PublishedAt != nil {
 		updatedAt = rel.PublishedAt.Format(time.RFC3339)
@@ -1989,10 +1899,9 @@ func encodeCursor(idx int) string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("cursor:%d", idx)))
 }
 
-// encodeConnectionCursor encodes a GraphQL connection cursor that carries both
-// the node's position and its stable identity ("cursor:<idx>:<id>"), so a page
-// boundary can be re-resolved by identity and does not shift when items are
-// inserted before it. With no identity it degrades to the plain index cursor.
+// encodeConnectionCursor encodes a cursor carrying both position and stable
+// identity ("cursor:<idx>:<id>"), so a page boundary does not shift when items
+// are inserted before it. With no identity it degrades to the index cursor.
 func encodeConnectionCursor(idx int, id string) string {
 	if id == "" {
 		return encodeCursor(idx)
@@ -2046,12 +1955,10 @@ func decodeCursorStrict(s string) (int, error) {
 	return n, nil
 }
 
-// gqlRefType returns the shared Ref object type (memoized). Used by
-// Repository.defaultBranchRef, Repository.ref/refs and PullRequest.baseRef —
-// matching GitHub, where all of them are the one Ref type.
-// branchProtectionRule resolves from the "branchProtectionRule" key of the
-// source map when the producer embeds one; sources without the key resolve
-// null, the value real GitHub returns for an unprotected ref.
+// gqlRefType returns the shared Ref object type (memoized), the one type
+// Repository.defaultBranchRef/ref/refs and PullRequest.baseRef all use.
+// branchProtectionRule resolves from the source map's key when present, else
+// null (an unprotected ref).
 func (s *Resolver) gqlRefType() *graphql.Object {
 	if s.graphqlTypes.ref != nil {
 		return s.graphqlTypes.ref
@@ -2083,9 +1990,7 @@ func (s *Resolver) gqlRefType() *graphql.Object {
 	return s.graphqlTypes.ref
 }
 
-// nullableTimePtr renders an optional timestamp as RFC3339 or JSON null
-// (moved here from the repos REST file in ARCH-003; its only callers are
-// GraphQL renderers).
+// nullableTimePtr renders an optional timestamp as RFC3339 or JSON null.
 func nullableTimePtr(t *time.Time) interface{} {
 	if t == nil || t.IsZero() {
 		return nil

@@ -8,12 +8,10 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// SubmitTriggeredWorkflow parses, expands, and submits one workflow file
-// for an event. Event metadata must travel INTO SubmitWorkflow: it
-// resolves the originating workflow file from RepoFullName at submit
-// time (the run's workflow_id), and the workflow becomes visible to
-// other goroutines the moment it is stored — patching fields afterwards
-// would both mis-derive the file id and race those readers.
+// SubmitTriggeredWorkflow parses, expands, and submits one workflow file for an
+// event. Metadata must pass into SubmitWorkflow, not be patched afterwards:
+// SubmitWorkflow derives the run's workflow_id from it, and the workflow becomes
+// visible to other goroutines the instant it is stored.
 func (s *Engine) SubmitTriggeredWorkflow(fileName string, content []byte, meta *WorkflowEventMeta) (*store.Workflow, error) {
 	wfDef, err := store.ParseWorkflow(content)
 	if err != nil {
@@ -33,9 +31,8 @@ func (s *Engine) SubmitTriggeredWorkflow(fileName string, content []byte, meta *
 	return s.SubmitWorkflow(context.Background(), serverURL, expandedDef, "", meta)
 }
 
-// WorkflowFileDisabled reports whether the registered workflow file for
-// (repo, filename) was manually disabled — disabled workflows never
-// trigger, matching real GitHub.
+// WorkflowFileDisabled reports whether (repo, filename) was manually disabled.
+// Disabled workflows never trigger, matching real GitHub.
 func (s *Engine) WorkflowFileDisabled(repoKey, filename string) bool {
 	path := ".github/workflows/" + filename
 	for _, f := range s.store.ListWorkflowFiles(repoKey) {
@@ -46,8 +43,8 @@ func (s *Engine) WorkflowFileDisabled(repoKey, filename string) bool {
 	return false
 }
 
-// pullRequestIsFromFork reports whether the event payload's pull request has
-// its head in a repository other than repoKey.
+// pullRequestIsFromFork reports whether the payload's pull request has its head
+// in a repository other than repoKey.
 func pullRequestIsFromFork(payload map[string]interface{}, repoKey string) bool {
 	pr, _ := payload["pull_request"].(map[string]interface{})
 	if pr == nil || repoKey == "" {
@@ -65,8 +62,8 @@ func pullRequestIsFromFork(payload map[string]interface{}, repoKey string) bool 
 	return headFullName != "" && !strings.EqualFold(headFullName, repoKey)
 }
 
-// OSFromDescription maps a runner's free-form OS description onto the
-// runners API's os vocabulary (linux / windows / macos).
+// OSFromDescription maps a runner's free-form OS description onto the runners
+// API's os vocabulary (linux / windows / macos).
 func OSFromDescription(desc string) string {
 	d := strings.ToLower(desc)
 	switch {

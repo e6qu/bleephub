@@ -49,9 +49,7 @@ func (s *Server) deriveDependabotAlertsForRepositoryAdvisory(repo *store.Repo, d
 			if !dependabotPackageMatches(vulnerability, ecosystem, packageName) {
 				continue
 			}
-			// The comparison is the advisory's ecosystem, not the purl's:
-			// they name the same ecosystem, and the advisory is the side
-			// that states which version algebra its range was written in.
+			// Compare against the advisory's ecosystem, not the purl's: it states which version algebra its range was written in.
 			if !store.VersionInVulnerableRange(vulnerability.PackageEcosystem, version, vulnerability.VulnerableVersionRange) {
 				continue
 			}

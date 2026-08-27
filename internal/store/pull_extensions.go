@@ -249,8 +249,8 @@ func (st *Store) DeletePullRequestStack(repoKey string, number int) bool {
 	return true
 }
 
-// CreateIssueSuggestion is the ingestion seam for coding agents. The public
-// REST surface deliberately exposes review, approval, and dismissal only.
+// CreateIssueSuggestion is the ingestion seam for coding agents; the public
+// REST surface exposes only review, approval, and dismissal.
 func (st *Store) CreateIssueSuggestion(repoKey string, issueID int, suggestion IssueSuggestion) *IssueSuggestion {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

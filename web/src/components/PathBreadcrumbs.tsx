@@ -2,8 +2,7 @@ import { Link } from "react-router";
 import { repoCodeRoute } from "../routes.js";
 
 const crumbLink = {
-  // Small standalone links: inline-block + 1.625rem line height keeps the
-  // WCAG 2.5.8 target size without inflating the row.
+  // inline-block + 1.625rem line-height meets WCAG 2.5.8 target size.
   display: "inline-block",
   lineHeight: "1.625rem",
   color: "var(--color-accent)",
@@ -11,9 +10,8 @@ const crumbLink = {
 } as const;
 
 /**
- * GitHub's per-segment path breadcrumb for tree/blob/blame views:
- * repo-name / dir / dir / leaf — every ancestor is a link to its tree at the
- * current ref; the final segment is plain text (aria-current).
+ * Per-segment path breadcrumb for tree/blob/blame views. Every ancestor links
+ * to its tree at the current ref; the final segment is plain text (aria-current).
  */
 export function PathBreadcrumbs({
   owner,
@@ -26,7 +24,6 @@ export function PathBreadcrumbs({
   repo: string;
   gitRef: string;
   path: string;
-  /** Optional muted suffix after the crumbs (e.g. "· blame on main"). */
   trailing?: React.ReactNode;
 }) {
   const segments = path === "" ? [] : path.split("/");

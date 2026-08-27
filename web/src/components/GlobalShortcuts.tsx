@@ -3,13 +3,9 @@ import { useNavigate } from "react-router";
 import { KeyboardShortcuts } from "./KeyboardShortcuts.js";
 
 /**
- * github.com's global keyboard affordances that are NOT the command palette:
- * the "?" shortcuts sheet and the `g …` navigation sequences it documents.
- *
- * Code-split out of the entry bundle (AppHeader mounts it lazily) so this and
- * the shortcuts modal never weigh on first paint. Both are ignored while the
- * user is typing so they can't hijack a form field, and the `g` prefix expires
- * quickly.
+ * github.com's "?" shortcuts sheet and `g …` navigation sequences. Code-split
+ * off the entry bundle (AppHeader mounts it lazily). Shortcuts are ignored
+ * while typing so they never hijack a form field.
  */
 export function GlobalShortcuts({ login }: { login: string }) {
   const navigate = useNavigate();
@@ -49,8 +45,7 @@ export function GlobalShortcuts({ login }: { login: string }) {
         }
         return;
       }
-      // github.com focuses the header search on `s` or `/` (the typing guard
-      // above keeps both usable inside form fields).
+      // github.com focuses the header search on `s` or `/`.
       if (e.key === "s" || e.key === "/") {
         const input = document.getElementById("global-search-input");
         if (input) {
@@ -61,7 +56,7 @@ export function GlobalShortcuts({ login }: { login: string }) {
       }
       if (e.key === "g") {
         gPendingRef.current = true;
-        // The prefix only stays armed briefly, matching github.com.
+        // The `g` prefix stays armed only briefly, matching github.com.
         window.setTimeout(() => {
           gPendingRef.current = false;
         }, 1000);

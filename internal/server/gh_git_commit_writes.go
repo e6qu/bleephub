@@ -1,14 +1,10 @@
 package bleephub
 
-// The two git writes that build a commit rather than move a reference: the
-// multi-file commit createCommitOnBranch writes, and the branch holding the
-// commit that undoes a merged pull request.
-//
-// Both are here rather than in the resolver layer because they reach the git
-// storer and the push machinery, which the resolver layer may not (ARCH-003),
-// and both advance their branch through the same compare-and-set the contents
-// API's single-file commit uses — a second unconditional ref write would
-// reopen the lost-update window that helper exists to close.
+// Git writes that build a commit rather than move a reference. They live here,
+// not in the resolver layer, because they reach the git storer and push
+// machinery (ARCH-003), and advance their branch through the same
+// compare-and-set the single-file contents commit uses — an unconditional ref
+// write would reopen the lost-update window that helper closes.
 
 import (
 	"context"
@@ -26,10 +22,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// multiFileCommit writes one commit onto branch containing every addition and
-// deletion named, and answers its hash. expectedParent, when non-zero, is the
-// head the caller saw: a branch that moved since is refused rather than
-// overwritten.
+// multiFileCommit writes one commit with the named additions and deletions onto
+// branch and returns its hash. A non-zero expectedParent is the head the caller
+// saw; a branch that moved since is refused rather than overwritten.
 func multiFileCommit(stor gitStorage.Storer, branch string, additions map[string][]byte, deletions []string,
 	message string, sig *object.Signature, expectedParent plumbing.Hash) (plumbing.Hash, error) {
 	fs := memfs.New()
@@ -80,9 +75,8 @@ func multiFileCommit(stor gitStorage.Storer, branch string, additions map[string
 	return commitHash, nil
 }
 
-// createCommitOnBranch is createCommitOnBranch's whole effect: the
-// branch-protection refusal, the commit, the secret-scanning scan and the push
-// machinery, in the order a ref write performs them.
+// createCommitOnBranch runs the branch-protection refusal, the commit, the
+// secret-scanning scan, and the push machinery, in the order a ref write does.
 func (s *Server) createCommitOnBranch(ctx context.Context, repo *store.Repo, stor gitStorage.Storer, sender *store.User,
 	branch, expectedHeadOid string, additions map[string][]byte, deletions []string, message, baseURL string) (plumbing.Hash, *gitRefWriteFailure) {
 	fullRef := plumbing.NewBranchReferenceName(branch)
@@ -118,9 +112,8 @@ func (s *Server) createCommitOnBranch(ctx context.Context, repo *store.Repo, sto
 	return commitHash, nil
 }
 
-// mergeBranchRefs merges head into base, answering the merge commit's hash, or
-// the zero hash when head was already an ancestor of base. It is the body of
-// POST /repos/{owner}/{repo}/merges after the request has been decoded.
+// mergeBranchRefs merges head into base, returning the merge commit's hash, or
+// the zero hash when head was already an ancestor of base.
 func (s *Server) mergeBranchRefs(repo *store.Repo, sender *store.User, base, head, commitMessage, authorEmail string) (plumbing.Hash, *gitRefWriteFailure) {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
@@ -171,14 +164,10 @@ func (s *Server) mergeBranchRefs(repo *store.Repo, sender *store.User, base, hea
 	return commitHash, nil
 }
 
-// createRevertBranch creates the branch holding the commit that undoes a
-// merged pull request, and answers its name.
-//
-// The change to undo is exactly what the merge commit added to the branch it
-// landed on — its first parent's tree against its own — so the revert restores
-// those paths to their pre-merge content on top of the base branch as it
-// stands now. Paths the merge introduced are removed; paths it removed come
-// back.
+// createRevertBranch creates the branch whose commit undoes a merged pull
+// request and returns its name. The change to undo is the merge commit's first
+// parent tree against its own; the revert restores those paths to their
+// pre-merge content atop the current base branch.
 func (s *Server) createRevertBranch(ctx context.Context, repo *store.Repo, pr *store.PullRequest, sender *store.User, baseURL string) (string, error) {
 	if pr.State != "MERGED" || pr.MergeCommitSHA == "" {
 		return "", fmt.Errorf("only a merged pull request can be reverted")
@@ -224,7 +213,7 @@ func (s *Server) createRevertBranch(ctx context.Context, repo *store.Repo, pr *s
 		}
 		switch {
 		case from != nil:
-			// The path existed before the merge: put its old content back.
+			// Existed before the merge: restore its old content.
 			contents, err := from.Contents()
 			if err != nil {
 				return "", fmt.Errorf("the pre-merge content of %s could not be read", from.Name)
@@ -234,7 +223,7 @@ func (s *Server) createRevertBranch(ctx context.Context, repo *store.Repo, pr *s
 				deletions = append(deletions, to.Name)
 			}
 		case to != nil:
-			// The merge introduced the path: take it away again.
+			// Introduced by the merge: remove it.
 			deletions = append(deletions, to.Name)
 		}
 	}
@@ -245,8 +234,8 @@ func (s *Server) createRevertBranch(ctx context.Context, repo *store.Repo, pr *s
 		return "", fmt.Errorf("the base branch no longer exists")
 	}
 	branch := fmt.Sprintf("revert-%d-%s", pr.Number, pr.HeadRefName)
-	// The revert branch is created through the same helper POST /git/refs
-	// uses, so branch protection and push protection apply to it.
+	// Create through the same helper POST /git/refs uses, so branch and push
+	// protection apply.
 	if failure := s.createGitRef(ctx, repo, stor, sender,
 		plumbing.NewBranchReferenceName(branch), baseHead.Hash(), baseURL); failure != nil {
 		return "", errors.New(failure.message)

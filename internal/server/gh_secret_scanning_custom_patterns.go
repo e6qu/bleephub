@@ -52,9 +52,8 @@ func (s *Server) orgCustomPatternScope(w http.ResponseWriter, r *http.Request) (
 
 func (s *Server) listCustomPatterns(w http.ResponseWriter, r *http.Request, scope string) {
 	patterns := s.store.ListSecretScanningCustomPatterns(scope)
-	// GitHub documents cursor pagination (before/after) on the org and repo
-	// custom-pattern lists alongside page/per_page; the shared helper honours
-	// the cursors and 422s an unparsable one.
+	// These lists support before/after cursor pagination alongside
+	// page/per_page.
 	if r.URL.Query().Get("before") != "" || r.URL.Query().Get("after") != "" {
 		page, ok := cursorPageByID(w, r, patterns, func(p *store.SecretScanningCustomPattern) int { return p.ID })
 		if !ok {
@@ -73,9 +72,8 @@ func (s *Server) createCustomPatterns(w http.ResponseWriter, r *http.Request, sc
 	if !decodeJSONBody(w, r, &request) {
 		return
 	}
-	// The documented 422 for this batch op is {message, validation_errors}
-	// keyed by the zero-based index of the failing pattern, each carrying
-	// coded errors — not the generic validation-error envelope.
+	// This batch op's 422 is {message, validation_errors} keyed by the failing
+	// pattern's zero-based index, not the generic validation-error envelope.
 	writePatternError := func(index int, code, message string) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
 			"message": "Validation Failed",

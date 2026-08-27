@@ -8,9 +8,9 @@ import (
 	"net/http"
 )
 
-// observeMiddleware tees every response through the registered
-// responseObserver. Hijacked exchanges (runner long-poll WebSockets)
-// pass through unobserved — they carry no HTTP response body.
+// observeMiddleware tees every response through responseObserver. Hijacked
+// exchanges (runner long-poll WebSockets) pass through unobserved — they carry
+// no HTTP response body.
 func (s *Server) observeMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec := &observeWriter{ResponseWriter: w, status: http.StatusOK}

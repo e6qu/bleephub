@@ -7,20 +7,17 @@ import (
 	"strings"
 )
 
-// BranchProtectionPatternRule is a web-only (github.com settings UI) branch
-// protection rule addressed by an fnmatch pattern instead of an exact branch
-// name. GitHub's REST branch protection API forbids wildcards, so these rules
-// live under /ui-data, never /api/v3. Protection carries the same shape the
-// REST PUT body persists, and the enforcement chokepoint consults these rules
-// only when no exact-name rule exists for the branch.
+// BranchProtectionPatternRule is a web-only branch protection rule addressed by
+// an fnmatch pattern. GitHub's REST API forbids wildcards, so these live under
+// /ui-data, and the enforcement chokepoint consults them only when no exact-name
+// rule matches the branch.
 type BranchProtectionPatternRule struct {
 	Pattern    string            `json:"pattern"`
 	Protection *BranchProtection `json:"protection"`
 }
 
-// cloneBranchProtectionPatternRules deep-copies a rule list via a JSON
-// round-trip so no caller holds a pointer into the stored table (STORE-021).
-// The types are plain data that already round-trip through persistence.
+// cloneBranchProtectionPatternRules deep-copies via JSON so no caller holds a
+// pointer into the stored table (STORE-021).
 func cloneBranchProtectionPatternRules(rules []*BranchProtectionPatternRule) []*BranchProtectionPatternRule {
 	if len(rules) == 0 {
 		return nil
@@ -36,16 +33,14 @@ func cloneBranchProtectionPatternRules(rules []*BranchProtectionPatternRule) []*
 	return out
 }
 
-// ListBranchProtectionPatterns returns the repository's ordered pattern rules
-// as a detached snapshot.
+// ListBranchProtectionPatterns returns the repo's ordered pattern rules as a detached snapshot.
 func (st *Store) ListBranchProtectionPatterns(repoID int) []*BranchProtectionPatternRule {
 	st.Misc.Mu.RLock()
 	defer st.Misc.Mu.RUnlock()
 	return cloneBranchProtectionPatternRules(st.Misc.BranchProtectionPatterns[repoID])
 }
 
-// SetBranchProtectionPatterns replaces the repository's pattern rules. An
-// empty list clears them. The stored slice is a private copy of the caller's.
+// SetBranchProtectionPatterns replaces the repo's pattern rules; an empty list clears them.
 func (st *Store) SetBranchProtectionPatterns(repoID int, rules []*BranchProtectionPatternRule) {
 	stored := cloneBranchProtectionPatternRules(rules)
 	key := strconv.Itoa(repoID)
@@ -64,11 +59,9 @@ func (st *Store) SetBranchProtectionPatterns(repoID int, rules []*BranchProtecti
 	}
 }
 
-// MatchBranchPattern reports whether a branch name matches an fnmatch-style
-// pattern with GitHub's branch-protection semantics: `*` matches any run of
-// characters within one path segment (it does not cross `/`), `**` matches
-// across segments, and `?` matches a single non-`/` character. Everything
-// else is literal.
+// MatchBranchPattern reports whether a branch matches an fnmatch pattern with
+// GitHub's branch-protection semantics: `*` spans one path segment (not `/`),
+// `**` spans segments, `?` matches one non-`/` char, everything else literal.
 func MatchBranchPattern(pattern, branch string) bool {
 	if pattern == "" {
 		return false

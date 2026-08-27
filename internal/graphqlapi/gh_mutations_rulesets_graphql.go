@@ -2,17 +2,11 @@ package graphqlapi
 
 // The repository-ruleset write mutations: createRepositoryRuleset,
 // updateRepositoryRuleset and deleteRepositoryRuleset. They write through the
-// same store primitives the REST ruleset routes write through —
-// CreateRuleset/CreateOrgRuleset, UpdateRuleset/UpdateOrgRuleset and
-// DeleteRuleset — so a ruleset authored over GraphQL is evaluated by the same
-// enforcement chokepoint and read back identically over REST.
+// same store primitives as the REST ruleset routes.
 //
-// A ruleset's source may be a repository, an organization or an enterprise.
-// The first two are supported here; the enterprise scope stays with the REST
-// enterprise-rulesets surface because bleephub's RuleSource union (built with
-// the read surface, before the Enterprise type exists) cannot yet name an
-// enterprise, and a payload that could not render its ruleset would be worse
-// than an explicit refusal.
+// A ruleset's source may be a repository, organization or enterprise. Only the
+// first two are supported here; enterprise rulesets stay with the REST surface
+// because the RuleSource union cannot yet name an enterprise.
 
 import (
 	"fmt"
@@ -36,11 +30,8 @@ func init() {
 	}
 }
 
-// rulesetOwnerRule is the policy for the ruleset mutations. The entitlement
-// is over the ruleset's source: repository administration for a repository
-// ruleset, organization administration for an organization ruleset, and
-// enterprise ownership for an enterprise one (whose write the resolver then
-// declines in favor of the REST surface).
+// rulesetOwnerRule is the policy for the ruleset mutations. The entitlement is
+// over the ruleset's source: repo admin, org admin, or enterprise ownership.
 type rulesetOwnerRule struct {
 	// sourceKey names the source account/repository directly; rulesetKey
 	// names an existing ruleset whose source is looked up. Exactly one is set.
@@ -119,8 +110,7 @@ func (r rulesetOwnerRule) authorizeEnterprise(s *Resolver, p graphql.ResolvePara
 // --- schema -----------------------------------------------------------------
 
 // addRulesetMutationsToSchema installs the three ruleset write mutations. It
-// runs after the ruleset read surface, whose RepositoryRuleset object the
-// payloads return.
+// runs after the ruleset read surface, whose RepositoryRuleset the payloads return.
 func (s *Resolver) addRulesetMutationsToSchema(mutationType *graphql.Object) {
 	rulesetType := s.accountSurfaceRegistry().ruleset
 	targetEnum := s.sharedEnum("RepositoryRulesetTarget", "BRANCH", "PUSH", "REPOSITORY", "TAG")
@@ -222,9 +212,8 @@ func (s *Resolver) addRulesetMutationsToSchema(mutationType *graphql.Object) {
 }
 
 // gqlRuleParametersInput transcribes RuleParametersInput and the per-rule
-// parameter inputs bleephub's ruleset evaluator understands. The camelCase
-// members convert to the snake_case parameter maps the REST ruleset bodies
-// carry, so one stored shape serves both surfaces.
+// parameter inputs. camelCase members convert to the snake_case parameter maps
+// the REST ruleset bodies carry, so one stored shape serves both surfaces.
 func (s *Resolver) gqlRuleParametersInput() *graphql.InputObject {
 	pattern := func(name string) *graphql.InputObject {
 		return s.mutationInput(name, graphql.InputObjectConfigFieldMap{
@@ -538,9 +527,8 @@ func (s *Resolver) resolveUpdateRepositoryRuleset(p graphql.ResolveParams) (inte
 		if repo == nil {
 			return nil, gqlMissingNode("RepositoryRuleset", nodeID)
 		}
-		// UpdateRuleset merges a sparse updates record; build it from the
-		// present members so an absent member leaves the field alone — the
-		// same merge PUT /repos/{owner}/{repo}/rulesets/{id} performs.
+		// UpdateRuleset merges a sparse record: build it from the present
+		// members so an absent member leaves the field alone.
 		updates := &store.Ruleset{}
 		apply(updates)
 		updated := s.store.UpdateRuleset(repo, existing, updates, actor.ID)

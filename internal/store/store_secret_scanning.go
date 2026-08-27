@@ -31,9 +31,8 @@ type SecretScanningLocationDetails struct {
 	HTMLURL     string `json:"html_url"`
 }
 
-// SecretScanningState is the lifecycle state of a secret-scanning alert; GitHub
-// only ever emits these two. Typing the field keeps invalid values out of the
-// struct; a typed string marshals to JSON identically to a plain string.
+// SecretScanningState is the lifecycle state of a secret-scanning alert;
+// GitHub only ever emits these two.
 type SecretScanningState string
 
 const (
@@ -42,7 +41,7 @@ const (
 )
 
 // SecretScanningResolution is the reason recorded when an alert is resolved;
-// only these six values are accepted (validated at the REST boundary).
+// only these six values are accepted.
 type SecretScanningResolution string
 
 const (
@@ -74,8 +73,8 @@ type SecretScanningAlert struct {
 	ResolvedAt            *time.Time               `json:"resolved_at"`
 }
 
-// CreateSecretScanningAlert seeds a new secret scanning alert for a repo.
-// The real API has no create endpoint; this is the internal bleephub seeding path.
+// CreateSecretScanningAlert seeds a new alert. The real API has no create
+// endpoint; this is bleephub's internal seeding path.
 func (st *Store) CreateSecretScanningAlert(repoKey, secretType string, locations []SecretScanningLocation) *SecretScanningAlert {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -115,8 +114,8 @@ func (st *Store) CreateSecretScanningAlertLocked(repoKey, secretType string, loc
 	return a
 }
 
-// CreateSecretScanningAlertIfNew records a content-derived alert unless the
-// same repository already has the same secret type at the same blob location.
+// CreateSecretScanningAlertIfNew records an alert unless the repo already has
+// the same secret type at the same blob location.
 func (st *Store) CreateSecretScanningAlertIfNew(repoKey, secretType string, locations []SecretScanningLocation) *SecretScanningAlert {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -157,12 +156,9 @@ func secretTypeDisplayName(secretType string) string {
 	}
 }
 
-// GetSecretScanningAlert returns an alert by repo + alert number.
-// cloneSecretScanningAlert returns a deep copy safe to hand outside the store
-// lock: the Locations slice and the ResolvedAt pointer are the only reference
-// fields, so copying the struct plus those two detaches the result from the
-// stored alert (STORE-021 — a reader must not observe a concurrent in-place
-// update, and must not be able to mutate the stored row through the getter).
+// cloneSecretScanningAlert returns a detached deep copy (STORE-021). Locations
+// and ResolvedAt are the only reference fields, so copying the struct plus
+// those two suffices.
 func cloneSecretScanningAlert(a *SecretScanningAlert) *SecretScanningAlert {
 	if a == nil {
 		return nil
@@ -184,9 +180,9 @@ func (st *Store) GetSecretScanningAlert(repoKey string, number int) *SecretScann
 	return cloneSecretScanningAlert(st.SecretScanningAlertsByRepo[repoKey][number])
 }
 
-// sortAlertList orders a slice of alert records by created/updated time,
-// defaulting to created descending. Shared by the secret-scanning,
-// code-scanning, and dependabot org-level list endpoints.
+// sortAlertList orders alert records by created/updated time, defaulting to
+// created descending. Shared by the secret-scanning, code-scanning, and
+// dependabot org-level list endpoints.
 func sortAlertList[T any](out []*T, sortField, direction string, createdAt, updatedAt func(*T) time.Time) {
 	if sortField == "" {
 		sortField = "created"
@@ -209,7 +205,8 @@ func sortAlertList[T any](out []*T, sortField, direction string, createdAt, upda
 	})
 }
 
-// ListSecretScanningAlerts returns repo alerts filtered/sorted per GitHub's list endpoint.
+// ListSecretScanningAlerts returns repo alerts filtered/sorted per GitHub's
+// list endpoint.
 func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution, sortField, direction string) []*SecretScanningAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -235,12 +232,9 @@ func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution
 	return snapshotSecretScanningAlerts(out)
 }
 
-// UpdateSecretScanningAlert applies a state/resolution transition to a single alert.
 // UpdateSecretScanningAlert applies a state/resolution transition. The caller's
-// `a` now comes from GetSecretScanningAlert, which returns a detached clone, so
-// the mutation is applied to the LIVE stored alert (re-fetched by key here) and
-// a detached snapshot of the new state is written back into `a` for the caller
-// to render — never the live pointer.
+// `a` is a detached clone, so the mutation is applied to the live alert
+// re-fetched by key here and a fresh snapshot is written back into `a`.
 func (st *Store) UpdateSecretScanningAlert(a *SecretScanningAlert, state, resolution, resolutionComment string) error {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -272,7 +266,8 @@ func (st *Store) UpdateSecretScanningAlert(a *SecretScanningAlert, state, resolu
 	return nil
 }
 
-// BulkUpdateSecretScanningAlerts updates every alert matching the repo filters to the given resolution.
+// BulkUpdateSecretScanningAlerts resolves every alert matching the repo
+// filters.
 func (st *Store) BulkUpdateSecretScanningAlerts(repoKey, stateFilter, secretTypeFilter, resolutionFilter, newResolution, resolutionComment string) ([]*SecretScanningAlert, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -302,9 +297,8 @@ func (st *Store) BulkUpdateSecretScanningAlerts(repoKey, stateFilter, secretType
 		updated = append(updated, &next)
 	}
 
-	// Validate and stage the complete result before changing either memory or
-	// persistence. Map iteration order must never decide which subset survives
-	// a rejected or failed bulk operation.
+	// Stage the complete result before touching memory or persistence: map
+	// iteration order must not decide which subset survives a failed bulk op.
 	batch := NewPersistBatch(st.Persist)
 	for _, a := range updated {
 		batch.Put("secret_scanning_alerts", strconv.Itoa(a.ID), a)
@@ -343,9 +337,8 @@ func validateSecretScanningTransition(currentState, newState, resolution string)
 
 func isValidResolution(r string) bool {
 	switch SecretScanningResolution(r) {
-	// github's secret-scanning-alert-resolution enum is
-	// false_positive|wont_fix|revoked|used_in_tests; pattern_deleted/edited are
-	// system-set response-only values a client PATCH cannot supply (422).
+	// pattern_deleted/edited are system-set response-only values a client PATCH
+	// cannot supply (422); the four below are the settable enum.
 	case SecretScanningResolutionFalsePositive, SecretScanningResolutionWontFix,
 		SecretScanningResolutionRevoked, SecretScanningResolutionUsedInTests:
 		return true
@@ -359,11 +352,9 @@ func (st *Store) persistSecretScanningAlert(a *SecretScanningAlert) {
 	}
 }
 
-// ListSecretScanningAlertsByOrg returns all secret scanning alerts for
-// repositories owned by the given organization, filtered and sorted per
-// GitHub's org-alerts query parameters (state, secret_type, resolution,
-// sort, direction). Unknown filter values are accepted but produce no
-// matches rather than a 400, matching GitHub's lenient list behavior.
+// ListSecretScanningAlertsByOrg returns alerts for the org's repos, filtered
+// and sorted per GitHub's org-alerts query parameters. Unknown filter values
+// yield no matches rather than a 400, matching GitHub's lenient behavior.
 func (st *Store) ListSecretScanningAlertsByOrg(orgID int, state, secretType, resolution, sortField, direction string) []*SecretScanningAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -400,8 +391,8 @@ func (st *Store) ListSecretScanningAlertsByOrg(orgID int, state, secretType, res
 	return snapshotSecretScanningAlerts(out)
 }
 
-// ListSecretScanningAlertsByUser returns all secret scanning alerts for
-// repositories owned by the given user, sorted by creation time descending.
+// ListSecretScanningAlertsByUser returns alerts for the user's repos, newest
+// first.
 func (st *Store) ListSecretScanningAlertsByUser(userID int) []*SecretScanningAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -423,7 +414,7 @@ func (st *Store) ListSecretScanningAlertsByUser(userID int) []*SecretScanningAle
 }
 
 // secretScanningProviderPatterns is the catalog of partner patterns the
-// pattern-configurations surface exposes and validates against.
+// pattern-configurations surface exposes.
 var secretScanningProviderPatterns = []struct {
 	patternID   string
 	slug        string
@@ -448,9 +439,8 @@ func IsSecretScanningProviderPattern(tokenType string) bool {
 	return false
 }
 
-// OrgSecretScanningPatternConfig holds an organization's push-protection
-// pattern settings and the optimistic-concurrency row version updates must
-// present.
+// OrgSecretScanningPatternConfig holds an org's push-protection pattern
+// settings and the optimistic-concurrency version updates must present.
 type OrgSecretScanningPatternConfig struct {
 	Version          string            `json:"version"`
 	ProviderSettings map[string]string `json:"provider_settings"` // token_type → not-set | disabled | enabled
@@ -458,10 +448,9 @@ type OrgSecretScanningPatternConfig struct {
 	UpdatedAt        time.Time         `json:"updated_at"`
 }
 
-// ListSecretScanningPatternConfigurations returns the secret scanning
-// pattern overrides exposed by GitHub's pattern-configurations endpoint for
-// the org, reflecting any stored push-protection settings and computing the
-// alert totals from the org's real alerts.
+// ListSecretScanningPatternConfigurations returns the org's pattern overrides
+// for GitHub's pattern-configurations endpoint, reflecting stored
+// push-protection settings and computing alert totals from real alerts.
 func (st *Store) ListSecretScanningPatternConfigurations(orgLogin string) map[string]interface{} {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -531,10 +520,9 @@ func (st *Store) ListSecretScanningPatternConfigurations(orgLogin string) map[st
 	}
 }
 
-// UpdateSecretScanningPatternConfig applies push-protection setting changes
-// for the org. expectedVersion, when non-nil, must match the current row
-// version — a mismatch reports a conflict without changing anything.
-// Returns the new version.
+// UpdateSecretScanningPatternConfig applies push-protection setting changes and
+// returns the new version. A non-nil expectedVersion that mismatches the
+// current version reports a conflict without changing anything.
 func (st *Store) UpdateSecretScanningPatternConfig(orgLogin string, expectedVersion *string, provider, custom map[string]string) (string, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -572,8 +560,8 @@ func (st *Store) UpdateSecretScanningPatternConfig(orgLogin string, expectedVers
 	return cfg.Version, true
 }
 
-// SecretScanningPushProtectionEnabled reports whether an organization has
-// explicitly enabled push protection for a provider pattern on this repository.
+// SecretScanningPushProtectionEnabled reports whether the org has enabled push
+// protection for a provider pattern on this repo.
 func (st *Store) SecretScanningPushProtectionEnabled(repo *Repo, patternID string) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -589,8 +577,8 @@ func (st *Store) SecretScanningPushProtectionEnabled(repo *Repo, patternID strin
 	return cfg != nil && cfg.ProviderSettings[patternID] == "enabled"
 }
 
-// SecretScanningPushProtectionPlaceholder is one blocked-push placeholder:
-// the identity a pusher presents when requesting a push protection bypass.
+// SecretScanningPushProtectionPlaceholder is the identity a pusher presents
+// when requesting a push protection bypass.
 type SecretScanningPushProtectionPlaceholder struct {
 	ID        string    `json:"id"`
 	RepoKey   string    `json:"repo_key"`
@@ -609,7 +597,7 @@ type SecretScanningPushProtectionBypass struct {
 }
 
 // CreateSecretScanningPushProtectionPlaceholder records a blocked push's
-// placeholder for the repository.
+// placeholder.
 func (st *Store) CreateSecretScanningPushProtectionPlaceholder(repoKey, tokenType string) *SecretScanningPushProtectionPlaceholder {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -630,12 +618,10 @@ func (st *Store) CreateSecretScanningPushProtectionPlaceholder(repoKey, tokenTyp
 	return ph
 }
 
-// secretScanningPushProtectionBypassTTL is how long a granted bypass stays
-// valid for the pusher to complete the push.
 const secretScanningPushProtectionBypassTTL = 2 * time.Hour
 
 // CreateSecretScanningPushProtectionBypass consumes a placeholder and grants
-// the bypass. Returns nil when the placeholder does not exist for the repo.
+// the bypass, returning nil when the placeholder does not exist for the repo.
 func (st *Store) CreateSecretScanningPushProtectionBypass(repoKey, placeholderID, reason string) *SecretScanningPushProtectionBypass {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -655,9 +641,8 @@ func (st *Store) CreateSecretScanningPushProtectionBypass(repoKey, placeholderID
 		CreatedAt:     now,
 	}
 	st.SecretScanningPushBypasses[repoKey] = append(st.SecretScanningPushBypasses[repoKey], bypass)
-	// One transaction: consuming the placeholder and recording the bypass it
-	// grants must not disagree across a crash, or a protected push could be
-	// bypassed with no record, or a placeholder consumed with no bypass.
+	// One transaction: consuming the placeholder and recording the bypass must
+	// not disagree across a crash.
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("secret_scanning_push_placeholders", repoKey, st.SecretScanningPushPlaceholders[repoKey])
 	batch.Put("secret_scanning_push_bypasses", repoKey, st.SecretScanningPushBypasses[repoKey])
@@ -667,8 +652,8 @@ func (st *Store) CreateSecretScanningPushProtectionBypass(repoKey, placeholderID
 	return bypass
 }
 
-// HasActiveSecretScanningPushProtectionBypass reports whether a previously
-// granted bypass still permits a protected write for this token type.
+// HasActiveSecretScanningPushProtectionBypass reports whether a granted bypass
+// still permits a protected write for this token type.
 func (st *Store) HasActiveSecretScanningPushProtectionBypass(repoKey, tokenType string, now time.Time) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -690,8 +675,8 @@ func (st *Store) HasActiveSecretScanningPushProtectionBypass(repoKey, tokenType 
 	}
 	if len(active) != len(bypasses) {
 		if len(active) == 0 {
-			// Delete the row rather than MustPut the now-nil slice, which would
-			// marshal to a literal `null` and reload as a permanent tombstone.
+			// Delete rather than MustPut the nil slice, which would marshal to
+			// `null` and reload as a permanent tombstone.
 			delete(st.SecretScanningPushBypasses, repoKey)
 			if st.Persist != nil {
 				st.Persist.MustDelete("secret_scanning_push_bypasses", repoKey)
@@ -706,12 +691,10 @@ func (st *Store) HasActiveSecretScanningPushProtectionBypass(repoKey, tokenType 
 	return found
 }
 
-// SecretScanningScanHistory derives the repository's scan history from the
-// recorded alert state: each alert-producing scan event appears as a
-// completed incremental scan, the earliest as the initial backfill, and an
-// org-level pattern configuration update as a pattern-update scan. A
-// repository with no recorded scanning activity has an honestly empty
-// history.
+// SecretScanningScanHistory derives the repo's scan history from recorded
+// alert state: each alert-producing event is a completed incremental scan, the
+// earliest is the backfill, and an org pattern-config update is a
+// pattern-update scan. No activity yields an empty history.
 func (st *Store) SecretScanningScanHistory(repo *Repo) (incremental, patternUpdate, backfill []*SecretScanningScanRecord) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

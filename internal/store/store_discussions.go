@@ -37,11 +37,9 @@ type Discussion struct {
 	LastEditedAt *time.Time `json:"last_edited_at"`
 	PublishedAt  *time.Time `json:"published_at"`
 	Deleted      bool       `json:"deleted"`
-	UpvoterIDs   []int      `json:"upvoter_ids"` // users who upvoted (addUpvote/removeUpvote)
-	// Closed, ClosedAt and StateReason carry github's discussion close state:
-	// a discussion closes as RESOLVED, OUTDATED or DUPLICATE, and reopening
-	// records REOPENED — how both the timeline and the discussion header
-	// explain the state.
+	UpvoterIDs   []int      `json:"upvoter_ids"`
+	// StateReason is github's close reason: RESOLVED, OUTDATED, DUPLICATE, or
+	// REOPENED.
 	Closed      bool       `json:"closed"`
 	ClosedAt    *time.Time `json:"closed_at"`
 	StateReason string     `json:"state_reason"`
@@ -60,7 +58,7 @@ type DiscussionComment struct {
 	IsAnswer     bool       `json:"is_answer"`
 	ParentID     int        `json:"parent_id"`
 	Deleted      bool       `json:"deleted"`
-	UpvoterIDs   []int      `json:"upvoter_ids"` // users who upvoted (addUpvote/removeUpvote)
+	UpvoterIDs   []int      `json:"upvoter_ids"`
 }
 
 func DiscussionCategoryNodeID(id int) string {
@@ -75,9 +73,9 @@ func discussionCommentNodeID(id int) string {
 	return fmt.Sprintf("DC_kgDO%08d", id)
 }
 
-// ensureDefaultDiscussionCategoriesBatchLocked creates default categories,
-// staging every row into batch so they commit with the repo row that owns them
-// in one transaction (STORE-001/002). Callers hold st.Mu.
+// ensureDefaultDiscussionCategoriesBatchLocked stages the default categories
+// into batch so they commit with their owning repo row (STORE-001/002).
+// Callers hold st.Mu.
 func (st *Store) ensureDefaultDiscussionCategoriesBatchLocked(batch *PersistBatch, repoID int) {
 	defaults := []struct {
 		Name         string `json:"-"`
@@ -96,23 +94,22 @@ func (st *Store) ensureDefaultDiscussionCategoriesBatchLocked(batch *PersistBatc
 	}
 }
 
-// CreateDiscussionCategory creates a new discussion category in the given repository.
+// CreateDiscussionCategory creates a discussion category.
 func (st *Store) CreateDiscussionCategory(repoID int, name, emoji, description string, isAnswerable bool) *DiscussionCategory {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	return st.createDiscussionCategoryLocked(repoID, name, emoji, description, isAnswerable)
 }
 
-// createDiscussionCategoryLocked creates a category while the caller already holds st.Mu.
+// createDiscussionCategoryLocked creates a category; callers hold st.Mu.
 func (st *Store) createDiscussionCategoryLocked(repoID int, name, emoji, description string, isAnswerable bool) *DiscussionCategory {
 	cat := st.buildDiscussionCategoryLocked(repoID, name, emoji, description, isAnswerable)
 	st.persistDiscussionCategory(cat)
 	return cat
 }
 
-// createDiscussionCategoryBatchLocked creates a category and stages its persist
-// into batch instead of committing its own transaction (STORE-001/002).
-// Callers hold st.Mu.
+// createDiscussionCategoryBatchLocked creates a category, staging its persist
+// into batch rather than committing its own (STORE-001/002). Callers hold st.Mu.
 func (st *Store) createDiscussionCategoryBatchLocked(batch *PersistBatch, repoID int, name, emoji, description string, isAnswerable bool) *DiscussionCategory {
 	cat := st.buildDiscussionCategoryLocked(repoID, name, emoji, description, isAnswerable)
 	batch.Put("discussion_categories", strconv.Itoa(cat.ID), cat)
@@ -120,7 +117,7 @@ func (st *Store) createDiscussionCategoryBatchLocked(batch *PersistBatch, repoID
 }
 
 // buildDiscussionCategoryLocked allocates and indexes a category without
-// persisting it. Callers hold st.Mu.
+// persisting it; callers hold st.Mu.
 func (st *Store) buildDiscussionCategoryLocked(repoID int, name, emoji, description string, isAnswerable bool) *DiscussionCategory {
 	now := st.CurrentTime()
 	cat := &DiscussionCategory{
@@ -143,8 +140,7 @@ func (st *Store) buildDiscussionCategoryLocked(repoID int, name, emoji, descript
 func (st *Store) GetDiscussionCategory(id int) *DiscussionCategory {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// A copy so a reader can't mutate the stored category through the getter
-	// (STORE-021); DiscussionCategory is all-value, so a shallow copy detaches.
+	// Detached copy (STORE-021); all-value, so a shallow copy suffices.
 	cat := st.DiscussionCategories[id]
 	if cat == nil {
 		return nil
@@ -159,7 +155,6 @@ func (st *Store) GetDiscussionCategoryByName(repoID int, name string) *Discussio
 	defer st.Mu.RUnlock()
 	for _, cat := range st.DiscussionCategories {
 		if cat.RepoID == repoID && cat.Name == name {
-			// Detach like GetDiscussionCategory — all-value, so a shallow copy.
 			clone := *cat
 			return &clone
 		}
@@ -186,11 +181,8 @@ func (st *Store) CreateDiscussion(repoID, categoryID, authorID int, title, body 
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	// Per-repo numbers come from a high-water counter rather than a scan of
-	// every discussion in the store: deleted discussions are tombstoned (never
-	// removed from st.Discussions), so a scan-for-max grew unbounded and its
-	// cost rose with every deletion. The counter only increments, so numbers
-	// stay monotonic across tombstones (a deleted number is never reused).
+	// A high-water counter, not a scan-for-max: deleted discussions are
+	// tombstoned, so numbers stay monotonic and a deleted number is never reused.
 	number := st.NextDiscussionNumber[repoID]
 	if number == 0 {
 		number = 1
@@ -217,9 +209,8 @@ func (st *Store) CreateDiscussion(repoID, categoryID, authorID int, title, body 
 	return d
 }
 
-// cloneDiscussion returns a copy safe to hand outside the store lock
-// (STORE-021): LastEditedAt, PublishedAt and UpvoterIDs are the reference
-// fields.
+// cloneDiscussion returns a detached copy (STORE-021), deep-copying the
+// LastEditedAt, PublishedAt and UpvoterIDs reference fields.
 func cloneDiscussion(d *Discussion) *Discussion {
 	if d == nil {
 		return nil
@@ -258,7 +249,7 @@ func (st *Store) GetDiscussionByNumber(repoID, number int) *Discussion {
 	return nil
 }
 
-// ListDiscussions returns discussions for a repository, optionally filtered by category.
+// ListDiscussions returns a repository's discussions, optionally filtered by category.
 func (st *Store) ListDiscussions(repoID, categoryID int) []*Discussion {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -276,7 +267,7 @@ func (st *Store) ListDiscussions(repoID, categoryID int) []*Discussion {
 	return snapshotDiscussions(out)
 }
 
-// UpdateDiscussion applies a mutation function to a discussion.
+// UpdateDiscussion applies fn to a discussion.
 func (st *Store) UpdateDiscussion(id int, fn func(*Discussion)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -336,12 +327,10 @@ func (st *Store) CreateDiscussionComment(discussionID, authorID int, body string
 func (st *Store) GetDiscussionComment(id int) *DiscussionComment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// A copy so a reader can't mutate the stored comment through the getter
-	// (STORE-021); LastEditedAt and UpvoterIDs are the reference fields.
 	return cloneDiscussionComment(st.DiscussionComments[id])
 }
 
-// ListDiscussionComments returns comments for a discussion, optionally scoped to a parent.
+// ListDiscussionComments returns a discussion's comments, optionally scoped to a parent.
 func (st *Store) ListDiscussionComments(discussionID, parentID int) []*DiscussionComment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -355,8 +344,8 @@ func (st *Store) ListDiscussionComments(discussionID, parentID int) []*Discussio
 		}
 		out = append(out, c)
 	}
-	// ID tie-break: carried-over comments (issue conversion) can share a
-	// CreatedAt, and sort.Slice is unstable for equal keys.
+	// ID tie-break: issue-conversion comments can share a CreatedAt and
+	// sort.Slice is unstable.
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
 			return out[i].ID < out[j].ID
@@ -366,7 +355,7 @@ func (st *Store) ListDiscussionComments(discussionID, parentID int) []*Discussio
 	return snapshotDiscussionComments(out)
 }
 
-// UpdateDiscussionComment applies a mutation function to a comment.
+// UpdateDiscussionComment applies fn to a comment.
 func (st *Store) UpdateDiscussionComment(id int, fn func(*DiscussionComment)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -400,9 +389,9 @@ func (st *Store) DeleteDiscussionComment(id int) bool {
 	return true
 }
 
-// MarkDiscussionCommentAsAnswer marks a comment as the answer, unmarking any
-// other answer. The unmark and the new answer commit in one transaction so a
-// crash cannot leave the discussion with no answer — or two (STORE-001/002).
+// MarkDiscussionCommentAsAnswer marks a comment as the answer. The unmark of
+// any prior answer and the new answer commit in one transaction, so a crash
+// cannot leave zero or two answers (STORE-001/002).
 func (st *Store) MarkDiscussionCommentAsAnswer(id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -427,10 +416,9 @@ func (st *Store) MarkDiscussionCommentAsAnswer(id int) bool {
 	return true
 }
 
-// SetDiscussionUpvote adds (up=true) or removes (up=false) userID's upvote on
-// a discussion. Idempotent both ways; reports whether the discussion exists.
-// Upvotes deliberately bump neither UpdatedAt nor LastEditedAt — a vote is not
-// an edit.
+// SetDiscussionUpvote adds (up) or removes userID's upvote, idempotently,
+// reporting whether the discussion exists. A vote is not an edit, so it bumps
+// neither UpdatedAt nor LastEditedAt.
 func (st *Store) SetDiscussionUpvote(id, userID int, up bool) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -445,9 +433,8 @@ func (st *Store) SetDiscussionUpvote(id, userID int, up bool) bool {
 	return true
 }
 
-// SetDiscussionCommentUpvote adds (up=true) or removes (up=false) userID's
-// upvote on a discussion comment. Idempotent both ways; reports whether the
-// comment exists.
+// SetDiscussionCommentUpvote adds (up) or removes userID's upvote,
+// idempotently, reporting whether the comment exists.
 func (st *Store) SetDiscussionCommentUpvote(id, userID int, up bool) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -462,8 +449,7 @@ func (st *Store) SetDiscussionCommentUpvote(id, userID int, up bool) bool {
 	return true
 }
 
-// setUpvoter adds or removes userID from an upvoter set, reporting whether the
-// set changed.
+// setUpvoter adds or removes userID, reporting whether the set changed.
 func setUpvoter(ids []int, userID int, up bool) (bool, []int) {
 	for i, existing := range ids {
 		if existing != userID {
@@ -494,10 +480,8 @@ func (st *Store) UnmarkDiscussionCommentAsAnswer(id int) bool {
 	return true
 }
 
-// CreateDiscussionCommentAt is CreateDiscussionComment with caller-supplied
-// timestamps, for flows that carry comments over from another conversation
-// (issue → discussion conversion) and must preserve the original authorship
-// times rather than stamping the conversion time.
+// CreateDiscussionCommentAt is CreateDiscussionComment with a caller-supplied
+// timestamp, so issue→discussion conversion preserves original authorship times.
 func (st *Store) CreateDiscussionCommentAt(discussionID, authorID int, body string, parentID int, createdAt time.Time) *DiscussionComment {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -518,13 +502,11 @@ func (st *Store) CreateDiscussionCommentAt(discussionID, authorID int, body stri
 	return c
 }
 
-// MaxPinnedDiscussions matches github.com's limit of four pinned discussions
-// per repository.
+// MaxPinnedDiscussions is github.com's per-repository pinned-discussion limit.
 const MaxPinnedDiscussions = 4
 
-// ListPinnedDiscussions returns the repo's ordered pinned discussion IDs as a
-// detached copy (STORE-021), dropping IDs whose discussion has since been
-// deleted.
+// ListPinnedDiscussions returns the repo's ordered pinned discussion IDs
+// (detached, STORE-021), dropping any whose discussion was deleted.
 func (st *Store) ListPinnedDiscussions(repoID int) []int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -538,10 +520,9 @@ func (st *Store) ListPinnedDiscussions(repoID int) []int {
 	return out
 }
 
-// SetPinnedDiscussions replaces the repo's ordered pinned discussion list.
-// The caller validates membership and the MaxPinnedDiscussions cap; the store
-// keeps a detached copy of ids so a caller cannot mutate the stored slice
-// afterwards (STORE-021).
+// SetPinnedDiscussions replaces the repo's ordered pinned list. The caller
+// validates membership and the MaxPinnedDiscussions cap; the store keeps a
+// detached copy (STORE-021).
 func (st *Store) SetPinnedDiscussions(repoID int, ids []int) []int {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -573,20 +554,16 @@ func (st *Store) persistDiscussionComment(c *DiscussionComment) {
 	}
 }
 
-// DiscussionPoll is the poll a discussion may carry: one question, ordered
-// options, one vote per user across the whole poll — github's rule, which is
-// why the vote records the option per user rather than a count per option.
+// DiscussionPoll is a discussion's optional poll. VotesByUser keys on user id,
+// making github's one-vote-per-poll rule structural.
 type DiscussionPoll struct {
 	ID           int    `json:"id"`
 	NodeID       string `json:"node_id"`
 	DiscussionID int    `json:"discussion_id"`
 	Question     string `json:"question"`
 	// Options in authored order; vote-count order is derived at read time.
-	Options []*DiscussionPollOption `json:"options"`
-	// VotesByUser maps a user id to the option id they voted for. One entry
-	// per user is what makes "one vote per poll" structural rather than a
-	// rule every writer must remember.
-	VotesByUser map[int]int `json:"votes_by_user"`
+	Options     []*DiscussionPollOption `json:"options"`
+	VotesByUser map[int]int             `json:"votes_by_user"`
 }
 
 // DiscussionPollOption is one answer in a discussion poll.
@@ -597,9 +574,8 @@ type DiscussionPollOption struct {
 	Option string `json:"option"`
 }
 
-// CreateDiscussionPoll attaches a poll to a discussion. A discussion carries
-// at most one; a second creation is refused rather than replacing votes that
-// were already cast.
+// CreateDiscussionPoll attaches a poll to a discussion, refusing a second so
+// cast votes are never replaced.
 func (st *Store) CreateDiscussionPoll(discussionID int, question string, options []string) *DiscussionPoll {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -634,8 +610,7 @@ func (st *Store) CreateDiscussionPoll(discussionID int, question string, options
 	return cloneDiscussionPoll(poll)
 }
 
-// GetDiscussionPoll answers the poll on a discussion as a detached snapshot,
-// or nil when the discussion carries none.
+// GetDiscussionPoll returns a discussion's poll as a detached snapshot, or nil.
 func (st *Store) GetDiscussionPoll(discussionID int) *DiscussionPoll {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -647,8 +622,8 @@ func (st *Store) GetDiscussionPoll(discussionID int) *DiscussionPoll {
 	return nil
 }
 
-// FindDiscussionPollOptionByNodeID resolves an option's global id to live
-// rows: the option and its poll, in the Find* live-row convention.
+// FindDiscussionPollOptionByNodeID resolves an option's global id to the live
+// option and its poll (Find* live-row convention).
 func FindDiscussionPollOptionByNodeID(st *Store, nodeID string) (*DiscussionPollOption, *DiscussionPoll) {
 	if nodeID == "" {
 		return nil, nil
@@ -665,9 +640,8 @@ func FindDiscussionPollOptionByNodeID(st *Store, nodeID string) (*DiscussionPoll
 	return nil, nil
 }
 
-// CastDiscussionPollVote records userID's vote for the named option,
-// replacing any earlier vote in the same poll — github lets a voter change
-// their mind, not vote twice.
+// CastDiscussionPollVote records userID's vote, replacing any earlier vote in
+// the same poll (github lets a voter change their mind, not vote twice).
 func (st *Store) CastDiscussionPollVote(pollID, optionID, userID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

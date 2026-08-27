@@ -2,16 +2,15 @@ package store
 
 import "strings"
 
-// Pure label predicates shared by the REST handlers and the GraphQL
-// resolver layer (moved from the server package in ARCH-003).
+// Pure label predicates shared by the REST handlers and the GraphQL resolvers.
 
-// IssueHasAllLabels checks if an issue has all the given label names.
+// IssueHasAllLabels reports whether an issue carries every named label.
 func IssueHasAllLabels(st *Store, issue *Issue, labelNames []string, repoID int) bool {
 	return LabelIDsCoverNames(st, issue.LabelIDs, labelNames)
 }
 
-// LabelIDsCoverNames is the label filter itself: it asks about label ids, not
-// about issues, so pull requests can be filtered by the same predicate.
+// LabelIDsCoverNames asks about label ids rather than issues, so pull requests
+// can be filtered by the same predicate.
 func LabelIDsCoverNames(st *Store, labelIDs []int, labelNames []string) bool {
 	for _, name := range labelNames {
 		found := false

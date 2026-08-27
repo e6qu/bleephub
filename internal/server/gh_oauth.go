@@ -19,15 +19,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// writeOAuthTokenResponse renders a POST /login/oauth/access_token response in
-// the format the client negotiated via Accept, matching real GitHub: JSON when
-// the client sends `Accept: application/json`, otherwise
-// application/x-www-form-urlencoded (GitHub's default for this endpoint).
-// Applies to both success and error bodies, and to both the web and device
-// flows that share the endpoint.
+// writeOAuthTokenResponse renders an access_token response in the format the client
+// negotiated via Accept: JSON for `Accept: application/json`, else GitHub's default
+// application/x-www-form-urlencoded. Covers success and error bodies alike.
 func writeOAuthTokenResponse(w http.ResponseWriter, r *http.Request, fields map[string]string) {
-	// RFC 6749 §5.1: the token endpoint response carries a credential and must
-	// never be cached by any intermediary.
+	// RFC 6749 §5.1: the response carries a credential and must never be cached.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	if strings.Contains(r.Header.Get("Accept"), "application/json") {
@@ -49,20 +45,15 @@ func writeOAuthTokenResponse(w http.ResponseWriter, r *http.Request, fields map[
 	_, _ = w.Write([]byte(form.Encode()))
 }
 
-// parseOAuthRequestParams reads the parameters of an OAuth endpoint from
-// either encoding a client may send them in, and leaves them in r.Form so every
-// handler downstream keeps reading them through r.FormValue.
+// parseOAuthRequestParams reads OAuth parameters from either encoding a client may
+// send and leaves them in r.Form for downstream r.FormValue reads.
 //
-// The OAuth endpoints live outside the REST API and its JSON-only convention:
-// the specification writes their requests as form-encoded, and that is what
-// GitHub documents, but GitHub accepts a JSON body just as well — which is what
-// the official octokit device-flow strategy sends. Reading only the form
-// encoding made the whole grant unreachable from that client: a JSON body
-// leaves every form value empty, so the request read as one carrying no
-// client_id at all and was refused as bad client credentials.
+// GitHub accepts a JSON body on these endpoints as well as form-encoding — the
+// octokit device-flow strategy sends JSON — so reading only the form encoding left
+// every value empty and refused the request as bad client credentials.
 func parseOAuthRequestParams(w http.ResponseWriter, r *http.Request) bool {
-	// ParseForm takes the query string and, for a form-encoded body, the body.
-	// It leaves a JSON body unread, so it is safe to decode below.
+	// ParseForm reads the query string and a form body but leaves a JSON body
+	// unread, so it is safe to decode below.
 	if err := r.ParseForm(); err != nil {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing form")
 		return false
@@ -76,8 +67,7 @@ func parseOAuthRequestParams(w http.ResponseWriter, r *http.Request) bool {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return false
 	}
-	// A JSON content type on an empty body carries no parameters rather than
-	// being malformed; whatever the query string held still stands.
+	// An empty JSON body carries no parameters; the query string still stands.
 	if len(strings.TrimSpace(string(raw))) == 0 {
 		return true
 	}
@@ -97,16 +87,15 @@ func parseOAuthRequestParams(w http.ResponseWriter, r *http.Request) bool {
 		if !ok {
 			continue
 		}
-		// A body parameter outranks the same name in the query string, the same
-		// way ParseForm orders a form-encoded body ahead of it.
+		// A body parameter outranks the same name in the query string, as ParseForm orders a form body.
 		r.PostForm.Set(key, text)
 		r.Form.Set(key, text)
 	}
 	return true
 }
 
-// oauthParamText renders one JSON member as the string an OAuth parameter is,
-// reporting false for a member that is not a scalar and so names no parameter.
+// oauthParamText renders one JSON member as an OAuth parameter string, reporting
+// false for a non-scalar member.
 func oauthParamText(value interface{}) (string, bool) {
 	switch v := value.(type) {
 	case string:
@@ -133,15 +122,11 @@ func (s *Server) registerGHOAuthRoutes() {
 	s.route("POST /login/oauth/authorize", s.handleOAuthAuthorizeApprove)
 }
 
-// handleLoginPage starts Shauth sign-in when it is configured. The legacy
-// personal-access-token form remains available only when no external identity
-// provider has been configured, so an interactive deployment never asks a
-// Shauth user for a Bleephub API credential.
+// handleLoginPage starts Shauth sign-in when configured. The legacy PAT form remains
+// only when no external identity provider is configured.
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	// Sanitize return_to at the entry point (relative-path only) rather than
-	// relying solely on the consumer: the value is otherwise forwarded raw into
-	// the /auth/shauth redirect below, so a `//evil` or absolute value must be
-	// neutralized before it can propagate through the login flow.
+	// Sanitize return_to to a relative path before it propagates into the
+	// /auth/shauth redirect: a `//evil` or absolute value is an open-redirect vector.
 	returnTo := r.URL.Query().Get("return_to")
 	if returnTo != "" {
 		returnTo = safeIdentityReturnTo(returnTo)
@@ -175,10 +160,8 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(page))
 }
 
-// handleLoginPost authenticates a user with a stored personal access token and
-// sets a _gh_sess session cookie. Bleephub does not implement password
-// verification (`/api/v3/meta` advertises that), so browser sessions must be
-// backed by the same real credential source as API requests.
+// handleLoginPost authenticates a user and sets a session cookie. Browser sessions
+// are backed by the same real credential source as API requests.
 func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing form")
@@ -208,8 +191,8 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rotate: revoke any session the browser already held before issuing a new
-	// one, so a fixation cookie planted before authentication cannot outlive it.
+	// Revoke any prior session before issuing a new one, so a fixation cookie
+	// planted before authentication cannot outlive it.
 	if cookie := s.sessionCookieFromRequest(r); cookie != nil {
 		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
 			s.logger.Error().Err(err).Msg("revoke prior session on login")
@@ -225,8 +208,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:  s.currentTime(),
 		UserAgent:  truncateSessionUserAgent(r.UserAgent()),
 		SignedInIP: sessionClientIP(r),
-		// The password (and, when enrolled, the second factor) were just
-		// verified above, so the session opens with a live proof of presence.
+		// Password (and any second factor) were just verified, so the session opens with proof of presence.
 		SudoAt:  s.currentTime(),
 		SudoMFA: s.store.TwoFactorEnabled(user.ID),
 	}
@@ -237,8 +219,8 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secure := s.secureCookies(r)
-	// Secure is always set (browsers honor it over http://localhost / 127.0.0.1);
-	// the __Host- prefixed name is used only for https origins.
+	// Secure is always set (honored over http://localhost); the __Host- prefixed name
+	// is used only for https origins.
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieNameFor(secure),
 		Value:    sessionID,
@@ -249,27 +231,22 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		Expires:  sess.ExpiresAt,
 	})
 
-	// The legacy PAT login (only reachable when Shauth is not configured)
-	// deliberately does not honor a caller-supplied return_to: redirecting to it
-	// was an open-redirect vector (AUTH-104), and this fallback path has no need
-	// to deep-link. Render the signed-in confirmation instead.
+	// The legacy PAT login does not honor a caller-supplied return_to: it was an
+	// open-redirect vector (AUTH-104). Render the signed-in confirmation instead.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><p>Signed in successfully.</p></body></html>`))
 }
 
 func (s *Server) browserLoginUser(login, credential string) *store.User {
-	// Canonicalize the login (NFKC + case fold) before any lookup so "Alice"
-	// authenticates the account stored as "alice", and mixed Latin/Cyrillic
-	// lookalikes cannot resolve to a real account.
+	// Canonicalize the login (NFKC + case fold) so lookalike scripts cannot resolve
+	// to a real account and case differences still authenticate.
 	normalized, err := normalizeLogin(login)
 	if err != nil {
 		return nil
 	}
-	// A PAT is an API capability, not an account password. Turning an
-	// arbitrary scoped PAT into a browser session drops every scope and grants
-	// the bearer's full account privileges. Retain only the explicitly
-	// configured site-admin bootstrap credential; ordinary accounts use their
-	// password or an external identity provider.
+	// A PAT is a scoped API capability, not a password: turning one into a browser
+	// session would drop its scopes and grant full account access. Accept only the
+	// configured site-admin bootstrap credential here.
 	_, user := s.store.LookupToken(credential)
 	adminCredential := store.AdminToken()
 	if user != nil && user.Login == normalized && user.SiteAdmin && !user.Suspended &&
@@ -283,10 +260,9 @@ func (s *Server) browserLoginUser(login, credential string) *store.User {
 	return user
 }
 
-// oauthClientKind resolves a registered OAuth client_id to the token-minting
-// parameters CreateUserToServerToken expects: (appID, oauthClientID). A GitHub
-// App client_id yields a non-zero appID (mints ghu_); a registered OAuth App
-// client_id yields oauthClientID (mints gho_). Unknown client IDs are invalid.
+// oauthClientKind resolves a client_id to token-minting parameters: a GitHub App
+// client_id yields a non-zero appID (mints ghu_), an OAuth App yields oauthClientID
+// (mints gho_). Unknown client IDs report ok=false.
 func (s *Server) oauthClientKind(clientID string) (appID int, oauthClientID string, isGitHubApp bool, ok bool) {
 	if clientID != "" {
 		if app := s.store.GetAppByClientID(clientID); app != nil {
@@ -299,12 +275,9 @@ func (s *Server) oauthClientKind(clientID string) (appID int, oauthClientID stri
 	return 0, "", false, false
 }
 
-// registeredCallbackURL returns the callback URL the client registered, which
-// is the only destination an authorization code may be delivered to.
-//
-// A client that registered none has nothing to compare against, and comparing
-// against nothing is what turns this endpoint into an open redirect and a code
-// interception primitive — so it is refused rather than defaulted.
+// registeredCallbackURL returns the client's registered callback, the only
+// destination an authorization code may be delivered to. A client that registered
+// none is refused rather than defaulted — defaulting is an open-redirect primitive.
 func (s *Server) registeredCallbackURL(clientID string) (string, bool) {
 	if clientID == "" {
 		return "", false
@@ -318,10 +291,9 @@ func (s *Server) registeredCallbackURL(clientID string) (string, bool) {
 	return "", false
 }
 
-// redirectURIMatchesRegistration compares a requested redirect_uri against the
-// client's registration. GitHub allows a sub-path of the registered callback
-// and nothing else: same scheme, host, port and query, with a path the
-// registered one is a prefix of at a segment boundary.
+// redirectURIMatchesRegistration reports whether a requested redirect_uri is allowed:
+// GitHub permits only a sub-path of the registered callback — same scheme, host, port
+// and query, with the registered path a prefix at a segment boundary.
 func redirectURIMatchesRegistration(requested, registered string) bool {
 	if registered == "" || requested == "" {
 		return false
@@ -343,15 +315,15 @@ func redirectURIMatchesRegistration(requested, registered string) bool {
 	if got.RawQuery != want.RawQuery || got.User.String() != want.User.String() {
 		return false
 	}
-	// Compare cleaned paths: "/cb/../../elsewhere" is a prefix match against
-	// "/cb" as written and a different destination once the client resolves it.
+	// Compare cleaned paths: "/cb/../../elsewhere" prefix-matches "/cb" as written
+	// but resolves to a different destination.
 	base := strings.TrimSuffix(path.Clean("/"+want.Path), "/")
 	candidate := path.Clean("/" + got.Path)
 	return candidate == base || strings.HasPrefix(candidate, base+"/")
 }
 
-// requireRegisteredRedirectURI enforces the comparison above, answering the
-// caller with a GitHub-shaped error and reporting whether to continue.
+// requireRegisteredRedirectURI enforces the comparison above, writing a
+// GitHub-shaped error and reporting whether to continue.
 func (s *Server) requireRegisteredRedirectURI(w http.ResponseWriter, clientID, redirectURI string) bool {
 	registered, known := s.registeredCallbackURL(clientID)
 	if !known {
@@ -425,14 +397,9 @@ func (s *Server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleOAuthAccessToken handles BOTH OAuth flows on the same shared endpoint,
-// mirroring real GitHub. The grant is identified by which fields the form carries:
-//
-//   - device_code → device flow
-//   - code        → web flow with authorization code grant
-//
-// Both return `{access_token, token_type, scope}` on success and
-// `{error: ...}` on failure (200 OK with an error body, matching real GitHub).
+// handleOAuthAccessToken serves both OAuth flows on the shared endpoint, keyed by
+// the fields present: device_code → device flow, code → web flow. Failure is a
+// 200 with an {error} body, as on GitHub.
 func (s *Server) handleOAuthAccessToken(w http.ResponseWriter, r *http.Request) {
 	if !parseOAuthRequestParams(w, r) {
 		return
@@ -445,8 +412,6 @@ func (s *Server) handleOAuthAccessToken(w http.ResponseWriter, r *http.Request) 
 		s.handleWebFlowTokenForm(w, r)
 		return
 	}
-	// Every other body this endpoint answers is negotiated and uncacheable;
-	// this one is no different for being an unrecognised grant.
 	writeOAuthTokenResponse(w, r, map[string]string{"error": "unsupported_grant_type"})
 }
 
@@ -492,9 +457,8 @@ func (s *Server) handleDeviceTokenForm(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleWebFlowTokenForm — web-flow leg. Exchanges a one-time-use authorization
-// code (issued by /login/oauth/authorize) for an access token. GitHub requires
-// the registered OAuth App or GitHub App client_id + client_secret here.
+// handleWebFlowTokenForm exchanges a one-time authorization code for an access token,
+// requiring the registered client_id + client_secret.
 func (s *Server) handleWebFlowTokenForm(w http.ResponseWriter, r *http.Request) {
 	code := r.FormValue("code")
 	clientID := r.FormValue("client_id")
@@ -626,13 +590,8 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><p>Device authorized.</p></body></html>`))
 }
 
-// handleOAuthAuthorize — GET /login/oauth/authorize.
-//
-// Real GitHub: requires an existing browser session. If no session is present,
-// redirects to /login?return_to=<authorize_url>. Once authenticated, renders a
-// consent form with an authenticity_token (CSRF) that the POST must echo.
-//
-// bleephub: same behaviour. Establish a session first via POST /login.
+// handleOAuthAuthorize requires a browser session, redirecting to /login when absent,
+// then renders a consent form carrying an authenticity_token (CSRF) the POST must echo.
 func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	clientID := q.Get("client_id")
@@ -699,9 +658,8 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(page))
 }
 
-// handleOAuthAuthorizeApprove handles the POST that the authorize consent form
-// submits. Validates the session cookie and the authenticity_token (CSRF), then
-// issues the auth code and 302s to redirect_uri.
+// handleOAuthAuthorizeApprove handles the consent-form POST: validates the session
+// and authenticity_token (CSRF), then issues the auth code and 302s to redirect_uri.
 func (s *Server) handleOAuthAuthorizeApprove(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing form")
@@ -747,12 +705,9 @@ func (s *Server) handleOAuthAuthorizeApprove(w http.ResponseWriter, r *http.Requ
 	s.completeAuthorize(w, r, user, clientID, redirectURI, scopes, state)
 }
 
-// mintConsentToken issues the authenticity_token the consent form carries.
-//
-// It is a fresh secret bound to the session and never the session identifier
-// itself: the identifier travels in an HttpOnly cookie precisely so that page
-// markup cannot yield it, and printing it into the form gave it back to anyone
-// who could read the page.
+// mintConsentToken issues the consent form's authenticity_token: a fresh secret bound
+// to the session, never the session identifier — that stays in the HttpOnly cookie so
+// page markup cannot leak it.
 func (s *Server) mintConsentToken(r *http.Request) (string, error) {
 	id, sess, err := s.sessionRecordFromRequest(r)
 	if err != nil || sess == nil {
@@ -769,8 +724,8 @@ func (s *Server) mintConsentToken(r *http.Request) (string, error) {
 	return token, nil
 }
 
-// consumeConsentToken verifies a submitted authenticity_token and retires it,
-// so a token that leaks after use buys nothing.
+// consumeConsentToken verifies a submitted authenticity_token and retires it, so a
+// leaked token buys nothing after use.
 func (s *Server) consumeConsentToken(r *http.Request, provided string) (bool, error) {
 	id, sess, err := s.sessionRecordFromRequest(r)
 	if err != nil || sess == nil {
@@ -790,8 +745,8 @@ func (s *Server) consumeConsentToken(r *http.Request, provided string) (bool, er
 	return true, nil
 }
 
-// sessionRecordFromRequest returns the session together with the cookie value
-// that keys it, which the CSRF rotation needs and sessionFromRequest drops.
+// sessionRecordFromRequest returns the session and the cookie value that keys it,
+// which the CSRF rotation needs and sessionFromRequest drops.
 func (s *Server) sessionRecordFromRequest(r *http.Request) (string, *store.LoginSession, error) {
 	cookie := s.sessionCookieFromRequest(r)
 	if cookie == nil {
@@ -807,11 +762,9 @@ func (s *Server) sessionRecordFromRequest(r *http.Request) (string, *store.Login
 	return cookie.Value, sess, nil
 }
 
-// completeAuthorize mints a one-time-use auth code bound to user, stores it,
-// and 302s back to redirect_uri with code + state.
-//
-// The destination is checked here rather than only at the form, because this
-// is the single point at which a code becomes deliverable to an address.
+// completeAuthorize mints a one-time auth code bound to user and 302s back to
+// redirect_uri with code + state. The destination is re-checked here — the single
+// point at which a code becomes deliverable.
 func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user *store.User, clientID, redirectURI, scopes, state string) {
 	if !s.requireRegisteredRedirectURI(w, clientID, redirectURI) {
 		return
@@ -821,10 +774,8 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 		s.store.AuthCodes = map[string]*store.AuthCode{}
 	}
 	code := uuid.New().String()
-	// An omitted scope grants read-only access to public information (GitHub's
-	// documented default) — never a silent upgrade to `repo`, which the user
-	// consented to nothing for. An empty scope string carries that minimal grant
-	// through classicScopeCovers.
+	// An omitted scope grants read-only public access (GitHub's default), never a
+	// silent upgrade to `repo`; the empty string carries that grant downstream.
 	s.store.AuthCodes[code] = &store.AuthCode{
 		Code:        code,
 		ClientID:    clientID,
@@ -851,8 +802,7 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 	http.Redirect(w, r, dest.String(), http.StatusFound)
 }
 
-// sessionFromRequest reads the session cookie and returns the corresponding
-// LoginSession, or nil if absent / expired / unknown.
+// sessionFromRequest returns the cookie's LoginSession, or nil if absent, expired, or unknown.
 func (s *Server) sessionFromRequest(r *http.Request) *store.LoginSession {
 	cookie := s.sessionCookieFromRequest(r)
 	if cookie == nil {

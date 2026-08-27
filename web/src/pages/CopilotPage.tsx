@@ -135,7 +135,6 @@ function BillingSection({ org }: { org: string }) {
   );
 }
 
-/** The Copilot subscription policy an organization owner configures. */
 export interface CopilotPolicy {
   plan_type: string;
   seat_management_setting: string;
@@ -145,7 +144,6 @@ export interface CopilotPolicy {
   cli: string;
 }
 
-/** One day of aggregated Copilot usage, as the metrics endpoint reports it. */
 interface CopilotMetricsDay {
   date: string;
   total_active_users: number;
@@ -161,8 +159,7 @@ interface CopilotMetricsDay {
   copilot_ide_chat: { total_engaged_users: number; editors: { models: { total_chats: number }[] }[] };
 }
 
-// The policy and usage wrappers live in this lazy page: api.ts is reachable
-// from the entry chunk, which sits against its 160 KB budget.
+// Wrappers live in this lazy page to keep them off the entry chunk (160 KB budget).
 const fetchCopilotPolicy = (org: string, signal?: AbortSignal) =>
   ghFetch<CopilotPolicy>(`/ui-data/orgs/${enc(org)}/copilot/policy`, signal);
 const fetchCopilotMetrics = (org: string, signal?: AbortSignal) =>
@@ -328,7 +325,6 @@ function SeatsSection({ org }: { org: string }) {
     onSuccess: invalidate,
     onError: (err: Error) => setError(err.message),
   });
-  // github.com also lets you grant/revoke Copilot seats for a whole team by slug.
   const addTeamMut = useMutation({
     mutationFn: () =>
       ghPostJSON<{ seats_created: number }>(
@@ -459,10 +455,6 @@ function SeatsSection({ org }: { org: string }) {
   );
 }
 
-// Copilot content exclusion: an organization maps each scope (a repository
-// "owner/name" or "*" for all) to a list of rules, each a path string or an
-// object with exactly one of ifAnyMatch / ifNoneMatch. The shape is faithfully
-// edited as JSON and PUT back to the org content_exclusion endpoint.
 function ContentExclusionSection({ org }: { org: string }) {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["copilot-content-exclusion", org],
@@ -480,7 +472,7 @@ function ContentExclusionSection({ org }: { org: string }) {
       {isError && (
         <InlineError title="Failed to load content exclusion rules" detail={String(error)} />
       )}
-      {/* Keyed on org so the editor seeds its text from the loaded rules once. */}
+      {/* Key on org so the editor seeds its text from the loaded rules once. */}
       {data && <ContentExclusionEditor key={org} org={org} initial={data} />}
     </section>
   );
@@ -554,8 +546,6 @@ function ContentExclusionEditor({
 
 const CODING_AGENT_POLICIES = ["all", "selected", "none"] as const;
 
-// Copilot coding agent: the organization policy for which repositories may use
-// the Copilot cloud/coding agent — all, a selected set, or none.
 function CodingAgentSection({ org }: { org: string }) {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["copilot-coding-agent-permissions", org],
@@ -573,7 +563,7 @@ function CodingAgentSection({ org }: { org: string }) {
       {isError && (
         <InlineError title="Failed to load Copilot coding agent policy" detail={String(error)} />
       )}
-      {/* Keyed on org so the select seeds its value from the loaded policy once. */}
+      {/* Key on org so the select seeds its value from the loaded policy once. */}
       {data && <CodingAgentEditor key={org} org={org} initial={data.enabled_repositories} />}
     </section>
   );
@@ -862,7 +852,7 @@ function SpaceDialog({
   );
 }
 
-/** The path identifier the collaborator endpoints key on: login for users, slug for teams. */
+// Path identifier the collaborator endpoints key on: login for users, slug for teams.
 function collaboratorIdentifier(c: GithubCopilotSpaceCollaborator): string {
   return (c.actor_type === "Team" ? c.slug : c.login) ?? String(c.id);
 }
@@ -1091,7 +1081,7 @@ function SpaceResourcesPanel({ owner, spaceNumber }: { owner: CopilotSpaceOwner;
             ))}
           </ul>
         ))}
-      {/* Keyed on the edited resource so switching rows remounts with fresh fields. */}
+      {/* Key on the edited resource so switching rows remounts with fresh fields. */}
       <SpaceResourceForm
         key={editing?.id ?? "new"}
         owner={owner}
@@ -1111,7 +1101,7 @@ function SpaceResourceForm({
 }: {
   owner: CopilotSpaceOwner;
   spaceNumber: number;
-  /** When set the form edits this resource's metadata (the type is fixed). */
+  // When set, edits this resource's metadata (type is fixed).
   resource?: GithubCopilotSpaceResource | undefined;
   onDone: () => void;
 }) {
@@ -1153,7 +1143,7 @@ function SpaceResourceForm({
         parsedRawMetadata = parsed as Record<string, unknown>;
       }
     } catch {
-      // The invalid state is reflected in `valid` and keeps submission disabled.
+      // `valid` reflects the invalid state and keeps submission disabled.
     }
   }
 

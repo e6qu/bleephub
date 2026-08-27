@@ -38,10 +38,9 @@ type PrivateRegistryConfiguration struct {
 	UpdatedAt                time.Time `json:"updated_at"`
 }
 
-// privateRegistryConfigurationPersist is the persistence shape of a private
-// registry configuration. It mirrors PrivateRegistryConfiguration but includes
-// the EncryptedValue so persistence round-trips it, while the API struct's
-// json:"-" keeps it out of every response.
+// privateRegistryConfigurationPersist mirrors PrivateRegistryConfiguration but
+// serializes EncryptedValue so persistence round-trips it (the API struct's
+// json:"-" keeps it out of responses).
 type privateRegistryConfigurationPersist struct {
 	Name                     string    `json:"name"`
 	RegistryType             string    `json:"registry_type"`
@@ -124,9 +123,8 @@ func (st *Store) GetPrivateRegistry(orgLogin, name string) *PrivateRegistryConfi
 	return st.OrgPrivateRegistries[orgLogin][name]
 }
 
-// persistPrivateRegistries saves the org's private registry map to
-// persistence, converting each entry to the persist shape so the
-// EncryptedValue round-trips while staying out of API responses.
+// PersistPrivateRegistries saves the org's registry map via the persist shape,
+// which serializes EncryptedValue.
 func (st *Store) PersistPrivateRegistries(orgLogin string) {
 	if st.Persist == nil {
 		return
@@ -143,9 +141,8 @@ func (st *Store) PersistPrivateRegistries(orgLogin string) {
 	st.Persist.MustPut("org_private_registries", orgLogin, out)
 }
 
-// CreatePrivateRegistry materializes a configuration. The configuration name
-// is derived from the registry type the way real GitHub names them
-// (MAVEN_REPOSITORY_SECRET, ...), suffixed on collision.
+// CreatePrivateRegistry materializes a configuration, naming it from the
+// registry type as GitHub does (MAVEN_REPOSITORY_SECRET, ...), suffixed on collision.
 func (st *Store) CreatePrivateRegistry(orgLogin string, req *PrivateRegistryRequest, authType string) *PrivateRegistryConfiguration {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -183,8 +180,7 @@ func (st *Store) UpdatePrivateRegistry(orgLogin, name string, req *PrivateRegist
 	st.PersistPrivateRegistries(orgLogin)
 }
 
-// DeletePrivateRegistry removes a configuration. Returns true when it
-// existed.
+// DeletePrivateRegistry removes a configuration, returning true when it existed.
 func (st *Store) DeletePrivateRegistry(orgLogin, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -196,8 +192,7 @@ func (st *Store) DeletePrivateRegistry(orgLogin, name string) bool {
 	return true
 }
 
-// applyPrivateRegistryRequest copies every provided member onto the
-// configuration.
+// applyPrivateRegistryRequest copies every provided member onto the configuration.
 func applyPrivateRegistryRequest(reg *PrivateRegistryConfiguration, req *PrivateRegistryRequest) {
 	if req.RegistryType != nil {
 		reg.RegistryType = *req.RegistryType

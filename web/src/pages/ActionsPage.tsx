@@ -211,7 +211,7 @@ function RunsPane({
   repo: string;
   workflow: GithubWorkflow | null;
 }) {
-  // Deleting runs (per-row kebab) needs push access; the runs stay readable.
+  // Deleting runs needs push access; the runs stay readable.
   const { canPush } = useRepoPermissions(owner, repo);
   const [status, setStatus] = useState("");
   const [event, setEvent] = useState("");
@@ -238,9 +238,7 @@ function RunsPane({
     enabled: !!owner && !!repo,
   });
   const loadedRuns = runsQ.data?.pages.flatMap((p) => p.items) ?? [];
-  // The list-runs endpoint has no actor query parameter (it filters by
-  // status/branch/event only), so the actor filter is applied client-side
-  // over the pages loaded so far.
+  // The list-runs endpoint has no actor param, so filter actor client-side.
   const runs = actor
     ? loadedRuns.filter((r) => r.actor?.login.toLowerCase().includes(actor.toLowerCase()))
     : loadedRuns;
@@ -385,7 +383,7 @@ function formatStorageBytes(bytes: number): string {
 
 function RepositoryArtifactsPane({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
-  // Artifact deletion needs push access; downloads stay for everyone.
+  // Deletion needs push access; downloads stay for everyone.
   const { canPush } = useRepoPermissions(owner, repo);
   const [pendingDelete, setPendingDelete] = useState<GithubArtifact | null>(null);
   const artifactsQ = useQuery({
@@ -494,7 +492,7 @@ function RepositoryArtifactsPane({ owner, repo }: { owner: string; repo: string 
 
 function RepositoryCachesPane({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
-  // Cache eviction needs push access; the cache list stays readable.
+  // Eviction needs push access; the cache list stays readable.
   const { canPush } = useRepoPermissions(owner, repo);
   const [pendingDelete, setPendingDelete] = useState<GithubActionsCache | null>(null);
   const cachesQ = useQuery({
@@ -777,16 +775,14 @@ function WorkflowHeader({
   workflow: GithubWorkflow;
 }) {
   const qc = useQueryClient();
-  // Dispatching and enabling/disabling a workflow both need push access.
+  // Dispatch and enable/disable both need push access.
   const { canPush } = useRepoPermissions(owner, repo);
   const [menuOpen, setMenuOpen] = useState(false);
   const workflowMenuRef = useDismiss<HTMLDivElement>(menuOpen, () => setMenuOpen(false));
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const disabled = workflow.state !== "active";
 
-  // The dispatch form only exists for files with `on: workflow_dispatch` —
-  // read the workflow file through the GitHub Contents application programming
-  // interface and parse the trigger section.
+  // The dispatch form only exists for files with `on: workflow_dispatch`.
   const yamlQ = useQuery({
     queryKey: ["workflow-yaml", owner, repo, workflow.path],
     queryFn: () => fetchFileContent(owner, repo, workflow.path),
@@ -938,9 +934,8 @@ function DispatchFormModal({
   const [ref, setRef] = useState("main");
   const [refTouched, setRefTouched] = useState(false);
 
-  // Seed the branch selector from the repository's branches, preselecting
-  // the default branch. Falls back to a free-text input when the branch
-  // list is unavailable (e.g. an empty repository).
+  // Falls back to a free-text ref input when the branch list is unavailable
+  // (e.g. an empty repository).
   const branchesQ = useQuery({
     queryKey: ["branches", owner, repo],
     queryFn: () => fetchRepoBranches(owner, repo),
@@ -976,7 +971,6 @@ function DispatchFormModal({
     [],
   );
 
-  // `environment`-typed inputs offer the repo's environments as choices.
   const needsEnvs = inputNames.some((n) => inputs[n]!.type === "environment");
   const envsQ = useQuery({
     queryKey: ["environments", owner, repo],
@@ -997,8 +991,7 @@ function DispatchFormModal({
       });
     },
     onSuccess: () => {
-      // The new run appears asynchronously — give the server a beat
-      // before refreshing the runs list.
+      // The new run appears asynchronously — refresh after a beat.
       refreshTimer.current = setTimeout(() => {
         void qc.invalidateQueries({ queryKey: ["runs", owner, repo] });
       }, 1000);

@@ -10,8 +10,6 @@ import (
 )
 
 func (s *Server) registerGHHookRoutes() {
-	// Every webhook-management endpoint is gated on the administration scope, so
-	// bind that shared scope once and let each registration name only its verb.
 	adminHookRoute := func(pattern string, level store.PermLevel, next http.HandlerFunc) {
 		s.route(pattern, s.requirePerm(store.ScopeAdministration, level, next))
 	}
@@ -30,11 +28,6 @@ func (s *Server) registerGHHookRoutes() {
 }
 
 // hookRepo resolves the repository the hook routes name, or writes 404.
-//
-// The route gate compares the caller against the repository the path resolves
-// to, and has nothing to compare against when the path names a repository that
-// does not exist — so every handler here must resolve the repository itself
-// rather than operate on a key that belongs to no repository.
 func (s *Server) hookRepo(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
@@ -44,8 +37,7 @@ func (s *Server) hookRepo(w http.ResponseWriter, r *http.Request) *store.Repo {
 	return repo
 }
 
-// rejectUndeliverableHookURL writes GitHub's validation error when a webhook
-// target is one deliveries must never reach.
+// rejectUndeliverableHookURL writes a validation error for a target deliveries must never reach.
 func (s *Server) rejectUndeliverableHookURL(w http.ResponseWriter, target string) bool {
 	if err := validateWebhookTargetURL(target); err != nil {
 		s.logger.Warn().Err(err).Msg("webhook target rejected at configuration time")
@@ -83,7 +75,7 @@ func (s *Server) handleCreateHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GitHub only supports the "web" hook type via the REST API.
+	// GitHub's REST API supports only the "web" hook type.
 	if req.Name != "" && req.Name != "web" {
 		store.WriteGHValidationError(w, "Hook", "name", "invalid")
 		return
@@ -110,9 +102,7 @@ func (s *Server) handleCreateHook(w http.ResponseWriter, r *http.Request) {
 		req.Config.ContentType, normalizeInsecureSSL(req.Config.InsecureSSL), events, active)
 	s.recordAuditEvent("hook.create", user.Login, "", map[string]interface{}{"repo": repoKey, "hook_id": hook.ID})
 
-	// Real GitHub fires a `ping` event automatically when an active hook
-	// is created (so the consumer can verify the endpoint). Inactive hooks
-	// receive no deliveries.
+	// GitHub fires a ping automatically on creating an active hook; inactive hooks get none.
 	if hook.Active {
 		s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook, user, s.baseURL(r))))
 	}
@@ -332,9 +322,8 @@ func (s *Server) handlePingHook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// hookConfigJSON renders a webhook's config sub-object in the published
-// webhook-config shape. The secret is never echoed back in cleartext — real
-// GitHub masks a configured secret as "********".
+// hookConfigJSON renders a webhook's config sub-object. GitHub masks a configured
+// secret as "********" rather than echoing it in cleartext.
 func hookConfigJSON(h *store.Webhook) map[string]interface{} {
 	config := map[string]interface{}{
 		"url":          h.URL,
@@ -347,7 +336,6 @@ func hookConfigJSON(h *store.Webhook) map[string]interface{} {
 	return config
 }
 
-// handleGetHookConfig — GET /repos/{o}/{r}/hooks/{id}/config.
 func (s *Server) handleGetHookConfig(w http.ResponseWriter, r *http.Request) {
 	repo := s.hookRepo(w, r)
 	if repo == nil {
@@ -366,9 +354,8 @@ func (s *Server) handleGetHookConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, hookConfigJSON(hook))
 }
 
-// handleUpdateHookConfig — PATCH /repos/{o}/{r}/hooks/{id}/config. Updates
-// the config sub-view of the webhook: present members replace the stored
-// value, absent members are left unchanged.
+// handleUpdateHookConfig updates the config sub-view: present members replace the
+// stored value, absent members are left unchanged.
 func (s *Server) handleUpdateHookConfig(w http.ResponseWriter, r *http.Request) {
 	repo := s.hookRepo(w, r)
 	if repo == nil {
@@ -418,10 +405,8 @@ func (s *Server) handleUpdateHookConfig(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, hookConfigJSON(s.store.GetHook(repoKey, hookID)))
 }
 
-// handleTestHook — POST /repos/{o}/{r}/hooks/{id}/tests. Triggers the hook
-// with a push event for the repository's latest push (the default branch
-// head). When the hook is not subscribed to push events no delivery is
-// generated, but the response is still 204 — matching real GitHub.
+// handleTestHook triggers the hook with a push event for the default branch head.
+// A hook not subscribed to push generates no delivery but still answers 204, as on GitHub.
 func (s *Server) handleTestHook(w http.ResponseWriter, r *http.Request) {
 	repo := s.hookRepo(w, r)
 	if repo == nil {
@@ -459,8 +444,7 @@ func mustMarshal(v interface{}) []byte {
 	return b
 }
 
-// handleGetHookDelivery — GET /repos/{o}/{r}/hooks/{id}/deliveries/{delivery_id}.
-// Real GitHub: returns the full delivery with request + response payloads.
+// handleGetHookDelivery returns the full delivery with request and response payloads.
 func (s *Server) handleGetHookDelivery(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -495,7 +479,6 @@ func (s *Server) handleGetHookDelivery(w http.ResponseWriter, r *http.Request) {
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
-// handleRedeliverHookDelivery — POST /repos/{o}/{r}/hooks/{id}/deliveries/{delivery_id}/attempts.
 func (s *Server) handleRedeliverHookDelivery(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -540,7 +523,6 @@ func (s *Server) handleRedeliverHookDelivery(w http.ResponseWriter, r *http.Requ
 }
 
 // hookToJSON serialises a Webhook to GitHub's published hook object shape.
-// r and owner/repo are needed to construct the self-referential API URLs.
 func (s *Server) hookToJSON(h *store.Webhook, lastResp *store.HookLastResponse, r *http.Request, owner, repo string) map[string]interface{} {
 	base := s.baseURL(r)
 	hookBase := base + "/api/v3/repos/" + owner + "/" + repo + "/hooks/" + strconv.Itoa(h.ID)
@@ -575,8 +557,8 @@ func (s *Server) hookToJSON(h *store.Webhook, lastResp *store.HookLastResponse, 
 	}
 }
 
-// hookLastResponseJSON renders the hook's last_response field. Before any
-// delivery has occurred GitHub returns {code:null,status:"unused",message:null}.
+// hookLastResponseJSON renders last_response. Before any delivery GitHub returns
+// {code:null,status:"unused",message:null}.
 func hookLastResponseJSON(lr *store.HookLastResponse) map[string]interface{} {
 	if lr == nil {
 		return map[string]interface{}{
@@ -592,9 +574,8 @@ func hookLastResponseJSON(lr *store.HookLastResponse) map[string]interface{} {
 	}
 }
 
-// normalizeInsecureSSL coerces GitHub's insecure_ssl config value (which clients
-// send as either a string "0"/"1" or a JSON number 0/1) to the canonical
-// string form. Returns "" when unset so callers can preserve the stored value.
+// normalizeInsecureSSL coerces insecure_ssl (sent as string "0"/"1" or number 0/1)
+// to the canonical string form, returning "" when unset so callers keep the stored value.
 func normalizeInsecureSSL(v interface{}) string {
 	switch t := v.(type) {
 	case string:
@@ -614,7 +595,7 @@ func normalizeInsecureSSL(v interface{}) string {
 	}
 }
 
-// deliveryStatus returns the human-readable status string GitHub uses.
+// deliveryStatus returns GitHub's human-readable delivery status string.
 func deliveryStatus(statusCode int) string {
 	if statusCode >= 200 && statusCode < 300 {
 		return "OK"
@@ -646,7 +627,7 @@ func deliveryToJSON(d *store.WebhookDelivery) map[string]interface{} {
 	return out
 }
 
-// nullableInt renders 0 as JSON null (GitHub emits unset nullable ids as null).
+// nullableInt renders 0 as JSON null, matching GitHub's unset nullable ids.
 func nullableInt(v int) interface{} {
 	if v == 0 {
 		return nil

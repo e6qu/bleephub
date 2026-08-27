@@ -31,7 +31,6 @@ func (st *Store) persistOrgBudgetsLocked(orgLogin string) {
 	}
 }
 
-// CreateOrgBudget stores a new budget for the organization.
 func (st *Store) CreateOrgBudget(orgLogin string, b *OrgBudget) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -66,8 +65,8 @@ func (st *Store) ListOrgBudgets(orgLogin string) []*OrgBudget {
 	return snapshotOrgBudgets(out)
 }
 
-// UpdateOrgBudget applies fn to a budget under the write lock. Returns the
-// updated budget, or nil when it does not exist.
+// UpdateOrgBudget applies fn to a budget under the write lock, returning it or
+// nil when it does not exist.
 func (st *Store) UpdateOrgBudget(orgLogin, id string, fn func(*OrgBudget)) *OrgBudget {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -92,11 +91,9 @@ func (st *Store) DeleteOrgBudget(orgLogin, id string) bool {
 	return true
 }
 
-// orgActionsUsageLines computes real Actions usage from the recorded
-// workflow run history (current runs plus archived attempts): every
-// completed job is billed per started minute, rounded up, exactly as GitHub
-// meters Actions. Returns lines filtered to the requested year/month/day
-// (zero month/day mean "whole year"/"whole month").
+// OrgActionsUsageLines bills every completed job per started minute, rounded
+// up, as GitHub meters Actions, over current runs plus archived attempts. Zero
+// month/day mean "whole year"/"whole month".
 func (st *Store) OrgActionsUsageLines(orgLogin string, year, month, day int) []ActionsUsageLine {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -155,8 +152,7 @@ func (st *Store) OrgActionsUsageLines(orgLogin string, year, month, day int) []A
 	return out
 }
 
-// ActionsUsageLine is one billable Actions usage line item: minutes consumed
-// by workflow jobs of one repository on one date.
+// ActionsUsageLine is minutes consumed by one repository's jobs on one date.
 type ActionsUsageLine struct {
 	Date     string `json:"-"`
 	OrgName  string `json:"-"`

@@ -66,8 +66,8 @@ export function parseDiffLines(patch: string): ParsedDiffLine[] {
     if (text.startsWith("\\ No newline")) {
       return { text, oldLine: null, newLine: null, commentLine: null, side: null };
     }
-    // split() produces one empty sentinel when the patch ends in a newline.
-    // Actual empty source lines still carry the unified-diff marker.
+    // A trailing-newline patch yields one empty sentinel; real empty source
+    // lines still carry the diff marker.
     if (text === "") {
       return { text, oldLine: null, newLine: null, commentLine: null, side: null };
     }
@@ -95,12 +95,11 @@ export function parseDiffLines(patch: string): ParsedDiffLine[] {
 }
 
 // ─── Pending (draft) review ──────────────────────────────────────────────
-// The server supports GitHub's PENDING-review lifecycle: POST /reviews with
-// no `event` creates a PENDING review (optionally with a comments batch),
-// GET /reviews/{id}/comments reads its drafts back, PUT /reviews/{id}
-// updates the summary body, POST /reviews/{id}/events submits, and
-// DELETE /reviews/{id} discards. There is no add-comment-to-pending-review
-// call, so growing the draft set recreates the pending review server-side.
+// PENDING-review lifecycle: POST /reviews with no `event` creates the pending
+// review (with an optional comments batch), /reviews/{id}/comments reads
+// drafts, PUT /reviews/{id} updates the summary, POST .../events submits,
+// DELETE /reviews/{id} discards. No add-to-pending call exists, so growing the
+// draft set recreates the pending review.
 
 function repoPath(owner: string, repo: string): string {
   return `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
@@ -115,16 +114,14 @@ function asArray<T>(value: unknown): T[] {
 }
 
 /**
- * The viewer's server-side PENDING review on this PR plus its draft
- * comments. Drafts live server-side, so switching tabs or reloading the page
- * cannot lose them. Shared with PullsPage for the Files-tab "Pending" badge.
+ * The viewer's server-side PENDING review on this PR plus its draft comments.
+ * Shared with PullsPage for the Files-tab "Pending" badge.
  */
 export function usePendingReview(owner: string, repo: string, number: number) {
-  // No viewer, no pending review: the /api/v3/user read 401s anonymously.
+  // The /api/v3/user read 401s anonymously.
   const signedIn = useSignedIn();
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
-  // The reviews read is auth-gated on the server too (401 anonymously).
   const reviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
     queryFn: () => fetchPRReviews(owner, repo, number),
@@ -175,9 +172,9 @@ function anchorsToLine(
 }
 
 /**
- * Syntax-highlight the file content carried by a patch, keeping one
- * safe-HTML entry per patch line (null for headers/meta lines). Plain text
- * renders until highlight.js finishes loading; unknown languages stay plain.
+ * Syntax-highlight a patch's content, one safe-HTML entry per line (null for
+ * header/meta lines). Renders plain until highlight.js loads; unknown
+ * languages stay plain.
  */
 function useHighlightedPatch(filename: string, patch: string | undefined): (string | null)[] | null {
   const [lines, setLines] = useState<(string | null)[] | null>(null);
@@ -419,8 +416,8 @@ function FileDiff({
     </div>
   );
 
-  // Threads/drafts whose anchor line is not in the current diff (outdated
-  // position, file-level comments, binary files) still need a home.
+  // Threads/drafts whose anchor line is absent from the current diff (outdated
+  // position, file-level, binary) still need a home.
   const unmatchedThreads = threads.filter((g) => !matchedIds.has(g.root.id));
   const unmatchedDrafts = drafts.filter((d) => !matchedIds.has(d.id));
 
@@ -510,18 +507,16 @@ export function PRFilesView({
   const qc = useQueryClient();
   const [target, setTarget] = useState<{ file: GithubPRFile; line: number; side: "LEFT" | "RIGHT"; source: string } | null>(null);
   const [body, setBody] = useState("");
-  // Optional multi-line range: a start line strictly above the selected line
-  // makes the comment span start_line..line (GitHub's multi-line comments).
+  // A start line strictly above the selected line spans start_line..line.
   const [startLine, setStartLine] = useState("");
   const rangeStart =
     target && /^\d+$/.test(startLine.trim()) && Number(startLine) >= 1 && Number(startLine) < target.line
       ? Number(startLine)
       : undefined;
 
-  // GitHub's "Hide whitespace changes": the /ui-data variant recomputes each
-  // patch ignoring whitespace-only line changes; same item shape as the REST
-  // list. The flag stays INSIDE the ["pr-files", owner, repo, number] prefix
-  // so existing invalidations reach both variants.
+  // "Hide whitespace changes": the /ui-data variant recomputes patches
+  // ignoring whitespace-only changes. Keep the flag INSIDE the ["pr-files",
+  // owner, repo, number] prefix so invalidations reach both variants.
   const [hideWhitespace, setHideWhitespace] = useState(false);
   const q = useQuery({
     queryKey: ["pr-files", owner, repo, number, hideWhitespace],
@@ -531,13 +526,12 @@ export function PRFilesView({
             `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files?ignore_whitespace=1`,
           )
         : fetchPRFiles(owner, repo, number),
-    // Keep the previous list rendered while the other variant loads, so the
-    // toolbar (and the checkbox itself) doesn't blink out mid-toggle.
+    // Keep the prior list rendered while the other variant loads so the
+    // toolbar doesn't blink out mid-toggle.
     placeholderData: (prev: GithubPRFile[] | undefined) => prev,
   });
-  // Reviews are auth-gated on the server (401 anonymously); review comments
-  // are a public read. Signed out the diff renders comments without reviews
-  // and without thread overlays (GraphQL refuses anonymous callers too).
+  // Reviews and thread overlays 401 anonymously; review comments are public.
+  // Signed out, the diff renders comments without reviews or overlays.
   const signedIn = useSignedIn();
   const reviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
@@ -556,8 +550,8 @@ export function PRFilesView({
   });
   const pending = usePendingReview(owner, repo, number);
 
-  // Per-file "Viewed" state, persisted per PR for the session (GitHub keeps
-  // this per viewer server-side; sessionStorage is the client-local stand-in).
+  // Per-file "Viewed" state; sessionStorage stands in for GitHub's per-viewer
+  // server-side state.
   const viewedKey = `bleephub:pr-viewed:${owner}/${repo}#${number}`;
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(() => {
     try {
@@ -578,7 +572,7 @@ export function PRFilesView({
       } catch {
         /* storage unavailable */
       }
-      // GitHub collapses a file when it is marked viewed and re-expands on unview.
+      // Marking viewed collapses the file; unviewing re-expands it.
       setCollapsedFiles((prevCollapsed) => {
         const nextCollapsed = new Set(prevCollapsed);
         if (nowViewed) nextCollapsed.add(filename);
@@ -596,9 +590,8 @@ export function PRFilesView({
       return next;
     });
 
-  // "Finish your review" popover + the review summary body. The body mirrors
-  // to sessionStorage so half-typed summaries survive reloads too (the draft
-  // comments themselves live in the server-side pending review).
+  // The summary body mirrors to sessionStorage so half-typed text survives
+  // reloads; the draft comments themselves live in the pending review.
   const bodyKey = `bleephub:pr-review-body:${owner}/${repo}#${number}`;
   const [finishOpen, setFinishOpen] = useState(false);
   const finishRef = useDismiss<HTMLDivElement>(finishOpen, () => setFinishOpen(false));
@@ -618,8 +611,7 @@ export function PRFilesView({
       /* storage unavailable */
     }
   };
-  // Adopt the server-side pending review's summary once, when nothing was
-  // typed locally.
+  // Adopt the pending review's summary once, when nothing was typed locally.
   useEffect(() => {
     if (pending.review?.body && reviewBody === "") {
       setReviewBodyState(pending.review.body);
@@ -664,10 +656,9 @@ export function PRFilesView({
     },
   });
 
-  // Add the composed comment to the (server-side) pending review. The REST
-  // surface has no add-to-pending-review call, so with an existing pending
-  // review this recreates it with the grown comment batch, then removes the
-  // superseded copy (old draft comments first, then the old review shell).
+  // Add the composed comment to the pending review. With no add-to-pending
+  // call, recreate the review with the grown batch, then delete the superseded
+  // copy (old draft comments first, then the old review shell).
   const addDraftMutation = useMutation({
     mutationFn: async (draft: PRReviewCommentDraft) => {
       const prior = pending.comments.map(toDraft);
@@ -704,7 +695,7 @@ export function PRFilesView({
     mutationFn: async (event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES") => {
       const summary = reviewBody.trim();
       if (!pending.review) {
-        // No drafts accumulated: create + submit in one call.
+        // No drafts: create + submit in one call.
         await ghPostJSON<GithubPRReview>(reviewsPath(owner, repo, number), { body: summary, event });
         return;
       }
@@ -742,16 +733,15 @@ export function PRFilesView({
   if (q.isLoading) return <Spinner label="loading changed files" />;
   if (q.isError) return <InlineError title="Failed to load changed files" detail={String(q.error)} />;
   const files = q.data ?? [];
-  // While hiding whitespace an empty list means "all changes were
-  // whitespace-only" — keep the toolbar so the checkbox can be untoggled.
+  // While hiding whitespace, an empty list means all changes were
+  // whitespace-only — keep the toolbar so the checkbox can be untoggled.
   if (files.length === 0 && !hideWhitespace) {
     return <Blankslate icon={<FileIcon size={26} />} title="No file changes" />;
   }
 
-  // Existing (submitted) review threads, grouped and bucketed per file.
-  // Comments still attached to any PENDING review are drafts, not public
-  // conversation — GitHub hides them from other viewers, so exclude them
-  // here and render the viewer's own drafts through the pending-review UI.
+  // Comments attached to a PENDING review are private drafts, not public
+  // conversation — exclude them here; the viewer's drafts render through the
+  // pending-review UI instead.
   const pendingReviewIds = new Set(
     asArray<GithubPRReview>(reviewsQ.data)
       .filter((r) => r.state === "PENDING")
@@ -807,7 +797,7 @@ export function PRFilesView({
           Hide whitespace changes
         </label>
         <div ref={finishRef} style={{ position: "relative" }}>
-          {/* Reviews need a session; github.com hides the control signed out. */}
+          {/* Reviews need a session; hide the control signed out. */}
           {signedIn && (
             <Button
               variant="primary"

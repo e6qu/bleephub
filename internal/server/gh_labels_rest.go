@@ -10,8 +10,7 @@ import (
 )
 
 func (s *Server) registerGHIssueRoutes() {
-	// Labels — issues:write covers labels (real GH conflates the two; admin
-	// would be required for organization-level changes which bleephub doesn't model).
+	// issues:write covers labels, as real GitHub conflates the two.
 	s.route("POST /api/v3/repos/{owner}/{repo}/labels", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateLabel))
 	s.route("GET /api/v3/repos/{owner}/{repo}/labels", s.handleListLabels)
 	s.route("GET /api/v3/repos/{owner}/{repo}/labels/{name}", s.handleGetLabel)
@@ -33,19 +32,15 @@ func (s *Server) registerGHIssueRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/{number}", s.handleGetIssue)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/{number}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleUpdateIssue))
 
-	// Issue comments. GET /issues/comments/{id} conflicts with
-	// GET /issues/{number}/reactions (and GET /issues/events/{id}) under
-	// Go 1.22's mux, so all two-segment issue GET paths dispatch via
-	// handleIssuesTwoSegGetDispatch.
+	// Go 1.22's mux can't disambiguate literal /issues/comments/{id} from
+	// wildcard /issues/{n}/..., so all two-segment issue GETs dispatch here.
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}", s.handleIssuesTwoSegGetDispatch)
 
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/comments", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateIssueComment))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleUpdateIssueComment))
 
-	// Issue + PR moderation — comment-by-id delete + lock/unlock collide at
-	// `/issues/{p1}/{p2}` because Go 1.22's mux can't disambiguate
-	// `/issues/comments/{id}` from `/issues/{n}/lock`. Dispatch via a
-	// single 2-segment handler at delete time.
+	// Two-segment issue DELETEs (comment-by-id vs lock/unlock) collide in the
+	// mux, so they dispatch through one handler.
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleIssuesDeleteDispatch))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/issues/{number}/lock", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleLockIssue))
 
@@ -65,30 +60,24 @@ func (s *Server) registerGHIssueRoutes() {
 	// Issue timeline + events
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/events", s.handleListRepoIssueEvents)
 
-	// Sub-issues + issue dependencies (gh_sub_issues.go); issue-field-values
-	// POST/PUT live in gh_issue_fields.go. List GETs and the sub-issue
-	// removal dispatch through the shared two-/three-segment wildcard
-	// handlers below.
+	// Sub-issues + issue dependencies (gh_sub_issues.go). List GETs and removals
+	// dispatch through the shared wildcard handlers below.
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/sub_issues", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateSubIssue))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/{number}/sub_issues/priority", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleReprioritizeSubIssue))
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleAddIssueDependencyBlockedBy))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by/{issue_id}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleRemoveIssueDependencyBlockedBy))
 
-	// Go's mux cannot disambiguate 3-segment issue DELETE paths (e.g.
-	// /issues/{n}/labels/{name} vs /issues/{n}/reactions/{id}), so they
-	// dispatch from one handler. Direct routes for labels/sub-issues are more
-	// specific and take precedence.
+	// Three-segment issue DELETEs dispatch from one handler; the direct
+	// labels/sub-issues routes above are more specific and take precedence.
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}/{p3}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleIssuesThreeSegDeleteDispatch))
 
-	// 3-segment issue GET paths (e.g. /issues/comments/{id}/reactions vs
-	// /issues/{n}/dependencies/blocked_by) also dispatch from one handler.
+	// Three-segment issue GETs likewise dispatch from one handler.
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}/{p3}", s.handleIssuesThreeSegGetDispatch)
 }
 
 // --- Label handlers ---
 
-// buildLabelPayload assembles the GitHub `label` webhook event body so that
-// `on: label` workflows fire for label create/edit/delete.
+// buildLabelPayload assembles the `label` webhook event body.
 func buildLabelPayload(repo *store.Repo, labelJSON map[string]interface{}, sender *store.User, action, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":     action,
@@ -98,9 +87,7 @@ func buildLabelPayload(repo *store.Repo, labelJSON map[string]interface{}, sende
 	}
 }
 
-// buildMilestonePayload assembles the GitHub `milestone` webhook event body so
-// that `on: milestone` workflows fire for milestone create/edit/close/reopen/
-// delete (ACT-026).
+// buildMilestonePayload assembles the `milestone` webhook event body.
 func buildMilestonePayload(repo *store.Repo, milestoneJSON map[string]interface{}, sender *store.User, action, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":     action,
@@ -207,7 +194,7 @@ func (s *Server) handleUpdateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412.
+	// Reject a stale If-Match with 412 (STORE-016).
 	if !checkIfMatch(w, r, issueLabelToJSON(label, s.baseURL(r), repo.FullName)) {
 		return
 	}
@@ -390,7 +377,7 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412.
+	// Reject a stale If-Match with 412 (STORE-016).
 	if !checkIfMatch(w, r, milestoneToJSON(ms, s.store, s.baseURL(r), repo.FullName)) {
 		return
 	}
@@ -421,8 +408,7 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 
 	updated := s.store.GetMilestone(ms.ID)
 	msJSON := milestoneToJSON(updated, s.store, s.baseURL(r), repo.FullName)
-	// GitHub distinguishes a state transition from a plain edit: closing fires
-	// `closed`, reopening fires `opened`, any other change fires `edited`.
+	// Closing fires `closed`, reopening `opened`, any other change `edited`.
 	action := "edited"
 	if newState := string(updated.State); newState != oldState {
 		if newState == "closed" {
@@ -464,7 +450,7 @@ func (s *Server) handleDeleteMilestone(w http.ResponseWriter, r *http.Request) {
 	}
 
 	repoKey := owner + "/" + repoName
-	// Snapshot the milestone JSON before deletion so the webhook payload carries it.
+	// Snapshot before deletion so the webhook payload still carries it.
 	msJSON := milestoneToJSON(ms, s.store, s.baseURL(r), repo.FullName)
 	s.store.DeleteMilestone(ms.ID)
 	s.recordAuditEvent("milestone.delete", user.Login, "", map[string]interface{}{"repo": repoKey, "milestone_id": ms.ID})
@@ -472,9 +458,8 @@ func (s *Server) handleDeleteMilestone(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListMilestoneLabels — GET /repos/{o}/{r}/milestones/{number}/labels.
-// Lists the labels on every issue (and pull request — PRs are issues) in
-// the milestone, each label once.
+// handleListMilestoneLabels lists each distinct label on any issue or PR in the
+// milestone (PRs are issues).
 func (s *Server) handleListMilestoneLabels(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
@@ -543,10 +528,9 @@ func issueLabelToJSON(l *store.IssueLabel, baseURL, repoFullName string) map[str
 	}
 }
 
-// milestoneToJSON converts a Milestone to the GitHub `milestone` shape.
-// Open/closed issue counts are derived live from the issues and pull
-// requests attached to the milestone (PRs count because they are issues
-// internally on GitHub). Must not be called with st.mu held.
+// milestoneToJSON renders the `milestone` shape, deriving open/closed issue
+// counts live from attached issues and PRs (PRs are issues). Must not be called
+// with st.mu held.
 func milestoneToJSON(ms *store.Milestone, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	var dueOn interface{}
 	if ms.DueOn != nil {
@@ -605,11 +589,8 @@ func milestoneToJSON(ms *store.Milestone, st *store.Store, baseURL, repoFullName
 	}
 }
 
-// handleIssuesTwoSegDispatchGET resolves GET /repos/{}/issues/{p1}/{p2} to
-// either an issue-comment lookup (/issues/comments/{id}), an issue-event
-// lookup (/issues/events/{id}), or one of the per-issue sub-resources
-// (comments, timeline, events, reactions, sub-issues, issue-field-values).
-// Go 1.22's mux cannot disambiguate these literal-and-wildcard mixtures.
+// handleIssuesTwoSegGetDispatch routes GET /issues/{p1}/{p2} to the comment/
+// event lookups or the per-issue sub-resources the mux cannot separate.
 func (s *Server) handleIssuesTwoSegGetDispatch(w http.ResponseWriter, r *http.Request) {
 	p1 := r.PathValue("p1")
 	p2 := r.PathValue("p2")
@@ -649,10 +630,8 @@ func (s *Server) handleIssuesTwoSegGetDispatch(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// handleIssuesThreeSegDeleteDispatch resolves DELETE /repos/{}/issues/{p1}/{p2}/{p3}
-// to the correct handler. Go 1.22's mux cannot disambiguate literal segments
-// from wildcard segments at the same depth, so issue reaction deletes live here
-// alongside the (more specific) direct routes for labels and sub-issues.
+// handleIssuesThreeSegDeleteDispatch routes DELETE /issues/{p1}/{p2}/{p3} to the
+// correct handler where the mux cannot separate literal from wildcard segments.
 func (s *Server) handleIssuesThreeSegDeleteDispatch(w http.ResponseWriter, r *http.Request) {
 	p1 := r.PathValue("p1")
 	p2 := r.PathValue("p2")
@@ -678,9 +657,8 @@ func (s *Server) handleIssuesThreeSegDeleteDispatch(w http.ResponseWriter, r *ht
 	}
 }
 
-// handleIssuesThreeSegGetDispatch resolves GET /repos/{}/issues/{p1}/{p2}/{p3}
-// to the correct handler. Go 1.22's mux cannot disambiguate literal segments
-// (comments) from wildcard segments (number) at the same depth.
+// handleIssuesThreeSegGetDispatch routes GET /issues/{p1}/{p2}/{p3} to the
+// correct handler where the mux cannot separate literal from wildcard segments.
 func (s *Server) handleIssuesThreeSegGetDispatch(w http.ResponseWriter, r *http.Request) {
 	p1 := r.PathValue("p1")
 	p2 := r.PathValue("p2")

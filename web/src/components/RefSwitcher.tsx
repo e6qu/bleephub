@@ -6,16 +6,8 @@ import { useDismiss } from "../hooks/useDismiss.js";
 import { repoCodeRoute } from "../routes.js";
 import { BranchIcon, TagIcon, ChevronDownIcon, CheckIcon } from "./octicons.js";
 
-/**
- * GitHub's branch/tag switcher: a trigger button showing the current ref and a
- * filterable popover with Branches/Tags tabs (combobox + listbox keyboard
- * pattern, same as GoToFile). Tags load lazily on first open; branches come
- * from the caller (every code view already has them).
- *
- * The popover also carries the "View all branches" / "View all tags" footer —
- * github.com's only route to the full branch and tag listings, and (since G9
- * removed the extra repo sub-tab row) this app's as well.
- */
+// Branch/tag switcher. Tags load lazily on first open; branches come from the
+// caller. The footer is this app's only route to the full branch/tag listings.
 export function RefSwitcher({
   owner,
   repo,
@@ -39,7 +31,7 @@ export function RefSwitcher({
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  // Same query key as the repo Tags tab so the cache is shared.
+  // Share the repo Tags tab's query key and cache.
   const tagsQ = useQuery({
     queryKey: ["repo-tags", owner, repo],
     queryFn: () => fetchRepoTags(owner, repo),

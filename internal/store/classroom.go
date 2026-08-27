@@ -36,8 +36,8 @@ type ClassroomAssignment struct {
 	AutogradingTests            []ClassroomAutogradingTest `json:"autograding_tests,omitempty"`
 }
 
-// ClassroomAcceptedAssignment records a student's (or team's) acceptance of
-// an assignment, backed by the real repository the acceptance created.
+// ClassroomAcceptedAssignment records a student's or team's acceptance of an
+// assignment, backed by the repository the acceptance created.
 type ClassroomAcceptedAssignment struct {
 	ID           int                `json:"id"`
 	AssignmentID int                `json:"assignment_id"`
@@ -75,19 +75,17 @@ func (st *Store) UpdateClassroom(id int, update func(*Classroom)) *Classroom {
 	return c
 }
 
-// DeleteClassroom removes the Classroom product metadata and its assignments.
-// Assignment repositories remain ordinary organization repositories, matching
-// GitHub Classroom's promise that deleting Classroom data does not delete the
-// repositories students worked in.
+// DeleteClassroom removes the Classroom metadata and its assignments; the
+// assignment repositories survive as ordinary org repositories, per GitHub
+// Classroom.
 func (st *Store) DeleteClassroom(id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	if st.Classrooms[id] == nil {
 		return false
 	}
-	// One transaction: the classroom and every assignment and accepted-assignment
-	// beneath it are deleted together, so a crash cannot orphan an assignment or
-	// acceptance under a deleted classroom (STORE-001/002).
+	// Single transaction: a crash cannot orphan an assignment or acceptance
+	// under a deleted classroom (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	delete(st.Classrooms, id)
 	batch.Delete("classrooms", strconv.Itoa(id))
@@ -142,8 +140,7 @@ func (st *Store) DeleteClassroomAssignment(id int) bool {
 	if st.ClassroomAssignments[id] == nil {
 		return false
 	}
-	// One transaction: the assignment and every acceptance of it are deleted
-	// together, so a crash cannot orphan an acceptance (STORE-001/002).
+	// Single transaction: a crash cannot orphan an acceptance (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	delete(st.ClassroomAssignments, id)
 	batch.Delete("classroom_assignments", strconv.Itoa(id))
@@ -185,8 +182,7 @@ func (st *Store) UpdateClassroomAcceptedAssignment(id int, update func(*Classroo
 	return a
 }
 
-// classroomAcceptedFor returns the accepted assignments for an assignment,
-// oldest first.
+// ClassroomAcceptedFor returns an assignment's accepted assignments, oldest first.
 func (st *Store) ClassroomAcceptedFor(assignmentID int) []*ClassroomAcceptedAssignment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -218,8 +214,6 @@ type ClassroomAutogradingTest struct {
 	Points  int    `json:"points"`
 }
 
-// ClassroomStudent links an accepted assignment to a student user with the
-// classroom roster identifier.
 type ClassroomStudent struct {
 	UserID           int    `json:"user_id"`
 	RosterIdentifier string `json:"roster_identifier"`

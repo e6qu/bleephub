@@ -1,13 +1,12 @@
 # OpenID Connect (OIDC) and shauth SSO
 
-bleephub supports federated SSO through a standard OpenID Connect
+bleephub supports federated SSO through any spec-compliant OpenID Connect
 provider. The reference integration is **shauth** (the e6qu identity service,
-built on Ory Hydra), but any spec-compliant OIDC provider works. This document
-covers the standards bleephub follows, exactly where each is implemented, and
-how to wire up shauth.
+built on Ory Hydra). This document covers the standards bleephub follows, where
+each is implemented, and how to wire up shauth.
 
-Code links use `github.com/e6qu/bleephub/blob/main/...` permalinks. The whole
-identity flow lives in
+Code links use `github.com/e6qu/bleephub/blob/main/...` permalinks. The identity
+flow lives in
 [`internal/server/identity.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/identity.go).
 
 ## Standards followed
@@ -28,8 +27,8 @@ identity flow lives in
 `(*Server).oidcClientContext` builds the OIDC HTTP client from the shared
 `newAddressCheckedHTTPTransport`. The issuer is operator-configured, but the
 provider-returned discovery document can point the JWKS or `end_session_endpoint`
-at an internal or cloud-metadata address; gating the actual dial prevents that.
-See [security.md](security.md#server-side-request-forgery-ssrf).
+at an internal or cloud-metadata address; gating the dial prevents that. See
+[security.md](security.md#server-side-request-forgery-ssrf).
 
 ## Identity mapping (the important part)
 
@@ -51,7 +50,7 @@ the mutable username — `externalIdentityKey` + `upsertExternalUser` in
 
 ### Configuration (environment)
 
-Set on the bleephub server process (`identityConfig`, loaded in
+Set these on the bleephub server process (`identityConfig`, loaded in
 [identity.go](https://github.com/e6qu/bleephub/blob/main/internal/server/identity.go);
 validation is all-or-nothing):
 
@@ -86,11 +85,11 @@ Once configured, `/login` transparently forwards to `/auth/shauth` (see
 ### How to run the reference integration locally
 
 The end-to-end shauth SSO harness (bleephub + Hydra + Postgres via compose) lives
-in [`test/shauth/`](https://github.com/e6qu/bleephub/blob/main/test/shauth) and is
+in [`test/shauth/`](https://github.com/e6qu/bleephub/blob/main/test/shauth),
 driven by
 [`scripts/test-shauth-sso.sh`](https://github.com/e6qu/bleephub/blob/main/scripts/test-shauth-sso.sh).
-Because the issuer runs on loopback there, the compose sets
-`BLEEPHUB_ALLOW_INSECURE_OIDC=true` — the pattern to copy for any local IdP.
+The issuer runs on loopback there, so the compose sets
+`BLEEPHUB_ALLOW_INSECURE_OIDC=true` — copy this pattern for any local IdP.
 (OIDC discovery uses an ordinary client for the operator-configured issuer, not
 the webhook SSRF gate, so a loopback issuer needs no private-address opt-out.)
 Production deployments use an HTTPS, publicly-resolvable issuer and leave the

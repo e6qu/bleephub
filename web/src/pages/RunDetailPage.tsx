@@ -45,7 +45,7 @@ import {
   PlayIcon,
 } from "../components/octicons.js";
 
-/** A run still producing output — drives the ~2s live-tail polling. */
+// Drives the ~2s live-tail polling.
 function runIsActive(run: GithubWorkflowRun | undefined): boolean {
   return !!run && run.status !== "completed";
 }
@@ -80,9 +80,8 @@ export function RunDetailPage() {
   const selectedJob = jobs.find((j) => j.id === selectedJobId) ?? jobs[0] ?? null;
   const [logSearch, setLogSearch] = useState("");
 
-  // Job dependencies are not part of the jobs REST payload — the workflow
-  // file is the only client-visible source of `needs`, so parse it
-  // best-effort (missing/unreadable file simply means no dependency chips).
+  // `needs` isn't in the jobs REST payload; parse it from the workflow file
+  // best-effort (missing/unreadable file means no dependency chips).
   const workflowYamlQ = useQuery({
     queryKey: ["workflow-yaml", owner, repo, run?.path],
     queryFn: () => fetchFileContent(owner, repo, run!.path),
@@ -212,10 +211,7 @@ export function RunDetailPage() {
   );
 }
 
-/**
- * Per-job match-count badge shown while a log search is active. Reuses the
- * ["job-logs", …] cache key so the selected job costs no extra request.
- */
+// Reuses the ["job-logs", …] cache key so the selected job costs no request.
 function JobLogMatchCount({
   owner,
   repo,
@@ -260,8 +256,6 @@ function JobLogMatchCount({
   );
 }
 
-// ─── Run header: title, meta, attempt selector, action buttons ──────────
-
 function RunHeader({
   owner,
   repo,
@@ -272,13 +266,12 @@ function RunHeader({
   run: GithubWorkflowRun;
 }) {
   const qc = useQueryClient();
-  // Run mutations (approve/cancel/re-run/delete) need push access; the log
-  // archive download stays for everyone.
+  // Run mutations need push access; the log archive download stays for everyone.
   const { canPush } = useRepoPermissions(owner, repo);
   const [attempt, setAttempt] = useState<number | null>(null);
 
-  // Attempt history is optional server surface: probe attempt 1 and hide
-  // the selector when the endpoint 404s.
+  // Attempt history is optional server surface: probe attempt 1, hide the
+  // selector when the endpoint 404s.
   const attemptsSupportedQ = useQuery({
     queryKey: ["run-attempt-probe", owner, repo, run.id],
     queryFn: () => fetchWorkflowRunAttempt(owner, repo, run.id, 1),
@@ -445,8 +438,7 @@ function RunHeader({
             </Button>
           )}
           {completed && (
-            // The run-level logs endpoint answers with the zip archive —
-            // a plain anchor download matches GitHub's "Download log archive".
+            // Logs endpoint returns a zip; a plain anchor download streams it.
             <a
               href={`/api/v3/repos/${owner}/${repo}/actions/runs/${run.id}/logs`}
               download
@@ -499,8 +491,6 @@ function RunHeader({
     </header>
   );
 }
-
-// ─── Pending environment approvals ──────────────────────────────────────
 
 function PendingDeploymentsBanner({
   owner,
@@ -610,19 +600,13 @@ function PendingDeploymentsBanner({
   );
 }
 
-// ─── Job pane: steps with per-step log slices ───────────────────────────
-
 interface LogSegment {
   title: string;
   lines: string[];
 }
 
-/**
- * Split a raw job log into ##[group]…##[endgroup] segments. Lines may be
- * prefixed with ISO timestamps, so the markers are matched anywhere in
- * the line. Logs without group markers yield no segments — the caller
- * then falls back to showing the whole log under the job.
- */
+// Split a raw job log into ##[group]…##[endgroup] segments. Markers are
+// matched anywhere in the line since lines may carry a leading ISO timestamp.
 function segmentJobLog(text: string): { segments: LogSegment[]; lines: string[] } {
   const lines = text.length === 0 ? [] : text.replace(/\n$/, "").split("\n");
   const segments: LogSegment[] = [];
@@ -645,7 +629,7 @@ function segmentJobLog(text: string): { segments: LogSegment[]; lines: string[] 
   return { segments, lines };
 }
 
-/** A single check-run annotation — GET .../check-runs/{id}/annotations. */
+// GET .../check-runs/{id}/annotations.
 interface CheckRunAnnotation {
   path: string;
   start_line: number;
@@ -656,14 +640,13 @@ interface CheckRunAnnotation {
   raw_details?: string;
 }
 
-/** Map an annotation level to a legible foreground token. */
 function annotationColor(level: string): string {
   if (level === "failure") return "var(--color-status-error)";
   if (level === "warning") return "var(--color-status-warn)";
   return "var(--color-fg-muted)";
 }
 
-/** Leading runner-log ISO timestamp ("2026-01-01T00:00:10Z ", incl. fractions). */
+// Leading runner-log ISO timestamp, incl. fractions.
 const LOG_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s/;
 
 function JobPane({
@@ -682,7 +665,7 @@ function JobPane({
   const [showTimestamps, setShowTimestamps] = useState(false);
   // Re-running a job needs push access; logs stay readable for everyone.
   const { canPush } = useRepoPermissions(owner, repo);
-  // The job JSON carries `.../check-runs/{id}` — the annotation source.
+  // Extract the annotation source id from the job's check_run_url.
   const checkRunId = useMemo(() => {
     const url = job.check_run_url;
     if (!url) return null;
@@ -690,8 +673,7 @@ function JobPane({
     return id && /^\d+$/.test(id) ? id : null;
   }, [job.check_run_url]);
 
-  // Annotation reads are auth-gated on the server (401 anonymously); logs
-  // stay readable without them.
+  // Annotation reads 401 anonymously; only fetch when signed in.
   const signedIn = useSignedIn();
   const annotationsQ = useQuery({
     queryKey: ["job-annotations", owner, repo, checkRunId],
@@ -973,7 +955,7 @@ function StepRow({
   );
 }
 
-/** Wrap case-insensitive occurrences of `needle` in <mark> for one line. */
+// Wrap case-insensitive occurrences of `needle` in <mark>.
 function highlightLine(line: string, needle: string): React.ReactNode {
   if (!needle) return line;
   const lower = line.toLowerCase();
@@ -1032,8 +1014,6 @@ function LogBlock({
   );
 }
 
-// ─── Artifacts ───────────────────────────────────────────────────────────
-
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -1083,8 +1063,7 @@ function ArtifactsSection({ owner, repo, runId }: { owner: string; repo: string;
               {formatBytes(a.size_in_bytes)}
             </span>
             {!a.expired && (
-              // The zip endpoint replies with a 302 to the download —
-              // a plain anchor follows it; fetch()+blob would not stream.
+              // Zip endpoint 302s to the download; a plain anchor follows it.
               <a
                 href={`/api/v3/repos/${owner}/${repo}/actions/artifacts/${a.id}/zip`}
                 className="inline-flex items-center gap-1"

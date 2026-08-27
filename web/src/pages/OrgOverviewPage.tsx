@@ -20,8 +20,7 @@ import { RepoIcon, PeopleIcon, GlobeIcon, LockIcon, BookIcon } from "../componen
 
 export function OrgOverviewPage() {
   const { org = "" } = useParams<{ org: string }>();
-  // The viewer's own membership read 401s anonymously; signed out the page
-  // renders the public view (no admin affordances).
+  // Viewer membership read 401s anonymously; signed out renders the public view.
   const signedIn = useSignedIn();
 
   const profile = useQuery({
@@ -36,9 +35,8 @@ export function OrgOverviewPage() {
     queryKey: ["org-overview-members", org],
     queryFn: () => fetchOrgMembers(org),
   });
-  // The org profile README is the README of the {org}/.github repo. The
-  // /ui-data wrapper answers 200 with readme: null when absent (the common
-  // case) — probing the readme endpoint directly would log a console 404.
+  // Org profile README = the {org}/.github README. The wrapper answers null when
+  // absent, avoiding the console 404 a direct readme probe would log.
   const readme = useQuery({
     queryKey: ["org-profile-readme", org],
     queryFn: async () => {
@@ -169,11 +167,8 @@ function MetaRow({ icon, children }: { icon?: React.ReactNode; children: React.R
   );
 }
 
-/**
- * Org pinned repositories, from GET /ui-data/orgs/{org}/pinned. Org owners
- * (viewer role "admin") get an "Edit pins" dialog; PUT is owner-only and
- * takes at most 6 org-owned repos.
- */
+// Org pinned repos from GET /ui-data/orgs/{org}/pinned. Owners get "Edit pins";
+// PUT is owner-only, at most 6 org-owned repos.
 function OrgPinnedSection({
   org,
   pinned,

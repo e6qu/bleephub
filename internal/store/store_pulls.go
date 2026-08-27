@@ -42,29 +42,21 @@ type PullRequest struct {
 	UpdatedAt               time.Time
 	ClosedAt                *time.Time
 	MergedAt                *time.Time
-	// AutoMerge is the armed auto-merge request (GraphQL
-	// enablePullRequestAutoMerge; REST pull-request.auto_merge). Nil when
-	// auto-merge is off. Cleared whenever the PR leaves the OPEN state —
-	// merging or closing retires the request, exactly as on GitHub.
+	// AutoMerge is the armed auto-merge request, nil when off. Cleared whenever
+	// the PR leaves the OPEN state.
 	AutoMerge *PullRequestAutoMerge
-	// Archived records a pull request taken out of the active list by
-	// archivePullRequest. An archived pull request keeps its state; it is
-	// hidden from the default views, which is what GitHub's archive does.
+	// Archived hides the PR from default views while keeping its state.
 	Archived bool
-	// ViewedFiles is the per-reviewer set of file paths marked as viewed in
-	// the diff, keyed by the reviewer's account id. It is per reviewer because
-	// "viewed" is a fact about one person's review pass.
+	// ViewedFiles is the per-reviewer set of file paths marked viewed in the
+	// diff, keyed by reviewer account id.
 	ViewedFiles map[int][]string
-	// MergeQueuePosition is the pull request's place in its base branch's
-	// merge queue, 1-based; zero means it is not queued.
-	MergeQueuePosition int
-	// MergeQueueEnqueuedAt is when it joined the queue.
+	// MergeQueuePosition is the 1-based place in the base branch's merge queue;
+	// zero means not queued.
+	MergeQueuePosition   int
 	MergeQueueEnqueuedAt *time.Time
-	// RevertedByID is the pull request opened to revert this one, once one has
-	// been; zero until then.
+	// RevertedByID is the PR opened to revert this one, zero until one is.
 	RevertedByID int
-	// RevertsID is the pull request this one reverts, zero when it reverts
-	// nothing.
+	// RevertsID is the PR this one reverts, zero when it reverts nothing.
 	RevertsID int
 }
 
@@ -90,10 +82,9 @@ type PullRequestReview struct {
 	SubmittedAt      *time.Time
 	DismissedAt      *time.Time
 	DismissalMessage string
-	// PreviousState is the state the review held before it was dismissed
-	// ("" while it has never been dismissed). Dismissal overwrites State, so
-	// without this the standing the dismissal overturned is unrecoverable —
-	// which is exactly what ReviewDismissedEvent.previousReviewState reports.
+	// PreviousState is the state held before dismissal ("" if never dismissed).
+	// Dismissal overwrites State, and ReviewDismissedEvent.previousReviewState
+	// needs the overturned standing.
 	PreviousState string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -106,8 +97,8 @@ type PullRequestOptions struct {
 
 var ErrOpenPullRequestExists = errors.New("an open pull request already exists for the head and base")
 
-// CreatePullRequest creates a new pull request in the given repository.
-// Uses the shared NextIssueNumber counter for issue/PR numbering.
+// CreatePullRequest creates a pull request. Numbering shares the repo's
+// NextIssueNumber counter with issues.
 func (st *Store) CreatePullRequest(repoID, authorID int, title, body, headRefName, baseRefName string, isDraft bool, labelIDs, assigneeIDs []int, milestoneID int, opts ...PullRequestOptions) *PullRequest {
 	pr, _ := st.CreatePullRequestChecked(repoID, authorID, title, body, headRefName, baseRefName, isDraft, labelIDs, assigneeIDs, milestoneID, opts...)
 	return pr
@@ -181,9 +172,8 @@ func (st *Store) CreatePullRequestChecked(repoID, authorID int, title, body, hea
 		HeadRepoID:          headRepoID,
 		BaseRefName:         baseRefName,
 		MaintainerCanModify: maintainerCanModify,
-		// GitHub records the base commit at PR creation; the PR's commit
-		// range stays anchored to it even after the base branch advances
-		// (including past the PR's own merge commit).
+		// The commit range stays anchored to the base at PR creation even
+		// after the base branch advances (including past the PR's merge commit).
 		BaseSHA:     baseSHA,
 		AuthorID:    authorID,
 		AssigneeIDs: assigneeIDs,
@@ -203,9 +193,8 @@ func (st *Store) CreatePullRequestChecked(repoID, authorID int, title, body, hea
 	return pr, nil
 }
 
-// indexPullLocked records the PR in the per-repo secondary index so
-// GetPullRequestByNumber and ListPullRequests resolve in O(PRs-in-repo)
-// instead of a full scan of every PR in the store. Caller holds st.Mu.
+// IndexPullLocked records the PR in the per-repo secondary index so lookups
+// resolve in O(PRs-in-repo) instead of a full store scan. Caller holds st.Mu.
 func (st *Store) IndexPullLocked(pr *PullRequest) {
 	m := st.PullsByRepo[pr.RepoID]
 	if m == nil {
@@ -226,11 +215,8 @@ func (st *Store) unindexPullLocked(pr *PullRequest) {
 	}
 }
 
-// GetPullRequest returns a pull request by global ID.
-// clonePullRequest returns a deep copy safe to hand outside the store lock
-// (STORE-021): the four ID slices plus ClosedAt/MergedAt are the reference
-// fields. PR writes go through the keyed UpdatePullRequest(id, fn); the getter's
-// callers only read.
+// clonePullRequest returns a detached snapshot safe to hand outside the store
+// lock (STORE-021). PR writes go through the keyed UpdatePullRequest(id, fn).
 func clonePullRequest(pr *PullRequest) *PullRequest {
 	if pr == nil {
 		return nil
@@ -318,8 +304,7 @@ func (st *Store) UpdatePullRequest(id int, fn func(*PullRequest)) bool {
 	}
 	fn(pr)
 	// Every state transition funnels through here, so retiring an armed
-	// auto-merge request when the PR leaves OPEN (merged or closed) needs no
-	// per-call-site bookkeeping.
+	// auto-merge request when the PR leaves OPEN needs no per-call-site bookkeeping.
 	if pr.State != "OPEN" {
 		pr.AutoMerge = nil
 	}
@@ -330,10 +315,8 @@ func (st *Store) UpdatePullRequest(id int, fn func(*PullRequest)) bool {
 	return true
 }
 
-// recordPullRequestLabelEventBatchLocked builds a labeled/unlabeled event
-// attached to a pull request (ParentType "pull_request", so it surfaces in the
-// PR timeline) and stages its persist into batch, so a relabel that emits
-// several events commits them with the pull-request row in one transaction
+// recordPullRequestLabelEventBatchLocked stages a labeled/unlabeled PR-timeline
+// event into batch so it commits with the pull-request row in one transaction
 // (STORE-001/002). Callers hold st.Mu.
 func (st *Store) recordPullRequestLabelEventBatchLocked(batch *PersistBatch, repoID, prID, actorID, labelID int, event string) {
 	e := st.buildIssueEventLocked(repoID, prID, actorID, event, "pull_request")
@@ -342,9 +325,7 @@ func (st *Store) recordPullRequestLabelEventBatchLocked(batch *PersistBatch, rep
 }
 
 // AddPullRequestLabels adds labels to a pull request, recording a labeled event
-// for each new attachment. Pull requests carry labels through the same
-// /issues/{number}/labels surface real GitHub exposes. Returns true when the PR
-// exists; duplicate IDs are ignored.
+// per new attachment. Returns true when the PR exists; duplicate IDs are ignored.
 func (st *Store) AddPullRequestLabels(repoID, prNumber int, labelIDs []int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -369,9 +350,8 @@ func (st *Store) AddPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 		}
 	}
 	if added {
-		// One transaction: every labeled event and the pull-request row commit
-		// together, so a crash cannot record an event without the label landing on
-		// the PR, or vice versa (STORE-001/002).
+		// One transaction so a crash cannot split the events from the label set
+		// (STORE-001/002).
 		pr.UpdatedAt = st.CurrentTime()
 		batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
 		if err := batch.Commit(); err != nil {
@@ -381,11 +361,8 @@ func (st *Store) AddPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 	return true
 }
 
-// SetPullRequestLabels replaces all labels on a pull request, recording
-// labeled/unlabeled events for the deltas. Returns true when the PR exists.
 // SetPullRequestPotentialMergeSHA records a pull request's test-merge commit
-// (ACT-027). A no-op when unchanged so it does not churn persistence on every
-// event.
+// (ACT-027). A no-op when unchanged, to avoid churning persistence.
 func (st *Store) SetPullRequestPotentialMergeSHA(prID int, sha string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -399,11 +376,8 @@ func (st *Store) SetPullRequestPotentialMergeSHA(prID int, sha string) {
 	}
 }
 
-// SetPullRequestDiffStats records a pull request's merge-base diff totals
-// (changed_files/additions/deletions on the REST detail payload, and
-// changedFiles/additions/deletions in GraphQL). Like the potential-merge SHA
-// it is derived state, so it does not bump UpdatedAt and is a no-op when
-// unchanged to avoid churning persistence on read-path refreshes.
+// SetPullRequestDiffStats records a pull request's merge-base diff totals. Being
+// derived state, it does not bump UpdatedAt and is a no-op when unchanged.
 func (st *Store) SetPullRequestDiffStats(prID, changedFiles, additions, deletions int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -434,8 +408,7 @@ func (st *Store) SetPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 	for _, lid := range labelIDs {
 		newSet[lid] = true
 	}
-	// One transaction: every labeled/unlabeled event and the pull-request row
-	// commit together, so a crash cannot split the event history from the PR's
+	// One transaction so a crash cannot split the event history from the PR's
 	// label set (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	for _, lid := range pr.LabelIDs {
@@ -448,7 +421,7 @@ func (st *Store) SetPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 			st.recordPullRequestLabelEventBatchLocked(batch, repoID, pr.ID, actorID, lid, "labeled")
 		}
 	}
-	// Clone rather than adopt the caller's slice by reference.
+	// Clone rather than adopt the caller's slice.
 	pr.LabelIDs = append([]int(nil), labelIDs...)
 	pr.UpdatedAt = st.CurrentTime()
 	batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
@@ -471,8 +444,7 @@ func (st *Store) ClearPullRequestLabels(repoID, prNumber, actorID int) bool {
 	if len(pr.LabelIDs) == 0 {
 		return true
 	}
-	// One transaction: every unlabeled event and the cleared PR row commit
-	// together (STORE-001/002).
+	// One transaction (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	for _, lid := range pr.LabelIDs {
 		st.recordPullRequestLabelEventBatchLocked(batch, repoID, pr.ID, actorID, lid, "unlabeled")
@@ -500,9 +472,8 @@ func (st *Store) RemovePullRequestLabel(repoID, prNumber, labelID, actorID int) 
 		if lid == labelID {
 			pr.LabelIDs = append(pr.LabelIDs[:idx], pr.LabelIDs[idx+1:]...)
 			pr.UpdatedAt = st.CurrentTime()
-			// One transaction: the PR row and its unlabeled event commit together,
-			// so a crash cannot drop the label without recording the event, or
-			// record the event while the label lingers (STORE-001/002).
+			// One transaction so the label drop and its event cannot be split
+			// (STORE-001/002).
 			batch := NewPersistBatch(st.Persist)
 			batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
 			st.recordPullRequestLabelEventBatchLocked(batch, repoID, pr.ID, actorID, labelID, "unlabeled")
@@ -568,9 +539,8 @@ func (st *Store) CreatePullRequestReview(repoKey string, pullNumber int, userID 
 	return st.createPRReviewLocked(pr.ID, userID, state, body)
 }
 
-// cloneReview returns a copy safe to hand outside the store lock (STORE-021):
-// SubmittedAt and DismissedAt are the only reference fields. Review writes go
-// through the keyed Update/Submit/Dismiss methods.
+// cloneReview returns a detached snapshot safe to hand outside the store lock
+// (STORE-021). Review writes go through the keyed Update/Submit/Dismiss methods.
 func cloneReview(r *PullRequestReview) *PullRequestReview {
 	if r == nil {
 		return nil
@@ -691,8 +661,8 @@ func (st *Store) SubmitPullRequestReview(id int, event string) bool {
 	return true
 }
 
-// PendingReviewForAuthor returns the author's still-pending review on a PR (a
-// reviewer has at most one), or nil. Used to submit a review by pull-request id.
+// PendingReviewForAuthor returns the author's still-pending review on a PR (at
+// most one), or nil.
 func (st *Store) PendingReviewForAuthor(prID, authorID int) *PullRequestReview {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -731,17 +701,13 @@ func (st *Store) FindPRByRepoNumberLocked(repoKey string, pullNumber int) *PullR
 	if repo == nil {
 		return nil
 	}
-	// Resolve through the same (repoID, number) index every read and merge path
-	// uses (PullsByRepo) rather than scanning st.PullRequests: a linear scan
-	// returns an arbitrary match in map-iteration order, so a stale or duplicate
-	// record could make these reviewer mutations act on a different PR than the
-	// endpoints that read the index. One source of truth, and O(1).
+	// Resolve through the same PullsByRepo index every read and merge path uses,
+	// not a scan of st.PullRequests: one source of truth, and O(1).
 	return st.PullsByRepo[repo.ID][pullNumber]
 }
 
-// RequestReviewers adds reviewer IDs to a PR's requested reviewers list and
-// records a review_requested issue event for each newly added reviewer,
-// attributed to actorID (the review requester).
+// RequestReviewers adds reviewer IDs to a PR and records a review_requested
+// event per newly added reviewer, attributed to actorID.
 func (st *Store) RequestReviewers(repoKey string, pullNumber int, reviewerIDs []int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -749,9 +715,8 @@ func (st *Store) RequestReviewers(repoKey string, pullNumber int, reviewerIDs []
 	if pr == nil {
 		return false
 	}
-	// One transaction: every review_requested event and the pull-request row
-	// commit together, so a crash cannot record a request without adding the
-	// reviewer, or vice versa (STORE-001/002).
+	// One transaction so a crash cannot split the request from the reviewer add
+	// (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	existing := map[int]struct{}{}
 	for _, id := range pr.RequestedReviewerIDs {
@@ -772,9 +737,8 @@ func (st *Store) RequestReviewers(repoKey string, pullNumber int, reviewerIDs []
 	return true
 }
 
-// RemoveRequestedReviewers removes reviewer IDs from a PR's requested
-// reviewers list and records a review_request_removed issue event for each
-// reviewer actually removed, attributed to actorID.
+// RemoveRequestedReviewers removes reviewer IDs from a PR and records a
+// review_request_removed event per reviewer removed, attributed to actorID.
 func (st *Store) RemoveRequestedReviewers(repoKey string, pullNumber int, reviewerIDs []int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -782,8 +746,7 @@ func (st *Store) RemoveRequestedReviewers(repoKey string, pullNumber int, review
 	if pr == nil {
 		return false
 	}
-	// One transaction: every review_request_removed event and the pull-request
-	// row commit together (STORE-001/002).
+	// One transaction (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	remove := map[int]struct{}{}
 	for _, id := range reviewerIDs {
@@ -806,9 +769,8 @@ func (st *Store) RemoveRequestedReviewers(repoKey string, pullNumber int, review
 	return true
 }
 
-// RequestTeamReviewers adds organization team review requests to a pull
-// request. Team IDs are used instead of slugs so a later team rename preserves
-// the request just as it does on GitHub.
+// RequestTeamReviewers adds team review requests to a pull request. Team IDs,
+// not slugs, so a later team rename preserves the request.
 func (st *Store) RequestTeamReviewers(repoKey string, pullNumber int, teamIDs []int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

@@ -1,7 +1,7 @@
 # @bleephub/web
 
 Standalone hub UI (separate product surface) — a functional GitHub-faithful clone.
-Pages live in `src/pages/` and are routed in `src/App.tsx` (React Router 7) inside
+Pages live in `src/pages/` and route in `src/App.tsx` (React Router 7) inside
 `src/components/Shell.tsx`, which renders the global header `src/components/AppHeader.tsx`
 above the routed content.
 

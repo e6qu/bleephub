@@ -16,25 +16,12 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Issue.timelineItems / PullRequest.timelineItems.
-//
-// The timeline is assembled from the records bleephub already keeps for the
-// REST `/issues/{n}/timeline` endpoint — store issue-event rows, conversation
-// comments, submitted reviews, review threads and the pull request's real git
-// commits — plus the cross-references derived at read time from other issue
-// and pull-request bodies. Nothing here is a second event log: an item exists
-// in GraphQL exactly when the same item exists in REST.
-//
-// Ordering is by the item's own timestamp, with the store's monotonic id as
-// the tiebreaker so cursor boundaries do not shift between identical-second
-// items.
+// Issue.timelineItems / PullRequest.timelineItems, assembled from the same
+// records as the REST `/issues/{n}/timeline` endpoint plus read-time
+// cross-references. Ordered by timestamp, tiebroken by the store's monotonic id.
 
-// timelineEventTypeNames maps a stored issue-event row's `Event` — the GitHub
-// REST issue-event vocabulary bleephub records — to the GraphQL union member
-// that renders it. An event with no entry has no GraphQL representation and is
-// left out (`opened` is the issue itself, `commented` is rendered from the
-// comment row, and `issue_suggestion_approved` is not a member of either
-// union).
+// timelineEventTypeNames maps a stored issue-event row's `Event` to the GraphQL
+// union member that renders it. An event with no entry is left out.
 var timelineEventTypeNames = map[string]string{
 	"closed":                  "ClosedEvent",
 	"reopened":                "ReopenedEvent",
@@ -67,10 +54,8 @@ var timelineEventTypeNames = map[string]string{
 	"base_ref_changed":        "BaseRefChangedEvent",
 }
 
-// issueTimelineMemberNames / pullRequestTimelineMemberNames are the event
-// object types each union admits, over and above the shared non-event members
-// (IssueComment for both; PullRequestCommit / PullRequestReview /
-// PullRequestReviewThread for pull requests).
+// issueTimelineMemberNames / pullRequestTimelineMemberNames are the event object
+// types each union admits, beyond the shared non-event members.
 var issueTimelineMemberNames = []string{
 	"AddedToProjectV2Event",
 	"AssignedEvent",
@@ -128,10 +113,8 @@ var pullRequestTimelineMemberNames = []string{
 	"UnpinnedEvent",
 }
 
-// timelineItemTypeNames maps a union member's type name to the
-// IssueTimelineItemsItemType / PullRequestTimelineItemsItemType enum value
-// that selects it. The values are GitHub's, spelled out rather than derived so
-// a mis-cased conversion cannot slip past the official-schema ratchet.
+// timelineItemTypeNames maps a union member's type name to its item-type enum
+// value. Spelled out rather than derived so a mis-case cannot pass the ratchet.
 var timelineItemTypeNames = map[string]string{
 	"AddedToProjectV2Event":      "ADDED_TO_PROJECT_V2_EVENT",
 	"AssignedEvent":              "ASSIGNED_EVENT",
@@ -190,8 +173,8 @@ func timelineItemTypesFor(members []string) map[string]string {
 	return out
 }
 
-// sortedItemTypeValues returns an item-type map's enum values in a stable
-// order, so the assembled enum is byte-identical across runs.
+// sortedItemTypeValues returns the enum values sorted, so the assembled enum is
+// byte-identical across runs.
 func sortedItemTypeValues(byName map[string]string) []string {
 	values := make([]string, 0, len(byName))
 	for _, value := range byName {
@@ -201,9 +184,8 @@ func sortedItemTypeValues(byName map[string]string) []string {
 	return values
 }
 
-// timelineEntry is one candidate item: its sort key, its stable identity for
-// cursors, its union member name (for `itemTypes` filtering) and the deferred
-// render of its source map.
+// timelineEntry is one candidate item: sort key, cursor identity, union member
+// name (for `itemTypes` filtering) and the deferred render of its source map.
 type timelineEntry struct {
 	at       time.Time
 	rank     int
@@ -213,12 +195,9 @@ type timelineEntry struct {
 	render   func() map[string]interface{}
 }
 
-// timelineParentResolver renders the issue or pull request an event belongs
-// to. Events carry only their parent's identity, so the subject fields
-// (closable, labelable, lockable, assignable, issue, pullRequest, subject)
-// resolve lazily here: embedding the parent in every event source would
-// re-render the whole issue once per event, and a PullRequest source embeds
-// its commits.
+// timelineParentResolver renders the issue or pull request an event belongs to.
+// Resolved lazily from the parent's identity, since embedding the parent in
+// every event source would re-render the whole issue once per event.
 func (s *Resolver) timelineParentResolver(p graphql.ResolveParams) (interface{}, error) {
 	event, ok := p.Source.(map[string]interface{})
 	if !ok {
@@ -229,9 +208,8 @@ func (s *Resolver) timelineParentResolver(p graphql.ResolveParams) (interface{},
 	return optionalObject(s.timelineParentSource(parentType, parentID)), nil
 }
 
-// timelineParentSource renders one timeline parent, tagged with its typename
-// so the Closable/Assignable/MilestoneItem/ReferencedSubject abstract types
-// dispatch without re-reading the store.
+// timelineParentSource renders one timeline parent, tagged with its typename so
+// the abstract types dispatch without re-reading the store.
 func (s *Resolver) timelineParentSource(parentType string, parentID int) map[string]interface{} {
 	switch parentType {
 	case "pull_request":
@@ -273,9 +251,8 @@ func (s *Resolver) resolveTimelineItems(p graphql.ResolveParams, parentType stri
 	return paginateTimelineEntries(entries, p.Args, updatedAt), nil
 }
 
-// timelineMembers is the set of union member names the given parent's
-// connection admits, so `itemTypes: [PULL_REQUEST_COMMIT]` on an issue is an
-// empty result rather than a leak of a member the union does not declare.
+// timelineMembers is the set of union member names the parent's connection
+// admits, so an itemTypes filter for a foreign member yields empty, not a leak.
 func (s *Resolver) timelineMembers(parentType string) map[string]bool {
 	if s.graphqlTypes.timeline == nil {
 		return nil
@@ -286,8 +263,8 @@ func (s *Resolver) timelineMembers(parentType string) map[string]bool {
 	return s.graphqlTypes.timeline.issueMemberSet
 }
 
-// filterTimelineEntries applies `itemTypes`, `since`, and the union's own
-// membership. GitHub's `since` filter keeps items at or after the timestamp.
+// filterTimelineEntries applies `itemTypes`, `since` (items at or after the
+// timestamp), and the union's own membership.
 func filterTimelineEntries(entries []timelineEntry, args map[string]interface{}, members map[string]bool) []timelineEntry {
 	wanted := map[string]bool{}
 	if raw, ok := args["itemTypes"].([]interface{}); ok && len(raw) > 0 {
@@ -317,10 +294,9 @@ func filterTimelineEntries(entries []timelineEntry, args map[string]interface{},
 	return out
 }
 
-// sortTimelineEntries orders the timeline oldest first. `rank` breaks ties at
-// an identical instant in the order GitHub renders them (a commit exists
-// before anything reacting to it), and `order` — the store's monotonic row id
-// — is the final tiebreaker so a cursor boundary is reproducible.
+// sortTimelineEntries orders oldest first. `rank` breaks ties at an identical
+// instant (a commit before anything reacting to it); `order`, the store's
+// monotonic row id, is the final tiebreaker so cursor boundaries reproduce.
 func sortTimelineEntries(entries []timelineEntry) {
 	sort.SliceStable(entries, func(a, b int) bool {
 		if !entries[a].at.Equal(entries[b].at) {
@@ -333,11 +309,9 @@ func sortTimelineEntries(entries []timelineEntry) {
 	})
 }
 
-// paginateTimelineEntries windows the timeline through the shared gqlConnItem
-// plumbing and adds the two members only these two connections carry:
-// filteredCount (the size of the `after`/`before` window before slicing) and
-// pageCount (the size of the returned page). `skip` advances the window's
-// start, which is what GitHub's extra `skip` argument does.
+// paginateTimelineEntries windows the timeline and adds filteredCount (window
+// size before slicing) and pageCount (returned page size). `skip` advances the
+// window start, as GitHub's `skip` argument does.
 func paginateTimelineEntries(entries []timelineEntry, args map[string]interface{}, updatedAt string) map[string]interface{} {
 	items := make([]gqlConnItem, len(entries))
 	for i := range entries {
@@ -455,8 +429,8 @@ func (s *Resolver) timelineEventEntries(parentType string, parentID int, repo *s
 		events = s.store.ListIssueEvents(repo.ID, parentID)
 	}
 
-	// The state reason and the closing subject belong to the close that
-	// produced the parent's current state, not to every close in its history.
+	// State reason and closing subject belong only to the close that produced
+	// the current state, not to every close in the history.
 	latestClose := 0
 	for _, event := range events {
 		if event.Event == "closed" {
@@ -473,9 +447,8 @@ func (s *Resolver) timelineEventEntries(parentType string, parentID int, repo *s
 		if !ok {
 			continue
 		}
-		// PinnedEvent, UnpinnedEvent and TransferredEvent name `issue: Issue!`;
-		// bleephub records all three only against issues, and rendering a pull
-		// request behind an Issue field would misreport its type.
+		// PinnedEvent/UnpinnedEvent/TransferredEvent name `issue: Issue!`, so a
+		// pull request behind that field would misreport its type.
 		if parentType != "issue" && (typeName == "PinnedEvent" || typeName == "UnpinnedEvent" || typeName == "TransferredEvent") {
 			continue
 		}
@@ -504,8 +477,7 @@ func (s *Resolver) timelineParentIsClosed(parentType string, parentID int) bool 
 }
 
 // timelineEventSource renders one stored event into its union member's source
-// map. Every member carries the id/createdAt/actor triple plus the parent
-// identity the lazy subject resolvers read.
+// map, carrying the id/createdAt/actor triple plus the parent identity.
 func (s *Resolver) timelineEventSource(event *store.IssueEvent, typeName, parentType string, parentID int, repo *store.Repo, isLatestClose bool) map[string]interface{} {
 	s.store.Mu.RLock()
 	actor := optionalRendered(s.store.Users[event.ActorID], userToGraphQL)
@@ -579,8 +551,8 @@ func (s *Resolver) timelineEventSource(event *store.IssueEvent, typeName, parent
 	case "ConvertedToDiscussionEvent":
 		source["discussion"] = optionalObject(s.timelineConvertedDiscussion(event, repo, parentID))
 	case "CommentDeletedEvent":
-		// The comment row is gone by the time this renders, so the event
-		// carries the deleted comment's id and its author itself.
+		// The comment row is gone, so the event carries the deleted comment's
+		// id and author itself.
 		source["databaseId"] = event.CommentID
 		s.store.Mu.RLock()
 		source["deletedCommentAuthor"] = optionalRendered(s.store.Users[event.AssigneeID], userToGraphQL)
@@ -647,8 +619,8 @@ func (s *Resolver) timelineCloseStateReason(parentType string, parentID int) int
 	return issue.StateReason
 }
 
-// timelineCloser is the pull request whose closing reference closed this
-// issue, which is what GitHub reports as ClosedEvent.closer.
+// timelineCloser is the pull request whose closing reference closed this issue
+// (ClosedEvent.closer).
 func (s *Resolver) timelineCloser(parentType string, parentID int, repo *store.Repo) map[string]interface{} {
 	if parentType != "issue" {
 		return nil
@@ -666,10 +638,8 @@ func (s *Resolver) timelineCloser(parentType string, parentID int, repo *store.R
 	return source
 }
 
-// timelineTransferSource is the repository an issue was transferred out of.
-// The transfer event records the source repository's id in CommitID (the
-// REST transfer handler's only free-form slot); when it is not a repository
-// id the field is genuinely unknown and stays null.
+// timelineTransferSource is the repository an issue was transferred out of; the
+// event records its id in CommitID. Null when that slot holds no repository id.
 func (s *Resolver) timelineTransferSource(event *store.IssueEvent, repo *store.Repo) map[string]interface{} {
 	id, err := strconv.Atoi(event.CommitID)
 	if err != nil || id == 0 || id == repo.ID {
@@ -682,8 +652,8 @@ func (s *Resolver) timelineTransferSource(event *store.IssueEvent, repo *store.R
 	return repoToGraphQL(s.store, s.store.SnapRepo(from))
 }
 
-// timelineConvertedDiscussion is the discussion an issue was converted into.
-// The conversion records the new discussion's number in CommitID.
+// timelineConvertedDiscussion is the discussion an issue was converted into; the
+// event records its number in CommitID.
 func (s *Resolver) timelineConvertedDiscussion(event *store.IssueEvent, repo *store.Repo, parentID int) map[string]interface{} {
 	number, err := strconv.Atoi(event.CommitID)
 	if err != nil || number <= 0 {
@@ -732,17 +702,14 @@ func (s *Resolver) timelineHeadRef(prID int, repo *store.Repo) (string, interfac
 	}
 	sha := store.ResolveBranchSha(storage, pr.HeadRefName)
 	if sha == "" {
-		// The branch is still gone, which is the ordinary state after a
-		// head-ref deletion: GitHub reports the name and a null ref.
+		// Branch still gone (the ordinary post-deletion state): name, null ref.
 		return pr.HeadRefName, nil
 	}
 	return pr.HeadRefName, gitRefSource(head.FullName, "refs/heads/"+pr.HeadRefName, sha)
 }
 
-// timelineFillDismissal resolves the review a `review_dismissed` event
-// dismissed. The store does not link the two rows, so the dismissal is matched
-// by time: both are stamped from the same store clock inside one request, so
-// the dismissed review whose DismissedAt is nearest the event is the one.
+// timelineFillDismissal resolves the review a `review_dismissed` event dismissed.
+// The two rows are not linked, so it matches by nearest DismissedAt timestamp.
 func (s *Resolver) timelineFillDismissal(source map[string]interface{}, prID int, event *store.IssueEvent) {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
@@ -775,8 +742,8 @@ func (s *Resolver) timelineFillDismissal(source map[string]interface{}, prID int
 	}
 }
 
-// timelineCommitSource renders a commit by sha from the repository's real git
-// storage, or nil when the repository holds no such object.
+// timelineCommitSource renders a commit by sha from git storage, or nil when the
+// repository holds no such object.
 func (s *Resolver) timelineCommitSource(repo *store.Repo, sha string) map[string]interface{} {
 	if sha == "" {
 		return nil
@@ -802,8 +769,7 @@ func (s *Resolver) timelineCommitSource(repo *store.Repo, sha string) map[string
 	return gitCommitToGQLLocked(commit, s.store, repo.FullName)
 }
 
-// timelineCommentEntries renders the conversation comments as IssueComment
-// members, which is where GitHub's timeline carries the conversation.
+// timelineCommentEntries renders the conversation comments as IssueComment members.
 func (s *Resolver) timelineCommentEntries(parentType string, parentID int) []timelineEntry {
 	comments := s.store.ListCommentsFor(parentType, parentID)
 	entries := make([]timelineEntry, 0, len(comments))
@@ -907,21 +873,14 @@ func (s *Resolver) timelinePullRequestEntries(prID int, repo *store.Repo) []time
 	return entries
 }
 
-// timelineReferenceRE matches a GitHub issue/pull-request reference: an
-// optional owner/repo prefix then #<number>. It is the same grammar the REST
-// timeline's cross-reference derivation uses.
+// timelineReferenceRE matches an issue/PR reference: optional owner/repo prefix
+// then #<number>. Same grammar as the REST timeline's cross-reference derivation.
 var timelineReferenceRE = regexp.MustCompile(`(?:\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#([0-9]+)`)
 
-// timelineCrossReferenceEntries derives the CrossReferencedEvent members: one
-// per other issue or pull request whose body names this one. github.com
-// threads these into the conversation; bleephub derives them at read time from
-// the referencing bodies, exactly as the REST timeline does.
-//
-// A reference from a repository the viewer cannot read is dropped rather than
-// rendered: the source's title, number and author would otherwise disclose the
-// contents of a private repository to anyone who can see the target. GitHub
-// redacts these the same way, and because the drop happens before pagination
-// the connection's totalCount does not disclose how many were withheld.
+// timelineCrossReferenceEntries derives the CrossReferencedEvent members, one
+// per other issue or PR whose body names this one, at read time as the REST
+// timeline does. A reference from a repository the viewer cannot read is dropped
+// before pagination, so neither its contents nor its count leak.
 func (s *Resolver) timelineCrossReferenceEntries(ctx context.Context, repo *store.Repo, parentType string, parentID, parentNumber int) []timelineEntry {
 	type candidate struct {
 		repoID     int
@@ -1044,8 +1003,8 @@ func (s *Resolver) timelineCrossReferenceEntries(ctx context.Context, repo *stor
 	return entries
 }
 
-// timelineReferenceSource renders the issue or pull request that made a
-// cross-reference, tagged for ReferencedSubject dispatch.
+// timelineReferenceSource renders the issue or PR that made a cross-reference,
+// tagged for ReferencedSubject dispatch.
 func (s *Resolver) timelineReferenceSource(isPull bool, id int) map[string]interface{} {
 	if isPull {
 		return s.timelineParentSource("pull_request", id)
@@ -1053,10 +1012,8 @@ func (s *Resolver) timelineReferenceSource(isPull bool, id int) map[string]inter
 	return s.timelineParentSource("issue", id)
 }
 
-// timelineProjectV2Entries renders one AddedToProjectV2Event per project this
-// issue or pull request has been added to. The item row records when it was
-// added, which is the event's timestamp; a project the viewer cannot read is
-// dropped rather than named.
+// timelineProjectV2Entries renders one AddedToProjectV2Event per project the
+// issue or PR was added to. A project the viewer cannot read is dropped.
 func (s *Resolver) timelineProjectV2Entries(ctx context.Context, parentType string, parentID int) []timelineEntry {
 	contentType := "Issue"
 	if parentType == "pull_request" {

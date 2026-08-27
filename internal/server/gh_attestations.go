@@ -10,9 +10,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Artifact attestation REST API: uploading Sigstore bundles to a
-// repository and listing/deleting them by subject digest at the
-// repository, organization, and user scope.
+// Artifact attestation REST API: uploads Sigstore bundles and lists/deletes
+// them by subject digest at repository, organization, and user scope.
 
 func (s *Server) registerGHAttestationsRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/attestations", s.handleRepoCreateAttestation)
@@ -32,7 +31,6 @@ func (s *Server) registerGHAttestationsRoutes() {
 	s.route("DELETE /api/v3/users/{username}/attestations/digest/{subject_digest}", s.handleUserDeleteAttestationsByDigest)
 }
 
-// ---------------------------------------------------------------------------
 // Repository scope
 
 func (s *Server) handleRepoCreateAttestation(w http.ResponseWriter, r *http.Request) {
@@ -87,11 +85,10 @@ func (s *Server) handleRepoListAttestations(w http.ResponseWriter, r *http.Reque
 	s.writeAttestationList(w, r, attestations)
 }
 
-// ---------------------------------------------------------------------------
 // Owner (org/user) scope plumbing
 
 // attestationRepoScope returns the IDs of the owner's repositories the
-// requesting user can read — the set an attestation list may draw from.
+// requesting user can read.
 func (s *Server) attestationRepoScope(r *http.Request, ownerLogin string) map[int]bool {
 	ids := s.store.RepoIDsOwnedBy(ownerLogin)
 	for id := range ids {
@@ -103,8 +100,7 @@ func (s *Server) attestationRepoScope(r *http.Request, ownerLogin string) map[in
 	return ids
 }
 
-// requireOrgAttestationAdmin resolves {org} and enforces org-admin
-// rights for attestation deletion. Writes 404/401/403 on failure.
+// requireOrgAttestationAdmin resolves {org} and requires org-admin rights.
 func (s *Server) requireOrgAttestationAdmin(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
@@ -123,8 +119,8 @@ func (s *Server) requireOrgAttestationAdmin(w http.ResponseWriter, r *http.Reque
 	return org, true
 }
 
-// requireUserAttestationOwner resolves {username} and enforces that the
-// caller is that user (or a site admin) for attestation deletion.
+// requireUserAttestationOwner resolves {username} and requires the caller be
+// that user or a site admin.
 func (s *Server) requireUserAttestationOwner(w http.ResponseWriter, r *http.Request) (*store.User, bool) {
 	target := s.store.LookupUserByLogin(r.PathValue("username"))
 	if target == nil {
@@ -143,8 +139,6 @@ func (s *Server) requireUserAttestationOwner(w http.ResponseWriter, r *http.Requ
 	return target, true
 }
 
-// writeAttestationList paginates and renders the shared
-// {"attestations": [{bundle, repository_id}]} list shape.
 func (s *Server) writeAttestationList(w http.ResponseWriter, r *http.Request, attestations []*store.Attestation) {
 	page, pi := cursorPaginate(r, attestations, func(a *store.Attestation) int { return a.ID })
 	setCursorLinkHeader(w, r, pi)
@@ -253,8 +247,8 @@ func (s *Server) serveOwnerListAttestationsBulk(w http.ResponseWriter, r *http.R
 	})
 }
 
-// serveOwnerDeleteAttestationsBulk handles the delete-request body: a
-// list of subject digests or a list of attestation IDs, but not both.
+// serveOwnerDeleteAttestationsBulk handles a delete-request body carrying
+// either subject digests or attestation IDs, but not both.
 func (s *Server) serveOwnerDeleteAttestationsBulk(w http.ResponseWriter, r *http.Request, ownerLogin string) {
 	var req struct {
 		SubjectDigests []string `json:"subject_digests"`
@@ -335,7 +329,6 @@ func (s *Server) serveOwnerDeleteAttestationsByDigest(w http.ResponseWriter, r *
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ---------------------------------------------------------------------------
 // Organization scope
 
 func (s *Server) handleOrgListAttestations(w http.ResponseWriter, r *http.Request) {
@@ -347,8 +340,8 @@ func (s *Server) handleOrgListAttestations(w http.ResponseWriter, r *http.Reques
 	s.serveOwnerListAttestations(w, r, org.Login)
 }
 
-// handleOrgListAttestationRepositories lists the org's repositories
-// with at least one attestation, ascending by repository ID.
+// handleOrgListAttestationRepositories lists the org's repositories with at
+// least one attestation, ascending by repository ID.
 func (s *Server) handleOrgListAttestationRepositories(w http.ResponseWriter, r *http.Request) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
@@ -410,7 +403,6 @@ func (s *Server) handleOrgDeleteAttestationsByDigest(w http.ResponseWriter, r *h
 	s.serveOwnerDeleteAttestationsByDigest(w, r, org.Login)
 }
 
-// ---------------------------------------------------------------------------
 // User scope
 
 func (s *Server) handleUserListAttestations(w http.ResponseWriter, r *http.Request) {

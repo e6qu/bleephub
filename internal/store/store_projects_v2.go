@@ -8,15 +8,11 @@ import (
 	"time"
 )
 
-// ProjectsV2 — minimum-viable GitHub Projects v2 store. Real GitHub's
-// ProjectV2 has a rich schema (fields, iterations, automations); this
-// implementation covers what `gh project create`, `gh project item-add`,
-// and `gh issue view --json projectItems` actually exercise.
+// ProjectsV2 store — covers what `gh project create`, `gh project item-add`,
+// and `gh issue view --json projectItems` exercise, not GitHub's full schema.
 
-// ProjectV2Owner is the resolved owner (org or user) of a Projects v2
-// project. Both the REST layer and the GraphQL resolver layer resolve
-// project owners into this record before running the shared access
-// predicates. (Moved from the server layer in ARCH-003.)
+// ProjectV2Owner is a project's resolved owner (org or user). Both the REST
+// and GraphQL layers resolve into this before the shared access predicates.
 type ProjectV2Owner struct {
 	ID        int
 	OwnerType string // "Organization" or "User"
@@ -25,9 +21,8 @@ type ProjectV2Owner struct {
 	User      *User
 }
 
-// ProjectV2 is a Projects v2 project. Per real GH: each project belongs
-// to a user or organization (the owner) and has a stable per-owner
-// `number` plus a globally unique `nodeID`.
+// ProjectV2 is a Projects v2 project owned by a user or organization, with a
+// stable per-owner Number and a globally unique NodeID.
 type ProjectV2 struct {
 	ID        int
 	NodeID    string
@@ -43,18 +38,15 @@ type ProjectV2 struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
-	// ShortDescription is the one-line blurb shown next to the title in
-	// project listings; Readme is the long-form markdown body.
+	// ShortDescription is the one-line blurb; Readme is the markdown body.
 	ShortDescription string
 	Readme           string
 	// Template marks the project as one new projects may be copied from.
 	Template bool
-	// LinkedRepoIDs / LinkedTeamIDs are the repositories and teams the
-	// project is linked to (linkProjectV2ToRepository / …ToTeam).
+	// LinkedRepoIDs / LinkedTeamIDs are the linked repositories and teams.
 	LinkedRepoIDs []int
 	LinkedTeamIDs []int
-	// Collaborators are the per-account permission grants layered on top of
-	// the owner's own access.
+	// Collaborators are per-account grants layered on the owner's access.
 	Collaborators []*ProjectV2Collaborator
 }
 
@@ -112,10 +104,8 @@ type ProjectV2Item struct {
 	Position int
 }
 
-// ProjectV2FieldDataType is the custom-field data type. The values are
-// the REST enum spelled uppercase, matching the GraphQL
-// ProjectV2CustomFieldType enum spellings for the types both surfaces
-// share; REST handlers lowercase them on the wire.
+// ProjectV2FieldDataType is the custom-field data type, spelled uppercase to
+// match the GraphQL enum; REST handlers lowercase it on the wire.
 type ProjectV2FieldDataType string
 
 const (
@@ -173,22 +163,17 @@ type ProjectV2Iteration struct {
 	Duration  int    // days
 }
 
-// ProjectV2ItemFieldValue is the value an item has for one field. For
-// SINGLE_SELECT, OptionID points at one of the field's options. For
-// TEXT, TextValue holds the body. For NUMBER, NumberValue. For DATE,
-// DateValue. For ITERATION, IterationID points at one of the field's
-// iterations.
+// ProjectV2ItemFieldValue is an item's value for one field; which member is
+// set depends on the field's data type.
 type ProjectV2ItemFieldValue struct {
 	FieldID     int
-	OptionID    string  // SINGLE_SELECT
-	OptionName  string  // denormalised so reads don't need to chase the field
-	TextValue   string  // TEXT
-	NumberValue float64 // NUMBER
-	DateValue   string  // DATE, YYYY-MM-DD
-	IterationID string  // ITERATION
-	// OptionIDs / OptionNames carry MULTI_SELECT, which holds an ordered set
-	// rather than the single OptionID above.
-	OptionIDs   []string
+	OptionID    string   // SINGLE_SELECT
+	OptionName  string   // denormalised so reads don't chase the field
+	TextValue   string   // TEXT
+	NumberValue float64  // NUMBER
+	DateValue   string   // DATE, YYYY-MM-DD
+	IterationID string   // ITERATION
+	OptionIDs   []string // MULTI_SELECT, ordered set
 	OptionNames []string
 }
 
@@ -290,7 +275,7 @@ func (s *ProjectV2Store) CreateProject(ownerID int, ownerType, title string, cre
 	id := p.ID
 	s.Mu.Unlock()
 	// Seeding takes the lock per mutator, so it runs after the project row is
-	// published rather than under the same critical section.
+	// published.
 	s.SeedProjectDefaults(id, creatorID)
 	return s.GetProject(id)
 }
@@ -319,15 +304,15 @@ func (s *ProjectV2Store) LookupProjectByNodeID(nodeID string) *ProjectV2 {
 	return nil
 }
 
-// AddItem adds an Issue or PullRequest to the given project. contentID is
-// the issue or PR database ID; contentType is "Issue" or "PullRequest".
+// AddItem adds an Issue or PullRequest to a project. contentID is the issue
+// or PR database ID; contentType is "Issue" or "PullRequest".
 func (s *ProjectV2Store) AddItem(projectID int, contentType string, contentID, creatorID int) *ProjectV2Item {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 	if _, ok := s.projects[projectID]; !ok {
 		return nil
 	}
-	// Avoid duplicate item for the same (project, content).
+	// Dedup on (project, content).
 	for _, it := range s.itemsByOwner[contentID] {
 		if it.ProjectID == projectID && it.ContentType == contentType {
 			return cloneProjectV2Item(it)
@@ -386,8 +371,8 @@ func (s *ProjectV2Store) AddDraftItem(projectID int, title, body string, creator
 	return it
 }
 
-// ListItemsForIssue returns every project item that wraps the issue with
-// the given database ID. Used by Issue.projectItems GraphQL resolver.
+// ListItemsForIssue returns every project item wrapping the issue with the
+// given database ID.
 func (s *ProjectV2Store) ListItemsForIssue(issueID int) []*ProjectV2Item {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
@@ -400,8 +385,8 @@ func (s *ProjectV2Store) ListItemsForIssue(issueID int) []*ProjectV2Item {
 	return out
 }
 
-// ListItemsForPR returns every project item that wraps the PR with the
-// given database ID.
+// ListItemsForPR returns every project item wrapping the PR with the given
+// database ID.
 func (s *ProjectV2Store) ListItemsForPR(prID int) []*ProjectV2Item {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
@@ -439,9 +424,7 @@ func (s *ProjectV2Store) LookupItemByNodeID(nodeID string) *ProjectV2Item {
 }
 
 // CreateField adds a field column to a project. options applies to
-// SINGLE_SELECT fields (IDs are assigned here; Name/Color/Description
-// are caller-supplied) and iteration to ITERATION fields (iteration IDs
-// are assigned here too).
+// SINGLE_SELECT and iteration to ITERATION; their IDs are assigned here.
 func (s *ProjectV2Store) CreateField(projectID int, name string, dataType ProjectV2FieldDataType, options []*ProjectV2SingleSelectOption, iteration *ProjectV2IterationConfiguration) *ProjectV2Field {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -552,9 +535,7 @@ func (s *ProjectV2Store) FieldsForProject(projectID int) []*ProjectV2Field {
 	return out
 }
 
-// FieldByNameOnProject returns the field with the given name on the
-// project, or nil. Lookups via gh CLI / GraphQL go through Issue.
-// projectItems → ProjectV2Item.fieldValueByName → field name.
+// FieldByNameOnProject returns the named field on the project, or nil.
 func (s *ProjectV2Store) FieldByNameOnProject(projectID int, name string) *ProjectV2Field {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
@@ -566,9 +547,8 @@ func (s *ProjectV2Store) FieldByNameOnProject(projectID int, name string) *Proje
 	return nil
 }
 
-// SetFieldValue writes a value for (item, field). For SINGLE_SELECT,
-// optionID must match one of the field's options. For TEXT/NUMBER,
-// optionID is ignored. Returns (value, nil) on success.
+// SetFieldValue writes a value for (item, field). For SINGLE_SELECT, optionID
+// must match one of the field's options; for TEXT/NUMBER it is ignored.
 func (s *ProjectV2Store) SetFieldValue(itemID, fieldID int, optionID, textValue string, numberValue float64) (*ProjectV2ItemFieldValue, error) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -670,9 +650,8 @@ func (s *ProjectV2Store) DeleteProject(id int) bool {
 	if s.projects[id] == nil {
 		return false
 	}
-	// One transaction: the project and every field, item and view it owns are
-	// deleted together, so a crash can never orphan a field/item/view pointing at
-	// a project that no longer exists (STORE-001/002).
+	// Delete the project with every field, item and view it owns in one
+	// transaction, so a crash can't orphan them (STORE-001/002).
 	batch := NewPersistBatch(s.Persist)
 	delete(s.projects, id)
 	for fid := range s.fields {
@@ -703,8 +682,8 @@ func (s *ProjectV2Store) DeleteProject(id int) bool {
 	return true
 }
 
-// DeleteContentItems removes every ProjectV2 item whose content points at
-// one of the supplied issue or pull request database IDs.
+// DeleteContentItems removes every item whose content is one of the supplied
+// issue or PR database IDs.
 func (s *ProjectV2Store) DeleteContentItems(contentType string, contentIDs map[int]bool) {
 	s.DeleteContentItemsBatch(contentType, contentIDs, nil)
 }
@@ -739,8 +718,7 @@ func (s *ProjectV2Store) ListItemsForProject(projectID int) []*ProjectV2Item {
 			out = append(out, cloneProjectV2Item(it))
 		}
 	}
-	// Position is the project's own ordering; ID breaks ties so items added
-	// before any reorder keep a stable, insertion-ordered sequence.
+	// Position orders items; ID breaks ties for a stable insertion order.
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Position != out[j].Position {
 			return out[i].Position < out[j].Position
@@ -771,10 +749,9 @@ func (s *ProjectV2Store) UpdateItem(id int, draftTitle, draftBody *string) *Proj
 	return it
 }
 
-// SetFieldValueAny writes a field value from a REST update, dispatching
-// on the field's data type: string for TEXT/DATE, float64 for NUMBER,
-// option ID string for SINGLE_SELECT, iteration ID string for
-// ITERATION. A nil value clears the field.
+// SetFieldValueAny writes a REST field value, dispatching on data type:
+// string for TEXT/DATE, float64 for NUMBER, option/iteration ID string for
+// SINGLE_SELECT/ITERATION. A nil value clears the field.
 func (s *ProjectV2Store) SetFieldValueAny(itemID, fieldID int, value interface{}) error {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -915,9 +892,8 @@ func (s *ProjectV2Store) UpdateField(id int, name *string, options []*ProjectV2S
 		f.Name = *name
 	}
 	if options != nil && f.DataType == ProjectV2FieldSingleSelect {
-		// Preserve the ID of any option kept by name. The mutation input carries
-		// only names, so re-minting every ID (as this did) dangled every item's
-		// stored OptionID for options that still exist. New names still mint.
+		// Keep the ID of any option matched by name; re-minting would dangle
+		// items' stored OptionID for options that still exist. New names mint.
 		existingIDByName := make(map[string]string, len(f.Options))
 		for _, old := range f.Options {
 			existingIDByName[old.Name] = old.ID

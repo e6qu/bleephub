@@ -3,14 +3,9 @@ package store
 import "sort"
 
 // ListEveryRepo returns a detached snapshot of every repository on the
-// instance, ordered by full name.
-//
-// The account-wide GraphQL connections (a user's authored issues, pull
-// requests and comments) are questions about the whole instance rather than
-// about one owner, and the caller then narrows the answer to what the request
-// may read. Reading st.ReposByName directly from a caller would be a
-// process-fatal map race (AUTH-043), so the traversal lives here behind the
-// store lock and hands back snapshots (STORE-021).
+// instance, ordered by full name (STORE-021). The traversal lives here behind
+// the store lock because reading st.ReposByName from a caller is a
+// process-fatal map race (AUTH-043).
 func (st *Store) ListEveryRepo() []*Repo {
 	st.Mu.RLock()
 	repos := make([]*Repo, 0, len(st.ReposByName))
@@ -22,12 +17,9 @@ func (st *Store) ListEveryRepo() []*Repo {
 	return snapshotRepos(repos)
 }
 
-// ListAccountSSHKeys returns a detached snapshot of the account's registered
-// SSH authentication keys, oldest first.
-//
-// GraphQL's User.publicKeys reads them, and the index is guarded by Misc.Mu,
-// so the traversal belongs here rather than in a caller that would have to
-// take that lock itself.
+// ListAccountSSHKeys returns a detached snapshot of the account's SSH
+// authentication keys, oldest first. The traversal lives here because the
+// index is guarded by Misc.Mu.
 func (st *Store) ListAccountSSHKeys(userID int) []*UserKey {
 	st.Misc.Mu.RLock()
 	keys := make([]*UserKey, 0, len(st.Misc.KeysByUser[userID]))

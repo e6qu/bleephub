@@ -7,13 +7,9 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// addModerationMutationsToSchema registers comment minimization +
-// issue/PR locking GraphQL mutations against the shared mutationType.
-// Mirrors real GitHub's mutation surface: minimizeComment /
-// unminimizeComment / lockLockable / unlockLockable.
+// addModerationMutationsToSchema registers minimizeComment/unminimizeComment
+// and lockLockable/unlockLockable.
 func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) {
-	// --- minimizeComment / unminimizeComment ---
-
 	classifierEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "ReportedContentClassifiers",
 		Values: graphql.EnumValueConfigMap{
@@ -41,9 +37,8 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 		},
 	})
 
-	// The payload carries the comment behind GitHub's Minimizable interface;
-	// the resolvers below feed it full commentToGQL source maps so any
-	// inline-fragment selection on the concrete IssueComment resolves.
+	// The resolvers feed full commentToGQL source maps so inline-fragment
+	// selections on the concrete IssueComment resolve.
 	minimizePayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "MinimizeCommentPayload",
 		Fields: graphql.Fields{
@@ -105,8 +100,6 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 		},
 	})
 
-	// --- lockLockable / unlockLockable ---
-
 	lockReasonEnum := s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")
 
 	lockInputType := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -124,9 +117,8 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 		},
 	})
 
-	// The payloads carry the locked record behind GitHub's Lockable
-	// interface; lockByNodeID feeds them full issueToGQL/pullRequestToGQL
-	// source maps so inline fragments on the concrete types resolve.
+	// lockByNodeID feeds full issueToGQL/pullRequestToGQL source maps so inline
+	// fragments on the concrete types resolve.
 	lockPayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "LockLockablePayload",
 		Fields: graphql.Fields{
@@ -178,8 +170,7 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 	})
 }
 
-// graphqlToRESTLockReason maps the GraphQL LockReason enum (UPPER_SNAKE)
-// to the REST API's kebab-cased reason string.
+// graphqlToRESTLockReason maps the LockReason enum to the REST reason string.
 func graphqlToRESTLockReason(enum string) string {
 	switch enum {
 	case "OFF_TOPIC":
@@ -194,13 +185,10 @@ func graphqlToRESTLockReason(enum string) string {
 	return ""
 }
 
-// lockByNodeID resolves nodeID to an Issue or PullRequest, applies the
-// requested lock state, and returns the full GraphQL source map for the
-// Lockable interface (the concrete Issue/PullRequest type resolves any
-// selection, and activeLockReason serializes through the LockReason enum).
-// The bool indicates whether a target was found. An issue or pull request also
-// delivers the locked/unlocked webhook action the REST lock endpoint delivers,
-// so the two surfaces stay indistinguishable to a consumer.
+// lockByNodeID applies the lock state to the Issue/PullRequest/Discussion
+// nodeID names and returns its Lockable source map (bool false when not found).
+// It also emits the locked/unlocked webhook the REST lock endpoint does, so the
+// two surfaces stay indistinguishable.
 func (s *Resolver) lockByNodeID(nodeID string, locked bool, reason string, user *store.User) (map[string]interface{}, bool) {
 	action := "unlocked"
 	if locked {
@@ -244,11 +232,9 @@ func (s *Resolver) lockByNodeID(nodeID string, locked bool, reason string, user 
 	return nil, false
 }
 
-// gqlLockableInterface returns GitHub's Lockable interface (memoized):
-// locked: Boolean! + activeLockReason: LockReason, exactly the official
-// field set. Issue, PullRequest, and Discussion implement it. ResolveType
-// discriminates on the source map's node id prefix — the registry entries
-// are populated by the time any query executes.
+// gqlLockableInterface returns the memoized Lockable interface, implemented by
+// Issue, PullRequest and Discussion. ResolveType discriminates on the source's
+// node-id prefix.
 func (s *Resolver) gqlLockableInterface() *graphql.Interface {
 	if s.graphqlTypes.lockable != nil {
 		return s.graphqlTypes.lockable
@@ -275,9 +261,8 @@ func (s *Resolver) gqlLockableInterface() *graphql.Interface {
 	return s.graphqlTypes.lockable
 }
 
-// gqlMinimizableInterface returns GitHub's Minimizable interface (memoized)
-// with the subset of official fields bleephub models (isMinimized,
-// minimizedReason). IssueComment and DiscussionComment implement it.
+// gqlMinimizableInterface returns the memoized Minimizable interface,
+// implemented by IssueComment and DiscussionComment.
 func (s *Resolver) gqlMinimizableInterface() *graphql.Interface {
 	if s.graphqlTypes.minimizable != nil {
 		return s.graphqlTypes.minimizable

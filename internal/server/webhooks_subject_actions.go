@@ -2,40 +2,32 @@ package bleephub
 
 import "github.com/e6qu/bleephub/internal/store"
 
-// Per-action webhook fan-out for the two subjects that share it.
-//
-// GitHub's `issues` and `pull_request` events are not one-event-per-API-call:
-// each state transition is its own delivery, with the members that transition
-// carries (`changes` on edited, `label` on labeled/unlabeled, `assignee` on
-// assigned/unassigned, `milestone` on milestoned/demilestoned). Issues and pull
-// requests differ only in event name and payload builder, so both drive the
-// same emitter and no action can be implemented for one and forgotten for the
-// other.
+// Per-action webhook fan-out shared by the `issues` and `pull_request` subjects.
+// GitHub delivers one event per state transition, each carrying that
+// transition's members (`changes` on edited, `label` on labeled, and so on).
+// Issues and PRs differ only in event name and payload builder, so both drive
+// the same emitter and no action can be wired for one and forgotten for the other.
 type subjectEmitter struct {
 	s     *Server
 	repo  *store.Repo
 	event string
-	// build renders the shared payload for one action; it is called per
-	// delivery so every payload carries its own `action` value.
+	// build renders the shared payload for one action, called per delivery.
 	build func(action string) map[string]interface{}
 }
 
-// issueEmitter fans out `issues` actions for one issue.
 func (s *Server) issueEmitter(repo *store.Repo, issue *store.Issue, sender *store.User) subjectEmitter {
 	return subjectEmitter{s: s, repo: repo, event: "issues", build: func(action string) map[string]interface{} {
 		return buildIssuesPayload(s.store, repo, issue, sender, action, s.publicOrigin())
 	}}
 }
 
-// pullRequestEmitter fans out `pull_request` actions for one pull request.
 func (s *Server) pullRequestEmitter(repo *store.Repo, pr *store.PullRequest, sender *store.User) subjectEmitter {
 	return subjectEmitter{s: s, repo: repo, event: "pull_request", build: func(action string) map[string]interface{} {
 		return buildPullRequestPayload(s.store, repo, pr, sender, action, s.publicOrigin())
 	}}
 }
 
-// emit delivers one action, merging that action's extra members into the
-// payload the shared builder produced.
+// emit delivers one action, merging its extra members into the shared payload.
 func (e subjectEmitter) emit(action string, extra map[string]interface{}) {
 	if e.repo == nil {
 		return
@@ -50,10 +42,9 @@ func (e subjectEmitter) emit(action string, extra map[string]interface{}) {
 	e.s.emitWebhookEvent(e.repo.FullName, e.event, action, payload)
 }
 
-// emitChanges turns one mutation into GitHub's per-change action sequence.
-// The order mirrors the order the handlers record their timeline events in:
-// the edit itself, then triage (labels, assignees, milestone), then the state
-// transition.
+// emitChanges turns one mutation into GitHub's per-change action sequence, in
+// the order handlers record timeline events: edit, triage (labels, assignees,
+// milestone), then the state transition.
 func (e subjectEmitter) emitChanges(change store.SubjectChange) {
 	if changes := editedChangesPayload(change); len(changes) > 0 {
 		e.emit("edited", map[string]interface{}{"changes": changes})
@@ -75,10 +66,9 @@ func (e subjectEmitter) emitChanges(change store.SubjectChange) {
 	}
 }
 
-// editedChangesPayload renders the `changes` member of an `edited` payload:
-// only the fields the mutation actually changed appear, each as {from: old}.
-// A base-branch change also reports the old ref under `base.ref.from`, which
-// is where GitHub puts it for a pull request.
+// editedChangesPayload renders the `changes` member: only changed fields, each
+// as {from: old}. A base-branch change reports the old ref under `base.ref.from`,
+// as GitHub does for a pull request.
 func editedChangesPayload(change store.SubjectChange) map[string]interface{} {
 	changes := map[string]interface{}{}
 	if change.TitleFrom != nil {
@@ -95,8 +85,7 @@ func editedChangesPayload(change store.SubjectChange) map[string]interface{} {
 	return changes
 }
 
-// emitLabelDelta emits one labeled action per label that entered the set and
-// one unlabeled per label that left it, each carrying the `label` member.
+// emitLabelDelta emits labeled per added label and unlabeled per removed one.
 func (e subjectEmitter) emitLabelDelta(before, after []int) {
 	added, removed := intSetDelta(before, after)
 	for _, id := range added {
@@ -112,13 +101,12 @@ func (e subjectEmitter) emitLabelAction(action string, labelID int) {
 	if label == nil {
 		return
 	}
-	// Hypermedia on a nested webhook object is relative, matching the
-	// repository and sender objects the shared builder already emitted.
+	// Nested webhook hypermedia is relative, matching the repository and sender
+	// objects the shared builder emits.
 	e.emit(action, map[string]interface{}{"label": issueLabelToJSON(label, "", e.repo.FullName)})
 }
 
-// emitAssigneeDelta emits one assigned action per user added and one
-// unassigned per user removed, each carrying the `assignee` member.
+// emitAssigneeDelta emits assigned per user added and unassigned per user removed.
 func (e subjectEmitter) emitAssigneeDelta(before, after []int) {
 	added, removed := intSetDelta(before, after)
 	for _, id := range added {
@@ -137,10 +125,8 @@ func (e subjectEmitter) emitAssigneeAction(action string, userID int) {
 	e.emit(action, map[string]interface{}{"assignee": senderPayload(assignee, e.s.publicOrigin())})
 }
 
-// emitMilestoneChange emits milestoned when a milestone is attached and
-// demilestoned when one is detached; the `milestone` member is the milestone
-// that was attached, or on a detach the one that was removed. Replacing one
-// milestone with another reports both, as GitHub does.
+// emitMilestoneChange emits demilestoned for a detach and milestoned for an
+// attach; replacing one milestone with another reports both, as GitHub does.
 func (e subjectEmitter) emitMilestoneChange(before, after int) {
 	if before == after {
 		return
@@ -163,10 +149,9 @@ func (e subjectEmitter) emitMilestoneAction(action string, milestoneID int) {
 	})
 }
 
-// emitReviewRequestDelta emits one review_requested per reviewer added and one
-// review_request_removed per reviewer dropped. GitHub delivers a separate
-// event per reviewer, carrying `requested_reviewer` for a user and
-// `requested_team` for a team.
+// emitReviewRequestDelta emits review_requested per reviewer added and
+// review_request_removed per reviewer dropped, one event each, carrying
+// `requested_reviewer` for a user and `requested_team` for a team.
 func (e subjectEmitter) emitReviewRequestDelta(beforeUsers, afterUsers, beforeTeams, afterTeams []int) {
 	addedUsers, removedUsers := intSetDelta(beforeUsers, afterUsers)
 	addedTeams, removedTeams := intSetDelta(beforeTeams, afterTeams)
@@ -185,8 +170,8 @@ func (e subjectEmitter) emitReviewerActions(action string, userIDs, teamIDs []in
 	}
 	org := e.s.store.GetOrg(ownerFromRepoFullName(e.repo.FullName))
 	if org == nil {
-		// A team reviewer only exists on an org repo; without the org there is
-		// no team object to render, so the user-side events still stand alone.
+		// A team reviewer only exists on an org repo; without the org there is no
+		// team object to render.
 		return
 	}
 	for _, id := range teamIDs {
@@ -196,10 +181,9 @@ func (e subjectEmitter) emitReviewerActions(action string, userIDs, teamIDs []in
 	}
 }
 
-// emitLockAction emits the locked/unlocked action for whichever of the issue or
-// pull request the number resolves to. The REST lock endpoint locks both
-// through one `/issues/{n}/lock` surface (pull requests are issues internally),
-// so the event name is only known after resolving the number.
+// emitLockAction emits locked/unlocked for whichever of the issue or pull
+// request the number resolves to. One REST surface (`/issues/{n}/lock`) locks
+// both, so the event name is known only after resolving the number.
 func (s *Server) emitLockAction(repo *store.Repo, number int, sender *store.User, locked bool) {
 	action := "unlocked"
 	if locked {
@@ -214,9 +198,8 @@ func (s *Server) emitLockAction(repo *store.Repo, number int, sender *store.User
 	}
 }
 
-// intSetDelta reports which ids are in after but not before (added) and which
-// are in before but not after (removed), preserving each slice's order so the
-// resulting action sequence is deterministic.
+// intSetDelta reports ids added and removed, preserving each slice's order so
+// the action sequence is deterministic.
 func intSetDelta(before, after []int) (added, removed []int) {
 	old, next := intSet(before), intSet(after)
 	for _, id := range after {
@@ -232,7 +215,6 @@ func intSetDelta(before, after []int) (added, removed []int) {
 	return added, removed
 }
 
-// intSet builds a membership set from an int slice.
 func intSet(ids []int) map[int]bool {
 	m := make(map[int]bool, len(ids))
 	for _, id := range ids {

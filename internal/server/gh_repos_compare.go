@@ -18,12 +18,12 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// resolveGitRef, refHash, findMergeBase, commitsBetween moved to
-// internal/store (ARCH-003): shared by REST and the GraphQL resolver layer.
+// resolveGitRef, refHash, findMergeBase, commitsBetween live in internal/store
+// (ARCH-003), shared by REST and the GraphQL resolver layer.
 
-// commitSignatureUserJSON resolves a git signature to a GitHub account (a
-// `simple-user`) or nil, matching real GitHub — a commit's author/committer is
-// the resolved account or null, never an empty object.
+// commitSignatureUserJSON resolves a git signature to a GitHub account or nil:
+// a commit's author/committer is the resolved account or null, never an empty
+// object.
 func commitSignatureUserJSON(st *store.Store, sig object.Signature, baseURL string) interface{} {
 	if st == nil {
 		return nil
@@ -82,9 +82,8 @@ func commitToJSON(c *object.Commit, repo *store.Repo, st *store.Store, baseURL s
 	}
 }
 
-// compareFiles walks the diff between baseTree and headTree and returns the
-// file entries GitHub's compare API emits, plus total additions/deletions/
-// changes.
+// compareFiles returns the file entries GitHub's compare API emits for the diff
+// between baseTree and headTree, plus total additions/deletions/changes.
 func compareFiles(baseTree, headTree *object.Tree, headCommit *object.Commit, repo *store.Repo, baseURL string) ([]map[string]interface{}, int, int, int, error) {
 	changes, err := object.DiffTree(baseTree, headTree)
 	if err != nil {
@@ -292,8 +291,8 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 	}
 	accept := r.Header.Get("Accept")
 	if acceptsGitHubMediaType(accept, "patch") {
-		// github's compare .patch is a series of per-commit git-format-patches
-		// (oldest first), not a single tree diff.
+		// github's compare .patch is per-commit git-format-patches (oldest
+		// first), not a single tree diff.
 		commits, err := store.CommitsBetween(stor, baseHash, headHash)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Diff computation failed")
@@ -341,9 +340,9 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 
 	apiURL := s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/compare/" + baseRef + "..." + headRef
 	htmlURL := s.baseURL(r) + "/" + repo.FullName + "/compare/" + baseRef + "..." + headRef
-	// GitHub caps an unpaginated comparison at 250 commits and shows up to
-	// 300 changed files; once the caller pages, commits come in per_page
-	// windows and the file list only rides along on the first page.
+	// GitHub caps an unpaginated comparison at 250 commits and 300 changed
+	// files; once the caller pages, commits come in per_page windows and the
+	// file list rides only on the first page.
 	totalCommits := len(commits)
 	if len(files) > 300 {
 		files = files[:300]
@@ -376,8 +375,8 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// flattenTree returns a map of full file paths to tree entries for all
-// non-directory entries in t.
+// flattenTree maps full file paths to tree entries for every non-directory
+// entry in t.
 func flattenTree(t *object.Tree) (map[string]object.TreeEntry, error) {
 	out := map[string]object.TreeEntry{}
 	if t == nil {
@@ -401,9 +400,8 @@ func flattenTree(t *object.Tree) (map[string]object.TreeEntry, error) {
 	return out, nil
 }
 
-// threeWayMergePaths combines file maps from the merge base, our side, and
-// their side. It returns a conflict error when both sides change the same path
-// differently.
+// threeWayMergePaths merges the base, ours, and theirs file maps, returning a
+// conflict error when both sides change the same path differently.
 func threeWayMergePaths(base, ours, theirs map[string]object.TreeEntry) (map[string]object.TreeEntry, error) {
 	result := map[string]object.TreeEntry{}
 	seen := map[string]bool{}
@@ -472,7 +470,6 @@ func threeWayMergePaths(base, ours, theirs map[string]object.TreeEntry) (map[str
 	return result, nil
 }
 
-// storeTreeObject encodes a tree and persists it in storer storage.
 func storeTreeObject(stor storer.EncodedObjectStorer, entries []object.TreeEntry) (plumbing.Hash, error) {
 	tree := &object.Tree{Entries: entries}
 	obj := stor.NewEncodedObject()
@@ -482,8 +479,8 @@ func storeTreeObject(stor storer.EncodedObjectStorer, entries []object.TreeEntry
 	return stor.SetEncodedObject(obj)
 }
 
-// buildTreeFromPaths reconstructs a root tree from a flat file path map and
-// stores all intermediate trees.
+// buildTreeFromPaths reconstructs a root tree from a flat file path map,
+// storing all intermediate trees.
 func buildTreeFromPaths(stor storer.EncodedObjectStorer, files map[string]object.TreeEntry) (plumbing.Hash, error) {
 	type node struct {
 		children map[string]*node
@@ -538,10 +535,9 @@ func buildTreeFromPaths(stor storer.EncodedObjectStorer, files map[string]object
 	return build(root)
 }
 
-// performMerge creates a merge commit updating baseRef to incorporate headHash.
-// headName is used in the default merge message. It fast-forwards when
-// possible, otherwise performs a three-way merge. It returns the new commit
-// hash, "true" for a fast-forward, or an error.
+// performMerge advances baseRef to incorporate headHash, fast-forwarding when
+// possible and otherwise writing a three-way merge commit. Returns the new
+// commit hash and whether it fast-forwarded.
 func performMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHash plumbing.Hash, headName, message string, sig *object.Signature) (plumbing.Hash, bool, error) {
 	baseRefObj, err := stor.Reference(baseRef)
 	if err != nil {
@@ -562,18 +558,15 @@ func performMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHa
 	}
 
 	if mergeBase == headHash {
-		// Already merged.
 		return baseHash, true, nil
 	}
 	if mergeBase == baseHash {
-		// Fast-forward: point base at head.
 		if err := stor.CheckAndSetReference(plumbing.NewHashReference(baseRef, headHash), baseRefObj); err != nil {
 			return plumbing.ZeroHash, false, err
 		}
 		return headHash, true, nil
 	}
 
-	// True three-way merge.
 	mergedTreeHash, err := threeWayMergedTree(stor, mergeBase, baseHash, headHash)
 	if err != nil {
 		return plumbing.ZeroHash, false, err
@@ -599,9 +592,7 @@ func performMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHa
 }
 
 // threeWayMergedTree merges the trees of ours and theirs relative to their
-// common ancestor mergeBase and stores the resulting tree, returning its
-// hash. A conflicting path yields the "merge conflict" error from
-// threeWayMergePaths.
+// common ancestor mergeBase, stores the result, and returns its hash.
 func threeWayMergedTree(stor gitStorage.Storer, mergeBase, ours, theirs plumbing.Hash) (plumbing.Hash, error) {
 	files := map[string]map[string]object.TreeEntry{}
 	for name, hash := range map[string]plumbing.Hash{"base": mergeBase, "ours": ours, "theirs": theirs} {
@@ -626,7 +617,6 @@ func threeWayMergedTree(stor gitStorage.Storer, mergeBase, ours, theirs plumbing
 	return buildTreeFromPaths(stor, mergedFiles)
 }
 
-// writeCommit encodes a commit object into storage and returns its hash.
 func writeCommit(stor gitStorage.Storer, commit *object.Commit) (plumbing.Hash, error) {
 	obj := stor.NewEncodedObject()
 	if err := commit.Encode(obj); err != nil {
@@ -635,17 +625,11 @@ func writeCommit(stor gitStorage.Storer, commit *object.Commit) (plumbing.Hash, 
 	return stor.SetEncodedObject(obj)
 }
 
-// performMergeCommit creates a two-parent merge commit updating baseRef to
-// incorporate headHash, the way GitHub's "merge" method merges a pull
-// request: unlike performMerge it never fast-forwards — a merge commit is
-// created even when base is an ancestor of head. Returns the merge commit
-// hash.
-// computeMergeCommitHash computes the merge of headHash into baseRef and writes
-// the resulting merge commit object, but does NOT advance baseRef. It is used to
-// materialize a pull request's potential ("test") merge commit so a
-// pull_request workflow run can report the merge ref/SHA without the PR actually
-// being merged (ACT-027). It returns baseRef's current hash when there is
-// nothing to merge, and an error when the branches do not share a merge base.
+// computeMergeCommitHash writes the merge commit of headHash into baseRef but
+// does NOT advance baseRef, materializing a PR's potential ("test") merge so a
+// pull_request workflow run can report the merge ref/SHA without merging
+// (ACT-027). Returns baseRef's current hash when there is nothing to merge, and
+// an error when the branches share no merge base.
 func computeMergeCommitHash(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHash plumbing.Hash, message string, sig *object.Signature) (plumbing.Hash, error) {
 	baseRefObj, err := stor.Reference(baseRef)
 	if err != nil {
@@ -661,7 +645,6 @@ func computeMergeCommitHash(stor gitStorage.Storer, baseRef plumbing.ReferenceNa
 		return plumbing.ZeroHash, errors.New("no merge base")
 	}
 	if mergeBase == headHash {
-		// Nothing to merge: head is already contained in base.
 		return baseHash, nil
 	}
 
@@ -688,11 +671,9 @@ func computeMergeCommitHash(stor gitStorage.Storer, baseRef plumbing.ReferenceNa
 	})
 }
 
-// refreshPullRequestPotentialMerge recomputes and stores an open PR's test-merge
-// commit (head merged into base without advancing base), so a pull_request
-// workflow run reports the merge ref/SHA rather than the head SHA (ACT-027). A
-// merge conflict, an unresolvable ref, or in-memory-only git storage clears the
-// field, leaving the head-SHA fallback in place.
+// refreshPullRequestPotentialMerge recomputes an open PR's test-merge commit
+// (ACT-027). A merge conflict, unresolvable ref, or in-memory-only git storage
+// clears the field, leaving the head-SHA fallback in place.
 func (s *Server) refreshPullRequestPotentialMerge(repo *store.Repo, pr *store.PullRequest) {
 	sha := ""
 	if repo != nil && pr != nil && pr.State == "OPEN" {
@@ -720,7 +701,6 @@ func performMergeCommit(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 		return plumbing.ZeroHash, err
 	}
 	if commitHash == baseRefObj.Hash() {
-		// Nothing to merge (head already contained in base): no ref change.
 		return commitHash, nil
 	}
 	if err := stor.CheckAndSetReference(plumbing.NewHashReference(baseRef, commitHash), baseRefObj); err != nil {
@@ -729,10 +709,9 @@ func performMergeCommit(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 	return commitHash, nil
 }
 
-// performSquashMerge condenses everything reachable from headHash but not
-// from baseRef into a single commit on baseRef, the way GitHub's squash
-// merge does: one commit whose tree is the merged result and whose sole
-// parent is the previous base head. Returns the squash commit hash.
+// performSquashMerge condenses everything reachable from headHash but not from
+// baseRef into a single commit on baseRef, the way GitHub's squash merge does:
+// one commit whose sole parent is the previous base head.
 func performSquashMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHash plumbing.Hash, message string, author, committer *object.Signature) (plumbing.Hash, error) {
 	baseRefObj, err := stor.Reference(baseRef)
 	if err != nil {
@@ -748,7 +727,6 @@ func performSquashMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 		return plumbing.ZeroHash, errors.New("no merge base")
 	}
 	if mergeBase == headHash {
-		// Nothing to squash: head is already contained in base.
 		return baseHash, nil
 	}
 
@@ -782,10 +760,10 @@ func performSquashMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 	return commitHash, nil
 }
 
-// performRebaseMerge replays the commits reachable from headHash but not
-// from baseRef on top of baseRef, the way GitHub's rebase merge does: each
-// commit keeps its author and message but gets a new parent chain and the
-// merger as committer. Returns the new base head (the rebased tip).
+// performRebaseMerge replays the commits reachable from headHash but not from
+// baseRef on top of baseRef, the way GitHub's rebase merge does: each commit
+// keeps its author and message but gets a new parent chain and the merger as
+// committer. Returns the rebased tip.
 func performRebaseMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHash plumbing.Hash, committer *object.Signature) (plumbing.Hash, error) {
 	baseRefObj, err := stor.Reference(baseRef)
 	if err != nil {
@@ -801,7 +779,6 @@ func performRebaseMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 		return plumbing.ZeroHash, errors.New("no merge base")
 	}
 	if mergeBase == headHash {
-		// Nothing to replay: head is already contained in base.
 		return baseHash, nil
 	}
 
@@ -821,8 +798,7 @@ func performRebaseMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 		if c.ParentHashes[0] == newParent {
 			treeHash = c.TreeHash
 		} else {
-			// Replay the commit's change (parent → commit) onto the new
-			// base side via a three-way tree merge.
+			// Replay parent → commit onto the new base via a three-way merge.
 			treeHash, err = threeWayMergedTree(stor, c.ParentHashes[0], newParent, c.Hash)
 			if err != nil {
 				return plumbing.ZeroHash, err

@@ -12,30 +12,22 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// maxJSONBodyBytes caps a JSON API request body. Real payloads are kilobytes;
-// this only stops an unbounded body from exhausting memory during decode.
+// maxJSONBodyBytes caps a JSON API request body, stopping an unbounded body from
+// exhausting memory during decode.
 const maxJSONBodyBytes = 25 << 20 // 25 MiB
 
-// maxBlobJSONBodyBytes caps POST /git/blobs, whose body is not a small
-// document but a whole file: GitHub accepts blobs up to 100 MB there, which
-// base64-inflates to ~133 MB of JSON (verified: api.github.com accepts a 40 MB
-// body on this route without a 413). maxJSONBodyBytes would refuse anything
-// past ~18.7 MB of binary, so the route gets its own cap.
-//
-// The effective ceiling is still maxStructuredRequestBody: requestBodyLimitMiddleware
-// wraps every application/json body in that reader before the handler runs, so
-// this cap can only raise the route to the shared pipeline's limit (~24 MB of
-// binary after base64), not to GitHub's 100 MB. Reaching parity needs the
-// shared cap raised, which is a whole-server decision rather than a route one.
+// maxBlobJSONBodyBytes caps POST /git/blobs, whose body is a whole file (GitHub
+// accepts blobs up to 100 MB, ~133 MB base64). The effective ceiling is still
+// maxStructuredRequestBody: requestBodyLimitMiddleware wraps every JSON body in
+// that reader first, so this only raises the route to the shared limit, not to
+// GitHub's 100 MB.
 const maxBlobJSONBodyBytes = maxStructuredRequestBody
 
-// maxUploadBytes caps a binary upload body (release assets, container blobs,
-// CodeQL databases) that a handler buffers in memory. Generous but bounded, so
-// no single request can exhaust the process.
+// maxUploadBytes caps a binary upload body a handler buffers in memory (release
+// assets, container blobs, CodeQL databases). Generous but bounded.
 const maxUploadBytes = 2 << 30 // 2 GiB
 
-// requestBodyLimit is one row of the request-body-size registry: a named cap,
-// the bytes it allows, and where it applies.
+// requestBodyLimit is one row of the request-body-size registry.
 type requestBodyLimit struct {
 	name  string
 	bytes int64
@@ -43,12 +35,9 @@ type requestBodyLimit struct {
 }
 
 // requestBodyLimits is the single auditable inventory of every request-body cap
-// on the byte-transfer surface (CORE-009). The shared pipeline
-// (maxStructuredRequestBody) bounds JSON/form/GraphQL by default; the entries
-// below are the endpoint-specific streaming caps that deliberately exceed it or
-// bound a non-JSON body. Adding a new binary/upload route means adding its cap
-// here so the whole surface stays reviewable in one place; TestRequestBodyLimits
-// keeps the registry honest.
+// (CORE-009): the shared pipeline bounds JSON/form/GraphQL, and the entries below
+// are endpoint-specific streaming caps that exceed it or bound a non-JSON body.
+// Add a new binary/upload route's cap here; TestRequestBodyLimits keeps it honest.
 var requestBodyLimits = []requestBodyLimit{
 	{"structured (shared pipeline)", maxStructuredRequestBody, "every application/json, form and GraphQL request"},
 	{"json decode helpers", maxJSONBodyBytes, "decodeJSONBody / readLimitedBody JSON handlers, container manifests"},
@@ -60,9 +49,8 @@ var requestBodyLimits = []requestBodyLimit{
 	{"backchannel logout", maxBackChannelLogoutBytes, "OIDC back-channel logout token POST"},
 }
 
-// decodeJSONBody decodes the JSON request body into v, refusing a body larger
-// than maxJSONBodyBytes. On failure it writes a GitHub-style response and
-// returns false. Usage: if !decodeJSONBody(w, r, &req) { return }
+// decodeJSONBody decodes the JSON body into v, refusing a body over
+// maxJSONBodyBytes; on failure it writes a GitHub-style response and returns false.
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, v interface{}) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
@@ -71,11 +59,9 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, v interface{}) bool 
 	return true
 }
 
-// decodeJSONBodyOversizeAware is decodeJSONBody with a route-specific cap,
-// for the JSON routes whose documented payload is a whole file rather than a
-// document (POST /git/blobs). An over-limit body is reported through
-// onOversize instead of the generic 413, because those operations do not
-// document 413 at all.
+// decodeJSONBodyOversizeAware is decodeJSONBody with a route-specific cap for JSON
+// routes whose payload is a whole file (POST /git/blobs). Over-limit is reported
+// through onOversize, since those operations do not document 413.
 func decodeJSONBodyOversizeAware(w http.ResponseWriter, r *http.Request, limit int64, v interface{}, onOversize func(http.ResponseWriter)) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
@@ -89,10 +75,9 @@ func decodeJSONBodyOversizeAware(w http.ResponseWriter, r *http.Request, limit i
 	return true
 }
 
-// decodeJSONBodyOptional decodes like decodeJSONBody but tolerates an
-// entirely absent body — for endpoints whose request body is optional on
-// real GitHub (PUT membership endpoints: go-github sends no body at all
-// when called without options).
+// decodeJSONBodyOptional decodes like decodeJSONBody but tolerates an absent body,
+// for endpoints where real GitHub accepts none (PUT membership: go-github sends no
+// body when called without options).
 func decodeJSONBodyOptional(w http.ResponseWriter, r *http.Request, v interface{}) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil && err != io.EOF {
@@ -101,8 +86,7 @@ func decodeJSONBodyOptional(w http.ResponseWriter, r *http.Request, v interface{
 	return true
 }
 
-// jsonDecodeFailed maps a decode error to the right response: 413 when the body
-// exceeded the cap, 400 otherwise.
+// jsonDecodeFailed maps a decode error: 413 when over the cap, 400 otherwise.
 func jsonDecodeFailed(w http.ResponseWriter, err error) bool {
 	var maxErr *http.MaxBytesError
 	if errors.As(err, &maxErr) {
@@ -113,10 +97,8 @@ func jsonDecodeFailed(w http.ResponseWriter, err error) bool {
 	return false
 }
 
-// readLimitedBody reads the whole request body, refusing more than limit bytes.
-// Use for the binary/blob upload routes that consume r.Body directly rather
-// than through decodeJSONBody. Returns false (after writing 413) when the body
-// exceeds the limit.
+// readLimitedBody reads the whole body, refusing more than limit bytes (writing
+// 413). For binary/blob routes that consume r.Body directly.
 func readLimitedBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
@@ -139,9 +121,8 @@ func (s *Server) registerGHRestRoutes() {
 }
 
 // handleGHApiRoot returns the API root meta information.
-// gh reads X-OAuth-Scopes from response headers to check token permissions.
 func (s *Server) handleGHApiRoot(w http.ResponseWriter, r *http.Request) {
-	// Must be exact match for /api/v3/ — don't match sub-paths
+	// Exact match for /api/v3/ only.
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/v3")
 	if trimmed != "/" && trimmed != "" {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -190,8 +171,7 @@ func (s *Server) handleGHApiRoot(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGHUser returns the authenticated user in the private-user shape
-// (the account owner sees their own private counters).
+// handleGHUser returns the authenticated user in the private-user shape.
 func (s *Server) handleGHUser(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -201,7 +181,6 @@ func (s *Server) handleGHUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.privateUserJSON(user))
 }
 
-// handleGHUserByLogin returns a user by login name.
 func (s *Server) handleGHUserByLogin(w http.ResponseWriter, r *http.Request) {
 	login := r.PathValue("username")
 	user := s.store.LookupUserByLogin(login)
@@ -212,7 +191,6 @@ func (s *Server) handleGHUserByLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.fullUserJSON(user, s.baseURL(r)))
 }
 
-// handleGHRateLimit returns rate limit status.
 func (s *Server) handleGHRateLimit(w http.ResponseWriter, r *http.Request) {
 	resources := make(map[string]interface{}, len(apiRateResponseResources))
 	names := append([]string(nil), apiRateResponseResources...)
@@ -227,7 +205,6 @@ func (s *Server) handleGHRateLimit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// writeGHError writes a GitHub-style error JSON response.
 func writeGHError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -237,9 +214,8 @@ func writeGHError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
-// writeGHValidationErrorMessage is writeGHValidationError with the error
-// item's optional human-readable message, for operations whose documented
-// validation-error detail carries one (e.g. issue-field-values).
+// writeGHValidationErrorMessage is writeGHValidationError with the error item's
+// optional human-readable message (e.g. issue-field-values).
 func writeGHValidationErrorMessage(w http.ResponseWriter, resource, field, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnprocessableEntity)
@@ -257,9 +233,8 @@ func writeGHValidationErrorMessage(w http.ResponseWriter, resource, field, code,
 	})
 }
 
-// mutated guards the gap between resolving a resource and mutating it: a
-// store mutator returns nil when the target was deleted in between, and the
-// request is then a 404 rather than a render of a nil pointer.
+// mutated turns a nil store-mutator result — the target was deleted between
+// resolve and mutate — into a 404 rather than a nil-pointer render.
 func mutated[T any](w http.ResponseWriter, v *T) bool {
 	if v == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -268,14 +243,9 @@ func mutated[T any](w http.ResponseWriter, v *T) bool {
 	return true
 }
 
-// fullUserJSON converts a User to the GitHub `public-user` shape served
-// by GET /user, GET /users/{username}, and GET /user/{account_id}: the
-// simple-user members plus profile fields and counters. Profile members
-// (blog, company, location, hireable, twitter_username) come from the
-// stored user profile (mutable via PATCH /user); unset company/location/
-// twitter_username are null, matching real GitHub. Followers/following
-// and repository counts are derived live from the store; gists are not a
-// bleephub feature so public_gists is 0.
+// fullUserJSON converts a User to GitHub's public-user shape (simple-user plus
+// profile fields and counters). Unset company/location/twitter_username are null;
+// gists are not a bleephub feature, so public_gists is 0.
 func (s *Server) fullUserJSON(u *store.User, baseURL string) map[string]interface{} {
 	if u == nil {
 		u = store.GhostUser()

@@ -1,21 +1,13 @@
 package store
 
-// Enterprise accounts: the account entity itself, its membership roll
-// (owners, billing managers, members), the organizations that belong to it,
-// the administrator and member invitations, support entitlements, the SAML
-// identity provider binding and the IP allow list.
-//
-// bleephub already carried an enterprise *settings* singleton — the
-// GHES-shaped configuration the /api/v3/enterprises/{enterprise} REST surface
-// serves. That singleton describes the instance's own enterprise. This file
-// adds the account layer GitHub's GraphQL schema models: a first-class
-// Enterprise row with a profile, a membership roll and a policy set, of which
-// the instance's own enterprise is one. Everything here is keyed by
-// enterprise id, so one enterprise's members, organizations, invitations and
-// policies are never reachable from another.
+// Enterprise accounts: the account entity, its membership roll, organizations,
+// invitations, support entitlements, SAML identity provider binding and IP
+// allow list. This is the account layer GitHub's GraphQL schema models, distinct
+// from the pre-existing GHES enterprise-settings singleton. Everything is keyed
+// by enterprise id, so one enterprise's data is never reachable from another.
 //
 // STORE-021: every getter and List* returns a detached snapshot;
-// FindEnterpriseByNodeID returns the live row (it is the write path's lookup).
+// FindEnterpriseByNodeID returns the live row (the write path's lookup).
 
 import (
 	"fmt"
@@ -29,9 +21,8 @@ import (
 const EnterpriseNodeIDPrefix = "E_kgDO"
 
 // EnterpriseUserAccountNodeIDPrefix is the global-id prefix for the
-// EnterpriseUserAccount projection of a user's membership in an enterprise.
-// The suffix is the membership's own database id, so two enterprises never
-// project the same user onto the same node id.
+// EnterpriseUserAccount projection of a user's membership. The suffix is the
+// membership's own database id.
 const EnterpriseUserAccountNodeIDPrefix = "EUA_kgDO"
 
 // EnterpriseAdminInvitationNodeIDPrefix and EnterpriseMemberInvitationNodeIDPrefix
@@ -42,41 +33,33 @@ const (
 	IPAllowListEntryNodeIDPrefix           = "IPALE_kgDO"
 )
 
-// IP allow list owner types. GitHub's IpAllowListOwner union admits an
-// enterprise, an organization or an App; the user-scoped list has no GraphQL
-// owner and is reachable only from the account's own /ui-data surface, which is
-// why it is named here rather than resolvable as a global id.
+// IP allow list owner types. The user-scoped list has no GraphQL owner and is
+// reachable only from the account's own /ui-data surface.
 const (
 	IPAllowListOwnerEnterprise   = "Enterprise"
 	IPAllowListOwnerOrganization = "Organization"
 	IPAllowListOwnerUser         = "User"
 )
 
-// EnterpriseRole is a principal's standing in an enterprise account. It is
-// spelled with GitHub's EnterpriseAdministratorRole /
-// EnterpriseUserAccountMembershipRole values so the stored value is what the
-// GraphQL enums serve.
+// EnterpriseRole is a principal's standing in an enterprise account, spelled
+// with GitHub's enum values so the stored value is what the GraphQL enums serve.
 type EnterpriseRole string
 
 const (
-	// EnterpriseRoleOwner is an enterprise owner: full administrative
-	// authority over the enterprise, its policies and its organizations.
+	// EnterpriseRoleOwner has full administrative authority over the enterprise.
 	EnterpriseRoleOwner EnterpriseRole = "OWNER"
-	// EnterpriseRoleBillingManager may read and change billing, and may read
-	// the enterprise profile, but holds no authority over policy, members or
-	// organizations.
+	// EnterpriseRoleBillingManager may read and change billing only.
 	EnterpriseRoleBillingManager EnterpriseRole = "BILLING_MANAGER"
-	// EnterpriseRoleMember is an ordinary enterprise member: a user who
-	// belongs to at least one of the enterprise's organizations, or who was
-	// added to the enterprise directly.
+	// EnterpriseRoleMember belongs to at least one of the enterprise's
+	// organizations, or was added directly.
 	EnterpriseRoleMember EnterpriseRole = "MEMBER"
-	// EnterpriseRoleUnaffiliated is the role GitHub reports for a principal
-	// invited to an enterprise who belongs to none of its organizations.
+	// EnterpriseRoleUnaffiliated is an invited principal belonging to none of
+	// the enterprise's organizations.
 	EnterpriseRoleUnaffiliated EnterpriseRole = "UNAFFILIATED"
 )
 
-// ValidEnterpriseAdministratorRole reports whether role is one of the values
-// GitHub's EnterpriseAdministratorRole enum admits.
+// ValidEnterpriseAdministratorRole reports whether role is one GitHub's
+// EnterpriseAdministratorRole enum admits.
 func ValidEnterpriseAdministratorRole(role string) bool {
 	switch EnterpriseRole(role) {
 	case EnterpriseRoleOwner, EnterpriseRoleBillingManager, EnterpriseRoleUnaffiliated:
@@ -85,101 +68,70 @@ func ValidEnterpriseAdministratorRole(role string) bool {
 	return false
 }
 
-// Policy-setting values. Each constant group is one of GitHub's enterprise
-// policy enums; the zero value of a policy field is never served — the
-// enterprise is created with GitHub's defaults (NO_POLICY / ENABLED) so a
-// non-null GraphQL field always has a value to return.
+// Policy-setting values, spelled with GitHub's enum values. A policy field's
+// zero value is never served — the enterprise is created with GitHub's defaults
+// so a non-null GraphQL field always has a value.
 const (
 	EnterprisePolicyEnabled  = "ENABLED"
 	EnterprisePolicyDisabled = "DISABLED"
 	EnterprisePolicyNoPolicy = "NO_POLICY"
-	// EnterprisePolicyDisallowInsecure is the non-NO_POLICY member of GitHub's
-	// EnterpriseDisallowedMethodsSettingValue: the enterprise bans the
-	// second-factor methods classed insecure.
+	// EnterprisePolicyDisallowInsecure bans the second-factor methods classed
+	// insecure.
 	EnterprisePolicyDisallowInsecure = "INSECURE"
-	// The two proof-of-presence requirements GitHub's ProofOfPresenceRequirement
-	// enum admits beside NO_POLICY: a fresh MFA challenge, or a full
-	// re-authentication against the enterprise identity provider.
+	// The two proof-of-presence requirements beside NO_POLICY: a fresh MFA
+	// challenge, or a full re-authentication against the identity provider.
 	EnterpriseProofOfPresenceMFA    = "MFA"
 	EnterpriseProofOfPresenceReauth = "REAUTH"
 )
 
-// EnterprisePolicy is the enterprise-wide policy set: every setting
-// EnterpriseOwnerInfo exposes and every setting an
-// updateEnterprise…Setting mutation writes.
-//
-// A policy is stored with GitHub's enum spelling so the GraphQL layer serves
-// the stored string directly, and every consumer — the REST handlers, the
-// GraphQL resolvers and the enforcement predicates in the server package —
-// reads the same value.
+// EnterprisePolicy is the enterprise-wide policy set. Each field is stored with
+// GitHub's enum spelling and read by every consumer — REST handlers, GraphQL
+// resolvers and the server-package enforcement predicates.
 type EnterprisePolicy struct {
-	// AllowPrivateRepositoryForking governs whether the enterprise's private
-	// and internal repositories may be forked at all; PolicyValue narrows
-	// where a permitted fork may land.
+	// AllowPrivateRepositoryForking governs whether private/internal repos may be
+	// forked at all; PolicyValue narrows where a permitted fork may land.
 	AllowPrivateRepositoryForking            string `json:"allow_private_repository_forking"`
 	AllowPrivateRepositoryForkingPolicyValue string `json:"allow_private_repository_forking_policy_value"`
 	// DefaultRepositoryPermission is the ceiling on the base permission an
-	// organization in the enterprise may grant its members.
-	DefaultRepositoryPermission string `json:"default_repository_permission"`
-	// MembersCanChangeRepositoryVisibility governs repository visibility
-	// changes by organization members who are not organization owners.
+	// organization may grant its members.
+	DefaultRepositoryPermission          string `json:"default_repository_permission"`
 	MembersCanChangeRepositoryVisibility string `json:"members_can_change_repository_visibility"`
-	// MembersCanCreateRepositories is the enterprise ceiling on repository
-	// creation; the three booleans are the per-visibility refinement GitHub
-	// applies when the setting is neither DISABLED nor NO_POLICY.
+	// The three booleans are the per-visibility refinement GitHub applies when
+	// MembersCanCreateRepositories is neither DISABLED nor NO_POLICY.
 	MembersCanCreateRepositories         string `json:"members_can_create_repositories"`
 	MembersCanCreatePublicRepositories   *bool  `json:"members_can_create_public_repositories"`
 	MembersCanCreatePrivateRepositories  *bool  `json:"members_can_create_private_repositories"`
 	MembersCanCreateInternalRepositories *bool  `json:"members_can_create_internal_repositories"`
-	// MembersCanDeleteIssues governs issue deletion.
-	MembersCanDeleteIssues string `json:"members_can_delete_issues"`
-	// MembersCanDeleteRepositories governs repository deletion and transfer.
-	MembersCanDeleteRepositories string `json:"members_can_delete_repositories"`
-	// MembersCanInviteCollaborators governs inviting outside collaborators.
-	MembersCanInviteCollaborators string `json:"members_can_invite_collaborators"`
-	// MembersCanMakePurchases governs Marketplace purchases.
-	MembersCanMakePurchases string `json:"members_can_make_purchases"`
-	// MembersCanUpdateProtectedBranches governs whether a member may change
-	// branch protection on a repository they administer.
-	MembersCanUpdateProtectedBranches string `json:"members_can_update_protected_branches"`
-	// MembersCanViewDependencyInsights governs the dependency-insights read
-	// surface.
-	MembersCanViewDependencyInsights string `json:"members_can_view_dependency_insights"`
-	// OrganizationProjects / RepositoryProjects govern the classic project
-	// boards at each scope.
-	OrganizationProjects string `json:"organization_projects"`
-	RepositoryProjects   string `json:"repository_projects"`
-	// RepositoryDeployKey governs repository deploy keys.
-	RepositoryDeployKey string `json:"repository_deploy_key"`
-	// TeamDiscussions governs team discussions.
-	TeamDiscussions string `json:"team_discussions"`
-	// TwoFactorRequired requires two-factor authentication of every member.
-	TwoFactorRequired string `json:"two_factor_required"`
+	MembersCanDeleteIssues               string `json:"members_can_delete_issues"`
+	MembersCanDeleteRepositories         string `json:"members_can_delete_repositories"`
+	MembersCanInviteCollaborators        string `json:"members_can_invite_collaborators"`
+	MembersCanMakePurchases              string `json:"members_can_make_purchases"`
+	MembersCanUpdateProtectedBranches    string `json:"members_can_update_protected_branches"`
+	MembersCanViewDependencyInsights     string `json:"members_can_view_dependency_insights"`
+	OrganizationProjects                 string `json:"organization_projects"`
+	RepositoryProjects                   string `json:"repository_projects"`
+	RepositoryDeployKey                  string `json:"repository_deploy_key"`
+	TeamDiscussions                      string `json:"team_discussions"`
+	TwoFactorRequired                    string `json:"two_factor_required"`
 	// TwoFactorDisallowedMethods bans insecure second factors (SMS).
 	TwoFactorDisallowedMethods string `json:"two_factor_disallowed_methods"`
-	// ProofOfPresenceRequired demands a fresh proof of presence (MFA or a
-	// re-authentication) before a sensitive action.
+	// ProofOfPresenceRequired demands a fresh proof of presence before a
+	// sensitive action.
 	ProofOfPresenceRequired string `json:"proof_of_presence_required"`
-	// NotificationDeliveryRestrictionEnabled restricts email notification
-	// delivery to the enterprise's verified domains.
+	// NotificationDeliveryRestrictionEnabled restricts notification delivery to
+	// the enterprise's verified domains.
 	NotificationDeliveryRestrictionEnabled string `json:"notification_delivery_restriction_enabled"`
-	// The three IP allow list settings.
 	IPAllowListEnabled                     string `json:"ip_allow_list_enabled"`
 	IPAllowListForInstalledAppsEnabled     string `json:"ip_allow_list_for_installed_apps_enabled"`
 	IPAllowListUserLevelEnforcementEnabled string `json:"ip_allow_list_user_level_enforcement_enabled"`
-	// IsUpdatingDefaultRepositoryPermission / IsUpdatingTwoFactorRequirement
-	// report that the enterprise-wide roll-out of the corresponding setting
-	// across its organizations has not finished. bleephub applies a policy to
-	// every organization inside the same batch write, so both are false
-	// outside the window in which a mutation is mid-apply.
+	// These report an unfinished enterprise-wide roll-out. bleephub applies a
+	// policy to every organization in one batch write, so both are false outside
+	// the window a mutation is mid-apply.
 	IsUpdatingDefaultRepositoryPermission bool `json:"is_updating_default_repository_permission"`
 	IsUpdatingTwoFactorRequirement        bool `json:"is_updating_two_factor_requirement"`
 }
 
-// defaultEnterprisePolicy is GitHub's out-of-the-box enterprise policy set:
-// no policy imposed on the organizations, purchases and the three IP allow
-// list toggles off, and the deploy-key/discussions/projects surfaces
-// unrestricted.
+// defaultEnterprisePolicy is GitHub's out-of-the-box enterprise policy set.
 func defaultEnterprisePolicy() EnterprisePolicy {
 	return EnterprisePolicy{
 		AllowPrivateRepositoryForking:          EnterprisePolicyNoPolicy,
@@ -206,17 +158,10 @@ func defaultEnterprisePolicy() EnterprisePolicy {
 	}
 }
 
-// EnterpriseSAMLIdentityProvider is an enterprise's SAML binding: the
-// assertion consumer configuration plus the one-time recovery codes GitHub
-// issues when the binding is created.
-//
-// bleephub delegates production authentication to an external OIDC provider
-// (see upsertExternalUser and the shauth SSO contract). This record is the
-// enterprise-scoped view of that delegation: SetEnterpriseIdentityProvider
-// records which issuer governs the enterprise, and the external identities
-// the SSO path already writes onto each User are what
-// EnterpriseIdentityProvider.externalIdentities reports. It is a description
-// of the binding, not a second authentication mechanism.
+// EnterpriseSAMLIdentityProvider is an enterprise's SAML binding plus its
+// one-time recovery codes. It describes the delegation to the external OIDC
+// provider bleephub already authenticates against; it is not a second
+// authentication mechanism.
 type EnterpriseSAMLIdentityProvider struct {
 	EnterpriseID    int       `json:"enterprise_id"`
 	NodeID          string    `json:"node_id"`
@@ -249,14 +194,12 @@ type Enterprise struct {
 	// MigratorLogins is the set of user logins granted the migrator role on
 	// every organization in the enterprise.
 	MigratorLogins []string `json:"migrator_logins,omitempty"`
-	// VerifiedDomains are the domains the enterprise has verified or approved.
-	// GitHub's notification-delivery restriction is expressed against them: with
-	// the restriction on, an address outside every verified domain is not a
-	// delivery target. They are stored lower-cased and without a leading "@".
+	// VerifiedDomains are the enterprise's verified domains, stored lower-cased
+	// and without a leading "@". The notification-delivery restriction is
+	// expressed against them.
 	VerifiedDomains []string `json:"verified_domains,omitempty"`
-	// BillingBandwidthQuotaGB / BillingStorageQuotaGB and the seat count are
-	// the enterprise's provisioned entitlements; usage is derived from the
-	// instance's actual repositories and packages rather than stored.
+	// Provisioned billing entitlements; usage is measured from actual
+	// repositories and packages rather than stored.
 	BillingBandwidthQuotaGB float64   `json:"billing_bandwidth_quota_gb"`
 	BillingStorageQuotaGB   float64   `json:"billing_storage_quota_gb"`
 	BillingTotalLicenses    int       `json:"billing_total_licenses"`
@@ -285,10 +228,8 @@ type EnterpriseOrganization struct {
 }
 
 // EnterpriseInvitation is an outstanding invitation to an enterprise. Kind
-// distinguishes the administrator invitation (which carries a role) from the
-// member invitation (which does not); they are separate GraphQL types with
-// separate node-id prefixes and separate connections, and one record type
-// keeps their lifecycles — invite, accept, cancel — from drifting apart.
+// distinguishes the admin invitation (which carries a role) from the member
+// invitation (which does not); one record type keeps their lifecycles aligned.
 type EnterpriseInvitation struct {
 	ID           int    `json:"id"`
 	NodeID       string `json:"node_id"`
@@ -306,9 +247,8 @@ type EnterpriseInvitation struct {
 	CreatedAt time.Time      `json:"created_at"`
 }
 
-// IPAllowListEntry is one CIDR on an IP allow list. Owner is an enterprise or
-// an organization; OwnerType distinguishes them because their ids are drawn
-// from different sequences.
+// IPAllowListEntry is one CIDR on an IP allow list. OwnerType distinguishes
+// enterprise from organization owners, whose ids come from different sequences.
 type IPAllowListEntry struct {
 	ID     int    `json:"id"`
 	NodeID string `json:"node_id"`
@@ -393,7 +333,7 @@ func copyBoolPtr(v *bool) *bool {
 // --- lifecycle ---
 
 // CreateEnterprise creates an enterprise account with GitHub's default policy
-// set. It returns nil when the slug is already taken.
+// set, or returns nil when the slug is taken.
 func (st *Store) CreateEnterprise(slug, name, billingEmail string) *Enterprise {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -435,18 +375,15 @@ func (st *Store) createEnterpriseLocked(slug, name, billingEmail string) *Enterp
 	return e
 }
 
-// Provisioned billing entitlements a new enterprise starts with. They are the
-// quotas EnterpriseBillingInfo reports against measured usage.
+// Provisioned billing entitlements a new enterprise starts with.
 const (
 	DefaultEnterpriseBandwidthQuotaGB = 100.0
 	DefaultEnterpriseStorageQuotaGB   = 50.0
 	DefaultEnterpriseTotalLicenses    = 50
 )
 
-// EnsureEnterprise returns the enterprise with the given slug, creating it
-// when it does not exist. It is how the instance's own enterprise account
-// comes into being at boot: the configured slug names an enterprise whether
-// or not one was ever persisted.
+// EnsureEnterprise returns the enterprise with the given slug, creating it when
+// absent. It brings the instance's own enterprise into being at boot.
 func (st *Store) EnsureEnterprise(slug, name, billingEmail string) *Enterprise {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -472,9 +409,8 @@ func (st *Store) GetEnterpriseByID(id int) *Enterprise {
 	return cloneEnterprise(st.Enterprises[id])
 }
 
-// FindEnterpriseByNodeID resolves an enterprise global id to the LIVE row —
-// the write path's lookup, so a mutation reads the pre-mutation values off
-// the same object it is about to update.
+// FindEnterpriseByNodeID resolves an enterprise global id to the LIVE row — the
+// write path's lookup.
 func FindEnterpriseByNodeID(st *Store, nodeID string) *Enterprise {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -540,9 +476,8 @@ func (st *Store) UpdateEnterpriseProfile(enterpriseID int, name, description, lo
 	return cloneEnterprise(e)
 }
 
-// UpdateEnterprisePolicy mutates the enterprise's policy set under the store
-// lock and returns a detached snapshot. mutate receives a pointer to the live
-// policy; it must not retain it.
+// UpdateEnterprisePolicy mutates the policy set under the store lock and returns
+// a detached snapshot. mutate receives the live policy and must not retain it.
 func (st *Store) UpdateEnterprisePolicy(enterpriseID int, mutate func(*EnterprisePolicy)) *Enterprise {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -575,8 +510,8 @@ func (st *Store) setEnterpriseMembershipLocked(enterpriseID, userID int, role En
 }
 
 // applyEnterpriseMembershipLocked installs the membership in memory without
-// writing it. AcceptEnterpriseInvitation stages the write in the same batch
-// that consumes the invitation, so the two can never diverge across a crash.
+// persisting. AcceptEnterpriseInvitation stages the write in the batch that
+// consumes the invitation, so the two cannot diverge across a crash.
 func (st *Store) applyEnterpriseMembershipLocked(enterpriseID, userID int, role EnterpriseRole) *EnterpriseMembership {
 	if st.Enterprises[enterpriseID] == nil {
 		return nil
@@ -790,10 +725,9 @@ func (st *Store) listEnterpriseOrgIDsLocked(enterpriseID int) []int {
 
 // --- invitations ---
 
-// CreateEnterpriseInvitation records an invitation. kind is "admin" or
-// "member"; role is meaningful for "admin" only. It returns a detached
-// snapshot, or nil when the enterprise does not exist or an equivalent
-// invitation is already outstanding.
+// CreateEnterpriseInvitation records an invitation ("admin" or "member"; role
+// applies to "admin" only) and returns a detached snapshot, or nil when the
+// enterprise is gone or an equivalent invitation is already outstanding.
 func (st *Store) CreateEnterpriseInvitation(enterpriseID, inviterID, inviteeID int, email, kind string, role EnterpriseRole) *EnterpriseInvitation {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -897,10 +831,9 @@ func (st *Store) deleteEnterpriseInvitationLocked(id int) bool {
 	return true
 }
 
-// AcceptEnterpriseInvitation consumes an invitation and installs the
-// membership it grants, in one batch write so an accepted invitation can
-// never survive a crash without its membership. It returns the consumed
-// invitation snapshot, or nil when no such invitation exists.
+// AcceptEnterpriseInvitation consumes an invitation and installs its membership
+// in one batch write, so an accepted invitation cannot survive a crash without
+// its membership. Returns the consumed snapshot, or nil when none exists.
 func (st *Store) AcceptEnterpriseInvitation(id, userID int) *EnterpriseInvitation {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -960,10 +893,9 @@ func (st *Store) SetEnterpriseMigratorRole(enterpriseID int, login string, grant
 
 // --- identity provider ---
 
-// SetEnterpriseIdentityProvider binds (or rebinds) an enterprise's SAML
-// identity provider and returns a detached snapshot of the binding.
-// recoveryCodes are generated by the caller so the store stays free of
-// randomness.
+// SetEnterpriseIdentityProvider binds (or rebinds) an enterprise's SAML identity
+// provider and returns a detached snapshot. The caller generates recoveryCodes
+// so the store stays free of randomness.
 func (st *Store) SetEnterpriseIdentityProvider(enterpriseID int, ssoURL, issuer, certificate, signatureMethod, digestMethod string, recoveryCodes []string) *EnterpriseSAMLIdentityProvider {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1121,8 +1053,8 @@ func (st *Store) ListIPAllowListEntries(ownerType string, ownerID int) []*IPAllo
 }
 
 // loadEnterpriseAccountBuckets restores the enterprise account layer from
-// persistence. Callers hold no lock: it runs during store construction,
-// before the store is reachable.
+// persistence. It runs during store construction, before the store is
+// reachable, so it takes no lock.
 func (st *Store) loadEnterpriseAccountBuckets() error {
 	if err := st.loadBucket("enterprises", func(raw []byte) error {
 		var e Enterprise
@@ -1130,10 +1062,8 @@ func (st *Store) loadEnterpriseAccountBuckets() error {
 			return err
 		}
 		if e.Policy.AllowPrivateRepositoryForking == "" {
-			// A row persisted before a policy field existed reads back with
-			// the Go zero value, which is not a member of GitHub's enums.
-			// Filling from the defaults keeps every non-null policy field
-			// answerable.
+			// An older persisted row reads back with Go zero values that are not
+			// enum members; fill from the defaults so every field is answerable.
 			e.Policy = mergeEnterprisePolicyDefaults(e.Policy)
 		}
 		st.Enterprises[e.ID] = &e
@@ -1207,9 +1137,8 @@ func (st *Store) loadEnterpriseAccountBuckets() error {
 	})
 }
 
-// mergeEnterprisePolicyDefaults fills any policy field left empty by an older
-// persisted row with GitHub's default for it, so a non-null GraphQL policy
-// field always has an enum member to serve.
+// mergeEnterprisePolicyDefaults fills any empty policy field with GitHub's
+// default, so a non-null GraphQL field always has an enum member to serve.
 func mergeEnterprisePolicyDefaults(p EnterprisePolicy) EnterprisePolicy {
 	defaults := defaultEnterprisePolicy()
 	fill := func(dst *string, def string) {
@@ -1241,11 +1170,9 @@ func mergeEnterprisePolicyDefaults(p EnterprisePolicy) EnterprisePolicy {
 	return p
 }
 
-// PrimaryEnterpriseSlug names the instance's own enterprise account — the one
-// the GHES enterprise-settings REST surface is keyed on. It is configuration
-// (BLEEPHUB_ENTERPRISE_SLUG), set once at boot by the server, and it is what
-// makes "every account on this instance belongs to this enterprise" a
-// property of one specific enterprise rather than of enterprises in general.
+// PrimaryEnterpriseSlug names the instance's own enterprise account, configured
+// via BLEEPHUB_ENTERPRISE_SLUG and set once at boot. It is the enterprise every
+// account on the instance belongs to.
 func (st *Store) PrimaryEnterpriseSlug() string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1259,23 +1186,17 @@ func (st *Store) SetPrimaryEnterpriseSlug(slug string) {
 	st.primaryEnterpriseSlug = strings.ToLower(strings.TrimSpace(slug))
 }
 
-// EffectiveEnterpriseRole reports the role a user holds in an enterprise.
+// EffectiveEnterpriseRole reports the role a user holds in an enterprise. An
+// explicit membership row wins; failing that, two enterprise-scoped derivations
+// apply:
 //
-// An explicit membership row wins. Failing that, two derivations apply, and
-// each is a property of *this* enterprise, so neither can carry a standing
-// from one enterprise into another:
-//
-//   - The instance's own enterprise account is the GHES enterprise: every
-//     account on the instance is one of its members, and every site
-//     administrator is one of its owners. That is the rule the enterprise
-//     REST surface has always enforced.
-//   - Any enterprise: a user who belongs to one of its organizations is a
-//     member of it, and an owner of one of them is an owner of it. That is
-//     how an organization joining an enterprise brings its people with it.
+//   - In the instance's own (GHES) enterprise, every account is a member and
+//     every site administrator is an owner.
+//   - In any enterprise, a member of one of its organizations is a member, and
+//     an owner of one is an owner.
 //
 // A user with neither an explicit membership nor an organization in the
-// enterprise holds no role in it, which is what keeps one enterprise's people
-// out of another's data.
+// enterprise holds no role, keeping one enterprise's people out of another's.
 func (st *Store) EffectiveEnterpriseRole(enterpriseID int, user *User) EnterpriseRole {
 	if user == nil {
 		return ""
@@ -1316,8 +1237,7 @@ func (st *Store) EffectiveEnterpriseRole(enterpriseID int, user *User) Enterpris
 }
 
 // IsEnterpriseOwner, IsEnterpriseMember and IsEnterpriseBillingReader are the
-// three standing questions every enterprise read and write is authorized
-// against.
+// three standing questions every enterprise read and write is authorized against.
 func (st *Store) IsEnterpriseOwner(enterpriseID int, user *User) bool {
 	return st.EffectiveEnterpriseRole(enterpriseID, user) == EnterpriseRoleOwner
 }
@@ -1340,12 +1260,11 @@ func (st *Store) IsEnterpriseBillingReader(enterpriseID int, user *User) bool {
 
 // --- billing measurement ---------------------------------------------------
 //
-// An enterprise's storage and bandwidth are measured from what its
-// organizations actually hold and served, so EnterpriseBillingInfo reports
-// this instance rather than a constant.
+// Storage and bandwidth are measured from what the organizations actually hold
+// and served, so EnterpriseBillingInfo reports this instance, not a constant.
 
-// EnterpriseStorageBytes sums the release-asset and package-file bytes held
-// by repositories owned by the given organizations.
+// EnterpriseStorageBytes sums the release-asset and package-file bytes held by
+// repositories owned by the given organizations.
 func (st *Store) EnterpriseStorageBytes(orgIDs map[int]bool) int64 {
 	repoIDs, packageOwners := st.enterpriseOwnedRepos(orgIDs)
 	var total int64
@@ -1382,9 +1301,8 @@ func (st *Store) EnterpriseStorageBytes(orgIDs map[int]bool) int64 {
 	return total
 }
 
-// EnterpriseBandwidthBytes sums the bytes the enterprise's repositories have
-// served: each release asset's size multiplied by the number of times it was
-// downloaded.
+// EnterpriseBandwidthBytes sums the bytes the enterprise's repositories served:
+// each release asset's size times its download count.
 func (st *Store) EnterpriseBandwidthBytes(orgIDs map[int]bool) int64 {
 	repoIDs, _ := st.enterpriseOwnedRepos(orgIDs)
 	var total int64
@@ -1401,8 +1319,8 @@ func (st *Store) EnterpriseBandwidthBytes(orgIDs map[int]bool) int64 {
 }
 
 // enterpriseOwnedRepos returns the ids of the repositories owned by the given
-// organizations, and the lower-cased package owner keys (the org logins and
-// the "owner/repo" names) those organizations answer for.
+// organizations, and the lower-cased package owner keys (org logins and
+// "owner/repo" names) those organizations answer for.
 func (st *Store) enterpriseOwnedRepos(orgIDs map[int]bool) (map[int]bool, map[string]bool) {
 	repoIDs := map[int]bool{}
 	owners := map[string]bool{}
@@ -1423,15 +1341,13 @@ func (st *Store) enterpriseOwnedRepos(orgIDs map[int]bool) (map[int]bool, map[st
 	return repoIDs, owners
 }
 
-// MaxAuditLogEntries bounds the in-memory audit log. Real GitHub retains
-// audit events for a finite window; an uncapped prepend-only slice both grows
-// without limit and makes each write O(n).
+// MaxAuditLogEntries bounds the in-memory audit log; an uncapped prepend-only
+// slice would grow without limit and make each write O(n).
 const MaxAuditLogEntries = 5000
 
-// RecordAuditEntry appends an audit-log entry and returns it. It is the one
-// implementation both the REST handlers and the GraphQL resolvers write
-// through, so an enterprise action performed through either surface lands in
-// the same log with the same shape.
+// RecordAuditEntry appends an audit-log entry and returns it. Both the REST
+// handlers and GraphQL resolvers write through it, so either surface's actions
+// land in the same log with the same shape.
 func (st *Store) RecordAuditEntry(action, actor, org string, data map[string]interface{}) *AuditEntry {
 	timestamp := st.CurrentTime().Format(time.RFC3339Nano)
 	st.Misc.Mu.Lock()
@@ -1458,12 +1374,10 @@ func (st *Store) RecordAuditEntry(action, actor, org string, data map[string]int
 
 // --- policy resolution -----------------------------------------------------
 
-// EnterprisePolicyForOrg returns the policy governing an organization: the
-// policy of the enterprise that owns it, or — for an organization no
-// enterprise has claimed — the instance's own enterprise, which owns every
-// unclaimed organization the way a GHES enterprise owns the whole appliance.
-// The second return is the enterprise the policy came from, so a caller can
-// exempt that enterprise's owners.
+// EnterprisePolicyForOrg returns the policy governing an organization — that of
+// the enterprise that owns it, or the instance's own enterprise for an unclaimed
+// organization. The second return names the source enterprise so a caller can
+// exempt its owners.
 func (st *Store) EnterprisePolicyForOrg(orgID int) (EnterprisePolicy, *Enterprise) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1482,9 +1396,9 @@ func (st *Store) enterprisePolicyForOrgLocked(orgID int) (EnterprisePolicy, *Ent
 	return EnterprisePolicy{}, nil
 }
 
-// EnterprisePolicyForRepo returns the policy governing a repository through
-// its owning organization. A user-owned repository is governed by the
-// instance's own enterprise.
+// EnterprisePolicyForRepo returns the policy governing a repository through its
+// owning organization; a user-owned repo is governed by the instance's own
+// enterprise.
 func (st *Store) EnterprisePolicyForRepo(repo *Repo) (EnterprisePolicy, *Enterprise) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1497,10 +1411,9 @@ func (st *Store) EnterprisePolicyForRepo(repo *Repo) (EnterprisePolicy, *Enterpr
 	return EnterprisePolicy{}, nil
 }
 
-// EnterprisePolicyForbids reports whether a DISABLED policy blocks user. A
-// blank setting or NO_POLICY imposes nothing, ENABLED permits, and DISABLED
-// blocks everyone but an owner of the enterprise that imposed it — GitHub
-// lets the people who set a policy act despite it.
+// EnterprisePolicyForbids reports whether a DISABLED policy blocks user. Blank
+// and NO_POLICY impose nothing, ENABLED permits, and DISABLED blocks everyone
+// but an owner of the enterprise that imposed it.
 func (st *Store) EnterprisePolicyForbids(e *Enterprise, setting string, user *User) bool {
 	if setting != EnterprisePolicyDisabled {
 		return false
@@ -1511,14 +1424,10 @@ func (st *Store) EnterprisePolicyForbids(e *Enterprise, setting string, user *Us
 	return !st.IsEnterpriseOwner(e.ID, user)
 }
 
-// enterpriseClampedBasePermissionLocked returns the base repository
-// permission an organization's members actually hold: the organization's own
-// setting, capped by the enterprise's default-repository-permission policy.
-//
-// It is read by the access check rather than only by the settings write, so
-// an enterprise that tightens the ceiling narrows what its organizations'
-// members can reach on the next request, without rewriting every
-// organization. Callers hold st.Mu.
+// enterpriseClampedBasePermissionLocked returns the base repository permission
+// an organization's members actually hold: the org's own setting, capped by the
+// enterprise's default-repository-permission policy. Read on the access path, so
+// tightening the ceiling takes effect on the next request. Callers hold st.Mu.
 func (st *Store) enterpriseClampedBasePermissionLocked(org *Org) string {
 	if org == nil {
 		return ""
@@ -1534,8 +1443,8 @@ func (st *Store) enterpriseClampedBasePermissionLocked(org *Org) string {
 	return org.DefaultRepositoryPermission
 }
 
-// enterpriseBasePermissionCeiling maps the enterprise policy enum onto the
-// REST permission spelling, and reports whether a ceiling is imposed at all.
+// enterpriseBasePermissionCeiling maps the policy enum onto the REST permission
+// spelling, and reports whether a ceiling is imposed at all.
 func enterpriseBasePermissionCeiling(policy EnterprisePolicy) (string, bool) {
 	switch policy.DefaultRepositoryPermission {
 	case "NONE":
@@ -1550,9 +1459,8 @@ func enterpriseBasePermissionCeiling(policy EnterprisePolicy) (string, bool) {
 	return "", false
 }
 
-// basePermissionRank orders the base repository permissions so a ceiling can
-// be compared against an organization's own setting. An unset organization
-// default means GitHub's "read".
+// basePermissionRank orders the base repository permissions for comparison. An
+// unset organization default ranks as "read".
 func basePermissionRank(permission string) int {
 	switch strings.ToLower(permission) {
 	case "admin":
@@ -1565,22 +1473,18 @@ func basePermissionRank(permission string) int {
 	return 0
 }
 
-// EnterpriseClampedBasePermission is the exported form of the base-permission
-// clamp: what an organization's members actually hold once the enterprise
-// ceiling is applied. The organization settings response reports this rather
-// than the organization's own setting, so what the API says a member holds is
-// what the access check grants.
+// EnterpriseClampedBasePermission is the exported base-permission clamp. The
+// organization settings response reports this rather than the org's own setting,
+// so what the API reports matches what the access check grants.
 func (st *Store) EnterpriseClampedBasePermission(org *Org) string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return st.enterpriseClampedBasePermissionLocked(org)
 }
 
-// ActiveEnterpriseIPAllowList returns the enterprise's active allow-list
-// entries when its IP allow list is on, and nil when it is off or the
-// enterprise has no active entry. It exists so the per-request gate costs one
-// read lock and no allocation on an instance that has not turned the feature
-// on, rather than cloning the enterprise on every API call.
+// ActiveEnterpriseIPAllowList returns the enterprise's active allow-list entries
+// when its IP allow list is on, else nil. Keeps the per-request gate to one read
+// lock and no allocation when the feature is off.
 func (st *Store) ActiveEnterpriseIPAllowList() (values []string, forInstalledApps bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1596,11 +1500,9 @@ func (st *Store) ActiveEnterpriseIPAllowList() (values []string, forInstalledApp
 	return values, e.Policy.IPAllowListForInstalledAppsEnabled == EnterprisePolicyEnabled
 }
 
-// ActiveUserIPAllowList returns the active entries of one account's own IP
-// allow list when the instance's enterprise has turned user-level enforcement
-// on, and nil otherwise. It is the user-scoped twin of
-// ActiveEnterpriseIPAllowList: the enterprise decides whether an account's own
-// list is enforced at all, and the account decides what is on it.
+// ActiveUserIPAllowList returns the active entries of one account's own IP allow
+// list when the enterprise has turned user-level enforcement on, else nil. The
+// enterprise decides whether it is enforced; the account decides its contents.
 func (st *Store) ActiveUserIPAllowList(userID int) []string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1619,9 +1521,8 @@ func (st *Store) ActiveUserIPAllowList(userID int) []string {
 
 // --- verified domains ------------------------------------------------------
 
-// NormalizeVerifiedDomain reduces a domain to the form the store keeps: lower
-// case, no surrounding space, no leading "@" and no trailing dot. An input
-// that is not a domain at all reduces to "".
+// NormalizeVerifiedDomain reduces a domain to the stored form: lower case, no
+// surrounding space, no leading "@", no trailing dot. A non-domain reduces to "".
 func NormalizeVerifiedDomain(domain string) string {
 	cleaned := strings.ToLower(strings.TrimSpace(domain))
 	cleaned = strings.TrimPrefix(cleaned, "@")
@@ -1632,10 +1533,9 @@ func NormalizeVerifiedDomain(domain string) string {
 	return cleaned
 }
 
-// SetEnterpriseVerifiedDomains replaces the enterprise's verified domain list
-// and returns a detached snapshot of the enterprise, or nil when it is gone.
-// Values that are not domains are dropped rather than stored, so the
-// notification-delivery check never compares against junk.
+// SetEnterpriseVerifiedDomains replaces the verified domain list and returns a
+// detached snapshot, or nil when the enterprise is gone. Non-domains are dropped
+// so the notification-delivery check never compares against junk.
 func (st *Store) SetEnterpriseVerifiedDomains(enterpriseID int, domains []string) *Enterprise {
 	normalized := make([]string, 0, len(domains))
 	seen := map[string]bool{}
@@ -1657,16 +1557,15 @@ func (st *Store) SetEnterpriseVerifiedDomains(enterpriseID int, domains []string
 	e.VerifiedDomains = normalized
 	e.UpdatedAt = st.CurrentTime()
 	st.persistEnterpriseLocked(e)
-	// The flat list and the VerifiableDomain rows the GraphQL surface serves
-	// are two views of one fact; a list write must not leave rows describing
-	// domains the enterprise no longer claims (or vice versa).
+	// Keep the VerifiableDomain rows the GraphQL surface serves in sync with the
+	// flat list; both are views of one fact.
 	st.reconcileEnterpriseDomainRowsLocked(e.ID, normalized)
 	return cloneEnterprise(e)
 }
 
 // EmailInVerifiedDomain reports whether an address's domain is one of the
-// verified domains, or a subdomain of one — GitHub approves a domain and the
-// hosts beneath it together.
+// verified domains or a subdomain of one — an approved domain covers the hosts
+// beneath it.
 func EmailInVerifiedDomain(email string, domains []string) bool {
 	at := strings.LastIndex(email, "@")
 	if at < 0 {
@@ -1685,10 +1584,8 @@ func EmailInVerifiedDomain(email string, domains []string) bool {
 }
 
 // NotificationDeliveryRestriction reports whether the instance's enterprise
-// restricts notification delivery to its verified domains, and which domains
-// those are. A restriction with no verified domain restricts everything, which
-// is what GitHub does: the enterprise has declared that only approved domains
-// may receive, and it has approved none.
+// restricts notification delivery to its verified domains, and which those are.
+// A restriction with no verified domain restricts everything, as on GitHub.
 func (st *Store) NotificationDeliveryRestriction() (bool, []string) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1708,10 +1605,8 @@ func (st *Store) ListIPAllowListEntryByID(id int) *IPAllowListEntry {
 }
 
 // UserNamespaceAccessGrant is an enterprise owner's temporary access to a
-// user-namespace repository of an enterprise-managed account — the record
-// accessUserNamespaceRepository creates. It is honored inside the one
-// repository-capability lattice, so the grant admits its holder everywhere a
-// collaborator grant would, and nowhere else.
+// user-namespace repository of a managed account. It admits its holder wherever
+// a collaborator grant would, and nowhere else.
 type UserNamespaceAccessGrant struct {
 	ID           int       `json:"id"`
 	EnterpriseID int       `json:"enterprise_id"`
@@ -1720,9 +1615,8 @@ type UserNamespaceAccessGrant struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 }
 
-// GrantUserNamespaceAccess records the grant and answers its expiry. The
-// window is github's two hours: long enough to investigate, short enough that
-// the elevated access does not quietly become permanent.
+// GrantUserNamespaceAccess records the grant and returns its expiry. The window
+// is GitHub's two hours.
 func (st *Store) GrantUserNamespaceAccess(enterpriseID, repoID, granteeID int) time.Time {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

@@ -28,23 +28,19 @@ func (s *Server) registerGHPullRoutes() {
 	s.route("PUT /api/v3/repos/{owner}/{repo}/pulls/{number}/merge-async", s.requirePerm(store.ScopeContents, store.PermWrite, s.handleMergePullRequestAsync))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/merge-async/{uuid}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetMergePullRequestAsyncResult))
 
-	// PR reviews. The 3-segment GET/PUT/DELETE paths conflict with PR
-	// review-comment reaction routes under Go 1.22's mux, so they are
-	// dispatched via handlePullsThreeSegDispatch in gh_reactions.go.
+	// The 3-segment review GET/PUT/DELETE paths collide with review-comment
+	// reaction routes under Go 1.22's mux; handlePullsThreeSegDispatch
+	// (gh_reactions.go) disambiguates them.
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews", s.requirePerm(store.ScopePullRequests, store.PermRead, s.handleListPRReviews))
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleCreatePRReview))
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/events", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleSubmitPRReview))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/dismissals", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleDismissPRReview))
 
-	// Requested reviewers
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers", s.requirePerm(store.ScopePullRequests, store.PermRead, s.handleListRequestedReviewers))
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleRequestReviewers))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleRemoveRequestedReviewers))
 
-	// PR commits (the commits_url every PR response advertises)
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/commits", s.handleListPullRequestCommits)
-
-	// Update branch (merge base into PR head)
 	s.route("PUT /api/v3/repos/{owner}/{repo}/pulls/{number}/update-branch", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleUpdateBranch))
 }
 
@@ -121,15 +117,13 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 	}
 
 	repoKey := owner + "/" + name
-	// Materialize the test-merge commit before the payload is built so the
-	// opened event (and the workflow run it triggers) reports the merge ref
-	// (ACT-027).
+	// Materialize the test-merge commit before building the payload so the
+	// opened event reports the merge ref.
 	s.refreshPullRequestPotentialMerge(repo, pr)
 	openedPayload := buildPullRequestPayload(s.store, repo, pr, user, "opened", s.baseURL(r))
 	s.emitWebhookEvent(repoKey, "pull_request", "opened", openedPayload)
-	// The code owners of the changed files are requested as reviewers once the
-	// pull request exists, and deliver their own review_requested events after
-	// the opened one, as GitHub orders them.
+	// Request code owners after the opened event; GitHub orders their
+	// review_requested events after it.
 	s.autoRequestCodeOwners(repo, pr, user)
 	if updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number); updated != nil {
 		pr = updated
@@ -220,9 +214,8 @@ func (s *Server) handleListPullRequests(w http.ResponseWriter, r *http.Request) 
 		prs = filtered
 	}
 
-	// Filter by head
+	// head is "owner:branch" or just "branch".
 	if head := r.URL.Query().Get("head"); head != "" {
-		// head can be "owner:branch" or just "branch"
 		headOwner := ""
 		branch := head
 		if idx := strings.Index(head, ":"); idx >= 0 {
@@ -245,7 +238,6 @@ func (s *Server) handleListPullRequests(w http.ResponseWriter, r *http.Request) 
 		prs = filtered
 	}
 
-	// Filter by base
 	if base := r.URL.Query().Get("base"); base != "" {
 		var filtered []*store.PullRequest
 		for _, pr := range prs {
@@ -338,10 +330,8 @@ func (s *Server) handleGetPullRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The diff and patch media types are GitHub's contract for this endpoint,
-	// and `gh pr diff` asks for the versioned spelling of the first one; a
-	// server that ignored it answered the pull request object instead, which
-	// the client printed verbatim as a "diff".
+	// Honor the diff/patch media types: `gh pr diff` requests them and prints
+	// the body verbatim, so answering with the PR object corrupts its output.
 	accept := r.Header.Get("Accept")
 	if acceptsGitHubMediaType(accept, "patch") {
 		patch, err := pullRequestFormatPatch(s.store, repo, pr)
@@ -374,16 +364,14 @@ func (s *Server) handleGetPullRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 // applyChecksToMergeability folds the head commit's check runs into
-// mergeable_state the way real GitHub does: unmet REQUIRED status
-// checks (branch protection on the base branch) block the merge;
-// failing or still-running non-required checks mark it unstable.
+// mergeable_state: unmet required status checks block ("blocked"); failing or
+// pending non-required checks mark it "unstable".
 func (s *Server) applyChecksToMergeability(out map[string]interface{}, repo *store.Repo, pr *store.PullRequest) {
 	if pr.State != "OPEN" || out["mergeable_state"] != "clean" {
 		return
 	}
-	// A base branch that requires code owner review and has not got it is
-	// blocked by branch protection exactly as an unmet required status check
-	// is, and reports the same state rather than a field of its own.
+	// Missing required code owner review is branch protection too; report the
+	// same "blocked" state as an unmet required status check.
 	if s.codeOwnerReviewMissing(repo, pr) {
 		out["mergeable_state"] = "blocked"
 		return
@@ -429,7 +417,7 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412.
+	// Optimistic concurrency: reject a stale If-Match with 412.
 	if !checkIfMatch(w, r, pullRequestToJSON(pr, s.store, s.baseURL(r), repo.FullName)) {
 		return
 	}
@@ -439,8 +427,7 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// GitHub rejects reopening a merged pull request; the state of a merged PR
-	// is terminal. Guard before the mutation so it is not a silent no-op.
+	// A merged PR is terminal; reject reopening it before the mutation.
 	if v, ok := req["state"].(string); ok && v == "open" && pr.State == "MERGED" {
 		writeGHValidationErrorMessage(w, "PullRequest", "state", "invalid", "State cannot be changed. A merged pull request cannot be reopened.")
 		return
@@ -485,9 +472,7 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 	case priorState == "CLOSED" && updated.State == "OPEN":
 		s.store.RecordPullRequestEvent(repo.ID, pr.ID, user.ID, "reopened", "", 0)
 	}
-	// A retitle and a retarget are two more github timeline events this
-	// endpoint produces. Both carry a before/after pair, which the event row's
-	// rename members hold.
+	// Retitle and retarget each record a timeline event with a before/after pair.
 	if v, ok := req["title"].(string); ok && v != pr.Title {
 		s.store.RecordIssueOrPREvent(repo.ID, pr.Number, user.ID, "renamed", map[string]interface{}{
 			"rename_from": pr.Title,
@@ -501,9 +486,8 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		})
 	}
 
-	// One PATCH is several GitHub events: the edit itself, then the state
-	// transition. `pr` is the pre-update snapshot, so it carries the
-	// before-values the `changes` member reports.
+	// pr is the pre-update snapshot, holding the before-values the `changes`
+	// member reports.
 	change := store.SubjectChange{StateFrom: priorState, StateTo: updated.State}
 	if v, ok := req["title"].(string); ok && v != pr.Title {
 		change.TitleFrom = &pr.Title
@@ -546,9 +530,7 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Merging a pull request is a write to the base branch: GitHub requires push
-	// access, so a read-only collaborator (or any authenticated user on a public
-	// repo with no branch protection) must not be able to merge (REST-123).
+	// Merging writes the base branch; require push access (REST-123).
 	if !s.viewerCanPushRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have write access to the repository.")
 		return
@@ -581,7 +563,7 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		store.WriteGHValidationError(w, "PullRequest", "merge_method", "invalid")
 		return
 	}
-	// GitHub 405s an explicit merge method the repository has disabled.
+	// 405 an explicit merge method the repository has disabled.
 	var disallowed string
 	switch {
 	case req.MergeMethod == "merge" && !repo.AllowMergeCommit:
@@ -595,7 +577,7 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusMethodNotAllowed, disallowed)
 		return
 	}
-	// Expected-head guard: merging against a stale head SHA is a 409.
+	// Merging against a stale head SHA is a 409.
 	if req.SHA != "" {
 		if head := s.prHeadSha(repo, pr); head != "" && head != req.SHA {
 			writeGHError(w, http.StatusConflict, "Head branch was modified. Review and try the merge again.")
@@ -603,8 +585,8 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Branch protection: required status checks must be green on the
-	// head commit before the merge API succeeds (405, real GitHub).
+	// Branch protection: required status checks must be green on the head
+	// commit before merge (405).
 	if headSha := s.prHeadSha(repo, pr); headSha != "" {
 		if st := s.evaluateChecksForMerge(repo, pr.BaseRefName, headSha); len(st.MissingRequired) > 0 {
 			writeGHError(w, http.StatusMethodNotAllowed,
@@ -640,17 +622,12 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// completePullRequestMerge materialises the merge in the repository's git
-// storage (merge commit, squash commit, or rebased commits per method), marks
-// the PR merged, and records the merged and closed timeline events. It returns
-// the resulting merge commit SHA or a non-empty error message when the merge
-// cannot be performed (e.g. a merge conflict).
-// completePullRequestMerge merges pr's head into its base. expectedHead is the
-// head SHA the caller's required-status-check / expected-head guards verified;
-// the merge is bound to exactly that commit so a head branch advanced by a
-// concurrent push between the check and here cannot land an unchecked commit on
-// a protected base (a check-then-merge TOCTOU). Pass "" only where no head guard
-// applies.
+// completePullRequestMerge materialises the merge in git storage (per method),
+// marks the PR merged, and records the merged and closed timeline events,
+// returning the merge commit SHA or a non-empty error message. expectedHead
+// binds the merge to exactly that commit, so a concurrent push cannot land an
+// unchecked commit on a protected base (check-then-merge TOCTOU); pass "" only
+// where no head guard applies.
 func (s *Server) completePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string) {
 	owner, name, _ := store.SplitRepoFullName(repo.FullName)
 	stor := s.store.GetGitStorage(owner, name)
@@ -663,8 +640,7 @@ func (s *Server) completePullRequestMerge(repo *store.Repo, pr *store.PullReques
 		return "", "Pull Request is not mergeable"
 	}
 	headHash, headErr := store.ResolveGitRef(headStor, pr.HeadRefName)
-	// Refuse if the head moved since it was checked (or can no longer be
-	// resolved): an unverifiable interlock is not a satisfied one.
+	// Refuse if the head moved or can no longer be resolved since it was checked.
 	if expectedHead != "" && (headErr != nil || !strings.EqualFold(headHash.String(), expectedHead)) {
 		return "", "Head branch was modified. Review and try the merge again."
 	}
@@ -727,8 +703,7 @@ func (s *Server) completePullRequestMerge(repo *store.Repo, pr *store.PullReques
 		p.MergedByID = user.ID
 		p.MergeCommitSHA = mergeSha
 	})
-	// GitHub's timeline for a merged PR carries a merged event (with the
-	// merge commit) immediately followed by a closed event.
+	// A merged PR's timeline carries a merged event followed by a closed event.
 	s.store.RecordPullRequestEvent(repo.ID, pr.ID, user.ID, "merged", mergeSha, 0)
 	s.store.RecordPullRequestEvent(repo.ID, pr.ID, user.ID, "closed", "", 0)
 	return mergeSha, ""
@@ -786,22 +761,20 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 	case "COMMENT":
 		state = "COMMENTED"
 	default:
-		// This operation documents the validation-error-simple 422 shape (a bare
-		// string per error), not the object form.
+		// This operation uses the validation-error-simple 422 shape.
 		writeGHValidationErrorSimple(w, "Invalid value for event")
 		return
 	}
 
-	// GitHub requires a review body when the event is REQUEST_CHANGES or COMMENT
-	// (an APPROVE or a still-pending review may have an empty body).
+	// A REQUEST_CHANGES or COMMENT review requires a body; APPROVE and pending
+	// reviews may have an empty one.
 	if (state == "CHANGES_REQUESTED" || state == "COMMENTED") && strings.TrimSpace(req.Body) == "" {
 		writeGHValidationErrorSimple(w, "body is required when the event is REQUEST_CHANGES or COMMENT")
 		return
 	}
 
-	// Validate the complete comment batch before creating either the review
-	// or its first comment. A malformed later entry must not leave a partial
-	// draft behind.
+	// Validate the whole comment batch first: a malformed later entry must not
+	// leave a partial draft behind.
 	for _, rc := range req.Comments {
 		if rc.Path == "" || rc.Body == "" {
 			writeGHValidationErrorSimple(w, "Every comment requires a path and a body")
@@ -815,9 +788,6 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The create-review API attaches its draft comments to the review; they
-	// surface through GET /pulls/{number}/reviews/{review_id}/comments and
-	// the regular review-comment endpoints.
 	for _, rc := range req.Comments {
 		line := int(rc.Line)
 		if line == 0 {
@@ -831,8 +801,7 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 		s.emitWebhookEvent(repo.FullName, "pull_request_review", "submitted",
 			buildPullRequestReviewPayload(s.store, repo, pr, review, user, "submitted", s.baseURL(r)))
 	}
-	// An approval can be the required review an armed auto-merge was
-	// waiting for.
+	// An approval can be the review an armed auto-merge was waiting for.
 	if review.State == "APPROVED" {
 		s.maybeAutoMergePR(pr.ID)
 	}
@@ -866,21 +835,18 @@ func (s *Server) handleListPRReviews(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
-// handlePullsThreeSegDispatch routes the ambiguous 3-segment paths under
-// /repos/{owner}/{repo}/pulls/{a}/{b}/{c}. The PR review surface
-// (/pulls/{number}/reviews/{review_id}) and PR review-comment reactions
-// (/pulls/comments/{comment_id}/reactions) both occupy three path segments
-// after /pulls and cannot both be registered directly with Go 1.22's mux.
-// The dispatcher inspects the literal segments and sets the correct path
-// values for the delegated handler. It is registered from gh_reactions.go
-// so that reaction-only test servers also provide the dispatch surface.
+// handlePullsThreeSegDispatch disambiguates the 3-segment paths under /pulls
+// that Go 1.22's mux cannot register together — PR reviews
+// (/pulls/{number}/reviews/{review_id}) and review-comment reactions
+// (/pulls/comments/{comment_id}/reactions) — by inspecting the literal
+// segments. Registered from gh_reactions.go so reaction-only test servers also
+// get the dispatch surface.
 func (s *Server) handlePullsThreeSegDispatch(method string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p1 := r.PathValue("p1")
 		p2 := r.PathValue("p2")
 		p3 := r.PathValue("p3")
 
-		// PR review: /pulls/{number}/reviews/{review_id}
 		if p2 == "reviews" {
 			r.SetPathValue("number", p1)
 			r.SetPathValue("review_id", p3)
@@ -897,7 +863,6 @@ func (s *Server) handlePullsThreeSegDispatch(method string) http.HandlerFunc {
 			return
 		}
 
-		// PR review-comment reactions: /pulls/comments/{comment_id}/reactions
 		if p1 == "comments" && p3 == "reactions" {
 			r.SetPathValue("comment_id", p2)
 			switch method {
@@ -978,11 +943,9 @@ func (s *Server) handleUpdatePRReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve and scope the review to this PR *before* mutating it: the store
-	// looks reviews up by global id alone, so writing first would let a caller
-	// who names any repo/PR they control edit a review that lives on another
-	// repository. Only then enforce that the caller authored it — GitHub allows
-	// just the review's author to edit its summary text.
+	// Scope the review to this PR before mutating: the store looks reviews up
+	// by global id alone, so writing first would let a caller edit a review on
+	// another repository. Only the review's author may edit it.
 	review := s.store.GetPullRequestReview(reviewID)
 	if review == nil || review.PRID != pr.ID {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -1161,8 +1124,8 @@ func (s *Server) handleDismissPRReview(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	// GitHub's dismiss endpoint requires a non-empty message; its 422 documents
-	// the validation-error-simple shape.
+	// Dismiss requires a non-empty message; its 422 uses the
+	// validation-error-simple shape.
 	if strings.TrimSpace(req.Message) == "" {
 		writeGHValidationErrorSimple(w, "message is required")
 		return
@@ -1178,15 +1141,15 @@ func (s *Server) handleDismissPRReview(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// GitHub adds a distinct `review_dismissed` timeline event (the original
-	// `reviewed` entry stays); without it a dismissal is invisible in history.
+	// Record a distinct review_dismissed timeline event; the original reviewed
+	// entry stays.
 	s.store.RecordPullRequestEvent(repo.ID, pr.ID, user.ID, "review_dismissed", "", 0)
 
 	review = s.store.GetPullRequestReview(reviewID)
 	s.emitWebhookEvent(repo.FullName, "pull_request_review", "dismissed",
 		buildPullRequestReviewPayload(s.store, repo, pr, review, user, "dismissed", s.baseURL(r)))
-	// Dismissing a blocking CHANGES_REQUESTED review can clear the condition
-	// an armed auto-merge was waiting for.
+	// Dismissing a blocking review can clear the condition an armed auto-merge
+	// was waiting for.
 	s.maybeAutoMergePR(pr.ID)
 	writeJSON(w, http.StatusOK, reviewToJSON(review, s.store, s.baseURL(r), repo.FullName, pr.Number))
 }
@@ -1311,9 +1274,8 @@ func (s *Server) handleRemoveRequestedReviewers(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, pullRequestSimpleJSON(updated, s.store, s.baseURL(r), repo.FullName))
 }
 
-// handleListRequestedReviewers serves
-// GET /repos/{owner}/{repo}/pulls/{number}/requested_reviewers — the
-// pull-request-review-request shape ({users, teams}).
+// handleListRequestedReviewers serves the pull-request-review-request shape
+// ({users, teams}).
 func (s *Server) handleListRequestedReviewers(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
@@ -1355,12 +1317,9 @@ func (s *Server) handleListRequestedReviewers(w http.ResponseWriter, r *http.Req
 }
 
 // buildPullRequestTimeline assembles the issue-timeline union for a pull
-// request: the PR's real git commits ("committed" items, interleaved by
-// commit author date), conversation comments ("commented"), submitted
-// reviews ("reviewed"), and recorded issue events (review_requested,
-// review_request_removed, merged, closed, reopened), ordered by creation
-// time. Pending reviews are not part of the public timeline on real GitHub
-// and are excluded here too.
+// request — git commits, comments, submitted reviews, and recorded issue
+// events — ordered by creation time. Pending reviews are excluded, as on
+// real GitHub.
 func (s *Server) buildPullRequestTimeline(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error) {
 	comments := s.store.ListCommentsFor("pull_request", pr.ID)
 	reviews := s.store.ListPullRequestReviews(repo.FullName, pr.Number)
@@ -1372,8 +1331,7 @@ func (s *Server) buildPullRequestTimeline(repo *store.Repo, pr *store.PullReques
 
 	type timelineEntry struct {
 		at time.Time
-		// Committed items sort before same-instant events/comments: the
-		// commits exist before anything reacting to them.
+		// Committed items sort before same-instant events/comments.
 		rank int
 		id   int
 		json map[string]interface{}
@@ -1432,13 +1390,11 @@ func (s *Server) buildPullRequestTimeline(repo *store.Repo, pr *store.PullReques
 	return out, nil
 }
 
-// pullRequestCommitObjects derives a pull request's commits from the
-// repository's real git history: the commits reachable from the head branch
-// but not from the merge base against the PR's recorded creation-time base
-// commit, oldest first — the same range GitHub's pulls/{n}/commits lists.
-// The recorded base keeps the range stable after the base branch advances,
-// including past the PR's own merge commit. The result is empty (with a nil
-// error) when the repository holds no git objects for the PR's branches.
+// pullRequestCommitObjects derives a PR's commits from git history: those
+// reachable from the head but not from the merge base against the PR's
+// recorded creation-time base, oldest first. The recorded base keeps the
+// range stable after the base branch advances. Empty (nil error) when the
+// repository holds no git objects for the PR's branches.
 func pullRequestCommitObjects(st *store.Store, repo *store.Repo, pr *store.PullRequest) ([]*object.Commit, error) {
 	stor, _ := store.PullRequestGitStorage(st, repo, pr)
 	if stor == nil {
@@ -1447,8 +1403,8 @@ func pullRequestCommitObjects(st *store.Store, repo *store.Repo, pr *store.PullR
 	return store.PullRequestCommitObjectsFromStorage(stor, pr)
 }
 
-// timelineCommittedEventJSON renders a real git commit as the GitHub
-// timeline-committed-event shape ("event": "committed").
+// timelineCommittedEventJSON renders a git commit as the
+// timeline-committed-event shape.
 func timelineCommittedEventJSON(c *object.Commit, repoFullName, baseURL string) map[string]interface{} {
 	sha := c.Hash.String()
 	parents := make([]map[string]interface{}, 0, len(c.ParentHashes))
@@ -1491,10 +1447,8 @@ func timelineCommittedEventJSON(c *object.Commit, repoFullName, baseURL string) 
 	}
 }
 
-// handleListPullRequestCommits serves GET
-// /repos/{owner}/{repo}/pulls/{number}/commits — the PR's commits derived
-// from the repository's real git history (the commits_url every PR
-// response advertises).
+// handleListPullRequestCommits serves the PR's commits derived from git
+// history (the commits_url every PR response advertises).
 func (s *Server) handleListPullRequestCommits(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
@@ -1576,8 +1530,8 @@ func (s *Server) handleUpdateBranch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// reviewerIDsFromRequest normalises the GitHub request reviewers field,
-// which may be an array of logins (strings) or objects with an id/login key.
+// reviewerIDsFromRequest normalises the reviewers field, which may be an
+// array of logins or objects with an id/login key.
 func reviewerIDsFromRequest(st *store.Store, reviewers []interface{}) []int {
 	var ids []int
 	for _, v := range reviewers {
@@ -1623,9 +1577,8 @@ func requestedTeamIDs(st *store.Store, repo *store.Repo, slugs []string) ([]int,
 	return ids, true
 }
 
-// requestedTeamJSONLocked is the team-simple shape used by pull request
-// review requests. Callers hold st.mu, so parent lookup uses the map directly
-// instead of the locking teamSimpleJSON helper.
+// requestedTeamJSONLocked renders the team-simple shape for review requests.
+// Callers hold st.mu, so parent lookup uses the map directly.
 func requestedTeamJSONLocked(st *store.Store, team *store.Team, org *store.Org, baseURL string) map[string]interface{} {
 	out := teamRefJSON(team, org, baseURL)
 	out["parent"] = nil
@@ -1653,26 +1606,21 @@ func pullRequestReviewCommitSHA(review *store.PullRequestReview, st *store.Store
 	return pullRequestHeadSHA(st.GetPullRequest(review.PRID), st)
 }
 
-// pullRequestSimpleJSON converts a PullRequest to the GitHub
-// `pull-request-simple` shape used by list responses — the full shape
-// minus the merge/diff-stat members that exist only on `pull-request`.
-// Must not be called with st.mu held.
+// pullRequestSimpleJSON converts a PullRequest to the `pull-request-simple`
+// shape used by list responses — the full shape minus the merge/diff-stat
+// members. Must not be called with st.mu held.
 func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
-	// Read the PR's mutable fields off a private snapshot: an UpdatePullRequest
-	// / merge / close writer mutates title, body, state, merge shas, and
-	// timestamps under st.mu.Lock, so the live pointer must not be read here.
-	// The snapshot's RLock is released before the map-resolution RLock below —
-	// they are sequential, never nested.
+	// Read mutable fields off a private snapshot: writers mutate the live PR
+	// under st.mu.Lock. The snapshot RLock and the map-resolution RLock below
+	// are sequential, never nested.
 	pr = st.SnapPR(pr)
 	st.Mu.RLock()
 
-	// Resolve author
 	var authorJSON map[string]interface{}
 	if u := store.ActorUserLocked(st, pr.AuthorID); u != nil {
 		authorJSON = store.UserToJSON(u, baseURL)
 	}
 
-	// Resolve labels
 	labels := make([]map[string]interface{}, 0)
 	for _, lid := range pr.LabelIDs {
 		if l, ok := st.Labels[lid]; ok {
@@ -1680,7 +1628,6 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 		}
 	}
 
-	// Resolve assignees
 	assignees := make([]map[string]interface{}, 0)
 	for _, aid := range pr.AssigneeIDs {
 		if u, ok := st.Users[aid]; ok {
@@ -1688,7 +1635,6 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 		}
 	}
 
-	// Resolve requested reviewers
 	requestedReviewers := make([]map[string]interface{}, 0)
 	for _, rid := range pr.RequestedReviewerIDs {
 		if u, ok := st.Users[rid]; ok {
@@ -1704,8 +1650,7 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 		}
 	}
 
-	// auto_merge: null when off; when armed, the enabled_by user plus the
-	// merge parameters, per the published auto-merge shape.
+	// auto_merge: null when off; the enabled_by user plus merge parameters when armed.
 	var autoMerge interface{}
 	if pr.AutoMerge != nil {
 		var enabledBy map[string]interface{}
@@ -1720,8 +1665,7 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 		}
 	}
 
-	// Milestone and repo conversion happens after unlock: both derive
-	// counts under their own locks.
+	// Convert milestone and repo after unlock: both derive counts under their own locks.
 	var milestone *store.Milestone
 	if pr.MilestoneID > 0 {
 		milestone = st.Milestones[pr.MilestoneID]
@@ -1760,21 +1704,20 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 	headOwnerLogin := ownerFromRepoFullName(headRepoFullName)
 	baseOwnerLogin := ownerFromRepoFullName(repoFullName)
 
-	// GitHub's assignee is the first assignee, null when unassigned.
+	// assignee is the first assignee, null when unassigned.
 	var assignee interface{}
 	if len(assignees) > 0 {
 		assignee = assignees[0]
 	}
 
-	// author_association relative to the repository: its owner authored
-	// it or someone else did. Bleephub does not model commit-derived
-	// CONTRIBUTOR status.
+	// author_association: OWNER when the repo owner authored it, else NONE.
+	// Commit-derived CONTRIBUTOR status is not modeled.
 	authorAssociation := "NONE"
 	if repo != nil && repo.Owner != nil && repo.Owner.ID == pr.AuthorID {
 		authorAssociation = "OWNER"
 	}
 
-	// REST state: "MERGED" → state:"closed", merged:true
+	// REST maps "MERGED" to state:"closed", merged:true.
 	state := strings.ToLower(pr.State)
 	if pr.State == "MERGED" {
 		state = "closed"
@@ -1872,17 +1815,13 @@ func repoOwnerLogin(repo *store.Repo) string {
 	return ownerFromRepoFullName(repo.FullName)
 }
 
-// pullRequestToJSON converts a PullRequest to the full GitHub
-// `pull-request` shape served by single-PR operations: the simple shape
-// plus merge state, diff stats, and conversation counters. Must not be
-// called with st.mu held.
+// pullRequestToJSON converts a PullRequest to the full `pull-request` shape:
+// the simple shape plus merge state, diff stats, and conversation counters.
+// Must not be called with st.mu held.
 func pullRequestToJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	out := pullRequestSimpleJSON(pr, st, baseURL, repoFullName)
-	// The `pull-request` shape carries requested_teams as team-simple, which
-	// has no `parent` member; only the pull-request-simple shape the base
-	// builder renders does. Drop it here so a team code owner requested on a
-	// pull request cannot put a key on the wire that the detail schema has not
-	// got.
+	// The `pull-request` shape's requested_teams has no `parent` member;
+	// drop the one the simple builder added.
 	if teams, ok := out["requested_teams"].([]map[string]interface{}); ok {
 		simple := make([]map[string]interface{}, 0, len(teams))
 		for _, team := range teams {
@@ -1897,7 +1836,7 @@ func pullRequestToJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFull
 		out["requested_teams"] = simple
 	}
 
-	// Snapshot before reading the mutable merge/diff fields off the pointer.
+	// Snapshot before reading the mutable merge/diff fields.
 	pr = st.SnapPR(pr)
 	st.Mu.RLock()
 	commentCount := st.CountCommentsForLocked("pull_request", pr.ID)
@@ -1940,11 +1879,8 @@ func pullRequestToJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFull
 		if commits, err := pullRequestCommitObjects(st, repo, pr); err == nil {
 			commitCount = len(commits)
 		}
-		// The diff totals come from the same merge-base diff the files
-		// endpoint serves, recomputed per request while the head can still
-		// move so they track new commits. A closed/merged PR whose refs no
-		// longer resolve (the recompute comes back empty) keeps the totals
-		// recorded while they were still computable.
+		// Recompute the diff totals per request so they track new commits; keep
+		// the recorded totals when a closed/merged PR's refs no longer resolve.
 		if c, a, d, err := pullRequestDiffStats(st, repo, pr); err == nil &&
 			(pr.State == "OPEN" || c > 0 || a > 0 || d > 0) {
 			changed, adds, dels = c, a, d
@@ -1960,10 +1896,9 @@ func pullRequestToJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFull
 	return out
 }
 
-// pullRequestDiffStats sums the per-file additions/deletions of the same
-// merge-base diff GET /pulls/{n}/files serves, giving the detail payload's
-// additions/deletions/changed_files counters (which real GitHub carries on
-// `pull-request` but not on `pull-request-simple` list items).
+// pullRequestDiffStats sums the per-file additions/deletions of the merge-base
+// diff GET /pulls/{n}/files serves, for the detail payload's
+// additions/deletions/changed_files counters.
 func pullRequestDiffStats(st *store.Store, repo *store.Repo, pr *store.PullRequest) (changedFiles, additions, deletions int, err error) {
 	files, err := pullRequestChangedFiles(st, repo, pr, "")
 	if err != nil {
@@ -1980,10 +1915,9 @@ func pullRequestDiffStats(st *store.Store, repo *store.Repo, pr *store.PullReque
 	return len(files), additions, deletions, nil
 }
 
-// refreshPullRequestDiffStats recomputes and persists a pull request's diff
-// totals after its head moves, so readers that serve the stored fields
-// (GraphQL's additions/deletions/changedFiles) stay current without waiting
-// for a REST detail fetch.
+// refreshPullRequestDiffStats recomputes and persists a PR's diff totals after
+// its head moves, so readers of the stored fields (GraphQL) stay current
+// without a REST detail fetch.
 func (s *Server) refreshPullRequestDiffStats(repo *store.Repo, pr *store.PullRequest) {
 	if changed, adds, dels, err := pullRequestDiffStats(s.store, repo, pr); err == nil {
 		s.store.SetPullRequestDiffStats(pr.ID, changed, adds, dels)
@@ -1997,9 +1931,6 @@ func reviewToJSON(review *store.PullRequestReview, st *store.Store, baseURL, rep
 	if u, ok := st.Users[review.AuthorID]; ok {
 		authorJSON = store.UserToJSON(u, baseURL)
 	}
-	// Match the review author's real relationship to the repo (OWNER / MEMBER /
-	// COLLABORATOR / CONTRIBUTOR / NONE), the same enum the sibling review-comment
-	// serializer uses, rather than the OWNER-or-CONTRIBUTOR-only approximation.
 	authorAssociation = "NONE"
 	if repo := st.ReposByName[repoFullName]; repo != nil {
 		authorAssociation = store.AuthorAssociationLocked(st, review.AuthorID, repo)
@@ -2024,19 +1955,18 @@ func reviewToJSON(review *store.PullRequestReview, st *store.Store, baseURL, rep
 			"pull_request": map[string]interface{}{"href": pullURL},
 		},
 	}
-	// submitted_at is optional and non-nullable: a PENDING review has not been
-	// submitted, so GitHub omits the key rather than emitting null.
+	// submitted_at is optional and non-nullable: omit the key for a PENDING
+	// review rather than emitting null.
 	if review.SubmittedAt != nil {
 		m["submitted_at"] = review.SubmittedAt.Format(time.RFC3339)
 	}
 	return m
 }
 
-// handleListPullRequestFiles serves GET /repos/{owner}/{repo}/pulls/{number}/files,
-// the changed-file list with per-file unified-diff patches real GitHub returns.
-// It is reached through handlePRCommentTwoSegDispatch (p2 == "files") so it adds
-// no new mux pattern. The diff is computed between the merge-base of the PR's
-// base and head and the head tip — the same range GitHub reports.
+// handleListPullRequestFiles serves the changed-file list with per-file
+// unified-diff patches, diffed between the base/head merge-base and the head
+// tip. Reached through handlePRCommentTwoSegDispatch (p2 == "files"), adding no
+// new mux pattern.
 func (s *Server) handleListPullRequestFiles(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
@@ -2065,12 +1995,10 @@ func (s *Server) handleListPullRequestFiles(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, files))
 }
 
-// pullRequestDiffChangeSource is the one derivation of what a pull request
-// changed: the storage holding its head branch, the merge base of its base and
-// head, and the tree pair the change set is the difference of. Every rendering
-// of a PR's changes — the files endpoint, the unified diff, the patch series
-// and the review-comment position map — starts here, so they can never
-// disagree about which trees were compared.
+// pullRequestDiffChangeSource is the single derivation of what a PR changed —
+// head storage, base/head merge base, and the compared tree pair. Every
+// rendering of a PR's changes starts here so they never disagree on which
+// trees were compared.
 type pullRequestDiffChangeSource struct {
 	stor      gitStorage.Storer
 	mergeBase plumbing.Hash
@@ -2079,10 +2007,10 @@ type pullRequestDiffChangeSource struct {
 	headTree  *object.Tree
 }
 
-// pullRequestDiffSource resolves that derivation. It returns (nil, nil) when
-// the pull request has nothing resolvable to diff — storage gone, head or base
-// ref deleted — which is an empty change set rather than a failure, and a
-// non-nil error only when git storage that should hold the objects cannot.
+// pullRequestDiffSource resolves that derivation. It returns (nil, nil) — an
+// empty change set, not a failure — when there is nothing resolvable to diff
+// (storage gone, head or base ref deleted), and a non-nil error only when git
+// storage that should hold the objects cannot.
 func pullRequestDiffSource(st *store.Store, repo *store.Repo, pr *store.PullRequest) (*pullRequestDiffChangeSource, error) {
 	stor, _ := store.PullRequestGitStorage(st, repo, pr)
 	if stor == nil {
@@ -2119,9 +2047,8 @@ func pullRequestDiffSource(st *store.Store, repo *store.Repo, pr *store.PullRequ
 	return source, nil
 }
 
-// pullRequestUnifiedDiff renders a pull request as the unified diff GitHub
-// serves for the .diff media type: one merge-base→head tree diff, the same
-// comparison the files endpoint reports per file, concatenated in tree order.
+// pullRequestUnifiedDiff renders the .diff media type: one merge-base→head
+// tree diff, concatenated in tree order.
 func pullRequestUnifiedDiff(st *store.Store, repo *store.Repo, pr *store.PullRequest) (string, error) {
 	source, err := pullRequestDiffSource(st, repo, pr)
 	if err != nil || source == nil {
@@ -2142,9 +2069,8 @@ func pullRequestUnifiedDiff(st *store.Store, repo *store.Repo, pr *store.PullReq
 	return diff.String(), nil
 }
 
-// pullRequestFormatPatch renders a pull request for the .patch media type: a
-// git-format-patch series, one mbox-headed patch per commit the PR adds,
-// oldest first — not the single tree diff .diff carries.
+// pullRequestFormatPatch renders the .patch media type: a git-format-patch
+// series, one mbox-headed patch per commit the PR adds, oldest first.
 func pullRequestFormatPatch(st *store.Store, repo *store.Repo, pr *store.PullRequest) (string, error) {
 	stor, _ := store.PullRequestGitStorage(st, repo, pr)
 	if stor == nil {
@@ -2169,8 +2095,8 @@ func pullRequestFormatPatch(st *store.Store, repo *store.Repo, pr *store.PullReq
 }
 
 // pullRequestChangedFiles diffs the PR's merge-base against its head tip and
-// returns the per-file JSON GitHub's pulls/{n}/files endpoint emits, including
-// the unified-diff `patch` for text changes.
+// returns the per-file JSON pulls/{n}/files emits, including the unified-diff
+// `patch` for text changes.
 func pullRequestChangedFiles(st *store.Store, repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error) {
 	source, err := pullRequestDiffSource(st, repo, pr)
 	if err != nil {
@@ -2236,9 +2162,9 @@ func pullRequestChangedFiles(st *store.Store, repo *store.Repo, pr *store.PullRe
 	return files, nil
 }
 
-// changeUnifiedPatch renders the hunk portion of a change's unified diff, matching
-// GitHub's `patch` field (which starts at the first "@@" hunk header, without the
-// "diff --git"/index/"---"/"+++" preamble). Returns "" for binary or empty diffs.
+// changeUnifiedPatch renders the hunk portion of a change's unified diff (from
+// the first "@@" header, without the preamble), matching the `patch` field.
+// Returns "" for binary or empty diffs.
 func changeUnifiedPatch(ch *object.Change) string {
 	patch, err := ch.Patch()
 	if err != nil {

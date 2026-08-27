@@ -10,9 +10,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub organization issue types: named, colored classifications (Bug, Epic,
-// Task, ...) an organization defines once and assigns to issues in any of its
-// repositories.
+// GitHub organization issue types: named, colored classifications an org defines
+// once and assigns to issues in any of its repositories.
 
 func (s *Server) registerGHIssueTypeRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/issue-types",
@@ -27,9 +26,8 @@ func (s *Server) registerGHIssueTypeRoutes() {
 		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteOrgIssueType)))
 }
 
-// handleListRepoIssueTypes returns the enabled issue types defined by the
-// repository owner's organization. User-owned repositories have no issue-type
-// catalog; private repositories remain concealed from unauthorized callers.
+// handleListRepoIssueTypes returns the enabled issue types defined by the repo
+// owner's org. User-owned repos have no catalog.
 func (s *Server) handleListRepoIssueTypes(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
@@ -50,12 +48,10 @@ func (s *Server) handleListRepoIssueTypes(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-// writeGHValidationErrorSimple writes GitHub's validation-error-simple shape
-// (a bare string per error). Many operations document exactly this form for
-// their 422 — issue-types/issue-fields, repository activity, dependabot alert
-// updates, topics, branch protection, runner labels, JIT config, credential
-// revocation, sub-issue priority — where writeGHValidationError's object form
-// would be a wire-format deviation (the shape gate flags it).
+// writeGHValidationErrorSimple writes GitHub's validation-error-simple 422 shape
+// (a bare string per error). Many operations document exactly this form, where
+// writeGHValidationError's object form would be a wire-format deviation the shape
+// gate flags.
 func writeGHValidationErrorSimple(w http.ResponseWriter, errs ...string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnprocessableEntity)
@@ -173,6 +169,3 @@ func issueTypeJSON(it *store.IssueType) map[string]interface{} {
 		"updated_at":  it.UpdatedAt.Format(time.RFC3339),
 	}
 }
-
-// findIssueTypeByNodeID moved to internal/graphqlapi with the GraphQL
-// resolver layer (ARCH-003); it has no REST callers.

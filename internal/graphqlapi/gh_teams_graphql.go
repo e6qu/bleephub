@@ -1,8 +1,7 @@
 package graphqlapi
 
-// The Team object graph. Organization.team / Organization.teams return it, and
-// a deployment's required reviewers can be one, so the type is completed here
-// rather than left as the four-field shell the review-request union needed.
+// The Team object graph, completing the four-field shell the review-request
+// union declared.
 
 import (
 	"sort"
@@ -13,8 +12,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// addTeamFields completes the shared Team type. It runs before the
-// organization installers, which name the connections built here.
+// addTeamFields completes the shared Team type. It runs before the organization
+// installers, which name the connections built here.
 func (s *Resolver) addTeamFields(types *accountSurfaceTypes) {
 	teamType := s.graphqlTypes.team
 	dateTime := s.graphQLStringScalar("DateTime")
@@ -105,8 +104,7 @@ func (s *Resolver) addTeamFields(types *accountSurfaceTypes) {
 				return paginateGQLItems(nil, p.Args), err
 			}
 			var ancestors []*store.Team
-			// A malformed parent cycle must not spin here; the chain is
-			// bounded by the number of teams in the organization.
+			// Guard against a malformed parent cycle.
 			seen := map[int]bool{team.ID: true}
 			for current := team; current.ParentID != 0; {
 				parent := s.store.GetTeamByID(current.ParentID)
@@ -143,8 +141,7 @@ func (s *Resolver) addTeamFields(types *accountSurfaceTypes) {
 			if err != nil || team == nil {
 				return paginateGQLItems(nil, p.Args), err
 			}
-			// A secret team's roster is visible only to the organization's
-			// members; an outsider must not learn who belongs to it.
+			// A secret team's roster is visible only to organization members.
 			if team.Privacy == store.TeamPrivacySecret && !s.viewerIsOrgMember(p.Context, org.Login) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
@@ -252,25 +249,22 @@ func (s *Resolver) addTeamFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// The remaining Team members (invitations, memberStatuses, projectsV2,
-	// review-request delegation, subscription pair) are completed here.
+	// The remaining Team fields (invitations, memberStatuses, projectsV2,
+	// review-request delegation, subscriptions).
 	s.addTeamExtraFields(types)
 }
 
-// gqlTeamConnectionType is the one TeamConnection type. The Projects v2
-// family already mints it through gqlConnectionType, so this reuses that
-// memo rather than declaring a second type with the same name.
+// gqlTeamConnectionType reuses the Projects v2 family's memoized TeamConnection
+// rather than declaring a second type of the same name.
 func (s *Resolver) gqlTeamConnectionType() *graphql.Object {
 	return s.gqlConnectionType("Team", s.graphqlTypes.team)
 }
 
-// gqlTeamOrderInput is GitHub's TeamOrder input.
 func (s *Resolver) gqlTeamOrderInput(types *accountSurfaceTypes) *graphql.InputObject {
 	return s.gqlOrderInput(types, "TeamOrder", "TeamOrderField", "NAME")
 }
 
-// teamFromSource re-reads the team a Team source names, along with its
-// organization.
+// teamFromSource re-reads the team a Team source names and its organization.
 func (s *Resolver) teamFromSource(source interface{}) (*store.Team, *store.Org, error) {
 	src, err := graphQLSourceMap(source)
 	if err != nil {
@@ -288,8 +282,7 @@ func (s *Resolver) teamFromSource(source interface{}) (*store.Team, *store.Org, 
 	return team, org, nil
 }
 
-// descendantTeams collects every team below the given ones, so a
-// childTeams(immediateOnly:false) selection reports the whole subtree.
+// descendantTeams collects every team below the given ones (the whole subtree).
 func (s *Resolver) descendantTeams(org *store.Org, teams []*store.Team) []*store.Team {
 	var out []*store.Team
 	queue := append([]*store.Team(nil), teams...)
@@ -312,8 +305,8 @@ func (s *Resolver) descendantTeams(org *store.Org, teams []*store.Team) []*store
 	return out
 }
 
-// teamConnectionItems renders teams as connection items, name-ordered so the
-// page boundaries are stable.
+// teamConnectionItems renders teams as connection items, name-ordered for stable
+// page boundaries.
 func (s *Resolver) teamConnectionItems(teams []*store.Team, org *store.Org) []gqlConnItem {
 	sort.Slice(teams, func(i, j int) bool { return teams[i].Slug < teams[j].Slug })
 	items := make([]gqlConnItem, 0, len(teams))
@@ -327,8 +320,8 @@ func (s *Resolver) teamConnectionItems(teams []*store.Team, org *store.Org) []gq
 	return items
 }
 
-// teamSource renders a team as its GraphQL source map, including the six
-// hypermedia paths GitHub's Team carries.
+// teamSource renders a team as its GraphQL source map, with the hypermedia paths
+// GitHub's Team carries.
 func (s *Resolver) teamSource(team *store.Team, org *store.Org) map[string]interface{} {
 	resourcePath := "/orgs/" + org.Login + "/teams/" + team.Slug
 	teamsPath := "/orgs/" + org.Login + "/teams"
@@ -361,9 +354,8 @@ func (s *Resolver) teamSource(team *store.Team, org *store.Org) map[string]inter
 	}
 }
 
-// teamPrivacyEnum maps the stored privacy onto GitHub's TeamPrivacy, whose
-// members are named for the visibility rather than the closed/secret wire
-// values the REST surface uses.
+// teamPrivacyEnum maps stored privacy onto GitHub's TeamPrivacy, whose members
+// are named for visibility rather than the REST closed/secret wire values.
 func teamPrivacyEnum(privacy store.TeamPrivacy) string {
 	if privacy == store.TeamPrivacySecret {
 		return "SECRET"

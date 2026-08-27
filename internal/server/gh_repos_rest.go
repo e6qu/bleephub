@@ -70,9 +70,8 @@ func (s *Server) registerGHRepoSettingsRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/interaction-limits", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteInteractionLimits))
 }
 
-// repoAccessLevel names the repository standing repoFromRequest enforces
-// before handing the repo to its handler. Handlers whose route or body
-// already authorizes the caller pass repoAccessNone.
+// repoAccessLevel names the standing repoFromRequest enforces before handing the repo
+// to its handler. Handlers already authorized by route or body pass repoAccessNone.
 type repoAccessLevel int
 
 const (
@@ -82,11 +81,9 @@ const (
 	repoAccessAdmin
 )
 
-// repoFromRequest resolves the {owner}/{repo} path and enforces the
-// requested access level. A private repo the caller cannot read answers 404
-// at every level, matching real GitHub (which hides private repos behind
-// 404, never 403, on read paths); a readable repo the caller may not change
-// answers 403.
+// repoFromRequest resolves the {owner}/{repo} path and enforces the access level. A
+// private repo the caller cannot read answers 404 at every level (GitHub hides private
+// repos behind 404, never 403); a readable repo the caller may not change answers 403.
 func (s *Server) repoFromRequest(w http.ResponseWriter, r *http.Request, access repoAccessLevel) *store.Repo {
 	owner := r.PathValue("owner")
 	name := r.PathValue("repo")
@@ -148,9 +145,8 @@ func (s *Server) handleCreateRepoDeployKey(w http.ResponseWriter, r *http.Reques
 		store.WriteGHValidationError(w, "DeployKey", "key", "missing_field")
 		return
 	}
-	// A deploy key is a credential that outlives the person who added it, which
-	// is why an enterprise can forbid them — and why one demanding proof of
-	// presence gets it before a new one is minted.
+	// A deploy key outlives the person who added it, so demand proof of presence
+	// before minting one.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -506,7 +502,6 @@ func (s *Server) setRepoFlag(w http.ResponseWriter, r *http.Request, field strin
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleCheckAutomatedSecurityFixes — GET /repos/{o}/{r}/automated-security-fixes.
 func (s *Server) handleCheckAutomatedSecurityFixes(w http.ResponseWriter, r *http.Request) {
 	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
@@ -518,7 +513,6 @@ func (s *Server) handleCheckAutomatedSecurityFixes(w http.ResponseWriter, r *htt
 	})
 }
 
-// handleCheckPrivateVulnerabilityReporting — GET /repos/{o}/{r}/private-vulnerability-reporting.
 func (s *Server) handleCheckPrivateVulnerabilityReporting(w http.ResponseWriter, r *http.Request) {
 	repo := s.repoFromRequest(w, r, repoAccessNone)
 	if repo == nil {
@@ -533,9 +527,8 @@ func (s *Server) handleCheckPrivateVulnerabilityReporting(w http.ResponseWriter,
 	})
 }
 
-// handleCheckVulnerabilityAlerts — GET /repos/{o}/{r}/vulnerability-alerts.
-// The check is a status code, not a body: 204 when Dependabot alerts are
-// enabled, 404 when disabled.
+// handleCheckVulnerabilityAlerts answers with a status code, not a body: 204 when
+// Dependabot alerts are enabled, 404 when disabled.
 func (s *Server) handleCheckVulnerabilityAlerts(w http.ResponseWriter, r *http.Request) {
 	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
@@ -548,9 +541,8 @@ func (s *Server) handleCheckVulnerabilityAlerts(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleGetInteractionLimits — GET /repos/{o}/{r}/interaction-limits.
-// Returns the active restriction, or an empty object when none is in
-// effect (an expired restriction is no longer in effect).
+// handleGetInteractionLimits returns the active restriction, or an empty object when
+// none is in effect (an expired restriction counts as none).
 func (s *Server) handleGetInteractionLimits(w http.ResponseWriter, r *http.Request) {
 	repo := s.repoFromRequest(w, r, repoAccessAdmin)
 	if repo == nil {
@@ -615,9 +607,8 @@ func (s *Server) handleDeleteInteractionLimits(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// isValidNewRepoName reports whether name is usable as a repository name: no
-// path separator, backslash, colon, or whitespace, and no trailing ".git"
-// (which would collide with the transport's ".git" trimming).
+// isValidNewRepoName reports whether name is usable: no path separator, backslash,
+// colon, or whitespace, and no trailing ".git" (which collides with transport trimming).
 func isValidNewRepoName(name string) bool {
 	if name == "" || len(name) > 100 {
 		return false
@@ -667,9 +658,8 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		store.WriteGHValidationError(w, "Repository", "name", "missing_field")
 		return
 	}
-	// A name carrying a path separator, whitespace, or a trailing ".git" makes
-	// the storage key ambiguous (GitHub rejects these). It is also the input to
-	// the git-transport double-suffix confusion, so refuse it at the source.
+	// Refuse an ambiguous storage key at the source; it also feeds the git-transport
+	// double-suffix confusion.
 	if !isValidNewRepoName(req.Name) {
 		store.WriteGHValidationError(w, "Repository", "name", "invalid")
 		return
@@ -776,9 +766,8 @@ func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, fullRepoJSONForViewer(repo, s.store, s.baseURL(r), user))
 }
 
-// changesVisibility reports whether a repository update body asks for a
-// different visibility than the repository already has. A body that restates
-// the current visibility changes nothing and is not governed.
+// changesVisibility reports whether an update body asks for a different visibility
+// than the repo already has; restating the current one is not governed.
 func changesVisibility(req map[string]interface{}, repo *store.Repo) bool {
 	if v, ok := coerceBool(req["private"]); ok && v != repo.Private {
 		return true
@@ -808,8 +797,8 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412. The
-	// representation is the same viewer-scoped one a GET returns for this user.
+	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412, against
+	// the same viewer-scoped representation a GET returns.
 	if !checkIfMatch(w, r, fullRepoJSONForViewer(repo, s.store, s.baseURL(r), user)) {
 		return
 	}
@@ -820,9 +809,8 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A visibility change is separately governed: an enterprise may let its
-	// members administer a repository while forbidding them to change who can
-	// see it.
+	// A visibility change is separately governed: an enterprise may allow admin but
+	// forbid changing who can see the repository.
 	if changesVisibility(req, repo) {
 		policy, enterprise := s.enterprisePolicyForRepo(repo)
 		if s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanChangeRepositoryVisibility,
@@ -929,11 +917,10 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 			r.PullRequestCreationPolicy = v
 		}
 		if sa, ok := req["security_and_analysis"].(map[string]interface{}); ok {
-			// The PATCH body's security_and_analysis accepts advanced_security,
-			// secret_scanning, secret_scanning_push_protection and
-			// secret_scanning_non_provider_patterns (dependabot_security_updates
-			// is toggled via PUT/DELETE /automated-security-fixes instead, as on
-			// real GitHub). Each carries {"status": "enabled"|"disabled"}.
+			// security_and_analysis accepts advanced_security, secret_scanning,
+			// secret_scanning_push_protection and secret_scanning_non_provider_patterns,
+			// each {"status": "enabled"|"disabled"}. dependabot_security_updates is
+			// toggled via /automated-security-fixes instead, as on GitHub.
 			applyStatus := func(key string, dst *bool) {
 				obj, ok := sa[key].(map[string]interface{})
 				if !ok {
@@ -958,8 +945,8 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated := s.store.GetRepo(owner, name)
-	// GitHub's `public` event fires when a repository is switched from private to
-	// public, so `on: public` workflows run (ACT-026).
+	// GitHub fires the `public` event on a private→public flip so `on: public`
+	// workflows run (ACT-026).
 	if wasPrivate && updated != nil && !updated.Private {
 		s.emitWebhookEvent(updated.FullName, "public", "", map[string]interface{}{
 			"repository": repoPayload(updated, s.baseURL(r)),
@@ -988,13 +975,11 @@ func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Destroying a repository is irreversible, so an enterprise demanding proof
-	// of presence gets it here before anything is removed.
+	// Repository deletion is irreversible: demand proof of presence before removing anything.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
-	// Repository deletion is one of the actions an enterprise may forbid its
-	// members outright, whatever standing they hold on the repository.
+	// An enterprise may forbid members from deleting repositories outright.
 	policy, enterprise := s.enterprisePolicyForRepo(repo)
 	if s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanDeleteRepositories,
 		"Repository deletion is disabled by an enterprise policy.") {
@@ -1066,9 +1051,8 @@ func (s *Server) handlePutRepoTopics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Capture the stored topics inside the write callback (under st.mu) — the
-	// repo pointer is shared, so reading r.Topics after the lock is released
-	// would race a concurrent UpdateRepo writer.
+	// Capture the stored topics inside the write callback (under st.mu): reading
+	// r.Topics after the lock releases would race a concurrent UpdateRepo writer.
 	names := []string{}
 	s.store.UpdateRepo(owner, name, func(r *store.Repo) {
 		r.Topics = req.Names
@@ -1172,11 +1156,9 @@ func queryInt(q url.Values, key string, def int) int {
 	return n
 }
 
-// baseURL computes the external base URL. BLEEPHUB_EXTERNAL_URL wins
-// when configured (the GHES "external URL" knob — job messages and
-// links must carry an address RUNNERS can reach, not whichever
-// interface a triggering API call happened to arrive on); otherwise
-// the request's Host.
+// baseURL computes the external base URL. A configured external URL wins so links
+// carry an address runners can reach, not whichever interface a call arrived on;
+// otherwise the request's Host.
 func (s *Server) baseURL(r *http.Request) string {
 	if s.externalURL != "" {
 		return s.externalURL
@@ -1188,11 +1170,8 @@ func (s *Server) baseURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-// fullRepoJSON converts a Repo to the GitHub `full-repository` shape
-// served by single-repo operations (GET/PATCH /repos/{owner}/{repo},
-// repo creation). It is the repository shape plus the network/subscriber
-// counters that exist only on full-repository, both derived from real
-// store state: the fork network and the watch subscriptions.
+// fullRepoJSON converts a Repo to GitHub's `full-repository` shape: the repository
+// shape plus the network/subscriber counters that exist only on full-repository.
 func fullRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	return fullRepoJSONForViewer(repo, st, baseURL, nil)
 }
@@ -1212,10 +1191,9 @@ func fullRepoJSONForViewer(repo *store.Repo, st *store.Store, baseURL string, vi
 	out["web_commit_signoff_required"] = repo.WebCommitSignoffRequired
 	out["is_template"] = repo.IsTemplate
 	out["use_squash_pr_title_as_default"] = repo.UseSquashPRTitleAsDefault
-	// security_and_analysis exists on full-repository (and optionally
-	// minimal-repository) but not on the plain `repository` schema, so it is
-	// rendered here rather than in store.RepoToJSON. dependabot_security_updates
-	// mirrors the automated-security-fixes toggle, exactly as on real GitHub.
+	// security_and_analysis is on full-repository but not the plain `repository`
+	// schema, so it is rendered here, not in store.RepoToJSON. dependabot_security_updates
+	// mirrors the automated-security-fixes toggle, as on GitHub.
 	out["security_and_analysis"] = map[string]interface{}{
 		"advanced_security":                     securityStatusJSON(repo.AdvancedSecurityEnabled),
 		"dependabot_security_updates":           securityStatusJSON(repo.AutomatedSecurityFixesEnabled),
@@ -1249,8 +1227,7 @@ func fullRepoJSONForViewer(repo *store.Repo, st *store.Store, baseURL string, vi
 	return out
 }
 
-// securityStatusJSON renders one security_and_analysis toggle in GitHub's
-// {"status": "enabled"|"disabled"} sub-shape.
+// securityStatusJSON renders one security_and_analysis toggle as {"status": ...}.
 func securityStatusJSON(enabled bool) map[string]interface{} {
 	status := "disabled"
 	if enabled {
@@ -1259,10 +1236,8 @@ func securityStatusJSON(enabled bool) map[string]interface{} {
 	return map[string]interface{}{"status": status}
 }
 
-// jsonArray returns s, or a non-nil empty slice when s is nil, so encoding/json
-// emits `[]` instead of `null` for a field GitHub always models as a (possibly
-// empty) array. A nil Go slice otherwise marshals to null, which fails the
-// response-shape check for a non-nullable array member (PAR-009).
+// jsonArray returns s, or a non-nil empty slice when nil, so a non-nullable array
+// member marshals to `[]` rather than `null` (PAR-009).
 func jsonArray[T any](s []T) []T {
 	if s == nil {
 		return []T{}
@@ -1270,8 +1245,8 @@ func jsonArray[T any](s []T) []T {
 	return s
 }
 
-// jsonObject is jsonArray for maps: a nil map marshals to null, so return a
-// non-nil empty map for a non-nullable object member that has no value.
+// jsonObject is jsonArray for maps: return a non-nil empty map so a non-nullable
+// object member marshals to `{}` rather than `null`.
 func jsonObject[K comparable, V any](m map[K]V) map[K]V {
 	if m == nil {
 		return map[K]V{}
@@ -1279,9 +1254,8 @@ func jsonObject[K comparable, V any](m map[K]V) map[K]V {
 	return m
 }
 
-// repoOwnerREST returns a simple-user-shaped map for the owner of repo,
-// using snake_case keys. For org-owned repos it resolves the organization
-// from the repo's full name rather than the creating user.
+// repoOwnerREST returns a simple-user-shaped map for the repo's owner. For org-owned
+// repos it resolves the organization from the full name, not the creating user.
 func repoOwnerREST(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	if repo == nil {
 		return nil
@@ -1357,8 +1331,7 @@ func (s *Server) handleListStargazers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-// handleStargazerCount serves GET /repos/{owner}/{repo}/stargazers/count —
-// the count alone, so a caller does not have to page the stargazer list.
+// handleStargazerCount serves the stargazer count alone, without paging the list.
 func (s *Server) handleStargazerCount(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
@@ -1381,8 +1354,8 @@ func (s *Server) handleStarRepo(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// GitHub's `watch` event (action "started") fires when a repo is starred, so
-	// `on: watch` workflows run (ACT-026); the name is historical.
+	// Starring fires the `watch` event (action "started") so `on: watch` workflows
+	// run (ACT-026); the name is historical.
 	if repo := s.store.GetRepo(owner, name); repo != nil {
 		s.emitWebhookEvent(repo.FullName, "watch", "started", map[string]interface{}{
 			"action":     "started",
@@ -1430,9 +1403,7 @@ func (s *Server) handleListStarredRepos(w http.ResponseWriter, r *http.Request) 
 		if !s.viewerCanReadRepo(r.Context(), repo) {
 			continue
 		}
-		// GitHub documents this against `repository`, not `full-repository`:
-		// the fuller shape adds network_count, subscribers_count and
-		// organization, which the starred listing does not carry.
+		// GitHub documents this against `repository`, not `full-repository`.
 		out = append(out, store.RepoToJSONForViewer(repo, s.store, s.baseURL(r), user))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -1531,8 +1502,7 @@ func (s *Server) handleAddCollaborator(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Inviting somebody onto a repository is an enterprise-governed action:
-	// it is how a person outside the enterprise gains access to its code.
+	// Inviting a collaborator is enterprise-governed: it grants an outsider access to the code.
 	policy, enterprise := s.enterprisePolicyForRepo(repo)
 	if s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanInviteCollaborators,
 		"Inviting collaborators is disabled by an enterprise policy.") {
@@ -1546,9 +1516,8 @@ func (s *Server) handleAddCollaborator(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// A PUT naming an existing collaborator (or the owner, who always has
-	// admin) updates the permission in place and answers 204, as on real
-	// GitHub.
+	// A PUT naming an existing collaborator (or the owner) updates the permission
+	// in place and answers 204, as on GitHub.
 	isOwner := repo.Owner != nil && strings.EqualFold(repo.Owner.Login, username)
 	if isOwner || s.store.GetRepoCollaboratorPermission(owner, name, username) != "" {
 		if !isOwner && !s.store.AddRepoCollaborator(owner, name, username, req.Permission) {
@@ -1558,10 +1527,8 @@ func (s *Server) handleAddCollaborator(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// Inviting a new user creates a pending repository invitation — the
-	// invitee joins the collaborator list when they accept it. Re-inviting
-	// while an invitation is pending updates that invitation instead of
-	// creating a second one.
+	// Inviting a new user creates a pending invitation; the invitee joins on accepting
+	// it. Re-inviting while one is pending updates it rather than creating a second.
 	inviterID := 0
 	if actor != nil {
 		inviterID = actor.ID
@@ -1627,9 +1594,8 @@ func collaboratorPermsJSON(perm string) map[string]bool {
 	}
 }
 
-// simpleRepoJSON returns a GitHub `simple-repository`-shaped map. It is a
-// trimmed subset of repoToJSON with only the fields the simple-repository
-// schema allows, used by alert/list surfaces that embed a repository object.
+// simpleRepoJSON returns a GitHub `simple-repository`-shaped map, used by alert/list
+// surfaces that embed a repository object.
 func simpleRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/repos/" + repo.FullName
 	return map[string]interface{}{

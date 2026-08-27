@@ -36,9 +36,8 @@ func (value *nullableStringUpdate) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// These catalogs are deliberately centralized: role validation and all three
-// discovery endpoints consume the same definitions, so an advertised
-// permission can always be used and an unadvertised one cannot leak through.
+// Role validation and the discovery endpoints share one catalog, so only
+// advertised permissions can be used.
 var repositoryFineGrainedPermissions = []fineGrainedPermission{
 	{Name: "add_assignee", Description: "Assign or remove a user"},
 	{Name: "remove_assignee", Description: "Remove an assigned user"},
@@ -85,7 +84,7 @@ func (s *Server) registerGHOrgGovernanceRoutes() {
 	s.route("PATCH /api/v3/orgs/{org}/custom-repository-roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleUpdateCustomRepositoryRole))
 	s.route("DELETE /api/v3/orgs/{org}/custom-repository-roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleDeleteCustomRepositoryRole))
 
-	// Deprecated aliases remain part of GitHub's Enterprise Cloud contract.
+	// Deprecated aliases still part of GitHub's Enterprise Cloud contract.
 	s.route("GET /api/v3/organizations/{organization_id}/custom_roles", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListCustomRepositoryRolesByOrgID))
 	s.route("POST /api/v3/orgs/{org}/custom_roles", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleCreateCustomRepositoryRole))
 	s.route("GET /api/v3/orgs/{org}/custom_roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleGetCustomRepositoryRole))
@@ -623,10 +622,9 @@ func (s *Server) handleDeleteOrganizationRole(w http.ResponseWriter, r *http.Req
 	delete(s.store.OrgCustomRoles[org.Login], id)
 	delete(s.store.OrgRoleTeamAssignments[org.Login], id)
 	delete(s.store.OrgRoleUserAssignments[org.Login], id)
-	// One transaction: the role and its team and user assignments are deleted
-	// together, so a crash cannot leave a dangling assignment to a deleted role
-	// (STORE-001/002). Unlock before any panic so recovery's reload is not
-	// deadlocked by a still-held write lock (this handler unlocks explicitly).
+	// Delete the role and its team/user assignments in one transaction so a
+	// crash cannot leave a dangling assignment. Unlock before any panic so
+	// recovery's reload is not deadlocked by a still-held write lock.
 	batch := store.NewPersistBatch(s.store.Persist)
 	batch.Put("org_custom_roles", org.Login, s.store.OrgCustomRoles[org.Login])
 	batch.Put("org_role_team_assignments", org.Login, s.store.OrgRoleTeamAssignments[org.Login])

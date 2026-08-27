@@ -30,17 +30,11 @@ func (s *Server) registerGHSearchRoutes() {
 	s.route("GET /api/v3/search/topics", s.handleSearchTopics)
 }
 
-// searchAccessibleRepoIDs snapshots the repositories that the request
-// credential may search. Search is unusual among repository-backed APIs:
-// GitHub App installation tokens may call every search endpoint without an
-// Issues, Pull requests, or Contents grant. Repository reach is still
-// enforced, though, so private results are limited to the installation and any
-// narrower repository selection on the token. Metadata read is implicit on
-// every installation and is the common reach check for this surface.
-//
-// This must run outside a caller-held store lock. viewerCanReadRepo follows the
-// installation, user-to-server, and fine-grained PAT selections and takes its
-// own store locks.
+// searchAccessibleRepoIDs snapshots the repositories the credential may search.
+// Search grants installation tokens reach without an Issues/PRs/Contents scope,
+// but repository reach is still enforced, so private results stay within the
+// token's selection. Must run outside a caller-held store lock:
+// viewerCanReadRepo takes its own.
 func (s *Server) searchAccessibleRepoIDs(ctx context.Context) map[int]struct{} {
 	s.store.Mu.RLock()
 	repositories := make([]*store.Repo, 0, len(s.store.Repos))
@@ -96,9 +90,9 @@ type searchQualifier struct {
 	Negated bool
 }
 
-// unsupportedQualifierError names a qualifier — or a qualifier value — that
-// the search parser does not implement. Silently dropping one would widen the
-// result set to the unfiltered universe, so it is a 422 instead.
+// unsupportedQualifierError names a qualifier or value the parser does not
+// implement. Dropping one silently would widen results to the unfiltered
+// universe, so it becomes a 422.
 type unsupportedQualifierError struct {
 	key   string
 	value string
@@ -111,8 +105,8 @@ func (e unsupportedQualifierError) Error() string {
 	return "The value \"" + e.value + "\" is not supported for the search qualifier \"" + e.key + "\"."
 }
 
-// writeGHSearchQualifierError writes GitHub's 422 for an unparseable search
-// query, carrying the offending qualifier in the errors array.
+// writeGHSearchQualifierError writes GitHub's 422 with the offending qualifier
+// in the errors array.
 func writeGHSearchQualifierError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnprocessableEntity)
@@ -130,9 +124,8 @@ func writeGHSearchQualifierError(w http.ResponseWriter, err error) {
 	})
 }
 
-// searchQueryOrError is the only way a handler obtains a searchQuery: it
-// rejects queries carrying qualifiers this server does not implement rather
-// than dropping them and answering with the unfiltered universe.
+// searchQueryOrError parses a searchQuery, rejecting unimplemented qualifiers
+// rather than answering with the unfiltered universe.
 func searchQueryOrError(w http.ResponseWriter, r *http.Request, searchType string) (searchQuery, bool) {
 	q, err := parseSearchQuery(r)
 	if err != nil {
@@ -386,9 +379,8 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 	return q, nil
 }
 
-// searchTextFor builds the text a term match runs against, honouring the `in:`
-// qualifier. With no in: field the default is title+body; otherwise the match
-// is restricted to the union of the named fields (title, body, comments).
+// searchTextFor builds the term-match target, honouring `in:`. Default is
+// title+body; otherwise the union of the named fields.
 func (q searchQuery) searchTextFor(title, body, comments string) string {
 	if !q.InTitle && !q.InBody && !q.InComments {
 		return title + " " + body
@@ -428,13 +420,10 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
 
-	// Matching rows are gathered under the read lock; rendering happens
-	// after release because the JSON builders (issueToJSON, repoToJSON and
-	// friends) take the store lock themselves. The mutable fields the scorer and
-	// sorter read directly (title, body, updated-at) are snapshotted here under
-	// the lock — reading them off the live pointer after release would race a
-	// concurrent UpdateIssue writer (the JSON builders re-lock, but these raw
-	// reads did not).
+	// Rows are gathered under the read lock, then rendered after release (the
+	// JSON builders re-lock). The fields the scorer and sorter read directly
+	// (title, body, timestamps) are snapshotted here so those raw reads do not
+	// race a concurrent UpdateIssue.
 	type issueRow struct {
 		issue   *store.Issue
 		repo    *store.Repo
@@ -458,9 +447,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 
 	s.store.Mu.RLock()
 
-	// in:comments restricts the term match to comment bodies. Build a per-subject
-	// concatenation of comment bodies once (reading st.Comments directly under the
-	// held lock — no re-lock), keyed by "parentType:id". Only when the query asks.
+	// in:comments needs comment bodies concatenated per subject, keyed by
+	// "parentType:id"; build it once, only when the query asks.
 	var commentBodies map[string]string
 	if q.InComments {
 		commentBodies = map[string]string{}
@@ -541,8 +529,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		if q.IsPR != nil && *q.IsPR {
 			continue
 		}
-		// is:merged / is:unmerged / is:draft are pull-request-only states, so an
-		// issue never matches them.
+		// is:merged / is:unmerged / is:draft are PR-only; no issue matches them.
 		if q.includes("is", "merged") || q.includes("is", "unmerged") || q.includes("is", "draft") {
 			continue
 		}
@@ -625,8 +612,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		if q.IsPR != nil && !*q.IsPR {
 			continue
 		}
-		// is:merged / is:unmerged / is:draft (PR-only). MERGED is the merged
-		// terminal state; IsDraft flags a draft PR.
+		// is:merged / is:unmerged / is:draft (PR-only).
 		if q.includes("is", "merged") && pr.State != "MERGED" {
 			continue
 		}
@@ -654,10 +640,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 
 	base := s.baseURL(r)
 
-	// Unify matched issue and PR rows so the whole result set can be sorted and
-	// paginated *before* rendering — rendering every matched row (issueToJSON +
-	// repoToJSON per row) only to return one page is the dominant per-request
-	// cost on a large corpus.
+	// Unify issue and PR rows so the set can be sorted and paginated before
+	// rendering — rendering every match only to return one page dominates cost.
 	rows := make([]searchIssueRow, 0, len(issueRows)+len(prRows))
 	for _, row := range issueRows {
 		rows = append(rows, searchIssueRow{issue: row.issue, repo: row.repo, assoc: row.assoc, title: row.title, body: row.body, created: row.created, updated: row.updated})
@@ -666,10 +650,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, searchIssueRow{pr: row.pr, repo: row.repo, assoc: row.assoc, title: row.title, body: row.body, created: row.created, updated: row.updated})
 	}
 
-	// Interaction qualifiers (involves:/commenter:/reactions:/interactions:) read
-	// comment authors and reaction counts through their own locks, so they are
-	// applied here — after the store read lock is released — rather than in the
-	// under-lock matcher.
+	// Interaction qualifiers read comment authors and reaction counts through
+	// their own locks, so apply them here, after the store lock is released.
 	if q.hasInteractionQualifiers() {
 		kept := rows[:0]
 		for _, row := range rows {
@@ -680,9 +662,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		rows = kept
 	}
 
-	// linked:pr / linked:issue derive an issue<->PR closing-reference relationship
-	// from PR bodies (Closes/Fixes/Resolves #N). Built once over the result rows'
-	// repositories under a fresh read lock, then applied as a filter.
+	// linked:pr / linked:issue derive the closing-reference relationship from PR
+	// bodies; built once over the result rows' repositories, then filtered.
 	if q.hasLinkedQualifier() {
 		rows = s.filterLinkedQualifiers(rows, q)
 	}
@@ -692,14 +673,12 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		var item map[string]interface{}
 		if row.issue != nil {
 			item = issueToJSON(row.issue, s.store, base, row.repo.FullName)
-			// Search returns issue-search-result-item rather than the richer
-			// issue response used by single-issue operations.
+			// Search returns the leaner issue-search-result-item.
 			delete(item, "closed_by")
 			item["score"] = searchRelevanceScore(q.Terms, row.title, row.body)
 			item["author_association"] = row.assoc
 			item["draft"] = false
-			// pull_request is optional and non-nullable: GitHub sets it only on
-			// rows that are pull requests, and omits it for plain issues.
+			// pull_request is omitted for plain issues; set only on PR rows.
 			item["repository"] = store.RepoToJSON(row.repo, s.store, base)
 		} else {
 			item = issueToJSONForPR(row.pr, s.store, base, row.repo.FullName)
@@ -720,16 +699,15 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 
 	total := len(rows)
 
-	// The "comments"/"reactions"/"interactions" sort keys need rendered per-row
-	// counts, so they keep the render-all path (rare). created/updated/best-match
-	// sort only on row timestamps, so those render just the requested page.
+	// comments/reactions/interactions sorts need rendered per-row counts, so
+	// they keep the render-all path; timestamp sorts render just the page.
 	if q.Sort == "comments" || q.Sort == "reactions" || q.Sort == "interactions" {
 		results := make([]map[string]interface{}, 0, total)
 		for _, row := range rows {
 			results = append(results, render(row))
 		}
 		env := searchEnvelope(results, len(results), false, q, sortSearchResults)
-		env["search_type"] = "lexical" // required on issues search; the algorithm, not the subject
+		env["search_type"] = "lexical" // the algorithm, not the subject
 		writeSearchEnvelope(w, r, q, env)
 		return
 	}
@@ -744,23 +722,21 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		"total_count":        total,
 		"incomplete_results": false,
 		"items":              pageItems,
-		// GitHub's issues-search response requires search_type — the search
-		// algorithm, not the subject. bleephub does keyword (lexical) search.
+		// Required on issues search: the algorithm, not the subject.
 		"search_type": "lexical",
 	}
 	writeSearchEnvelope(w, r, q, out)
 }
 
-// searchIssueRow is a matched issue or PR gathered by the issue-search scan,
-// carrying just enough to sort and then render only the requested page.
+// searchIssueRow is a matched issue or PR carrying just enough to sort and then
+// render only the requested page.
 type searchIssueRow struct {
 	issue *store.Issue
 	pr    *store.PullRequest
 	repo  *store.Repo
 	assoc string
-	// title/body/created/updated are snapshotted under the store lock at gather
-	// time; the scorer and sorter read these instead of the live entity so they
-	// do not race a concurrent writer.
+	// Snapshotted under the store lock; the scorer and sorter read these instead
+	// of the live entity so they do not race a concurrent writer.
 	title   string
 	body    string
 	created time.Time
@@ -771,9 +747,8 @@ func (row searchIssueRow) createdAt() time.Time { return row.created }
 
 func (row searchIssueRow) updatedAt() time.Time { return row.updated }
 
-// orderKey mirrors searchItemOrderKey for an unrendered row: the entity id
-// plus its issue path, which is unique because issues and pull requests draw
-// numbers from one per-repository counter.
+// orderKey mirrors searchItemOrderKey for an unrendered row: entity id plus its
+// issue path, unique because issues and PRs share one per-repository counter.
 func (row searchIssueRow) orderKey() (int, string) {
 	id, number := 0, 0
 	if row.issue != nil {
@@ -784,10 +759,9 @@ func (row searchIssueRow) orderKey() (int, string) {
 	return id, "/api/v3/repos/" + row.repo.FullName + "/issues/" + strconv.Itoa(number)
 }
 
-// sortSearchRows establishes the total row order — the deterministic base
-// order that map iteration does not provide, then the requested sort stably on
-// top — by the same keys as sortSearchResults, so paginate-before-render
-// yields the identical page a render-all-then-sort would.
+// sortSearchRows establishes the total row order (deterministic base order,
+// then the requested sort stably on top) by the same keys as sortSearchResults,
+// so paginate-before-render yields the identical page.
 func sortSearchRows(rows []searchIssueRow, sortKey, order string) {
 	sort.Slice(rows, func(i, j int) bool {
 		idI, keyI := rows[i].orderKey()
@@ -815,7 +789,6 @@ func sortSearchRows(rows []searchIssueRow, sortKey, order string) {
 	}
 }
 
-// searchPageBounds computes the [start,end) slice bounds for the given page.
 func searchPageBounds(page, perPage, total int) (int, int) {
 	start := (page - 1) * perPage
 	if start < 0 || start > total {
@@ -840,9 +813,8 @@ func issueToJSONForPR(pr *store.PullRequest, st *store.Store, baseURL, repoFullN
 	return out
 }
 
-// issueToJSONForPullRequest renders a pull request in the issue shape.
-// Must not be called with st.mu held: it takes the read lock itself and
-// derives milestone issue counts via milestoneToJSON, which locks too.
+// issueToJSONForPullRequest renders a pull request in the issue shape. Must not
+// be called with st.mu held: it takes the read lock itself.
 func issueToJSONForPullRequest(pr *store.PullRequest, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	pr = st.SnapPR(pr)
 	st.Mu.RLock()
@@ -865,8 +837,7 @@ func issueToJSONForPullRequest(pr *store.PullRequest, st *store.Store, baseURL, 
 	if len(assignees) > 0 {
 		assignee = assignees[0]
 	}
-	// Grab the milestone pointer; conversion happens after unlock because
-	// milestoneToJSON derives issue counts under its own lock.
+	// Convert the milestone after unlock; milestoneToJSON locks itself.
 	var milestone *store.Milestone
 	if pr.MilestoneID > 0 {
 		milestone = st.Milestones[pr.MilestoneID]
@@ -888,7 +859,6 @@ func issueToJSONForPullRequest(pr *store.PullRequest, st *store.Store, baseURL, 
 	}
 	numStr := strconv.Itoa(pr.Number)
 	api := baseURL + "/api/v3/repos/" + repoFullName + "/issues/" + numStr
-	// issue-search-result-item carries a reaction-rollup like the issue shape;
 	// PR search rows reuse the issues reactions parent ("pull_request") and URL.
 	reactions := st.Reactions.SummarizeReactions("pull_request", pr.ID)
 	reactions["url"] = api + "/reactions"
@@ -949,7 +919,7 @@ func pullRequestClosedByJSON(st *store.Store, pr *store.PullRequest, baseURL str
 }
 
 // issueHasLabelNames reports whether the issue carries every named label.
-// Callers hold st.mu (it reads st.Labels directly).
+// Callers hold st.mu.
 func issueHasLabelNames(st *store.Store, issue *store.Issue, names []string) bool {
 	for _, name := range names {
 		found := false
@@ -966,8 +936,8 @@ func issueHasLabelNames(st *store.Store, issue *store.Issue, names []string) boo
 	return true
 }
 
-// prHasLabelNames reports whether the pull request carries every named
-// label. Callers hold st.mu (it reads st.Labels directly).
+// prHasLabelNames reports whether the pull request carries every named label.
+// Callers hold st.mu.
 func prHasLabelNames(st *store.Store, pr *store.PullRequest, names []string) bool {
 	for _, name := range names {
 		found := false
@@ -984,13 +954,8 @@ func prHasLabelNames(st *store.Store, pr *store.PullRequest, names []string) boo
 	return true
 }
 
-// searchIssueQualifiersMatchLocked applies the issue/PR-scoped search qualifiers
-// github honors and bleephub previously 422'd or silently dropped: author:,
-// assignee: (incl. `*`), milestone: (incl. `*`), every positive label: (AND'd —
-// the old code kept only the last), no:label|assignee|milestone, and mentions:.
-// Callers hold st.Mu.RLock; text is the item's title+" "+body for mentions.
-// hasInteractionQualifiers reports whether the query carries any qualifier
-// whose evaluation needs comment/reaction data fetched outside the store lock.
+// hasInteractionQualifiers reports whether the query carries a qualifier whose
+// evaluation needs comment/reaction data fetched outside the store lock.
 func (q searchQuery) hasInteractionQualifiers() bool {
 	for _, ql := range q.Qualifiers {
 		switch ql.Key {
@@ -1015,8 +980,7 @@ func (q searchQuery) hasLinkedQualifier() bool {
 // issue reference, e.g. "Closes #12", "fixes: #3", "Resolved #9".
 var prClosingRefPattern = regexp.MustCompile(`(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+#(\d+)\b`)
 
-// parsePRClosingIssueRefs extracts the issue numbers a pull-request body closes
-// via a closing keyword.
+// parsePRClosingIssueRefs extracts the issue numbers a PR body closes.
 func parsePRClosingIssueRefs(body string) []int {
 	var out []int
 	for _, m := range prClosingRefPattern.FindAllStringSubmatch(body, -1) {
@@ -1028,9 +992,8 @@ func parsePRClosingIssueRefs(body string) []int {
 }
 
 // filterLinkedQualifiers applies linked:pr / linked:issue. An issue matches
-// linked:pr when some pull request in its repository closes it; a pull request
-// matches linked:issue when it closes at least one issue. The relationship is
-// derived from PR-body closing keywords across the result rows' repositories.
+// linked:pr when a PR in its repository closes it; a PR matches linked:issue
+// when it closes at least one issue, derived from PR-body closing keywords.
 func (s *Server) filterLinkedQualifiers(rows []searchIssueRow, q searchQuery) []searchIssueRow {
 	repoIDs := map[int]bool{}
 	for _, row := range rows {
@@ -1089,9 +1052,8 @@ func rowMatchesLinkedQualifiers(row searchIssueRow, q searchQuery, closedIssueNu
 	return true
 }
 
-// prReviewDecision derives a pull request's review decision from its submitted
-// reviews (latest per author): CHANGES_REQUESTED wins over APPROVED; "" when
-// neither. Mirrors the GraphQL reviewDecision derivation.
+// prReviewDecision derives a PR's review decision from its latest-per-author
+// submitted reviews: CHANGES_REQUESTED wins over APPROVED, "" when neither.
 func (s *Server) prReviewDecision(prID int) string {
 	latest := map[int]*store.PullRequestReview{}
 	for _, rv := range s.store.ListPRReviews(prID) {
@@ -1124,9 +1086,8 @@ func (s *Server) prReviewDecision(prID int) string {
 	return ""
 }
 
-// rowMatchesInteractionQualifiers applies GitHub's issue-search interaction
-// qualifiers to one matched row, reading comment authors and reaction counts
-// through their own locks. Must be called with the store read lock released.
+// rowMatchesInteractionQualifiers applies the interaction qualifiers to one row.
+// Must be called with the store read lock released.
 func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQuery) bool {
 	var parentType string
 	var parentID, authorID int
@@ -1177,7 +1138,7 @@ func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQue
 		}
 		return reviews
 	}
-	// submitted reviews exclude a viewer's own PENDING (unsubmitted) review.
+	// Submitted reviews exclude a viewer's own PENDING review.
 	submittedReviewerLogins := func() map[string]bool {
 		out := map[string]bool{}
 		for _, rv := range loadReviews() {
@@ -1197,7 +1158,7 @@ func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQue
 		case "commenter":
 			ok = isCommenter(val)
 		case "involves":
-			// author, assignee, mentioned, or commenter — GitHub's union.
+			// GitHub's union: author, assignee, mentioned, or commenter.
 			ok = strings.EqualFold(loginOf(authorID), val)
 			for _, aid := range assigneeIDs {
 				if ok {
@@ -1218,8 +1179,7 @@ func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQue
 			c, err := parseNumericSearchConstraint(val)
 			ok = err == nil && c.matches(int64(reactionTotal()+len(loadComments())))
 		case "head":
-			// head:/base: match a pull request's source/target branch; a plain
-			// issue has neither and never matches.
+			// head:/base: match a PR's source/target branch; an issue never matches.
 			ok = row.pr != nil && strings.EqualFold(row.pr.HeadRefName, val)
 		case "base":
 			ok = row.pr != nil && strings.EqualFold(row.pr.BaseRefName, val)
@@ -1235,7 +1195,7 @@ func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQue
 				}
 			}
 		case "review":
-			// review qualifiers apply to pull requests only.
+			// PR-only.
 			if row.pr != nil {
 				switch strings.ToLower(val) {
 				case "approved":
@@ -1245,14 +1205,13 @@ func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQue
 				case "none":
 					ok = len(submittedReviewerLogins()) == 0
 				case "required":
-					// A review was requested but the PR is not yet approved.
+					// Review requested but not yet approved.
 					ok = len(row.pr.RequestedReviewerIDs) > 0 && s.prReviewDecision(row.pr.ID) != "APPROVED"
 				}
 			}
 		default:
 			continue
 		}
-		// Positive qualifier must match; negated must not.
 		if ok == ql.Negated {
 			return false
 		}
@@ -1261,8 +1220,7 @@ func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQue
 }
 
 // issueSearchSubject carries the per-item fields the temporal and state
-// qualifiers filter on (dates, draft flag, owning-repo archived flag), so the
-// issue and pull-request callers can drive one matcher.
+// qualifiers filter on, so the issue and PR callers drive one matcher.
 type issueSearchSubject struct {
 	createdAt time.Time
 	updatedAt time.Time
@@ -1392,10 +1350,9 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Take private snapshots of readable repositories under the store lock,
-	// then evaluate storage-backed qualifiers (size, README and funding file)
-	// after releasing it. repoToJSON and several qualifier counters lock the
-	// store themselves.
+	// Snapshot readable repositories under the store lock, then evaluate
+	// storage-backed qualifiers after release (repoToJSON and several counters
+	// lock the store themselves).
 	var candidates []*store.Repo
 	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
 	s.store.Mu.RLock()
@@ -1473,9 +1430,8 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Readable repos and their git storages are gathered under the read
-	// lock; the tree walk and rendering happen after release because
-	// repoToJSON takes the store lock itself.
+	// Gather repos and their git storages under the read lock; the tree walk and
+	// rendering happen after release (repoToJSON locks itself).
 	type codeSearchRepo struct {
 		repo *store.Repo
 		stor gitStorage.Storer
@@ -1519,8 +1475,8 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		searchRepos = append(searchRepos, codeSearchRepo{repo, stor})
 	}
 	s.store.Mu.RUnlock()
-	// Scan repositories in a fixed order: the 1000-result cap below otherwise
-	// truncates a different subset on every request.
+	// Fixed scan order: the 1000-result cap otherwise truncates a different
+	// subset each request.
 	sort.Slice(searchRepos, func(i, j int) bool { return searchRepos[i].repo.ID < searchRepos[j].repo.ID })
 
 	base := s.baseURL(r)
@@ -1596,9 +1552,8 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 				return nil
 			}
 
-			// Count every match so total_count reflects the full result set;
-			// only the first searchResultCap rows are rendered, and the rest
-			// is reported via incomplete_results.
+			// Count every match for total_count; only searchResultCap rows are
+			// rendered, the rest reported via incomplete_results.
 			total++
 			if len(results) >= searchResultCap {
 				truncated = true
@@ -1633,8 +1588,8 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 	writeSearchEnvelope(w, r, q, searchEnvelope(results, total, truncated, q, nil))
 }
 
-// userSearchText restricts the free-text match target to the fields named by
-// in: qualifiers (login/name/email/fullname); the default is login+name+bio.
+// userSearchText restricts the match target to the fields named by in:
+// (login/name/email/fullname); default is login+name+bio.
 func userSearchText(q searchQuery, u *store.User) string {
 	var fields []string
 	for _, ql := range q.Qualifiers {
@@ -1660,8 +1615,8 @@ func userSearchText(q searchQuery, u *store.User) string {
 	return strings.Join(parts, " ")
 }
 
-// userMatchesInLockQualifiers applies the user qualifiers readable directly off
-// the User struct (location:, created:). Caller holds st.Mu.RLock.
+// userMatchesInLockQualifiers applies the qualifiers readable directly off the
+// User struct (location:, created:). Caller holds st.Mu.RLock.
 func userMatchesInLockQualifiers(q searchQuery, u *store.User) bool {
 	for _, ql := range q.Qualifiers {
 		if ql.Negated {
@@ -1681,9 +1636,8 @@ func userMatchesInLockQualifiers(q searchQuery, u *store.User) bool {
 	return true
 }
 
-// userMatchesCountQualifiers applies repos:/followers: constraints. Called
-// AFTER the store lock is released — CountPublicRepos/CountFollowers acquire
-// their own locks and would nest under a held st.Mu.RLock.
+// userMatchesCountQualifiers applies repos:/followers: constraints. Call after
+// releasing the store lock: the count helpers take their own.
 func (s *Server) userMatchesCountQualifiers(q searchQuery, u *store.User) bool {
 	for _, ql := range q.Qualifiers {
 		if ql.Negated {
@@ -1714,8 +1668,8 @@ func (s *Server) userMatchesCountQualifiers(q searchQuery, u *store.User) bool {
 	return true
 }
 
-// queryHasUserScopedQualifier reports whether the query carries a qualifier that
-// only applies to users, so organization results should be excluded.
+// queryHasUserScopedQualifier reports whether the query carries a user-only
+// qualifier, so organizations should be excluded.
 func queryHasUserScopedQualifier(q searchQuery) bool {
 	for _, ql := range q.Qualifiers {
 		switch ql.Key {
@@ -1738,9 +1692,8 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Matching users and orgs are gathered under the read lock; rendering
-	// happens after release because fullUserJSON derives follower and repo
-	// counts under the store and misc locks itself.
+	// Gather users and orgs under the read lock; render after release
+	// (fullUserJSON derives its counts under its own locks).
 	var users []*store.User
 	var orgs []*store.Org
 	s.store.Mu.RLock()
@@ -1759,8 +1712,7 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		users = append(users, u)
 	}
-	// A user-scoped qualifier (repos:/followers:/location:/created:/in:login…)
-	// excludes organizations, which cannot satisfy it.
+	// A user-scoped qualifier excludes organizations, which cannot satisfy it.
 	orgsExcluded := queryHasUserScopedQualifier(q)
 	for _, org := range s.store.Orgs {
 		if q.Type == "user" || orgsExcluded {
@@ -1777,8 +1729,8 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Mu.RUnlock()
 
-	// repos:/followers: read follower and public-repo counts, whose store
-	// helpers take their own locks — apply them after releasing st.Mu.
+	// repos:/followers: read counts whose helpers take their own locks — apply
+	// after releasing st.Mu.
 	users = slices.DeleteFunc(users, func(u *store.User) bool {
 		return !s.userMatchesCountQualifiers(q, u)
 	})
@@ -1786,7 +1738,7 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	var results []map[string]interface{}
 	for _, u := range users {
 		item := s.fullUserJSON(u, s.baseURL(r))
-		// user-search-result-item carries no twitter_username member.
+		// user-search-result-item has no twitter_username.
 		delete(item, "twitter_username")
 		item["score"] = searchRelevanceScore(q.Terms, u.Login, u.Name+" "+u.Bio)
 		results = append(results, item)
@@ -1836,13 +1788,12 @@ func detectLanguage(filename string) interface{} {
 	return ext
 }
 
-// searchSorter applies a requested sort key to already-ordered results. Every
-// implementation must sort stably so the base order survives as the tiebreak.
+// searchSorter applies a sort key to already-ordered results. It must sort
+// stably so the base order survives as the tiebreak.
 type searchSorter func(items []map[string]interface{}, sortKey, order string) []map[string]interface{}
 
-// searchItemOrderKey is the identity a search result is tiebroken on: its id,
-// then the first globally unique string member it carries. Every rendered item
-// has one, so the resulting order is total.
+// searchItemOrderKey is the identity a result is tiebroken on: its id, then the
+// first globally unique string member it carries.
 func searchItemOrderKey(item map[string]interface{}) (int, string) {
 	id, _ := item["id"].(int)
 	for _, member := range []string{"url", "node_id", "name"} {
@@ -1853,10 +1804,9 @@ func searchItemOrderKey(item map[string]interface{}) (int, string) {
 	return id, ""
 }
 
-// orderSearchItems imposes the total result order — score descending, then
-// identity ascending — that map iteration does not provide. Without it,
-// slicing a page out of the result set overlaps and omits results between
-// requests for the same query.
+// orderSearchItems imposes the total result order (score descending, then
+// identity ascending) that map iteration lacks, so paging is stable across
+// requests.
 func orderSearchItems(items []map[string]interface{}) {
 	sort.SliceStable(items, func(i, j int) bool {
 		si, _ := items[i]["score"].(float64)
@@ -1873,21 +1823,14 @@ func orderSearchItems(items []map[string]interface{}) {
 	})
 }
 
-// searchResultCap bounds the number of items a search collects and renders.
-// GitHub caps code and commit search at 1000 results; once that many rows
-// have been gathered the remaining matches are counted but not rendered, and
-// the response carries incomplete_results=true with a total_count reflecting
-// the full match set rather than the truncated slice.
+// searchResultCap bounds items a search collects and renders. GitHub caps code
+// and commit search at 1000; further matches are counted but not rendered, and
+// the response carries incomplete_results=true.
 const searchResultCap = 1000
 
-// searchRelevanceScore assigns a deterministic relevance score in [0,1] to a
-// free-text search match. A hit in primary — the highest-ranked field, such
-// as a repository name, issue title or user login — outscores one only in
-// secondary (description, body or bio), and exact equality beats substring
-// containment. Multi-term queries average the per-term contributions, so a
-// document matching every term ranks above one matching only some.
-// Qualifier-only queries (no free-text terms) treat every hit as equally
-// relevant and return 1.0.
+// searchRelevanceScore assigns a deterministic score in [0,1]: a hit in primary
+// outscores one only in secondary, exact equality beats containment, and
+// multi-term queries average per-term contributions. No terms returns 1.0.
 func searchRelevanceScore(terms []string, primary, secondary string) float64 {
 	if len(terms) == 0 {
 		return 1.0
@@ -1912,15 +1855,8 @@ func searchRelevanceScore(terms []string, primary, secondary string) float64 {
 	return sum / float64(len(terms))
 }
 
-// searchEnvelope orders, sorts and pages a search result set. Ordering is not
-// optional: it happens here so no handler can slice an unordered set.
-// totalCount is the size of the full match set (before truncation); items is
-// the rendered slice, which may be shorter when a handler caps collection.
-// incomplete reports whether items was truncated below totalCount.
-// writeSearchEnvelope emits a search response with the Link header every other
-// collection carries, so a client can page past the first window of results.
-// The envelope's own total_count is the source of truth for how many pages
-// exist, capped at the 1,000 results GitHub will serve.
+// writeSearchEnvelope emits a search response with the paging Link header,
+// whose total_count decides how many pages exist.
 func writeSearchEnvelope(w http.ResponseWriter, r *http.Request, q searchQuery, envelope map[string]interface{}) {
 	total, _ := envelope["total_count"].(int)
 	setSearchLinkHeader(w, r, q.Page, q.PerPage, total)
@@ -1942,9 +1878,7 @@ func searchEnvelope(items []map[string]interface{}, totalCount int, incomplete b
 	if end > available {
 		end = available
 	}
-	// GitHub's search envelope always carries items as an array; an empty
-	// result set is [], never null. Slicing a nil source (no matches) yields a
-	// nil slice that would marshal to null, so materialize an empty array.
+	// items must marshal as [], never null: a nil slice would become null.
 	pageItems := items[start:end]
 	if pageItems == nil {
 		pageItems = []map[string]interface{}{}
@@ -1994,7 +1928,7 @@ func sortSearchResults(items []map[string]interface{}, sortKey, order string) []
 			return itemReactionTotal(items[i]) > itemReactionTotal(items[j])
 		})
 	case "interactions":
-		// GitHub's interactions = reactions + comments on the item.
+		// interactions = reactions + comments.
 		inter := func(m map[string]interface{}) int {
 			c, _ := m["comments"].(int)
 			return itemReactionTotal(m) + c
@@ -2009,8 +1943,7 @@ func sortSearchResults(items []map[string]interface{}, sortKey, order string) []
 	return items
 }
 
-// itemReactionTotal reads the reaction-rollup total_count off a rendered
-// search item (0 when absent).
+// itemReactionTotal reads the reaction-rollup total_count off a rendered item.
 func itemReactionTotal(m map[string]interface{}) int {
 	r, _ := m["reactions"].(map[string]interface{})
 	t, _ := r["total_count"].(int)
@@ -2104,10 +2037,8 @@ func sortUserSearchResults(items []map[string]interface{}, sortKey, order string
 	return items
 }
 
-// handleSearchCommits implements GET /search/commits: a real search across
-// the git commit history of every repository the caller can read, matching
-// query terms against commit messages with repo:/user:/org:/author:/hash:
-// qualifiers.
+// handleSearchCommits searches commit messages across every readable
+// repository's git history, honoring repo:/user:/org:/author:/hash:.
 func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 	q, ok := searchQueryOrError(w, r, "commits")
 	if !ok {
@@ -2119,10 +2050,8 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Readable repos and their git storages are gathered under the read
-	// lock; the log walk and rendering happen after release because
-	// commitSearchItemJSON and commitAuthorMatches take the store lock
-	// themselves.
+	// Gather repos and their git storages under the read lock; the log walk and
+	// rendering happen after release (the helpers lock the store themselves).
 	type commitSearchRepo struct {
 		repo *store.Repo
 		stor gitStorage.Storer
@@ -2158,8 +2087,8 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		searchRepos = append(searchRepos, commitSearchRepo{repo, stor})
 	}
 	s.store.Mu.RUnlock()
-	// Scan repositories in a fixed order: the 1000-result cap below otherwise
-	// truncates a different subset on every request.
+	// Fixed scan order: the 1000-result cap otherwise truncates a different
+	// subset each request.
 	sort.Slice(searchRepos, func(i, j int) bool { return searchRepos[i].repo.ID < searchRepos[j].repo.ID })
 
 	base := s.baseURL(r)
@@ -2207,9 +2136,8 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 			if !commitMatchesCommitQualifiers(s.store, commit, q) {
 				return nil
 			}
-			// Count every match so total_count reflects the full result set;
-			// only the first searchResultCap rows are rendered, and the rest
-			// is reported via incomplete_results.
+			// Count every match for total_count; only searchResultCap rows are
+			// rendered, the rest reported via incomplete_results.
 			total++
 			if len(results) >= searchResultCap {
 				truncated = true
@@ -2233,10 +2161,9 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 	writeSearchEnvelope(w, r, q, searchEnvelope(results, total, truncated, q, sortCommitSearchResults))
 }
 
-// commitAuthorMatches matches the author: qualifier against the commit's
-// git author name/email and against the login of a store user with the
-// commit author's email. Must not be called with st.mu held; it takes the
-// read lock itself.
+// commitAuthorMatches matches author: against the commit's git author name/email
+// and the login of a store user with that email. Must not be called with st.mu
+// held.
 func commitAuthorMatches(st *store.Store, commit *object.Commit, author string) bool {
 	if strings.EqualFold(commit.Author.Name, author) {
 		return true
@@ -2254,9 +2181,8 @@ func commitAuthorMatches(st *store.Store, commit *object.Commit, author string) 
 	return false
 }
 
-// commitCommitterMatches mirrors commitAuthorMatches for the committer:
-// qualifier, against the commit's git committer name/email and the login of a
-// store user with that committer email. Must not be called with st.mu held.
+// commitCommitterMatches mirrors commitAuthorMatches for committer:. Must not be
+// called with st.mu held.
 func commitCommitterMatches(st *store.Store, commit *object.Commit, committer string) bool {
 	if strings.EqualFold(commit.Committer.Name, committer) || strings.EqualFold(commit.Committer.Email, committer) {
 		return true
@@ -2271,10 +2197,9 @@ func commitCommitterMatches(st *store.Store, commit *object.Commit, committer st
 	return false
 }
 
-// commitMatchesCommitQualifiers applies GitHub's commit-search identity, date
-// and merge qualifiers (positive and negated) against a commit. author: and
-// hash: are handled by the caller; everything else this qualifier set allows is
-// resolved here. Must not be called with st.mu held.
+// commitMatchesCommitQualifiers applies the commit-search identity, date and
+// merge qualifiers. author: and hash: are handled by the caller. Must not be
+// called with st.mu held.
 func commitMatchesCommitQualifiers(st *store.Store, commit *object.Commit, q searchQuery) bool {
 	for _, ql := range q.Qualifiers {
 		val := strings.Trim(ql.Value, `"`)
@@ -2301,7 +2226,6 @@ func commitMatchesCommitQualifiers(st *store.Store, commit *object.Commit, q sea
 		default:
 			continue
 		}
-		// Positive qualifier must match; negated must not.
 		if ok == ql.Negated {
 			return false
 		}
@@ -2309,18 +2233,14 @@ func commitMatchesCommitQualifiers(st *store.Store, commit *object.Commit, q sea
 	return true
 }
 
-// commitSearchItemJSON renders the spec `commit-search-result-item` shape.
-// Must not be called with the store lock held: it resolves the author under
-// its own read lock and embeds the repository via repoToJSON, which derives
-// counters under the store lock itself. terms drives the relevance score:
-// the commit subject (first line) is the primary field and the full message
-// the secondary one.
+// commitSearchItemJSON renders the `commit-search-result-item` shape, scoring
+// the commit subject as primary and the full message as secondary. Must not be
+// called with the store lock held.
 func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *store.Repo, base string, terms []string) map[string]interface{} {
 	sha := commit.Hash.String()
 	api := base + "/api/v3/repos/" + repo.FullName
 
-	// The top-level author is the GitHub account behind the commit author
-	// email (null when the email matches no account).
+	// The account behind the commit author email, or null when none matches.
 	var authorJSON interface{}
 	s.store.Mu.RLock()
 	for _, u := range s.store.Users {
@@ -2379,8 +2299,8 @@ func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *store.Repo, b
 	}
 }
 
-// sortCommitSearchResults orders commit results for the documented sort
-// keys (author-date, committer-date); default is best-match order.
+// sortCommitSearchResults orders by author-date/committer-date; default is
+// best-match order.
 func sortCommitSearchResults(items []map[string]interface{}, sortKey, order string) []map[string]interface{} {
 	if sortKey != "author-date" && sortKey != "committer-date" {
 		return items
@@ -2404,8 +2324,8 @@ func sortCommitSearchResults(items []map[string]interface{}, sortKey, order stri
 	return items
 }
 
-// handleSearchLabels implements GET /search/labels: a real search over the
-// labels of the repository named by the required repository_id parameter.
+// handleSearchLabels searches the labels of the repository named by the required
+// repository_id parameter.
 func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 	repoIDStr := r.URL.Query().Get("repository_id")
 	if repoIDStr == "" {
@@ -2462,8 +2382,7 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 	writeSearchEnvelope(w, r, q, searchEnvelope(items, len(items), false, q, nil))
 }
 
-// handleSearchTopics implements GET /search/topics: a real search over the
-// topics applied to repositories the caller can read.
+// handleSearchTopics searches the topics applied to readable repositories.
 func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("q") == "" {
 		store.WriteGHValidationError(w, "Search", "q", "missing_field")

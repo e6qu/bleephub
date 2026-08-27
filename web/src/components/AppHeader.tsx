@@ -11,19 +11,15 @@ import {
 } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
-// The command palette is behind a keyboard shortcut, so it is code-split out of
-// the entry bundle and loaded on first ⌘K rather than at initial page load.
+// Code-split from the entry bundle; loads on first ⌘K.
 const CommandPalette = lazy(() =>
   import("./CommandPalette.js").then((m) => ({ default: m.CommandPalette })),
 );
-// The "?" shortcuts sheet and the global `g …` navigation sequences live in a
-// lazily-loaded module so their code (and the modal) stay out of the entry
-// bundle rather than weighing on first paint.
+// Code-split from the entry bundle.
 const GlobalShortcuts = lazy(() =>
   import("./GlobalShortcuts.js").then((m) => ({ default: m.GlobalShortcuts })),
 );
-// The global-nav drawer only mounts on a hamburger click, so it is code-split
-// out of the always-loaded header too.
+// Code-split; mounts only on a hamburger click.
 const GlobalNavDrawer = lazy(() =>
   import("./GlobalNavDrawer.js").then((m) => ({ default: m.GlobalNavDrawer })),
 );
@@ -59,13 +55,7 @@ import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications,
 import { accountRoute, matchRepoPath, repoRoute } from "../routes.js";
 import { loginPath, useSignedIn } from "../session.js";
 
-/**
- * GitHub-faithful global header: hamburger → global-nav drawer, brand, a
- * search box, a "create" menu, Issues / Pull requests quick links, the
- * notifications bell, and an avatar dropdown. It mirrors github.com's chrome
- * so the app's information architecture matches a user's GitHub muscle memory;
- * only the visual styling is bleephub's own.
- */
+// GitHub-faithful global header; only the visual styling is bleephub's own.
 
 // ─── click-outside dropdown menu ────────────────────────────────────────────
 
@@ -79,9 +69,8 @@ function HeaderMenu({
   label: string;
   trigger: ReactNode;
   align?: "left" | "right";
-  /** The signed-in username, published on the always-visible trigger so
-   * post-deployment qualification can find the identity and open this menu to
-   * reach the real sign-out control inside it. */
+  /** Published on the trigger so post-deploy qualification can open this menu
+   * and reach the sign-out control inside it. */
   shauthUser?: string | undefined;
   children: (close: () => void) => ReactNode;
 }) {
@@ -223,9 +212,8 @@ function MenuSeparator() {
 
 // ─── header ─────────────────────────────────────────────────────────────────
 
-// Display/alignment intentionally live in the className (see iconButtonClass)
-// rather than here: an inline `display` would override the responsive `hidden`
-// utilities that collapse some of these controls at phone widths.
+// Keep `display` in the className — an inline value would override the
+// responsive `hidden` utilities that collapse these controls at phone widths.
 function iconButtonStyle(): CSSProperties {
   return {
     background: "transparent",
@@ -239,9 +227,8 @@ function iconButtonStyle(): CSSProperties {
 }
 
 const iconButtonClass = "app-header-control inline-flex items-center justify-center";
-// Phone widths can't fit every header control; like github.com, the Issues /
-// Pull requests quick links collapse below md (they remain reachable through
-// the global-nav drawer and search).
+// Collapse Issues/PR quick links below md, like github.com (still reachable
+// via the drawer and search).
 const iconButtonMdUpClass = "app-header-control hidden items-center justify-center md:inline-flex";
 
 function Avatar({ login, url, size = 24 }: { login: string; url?: string | undefined; size?: number }) {
@@ -268,22 +255,10 @@ function Avatar({ login, url, size = 24 }: { login: string; url?: string | undef
   );
 }
 
-/**
- * github.com's 2023+ global header carries the owner/repo breadcrumb in the
- * header row itself, immediately after the logo, instead of repeating it as a
- * page-level bar above the repository tabs.
- *
- * The owner's destination depends on whether it is a user or an organization,
- * which only the repository payload knows. Rather than issue a header-owned
- * request for it, this subscribes to the very query key the repo pages fill
- * (`["repo", owner, repo]`) with `skipToken`, so it never fetches: it reads
- * whatever is cached and re-renders when the page's own fetch lands. Before
- * that (and for a cold deep link) the owner falls back to the user route,
- * which is also the correct answer for the overwhelming majority of repos.
- *
- * Hidden below `sm`: a phone-width header has no room for it beside the
- * search box, exactly as github.com drops it at narrow viewports.
- */
+// Owner/repo breadcrumb in the header row (github.com 2023+). Subscribes to the
+// repo pages' query key with `skipToken` — never fetches, reads cache and
+// re-renders when their fetch lands; falls back to the user route until then.
+// Hidden below `sm` for phone widths, like github.com.
 function RepoBreadcrumb({ owner, repo }: { owner: string; repo: string }) {
   const { data } = useQuery({ queryKey: ["repo", owner, repo], queryFn: skipToken });
   const ownerType = (data as { owner?: { type?: string } } | undefined)?.owner?.type ?? "User";
@@ -319,10 +294,7 @@ function RepoBreadcrumb({ owner, repo }: { owner: string; repo: string }) {
 export function AppHeader() {
   const navigate = useNavigate();
   const location = useLocation();
-  // Inside a repo route the header both scopes its search box to that
-  // repository and shows the owner/repo breadcrumb (github.com's 2023+ global
-  // header). The header has no route params of its own, so the repository is
-  // recovered from the pathname through the shared reserved-word matcher.
+  // Header has no route params of its own; recover the repo from the pathname.
   const repoScope = matchRepoPath(location.pathname);
   const scopedRepo = repoScope ? `${repoScope.owner}/${repoScope.repo}` : null;
   const queryClient = useQueryClient();
@@ -334,12 +306,11 @@ export function AppHeader() {
   const [scope, setScope] = useState("repositories");
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  // A signed-out visitor gets github.com's anonymous header: brand + search +
-  // a Sign in button. No create menu, bell, avatar menu, drawer, palette or
-  // shortcuts — and, critically, none of their viewer-scoped fetches/polls.
+  // Signed-out: brand + search + Sign in only, and none of the viewer-scoped
+  // fetches/polls.
   const signedIn = useSignedIn();
 
-  // Global ⌘K / Ctrl-K opens the command palette (github.com's "jump to").
+  // ⌘K / Ctrl-K toggles the command palette.
   useEffect(() => {
     if (!signedIn) return;
     const onKey = (e: KeyboardEvent) => {
@@ -352,9 +323,8 @@ export function AppHeader() {
     return () => document.removeEventListener("keydown", onKey);
   }, [signedIn]);
 
-  // A throttled 403 is final for the current window: retrying it only deepens
-  // the exhaustion (same guard pattern as useMetricsData). Surface it instead
-  // of spinning, so a rate-limited session fails visibly.
+  // A throttled 403 is final for the window; surface it instead of retrying
+  // into deeper exhaustion.
   const { data: user, error: userError } = useQuery({
     queryKey: ["current-user"],
     queryFn: ({ signal }) => fetchCurrentUser(signal),
@@ -363,24 +333,23 @@ export function AppHeader() {
     enabled: signedIn,
   });
   useToastQueryErrors(isRateLimited(userError) ? userError : undefined, "API rate limit exceeded");
-  // enabled:false also stops the 30s poll — an anonymous session must never
-  // touch the notifications endpoint (it would 401 on every tick).
+  // enabled:false also halts the 30s poll — an anonymous session would 401
+  // on every tick.
   const { data: notifications } = useQuery({
     queryKey: ["notifications", "header"],
     queryFn: ({ signal }) => fetchNotifications({}, signal),
     refetchInterval: (query) => (isRateLimited(query.state.error) ? false : 30_000),
     enabled: signedIn,
   });
-  // Tolerate a non-array body: the header must keep rendering (and the
-  // sign-out transition must keep working) even when this poll gets garbage.
+  // Tolerate a non-array body so the header keeps rendering during sign-out.
   const unread = Array.isArray(notifications) ? notifications.filter((n) => n.unread).length : 0;
   const login = user?.login ?? "";
 
   const submitSearch = (e: FormEvent) => {
     e.preventDefault();
     let term = q.trim();
-    // Inside a repository, an unqualified query searches that repository —
-    // github.com's "In this repository" scope.
+    // Inside a repo, an unqualified query scopes to it (github.com's
+    // "In this repository").
     if (scopedRepo && term && !/(^|\s)repo:/.test(term)) term = `repo:${scopedRepo} ${term}`;
     const typeParam = scope !== "repositories" ? `&type=${scope}` : "";
     navigate(term ? `/ui/search?q=${encodeURIComponent(term)}${typeParam}` : `/ui/search?type=${scope}`);
@@ -389,19 +358,16 @@ export function AppHeader() {
   const submitLogout = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
-    // cancelQueries alone was not enough: nothing in the API layer honoured an
-    // abort signal, so in-flight polls kept running, landed after the token was
-    // gone, and 401'd. Abort them for real before navigating.
+    // cancelQueries doesn't abort in-flight polls; abort them for real so they
+    // don't land after the token is gone and 401.
     try {
       await queryClient.cancelQueries();
     } catch (err) {
       reportError(err, "Sign-out could not cancel in-flight requests");
     }
     abortPendingRequests();
-    // Do not clear the cache while this page is still mounted. Active query
-    // observers immediately resubscribe after clear(), schedule fresh API
-    // reads, and race the token removal below with unauthenticated 401s. The
-    // native form navigation unloads this document and its cache moments later.
+    // Don't clear the cache while mounted — observers resubscribe and race the
+    // token removal with 401s; the form navigation unloads it moments later.
     clearToken();
     form.submit();
   };
@@ -487,8 +453,6 @@ export function AppHeader() {
           </form>
 
           {!signedIn && (
-            // github.com's anonymous header ends in a Sign in affordance that
-            // returns the visitor to the page they were reading.
             <Link
               to={loginPath(location)}
               className="app-header-control inline-flex items-center"
@@ -509,7 +473,6 @@ export function AppHeader() {
           )}
           {signedIn && (
           <div className="flex items-center gap-2">
-            {/* create menu */}
             <HeaderMenu label="Create new…" trigger={<><PlusIcon size={14} /><TriangleDownIcon size={12} /></>}>
               {(close) => (
                 <>
@@ -569,7 +532,6 @@ export function AppHeader() {
               )}
             </Link>
 
-            {/* avatar menu */}
             <HeaderMenu label="Open user menu" align="right" shauthUser={login || undefined} trigger={<><Avatar login={login} url={user?.avatar_url} /><TriangleDownIcon size={12} /></>}>
               {(close) => (
                 <>

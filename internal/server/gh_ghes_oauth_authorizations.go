@@ -37,12 +37,10 @@ func (s *Server) legacyAuthorizationUser(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return nil
 	}
-	// The authorizations API mints and rewrites the account's own credentials,
-	// so — like GitHub — it demands account-password-equivalent authority: a
-	// browser session. A derived bearer (classic/fine-grained PAT, OAuth or
-	// GitHub-App user token, installation token, app JWT) is refused; otherwise
-	// a leaked scoped token could POST an arbitrary-scope classic PAT for its
-	// owner, or PATCH its own scopes wider.
+	// This API mints and rewrites the account's own credentials, so it demands
+	// a browser session and refuses any derived bearer (PAT, OAuth/App user
+	// token, installation token, app JWT): otherwise a leaked scoped token could
+	// mint an arbitrary-scope PAT or widen its own scopes.
 	if ghPersonalAccessTokenFromContext(ctx) != nil ||
 		ghUserToServerTokenFromContext(ctx) != nil ||
 		ghInstallationTokenFromContext(ctx) != nil ||
@@ -143,13 +141,9 @@ func (s *Server) handleCreateLegacyAuthorization(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusCreated, classicAuthorizationJSON(token.Value, &copy, user, true, s.baseURL(r)))
 }
 
-// handleCreateClassicTokenWeb serves POST /ui-data/user/tokens/classic — the
-// browser settings flow for minting a classic PAT with an optional
-// expiration. It mirrors handleCreateLegacyAuthorization's classic-PAT branch
-// (same stored fields, same classic-authorization response JSON with the
-// token revealed once) and additionally honors expires_at, which the legacy
-// API cannot accept. An expired token is refused by store.LookupToken exactly
-// like an expired fine-grained PAT.
+// handleCreateClassicTokenWeb mints a classic PAT for the browser settings
+// flow. Like handleCreateLegacyAuthorization's classic branch, but also honors
+// expires_at, which the legacy API cannot accept.
 func (s *Server) handleCreateClassicTokenWeb(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -159,7 +153,7 @@ func (s *Server) handleCreateClassicTokenWeb(w http.ResponseWriter, r *http.Requ
 	var req struct {
 		Note      string   `json:"note"`
 		Scopes    []string `json:"scopes"`
-		ExpiresAt *string  `json:"expires_at"` // RFC3339, or null/absent for no expiration
+		ExpiresAt *string  `json:"expires_at"` // RFC3339, or null/absent for none
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -237,8 +231,7 @@ func (s *Server) createLegacyOAuthAuthorization(
 	s.store.Mu.Lock()
 	stored := s.store.UserToServerTokens[token.Token]
 	if stored == nil {
-		// A concurrent grant revoke removed the freshly minted token; do not
-		// deref it under the lock.
+		// A concurrent grant revoke removed the freshly minted token.
 		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusInternalServerError, "authorization could not be persisted")
 		return
@@ -311,10 +304,10 @@ func (s *Server) handleUpdateLegacyAuthorization(w http.ResponseWriter, r *http.
 		return
 	}
 	s.store.Mu.Lock()
-	// The ref was resolved under a separate RLock, so the credential may have
-	// been deleted by a concurrent DELETE in between. A nil deref here would
-	// panic while holding st.mu — which recoverMiddleware cannot release —
-	// deadlocking every later request. Re-check under the write lock.
+	// The ref was resolved under a separate RLock; a concurrent DELETE may have
+	// removed the credential. A nil deref here would panic while holding st.Mu,
+	// which recoverMiddleware cannot release, deadlocking every later request.
+	// Re-check under the write lock.
 	if ref.kind == "pat" {
 		stored := s.store.Tokens[ref.mapKey]
 		if stored == nil {

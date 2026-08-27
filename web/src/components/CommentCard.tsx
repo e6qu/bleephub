@@ -25,11 +25,8 @@ export interface CommentCardProps {
   body?: string | undefined;
   date: string;
   isOp?: boolean | undefined;
-  /** Author avatar image; falls back to a monogram tile when absent. */
   avatarUrl?: string | null | undefined;
-  /** Rendered at the right of the header — e.g. Edit/Delete controls. */
   headerActions?: ReactNode | undefined;
-  /** When set, task-list checkboxes become interactive (index + new state). */
   onToggleTask?: ((index: number, checked: boolean) => void) | undefined;
 }
 
@@ -95,18 +92,7 @@ export function CommentCard({ login, body, date, isOp = false, avatarUrl, header
   );
 }
 
-/**
- * A comment timeline whose entries can be edited and deleted in place, matching
- * github.com's per-comment actions. Edits/deletes go through the shared
- * issue-comments endpoints (issues and PRs alike) and invalidate `invalidateKeys`
- * — normally the comment list plus the issue/PR detail so its count refreshes.
- */
-// Renders an issue/PR conversation timeline: comment events become editable
-// comments (edit / delete / reactions), and every other event (labeled, assigned,
-// closed, renamed, referenced, milestoned …) becomes a shared TimelineEventRow —
-// interleaved in the order github.com shows them.
-// github.com's "Hide" classifiers → GraphQL ReportedContentClassifiers /
-// the stored MinimizedReason enum.
+// GraphQL ReportedContentClassifiers / stored MinimizedReason enum.
 const HIDE_CLASSIFIERS = ["OFF_TOPIC", "OUTDATED", "RESOLVED", "DUPLICATE", "SPAM", "ABUSE"] as const;
 type HideClassifier = (typeof HIDE_CLASSIFIERS)[number];
 
@@ -167,11 +153,6 @@ export function EditableCommentList({
   items: GithubTimelineItem[];
   invalidateKeys: QueryKey[];
   viewerLogin?: string | null | undefined;
-  /**
-   * Whether the viewer has write access. Edit/Delete/Hide render only for
-   * writers or the comment's own author (github.com: moderation needs write;
-   * authors manage their own comments). Reactions stay for everyone.
-   */
   canPush?: boolean;
 }) {
   const qc = useQueryClient();
@@ -192,8 +173,7 @@ export function EditableCommentList({
     onSuccess: invalidate,
   });
 
-  // Minimization state rides the GraphQL endpoint, which refuses anonymous
-  // callers — signed out the comments simply render unminimized.
+  // GraphQL minimization endpoint refuses anonymous callers; signed out, render unminimized.
   const signedIn = useSignedIn();
   const minimizedQuery = useQuery({
     queryKey: ["issue-comment-minimization", owner, repo, number],
@@ -213,26 +193,21 @@ export function EditableCommentList({
     mutationFn: (subjectId: string) => unminimizeComment(subjectId),
     onSuccess: refetchMinimized,
   });
-  // Comment id currently showing its hide-reason picker, and the chosen reason.
   const [hidingId, setHidingId] = useState<number | null>(null);
   const [hideReason, setHideReason] = useState<HideClassifier>("OFF_TOPIC");
-  // Minimized comments the viewer chose to expand ("Show").
   const [shown, setShown] = useState<Set<number>>(new Set());
 
   return (
     <>
       {items.map((item, index) => {
-        // Non-comment events render as a shared timeline row.
         if (item.event !== "commented" || typeof item.id !== "number") {
           return <TimelineEventRow key={`${item.event}-${item.id ?? index}`} item={item} />;
         }
         const c = { id: item.id, node_id: item.node_id, body: item.body, created_at: item.created_at ?? "", user: item.user };
-        // github.com: write access moderates any comment; authors manage
-        // their own. Everyone else gets a read-only card (reactions stay).
+        // Write access moderates any comment; authors manage their own.
         const canManage =
           canPush || (viewerLogin != null && c.user?.login != null && c.user.login === viewerLogin);
         const min = minimized.get(c.id);
-        // A minimized comment renders collapsed until the viewer clicks Show.
         if (min?.isMinimized && !shown.has(c.id)) {
           return (
             <div

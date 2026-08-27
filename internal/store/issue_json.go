@@ -1,7 +1,6 @@
 package store
 
-// TimelineCommentToJSON renders a comment as it appears inside an issue
-// timeline, including the "event": "commented" discriminator.
+// TimelineCommentToJSON renders a comment in the issue-timeline shape.
 func TimelineCommentToJSON(c *Comment, st *Store, baseURL, repoFullName string, issueNumber int, repo *Repo) map[string]interface{} {
 	out := CommentToJSON(c, st, baseURL, repoFullName, issueNumber)
 	out["event"] = "commented"
@@ -11,8 +10,7 @@ func TimelineCommentToJSON(c *Comment, st *Store, baseURL, repoFullName string, 
 	return out
 }
 
-// IssueEventForTimelineToJSON renders an IssueEvent to the timeline-event
-// shape (timeline-issue-events union).
+// IssueEventForTimelineToJSON renders an IssueEvent to the timeline-event shape.
 func IssueEventForTimelineToJSON(e *IssueEvent, st *Store, baseURL, repoFullName string) map[string]interface{} {
 	out := IssueEventBase(e, st, baseURL, repoFullName)
 	out["performed_via_github_app"] = nil
@@ -67,8 +65,7 @@ func IssueEventForTimelineToJSON(e *IssueEvent, st *Store, baseURL, repoFullName
 		out["review_requester"] = requesterJSON
 		out["requested_reviewer"] = reviewerJSON
 	default:
-		// opened, closed, reopened, merged, etc. map to
-		// state-change-issue-event.
+		// opened/closed/reopened/merged map to state-change-issue-event.
 		out["state_reason"] = nil
 	}
 	return out

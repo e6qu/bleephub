@@ -6,22 +6,11 @@ import (
 	"unicode"
 )
 
-// This file is the ecosystem-aware version algebra Dependabot alert
-// derivation runs on: given a dependency's resolved version, an advisory's
-// vulnerable version range and the ecosystem both belong to, decide whether
-// the dependency is affected.
-//
-// Every package ecosystem GitHub publishes advisories for orders versions by
-// its own rules, and the rules genuinely disagree about the same string.
-// "1.0.post1" is *newer* than "1.0" under PEP 440 but a prerelease of it under
-// SemVer; "1.0-sp1" is newer than "1.0" under Maven but older under SemVer;
-// "1.0.a" is a prerelease under RubyGems but an ordinary segment under Maven.
-// A single generic comparator therefore cannot answer "is this version inside
-// the vulnerable range" correctly for more than one ecosystem — it silently
-// produces both missed alerts and false ones. Each ecosystem below gets the
-// comparator its package manager actually uses.
-//
-// Implemented comparators, by SecurityAdvisoryEcosystem value:
+// Ecosystem-aware version algebra for Dependabot alert derivation. Each
+// ecosystem orders versions by incompatible rules ("1.0-sp1" is newer than
+// "1.0" under Maven but older under SemVer), so a single generic comparator
+// would produce both missed and false alerts; each gets its package manager's
+// own comparator:
 //
 //	NPM, GO, RUST, ACTIONS, PUB, ERLANG, SWIFT → SemVer 2.0.0 precedence
 //	PIP                                        → PEP 440
@@ -30,11 +19,8 @@ import (
 //	NUGET                                      → NuGetVersion (4-part SemVer 2.0)
 //	COMPOSER                                   → PHP version_compare stability order
 
-// Canonical ecosystem keys. These are the REST spelling (the
-// dependabot-alert-package `ecosystem` field), which is also what the store
-// records on an alert; GraphQL's SecurityAdvisoryEcosystem enum is the
-// uppercased form of the same set with PIP spelt PIP for pip and RUST for
-// cargo.
+// Canonical ecosystem keys: the REST spelling the store records on an alert.
+// GraphQL's SecurityAdvisoryEcosystem enum is the uppercased form.
 const (
 	EcosystemNPM      = "npm"
 	EcosystemPip      = "pip"
@@ -51,12 +37,9 @@ const (
 )
 
 // NormalizeAdvisoryEcosystem folds the several spellings of one ecosystem
-// onto the canonical key. Advisories, dependency snapshots and package URLs
-// all name the same ecosystem differently — a purl says "pypi" and
-// "cargo" and "golang", GitHub's REST advisory says "pip" and "rust" and
-// "go", and the GraphQL enum shouts "PIP". Matching a dependency against an
-// advisory compares the folded forms, so the three spellings cannot become
-// three ecosystems that never match each other.
+// (purl "pypi"/"cargo", REST "pip"/"rust", GraphQL "PIP") onto the canonical
+// key, so matching compares folded forms rather than three names that never
+// meet.
 func NormalizeAdvisoryEcosystem(ecosystem string) string {
 	switch strings.ToLower(strings.TrimSpace(ecosystem)) {
 	case "npm", "node", "nodejs", "javascript":
@@ -88,12 +71,9 @@ func NormalizeAdvisoryEcosystem(ecosystem string) string {
 	}
 }
 
-// AdvisoryEcosystemGraphQL renders a canonical ecosystem key as its
-// SecurityAdvisoryEcosystem enum value, or "" when the key is not one of the
-// twelve ecosystems the enum names — a manifest may legitimately declare a
-// package from an ecosystem GitHub's advisory database has no enum for, and
-// the field is nullable precisely so that case reports honestly rather than
-// inventing a member.
+// AdvisoryEcosystemGraphQL renders a canonical key as its
+// SecurityAdvisoryEcosystem enum value, or "" for an ecosystem the enum does
+// not name (the field is nullable so this reports honestly).
 func AdvisoryEcosystemGraphQL(ecosystem string) string {
 	switch NormalizeAdvisoryEcosystem(ecosystem) {
 	case EcosystemNPM:
@@ -124,21 +104,15 @@ func AdvisoryEcosystemGraphQL(ecosystem string) string {
 	return ""
 }
 
-// AdvisoryEcosystemFromGraphQL is the inverse of AdvisoryEcosystemGraphQL:
-// it turns a SecurityAdvisoryEcosystem enum value back into the canonical
-// key so a GraphQL ecosystem: filter compares against the same folded form
-// the store records.
+// AdvisoryEcosystemFromGraphQL turns a SecurityAdvisoryEcosystem enum value
+// back into the canonical key.
 func AdvisoryEcosystemFromGraphQL(enum string) string {
 	return NormalizeAdvisoryEcosystem(enum)
 }
 
-// CompareEcosystemVersions orders two version strings under the given
-// ecosystem's own rules, reporting false when either string is not a version
-// that ecosystem's comparator can parse.
-//
-// The boolean is not decoration: callers must not treat an unparseable
-// version as equal, less or greater. Alert derivation reads it to decide
-// whether it is entitled to rule a dependency *out* of a vulnerable range.
+// CompareEcosystemVersions orders two versions under the ecosystem's own
+// rules. The bool is false when either string is unparseable; callers must not
+// then treat the versions as ordered.
 func CompareEcosystemVersions(ecosystem, left, right string) (int, bool) {
 	switch NormalizeAdvisoryEcosystem(ecosystem) {
 	case EcosystemPip:
@@ -152,20 +126,16 @@ func CompareEcosystemVersions(ecosystem, left, right string) (int, bool) {
 	case EcosystemComposer:
 		return compareComposer(left, right)
 	default:
-		// SemVer 2.0.0 precedence, which npm, Go modules, Cargo, Hex, pub,
-		// SwiftPM and Actions tags all use. It is also the least surprising
-		// answer for an ecosystem this build does not know, and the honest
-		// one: every remaining GitHub advisory ecosystem is semver-ordered.
+		// SemVer 2.0.0: what npm/Go/Cargo/Hex/pub/SwiftPM/Actions use, and the
+		// right default for any unknown ecosystem (all remaining ones are
+		// semver-ordered).
 		return compareSemVer(left, right)
 	}
 }
 
 // VersionInVulnerableRange reports whether version falls inside an advisory's
-// vulnerableVersionRange under the ecosystem's ordering.
-//
-// The range grammar is GitHub's, documented on SecurityVulnerability:
-// comma-separated constraints, all of which must hold — "= 0.2.0",
-// "<= 1.0.8", "< 0.1.11", ">= 4.3.0, < 4.3.5", ">= 0.0.1".
+// vulnerableVersionRange. The grammar is GitHub's: comma-separated
+// constraints, all of which must hold (e.g. ">= 4.3.0, < 4.3.5").
 func VersionInVulnerableRange(ecosystem, version, rangeExpr string) bool {
 	version = strings.TrimSpace(version)
 	rangeExpr = strings.TrimSpace(rangeExpr)
@@ -191,11 +161,8 @@ func versionSatisfiesConstraint(ecosystem, version, constraint string) bool {
 	operator, operand := splitVersionConstraint(constraint)
 	cmp, ok := CompareEcosystemVersions(ecosystem, version, operand)
 	if !ok {
-		// A version dialect this comparator cannot read must not silently
-		// turn a published vulnerability into "safe": suppressing the alert
-		// hides the advisory outright, while raising it leaves a human (or a
-		// later Dependabot reconciliation) able to dismiss it. The
-		// conservative direction is the one that still tells somebody.
+		// Unparseable version: fail toward alerting. Suppressing hides the
+		// advisory; a false alert can still be dismissed.
 		return true
 	}
 	switch operator {
@@ -212,10 +179,9 @@ func versionSatisfiesConstraint(ecosystem, version, constraint string) bool {
 	}
 }
 
-// splitVersionConstraint separates a constraint's comparison operator from
-// its operand, defaulting to equality for a bare version. The candidates are
-// ordered longest-first so "<=" is never read as "<" followed by a version
-// that begins with "=".
+// splitVersionConstraint separates a constraint's operator from its operand,
+// defaulting to equality. Candidates are longest-first so "<=" is not read as
+// "<" plus "=...".
 func splitVersionConstraint(constraint string) (operator, operand string) {
 	for _, candidate := range []string{"<=", ">=", "==", "<", ">", "="} {
 		if !strings.HasPrefix(constraint, candidate) {
@@ -234,11 +200,9 @@ func splitVersionConstraint(constraint string) (operator, operand string) {
 // SemVer 2.0.0 — npm, Go, Cargo, Hex, pub, SwiftPM, Actions
 // ---------------------------------------------------------------------------
 
-// compareSemVer implements SemVer 2.0.0 §11 precedence: the release triple is
-// compared numerically, build metadata is ignored, a version with a
-// prerelease sorts below the same version without one, and prerelease
-// identifiers are compared dot-part by dot-part with numeric parts below
-// alphanumeric ones.
+// compareSemVer implements SemVer 2.0.0 §11 precedence: numeric release
+// triple, build metadata ignored, a prerelease below the same release, and
+// dot-parts compared with numeric below alphanumeric.
 func compareSemVer(left, right string) (int, bool) {
 	leftRelease, leftPre, ok := parseSemVer(left)
 	if !ok {
@@ -254,10 +218,9 @@ func compareSemVer(left, right string) (int, bool) {
 	return comparePrereleaseIdentifiers(leftPre, rightPre), true
 }
 
-// parseSemVer splits a version into its numeric release segments and its
-// prerelease identifiers. A leading "v" is tolerated because Go module and
-// Actions tags carry one, and a missing minor or patch is tolerated because
-// advisories are routinely written "< 2" rather than "< 2.0.0".
+// parseSemVer splits a version into numeric release segments and prerelease
+// identifiers. A leading "v" (Go/Actions tags) and a missing minor/patch
+// (advisories write "< 2") are tolerated.
 func parseSemVer(version string) (release []int, prerelease []string, ok bool) {
 	version = strings.TrimSpace(version)
 	version = strings.TrimPrefix(version, "v")
@@ -289,9 +252,8 @@ func parseSemVer(version string) (release []int, prerelease []string, ok bool) {
 	return release, prerelease, true
 }
 
-// comparePrereleaseIdentifiers applies SemVer §11.4 to two prerelease
-// identifier lists, where an empty list (a final release) outranks any
-// non-empty one.
+// comparePrereleaseIdentifiers applies SemVer §11.4; an empty list (final
+// release) outranks any non-empty one.
 func comparePrereleaseIdentifiers(left, right []string) int {
 	switch {
 	case len(left) == 0 && len(right) == 0:
@@ -330,25 +292,20 @@ func comparePrereleaseIdentifiers(left, right []string) int {
 // PEP 440 — pip
 // ---------------------------------------------------------------------------
 
-// pep440Version is a parsed PEP 440 version. The five ordered components are
-// exactly the ones §"Summary of permitted suffixes and relative ordering"
-// names, and the sentinel values are chosen so a plain slice comparison
-// reproduces that ordering.
+// pep440Version is a parsed PEP 440 version, with sentinel values chosen so a
+// plain field-by-field comparison reproduces PEP 440 ordering.
 type pep440Version struct {
 	epoch   int
 	release []int
-	// preKind is "" for a final release, otherwise "a", "b" or "rc"; a
-	// pre-release sorts below the same release, which preRank encodes.
+	// preRank is 0 for a final release, else the pre-release stage; a
+	// pre-release sorts below the same release.
 	preRank   int
 	preNumber int
-	// postNumber is -1 when there is no post-release, so a post-release
-	// sorts above the same release.
+	// postNumber is -1 when absent, so a post-release sorts above the release.
 	postNumber int
-	// hasDev / devNumber describe a .devN suffix. A dev release sorts BELOW
-	// everything else carrying the same release segment and stage, so the
-	// absence of one cannot be spelt as a number: "1.0a1" must outrank
-	// "1.0a1.dev1", which any sentinel value compared numerically against a
-	// real dev number gets backwards in one direction or the other.
+	// hasDev is a separate flag, not a sentinel devNumber: a dev release sorts
+	// below everything at the same stage ("1.0a1" outranks "1.0a1.dev1"), which
+	// no numeric sentinel gets right in both directions.
 	hasDev    bool
 	devNumber int
 	local     []string
@@ -396,15 +353,13 @@ func comparePEP440(left, right string) (int, bool) {
 	return comparePEP440Local(leftVersion.local, rightVersion.local), true
 }
 
-// pep440StageRank collapses the dev/pre/final/post distinction into the
-// coarse ordering PEP 440 gives them within one release segment.
+// pep440StageRank collapses the dev/pre/final/post distinction into PEP 440's
+// coarse ordering within one release segment.
 func pep440StageRank(version pep440Version) int {
 	switch {
 	case version.postNumber >= 0:
 		return 3
 	case version.preRank > 0:
-		// A pre-release with a .devN suffix is still below a bare
-		// pre-release, which the hasDev tiebreak settles.
 		return 1
 	case version.hasDev:
 		return 0
@@ -413,9 +368,8 @@ func pep440StageRank(version pep440Version) int {
 	}
 }
 
-// comparePEP440Local orders local version labels: a version with a local
-// label sorts above the same version without one, numeric segments outrank
-// alphanumeric ones, and equal-kind segments compare in their own domain.
+// comparePEP440Local orders local version labels: a label outranks none,
+// numeric segments outrank alphanumeric, equal kinds compare in their domain.
 func comparePEP440Local(left, right []string) int {
 	switch {
 	case len(left) == 0 && len(right) == 0:
@@ -446,9 +400,8 @@ func comparePEP440Local(left, right []string) int {
 	return signOf(len(left) - len(right))
 }
 
-// parsePEP440 reads the normalized and the common non-normalized spellings
-// PEP 440 declares equivalent: "1.0alpha1" and "1.0.a1" and "1.0-a-1" are one
-// version, "1.0-1" and "1.0.post1" and "1.0rev1" are another.
+// parsePEP440 reads the normalized and non-normalized spellings PEP 440 treats
+// as equivalent ("1.0alpha1" == "1.0.a1", "1.0-1" == "1.0.post1").
 func parsePEP440(version string) (pep440Version, bool) {
 	parsed := pep440Version{preNumber: -1, postNumber: -1}
 	version = strings.ToLower(strings.TrimSpace(version))
@@ -494,26 +447,24 @@ func parsePEP440(version string) (pep440Version, bool) {
 	return parsed, true
 }
 
-// pep440PreRanks maps every spelling of a pre-release marker to its rank.
-// The ranks start at 1 so that zero can mean "not a pre-release".
+// pep440PreRanks maps each pre-release marker to its rank; ranks start at 1 so
+// zero means "not a pre-release".
 var pep440PreRanks = map[string]int{
 	"a": 1, "alpha": 1,
 	"b": 2, "beta": 2,
 	"c": 3, "rc": 3, "pre": 3, "preview": 3,
 }
 
-// parsePEP440Suffix consumes the pre/post/dev suffix chain that follows a
-// PEP 440 release segment, tolerating the "." "-" "_" separators the spec
-// declares interchangeable.
+// parsePEP440Suffix consumes the pre/post/dev suffix chain after a release
+// segment, tolerating the interchangeable "." "-" "_" separators.
 func parsePEP440Suffix(parsed *pep440Version, suffix string) bool {
 	for suffix != "" {
 		suffix = strings.TrimLeft(suffix, ".-_")
 		if suffix == "" {
 			break
 		}
-		// The implicit post-release spelling "1.0-1": a separator followed
-		// only by digits. The separator is already trimmed, so a leading
-		// digit here means the number stood alone.
+		// Implicit post-release "1.0-1": a leading digit (separator already
+		// trimmed) means the number stood alone.
 		if suffix[0] >= '0' && suffix[0] <= '9' {
 			word, rest := splitLeadingDigits(suffix)
 			number, err := strconv.Atoi(word)
@@ -558,9 +509,8 @@ func parsePEP440Suffix(parsed *pep440Version, suffix string) bool {
 // Maven ComparableVersion
 // ---------------------------------------------------------------------------
 
-// mavenQualifierOrder is Maven's ComparableVersion qualifier ranking. The
-// empty string is the release itself, so anything below it is a prerelease
-// and "sp" (service pack) is the one qualifier that outranks the release.
+// mavenQualifierOrder is Maven's ComparableVersion qualifier ranking. "" is
+// the release; anything below it is a prerelease, and "sp" alone outranks it.
 var mavenQualifierOrder = map[string]int{
 	"alpha": 0, "a": 0,
 	"beta": 1, "b": 1,
@@ -571,10 +521,9 @@ var mavenQualifierOrder = map[string]int{
 	"sp": 6,
 }
 
-// compareMaven orders two Maven coordinates' versions the way Maven's own
-// ComparableVersion does: tokens split on separators and on digit/letter
-// transitions, numeric tokens compared as integers, qualifier tokens ranked
-// against the release, and a shorter version zero-padded.
+// compareMaven orders two versions the way Maven's ComparableVersion does:
+// tokens split on separators and digit/letter transitions, numerics compared
+// as integers, qualifiers ranked against the release, shorter version padded.
 func compareMaven(left, right string) (int, bool) {
 	leftTokens, ok := mavenTokens(left)
 	if !ok {
@@ -600,11 +549,9 @@ func compareMaven(left, right string) (int, bool) {
 	return 0, true
 }
 
-// mavenTokenKind distinguishes the three things a ComparableVersion item can
-// be. The null kind is not an absence to be skipped: Maven compares a
-// present token against the padding explicitly, and the answer differs by
-// kind — a trailing ".0" leaves a version unchanged while a trailing "-rc"
-// makes it older and a trailing "-sp" makes it newer.
+// mavenTokenKind distinguishes a ComparableVersion item. The null kind is
+// compared against explicitly, not skipped: trailing ".0" leaves a version
+// unchanged, "-rc" makes it older, "-sp" newer.
 type mavenTokenKind int
 
 const (
@@ -623,9 +570,8 @@ type mavenToken struct {
 // mavenNullToken is the padding a shorter version is compared against.
 func mavenNullToken() mavenToken { return mavenToken{kind: mavenTokenNull} }
 
-// mavenQualifierRank ranks a qualifier against the release marker. Maven
-// sorts an unrecognized qualifier above every recognized one and above the
-// release itself, so a rank one past the table stands in for "unknown".
+// mavenQualifierRank ranks a qualifier against the release. An unrecognized
+// qualifier sorts above every known one, so it gets a rank one past the table.
 func mavenQualifierRank(qualifier string) int {
 	if rank, known := mavenQualifierOrder[qualifier]; known {
 		return rank
@@ -661,29 +607,26 @@ func mavenTokens(version string) ([]mavenToken, bool) {
 }
 
 // compareMavenToken orders two ComparableVersion items, reproducing
-// IntItem.compareTo and StringItem.compareTo including their treatment of
-// the null padding.
+// IntItem/StringItem.compareTo including their null-padding treatment.
 func compareMavenToken(left, right mavenToken) int {
 	switch {
 	case left.kind == mavenTokenNumeric && right.kind == mavenTokenNumeric:
 		return signOf(left.number - right.number)
 
-	// A number is always newer than a qualifier: "1.1" beats "1.0-rc" on the
-	// third item, and "1.0.1" beats "1.0-sp" on the same one.
+	// A number is always newer than a qualifier.
 	case left.kind == mavenTokenNumeric && right.kind == mavenTokenQualifier:
 		return 1
 	case left.kind == mavenTokenQualifier && right.kind == mavenTokenNumeric:
 		return -1
 
-	// A trailing zero is not a version change, so "1.0" and "1.0.0" are the
-	// same version while "1.0.1" is newer than "1.0".
+	// Trailing zero is not a version change: "1.0" == "1.0.0".
 	case left.kind == mavenTokenNumeric && right.kind == mavenTokenNull:
 		return signOf(left.number)
 	case left.kind == mavenTokenNull && right.kind == mavenTokenNumeric:
 		return -signOf(right.number)
 
-	// A trailing qualifier is compared against the release marker, which is
-	// what puts "1.0-rc" below "1.0" and "1.0-sp" above it.
+	// Trailing qualifier compared against the release marker: "-rc" below,
+	// "-sp" above.
 	case left.kind == mavenTokenQualifier && right.kind == mavenTokenNull:
 		return signOf(mavenQualifierRank(left.qualifier) - mavenQualifierOrder[""])
 	case left.kind == mavenTokenNull && right.kind == mavenTokenQualifier:
@@ -694,9 +637,8 @@ func compareMavenToken(left, right mavenToken) int {
 		if leftRank != rightRank {
 			return signOf(leftRank - rightRank)
 		}
-		// Two qualifiers of the same rank are either aliases of one another
-		// ("a" and "alpha") or two unrecognized words, which Maven orders
-		// lexically against each other.
+		// Same rank: aliases ("a"/"alpha") are equal; unrecognized words order
+		// lexically.
 		if _, leftKnown := mavenQualifierOrder[left.qualifier]; leftKnown {
 			return 0
 		}
@@ -711,10 +653,9 @@ func compareMavenToken(left, right mavenToken) int {
 // RubyGems Gem::Version
 // ---------------------------------------------------------------------------
 
-// compareRubyGems orders two gem versions. Gem::Version splits on "." and on
-// digit/letter transitions, compares numeric segments as integers and string
-// segments lexically, and ranks a string segment below a numeric one — which
-// is what makes "1.0.a" a prerelease of "1.0" and "1.0.0" equal to "1.0".
+// compareRubyGems orders two gem versions the way Gem::Version does: split on
+// "." and digit/letter transitions, numerics as integers, strings lexically
+// and below numerics ("1.0.a" is a prerelease of "1.0", "1.0.0" == "1.0").
 func compareRubyGems(left, right string) (int, bool) {
 	leftSegments, ok := rubyGemsSegments(left)
 	if !ok {
@@ -725,8 +666,7 @@ func compareRubyGems(left, right string) (int, bool) {
 		return 0, false
 	}
 	for i := 0; i < len(leftSegments) || i < len(rightSegments); i++ {
-		// Gem::Version pads the shorter version with numeric zeroes, so
-		// "1.0" and "1.0.0" compare equal while "1.0" outranks "1.0.a".
+		// Gem::Version pads the shorter version with numeric zeroes.
 		leftSegment := "0"
 		if i < len(leftSegments) {
 			leftSegment = leftSegments[i]
@@ -782,9 +722,8 @@ func rubyGemsSegments(version string) ([]string, bool) {
 // NuGet
 // ---------------------------------------------------------------------------
 
-// compareNuGet orders two NuGet package versions: a four-part numeric
-// version (the legacy revision field) followed by SemVer 2.0 prerelease
-// identifiers compared case-insensitively, with build metadata ignored.
+// compareNuGet orders two NuGet versions: a four-part numeric version plus
+// case-insensitive SemVer 2.0 prerelease identifiers, build metadata ignored.
 func compareNuGet(left, right string) (int, bool) {
 	leftRelease, leftPre, ok := parseNuGet(left)
 	if !ok {
@@ -794,7 +733,7 @@ func compareNuGet(left, right string) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	// NuGet pads to four parts, so 1.0 and 1.0.0.0 are the same version.
+	// NuGet pads to four parts: 1.0 == 1.0.0.0.
 	for len(leftRelease) < 4 {
 		leftRelease = append(leftRelease, 0)
 	}
@@ -822,8 +761,8 @@ func parseNuGet(version string) (release []int, prerelease []string, ok bool) {
 // Composer / PHP version_compare
 // ---------------------------------------------------------------------------
 
-// composerStabilityRanks is PHP's version_compare ordering of the stability
-// words, where anything unrecognized sorts below "dev" exactly as PHP does.
+// composerStabilityRanks is PHP version_compare's stability-word ordering;
+// anything unrecognized sorts below "dev", as PHP does.
 var composerStabilityRanks = map[string]int{
 	"dev":   0,
 	"alpha": 1, "a": 1,
@@ -833,10 +772,9 @@ var composerStabilityRanks = map[string]int{
 	"pl": 5, "p": 5,
 }
 
-// compareComposer orders two Composer package versions with PHP's
-// version_compare semantics: the version is canonicalized into
-// period-separated parts, and each part is either a number or a stability
-// word ranked against the implicit release marker.
+// compareComposer orders two versions with PHP version_compare semantics:
+// canonicalized into parts, each a number or a stability word ranked against
+// the release marker.
 func compareComposer(left, right string) (int, bool) {
 	leftParts, ok := composerParts(left)
 	if !ok {
@@ -868,8 +806,7 @@ func compareComposerPart(left, right string) int {
 	if leftErr == nil && rightErr == nil {
 		return signOf(leftNumber - rightNumber)
 	}
-	// A numeric part is the release marker's peer: "1.0.1" outranks
-	// "1.0.rc1" for the same reason "1.0" does.
+	// A numeric part ranks as the release marker.
 	rank := func(part string, numeric bool) int {
 		if numeric {
 			return composerStabilityRanks["#"]
@@ -893,9 +830,8 @@ func compareComposerPart(left, right string) int {
 	return strings.Compare(left, right)
 }
 
-// composerParts canonicalizes a Composer version the way PHP's
-// version_compare does before comparing: separators become boundaries, and
-// every digit/letter transition becomes one too.
+// composerParts canonicalizes a version the way PHP version_compare does:
+// separators and digit/letter transitions both become boundaries.
 func composerParts(version string) ([]string, bool) {
 	version = strings.ToLower(strings.TrimSpace(version))
 	version = strings.TrimPrefix(version, "v")
@@ -925,8 +861,8 @@ func composerParts(version string) ([]string, bool) {
 // Shared primitives
 // ---------------------------------------------------------------------------
 
-// compareNumericSegments orders two release-segment slices, treating a
-// missing trailing segment as zero so "1.2" and "1.2.0" compare equal.
+// compareNumericSegments orders two release-segment slices, a missing trailing
+// segment counting as zero ("1.2" == "1.2.0").
 func compareNumericSegments(left, right []int) int {
 	for i := 0; i < len(left) || i < len(right); i++ {
 		leftSegment, rightSegment := 0, 0
@@ -943,9 +879,8 @@ func compareNumericSegments(left, right []int) int {
 	return 0
 }
 
-// splitDigitLetterRuns breaks a chunk at every digit-to-letter and
-// letter-to-digit transition, which is the tokenization Maven, RubyGems and
-// Composer all perform before comparing.
+// splitDigitLetterRuns breaks a chunk at every digit/letter transition, the
+// tokenization Maven, RubyGems and Composer share.
 func splitDigitLetterRuns(chunk string) []string {
 	var runs []string
 	start := 0

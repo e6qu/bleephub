@@ -17,7 +17,6 @@ import (
 
 func (s *Server) registerGHAppsRoutes() {
 	s.registerGHAppSettingsRoutes()
-	// GitHub App application programming interface endpoints.
 	s.route("POST /api/v3/app-manifests/{code}/conversions", s.handleManifestConversion)
 	s.route("GET /api/v3/app", s.handleGetAuthenticatedApp)
 	s.route("GET /api/v3/apps/{app_slug}", s.handleGetAppBySlug)
@@ -33,10 +32,6 @@ func (s *Server) registerGHAppsRoutes() {
 	s.route("GET /api/v3/orgs/{org}/installations", s.handleListOrgInstallations)
 	s.route("GET /api/v3/users/{username}/installation", s.handleGetUserInstallation)
 
-	// App-manifest submission — the web-flow form post real GitHub serves at
-	// github.com/settings/apps/new. Creates the app and 302-redirects to the
-	// manifest's redirect_url with the one-time code that
-	// POST /api/v3/app-manifests/{code}/conversions redeems.
 	s.route("POST /settings/apps/new", s.handleManifestSubmission)
 	s.route("GET /settings/apps", s.handleListBrowserGitHubApps)
 	s.route("POST /apps/{app_slug}/installations/new", s.handleBrowserInstallApp)
@@ -49,26 +44,21 @@ func (s *Server) registerGHAppsRoutes() {
 }
 
 // registerGHAppsUserAndOperatorRoutes mounts the authenticated-user
-// installation views and the operator-facing /internal app management
-// surface.
+// installation views and the installation-token-scoped repository list.
 func (s *Server) registerGHAppsUserAndOperatorRoutes() {
-	// installations from the authenticated user's perspective.
 	s.route("GET /api/v3/user/installations", s.handleListUserInstallations)
 	s.route("GET /api/v3/user/installations/{id}/repositories", s.handleListUserInstallationRepos)
 	s.route("PUT /api/v3/user/installations/{id}/repositories/{repo_id}", s.handleAddUserInstallationRepo)
 	s.route("DELETE /api/v3/user/installations/{id}/repositories/{repo_id}", s.handleRemoveUserInstallationRepo)
 	s.route("DELETE /api/v3/installation/token", s.handleRevokeInstallationToken)
 
-	// installation-token-scoped repositories list.
 	s.route("GET /api/v3/installation/repositories", s.handleListInstallationRepositories)
-
 }
 
-// handleManifestSubmission — POST /settings/apps/new. The browser half of the
-// GitHub App Manifest flow: a logged-in user posts a form whose `manifest`
-// field carries the app manifest JSON; GitHub registers the app and redirects
-// to the manifest's redirect_url with a one-time `code` (echoing the optional
-// `state`). The conversion endpoint below redeems the code for credentials.
+// handleManifestSubmission is the browser half of the GitHub App Manifest flow:
+// register the app from the posted `manifest` JSON and 302 to its redirect_url
+// with a one-time `code` (echoing any `state`) that the conversion endpoint
+// redeems for credentials.
 func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request) {
 	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
@@ -128,10 +118,8 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	// bleephub records one callback per client, the same shape OAuth Apps
-	// carry, so the authorize gate has a single destination to compare
-	// against. A manifest offering several is refused rather than quietly
-	// reduced to its first entry.
+	// One callback per client (as OAuth Apps carry); a manifest offering
+	// several is refused, not silently reduced to its first entry.
 	callbackURL := ""
 	if len(manifest.CallbackURLs) > 1 {
 		store.WriteGHValidationError(w, "AppManifest", "callback_urls", "invalid")
@@ -152,8 +140,7 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 	}
 	s.store.UpdateApp(app.ID, func(a *store.App) {
 		if manifest.URL != "" {
-			// The manifest's `url` is the app homepage, served back
-			// as external_url.
+			// The manifest's `url` is the app homepage (external_url).
 			a.ExternalURL = manifest.URL
 		}
 		a.CallbackURL = callbackURL
@@ -175,8 +162,7 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, redirect.String(), http.StatusFound)
 }
 
-// handleListBrowserGitHubApps exposes the signed-in user's GitHub Apps through
-// the same settings surface that owns the browser manifest flow.
+// handleListBrowserGitHubApps lists the signed-in user's GitHub Apps.
 func (s *Server) handleListBrowserGitHubApps(w http.ResponseWriter, r *http.Request) {
 	_, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
@@ -193,10 +179,9 @@ func (s *Server) handleListBrowserGitHubApps(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleBrowserInstallApp implements the signed-in browser installation step
-// behind GitHub's "Install App" flow. The app's registered default
-// permissions/events are the installation grant; the form only chooses the
-// target account and all-vs-selected repository access.
+// handleBrowserInstallApp is the browser "Install App" step. The app's
+// registered default permissions/events form the grant; the form only chooses
+// the target account and all-vs-selected repository access.
 func (s *Server) handleBrowserInstallApp(w http.ResponseWriter, r *http.Request) {
 	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
@@ -331,8 +316,7 @@ func (s *Server) browserManageableInstallation(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) resolveInstallTarget(ctx context.Context, user *store.User, targetLogin string) (string, int, bool) {
-	// Resolve the login case-insensitively and compare identities, not raw
-	// strings: "ADMIN" names the same account as "admin".
+	// Compare identities, not raw strings: "ADMIN" names the "admin" account.
 	if u := s.store.LookupUserByLogin(targetLogin); u != nil && u.ID == user.ID {
 		return "User", user.ID, true
 	}
@@ -454,7 +438,6 @@ func (s *Server) handleCreateInstallationToken(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Optional permissions + repo-subset override from request body.
 	perms := inst.Permissions
 	var repoIDs []int
 	var body struct {
@@ -474,8 +457,8 @@ func (s *Server) handleCreateInstallationToken(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Requested permissions must be a subset of the installation's grants —
-	// real GitHub rejects escalation with 422.
+	// Requested permissions must be a subset of the installation's grants;
+	// escalation is a 422.
 	if body.Permissions != nil {
 		if scope, ok := validateRequestedPermissions(body.Permissions, inst.Permissions); !ok {
 			writeGHError(w, http.StatusUnprocessableEntity,
@@ -485,9 +468,8 @@ func (s *Server) handleCreateInstallationToken(w http.ResponseWriter, r *http.Re
 		perms = body.Permissions
 	}
 
-	// Repository scoping: every requested repo must exist under the
-	// installation target and be accessible to the installation — real
-	// GitHub rejects unknown/inaccessible repos with 422.
+	// Every requested repo must exist under the target and be accessible to
+	// the installation; unknown/inaccessible repos are a 422.
 	accessible := installationAccessibleRepoIDs(s.store, inst)
 	for _, rid := range body.RepositoryIDs {
 		if _, ok := accessible[rid]; !ok {
@@ -520,10 +502,9 @@ func (s *Server) handleCreateInstallationToken(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// When the token is minted with a specific repository subset, real GitHub
-	// returns repository_selection="selected" and a `repositories` array of the
-	// scoped repos. Resolve the token's repo IDs against the installation's
-	// owned repos.
+	// A token minted with a repository subset returns
+	// repository_selection="selected" and a `repositories` array; resolve its
+	// repo IDs against the installation's owned repos.
 	var scopedRepos []*store.Repo
 	if len(token.RepositoryIDs) > 0 {
 		owned := s.store.ListReposByOwner(inst.TargetLogin)
@@ -583,8 +564,7 @@ func (s *Server) handleGetRepoInstallation(w http.ResponseWriter, r *http.Reques
 			!strings.EqualFold(inst.TargetType, repo.OwnerType) {
 			continue
 		}
-		// A "selected"-mode installation only covers repos on its allow-list;
-		// real GitHub 404s for repos outside the selection.
+		// A "selected"-mode installation 404s for repos outside its allow-list.
 		if _, ok := installationAccessibleRepoIDs(s.store, inst)[repo.ID]; ok {
 			writeJSON(w, http.StatusOK, installationToJSON(inst, s.baseURL(r)))
 			return
@@ -620,10 +600,9 @@ func appToJSON(st *store.Store, app *store.App, includePEM bool, baseURL string)
 	return result
 }
 
-// appOwnerJSON serializes the GitHub App's owning account as a Simple User,
-// matching the `owner` object real GitHub returns on GET /app and
-// GET /apps/{slug}. App loading and creation validate OwnerID, so a missing
-// owner is corrupt state and is exposed as null rather than a fabricated user.
+// appOwnerJSON serializes the app's owning account as a Simple User. OwnerID is
+// validated at load and creation, so a missing owner is corrupt state and
+// serializes as null rather than a fabricated user.
 func appOwnerJSON(st *store.Store, app *store.App, baseURL string) map[string]interface{} {
 	st.Mu.RLock()
 	owner := st.Users[app.OwnerID]
@@ -635,9 +614,8 @@ func appOwnerJSON(st *store.Store, app *store.App, baseURL string) map[string]in
 }
 
 // appPermissionScopesWithAdminLevel are the app-permissions members whose
-// documented enum admits "admin": components/schemas/app-permissions in the
-// vendored description declares ["read","write","admin"] for exactly these
-// four and stops at ["read","write"] for the rest.
+// documented enum admits "admin" (["read","write","admin"]); all other scopes
+// stop at ["read","write"].
 var appPermissionScopesWithAdminLevel = map[string]bool{
 	"repository_projects":                            true,
 	"organization_projects":                          true,
@@ -645,12 +623,9 @@ var appPermissionScopesWithAdminLevel = map[string]bool{
 	"enterprise_custom_properties_for_organizations": true,
 }
 
-// appPermissionsJSON renders a stored permission map in the app-permissions
-// wire vocabulary. bleephub's authorization model has a level above write
-// (store.PermAdmin) that GitHub's enum does not carry for most scopes; on the
-// wire that level serializes as "write", the highest level GitHub models
-// there. The stored map is untouched, so every authorization decision keeps
-// reading the internal level; only the representation is narrowed.
+// appPermissionsJSON renders a stored permission map on the wire. bleephub's
+// PermAdmin sits above write; for scopes whose enum lacks "admin" it serializes
+// as "write". The stored map is untouched — only the representation narrows.
 func appPermissionsJSON(perms map[string]string) map[string]string {
 	if perms == nil {
 		return nil
@@ -669,10 +644,9 @@ func installationToJSON(inst *store.Installation, baseURL string) map[string]int
 	if inst == nil {
 		return nil
 	}
-	// The account rides as a simple-user regardless of target type —
-	// real GitHub serializes Organization targets in the same shape with
-	// type "Organization". Node ID and avatar were snapshotted from the
-	// target account at installation time.
+	// The account rides as a simple-user regardless of target type
+	// (Organization targets use the same shape with type "Organization").
+	// Node ID and avatar were snapshotted at installation time.
 	accountAPI := baseURL + "/api/v3/users/" + inst.TargetLogin
 	account := map[string]interface{}{
 		"login":               inst.TargetLogin,
@@ -726,8 +700,8 @@ func installationToJSON(inst *store.Installation, baseURL string) map[string]int
 }
 
 func installationTokenToJSON(token *store.InstallationToken, inst *store.Installation, scopedRepos []*store.Repo, st *store.Store, baseURL string) map[string]interface{} {
-	// repository_selection reflects the token's effective scope: "selected"
-	// when minted with a repository subset, otherwise the installation's.
+	// "selected" when minted with a repository subset, otherwise the
+	// installation's own selection.
 	selection := ""
 	if inst != nil {
 		selection = inst.RepositorySelection
@@ -751,10 +725,8 @@ func installationTokenToJSON(token *store.InstallationToken, inst *store.Install
 	return out
 }
 
-// handleListUserInstallations — GET /api/v3/user/installations.
-// Real GitHub: scoped to installations the authenticated user has access
-// to — installations on the user's own account plus installations on
-// organizations where the user is an active member.
+// handleListUserInstallations lists installations on the user's own account
+// plus those on organizations where the user is an active member.
 func (s *Server) handleListUserInstallations(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -783,13 +755,8 @@ func (s *Server) handleListUserInstallations(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// handleListUserInstallationRepos — GET /api/v3/user/installations/{id}/repositories.
-// Returns repos accessible via this installation. With
-// `RepositorySelection=all` (the default in bleephub's CreateInstallation),
-// this returns every repo owned by the installation's target login.
-// Real GitHub additionally supports `selected` selection — that path
-// would read a per-installation repo allow-list, which bleephub
-// doesn't model today; the response just enumerates all owned repos.
+// handleListUserInstallationRepos returns the repos accessible via this
+// installation.
 func (s *Server) handleListUserInstallationRepos(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -821,12 +788,10 @@ func (s *Server) handleListUserInstallationRepos(w http.ResponseWriter, r *http.
 }
 
 // userAccessibleInstallation binds a /user/installations/{id} request to the
-// authenticated human and, for GitHub App user-to-server credentials, to the
-// app and explicit installation subset represented by that credential.
-//
-// Read endpoints accept active organization members, matching
-// /user/installations. Mutations require an organization owner. A user-account
-// installation is visible and mutable only by that account's user.
+// authenticated human and, for user-to-server credentials, to the app and
+// installation subset that credential represents. Reads accept active org
+// members; mutations (requireAdmin) require an org owner; a user-account
+// installation is reachable only by that account's user.
 func (s *Server) userAccessibleInstallation(ctx context.Context, user *store.User, id int, requireAdmin bool) (*store.Installation, bool) {
 	inst := s.store.GetInstallation(id)
 	if inst == nil || user == nil {
@@ -859,9 +824,8 @@ func (s *Server) userAccessibleInstallation(ctx context.Context, user *store.Use
 	return inst, true
 }
 
-// handleGetAppBySlug — GET /api/v3/apps/{app_slug}.
-// Real GitHub: anonymous-readable public app lookup. Returns the public
-// fields (no PEM, no client_secret). 404 when the slug doesn't match.
+// handleGetAppBySlug is the anonymous-readable public app lookup: public fields
+// only (no PEM, no client_secret), 404 on an unknown slug.
 func (s *Server) handleGetAppBySlug(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("app_slug")
 	app := s.store.GetAppBySlug(slug)
@@ -872,8 +836,8 @@ func (s *Server) handleGetAppBySlug(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, appToJSON(s.store, app, false, s.baseURL(r)))
 }
 
-// handleSuspendInstallation — PUT /api/v3/app/installations/{id}/suspended.
-// JSON Web Token-authenticated GitHub App. 204 on success, 409 if already suspended.
+// handleSuspendInstallation suspends an installation: 204 on success, 409 if
+// already suspended.
 func (s *Server) handleSuspendInstallation(w http.ResponseWriter, r *http.Request) {
 	app := ghAppFromContext(r.Context())
 	if app == nil {
@@ -902,8 +866,8 @@ func (s *Server) handleSuspendInstallation(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleUnsuspendInstallation — DELETE /api/v3/app/installations/{id}/suspended.
-// JSON Web Token-authenticated GitHub App. 204 on success, 409 if not suspended.
+// handleUnsuspendInstallation unsuspends an installation: 204 on success, 409
+// if not suspended.
 func (s *Server) handleUnsuspendInstallation(w http.ResponseWriter, r *http.Request) {
 	app := ghAppFromContext(r.Context())
 	if app == nil {
@@ -947,10 +911,8 @@ func (s *Server) findAppInstallationByTarget(w http.ResponseWriter, appID int, t
 	return false
 }
 
-// handleListOrgInstallations — GET /api/v3/orgs/{org}/installations.
-// Lists the app installations on an organization. Real GitHub gates this
-// on organization owner (or organization_administration:read); Bleephub's analogue
-// is an active org admin membership.
+// handleListOrgInstallations lists the app installations on an organization,
+// gated on active org admin membership.
 func (s *Server) handleListOrgInstallations(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -983,7 +945,6 @@ func (s *Server) handleListOrgInstallations(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// handleGetOrgInstallation — GET /api/v3/orgs/{org}/installation.
 func (s *Server) handleGetOrgInstallation(w http.ResponseWriter, r *http.Request) {
 	app := ghAppFromContext(r.Context())
 	if app == nil {
@@ -993,7 +954,6 @@ func (s *Server) handleGetOrgInstallation(w http.ResponseWriter, r *http.Request
 	s.findAppInstallationByTarget(w, app.ID, r.PathValue("org"), "Organization")
 }
 
-// handleGetUserInstallation — GET /api/v3/users/{username}/installation.
 func (s *Server) handleGetUserInstallation(w http.ResponseWriter, r *http.Request) {
 	app := ghAppFromContext(r.Context())
 	if app == nil {
@@ -1003,14 +963,12 @@ func (s *Server) handleGetUserInstallation(w http.ResponseWriter, r *http.Reques
 	s.findAppInstallationByTarget(w, app.ID, r.PathValue("username"), "User")
 }
 
-// handleAddUserInstallationRepo — PUT /api/v3/user/installations/{id}/repositories/{repo_id}.
-// User-auth. Adds a repository owned by the installation target to an existing
-// "selected"-mode installation's allow-list.
+// handleAddUserInstallationRepo adds a repository owned by the installation
+// target to a "selected"-mode installation's allow-list.
 func (s *Server) handleAddUserInstallationRepo(w http.ResponseWriter, r *http.Request) {
 	s.handleUserInstallationRepoMutation(w, r, true)
 }
 
-// handleRemoveUserInstallationRepo — DELETE /api/v3/user/installations/{id}/repositories/{repo_id}.
 func (s *Server) handleRemoveUserInstallationRepo(w http.ResponseWriter, r *http.Request) {
 	s.handleUserInstallationRepoMutation(w, r, false)
 }
@@ -1067,10 +1025,9 @@ func (s *Server) handleUserInstallationRepoMutation(w http.ResponseWriter, r *ht
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListInstallationRepositories — GET /api/v3/installation/repositories.
-// Installation-token-scoped (ghs_) repo list. Real GitHub: returns the repos the
-// installation has access to. When the token was minted with a repository_ids
-// subset, only those repos are returned.
+// handleListInstallationRepositories is the ghs_-token-scoped repo list: the
+// repos the installation reaches, narrowed to the token's repository_ids subset
+// when it has one.
 func (s *Server) handleListInstallationRepositories(w http.ResponseWriter, r *http.Request) {
 	tok := ghInstallationTokenFromContext(r.Context())
 	inst := ghInstallationFromContext(r.Context())
@@ -1093,8 +1050,8 @@ func (s *Server) handleListInstallationRepositories(w http.ResponseWriter, r *ht
 	})
 }
 
-// snapshotInstallations returns a slice copy of every installation under
-// a single RLock; lets handlers iterate without holding the store lock.
+// snapshotInstallations copies every installation under one RLock so handlers
+// iterate without holding the store lock.
 func (s *Server) snapshotInstallations() []*store.Installation {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
@@ -1115,9 +1072,8 @@ func (s *Server) snapshotGitHubApps() []*store.App {
 	return out
 }
 
-// installationAccessibleRepoIDs returns the set of repo IDs the installation
-// can reach: the target's owned repos, narrowed to SelectedRepoIDs when the
-// installation is in "selected" mode.
+// installationAccessibleRepoIDs is the target's owned repos, narrowed to
+// SelectedRepoIDs in "selected" mode.
 func installationAccessibleRepoIDs(st *store.Store, inst *store.Installation) map[int]struct{} {
 	owned := st.ListReposByOwner(inst.TargetLogin)
 	out := make(map[int]struct{}, len(owned))
@@ -1140,7 +1096,7 @@ func installationAccessibleRepoIDs(st *store.Store, inst *store.Installation) ma
 }
 
 // filterReposBySelection applies the installation's repository_selection mode
-// + token-scoped repository_ids subset.
+// then the token-scoped repository_ids subset.
 func filterReposBySelection(all []*store.Repo, inst *store.Installation, tok *store.InstallationToken) []*store.Repo {
 	out := filterInstallationRepos(all, inst)
 	if len(tok.RepositoryIDs) == 0 {
@@ -1179,10 +1135,8 @@ func filterInstallationRepos(all []*store.Repo, inst *store.Installation) []*sto
 	return out
 }
 
-// emitInstallationEvent fires an `installation` webhook (action one of:
-// created | deleted | suspend | unsuspend | new_permissions_accepted) to
-// the app's configured webhook URL, and records the delivery on the
-// app-level deliveries queue.
+// emitInstallationEvent fires an `installation` webhook (created | deleted |
+// suspend | unsuspend | new_permissions_accepted) to the app's webhook URL.
 func (s *Server) emitInstallationEvent(app *store.App, action string, inst *store.Installation) {
 	if app == nil || app.WebhookURL == "" || !app.WebhookActive {
 		return
@@ -1195,7 +1149,7 @@ func (s *Server) emitInstallationEvent(app *store.App, action string, inst *stor
 }
 
 // emitInstallationRepositoriesEvent fires an `installation_repositories`
-// webhook (action: added | removed).
+// webhook (added | removed).
 func (s *Server) emitInstallationRepositoriesEvent(app *store.App, action string, inst *store.Installation, repoIDsChanged []int) {
 	if app == nil || app.WebhookURL == "" || !app.WebhookActive {
 		return
@@ -1207,8 +1161,8 @@ func (s *Server) emitInstallationRepositoriesEvent(app *store.App, action string
 	})
 }
 
-// deliverAppWebhook is the app-level analogue of deliverWebhook: same
-// retry shape, but records to AppHookDeliveries.
+// deliverAppWebhook is the app-level deliverWebhook: same retry shape, records
+// to AppHookDeliveries.
 func (s *Server) deliverAppWebhook(app *store.App, event, action string, installationID int, payloadBytes []byte) {
 	hook := appWebhookPseudoHook(app)
 	guid := uuid.New().String()
@@ -1227,12 +1181,8 @@ func (s *Server) deliverAppWebhook(app *store.App, event, action string, install
 	}
 }
 
-// handleRevokeInstallationToken — DELETE /api/v3/installation/token.
-// Real GitHub: 204 No Content; the token used in the request's
-// Authorization header is revoked. Auth: must be presented as a
-// Bearer ghs_* installation token (the middleware sets ctxInstallation
-// when it recognises the prefix). The bare token string is parsed
-// from the header so we can drop it from the InstallationTokens map.
+// handleRevokeInstallationToken revokes the ghs_* installation token in the
+// request's Authorization header, dropping it from the InstallationTokens map.
 func (s *Server) handleRevokeInstallationToken(w http.ResponseWriter, r *http.Request) {
 	scheme, cred := authScheme(r.Header.Get("Authorization"))
 	tokenStr := ""
@@ -1250,10 +1200,9 @@ func (s *Server) handleRevokeInstallationToken(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListAppInstallationRequests implements GET /app/installation-requests.
-// Installation requests exist on GitHub only when a non-admin asks an owner
-// to install the app; bleephub installations are created directly by their
-// owners, so the store never holds a pending request and the list is empty.
+// handleListAppInstallationRequests always returns empty: installation requests
+// arise only when a non-admin asks an owner to install, and bleephub
+// installations are created directly by their owners.
 func (s *Server) handleListAppInstallationRequests(w http.ResponseWriter, r *http.Request) {
 	app := ghAppFromContext(r.Context())
 	if app == nil {

@@ -15,18 +15,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// OAuth applications token management endpoints.
-// Real GitHub exposes a parallel surface for OAuth Apps and GitHub Apps acting
-// as OAuth clients. Authentication is HTTP Basic with client_id:client_secret.
-// `client_id` resolves to either an OAuth App or a GitHub App (looked up in
-// Store.OAuthApps then Store.AppsByClientID).
-//
-// Endpoints implemented:
-//   POST   /applications/{client_id}/token         check token validity
-//   PATCH  /applications/{client_id}/token         reset (rotate) token
-//   DELETE /applications/{client_id}/token         revoke token
-//   POST   /applications/{client_id}/token/scoped  scope user-to-server token
-//   DELETE /applications/{client_id}/grant         revoke user grant
+// OAuth application token management, authenticated with HTTP Basic
+// client_id:client_secret resolving to either an OAuth App or a GitHub App.
 
 func (s *Server) registerGHAppsOAuthMgmtRoutes() {
 	s.route("POST /api/v3/applications/{client_id}/token", s.handleCheckOAuthToken)
@@ -44,11 +34,8 @@ func (s *Server) registerGHAppsOAuthMgmtRoutes() {
 	s.route("PUT /api/v3/authorizations/clients/{client_id}/{fingerprint}", s.handleGetOrCreateLegacyAuthorization)
 	s.route("GET /settings/oauth-apps", s.handleListBrowserOAuthApps)
 	s.route("POST /settings/oauth-apps/new", s.handleCreateBrowserOAuthApp)
-	// The legacy /api/v3/authorizations API has no expires_at request field
-	// (matching GitHub's published spec); on github.com a classic PAT's
-	// expiration is chosen in the web settings UI. That browser-only creation
-	// flow therefore lives under /ui-data (`s.route` auto-wraps /ui-data with
-	// authenticateUIData).
+	// The legacy /api/v3/authorizations API has no expires_at field (GitHub's
+	// spec), so browser-only classic-PAT creation lives under /ui-data.
 	s.route("POST /ui-data/user/tokens/classic", s.handleCreateClassicTokenWeb)
 
 }
@@ -68,9 +55,8 @@ func (s *Server) handleDeleteApplicationDispatch(w http.ResponseWriter, r *http.
 	}
 }
 
-// authenticateClientCreds reads + verifies HTTP Basic auth carrying
-// client_id:client_secret against either OAuthApps or AppsByClientID.
-// On match returns (clientID, isOAuthApp). On miss writes 401 + returns ("", false).
+// authenticateClientCreds verifies HTTP Basic client_id:client_secret against
+// OAuthApps or AppsByClientID, writing 401 on miss.
 func (s *Server) authenticateClientCreds(w http.ResponseWriter, r *http.Request, pathClientID string) (string, bool) {
 	auth := r.Header.Get("Authorization")
 	if !strings.HasPrefix(auth, "Basic ") {
@@ -119,7 +105,6 @@ func (s *Server) handleCheckOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Token must belong to this client_id, either as an OAuth App token or as a GitHub App OAuth client token.
 	if !tokenMatchesClient(tok, clientID, s.store) {
 		writeGHError(w, http.StatusUnprocessableEntity, "token does not match client_id")
 		return
@@ -148,16 +133,15 @@ func (s *Server) handleResetOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "token does not match client_id")
 		return
 	}
-	// Mint the replacement before revoking the old token so an entropy or
-	// persistence failure leaves the original credential intact.
+	// Mint the replacement before revoking the old token so a failure leaves the
+	// original credential intact.
 	fresh, refresh, err := s.store.CreateUserToServerTokenE(tok.UserID, tok.AppID, tok.OAuthAppClientID, tok.Scopes, 8*time.Hour, tok.RefreshTokenValue != "")
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// Carry the source token's installation/permission/repository restrictions
-	// onto the replacement. Resetting a narrowed token must not silently widen
-	// it back to the installation's full authority.
+	// Carry the source token's restrictions onto the replacement — a reset must
+	// not widen a narrowed token back to full authority.
 	s.store.ScopeUserToServerToken(fresh.Token, tok.InstallationIDs, tok.Permissions, tok.RepositoryIDs)
 	s.store.RevokeUserToServerToken(tok.Token)
 	resp := oauthTokenInspectionJSON(s.store, fresh, s.userByID(fresh.UserID), s.baseURL(r))
@@ -261,10 +245,8 @@ func (s *Server) handleScopeOAuthToken(w http.ResponseWriter, r *http.Request) {
 			"There is at least one repository that does not exist or is not accessible to the authorization")
 		return
 	}
-	// Real GitHub mints a fresh user-to-server token narrowed to the requested
-	// target / permissions / repositories and returns it (the original is not
-	// revoked). Reflect that by creating a new token carrying the same user +
-	// app, scoped to the requested installation when a target is supplied.
+	// GitHub mints a fresh token narrowed to the request and leaves the original
+	// intact; mirror that.
 	ttl := time.Until(tok.ExpiresAt)
 	if ttl <= 0 {
 		ttl = 8 * time.Hour
@@ -275,9 +257,8 @@ func (s *Server) handleScopeOAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// When the request omits permissions, inherit the source token's own
-	// restriction rather than defaulting to the installation's full permission
-	// map — scoping must only ever narrow, never widen.
+	// Omitted permissions inherit the source token's restriction, not the
+	// installation's full map — scoping only narrows.
 	effectivePermissions := body.Permissions
 	if effectivePermissions == nil {
 		effectivePermissions = tok.Permissions
@@ -321,8 +302,7 @@ func (s *Server) scopeTargetAccessibleToUser(userID int, inst *store.Installatio
 	case "User":
 		return inst.TargetID == user.ID && strings.EqualFold(inst.TargetLogin, user.Login)
 	case "Organization":
-		// This asks about the token owner named in the authorization, not the
-		// Basic-authenticated App client carrying this management request.
+		// The token owner, not the Basic-authenticated App client, is checked.
 		return namedUserIsActiveOrgMember(s.store, user, inst.TargetLogin)
 	default:
 		return false
@@ -359,8 +339,8 @@ func (s *Server) resolveScopedUserTokenRepositories(inst *store.Installation, so
 	return resolved, true
 }
 
-// resolveScopeTargetInstallation finds the installation a scoped-token request
-// targets, by target login or target id, among the app's installations.
+// resolveScopeTargetInstallation finds the app installation a scoped-token
+// request targets, by target login or id.
 func (s *Server) resolveScopeTargetInstallation(tok *store.UserToServerToken, targetLogin string, targetID int) *store.Installation {
 	if tok.AppID == 0 {
 		return nil
@@ -507,8 +487,6 @@ func (s *Server) userByID(id int) *store.User {
 }
 
 func oauthTokenInspectionJSON(st *store.Store, tok *store.UserToServerToken, user *store.User, baseURL string) map[string]interface{} {
-	// app: the OAuth App / GitHub App the token was issued for, with the real
-	// client_id, name and url.
 	app := map[string]interface{}{
 		"client_id": "",
 		"name":      "",
@@ -528,8 +506,8 @@ func oauthTokenInspectionJSON(st *store.Store, tok *store.UserToServerToken, use
 		}
 	}
 
-	// installation: null for OAuth-App tokens; the scoped installation object
-	// for GitHub-App user-to-server tokens.
+	// installation is null for OAuth-App tokens, the scoped installation for
+	// GitHub-App user-to-server tokens.
 	var installation interface{}
 	if tok.AppID > 0 {
 		if inst := firstInstallationForToken(st, tok); inst != nil {
@@ -544,8 +522,7 @@ func oauthTokenInspectionJSON(st *store.Store, tok *store.UserToServerToken, use
 		}
 	}
 
-	// id/url identify the authorization. We derive a stable id from the token
-	// value (we don't carry a separate authorization id) and the matching URL.
+	// Derive a stable authorization id from the token value; we store none.
 	authID := authorizationID(tok.Token)
 	out := map[string]interface{}{
 		"id":               authID,
@@ -569,9 +546,8 @@ func oauthTokenInspectionJSON(st *store.Store, tok *store.UserToServerToken, use
 	return out
 }
 
-// firstInstallationForToken resolves the installation a GitHub-App
-// user-to-server token is scoped to. Prefers an explicit InstallationIDs
-// entry, falling back to the (user, app) installation.
+// firstInstallationForToken resolves the installation a GitHub-App token is
+// scoped to, preferring an explicit InstallationIDs entry.
 func firstInstallationForToken(st *store.Store, tok *store.UserToServerToken) *store.Installation {
 	for _, id := range tok.InstallationIDs {
 		if inst := st.GetInstallation(id); inst != nil {
@@ -586,8 +562,7 @@ func firstInstallationForToken(st *store.Store, tok *store.UserToServerToken) *s
 	return nil
 }
 
-// lastEight returns the last 8 characters of the token, matching real
-// GitHub's token_last_eight field.
+// lastEight returns the token's last 8 characters (GitHub's token_last_eight).
 func lastEight(token string) string {
 	if len(token) <= 8 {
 		return token
@@ -595,16 +570,14 @@ func lastEight(token string) string {
 	return token[len(token)-8:]
 }
 
-// hashedToken returns the hex-encoded SHA-256 of the token, matching real
-// GitHub's hashed_token field.
+// hashedToken returns the hex SHA-256 of the token (GitHub's hashed_token).
 func hashedToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
 
-// authorizationID derives a stable positive integer id for an authorization
-// from its token value. GitHub exposes a separate int authorization id; the
-// Bleephub does not store one, so derive it deterministically from the token.
+// authorizationID derives a stable positive id from the token value, since
+// GitHub exposes a separate authorization id the Bleephub does not store.
 func authorizationID(token string) int {
 	sum := sha256.Sum256([]byte(token))
 	id := int(binary.BigEndian.Uint32(sum[:4]) & 0x7fffffff)

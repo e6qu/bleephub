@@ -1,18 +1,8 @@
 package bleephub
 
-// An enterprise's verified domains.
-//
-// GitHub's notification-delivery restriction is expressed against them: with
-// the restriction on, only an address inside a verified (or approved) domain
-// is a delivery target. Storing the restriction without the domains it names
-// would leave the policy unanswerable, so the domains are first-class state
-// with a write path of their own.
-//
-// The surface is /ui-data rather than /api/v3 because GitHub has no REST
-// endpoint for verifiable domains — they are a GraphQL and web-settings
-// concept (VerifiableDomain, createVerifiableDomain, verifyVerifiableDomain).
-// Inventing a REST route for them would put an undocumented path under
-// /api/v3, which is exactly what the browser-only namespace exists to avoid.
+// An enterprise's verified domains, which the notification-delivery restriction
+// names. Served under /ui-data, not /api/v3: GitHub exposes verifiable domains
+// only through GraphQL and web settings, so a REST route would be invented.
 
 import (
 	"net/http"
@@ -25,9 +15,8 @@ func (s *Server) registerGHEnterpriseVerifiedDomainRoutes() {
 	s.route("PUT /ui-data/enterprises/{enterprise}/verified-domains", s.handleSetEnterpriseVerifiedDomains)
 }
 
-// enterpriseForVerifiedDomains resolves the enterprise named in the path and
-// checks the viewer owns it. A non-owner gets 404 rather than 403: whether a
-// given slug names an enterprise is not something a stranger needs to learn.
+// enterpriseForVerifiedDomains resolves the path's enterprise and checks access.
+// A non-member gets 404, not 403, so a stranger cannot learn a slug names one.
 func (s *Server) enterpriseForVerifiedDomains(w http.ResponseWriter, r *http.Request, write bool) *store.Enterprise {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
@@ -51,8 +40,7 @@ func (s *Server) enterpriseForVerifiedDomains(w http.ResponseWriter, r *http.Req
 }
 
 // verifiedDomainsJSON reports the domains alongside the restriction that gives
-// them their effect, so the page never shows a domain list without saying
-// whether anything is being restricted by it.
+// them effect.
 func verifiedDomainsJSON(e *store.Enterprise) map[string]interface{} {
 	domains := e.VerifiedDomains
 	if domains == nil {

@@ -11,11 +11,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// Organization billing under the enhanced billing platform paths
-// (/organizations/{org}/settings/billing/...): budgets are real persisted
-// entities with full CRUD; the usage reports are computed from real stored
-// state — GitHub Actions job run history recorded on the shared store — and
-// are honestly empty when no billable usage exists.
+// Org billing under the enhanced billing platform paths
+// (/organizations/{org}/settings/billing/...): budgets are persisted CRUD
+// entities; usage reports are computed from stored Actions run history and are
+// empty when no billable usage exists.
 
 var budgetScopes = map[string]bool{
 	"organization":        true,
@@ -41,10 +40,6 @@ func (s *Server) registerGHOrgBillingRoutes() {
 	s.route("GET /api/v3/organizations/{org}/settings/billing/premium_request/usage", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleOrgBillingPremiumRequestUsage))
 	s.route("GET /api/v3/organizations/{org}/settings/billing/ai_credit/usage", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleOrgBillingAICreditUsage))
 }
-
-// ─── budget store methods ────────────────────────────────────────────────
-
-// ─── budget handlers ─────────────────────────────────────────────────────
 
 type orgBudgetBody struct {
 	BudgetAmount        *int    `json:"budget_amount"`
@@ -171,7 +166,7 @@ func (s *Server) handleCreateOrgBudget(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "user", "multi_user_customer":
-		// The spec requires prevent_further_usage to be true for these scopes.
+		// Spec requires prevent_further_usage true for these scopes.
 		if !b.PreventFurtherUsage {
 			store.WriteGHValidationError(w, "Budget", "prevent_further_usage", "invalid")
 			return
@@ -269,13 +264,11 @@ func (s *Server) handleDeleteOrgBudget(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ─── usage reports ───────────────────────────────────────────────────────
-
 // actionsPricePerMinute mirrors GitHub's Linux runner list price.
 const actionsPricePerMinute = 0.008
 
-// billingPeriod parses the year/month/day query parameters. defaultMonth
-// selects the month-defaulting behavior of the summary/premium/AI reports.
+// billingPeriod parses the year/month/day query params. defaultMonth defaults
+// the month to now, as the summary/premium/AI reports do.
 func billingPeriod(w http.ResponseWriter, r *http.Request, defaultMonth bool, now time.Time) (year, month, day int, ok bool) {
 	now = now.UTC()
 	year = now.Year()
@@ -404,16 +397,14 @@ func (s *Server) handleOrgBillingUsageSummary(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleOrgBillingPremiumRequestUsage reports Copilot premium request usage.
-// bleephub runs no metered premium-request product, so the report is
-// honestly empty for every period.
+// handleOrgBillingPremiumRequestUsage reports Copilot premium request usage,
+// always empty: bleephub runs no metered premium-request product.
 func (s *Server) handleOrgBillingPremiumRequestUsage(w http.ResponseWriter, r *http.Request) {
 	s.writeOrgBillingMeteredAIUsage(w, r)
 }
 
-// handleOrgBillingAICreditUsage reports AI credit usage. bleephub runs no
-// metered AI-credit product, so the report is honestly empty for every
-// period.
+// handleOrgBillingAICreditUsage reports AI credit usage, always empty: bleephub
+// runs no metered AI-credit product.
 func (s *Server) handleOrgBillingAICreditUsage(w http.ResponseWriter, r *http.Request) {
 	s.writeOrgBillingMeteredAIUsage(w, r)
 }

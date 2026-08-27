@@ -94,9 +94,8 @@ import { PageTitle, Button, ButtonLink, Box, FormLabel, ErrorBanner, Modal, Dial
 import { RelativeTime } from "../components/RelativeTime.js";
 import { WebhookForm, type WebhookFormValues } from "../components/WebhookForm.js";
 
-// Repo PATCH fields the server accepts (internal/server/gh_repos_rest.go) that
-// predate the BleephubRepo shape. Kept page-local so types.ts and api.ts stay
-// untouched; updateRepo's Partial<BleephubRepo> payload is widened via RepoPatch.
+// Repo PATCH fields the server accepts beyond the BleephubRepo shape; kept
+// page-local so types.ts and api.ts stay untouched.
 interface SecurityAnalysisStatus { status: "enabled" | "disabled" }
 interface RepoSettingsExtras {
   has_discussions?: boolean;
@@ -105,7 +104,7 @@ interface RepoSettingsExtras {
     secret_scanning?: SecurityAnalysisStatus;
     secret_scanning_push_protection?: SecurityAnalysisStatus;
     secret_scanning_non_provider_patterns?: SecurityAnalysisStatus;
-    /** Read-only in the PATCH payload — toggled via PUT/DELETE /automated-security-fixes. */
+    /** Read-only here — toggled via PUT/DELETE /automated-security-fixes. */
     dependabot_security_updates?: SecurityAnalysisStatus;
   };
 }
@@ -154,10 +153,7 @@ export function RepoSettingsPage() {
     queryFn: () => fetchRepoDetail(owner, repo),
     enabled: !!owner && !!repo,
   });
-  // Settings is admin-only: github.com answers this URL with a 404 for
-  // non-admin viewers rather than explaining what it is. The repo query
-  // above is the same payload the hook reads, so once it has resolved the
-  // decision is final — admins never see a 404 flash.
+  // Settings is admin-only; non-admins get a 404, matching github.com.
   const { isAdmin } = useRepoPermissions(owner, repo);
 
   if (isLoading) return <Spinner label={`loading ${owner}/${repo}`} />;
@@ -302,7 +298,6 @@ function RepoTopicsForm({
   );
 }
 
-// GitHub's default-commit-message enums, mirroring the repo PATCH schema.
 const SQUASH_TITLE_OPTIONS = [
   { value: "COMMIT_OR_PR_TITLE", label: "Commit title (single commit) or PR title" },
   { value: "PR_TITLE", label: "Pull request title" },
@@ -333,7 +328,6 @@ function RenameRepoCard({ owner, repo }: { owner: string; repo: string }) {
     onSuccess: (updated) => {
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ["repos"] });
-      // The PATCH response carries the new full_name — navigate to the renamed repo.
       const [newOwner, newName] = (updated.full_name ?? `${owner}/${name.trim()}`).split("/");
       navigate(`/ui/${newOwner}/${newName}/settings`);
     },
@@ -935,9 +929,8 @@ function DeployKeysTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-// The four security_and_analysis toggles the repo PATCH accepts
-// (internal/server/gh_repos_rest.go). dependabot_security_updates is read-only
-// in that payload — it goes through PUT/DELETE /automated-security-fixes.
+// The security_and_analysis toggles the repo PATCH accepts. dependabot_security_updates
+// is excluded — it goes through PUT/DELETE /automated-security-fixes instead.
 const SECURITY_ANALYSIS_TOGGLES: { key: keyof NonNullable<RepoSettingsExtras["security_and_analysis"]>; label: string; description: string }[] = [
   { key: "advanced_security", label: "GitHub Advanced Security", description: "Enable code security features for this repository." },
   { key: "secret_scanning", label: "Secret scanning", description: "Scan the repository for known secret formats." },
@@ -1010,10 +1003,8 @@ function SecurityTab({ owner, repo, repoData }: { owner: string; repo: string; r
     vulnerability_alerts: false,
   });
 
-  // Seed each checkbox from its own dedicated status endpoint. The repo object
-  // carries no `security_and_analysis` block (the server never emits it), so
-  // reading the flags off the repo detail left every toggle stuck unchecked —
-  // these are the same endpoints setRepoFlag writes to.
+  // Seed each checkbox from its own status endpoint; the repo detail carries no
+  // security_and_analysis block. These are the endpoints setRepoFlag writes to.
   const securityQuery = useQuery({
     queryKey: ["repo-security-flags", owner, repo],
     queryFn: async () => {
@@ -1124,8 +1115,6 @@ function InteractionTab({ owner, repo }: { owner: string; repo: string }) {
   const [success, setSuccess] = useState<string | null>(null);
   const [limit, setLimit] = useState<string | null>(null);
 
-  // Load the repo's current interaction limit so the select reflects server
-  // state; this is also the reader that makes the onSuccess invalidation live.
   const limitQuery = useQuery({
     queryKey: ["repo-interaction-limit", owner, repo],
     queryFn: () => fetchRepoInteractionLimit(owner, repo),
@@ -1402,12 +1391,8 @@ function AutolinksTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-// Create/PATCH a repo hook with a full config (url/content_type/secret/
-// insecure_ssl) — the entry-resident createRepoHook/updateRepoHook wrappers'
-// config types carry neither secret nor insecure_ssl, so the webhooks tab
-// posts/patches through these lazy-page fetchers instead of widening api.ts.
-// A blank secret is omitted: the server keeps the stored secret when
-// config.secret is absent/empty (internal/server/gh_hooks_rest.go).
+// Full-config hook create/PATCH; the entry-resident api.ts wrappers omit secret
+// and insecure_ssl. A blank secret is omitted so the server keeps the stored one.
 type RepoHookConfigBody = { url: string; content_type: string; insecure_ssl: string; secret?: string };
 const createRepoHookFull = (
   owner: string,
@@ -1500,9 +1485,7 @@ function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
             initial={{
               url: editing.config.url,
               contentType: editing.config.content_type,
-              // The GET config carries insecure_ssl; GithubWebhook.config's
-              // inline type omits it (types.ts is entry-resident), so read it
-              // through a local widening.
+              // GithubWebhook.config's inline type omits insecure_ssl; widen to read it.
               insecureSsl:
                 (editing.config as GithubWebhook["config"] & { insecure_ssl?: string }).insecure_ssl === "1"
                   ? "1"
@@ -1747,8 +1730,6 @@ function RenameBranchTab({ owner, repo }: { owner: string; repo: string }) {
     </Box>
   );
 }
-
-// ─── GitHub Pages panel ──────────────────────────────────────────────────
 
 function PagesTab({ owner, repo }: { owner: string; repo: string }) {
   const queryClient = useQueryClient();
@@ -2289,9 +2270,8 @@ const settingsInputStyle: CSSProperties = {
 
 const settingsH2: CSSProperties = { fontSize: "1.1rem", fontWeight: 600 };
 
-// Repo Actions fork-PR approval + artifact/log retention. These wrappers live in
-// this lazily-loaded page (not entry-resident api.ts) to keep the entry bundle
-// under budget, per the ghFetch/ghSend lazy-wrapper pattern.
+// Repo Actions fork-PR approval + artifact/log retention. Wrappers live here,
+// not in api.ts, to keep the entry bundle under budget.
 interface ForkPRApproval { approval_policy: string }
 interface ArtifactRetention { days: number; maximum_allowed_days: number }
 const FORK_PR_POLICIES = [
@@ -2310,14 +2290,12 @@ const fetchArtifactRetention = (owner: string, repo: string) =>
 const updateArtifactRetention = (owner: string, repo: string, days: number) =>
   ghSend("PUT", `${actionsPermBase(owner, repo)}/artifact-and-log-retention`, { days });
 
-// Allow-list backing the "Allow select actions and reusable workflows" radio.
 interface SelectedActions { github_owned_allowed: boolean; verified_allowed: boolean; patterns_allowed: string[] }
 const fetchSelectedActions = (owner: string, repo: string) =>
   ghFetch<SelectedActions>(`${actionsPermBase(owner, repo)}/selected-actions`);
 const updateSelectedActions = (owner: string, repo: string, body: SelectedActions) =>
   ghSend("PUT", `${actionsPermBase(owner, repo)}/selected-actions`, body);
 
-// Which other repositories may consume this repo's actions/reusable workflows.
 interface ActionsAccess { access_level: string }
 const ACTIONS_ACCESS_LEVELS = [
   { value: "none", label: "Not accessible outside the repository" },
@@ -2329,7 +2307,6 @@ const fetchActionsAccess = (owner: string, repo: string) =>
 const updateActionsAccess = (owner: string, repo: string, access_level: string) =>
   ghSend("PUT", `${actionsPermBase(owner, repo)}/access`, { access_level });
 
-// Fork PR workflow controls for private repositories (all server-side optional).
 interface ForkPRWorkflowsPrivate {
   run_workflows_from_fork_pull_requests?: boolean;
   send_write_tokens_to_workflows?: boolean;
@@ -2341,7 +2318,7 @@ const fetchForkPRWorkflowsPrivate = (owner: string, repo: string) =>
 const updateForkPRWorkflowsPrivate = (owner: string, repo: string, body: ForkPRWorkflowsPrivate) =>
   ghSend("PUT", `${actionsPermBase(owner, repo)}/fork-pr-workflows-private-repos`, body);
 
-// Immutable releases: GET 404s when disabled; PUT enables, DELETE disables.
+// GET 404s when disabled; PUT enables, DELETE disables.
 interface ImmutableReleases { enabled: boolean; enforced_by_owner?: boolean }
 const immutableReleasesPath = (owner: string, repo: string) =>
   `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/immutable-releases`;
@@ -2358,7 +2335,6 @@ const enableImmutableReleases = (owner: string, repo: string) =>
 const disableImmutableReleases = (owner: string, repo: string) =>
   ghSend("DELETE", immutableReleasesPath(owner, repo));
 
-// ─── Actions settings ──────────────────────────────────────────────────────
 function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -2389,7 +2365,6 @@ function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
     onError: (e: Error) => setError(e.message),
   });
 
-  // Allow-list editor for the "selected" actions policy.
   const isSelected = perms.data?.allowed_actions === "selected";
   const selectedActions = useQuery({
     queryKey: ["selected-actions", owner, repo],
@@ -2635,15 +2610,13 @@ function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-// ─── repo Custom properties ─────────────────────────────────────────────────
 interface RepoCustomPropertyValue {
   property_name: string;
   value: string | string[] | null;
 }
 
-// Repo Settings › Custom properties: set values for the org-defined property
-// schema. Values are authored per value_type and saved via
-// PATCH /repos/{owner}/{repo}/properties/values {properties:[…]}.
+// Set values for the org-defined property schema, saved via
+// PATCH /repos/{owner}/{repo}/properties/values.
 function CustomPropertiesTab({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -2670,8 +2643,7 @@ function CustomPropertiesTab({ owner, repo }: { owner: string; repo: string }) {
   });
 
   if (schema.isLoading || values.isLoading) return <Spinner label="loading custom properties" />;
-  // Custom properties are an organization feature; a user-owned repo (or an org
-  // with no schema) simply has none to set.
+  // Org-only feature; a user-owned repo has no schema to set.
   const props: GithubCustomProperty[] = schema.data ?? [];
   if (schema.isError || props.length === 0) {
     return (
@@ -2755,7 +2727,6 @@ function CustomPropertiesTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-// ─── repo Rulesets ─────────────────────────────────────────────────────────
 function RepoRulesetsTab({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
@@ -2764,8 +2735,8 @@ function RepoRulesetsTab({ owner, repo }: { owner: string; repo: string }) {
   const [ruleConfig, setRuleConfig] = useState<RulesetRuleConfig>({ rules: [], bypass_actors: [] });
   const [error, setError] = useState<string | null>(null);
   const list = useQuery({ queryKey: ["repo-rulesets", owner, repo], queryFn: () => fetchRepoRulesets(owner, repo) });
-  // Team picker data for bypass actors — org-owned repos only: probing the
-  // org-teams endpoint for a user owner 404s into the browser console.
+  // Bypass-actor team picker: org-owned repos only, or the org-teams probe
+  // 404s into the browser console.
   const repoQ = useQuery({ queryKey: ["repo", owner, repo], queryFn: () => fetchRepoDetail(owner, repo) });
   const ownerIsOrg = repoQ.data?.owner?.type === "Organization";
   const teamsQ = useQuery({
@@ -2827,7 +2798,6 @@ function RepoRulesetsTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-// ─── repo Environments ─────────────────────────────────────────────────────
 function EnvironmentsTab({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
   const [newEnv, setNewEnv] = useState("");
@@ -2881,10 +2851,7 @@ function EnvironmentsTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-// One entry in the environment's required-reviewers PUT payload, plus a label
-// for display. The GET response resolves each reviewer to its user/team
-// object (id + login for users, id + slug/name for teams), so both kinds
-// round-trip their ids on save.
+// One required-reviewer entry (id round-trips on save) plus a display label.
 interface EnvReviewerDraft {
   type: "User" | "Team";
   id: number;
@@ -2906,14 +2873,12 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
   const [waitTimer, setWaitTimer] = useState<string>("");
   useEffect(() => setWaitTimer(String(currentWait)), [currentWait]);
 
-  // ── required reviewers ────────────────────────────────────────────────────
   const reviewersRule = thisEnv?.protection_rules?.find((r) => r.type === "required_reviewers");
   const [reviewers, setReviewers] = useState<EnvReviewerDraft[]>([]);
   useEffect(() => {
     const drafts: EnvReviewerDraft[] = [];
     for (const entry of reviewersRule?.reviewers ?? []) {
-      // The typed reviewer only declares login; the payload carries the full
-      // simple-user | team union (id, and slug/name for teams).
+      // The typed reviewer declares only login; the payload also carries id and slug/name.
       const reviewer = entry.reviewer as
         | { id?: number; login?: string; slug?: string; name?: string }
         | undefined;
@@ -2930,15 +2895,15 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
       }
     }
     setReviewers(drafts);
-    // Re-seed when the rule content (not the array identity) changes.
+    // Re-seed on rule content, not array identity.
   }, [JSON.stringify(reviewersRule?.reviewers ?? [])]);
 
   const collaboratorsQ = useQuery({
     queryKey: ["repo-collaborators", owner, repo],
     queryFn: () => fetchRepoCollaborators(owner, repo),
   });
-  // Team pickers only make sense for org-owned repos — and probing the
-  // org-teams endpoint for a user owner 404s into the browser console.
+  // Team pickers apply to org-owned repos only; the org-teams probe 404s into
+  // the browser console otherwise.
   const envRepoQ = useQuery({ queryKey: ["repo", owner, repo], queryFn: () => fetchRepoDetail(owner, repo) });
   const teamsQ = useQuery({
     queryKey: ["org-teams", owner],

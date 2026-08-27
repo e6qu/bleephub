@@ -1,26 +1,8 @@
 package graphqlapi
 
-// GitHub's User.contributionsCollection type graph and its real aggregate.
-//
-// The ContributionsCollection SDL type declares ~80 fields spanning a calendar,
-// five kinds of contribution grouped several ways, and per-repository
-// breakdowns. Every dependent object, connection, union, enum and input GitHub
-// names is built here — signature-exact — and the aggregate that feeds them is
-// computed from real store data by store.ComputeContributions.
-//
-// Two methods are exported to the package for the parent to wire onto
-// User.contributionsCollection:
-//
-//	s.gqlContributionsCollectionType() *graphql.Object
-//	s.contributionsCollectionSource(userID int, from, to time.Time, orgID int) map[string]interface{}
-//
-// The field is `contributionsCollection: ContributionsCollection!`, and the
-// resolver returns s.contributionsCollectionSource(user.ID, from, to, 0),
-// reading the field's from/to DateTime arguments (zero when absent).
-//
-// All memoization goes through the shared helpers (mutationObject /
-// mutationObjectLazy / mutationUnion / sharedEnum / the s.mutationObjects
-// map), so names stay unique and every type is reachable once.
+// User.contributionsCollection: the ContributionsCollection type graph and the
+// aggregate computed from store data by store.ComputeContributions. Memoization
+// goes through the shared mutationObject/mutationUnion/sharedEnum helpers.
 
 import (
 	"fmt"
@@ -32,11 +14,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// contributionColorRamp is GitHub's calendar green ramp, indexed by
-// ContributionLevel (0=NONE … 4=FOURTH_QUARTILE).
+// GitHub's calendar green ramp, indexed by ContributionLevel (0=NONE … 4).
 var contributionColorRamp = []string{"#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"}
 
-// contributionLevelNames maps a level index to the ContributionLevel enum name.
 var contributionLevelNames = []string{"NONE", "FIRST_QUARTILE", "SECOND_QUARTILE", "THIRD_QUARTILE", "FOURTH_QUARTILE"}
 
 // --- enums & inputs ---------------------------------------------------------
@@ -60,8 +40,6 @@ func (s *Resolver) commitContributionOrderInput() *graphql.InputObject {
 
 // --- the Contribution interface & its implementers --------------------------
 
-// contributionInterface is the Contribution interface every Created* /
-// Restricted / Joined contribution implements.
 func (s *Resolver) contributionInterface() *graphql.Interface {
 	return s.mutationInterface("Contribution", func() graphql.Fields {
 		dateTime := s.graphQLStringScalar("DateTime")
@@ -78,8 +56,8 @@ func (s *Resolver) contributionInterface() *graphql.Interface {
 	})
 }
 
-// contributionObjectFor dispatches a contribution source map to its concrete
-// object by the __typename tag every renderer writes.
+// contributionObjectFor dispatches a source map to its concrete object by the
+// __typename tag every renderer writes.
 func (s *Resolver) contributionObjectFor(value interface{}) *graphql.Object {
 	src, _ := value.(map[string]interface{})
 	switch src["__typename"] {
@@ -102,8 +80,7 @@ func (s *Resolver) contributionObjectFor(value interface{}) *graphql.Object {
 
 // contribObject memoizes a Contribution-implementing object. mutationObjectLazy
 // cannot set Interfaces, so this mints the object directly and records it in the
-// same s.mutationObjects registry the shared helpers use, keeping the name
-// unique and the type reachable.
+// s.mutationObjects registry the shared helpers use.
 func (s *Resolver) contribObject(name string, build func() graphql.Fields) *graphql.Object {
 	if existing := s.memoizedMutationObject(name); existing != nil {
 		return existing
@@ -117,8 +94,8 @@ func (s *Resolver) contribObject(name string, build func() graphql.Fields) *grap
 	return obj
 }
 
-// contributionCommonFields is the five-field Contribution shape shared by every
-// implementer, so each object declares them with the exact interface types.
+// contributionCommonFields is the five-field Contribution shape every
+// implementer declares, with the exact interface types.
 func (s *Resolver) contributionCommonFields() graphql.Fields {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
@@ -253,9 +230,8 @@ func (s *Resolver) createdCommitContributionConnection() *graphql.Object {
 
 // --- *ByRepository groupings ------------------------------------------------
 
-// contributionsConnectionField is the `contributions(...)` connection field
-// every *ByRepository object declares. It reads the group's pre-rendered node
-// list from the source and paginates it.
+// contributionsConnectionField is the `contributions(...)` connection every
+// *ByRepository object declares, paginating the group's pre-rendered node list.
 func (s *Resolver) contributionsConnectionField(connection *graphql.Object, order graphql.Input) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(connection),
@@ -356,8 +332,6 @@ func (s *Resolver) contributionCalendarMonthType() *graphql.Object {
 
 // --- the collection ---------------------------------------------------------
 
-// gqlContributionsCollectionType builds the fully-populated
-// ContributionsCollection object with every field GitHub declares.
 func (s *Resolver) gqlContributionsCollectionType() *graphql.Object {
 	return s.mutationObjectLazy("ContributionsCollection", func() graphql.Fields {
 		dateTime := s.graphQLStringScalar("DateTime")
@@ -392,7 +366,6 @@ func (s *Resolver) gqlContributionsCollectionType() *graphql.Object {
 			"firstRepositoryContribution":  gqlField(s.createdRepositoryOrRestrictedUnion()),
 		}
 
-		// commitContributionsByRepository(maxRepositories)
 		fields["commitContributionsByRepository"] = &graphql.Field{
 			Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(s.commitContributionsByRepositoryType()))),
 			Args: graphql.FieldConfigArgument{
@@ -403,18 +376,15 @@ func (s *Resolver) gqlContributionsCollectionType() *graphql.Object {
 			},
 		}
 
-		// issueContributions / pullRequestContributions / pullRequestReviewContributions / repositoryContributions
 		fields["issueContributions"] = s.excludableConnectionField(s.createdIssueContributionConnection(), "_issueNodes", true)
 		fields["pullRequestContributions"] = s.excludableConnectionField(s.createdPullRequestContributionConnection(), "_prNodes", true)
 		fields["pullRequestReviewContributions"] = s.plainConnectionField(s.createdPullRequestReviewContributionConnection(), "_reviewNodes")
 		fields["repositoryContributions"] = s.excludableConnectionField(s.createdRepositoryContributionConnection(), "_repoNodes", false)
 
-		// *ByRepository groupings with exclude/max arguments
 		fields["issueContributionsByRepository"] = s.byRepositoryField(s.issueContributionsByRepositoryType(), "_issueByRepo", true)
 		fields["pullRequestContributionsByRepository"] = s.byRepositoryField(s.pullRequestContributionsByRepositoryType(), "_prByRepo", true)
 		fields["pullRequestReviewContributionsByRepository"] = s.byRepositoryMaxOnlyField(s.pullRequestReviewContributionsByRepositoryType(), "_reviewByRepo")
 
-		// total* counts that honor exclude arguments
 		fields["totalIssueContributions"] = s.excludableCountField("_issueNodes")
 		fields["totalPullRequestContributions"] = s.excludableCountField("_prNodes")
 		fields["totalRepositoriesWithContributedIssues"] = s.excludableRepoCountField("_issueNodes")
@@ -448,9 +418,8 @@ func contributionConnArgs(extra graphql.FieldConfigArgument, order graphql.Input
 	return args
 }
 
-// excludableConnectionField is a top-level contribution connection that honors
-// the excludeFirst/excludePopular arguments (issue & PR carry both; repository
-// carries excludeFirst only, so excludePopular is simply absent from its args).
+// excludableConnectionField honors the excludeFirst/excludePopular arguments;
+// repository carries excludeFirst only (popular==false).
 func (s *Resolver) excludableConnectionField(connection *graphql.Object, key string, popular bool) *graphql.Field {
 	extra := graphql.FieldConfigArgument{"excludeFirst": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false}}
 	if popular {
@@ -560,8 +529,8 @@ func maxReposArg(args map[string]interface{}) int {
 	return 25
 }
 
-// filterExcluded drops the user's first-ever and/or most-commented node when
-// the caller asked to exclude them.
+// filterExcluded drops the first-ever and/or most-commented node per the
+// excludeFirst/excludePopular arguments.
 func filterExcluded(nodes []map[string]interface{}, source interface{}, args map[string]interface{}) []map[string]interface{} {
 	excludeFirst, _ := args["excludeFirst"].(bool)
 	excludePopular, _ := args["excludePopular"].(bool)
@@ -584,7 +553,7 @@ func filterExcluded(nodes []map[string]interface{}, source interface{}, args map
 }
 
 // firstKeyFor / popularKeyFor name the source keys holding the first/popular
-// node id for a node list, keyed by the list's contribution __typename.
+// node id, keyed by the list's contribution __typename.
 func firstKeyFor(nodes []map[string]interface{}) string {
 	return "_first" + contributionKind(nodes)
 }
@@ -606,8 +575,8 @@ func contributionKind(nodes []map[string]interface{}) string {
 	return ""
 }
 
-// excludeFromGroups applies exclude arguments to grouped contributions and
-// drops any group that becomes empty.
+// excludeFromGroups applies exclude arguments per-group, dropping groups that
+// become empty.
 func excludeFromGroups(groups []map[string]interface{}, source interface{}, args map[string]interface{}) []map[string]interface{} {
 	excludeFirst, _ := args["excludeFirst"].(bool)
 	excludePopular, _ := args["excludePopular"].(bool)
@@ -631,7 +600,6 @@ func excludeFromGroups(groups []map[string]interface{}, source interface{}, args
 	return out
 }
 
-// limitByRepository caps a per-repository list at maxRepositories.
 func limitByRepository(groups []map[string]interface{}, max int) []interface{} {
 	if max < 0 {
 		max = 0
@@ -646,8 +614,8 @@ func limitByRepository(groups []map[string]interface{}, max int) []interface{} {
 	return out
 }
 
-// paginateContributionNodes windows a pre-rendered node list into a connection
-// source, honoring the Relay arguments.
+// paginateContributionNodes windows a pre-rendered node list into a Relay
+// connection source.
 func paginateContributionNodes(nodes []map[string]interface{}, args map[string]interface{}) map[string]interface{} {
 	items := make([]gqlConnItem, len(nodes))
 	for i := range nodes {
@@ -662,10 +630,9 @@ func paginateContributionNodes(nodes []map[string]interface{}, args map[string]i
 
 // --- the aggregate source ---------------------------------------------------
 
-// contributionsCollectionSource computes the real aggregate for the window and
-// returns the source map the ContributionsCollection type resolves from. When
-// from or to is the zero time the trailing 52 weeks ending at the store's
-// current time are used.
+// contributionsCollectionSource computes the aggregate for the window and
+// returns the ContributionsCollection source map. A zero from or to means the
+// trailing 52 weeks ending at the store's current time.
 func (s *Resolver) contributionsCollectionSource(userID int, from, to time.Time, orgID int) map[string]interface{} {
 	if from.IsZero() || to.IsZero() {
 		to = s.store.CurrentTime()
@@ -734,16 +701,14 @@ func (s *Resolver) contributionsCollectionSource(userID int, from, to time.Time,
 		source["_popularPR"] = data.PopularPR.ID
 	}
 
-	// firstIssueContribution / firstPullRequestContribution / firstRepositoryContribution
 	source["firstIssueContribution"] = optionalObject(s.renderFirstIssue(data, userSource, from, to))
 	source["firstPullRequestContribution"] = optionalObject(s.renderFirstPullRequest(data, userSource, from, to))
 	source["firstRepositoryContribution"] = optionalObject(s.renderFirstRepository(data, userSource, from, to))
 
-	// popularIssueContribution / popularPullRequestContribution
 	source["popularIssueContribution"] = optionalObject(s.renderPopularIssue(data, userSource))
 	source["popularPullRequestContribution"] = optionalObject(s.renderPopularPullRequest(data, userSource))
 
-	// joinedGitHubContribution — non-null only when the join falls in the window.
+	// Non-null only when the join falls in the window.
 	source["joinedGitHubContribution"] = optionalObject(s.renderJoinedGitHub(data, userSource, from, to))
 
 	return source
@@ -840,7 +805,6 @@ func (s *Resolver) renderRepositoryContributions(data *store.ContributionData, u
 }
 
 func (s *Resolver) renderCommitContributionsByRepository(data *store.ContributionData, userSource map[string]interface{}) []map[string]interface{} {
-	// Group commit days by repository.
 	byRepo := map[int][]store.CommitContributionDay{}
 	order := []int{}
 	for _, day := range data.CommitDays {
@@ -894,9 +858,8 @@ func (s *Resolver) renderCommitContributionsByRepository(data *store.Contributio
 	return groups
 }
 
-// groupByRepository groups already-rendered issue/PR/review contribution nodes
-// by their repository into *ByRepository group source maps, ordered by
-// contribution count (descending) then repository id.
+// groupByRepository groups rendered nodes into *ByRepository source maps,
+// ordered by contribution count descending then repository id.
 func groupByRepository(nodes []map[string]interface{}, st *store.Store) []map[string]interface{} {
 	byRepo := map[int][]map[string]interface{}{}
 	order := []int{}
@@ -996,7 +959,7 @@ func (s *Resolver) renderJoinedGitHub(data *store.ContributionData, userSource m
 // --- calendar rendering -----------------------------------------------------
 
 func (s *Resolver) renderContributionCalendar(data *store.ContributionData, from, to time.Time) map[string]interface{} {
-	// Positive day counts across the span determine the quartile thresholds.
+	// Positive day counts determine the quartile thresholds.
 	positive := make([]int, 0, len(data.DayCounts))
 	total := 0
 	for _, c := range data.DayCounts {
@@ -1069,8 +1032,8 @@ func repoFullName(repo *store.Repo) string {
 	return repo.FullName
 }
 
-// dayID is a stable numeric identity for a commit-day contribution node,
-// combining the repository id with the day's ordinal.
+// dayID is a stable numeric identity for a commit-day node: repository id
+// combined with the day's ordinal.
 func dayID(repoID int, date time.Time) int {
 	return repoID*1_000_000 + int(date.UTC().Unix()/86400)
 }
@@ -1082,8 +1045,8 @@ func weekStart(t time.Time) time.Time {
 	return day.AddDate(0, 0, -int(day.Weekday()))
 }
 
-// quartiles returns the 25th/50th/75th percentile thresholds of the positive
-// day counts, used to bucket a day into a ContributionLevel.
+// quartiles returns the 25th/50th/75th percentile thresholds bucketing a day
+// into a ContributionLevel.
 func quartiles(values []int) (q1, q2, q3 int) {
 	if len(values) == 0 {
 		return 0, 0, 0

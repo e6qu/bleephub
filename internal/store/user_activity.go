@@ -8,25 +8,21 @@ import (
 	"time"
 )
 
-// The account-activity state GitHub exposes over GraphQL only: the status
-// message on a profile, the lists a user sorts starred repositories into, and
-// the follow edges.
-//
-// The follow edges already existed as a raw map two HTTP handlers wrote in
-// place; SetFollow/ClearFollow are the primitive both those handlers and the
-// followUser / unfollowUser mutations go through, so the two surfaces cannot
-// disagree about what following means or forget to persist it.
+// GraphQL-only account-activity state: profile status, the lists a user sorts
+// starred repositories into, and the follow edges. SetFollow is the single
+// primitive both the HTTP handlers and the followUser/unfollowUser mutations go
+// through, so the two surfaces cannot disagree.
 
 // --- user status ------------------------------------------------------------
 
 // UserStatus is the message, emoji and availability a user sets on their
-// profile. GitHub keeps one per account, so it is stored on the account rather
-// than in a table of its own, and its node id is derived from the account's.
+// profile. GitHub keeps one per account, so it lives on the account and its node
+// id derives from the account's.
 type UserStatus struct {
 	UserID int    `json:"user_id"`
 	Emoji  string `json:"emoji,omitempty"`
-	// Message is the status text. GitHub allows a status with an emoji and no
-	// message, so an empty message is not an absent status.
+	// Message is the status text. An empty message with an emoji is still a
+	// status, not its absence.
 	Message string `json:"message,omitempty"`
 	// OrganizationID scopes the status to one organization's members when set.
 	OrganizationID int `json:"organization_id,omitempty"`
@@ -51,9 +47,8 @@ func cloneUserStatus(status *UserStatus) *UserStatus {
 	return &clone
 }
 
-// GetUserStatus returns a detached copy of the user's status, or nil when the
-// account has none or the one it has has expired. An expired status is not
-// served, exactly as github.com stops showing one past its expiry.
+// GetUserStatus returns a detached copy of the user's status, or nil when there
+// is none or it has expired.
 func (st *Store) GetUserStatus(userID int) *UserStatus {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -67,9 +62,8 @@ func (st *Store) GetUserStatus(userID int) *UserStatus {
 	return cloneUserStatus(user.Status)
 }
 
-// SetUserStatus writes the account's status and answers the stored row.
-// Clearing is expressed as a status with neither emoji nor message, which is
-// what changeUserStatus sends to take a status down.
+// SetUserStatus writes the account's status and returns the stored row. A status
+// with neither emoji nor message clears it.
 func (st *Store) SetUserStatus(userID int, status UserStatus) *UserStatus {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -103,9 +97,8 @@ func (st *Store) SetUserStatus(userID int, status UserStatus) *UserStatus {
 
 // --- user lists -------------------------------------------------------------
 
-// UserList is one of the named lists a user sorts starred repositories into.
-// GitHub calls them "lists" on the stars page; each holds repositories, is
-// public or private, and has a slug derived from its name.
+// UserList is one named list a user sorts starred repositories into, public or
+// private, with a slug derived from its name.
 type UserList struct {
 	ID          int    `json:"id"`
 	NodeID      string `json:"node_id"`
@@ -131,8 +124,8 @@ func cloneUserList(list *UserList) *UserList {
 	return &clone
 }
 
-// UserListSlug is the slug GitHub derives from a list's name: lower case, with
-// every run of non-alphanumeric characters collapsed to one hyphen.
+// UserListSlug derives a list's slug: lower case, each run of non-alphanumerics
+// collapsed to one hyphen.
 func UserListSlug(name string) string {
 	var out strings.Builder
 	lastHyphen := true
@@ -149,10 +142,9 @@ func UserListSlug(name string) string {
 	return strings.Trim(out.String(), "-")
 }
 
-// CreateUserList adds a list to the account. It answers nil when the account
-// does not exist, the name is blank, or the account already has a list with
-// the same slug — GitHub addresses a list by slug, so two would be
-// unreachable.
+// CreateUserList adds a list to the account, or nil when the account is missing,
+// the name is blank, or a list with the same slug already exists (a list is
+// addressed by slug, so two would collide).
 func (st *Store) CreateUserList(userID int, name, description string, private bool) *UserList {
 	slug := UserListSlug(name)
 	if slug == "" {
@@ -209,8 +201,8 @@ func (st *Store) ListUserLists(userID int) []*UserList {
 	return out
 }
 
-// UpdateUserList applies a change to a list and answers the stored result. A
-// rename that would collide with another of the account's lists is refused.
+// UpdateUserList applies a change and returns the stored result. A rename that
+// would collide with another of the account's lists is refused.
 func (st *Store) UpdateUserList(id int, apply func(*UserList)) *UserList {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -251,10 +243,8 @@ func (st *Store) DeleteUserList(id int) bool {
 	return true
 }
 
-// SetUserListsForRepo puts the repository on exactly the named lists of the
-// account and takes it off the account's others, which is what GitHub's
-// list-picker does when it is dismissed. It answers the account's lists after
-// the change.
+// SetUserListsForRepo puts the repository on exactly the named lists and off the
+// account's others, returning the account's lists after the change.
 func (st *Store) SetUserListsForRepo(userID, repoID int, listIDs []int) []*UserList {
 	wanted := make(map[int]bool, len(listIDs))
 	for _, id := range listIDs {
@@ -336,9 +326,8 @@ func FindUserListByNodeID(st *Store, nodeID string) *UserList {
 
 // --- follow edges -----------------------------------------------------------
 
-// SetFollow records that follower follows target, or removes the edge when
-// following is false. Both logins are accounts (a user may follow an
-// organization), which is why the graph is keyed by login rather than by id.
+// SetFollow records or removes a follow edge. The graph is keyed by login, not
+// id, because a user may follow an organization.
 func (st *Store) SetFollow(follower, target string, following bool) {
 	if follower == "" || target == "" || follower == target {
 		return

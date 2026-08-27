@@ -1,9 +1,5 @@
-/**
- * GitHub surfaces (discussion categories, reactions metadata) carry emoji as
- * `:shortcode:` strings; github.com renders the glyph. This maps the codes
- * those surfaces actually emit — the discussion-category defaults plus the
- * common picker set — and leaves unknown codes as-is rather than guessing.
- */
+// Maps the `:shortcode:` emoji GitHub surfaces emit (discussion-category
+// defaults plus the common picker set) to glyphs; unknown codes stay as-is.
 const SHORTCODES: Record<string, string> = {
   speech_balloon: "💬",
   bulb: "💡",

@@ -327,8 +327,8 @@ func (s *Server) setRepoLFS(w http.ResponseWriter, r *http.Request, enabled bool
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
-	// repo is a detached snapshot from GetRepo; mutate the live row through the
-	// copy-on-write UpdateRepo path so the change is observed and persisted.
+	// repo is a detached snapshot; mutate through UpdateRepo so the change is
+	// observed and persisted.
 	s.store.UpdateRepo(r.PathValue("owner"), r.PathValue("repo"), func(rp *store.Repo) {
 		rp.LFSEnabled = enabled
 	})

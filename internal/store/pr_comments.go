@@ -25,7 +25,7 @@ func newPRReviewCommentRecord(c *PRReviewComment) prReviewCommentRecord {
 	}
 }
 
-// ListThreads groups PR review comments by thread root.
+// ReviewThread groups PR review comments by thread root.
 type ReviewThread struct {
 	ID           int                `json:"id"`
 	IsResolved   bool               `json:"isResolved"`

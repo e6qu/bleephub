@@ -163,9 +163,8 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "You cannot delete your own account.")
 		return
 	}
-	// Cascade the resources the account owns before removing the row, so a
-	// deleted user leaves no orphaned repositories, package rows/bytes or live
-	// Marketplace purchases (STORE-028).
+	// Cascade owned resources before removing the row, leaving no orphaned
+	// repositories, package rows/bytes, or live Marketplace purchases (STORE-028).
 	repoIntents, userIntent, err := s.store.DeleteUserOwnedResourcesLocked(u)
 	if err != nil {
 		s.store.Mu.Unlock()
@@ -187,7 +186,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Mu.Unlock()
 
-	// Reclaim external bytes outside the lock, mirroring the org cascade.
+	// Reclaim external bytes outside the lock.
 	for _, intent := range repoIntents {
 		if err := s.store.PurgeDeletedRepoBytes(intent.Name, intent); err != nil {
 			s.logger.Error().Err(err).Msg("reclaim deleted user's repository bytes")
@@ -221,8 +220,8 @@ func (s *Server) handleAdminDemoteUser(w http.ResponseWriter, r *http.Request) {
 	if admin == nil {
 		return
 	}
-	// Compare resolved identities, not raw strings: the path resolves
-	// case-insensitively, so "ADMIN" names the same account as "admin".
+	// Compare resolved identities: the path resolves case-insensitively, so
+	// "ADMIN" is the same account as "admin".
 	if target := s.store.LookupUserByLogin(r.PathValue("username")); target != nil && target.ID == admin.ID {
 		writeGHError(w, http.StatusForbidden, "You cannot demote your own account.")
 		return
@@ -235,8 +234,8 @@ func (s *Server) handleAdminSuspendUser(w http.ResponseWriter, r *http.Request) 
 	if admin == nil {
 		return
 	}
-	// Compare resolved identities, not raw strings: the path resolves
-	// case-insensitively, so "ADMIN" names the same account as "admin".
+	// Compare resolved identities: the path resolves case-insensitively, so
+	// "ADMIN" is the same account as "admin".
 	if target := s.store.LookupUserByLogin(r.PathValue("username")); target != nil && target.ID == admin.ID {
 		writeGHError(w, http.StatusForbidden, "You cannot suspend your own account.")
 		return
@@ -296,8 +295,8 @@ func (s *Server) handleListUserGists(w http.ResponseWriter, r *http.Request) {
 	gists := s.store.ListGistsForUser(user.ID, since)
 	out := make([]map[string]interface{}, 0, len(gists))
 	for _, g := range gists {
-		// "List gists for a user" is public-only; a user's secret gists are
-		// reachable only via GET /gists as the owner. Never leak them here.
+		// Public-only: secret gists are reachable only via GET /gists as the
+		// owner. Never leak them here.
 		if !g.Public {
 			continue
 		}
@@ -363,8 +362,7 @@ func (s *Server) handleListUserReceivedEvents(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Received events are other users' activity on the user's own public
-	// repositories.
+	// Received events are other users' activity on the user's own public repos.
 	s.store.Mu.RLock()
 	repos := map[int]*store.Repo{}
 	for _, repo := range s.store.Repos {
@@ -548,8 +546,8 @@ func (s *Server) handleCreateMySocialAccounts(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusCreated, s.store.ListUserSocialAccounts(user.ID))
 		return
 	}
-	// GitHub's documented body is {"account_urls": [...]}; accept it (the delete
-	// handler already does) alongside the bare-array and [{url}] object forms.
+	// GitHub's documented body is {"account_urls": [...]}; also accept the
+	// bare-array and [{url}] object forms.
 	var req struct {
 		AccountUrls []string `json:"account_urls"`
 	}
@@ -591,7 +589,6 @@ func (s *Server) handleDeleteMySocialAccounts(w http.ResponseWriter, r *http.Req
 	}
 	var urls []string
 	if err := json.Unmarshal(body, &urls); err == nil && len(urls) > 0 {
-		// fall through to filter
 	} else {
 		var req struct {
 			AccountUrls []string `json:"account_urls"`

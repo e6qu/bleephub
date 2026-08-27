@@ -1,9 +1,4 @@
-/*
- * Account avatar — renders the account's avatar image when the server
- * supplies one, otherwise a monogram tile from the login's first letter.
- * GitHub renders every account (user, org, team) with a rounded avatar;
- * this keeps that shape without depending on an external image host.
- */
+// Avatar image, falling back to a monogram tile from the login's first letter.
 export function Avatar({
   login,
   src,

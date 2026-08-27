@@ -11,19 +11,10 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Profile achievements. GitHub computes profile badges (Pull Shark, YOLO, …)
-// server-side and shows them in the profile sidebar; there is no public API
-// for them, so bleephub serves the simulator UI's copy under the browser-only
-// /ui-data namespace rather than an invented /api/v3 path (`s.route`
-// auto-wraps /ui-data with authenticateUIData).
-//
-// Registered operations:
-//
-//	GET /ui-data/users/{login}/achievements
-//	  → 200 [{slug, name, tier, count}] — the badges the user has earned,
-//	    derived on demand from stored state (nothing is persisted). An empty
-//	    list is a 200 [] — like GitHub, a profile without achievements simply
-//	    hides the section.
+// Profile achievements (Pull Shark, YOLO, …). GitHub has no public API for
+// these, so they live under browser-only /ui-data, not an invented /api/v3 path.
+// GET /ui-data/users/{login}/achievements returns 200 [{slug, name, tier,
+// count}], derived on demand from stored state; an empty list is a 200 [].
 func (s *Server) registerGHAchievementsRoutes() {
 	s.route("GET /ui-data/users/{login}/achievements", s.handleListUserAchievements)
 }
@@ -35,8 +26,7 @@ type profileAchievement struct {
 	Count int    `json:"count"`
 }
 
-// achievementTier maps a raw count onto GitHub's multiplier tiers: the tier is
-// the number of thresholds reached (0 = not earned).
+// achievementTier is the number of thresholds reached (0 = not earned).
 func achievementTier(count int, thresholds []int) int {
 	tier := 0
 	for _, threshold := range thresholds {
@@ -55,9 +45,8 @@ func appendAchievement(out []profileAchievement, slug, name string, count int, t
 	return append(out, profileAchievement{Slug: slug, Name: name, Tier: tier, Count: count})
 }
 
-// mergedPRForCoauthorScan is the detached snapshot of a merged PR that the
-// pair-extraordinaire git scan needs after the store lock is released
-// (STORE-021: no live store pointers escape the lock).
+// mergedPRForCoauthorScan is a detached snapshot the pair-extraordinaire git
+// scan reads after the store lock is released (STORE-021).
 type mergedPRForCoauthorScan struct {
 	baseRepoFullName string
 	headRepoFullName string
@@ -149,8 +138,8 @@ func (s *Server) handleListUserAchievements(w http.ResponseWriter, r *http.Reque
 	}
 	s.store.Mu.RUnlock()
 
-	// pair-extraordinaire reads git objects, so it runs after the store lock
-	// is released, over the detached PR snapshots collected above.
+	// pair-extraordinaire reads git objects, so it runs after the store lock is
+	// released, over the detached snapshots.
 	coauthoredPRs := 0
 	for _, scan := range coauthScans {
 		if s.mergedPRHasCoauthoredCommit(scan) {
@@ -168,11 +157,10 @@ func (s *Server) handleListUserAchievements(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, out)
 }
 
-// mergedPRHasCoauthoredCommit reports whether any commit the merged PR
-// carried — its branch commits, or the merge commit itself (a squash merge
-// folds Co-authored-by trailers into it) — carries a Co-authored-by trailer.
-// Git storage that is gone (deleted head branch, pruned fork) simply yields
-// false: achievements are best-effort derivations, never errors.
+// mergedPRHasCoauthoredCommit reports whether any commit the PR carried — its
+// branch commits or the merge commit itself (a squash merge folds the trailers
+// in) — has a Co-authored-by trailer. Missing git storage yields false:
+// achievements are best-effort, never errors.
 func (s *Server) mergedPRHasCoauthoredCommit(scan mergedPRForCoauthorScan) bool {
 	if scan.baseRepoFullName != "" && scan.mergeCommitSHA != "" {
 		if baseOwner, baseName, ok := store.SplitRepoFullName(scan.baseRepoFullName); ok {
@@ -210,8 +198,8 @@ func (s *Server) mergedPRHasCoauthoredCommit(scan mergedPRForCoauthorScan) bool 
 	return false
 }
 
-// messageHasCoauthorTrailer reports whether a commit message carries a
-// Co-authored-by trailer line (matched case-insensitively, as git does).
+// messageHasCoauthorTrailer reports whether a commit message has a
+// Co-authored-by trailer, matched case-insensitively as git does.
 func messageHasCoauthorTrailer(message string) bool {
 	for _, line := range strings.Split(message, "\n") {
 		trimmed := strings.TrimSpace(line)

@@ -18,28 +18,24 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// uploadPackRequestCap bounds the pkt-line want/have negotiation body an
-// (possibly anonymous) fetch may send. Real negotiations are kilobytes; this is
-// generous headroom while still refusing an unbounded stream.
+// uploadPackRequestCap bounds the pkt-line want/have negotiation body a
+// (possibly anonymous) fetch may send, refusing an unbounded stream.
 const uploadPackRequestCap = 50 << 20 // 50 MiB
 
 // authenticateGitRequest resolves the credential on a git smart-HTTP request.
-// It returns the context rather than only the user because the git routes sit
-// outside the /api middleware and the credential shape — installation token,
-// user-to-server token, PAT, session — lives on that context and decides what
-// the caller may read.
+// It returns the context because git routes sit outside the /api middleware
+// and the credential shape on that context decides what the caller may read.
 func (s *Server) authenticateGitRequest(r *http.Request) (context.Context, *store.User) {
 	ctx := s.authenticateRequest(r)
 	return ctx, ghUserFromContext(ctx)
 }
 
-// tryHandleGitRequest checks if the request is a git smart HTTP request and handles it.
-// Returns true if handled, false otherwise.
-// Git URLs look like: /{owner}/{repo}.git/info/refs, /{owner}/{repo}.git/git-upload-pack, etc.
+// tryHandleGitRequest handles a git smart-HTTP request (URLs like
+// /{owner}/{repo}.git/info/refs or /git-upload-pack), returning true when it
+// did.
 func (s *Server) tryHandleGitRequest(w http.ResponseWriter, r *http.Request) bool {
 	path := r.URL.Path
 
-	// Match /{owner}/{repo}/info/refs or /{owner}/{repo}.git/info/refs
 	if strings.HasSuffix(path, "/info/refs") && r.Method == "GET" {
 		repoPath := strings.TrimSuffix(path, "/info/refs")
 		owner, repo := splitRepoPath(repoPath)
@@ -52,7 +48,6 @@ func (s *Server) tryHandleGitRequest(w http.ResponseWriter, r *http.Request) boo
 		}
 	}
 
-	// Match /{owner}/{repo}/git-upload-pack
 	if strings.HasSuffix(path, "/git-upload-pack") && r.Method == "POST" {
 		repoPath := strings.TrimSuffix(path, "/git-upload-pack")
 		owner, repo := splitRepoPath(repoPath)
@@ -65,7 +60,6 @@ func (s *Server) tryHandleGitRequest(w http.ResponseWriter, r *http.Request) boo
 		}
 	}
 
-	// Match /{owner}/{repo}/git-receive-pack
 	if strings.HasSuffix(path, "/git-receive-pack") && r.Method == "POST" {
 		repoPath := strings.TrimSuffix(path, "/git-receive-pack")
 		owner, repo := splitRepoPath(repoPath)
@@ -96,23 +90,16 @@ func (s *Server) resolveGitRepo(owner, repoName string) storer.Storer { //nolint
 	return s.store.GetGitStorage(owner, repoName)
 }
 
-// authorizeGitHTTP authenticates the request before resolving what it addresses:
-// anonymous requests receive the same 401 challenge whether or not the
-// repository exists, and authenticated-but-unauthorized requests receive the
-// same 404 as a nonexistent repository, so neither response discloses whether
-// a private repository name is taken. When it returns ok=false the response
-// has already been written.
-//
-// A wiki goes through here rather than through a second authorization path:
-// reading `<repo>.wiki.git` is the repository's own contents:read, so a stranger
-// cannot clone a private repository's wiki for the same reason they cannot clone
-// the repository, and the write half is the one wiki policy decision.
+// authorizeGitHTTP authenticates then authorizes a git request, writing the
+// response and returning ok=false on failure. Anonymous requests get a 401
+// and unauthorized ones a 404 whether or not the repo exists, so neither
+// response discloses a private repository name. Wiki access reuses the
+// repository's own contents:read.
 func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner, repoName string, wantWrite bool) (context.Context, *store.User, *gitTarget, bool) {
 	ctx, user := s.authenticateGitRequest(r)
-	// git HTTP sits outside ghHeadersMiddleware, so an invalid or revoked
-	// credential would otherwise be silently downgraded to anonymous and, on a
-	// public repo, served 200. A presented-but-invalid credential earns a 401,
-	// matching GitHub, rather than being treated as if no credential was given.
+	// git HTTP sits outside ghHeadersMiddleware; a presented-but-invalid
+	// credential earns a 401 rather than being downgraded to anonymous and,
+	// on a public repo, served 200.
 	if invalid, _ := ctx.Value(ctxInvalidCredential).(bool); invalid {
 		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 		http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
@@ -163,9 +150,8 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-%s-advertisement", service))
 	w.Header().Set("Cache-Control", "no-cache")
 
-	// Write pkt-line header. Encode/Flush errors at this point mean the
-	// response connection dropped before we sent the advertisement — log
-	// at Debug (the client is gone, nothing further to do).
+	// Encode/Flush errors here mean the client disconnected before the
+	// advertisement; log at Debug and stop.
 	enc := pktline.NewEncoder(w)
 	if err := enc.Encodef("# service=%s\n", service); err != nil {
 		s.logger.Debug().Err(err).Str("service", service).Msg("git-http: pkt-line advertisement encode failed (client disconnected?)")
@@ -179,16 +165,15 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 	switch service {
 	case "git-upload-pack":
 		if gitProtocolV2Requested(r.Header.Get(gitProtocolHeader)) {
-			// Protocol v2 answers info/refs with the commands the client may
-			// call rather than with references; the references themselves come
-			// from the ls-refs command on the POST that follows.
+			// Protocol v2 answers info/refs with the callable commands, not
+			// references; refs come from the ls-refs command on the POST.
 			if err := writeGitV2CapabilityAdvertisement(w); err != nil {
 				s.logger.Debug().Err(err).Msg("git-http: protocol v2 capability advertisement failed (client disconnected?)")
 			}
 			return
 		}
-		// Built here rather than by go-git's server transport, which cannot
-		// advertise the shallow capabilities — see git_uploadpack.go.
+		// Built here, not by go-git's transport, which cannot advertise the
+		// shallow capabilities — see git_uploadpack.go.
 		info, err := gitUploadPackAdvertisement(target.stor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -200,8 +185,8 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		}
 
 	case "git-receive-pack":
-		// Built here rather than by go-git's server transport, which advertises
-		// neither atomic, push options, a side band nor report-status-v2 — see
+		// Built here, not by go-git's transport, which advertises neither
+		// atomic, push options, side-band nor report-status-v2 — see
 		// git_receivepack.go.
 		info, err := gitReceivePackAdvertisement(target.stor)
 		if err != nil {
@@ -215,24 +200,13 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 	}
 }
 
-// advertiseDefaultBranchSymref names the repository's default branch in the ref
-// advertisement, the way github does.
-//
-// Without the symref=HEAD:refs/heads/<default> capability a client cannot be
-// told which branch to check out: it falls back to matching the advertised HEAD
-// object id against the ref list and takes the first branch that matches, so
-// two branches sharing a tip — or a HEAD that drifted off the default branch —
-// silently produce a clone on the wrong branch. Deriving both the capability
-// and the advertised HEAD id from the repository's recorded default branch
-// makes the answer deterministic rather than a property of ref ordering.
-//
-// Set (not Add) replaces whatever HEAD symref go-git derived from storage, so
-// exactly one is advertised. A repository with no refs at all still advertises
-// the capability — that is how `git clone` of an empty repository learns the
-// branch name its first commit should land on — but one whose default branch
-// simply carries no commits yet does not, because pointing a client at a ref
-// that is missing from an otherwise populated advertisement only draws a
-// warning.
+// advertiseDefaultBranchSymref sets the symref=HEAD:refs/heads/<default>
+// capability so the client checks out the recorded default branch
+// deterministically, rather than the first advertised ref that matches
+// HEAD's object id. Set (not Add) keeps exactly one HEAD symref. An empty
+// repo still advertises it (that is how `git clone` learns the branch its
+// first commit lands on); a populated repo whose default branch has no
+// commits does not, since pointing at a missing ref only warns.
 func advertiseDefaultBranchSymref(info *packp.AdvRefs, defaultBranch string) {
 	if info == nil || defaultBranch == "" {
 		return
@@ -256,9 +230,8 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		return
 	}
 
-	// The upload-pack negotiation (a pkt-line want/have list) is small; a public
-	// repo serves it to anonymous callers, so cap the request body to keep an
-	// unbounded stream from exhausting memory. Real negotiations are kilobytes.
+	// A public repo serves this to anonymous callers, so cap the request body
+	// against an unbounded stream.
 	requestReader := bufio.NewReader(http.MaxBytesReader(w, r.Body, uploadPackRequestCap))
 	empty, err := flushOnlyGitRequest(requestReader)
 	if err != nil {
@@ -273,18 +246,15 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		return
 	}
 
-	// A smart-HTTP upload-pack answer is a 200 whose body is the pkt-line
-	// exchange, so the header is set up front; once the first shallow or NAK
-	// line is out there is no status code left to fail with, and the refusal
-	// has to travel in the stream. A request rejected before that — a malformed
-	// pkt-line, no wants, a capability never advertised — is still answerable
-	// with a 400.
+	// The answer is a 200 whose body is the pkt-line exchange: once the first
+	// line is out there is no status code left, so a later refusal travels in
+	// the stream. A request rejected before that is still answerable with 400.
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 	stor := gitStorerWithPackReuse(r.Context(), target.storageName, target.stor)
 	var result gitUploadPackResult
 	if gitRequestUsesProtocolV2(r, requestReader) {
-		// Each POST of a smart-HTTP conversation is one whole request, so the
-		// v2 command loop serves a single command and returns.
+		// Each smart-HTTP POST is one whole request, so the v2 command loop
+		// serves a single command and returns.
 		result, err = serveGitProtocolV2(r.Context(), stor, target.defaultBranch, requestReader, w, true)
 	} else {
 		result, err = serveGitUploadPack(r.Context(), stor, requestReader, w)
@@ -305,15 +275,11 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 			Msg("git HTTP upload-pack session")
 	}
 
-	// A fetch that carried no haves is a full clone; count it for the traffic
-	// API, but only once the client actually asked for a pack — the first
-	// request of a stateless deepening fetch asks for the shallow boundary
-	// alone and is the same clone as the request that follows it. The actor
-	// identity is the authenticated login, or the remote host for anonymous
-	// clones of public repos.
-	//
-	// Wiki clones are not repository clones and github does not count them in
-	// the traffic API, so only the repository itself is recorded.
+	// A fetch with no haves is a full clone; count it for the traffic API,
+	// but only once the client asked for a pack (a stateless deepening
+	// fetch's first request asks only for the shallow boundary and is the
+	// same clone as the one that follows). Actor is the login, or the remote
+	// host for anonymous clones. Wiki clones are not counted.
 	if result.packed && result.clone && !target.wiki {
 		actor := r.RemoteAddr
 		if host, _, splitErr := net.SplitHostPort(r.RemoteAddr); splitErr == nil {
@@ -326,10 +292,8 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 	}
 }
 
-// gitRequestUsesProtocolV2 reports whether an upload-pack POST carries a
-// protocol v2 command request. git states the version in a request header, and
-// the body states it too: a v2 request opens with a "command=" pkt-line where a
-// v0 one opens with a want line.
+// gitRequestUsesProtocolV2 reports whether an upload-pack POST is protocol
+// v2, from either the request header or a body that opens with "command=".
 func gitRequestUsesProtocolV2(r *http.Request, body *bufio.Reader) bool {
 	if gitProtocolV2Requested(r.Header.Get(gitProtocolHeader)) {
 		return true
@@ -344,9 +308,8 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 
-	// A malformed request is still answerable with a status code, because
-	// nothing of the reply has been written yet. Once the report is under way
-	// the only channel left is the stream itself.
+	// A malformed request is still answerable with a status code; once the
+	// report is under way the only channel left is the stream.
 	request, err := decodeGitReceiveRequest(bufio.NewReader(r.Body))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

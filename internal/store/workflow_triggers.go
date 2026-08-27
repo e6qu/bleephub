@@ -1,7 +1,7 @@
 package store
 
-// NormalizeYAMLValue maps YAML-decoded scalars into the expression value
-// space (ints become float64 like every other expression number).
+// NormalizeYAMLValue coerces YAML-decoded integers to float64 to match every
+// other expression number.
 func NormalizeYAMLValue(v interface{}) interface{} {
 	switch t := v.(type) {
 	case int:

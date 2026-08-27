@@ -11,9 +11,8 @@ import (
 
 func (s *Server) registerGHOrgRoutes() {
 	s.route("POST /api/v3/admin/organizations", s.handleAdminCreateOrg)
-	// GitHub has no REST endpoint to self-create an org (real creation is the
-	// GHES admin API above or the web UI), so this provisioning convenience is
-	// sim-control under /internal/, not the GitHub namespace.
+	// GitHub has no REST endpoint to self-create an org, so this provisioning
+	// convenience lives under /internal/, not the GitHub namespace.
 	s.route("POST /internal/orgs", s.handleCreateOrg)
 	s.route("GET /api/v3/user/orgs", s.handleListAuthUserOrgs)
 	s.route("GET /api/v3/organizations", s.handleListAllOrgs)
@@ -28,11 +27,9 @@ func (s *Server) registerGHOrgRoutes() {
 	s.registerGHOrgHookRoutes()
 }
 
-// handleAdminCreateOrg implements the GHES admin org-creation endpoint:
-// POST /admin/organizations — the standard GitHub Enterprise Server path for
-// provisioning organizations. Body: { login, admin, profile_name }.
-// `admin` is the login of the user who becomes the org owner.
-// Requires a site-admin token (matches real GHES behaviour).
+// handleAdminCreateOrg implements the GHES admin org-creation endpoint. Body:
+// { login, admin, profile_name }, where `admin` becomes the org owner. Requires
+// a site-admin token, as real GHES does.
 func (s *Server) handleAdminCreateOrg(w http.ResponseWriter, r *http.Request) {
 	caller := ghUserFromContext(r.Context())
 	if caller == nil || !caller.SiteAdmin {
@@ -150,9 +147,8 @@ func (s *Server) handleUpdateOrg(w http.ResponseWriter, r *http.Request) {
 			store.WriteGHValidationError(w, "Organization", "default_repository_permission", "invalid")
 			return
 		}
-		// The enterprise's default-repository-permission policy is a ceiling
-		// on what its organizations may grant, so a value above it is refused
-		// rather than silently clamped.
+		// Refuse a value above the enterprise's base-permission ceiling rather
+		// than silently clamping it.
 		if refusal := s.enterpriseClampsBasePermission(r.Context(), org, v); refusal != "" {
 			writeGHError(w, http.StatusForbidden, refusal)
 			return
@@ -194,8 +190,8 @@ func (s *Server) handleUpdateOrg(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, orgToJSON(updated, s.store, s.baseURL(r)))
 }
 
-// handleListAllOrgs — GET /api/v3/organizations: the global org list,
-// ordered by id, starting after the `since` cursor.
+// handleListAllOrgs serves the global org list, id-ordered, starting after the
+// `since` cursor.
 func (s *Server) handleListAllOrgs(w http.ResponseWriter, r *http.Request) {
 	if ghUserFromContext(r.Context()) == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -234,16 +230,15 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
-	// Deleting an organization takes its repositories, teams and history with
-	// it; an enterprise demanding proof of presence gets it before that runs.
+	// Deletion is destructive, so honor an enterprise proof-of-presence demand
+	// before it runs.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
 
 	s.store.DeleteOrg(login)
 	s.recordAuditEvent("org.delete", user.Login, login, nil)
-	// GitHub deletes an organization asynchronously and answers 202 Accepted,
-	// not 204.
+	// GitHub deletes asynchronously and answers 202, not 204.
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -271,9 +266,8 @@ func (s *Server) handleListUserOrgs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This public profile surface exposes only memberships the subject has
-	// publicized. GET /user/orgs above is the authenticated all-memberships
-	// view.
+	// Public profile: only memberships the subject publicized (GET /user/orgs is
+	// the authenticated all-memberships view).
 	orgs := s.store.ListPublicOrgsByUser(user.ID)
 	result := make([]map[string]interface{}, 0, len(orgs))
 	base := s.baseURL(r)
@@ -362,9 +356,8 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The enterprise ceiling on repository creation is checked against the
-	// visibility actually requested: an enterprise may permit private
-	// repositories while forbidding public ones.
+	// Check the enterprise ceiling against the visibility requested: an
+	// enterprise may permit private repositories while forbidding public ones.
 	visibility := req.Visibility
 	if visibility == "" {
 		visibility = "public"
@@ -447,10 +440,8 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, fullRepoJSONForViewer(repo, s.store, s.baseURL(r), ghUserFromContext(r.Context())))
 }
 
-// orgSimpleJSON converts an Org to the GitHub `organization-simple`
-// shape — the org object used in org list responses. The schema
-// enumerates exactly these twelve members; profile fields belong to
-// organization-full (orgToJSON).
+// orgSimpleJSON renders the `organization-simple` shape used in list responses:
+// exactly these twelve members. Profile fields belong to orgToJSON.
 func orgSimpleJSON(org *store.Org, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/orgs/" + org.Login
 	return map[string]interface{}{
@@ -469,12 +460,9 @@ func orgSimpleJSON(org *store.Org, baseURL string) map[string]interface{} {
 	}
 }
 
-// orgToJSON converts an Org to the GitHub `organization-full` shape
-// served by single-org operations. public_repos is derived live from
-// the store; bleephub has no org archiving, gists, or org-level
-// follower graph, so archived_at is null and those counters are 0. The
-// has_*_projects toggles are false because bleephub serves no classic
-// projects surface. Must not be called with st.mu held.
+// orgToJSON renders the `organization-full` shape for single-org operations.
+// bleephub has no org archiving, gists, or org-level follower graph, so those
+// counters are 0 and archived_at is null. Must not be called with st.mu held.
 func orgToJSON(org *store.Org, st *store.Store, baseURL string) map[string]interface{} {
 	out := orgSimpleJSON(org, baseURL)
 	out["name"] = org.Name
@@ -488,8 +476,7 @@ func orgToJSON(org *store.Org, st *store.Store, baseURL string) map[string]inter
 	out["public_gists"] = 0
 	out["followers"] = 0
 	out["following"] = 0
-	// The two project toggles report the enterprise policy governing this
-	// organization: an enterprise that disables projects disables them here.
+	// The project toggles report the governing enterprise policy.
 	policy, _ := st.EnterprisePolicyForOrg(org.ID)
 	out["has_organization_projects"] = policy.OrganizationProjects != store.EnterprisePolicyDisabled
 	out["has_repository_projects"] = policy.RepositoryProjects != store.EnterprisePolicyDisabled
@@ -500,11 +487,9 @@ func orgToJSON(org *store.Org, st *store.Store, baseURL string) map[string]inter
 	out["billing_email"] = org.BillingEmail
 	out["is_verified"] = false
 	out["web_commit_signoff_required"] = org.WebCommitSignoffRequired
-	// two_factor_requirement_enabled reports the enterprise's two-factor
-	// policy, which is where the requirement is decided.
+	// Reports the enterprise's two-factor policy, where the requirement is decided.
 	out["two_factor_requirement_enabled"] = policy.TwoFactorRequired == store.EnterprisePolicyEnabled
-	// The base permission is what an organization's members actually hold:
-	// the organization's own setting, capped by the enterprise ceiling.
+	// The org's own base permission, capped by the enterprise ceiling.
 	basePermission := st.EnterpriseClampedBasePermission(org)
 	if basePermission == "" {
 		basePermission = "read" // GitHub's default

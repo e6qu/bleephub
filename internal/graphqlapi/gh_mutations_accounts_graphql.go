@@ -1,15 +1,11 @@
 package graphqlapi
 
 // The account-scoped mutation surface: the follow graph, the profile status,
-// the repository lists a user keeps on their stars page, and the
-// notification-delivery restriction an organization or enterprise sets.
+// the stars-page repository lists, and the notification-delivery restriction.
 //
-// These mutations name no repository, so their policy rows do not go through
-// repoRule. Each names either the viewer's own account — in which case the
-// entitlement is the credential's grant over that account, which is what
-// refuses an app installed elsewhere — or an organization or enterprise, in
-// which case it is ownership of that account, which is what makes the refusal
-// cross-tenant.
+// These name no repository, so their policy rows bypass repoRule. Each is
+// entitled either by the credential's grant over the viewer's own account or
+// by ownership of the named organization/enterprise.
 
 import (
 	"fmt"
@@ -23,11 +19,9 @@ import (
 
 // --- authorization rules ----------------------------------------------------
 
-// viewerAccountRule is the policy for a mutation that changes the viewer's own
-// account. Authentication is asked by the registrar, so what is left is the
-// credential's grant: a user-to-server token of an app installed nowhere, or a
-// fine-grained token belonging to somebody else, holds no such grant and is
-// refused where the bearer's own session would be served.
+// viewerAccountRule is the policy for a mutation on the viewer's own account.
+// The registrar checks authentication; this checks the credential's grant, so a
+// foreign or nowhere-installed token is refused where the bearer's session is served.
 type viewerAccountRule struct {
 	scope store.PermScope
 }
@@ -50,10 +44,8 @@ func (r viewerAccountRule) authorize(s *Resolver, p graphql.ResolveParams, _ map
 	return nil
 }
 
-// userListRule is viewerAccountRule for the two mutations that name an
-// existing list: the list has to be the viewer's own. Somebody else's list is
-// answered as though it did not exist, so the mutation is not a way to learn
-// that a private list exists.
+// userListRule requires the named list to be the viewer's own. Another user's
+// list is answered as absent, so the mutation cannot reveal a private list exists.
 type userListRule struct {
 	idKey string
 }
@@ -82,9 +74,8 @@ func (r userListRule) authorize(s *Resolver, p graphql.ResolveParams, input map[
 }
 
 // notificationRestrictionRule is the policy for
-// updateNotificationRestrictionSetting, whose owner is an enterprise or an
-// organization. Either way the entitlement is ownership of that account, so
-// owning one organization never authorizes the write against another.
+// updateNotificationRestrictionSetting: ownership of the named enterprise or
+// organization, so owning one never authorizes a write against another.
 type notificationRestrictionRule struct{}
 
 func (notificationRestrictionRule) check() error { return nil }
@@ -364,8 +355,7 @@ func (s *Resolver) userListToGQL(list *store.UserList) map[string]interface{} {
 		}
 		items = append(items, repoToGraphQL(s.store, repo))
 	}
-	// GitHub's lastAddedAt is non-null; a list nothing has been added to
-	// answers with its own creation time, which is when it last changed size.
+	// lastAddedAt is non-null; an empty list answers with its creation time.
 	lastAdded := list.CreatedAt
 	if list.LastAddedAt != nil {
 		lastAdded = *list.LastAddedAt
@@ -432,8 +422,7 @@ func (s *Resolver) resolveChangeUserStatus(p graphql.ResolveParams) (interface{}
 		if org == nil {
 			return nil, gqlMissingNode("Organization", orgNodeID)
 		}
-		// A status scoped to an organization is shown to that organization's
-		// members, so only a member may set one.
+		// Only a member may scope a status to an organization.
 		if !s.viewerIsOrgMember(p.Context, org.Login) {
 			return nil, &ghForbiddenError{message: "You must be a member of the organization to scope a status to it."}
 		}

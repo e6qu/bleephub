@@ -31,7 +31,7 @@ terraform -chdir=terraform init \
 ```
 
 The state bucket must have versioning and default encryption enabled and public
-access fully blocked; it is not created by this module, because a module cannot
+access fully blocked. This module does not create it, because a module cannot
 hold the state of its own backend. `use_lockfile = true` is S3-native locking,
 which replaces the DynamoDB lock table on this Terraform line — no table is
 needed or accepted.
@@ -41,17 +41,17 @@ empty `backend "s3"` body is exactly the shape it expects. CI runs
 `init -backend=false`, which skips the backend entirely, so validation and the
 contract tests need no credentials.
 
-One of the contract tests calls this root module as a child module, so every
-`init`, `validate`, and `test` run prints a "Backend configuration ignored"
-warning against `versions.tf`. It is expected and applies only to that nested
-call; the backend still governs the real root.
+One contract test calls this root module as a child module, so every `init`,
+`validate`, and `test` run prints a "Backend configuration ignored" warning
+against `versions.tf`. Expect it; it applies only to that nested call, and the
+backend still governs the real root.
 
-`terraform fmt`, `validate`, and `test` are gated by the `terraform` job in
-`.github/workflows/ci.yml` on the Terraform version pinned in `versions.tf`.
+The `terraform` job in `.github/workflows/ci.yml` gates `terraform fmt`,
+`validate`, and `test` on the Terraform version pinned in `versions.tf`.
 `.terraform.lock.hcl` records provider checksums for `linux_amd64`,
-`linux_arm64`, `darwin_amd64`, and `darwin_arm64`; regenerate it with
-`terraform providers lock -platform=…` for all four whenever a provider version
-changes, or `init` re-resolves them.
+`linux_arm64`, `darwin_amd64`, and `darwin_arm64`. Whenever a provider version
+changes, regenerate it with `terraform providers lock -platform=…` for all four,
+or `init` re-resolves them.
 
 ## Required inputs
 
@@ -62,14 +62,14 @@ changes, or `init` re-resolves them.
 - `admin_token` — initial administrator secret; provide it through the
   Terragrunt environment rather than committing it.
 - `ssh_ingress_cidr_blocks` — IPv4 CIDR blocks allowed to reach public SSH on
-  port 22. There is no default: publishing SSH to an unstated audience is a
-  decision the caller has to make explicitly, and `0.0.0.0/0` is rejected.
+  port 22. No default: publishing SSH to an unstated audience is a decision the
+  caller must make explicitly, and `0.0.0.0/0` is rejected.
 - `wake_listener_zip_path` — pre-built Linux Amazon Lambda wake-listener ZIP.
 - `startup_page_path` — extracted `index.html` from the versioned startup ZIP.
 
 `region` must equal the region of the AWS provider the caller passes in, and
 every entry of `availability_zones` must belong to it. The module checks both
-and refuses to plan otherwise rather than composing ARNs for one region while
+and refuses to plan otherwise, rather than composing ARNs for one region while
 deploying into another.
 
 ## Encryption and durability
@@ -80,17 +80,16 @@ Secrets Manager secrets, and the CloudWatch log group. Revoking or disabling
 `alias/<name>` takes every one of them offline at once, which is the point.
 
 The Git and object buckets are versioned and the EFS filesystem has an AWS
-Backup policy, so an overwrite or a deletion has somewhere to restore from.
-All three buckets block public access completely; the startup document is
-served through a CloudFront distribution with an origin access control, so no
-bucket policy grants anonymous reads.
+Backup policy, so an overwrite or deletion has somewhere to restore from.
+All three buckets block public access completely; a CloudFront distribution with
+an origin access control serves the startup document, so no bucket policy grants
+anonymous reads.
 
-An EFS filesystem cannot be re-keyed in place, so on an environment that was
-deployed before the key existed the plan will stop on `prevent_destroy` rather
-than replace the filesystem underneath the quorum. Migrating means restoring an
-AWS Backup recovery point onto a new encrypted filesystem and moving the state
-entry across; the buckets, secrets, and log group re-key in place and need no
-such step.
+An EFS filesystem cannot be re-keyed in place, so on an environment deployed
+before the key existed, the plan stops on `prevent_destroy` rather than replace
+the filesystem underneath the quorum. To migrate, restore an AWS Backup recovery
+point onto a new encrypted filesystem and move the state entry across; the
+buckets, secrets, and log group re-key in place and need no such step.
 
 Each of those stores also carries `prevent_destroy`, which Terraform accepts
 only as a literal. `force_destroy_storage = true` empties the buckets but does
@@ -106,21 +105,21 @@ terraform -chdir=terraform state rm \
 terraform -chdir=terraform destroy
 ```
 
-The released resources then have to be deleted by hand, which is deliberate.
+You then delete the released resources by hand, which is deliberate.
 
 ## Deployments
 
 The application service deploys with `deployment_minimum_healthy_percent = 100`
-and a container health check against `/health`, so a replacement task has to
-pass before the serving one is taken away, and a deployment circuit breaker
-rolls back a release that never becomes healthy. Each dqlite voter owns a
-single raft directory on its own EFS access point, so those services replace
-rather than overlap and rely on the circuit breaker alone.
+and a container health check against `/health`, so a replacement task must pass
+before the serving one is taken away, and a deployment circuit breaker rolls
+back a release that never becomes healthy. Each dqlite voter owns a single raft
+directory on its own EFS access point, so those services replace rather than
+overlap and rely on the circuit breaker alone.
 
-`desired_count` is carried by `ignore_changes` on the application and dqlite
-services: the wake controller owns capacity at runtime, and reconciling it from
-Terraform would stop a live service mid-request. The value in the configuration
-is only the count the service is created with.
+`ignore_changes` carries `desired_count` on the application and dqlite services:
+the wake controller owns capacity at runtime, and reconciling it from Terraform
+would stop a live service mid-request. The value in the configuration is only
+the count the service is created with.
 
 ## dqlite cluster secret
 
@@ -130,8 +129,8 @@ derives the private-cluster TLS identity and is also compared in constant time
 through the `X-Bleephub-Dqlite-Secret` header. This encrypts every dqlite byte,
 rejects nodes from another cluster, and lets one secret rotation replace both
 credentials. Both ends require it: the application refuses to open the database
-without it, and each voter refuses connections that do not present it. A
-partial wiring is worse than none — it looks configured and then fails at boot.
+without it, and each voter refuses connections that do not present it. Partial
+wiring is worse than none — it looks configured and then fails at boot.
 
 The module generates the value itself (`random_password`, 64 alphanumeric
 characters) and stores it in AWS Secrets Manager as `<name>/dqlite-secret`,
@@ -156,20 +155,19 @@ quorum, because members that restart with the new value cannot speak to members
 still holding the old one — rotating it means restarting the application and all
 three voters together.
 
-To use a shared VPC, set `existing_vpc_id`,
-`existing_private_subnet_ids`, `existing_public_subnet_ids`, and
-`existing_ecs_cluster_arn` together. The module then creates no VPC, subnets,
-route tables, fck-nat instance, Amazon Simple Storage Service endpoint, or ECS
-cluster. It continues to create Bleephub-scoped security groups, EFS mount
-targets, AWS Cloud Map discovery services, and Amazon ECS services in the
-supplied network. HTTP traffic uses Amazon API Gateway directly through a VPC
-link to AWS Cloud Map; the only Network Load Balancer is the public raw-SSH
-endpoint because Amazon API Gateway does not proxy SSH/TCP.
+To use a shared VPC, set `existing_vpc_id`, `existing_private_subnet_ids`,
+`existing_public_subnet_ids`, and `existing_ecs_cluster_arn` together. The module
+then creates no VPC, subnets, route tables, fck-nat instance, Amazon Simple
+Storage Service endpoint, or ECS cluster. It still creates Bleephub-scoped
+security groups, EFS mount targets, AWS Cloud Map discovery services, and Amazon
+ECS services in the supplied network. HTTP traffic uses Amazon API Gateway
+directly through a VPC link to AWS Cloud Map; the only Network Load Balancer is
+the public raw-SSH endpoint, because Amazon API Gateway does not proxy SSH/TCP.
 
 By default, Bleephub creates a dedicated Amazon API Gateway VPC Link and its
-ingress security group. Set `create_api_gateway_vpc_link = false`,
-`api_gateway_vpc_link_id`, and `api_gateway_vpc_link_security_group_id` together
-to reuse an environment-wide VPC Link instead. The explicit Boolean keeps
+ingress security group. To reuse an environment-wide VPC Link instead, set
+`create_api_gateway_vpc_link = false`, `api_gateway_vpc_link_id`, and
+`api_gateway_vpc_link_security_group_id` together. The explicit Boolean keeps
 resource ownership known during planning even when the supplied IDs come from
 resources created in the same Terraform plan. Shared-link mode creates neither
 dedicated resource, connects the Bleephub API integration through the supplied
@@ -179,14 +177,13 @@ dedicated mode is enabled, is invalid.
 
 `github_oauth_client_id` and `github_oauth_client_secret_arn` enable the
 registered GitHub OAuth App. The secret ARN references an existing AWS Secrets
-Manager secret so Terraform never receives the OAuth client secret value.
+Manager secret, so Terraform never receives the OAuth client secret value.
 
-`shauth_oidc_issuer`, `shauth_oidc_client_id`,
-`shauth_oidc_client_secret_arn`, and `shauth_oidc_post_logout_url` enroll
-Bleephub with Shauth without changing its GitHub-compatible OAuth endpoints.
-Set all four together. Register the exact redirect URI
-`https://<domain_name>/auth/shauth/callback`, post-logout redirect URI
-`https://<domain_name>/auth/shauth/logout/complete` through
+`shauth_oidc_issuer`, `shauth_oidc_client_id`, `shauth_oidc_client_secret_arn`,
+and `shauth_oidc_post_logout_url` enroll Bleephub with Shauth without changing
+its GitHub-compatible OAuth endpoints. Set all four together. Register the exact
+redirect URI `https://<domain_name>/auth/shauth/callback`, post-logout redirect
+URI `https://<domain_name>/auth/shauth/logout/complete` through
 `shauth_oidc_post_logout_url`, Front-Channel Logout URI
 `https://<domain_name>/auth/shauth/frontchannel-logout`, and Back-Channel
 Logout URI `https://<domain_name>/auth/shauth/backchannel-logout`. Bleephub
@@ -222,7 +219,7 @@ scripts/build-bleephub-startup.sh
 The post-merge release workflow publishes the startup ZIP and Linux ARM64
 wake-listener ZIP as immutable
 `ghcr.io/e6qu/bleephub-startup:<short-sha>` and
-`ghcr.io/e6qu/bleephub-wake:<short-sha>` GitHub Container Registry packages. It
-retains the newest 20 versions of each. Terragrunt consumes the extracted
+`ghcr.io/e6qu/bleephub-wake:<short-sha>` GitHub Container Registry packages,
+retaining the newest 20 versions of each. Terragrunt consumes the extracted
 artifacts, so the public and administrator origins can show a dehydrated startup
 view and wake the service without compiling source during deployment.

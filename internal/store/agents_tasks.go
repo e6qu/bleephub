@@ -28,15 +28,14 @@ type AgentTask struct {
 	UpdatedAt   time.Time          `json:"updated_at"`
 }
 
-// CreateAgentTask stores a new Copilot coding agent task for a repository
-// with its initial session.
+// CreateAgentTask stores a new task with its initial session.
 func (st *Store) CreateAgentTask(repo *Repo, creator *User, prompt, model string, createPR bool, baseRef, headRef string) *AgentTask {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
 	now := time.Now().UTC()
 
-	// The task name is derived from the first line of the prompt.
+	// Name is the first line of the prompt, capped at 80 chars.
 	name := prompt
 	if idx := strings.IndexByte(name, '\n'); idx >= 0 {
 		name = name[:idx]

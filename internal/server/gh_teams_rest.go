@@ -34,8 +34,8 @@ func (s *Server) registerGHTeamRoutes() {
 	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleRemoveTeamRepo))
 }
 
-// validTeamEnums checks the privacy / permission / notification_setting
-// enum values a create/update body may carry ("" = absent, allowed).
+// validTeamEnums checks the privacy/permission/notification_setting enums
+// ("" = absent, allowed), returning the offending field name.
 func validTeamEnums(privacy, permission, notification string) (string, bool) {
 	switch store.TeamPrivacy(privacy) {
 	case "", store.TeamPrivacyClosed, store.TeamPrivacySecret:
@@ -103,10 +103,8 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The create body may seed maintainers (by login) and repos (by
-	// "org/repo" full name). Resolve them BEFORE creating the team so an
-	// unknown entry rejects the whole request instead of leaving a
-	// half-built team behind.
+	// Resolve seeded maintainers and repos before creating the team, so an
+	// unknown entry rejects the request instead of leaving a half-built team.
 	maintainerIDs := make([]int, 0, len(req.Maintainers))
 	for _, login := range req.Maintainers {
 		maintainer := s.store.LookupUserByLogin(login)
@@ -135,8 +133,7 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Validation Failed")
 		return
 	}
-	// Real GitHub makes the authenticated creator a team maintainer
-	// automatically, even when the request omits them from maintainers.
+	// GitHub makes the human creator a maintainer even when omitted from maintainers.
 	if ghInstallationTokenFromContext(r.Context()) == nil {
 		s.store.SetTeamMembership(orgLogin, team.Slug, user.ID, store.TeamRoleMaintainer)
 	}
@@ -237,10 +234,9 @@ func (s *Server) handleUpdateTeam(w http.ResponseWriter, r *http.Request) {
 	s.applyTeamUpdate(w, r, org, team)
 }
 
-// applyTeamUpdate validates and applies a team PATCH body against an
-// already-resolved team, writing the team-full response (or a
-// validation error). Shared by the slug-addressed and the legacy
-// ID-addressed update endpoints so both surfaces stay identical.
+// applyTeamUpdate validates and applies a team PATCH body, writing the
+// team-full response or a validation error. Shared by the slug- and
+// legacy ID-addressed update endpoints.
 func (s *Server) applyTeamUpdate(w http.ResponseWriter, r *http.Request, org *store.Org, team *store.Team) {
 	orgLogin := org.Login
 	slug := team.Slug
@@ -258,7 +254,7 @@ func (s *Server) applyTeamUpdate(w http.ResponseWriter, r *http.Request, org *st
 		return
 	}
 
-	// parent_team_id: a number re-parents, an explicit null detaches.
+	// parent_team_id: a number re-parents, explicit null detaches.
 	parentID := -1 // -1 = absent
 	if raw, present := req["parent_team_id"]; present {
 		switch v := raw.(type) {
@@ -322,7 +318,6 @@ func (s *Server) applyTeamUpdate(w http.ResponseWriter, r *http.Request, org *st
 	writeJSON(w, http.StatusOK, teamToJSON(updated, org, s.store, s.baseURL(r)))
 }
 
-// handleListChildTeams — GET /api/v3/orgs/{org}/teams/{team_slug}/teams.
 func (s *Server) handleListChildTeams(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -336,9 +331,8 @@ func (s *Server) handleListChildTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
-		// Team hierarchy, including the existence of secret teams, is private
-		// organization data. Installation credentials with members:read are
-		// admitted by the typed grant installed by requirePerm.
+		// Team hierarchy (including secret teams) is private org data; the
+		// members:read installation grant is admitted upstream by requirePerm.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -388,10 +382,9 @@ func (s *Server) handleDeleteTeam(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListAuthUserTeams — GET /api/v3/user/teams.
-// Returns every team the authenticated user belongs to, across all orgs.
-// Real GitHub shape: array of team objects, each with an embedded "organization" field.
-// OIDC relying parties call this endpoint to map team membership → roles at sign-in.
+// handleListAuthUserTeams returns every team the caller belongs to across all
+// orgs, each with an embedded "organization". OIDC relying parties call it to
+// map team membership to roles at sign-in.
 func (s *Server) handleListAuthUserTeams(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -413,10 +406,9 @@ func (s *Server) handleListAuthUserTeams(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
-// viewerCanReadOrgTeams keeps human visibility and App authorization separate:
-// an installation token represents the installation, not the synthetic bot
-// user placed in ctxUser. Its Members grant and organization installation are
-// the complete standing GitHub requires for the team API.
+// viewerCanReadOrgTeams: an installation token is authorized by its Members
+// grant over the org, a human by org membership. (The token represents the
+// installation, not the synthetic bot user in ctxUser.)
 func (s *Server) viewerCanReadOrgTeams(ctx context.Context, orgLogin string) bool {
 	if ghInstallationTokenFromContext(ctx) != nil {
 		return s.credentialGrantsAccount(ctx, store.OrganizationAccount, orgLogin, store.ScopeMembers, store.PermRead)
@@ -424,9 +416,8 @@ func (s *Server) viewerCanReadOrgTeams(ctx context.Context, orgLogin string) boo
 	return s.viewerIsOrgMember(ctx, orgLogin)
 }
 
-// viewerCanCreateTeam reflects GitHub's default organization policy: members
-// may create teams. Installation tokens instead act through Members:write and
-// are not made into a synthetic team membership after creation.
+// viewerCanCreateTeam: org members may create teams (GitHub's default policy);
+// an installation token acts through Members:write instead.
 func (s *Server) viewerCanCreateTeam(ctx context.Context, orgLogin string) bool {
 	if ghInstallationTokenFromContext(ctx) != nil {
 		return s.credentialGrantsAccount(ctx, store.OrganizationAccount, orgLogin, store.ScopeMembers, store.PermWrite)
@@ -435,10 +426,8 @@ func (s *Server) viewerCanCreateTeam(ctx context.Context, orgLogin string) bool 
 }
 
 // canManageTeam reports whether the request may mutate a team, its membership,
-// or its repository grants. An installation token is authorized by its
-// Members:write grant over the organization; human credentials retain the
-// owner/maintainer rules, including the rule that only owners promote another
-// human to maintainer.
+// or its repo grants. Installation tokens are authorized by Members:write;
+// humans by owner/maintainer, and only owners may promote another to maintainer.
 func (s *Server) canManageTeam(ctx context.Context, user *store.User, org *store.Org, team *store.Team, addingMaintainer bool) bool {
 	if ghInstallationTokenFromContext(ctx) != nil {
 		return s.credentialGrantsAccount(ctx, store.OrganizationAccount, org.Login, store.ScopeMembers, store.PermWrite)
@@ -451,10 +440,9 @@ func (s *Server) canManageTeam(ctx context.Context, user *store.User, org *store
 	return isMember && role == store.TeamRoleMaintainer && !addingMaintainer
 }
 
-// canManageTeamRepository keeps the human owner/maintainer rule while using
-// the endpoint's documented Members:read organization half for installation
-// tokens. The Administration:write repository half is enforced by
-// requirePerms before this handler is entered.
+// canManageTeamRepository: installation tokens need Members:read on the org,
+// humans the owner/maintainer rule. The Administration:write repo half is
+// enforced by requirePerms upstream.
 func (s *Server) canManageTeamRepository(ctx context.Context, user *store.User, org *store.Org, team *store.Team, repo *store.Repo) bool {
 	if !s.viewerHasRepoPermission(ctx, repo, store.ScopeAdministration, store.PermWrite) {
 		return false
@@ -489,7 +477,7 @@ func (s *Server) handleListTeamMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GitHub documents ?role (member|maintainer|all, default all).
+	// ?role = member|maintainer|all (default all).
 	role := r.URL.Query().Get("role")
 	if role == "" {
 		role = "all"
@@ -572,9 +560,8 @@ func (s *Server) handleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, teamMembershipJSON(s.baseURL(r), orgLogin, slug, target, team, org, role, orgMembership.State))
 }
 
-// handleGetTeamMembership — GET /api/v3/orgs/{org}/teams/{team_slug}/memberships/{username}.
-// The membership state mirrors the user's org membership: a team member
-// whose org invitation is still pending reads as pending.
+// handleGetTeamMembership reports the membership; its state mirrors the user's
+// org membership, so a member with a pending org invite reads as pending.
 func (s *Server) handleGetTeamMembership(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -664,7 +651,6 @@ func (s *Server) handleRemoveTeamMember(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListTeamRepos — GET /api/v3/orgs/{org}/teams/{team_slug}/repos.
 func (s *Server) handleListTeamRepos(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -700,10 +686,8 @@ func (s *Server) handleListTeamRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// handleCheckTeamRepo — GET /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}.
-// 204 when the team manages the repo; 200 with the repository body when the
-// client asks via the repository media type (go-github's IsTeamRepoBySlug
-// sends Accept: application/vnd.github.v3.repository+json); 404 otherwise.
+// handleCheckTeamRepo answers 204 when the team manages the repo, 200 with the
+// repository body under the repository media type, 404 otherwise.
 func (s *Server) handleCheckTeamRepo(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -727,10 +711,9 @@ func (s *Server) handleCheckTeamRepo(w http.ResponseWriter, r *http.Request) {
 	s.writeTeamRepoCheck(w, r, orgLogin, team)
 }
 
-// writeTeamRepoCheck answers a team-manages-repository check for an
-// already-resolved team: 204 when linked, 200 with the team-repository
-// body under the repository media type, 404 otherwise. Shared by the
-// slug-addressed and the legacy ID-addressed check endpoints.
+// writeTeamRepoCheck answers the check for an already-resolved team: 204 when
+// linked, 200 with the team-repository body under the repository media type,
+// 404 otherwise. Shared by the slug- and legacy ID-addressed endpoints.
 func (s *Server) writeTeamRepoCheck(w http.ResponseWriter, r *http.Request, orgLogin string, team *store.Team) {
 	owner, name := r.PathValue("owner"), r.PathValue("repo")
 	fullName := owner + "/" + name
@@ -749,8 +732,7 @@ func (s *Server) writeTeamRepoCheck(w http.ResponseWriter, r *http.Request, orgL
 		perms, roleName := teamRepoPermissionsJSON(perm)
 		j["permissions"] = perms
 		j["role_name"] = roleName
-		// team-repository (unlike repository / minimal-repository) does
-		// not carry has_discussions or has_pull_requests.
+		// team-repository omits has_discussions and has_pull_requests.
 		delete(j, "has_discussions")
 		delete(j, "has_pull_requests")
 		writeJSON(w, http.StatusOK, j)
@@ -852,8 +834,8 @@ func (s *Server) handleRemoveTeamRepo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// teamRepoPermissionsJSON expands a team's permission level into the
-// boolean permissions object + role_name GitHub serves on team repos.
+// teamRepoPermissionsJSON expands a permission level into the boolean
+// permissions object plus role_name.
 func teamRepoPermissionsJSON(perm store.TeamPermission) (map[string]interface{}, string) {
 	perms := map[string]interface{}{
 		"pull":     true,
@@ -872,10 +854,8 @@ func teamRepoPermissionsJSON(perm store.TeamPermission) (map[string]interface{},
 	}
 }
 
-// teamRefJSON converts a Team to the GitHub `team-simple` shape — the
-// flat reference object used for a team's `parent` member. All bleephub
-// teams are organization-owned, so type is "organization" (the other
-// enum value is "enterprise").
+// teamRefJSON renders the flat `team-simple` shape used for a team's `parent`.
+// All bleephub teams are org-owned, so type is always "organization".
 func teamRefJSON(team *store.Team, org *store.Org, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/orgs/" + org.Login + "/teams/" + team.Slug
 	return map[string]interface{}{
@@ -895,8 +875,7 @@ func teamRefJSON(team *store.Team, org *store.Org, baseURL string) map[string]in
 	}
 }
 
-// teamSimpleJSON converts a Team to the GitHub `team` shape used in org
-// team list responses: team-simple plus a nullable parent reference.
+// teamSimpleJSON renders the `team` shape (team-simple plus a nullable parent).
 // Must not be called with st.mu held (parent resolution takes RLock).
 func teamSimpleJSON(team *store.Team, org *store.Org, st *store.Store, baseURL string) map[string]interface{} {
 	out := teamRefJSON(team, org, baseURL)
@@ -909,16 +888,13 @@ func teamSimpleJSON(team *store.Team, org *store.Org, st *store.Store, baseURL s
 	return out
 }
 
-// teamToJSON converts a Team to the GitHub `team-full` shape served by
-// single-team operations. Member and repository counts come straight
-// from the team's stored membership and repo links. Must not be called
-// with st.mu held (the embedded organization-full derives counts).
+// teamToJSON renders the `team-full` shape served by single-team operations.
+// Must not be called with st.mu held (the embedded organization-full derives counts).
 func teamToJSON(team *store.Team, org *store.Org, st *store.Store, baseURL string) map[string]interface{} {
 	out := teamSimpleJSON(team, org, st, baseURL)
 	orgJSON := orgToJSON(org, st, baseURL)
-	// The embedded org uses GitHub's `team-organization` schema, which carries
-	// every member-privilege flag EXCEPT members_can_create_teams (only the
-	// top-level `organization-full` response includes that one).
+	// The embedded org uses the `team-organization` schema, which omits
+	// members_can_create_teams (only `organization-full` carries it).
 	delete(orgJSON, "members_can_create_teams")
 	out["organization"] = orgJSON
 	out["members_count"] = len(team.MemberIDs)

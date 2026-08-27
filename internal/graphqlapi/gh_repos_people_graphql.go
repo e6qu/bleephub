@@ -13,8 +13,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// repoCollaborator is one account's standing on a repository, with how it was
-// acquired so the affiliation filter can be answered.
+// repoCollaborator is one account's standing on a repository, tracking how it
+// was acquired for the affiliation filter.
 type repoCollaborator struct {
 	user       *store.User
 	permission string
@@ -47,10 +47,8 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// Who may push to a repository is not public information: GitHub
-			// requires push standing to list collaborators, and the field is
-			// nullable so "you may not see this" is distinguishable from
-			// "there are none".
+			// Listing collaborators requires push standing; the field is
+			// nullable so "not visible" is distinct from "none".
 			if !s.viewerCanPushRepo(p.Context, repo) {
 				return nil, nil
 			}
@@ -107,8 +105,7 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 			if !s.viewerCanReadRepo(p.Context, repo) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
-			// A fork of a private repository is itself private; the viewer
-			// sees only the forks they may read.
+			// The viewer sees only the forks they may read.
 			forks := s.visibleRepos(p.Context, s.store.ListForks(repo.ID, store.RepoListOptions{NoPaginate: true}))
 			forks = filterReposByPrivacy(forks, p.Args)
 			return paginateGQLItems(s.repositoryConnectionItems(forks), p.Args), nil
@@ -175,8 +172,8 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// A deploy key is a credential on the repository; only an
-			// administrator sees the list, as with the REST keys routes.
+			// A deploy key is a credential; only an administrator sees
+			// the list, as with the REST keys routes.
 			if !s.viewerCanAdminRepo(p.Context, repo) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
@@ -189,13 +186,12 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 					render: func() map[string]interface{} {
 						return map[string]interface{}{
 							"createdAt": row.CreatedAt.UTC().Format(rfc3339),
-							// bleephub never disables a registered deploy key.
-							"enabled":  true,
-							"id":       row.NodeID,
-							"key":      row.Key,
-							"readOnly": row.ReadOnly,
-							"title":    row.Title,
-							"verified": row.Verified,
+							"enabled":   true, // bleephub never disables a registered deploy key
+							"id":        row.NodeID,
+							"key":       row.Key,
+							"readOnly":  row.ReadOnly,
+							"title":     row.Title,
+							"verified":  row.Verified,
 						}
 					},
 				})
@@ -220,21 +216,18 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// The residual repos-family / git-object members GitHub declares on
-	// Repository, Commit, Ref, TreeEntry and the shared RepositoryConnection.
-	// It is wired here, at the tail of the people surface, so every type it
-	// reaches read-only (the pull-request, check, status-rollup, discussion,
-	// project, submodule and advisory families) is already assembled.
+	// Residual repos/git-object members on Repository, Commit, Ref, TreeEntry
+	// and RepositoryConnection. Wired last, so every family it reaches is
+	// already assembled.
 	s.addRepoGitResidualFields(types)
 }
 
 // rfc3339 is the DateTime layout every timestamp in this family renders with.
 const rfc3339 = "2006-01-02T15:04:05Z07:00"
 
-// withEdgeMember copies a private node member onto each edge of a built
-// connection, which is how an edge-only GitHub field (a collaborator's
-// permission, a stargazer's starred-at) is carried without a second
-// pagination pass.
+// withEdgeMember copies a private node member onto each edge, carrying an
+// edge-only GitHub field (a collaborator's permission, a stargazer's
+// starred-at) without a second pagination pass.
 func withEdgeMember(connection map[string]interface{}, edgeField, nodeKey string) map[string]interface{} {
 	edges, _ := connection["edges"].([]map[string]interface{})
 	for _, edge := range edges {
@@ -261,7 +254,6 @@ func (s *Resolver) commitCommentItems(comments []*store.CommitComment) []gqlConn
 	return items
 }
 
-// repositoryConnectionItems renders repositories as connection items.
 func (s *Resolver) repositoryConnectionItems(repos []*store.Repo) []gqlConnItem {
 	sort.Slice(repos, func(i, j int) bool { return repos[i].FullName < repos[j].FullName })
 	items := make([]gqlConnItem, 0, len(repos))
@@ -299,18 +291,16 @@ func filterReposByPrivacy(repos []*store.Repo, args map[string]interface{}) []*s
 	return out
 }
 
-// gqlRepositoryOrderInput is GitHub's RepositoryOrder input. The repository
-// family already declares it, so this reads it out of the shared enum table
-// rather than minting a second one.
+// gqlRepositoryOrderInput reads GitHub's RepositoryOrder input out of the
+// shared table the repository family already declared it in.
 func (s *Resolver) gqlRepositoryOrderInput() *graphql.InputObject {
 	return s.gqlOrderInput(s.accountSurfaceRegistry(), "RepositoryOrder", "RepositoryOrderField",
 		"CREATED_AT", "NAME", "PUSHED_AT", "STARGAZERS", "UPDATED_AT")
 }
 
-// repositoryCollaborators lists the accounts with standing on a repository:
-// its owner, the accounts added to it directly, and — for an organization
-// repository — the members of the teams granted access. `affiliation`,
-// `login` and `query` narrow the list exactly as GitHub's arguments do.
+// repositoryCollaborators lists the accounts with standing on a repository: its
+// owner, directly-added accounts, and (for an org repo) members of teams
+// granted access. affiliation, login and query narrow the list.
 func (s *Resolver) repositoryCollaborators(repo *store.Repo, args map[string]interface{}) []repoCollaborator {
 	byLogin := map[string]repoCollaborator{}
 	orgLogin := ""
@@ -334,8 +324,7 @@ func (s *Resolver) repositoryCollaborators(repo *store.Repo, args map[string]int
 		}
 		existing, seen := byLogin[user.Login]
 		if seen && repositoryPermissionRank(existing.permission) >= repositoryPermissionRank(permission) {
-			// Keep the stronger standing, and remember that it was direct if
-			// either grant was.
+			// Keep the stronger standing, direct if either grant was.
 			existing.direct = existing.direct || direct
 			byLogin[user.Login] = existing
 			return
@@ -348,9 +337,8 @@ func (s *Resolver) repositoryCollaborators(repo *store.Repo, args map[string]int
 		}
 	}
 
-	// The account that owns the repository administers it — for an
-	// organization repository that is every owner of the organization, which
-	// is the standing the authorization layer grants them.
+	// The owning account administers the repo; for an org repo that is every
+	// org owner, matching the authorization layer.
 	if orgLogin == "" {
 		if repo.Owner != nil {
 			record(repo.Owner, "ADMIN", true)
@@ -440,16 +428,16 @@ func repositoryPermissionRank(permission string) int {
 }
 
 // accountMatchesQuery is the substring match GitHub's `query` argument applies
-// to an account's login and name.
+// to login and name.
 func accountMatchesQuery(user *store.User, query string) bool {
 	needle := strings.ToLower(query)
 	return strings.Contains(strings.ToLower(user.Login), needle) ||
 		strings.Contains(strings.ToLower(user.Name), needle)
 }
 
-// repositoryMentionableUsers lists the accounts a comment in this repository
-// may @-mention: everyone with standing on it plus everyone who has already
-// taken part in one of its issues or pull requests.
+// repositoryMentionableUsers lists the accounts a comment may @-mention:
+// everyone with standing on the repo plus everyone who has taken part in one of
+// its issues or pull requests.
 func (s *Resolver) repositoryMentionableUsers(repo *store.Repo, args map[string]interface{}) []*store.User {
 	byID := map[int]*store.User{}
 	for _, entry := range s.repositoryCollaborators(repo, map[string]interface{}{}) {

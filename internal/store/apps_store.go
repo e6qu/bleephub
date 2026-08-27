@@ -15,13 +15,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// App represents a registered GitHub App.
-//
-// The credential / webhook-config fields carry real json names so the
-// persistence layer (which marshals the struct as-is) round-trips them:
-// JWT auth, OAuth client-secret auth and app webhooks must survive a
-// restart. Client-facing responses never marshal this struct directly —
-// they go through appToJSON / appHookConfigJSON, which emit explicit maps.
+// App is a registered GitHub App. The credential/webhook-config json names
+// are the persisted form; client responses go through appToJSON /
+// appHookConfigJSON, never this struct directly.
 type App struct {
 	ID                 int               `json:"id"`
 	NodeID             string            `json:"node_id"`
@@ -37,7 +33,7 @@ type App struct {
 	WebhookEvents      []string          `json:"webhook_events"`
 	WebhookContentType string            `json:"webhook_content_type"` // "json" | "form" (default "form")
 	WebhookInsecureSSL string            `json:"webhook_insecure_ssl"` // "0" | "1" (default "0")
-	CallbackURL        string            `json:"callback_url"`         // OAuth web-flow destination; empty means none registered
+	CallbackURL        string            `json:"callback_url"`         // OAuth web-flow destination; empty means none
 	PEMPrivateKey      string            `json:"pem_private_key"`
 	Permissions        map[string]string `json:"permissions"`
 	Events             []string          `json:"events"`
@@ -46,10 +42,8 @@ type App struct {
 	UpdatedAt          time.Time         `json:"updated_at"`
 }
 
-// AppBotUser materializes the Bot actor GitHub exposes for installation-token
-// writes. The bot is derived from the app rather than persisted as an ordinary
-// account: its negative internal ID cannot collide with a real user, while the
-// app record is sufficient to restore the identity after a restart.
+// AppBotUser derives the Bot actor for installation-token writes from the app.
+// The negative ID cannot collide with a real user.
 func AppBotUser(app *App) *User {
 	if app == nil {
 		return nil
@@ -65,10 +59,9 @@ func AppBotUser(app *App) *User {
 	}
 }
 
-// ActionsBotUser is the synthetic principal a workflow's GITHUB_TOKEN acts as on
-// the REST surface, matching real GitHub's `github-actions[bot]`. Its id mirrors
-// the app-bot scheme (negative of the well-known Actions app id) so a resource
-// it authors attributes back to it through ActorUserLocked (ACT-014).
+// ActionsBotUser is the principal a workflow's GITHUB_TOKEN acts as, matching
+// GitHub's `github-actions[bot]`. Its negative-app-id scheme lets a resource it
+// authors attribute back through ActorUserLocked (ACT-014).
 func ActionsBotUser() *User {
 	return &User{
 		ID:     -GithubActionsAppID,
@@ -79,9 +72,8 @@ func ActionsBotUser() *User {
 	}
 }
 
-// ActorUserLocked resolves both persisted users and the derived GitHub App bot
-// IDs stored on resources created with an installation token. st.Mu must be
-// held by the caller.
+// ActorUserLocked resolves persisted users and derived App-bot IDs. Caller
+// holds st.Mu.
 func ActorUserLocked(st *Store, id int) *User {
 	if user := st.Users[id]; user != nil {
 		return user
@@ -95,7 +87,7 @@ func ActorUserLocked(st *Store, id int) *User {
 	return nil
 }
 
-// GetActorByID is the lock-safe form used by response and activity builders.
+// GetActorByID is the lock-safe form of ActorUserLocked.
 func (st *Store) GetActorByID(id int) *User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -115,12 +107,12 @@ type Installation struct {
 	TargetType          string            `json:"target_type"`
 	TargetID            int               `json:"target_id"`
 	TargetLogin         string            `json:"target_login"`
-	TargetNodeID        string            `json:"target_node_id"`    // snapshotted from the target account at install time
-	TargetAvatarURL     string            `json:"target_avatar_url"` // snapshotted from the target account at install time
+	TargetNodeID        string            `json:"target_node_id"`    // snapshotted at install time
+	TargetAvatarURL     string            `json:"target_avatar_url"` // snapshotted at install time
 	Permissions         map[string]string `json:"permissions"`
 	Events              []string          `json:"events"`
 	RepositorySelection string            `json:"repository_selection"`
-	SelectedRepoIDs     []int             `json:"selected_repo_ids"` // persisted; rendered only via the bespoke installation emitters
+	SelectedRepoIDs     []int             `json:"selected_repo_ids"` // rendered only via installation emitters
 	SuspendedAt         *time.Time        `json:"suspended_at"`
 	SuspendedBy         *User             `json:"suspended_by"`
 	SingleFileName      string            `json:"single_file_name"`
@@ -133,18 +125,14 @@ type InstallationToken struct {
 	Token          string            `json:"token"`
 	ExpiresAt      time.Time         `json:"expires_at"`
 	Permissions    map[string]string `json:"permissions"`
-	RepositoryIDs  []int             `json:"repository_ids"` // persisted; rendered only via installationTokenToJSON
+	RepositoryIDs  []int             `json:"repository_ids"` // rendered only via installationTokenToJSON
 	InstallationID int               `json:"installation_id"`
 	AppID          int               `json:"app_id"`
 }
 
-// NormalizeAppPermissions materializes the Metadata read permission GitHub
-// grants to every GitHub App installation. It cannot be deselected in GitHub's
-// App settings and remains present when an app asks for no other permission.
-//
-// Always return a copy: App, Installation, and InstallationToken are separate
-// persisted snapshots and mutating one grant must never silently mutate the
-// others through a shared map.
+// NormalizeAppPermissions adds the mandatory Metadata:read grant GitHub gives
+// every installation. Returns a copy so App/Installation/InstallationToken
+// never share a permissions map.
 func NormalizeAppPermissions(perms map[string]string) map[string]string {
 	out := make(map[string]string, len(perms)+1)
 	for scope, level := range perms {
@@ -154,9 +142,8 @@ func NormalizeAppPermissions(perms map[string]string) map[string]string {
 	return out
 }
 
-// OAuthApp is the OAuth-app entity Basic-authenticated by client_id+client_secret.
-// Distinct from GitHub Apps (App above) although a GitHub App also has a client_id+secret pair
-// that can be used the same way for OAuth user-to-server flows.
+// OAuthApp is a classic OAuth app, distinct from a GitHub App (App above)
+// though both support the OAuth web flow.
 type OAuthApp struct {
 	ClientID     string
 	ClientSecret string
@@ -217,13 +204,9 @@ func cloneOAuthApp(app *OAuthApp) *OAuthApp {
 	return &copy
 }
 
-// ValidateClientCallbackURL is the registration rule for an OAuth client's
-// callback, shared by both client kinds so "where may this client be
-// redirected" has one answer and one validator rather than two.
-//
-// An empty callback records no destination. That is a legal registration — the
-// authorize flow refuses a client that has none — but it is never a licence to
-// redirect somewhere else.
+// ValidateClientCallbackURL is the shared registration rule for an OAuth
+// client's callback. An empty callback is legal (records no destination); a
+// non-empty one must be an absolute http/https URL with a host.
 func ValidateClientCallbackURL(raw string) error {
 	if raw == "" {
 		return nil
@@ -311,8 +294,7 @@ func (st *Store) CreateAppE(ownerID int, name, description string, perms map[str
 }
 
 // UpdateApp mutates a registered app under the write lock and persists it.
-// Every field-level app edit goes through here so none of them can forget the
-// lock or the persistence write.
+// Every field-level app edit routes through here.
 func (st *Store) UpdateApp(appID int, fn func(a *App)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -333,8 +315,7 @@ func (st *Store) UpdateAppHookConfig(appID int, fn func(a *App)) bool {
 	return st.UpdateApp(appID, fn)
 }
 
-// RotateAppClientSecret replaces an app's OAuth client secret and returns the
-// new one-time value.
+// RotateAppClientSecret replaces the client secret and returns it once.
 func (st *Store) RotateAppClientSecret(appID int) (string, error) {
 	secret, err := RandomHex(20)
 	if err != nil {
@@ -346,7 +327,7 @@ func (st *Store) RotateAppClientSecret(appID int) (string, error) {
 	return secret, nil
 }
 
-// RotateAppPrivateKey replaces the signing key and returns its one-time PEM.
+// RotateAppPrivateKey replaces the signing key and returns its PEM once.
 func (st *Store) RotateAppPrivateKey(appID int) (string, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -363,8 +344,8 @@ func (st *Store) RotateAppPrivateKey(appID int) (string, error) {
 }
 
 // DeleteApp removes an app and every credential or installation derived from
-// it. Marketplace deletion is handled by the settings layer because that
-// store has a separate lock and may refuse deletion while purchases exist.
+// it. Marketplace deletion stays in the settings layer (separate lock, may
+// refuse while purchases exist).
 func (st *Store) DeleteApp(appID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -375,12 +356,9 @@ func (st *Store) DeleteApp(appID int) bool {
 	delete(st.Apps, appID)
 	delete(st.AppsBySlug, app.Slug)
 	delete(st.AppsByClientID, app.ClientID)
-	// Stage every durable delete into ONE batch so the cascade is atomic. A
-	// crash mid-delete must never leave live ghu_/ghs_/ghr_ bearer tokens
-	// durable and still resolving on reload for an app that no longer exists.
-	// Child credentials are staged first and the parent apps row is staged
-	// last (mirroring the org/repo cascade in DeleteOrg), so even under a
-	// partial-transaction reload the app cannot be gone while its tokens live.
+	// One atomic batch: child credentials staged first, the apps row last, so
+	// a partial-reload cascade can never leave live bearer tokens for a
+	// deleted app.
 	batch := NewPersistBatch(st.Persist)
 	for code, id := range st.ManifestCodes {
 		if id == appID {
@@ -431,9 +409,8 @@ func (st *Store) DeleteApp(appID int) bool {
 	}
 	delete(st.AppHookDeliveries, appID)
 	batch.Delete("app_hook_deliveries", strconv.Itoa(appID))
-	// Parent apps row last: a reader recovering from a partially applied
-	// cascade never sees the app absent while a credential remains.
-	batch.Delete("apps", strconv.Itoa(appID))
+	batch.Delete("apps", strconv.Itoa(appID)) // parent row last
+
 	if err := batch.Commit(); err != nil {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "apps", Err: err})
 	}
@@ -468,9 +445,8 @@ func (st *Store) CreateInstallation(appID int, targetType string, targetID int, 
 	st.NextInstallationID++
 	now := st.CurrentTime()
 
-	// Snapshot the target account's node ID and avatar so the
-	// installation's `account` object can be served without a live
-	// lookup (both are immutable in bleephub).
+	// Snapshot the target's node ID and avatar (both immutable) so the
+	// `account` object needs no live lookup.
 	var targetNodeID, targetAvatarURL string
 	if u := st.UsersByLogin[targetLogin]; u != nil {
 		targetNodeID, targetAvatarURL = u.NodeID, u.AvatarURL
@@ -563,7 +539,7 @@ func (st *Store) DeleteInstallation(id int) bool {
 	return true
 }
 
-// persistInstallation writes-through to disk. Caller must hold st.Mu.
+// persistInstallation writes-through to disk. Caller holds st.Mu.
 func (st *Store) persistInstallation(inst *Installation) {
 	if st.Persist == nil || inst == nil {
 		return
@@ -629,9 +605,7 @@ func (st *Store) SetInstallationRepositorySelection(id int, mode string, repoIDs
 	return true
 }
 
-// AddInstallationRepo adds a repo to a "selected" installation's allow-list.
-// Returns (added, ok) — ok=false if installation not found; added=false if
-// repo was already in the list (idempotent).
+// InstallationOwnsRepo reports whether repo belongs to the installation's target.
 func InstallationOwnsRepo(inst *Installation, repo *Repo) bool {
 	if inst == nil || repo == nil || !strings.EqualFold(inst.TargetType, repo.OwnerType) {
 		return false
@@ -687,10 +661,8 @@ func (st *Store) GetAppByClientID(clientID string) *App {
 	return cloneApp(st.AppsByClientID[clientID])
 }
 
-// CreateOAuthApp registers a new (classic) OAuth App. Distinct from a GitHub App:
-// no JWT, no installations, no permissions table — just client_id/secret + callback URL.
-// Both kinds of apps support the OAuth web flow, but the resulting access tokens
-// have different prefixes (gho_ for OAuth Apps, ghu_ for GitHub App user-to-server).
+// CreateOAuthApp registers a classic OAuth App. Its web-flow tokens are gho_
+// (versus ghu_ for a GitHub App's user-to-server tokens).
 func (st *Store) CreateOAuthApp(ownerID int, name, description, url, callbackURL string) *OAuthApp {
 	app, err := st.CreateOAuthAppE(ownerID, name, description, url, callbackURL)
 	if err != nil {
@@ -785,9 +757,9 @@ func (st *Store) DeleteOAuthApp(clientID string) bool {
 	if st.OAuthApps[clientID] == nil {
 		return false
 	}
-	// One transaction: the OAuth app and every user-to-server + refresh token it
-	// issued are deleted together, so a crash cannot leave a token alive for a
-	// deleted app (STORE-001/002). Auth codes and device codes are in-memory only.
+	// One transaction: the app and every user-to-server + refresh token it
+	// issued are deleted together (STORE-001/002). Auth/device codes are
+	// in-memory only.
 	batch := NewPersistBatch(st.Persist)
 	delete(st.OAuthApps, clientID)
 	batch.Delete("oauth_apps", clientID)
@@ -847,9 +819,8 @@ func (st *Store) VerifyAppClientSecret(clientID, clientSecret string) *App {
 	return cloneApp(app)
 }
 
-// CreateInstallationToken generates a ghs_-prefixed token with 1h expiry.
-// If repoIDs is non-empty, the token is scoped to those repositories
-// (a subset of the installation's accessible repos).
+// CreateInstallationToken generates a ghs_-prefixed token with 1h expiry,
+// scoped to repoIDs when non-empty.
 func (st *Store) CreateInstallationToken(installationID, appID int, perms map[string]string, repoIDs []int) *InstallationToken {
 	token, err := st.CreateInstallationTokenE(installationID, appID, perms, repoIDs)
 	if err != nil {
@@ -883,9 +854,8 @@ func (st *Store) CreateInstallationTokenE(installationID, appID int, perms map[s
 	return cloneInstallationToken(token), nil
 }
 
-// RevokeInstallationToken drops the token from the store. Returns
-// true if the token existed (so the caller can return 204) and false
-// if it didn't (so the caller can return 401 for unknown tokens).
+// RevokeInstallationToken drops the token, reporting whether it existed
+// (204 vs 401 for the caller).
 func (st *Store) RevokeInstallationToken(tokenStr string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

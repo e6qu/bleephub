@@ -12,16 +12,12 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// graphqlSeams adapts the server's authorization predicates, webhook
-// emission, and merge gate to the seam interfaces the GraphQL resolver
-// layer consumes (ARCH-003). The adapter exists so the Server's own method
-// set keeps its unexported spellings.
+// graphqlSeams adapts the server's authz predicates, webhook emission, and merge
+// gate to the interfaces the GraphQL resolver layer consumes (ARCH-003).
 type graphqlSeams struct {
 	s *Server
 }
 
-// newGraphQLResolver wires the resolver layer to this server's store and
-// injected seams.
 func (s *Server) newGraphQLResolver() *graphqlapi.Resolver {
 	seams := graphqlSeams{s: s}
 	return graphqlapi.NewResolver(graphqlapi.Config{
@@ -88,8 +84,8 @@ func (a graphqlSeams) ViewerCanAdminAccount(ctx context.Context, login string) b
 	return a.s.viewerCanAdminAccount(ctx, login)
 }
 
-// ViewerMayMigrateOrg is the REST migration surface's own predicate, so the
-// GraphQL migration surface admits exactly the principals the REST one does.
+// ViewerMayMigrateOrg reuses the REST migration predicate so both surfaces admit
+// the same principals.
 func (a graphqlSeams) ViewerMayMigrateOrg(ctx context.Context, org *store.Org) bool {
 	return a.s.viewerMayMigrateOrg(ctx, org)
 }
@@ -144,9 +140,8 @@ func (a graphqlSeams) EmitPullRequestChanges(repo *store.Repo, pr *store.PullReq
 	a.s.pullRequestEmitter(repo, pr, sender).emitChanges(change)
 }
 
-// EmitCheckRunEvent / EmitCheckSuiteEvent are the same emitters the REST
-// checks routes fire, so a rerequest through GraphQL asks the owning app to
-// run again with the identical payload.
+// EmitCheckRunEvent / EmitCheckSuiteEvent reuse the REST checks emitters, so a
+// GraphQL rerequest fires the identical payload.
 func (a graphqlSeams) EmitCheckRunEvent(repoKey string, checkRunID int64, action string) {
 	a.s.CheckRunEvent(repoKey, checkRunID, action)
 }
@@ -155,8 +150,8 @@ func (a graphqlSeams) EmitCheckSuiteEvent(repoKey string, suiteID int64, action 
 	a.s.CheckSuiteEvent(repoKey, suiteID, action)
 }
 
-// EmitDeploymentEvent / EmitDeploymentStatusEvent render the same payloads
-// POST /deployments and POST /deployments/{id}/statuses emit.
+// EmitDeploymentEvent / EmitDeploymentStatusEvent reuse the REST deployment
+// payload builders.
 func (a graphqlSeams) EmitDeploymentEvent(repo *store.Repo, d *store.Deployment, sender *store.User, action string) {
 	a.s.emitWebhookEvent(repo.FullName, "deployment", action,
 		buildDeploymentEventPayload(repo, d, sender, action, a.s.publicOrigin()))
@@ -189,9 +184,8 @@ func (a graphqlSeams) CompletePullRequestMerge(repo *store.Repo, pr *store.PullR
 	return a.s.completePullRequestMerge(repo, pr, user, method, commitTitle, commitMessage, expectedHead)
 }
 
-// MaybeAutoMergeRepo re-evaluates every armed auto-merge in the repository
-// after a branch-protection change lands through GraphQL — the same
-// re-evaluation the REST protection handlers trigger.
+// MaybeAutoMergeRepo re-evaluates every armed auto-merge after a GraphQL
+// branch-protection change, as the REST protection handlers do.
 func (a graphqlSeams) MaybeAutoMergeRepo(repo *store.Repo) {
 	a.s.maybeAutoMergeRepo(repo)
 }
@@ -200,8 +194,8 @@ func (a graphqlSeams) ChangedFiles(repo *store.Repo, pr *store.PullRequest, base
 	return pullRequestChangedFiles(a.s.store, repo, pr, baseURL)
 }
 
-// UpdatePullRequestBranch brings a pull request's head branch up to date with
-// its base through the same helper PUT /pulls/{n}/update-branch uses.
+// UpdatePullRequestBranch brings a PR's head branch up to date with its base
+// through the same helper PUT /pulls/{n}/update-branch uses.
 func (a graphqlSeams) UpdatePullRequestBranch(repo *store.Repo, pr *store.PullRequest, user *store.User, expectedHeadOid, method string) error {
 	return a.s.updatePullRequestBranch(repo, pr, user, expectedHeadOid, method, a.s.externalURL)
 }
@@ -211,7 +205,7 @@ func (a graphqlSeams) MaybeAutoMerge(prID int) {
 }
 
 // MaybeAutoMergeHeadSHA releases any armed auto-merge waiting on this commit,
-// through the same helper the REST checks routes call when a run completes.
+// through the same helper the REST checks routes call.
 func (a graphqlSeams) MaybeAutoMergeHeadSHA(repo *store.Repo, headSha string) {
 	a.s.maybeAutoMergeHeadSHA(repo, headSha)
 }
@@ -222,10 +216,9 @@ func (a graphqlSeams) AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequ
 
 // --- graphqlapi.Migrations --------------------------------------------------
 
-// StartRepositoryMigration and StartOrganizationMigration hand a migration the
-// GraphQL layer has recorded to the workers that actually perform it. The
-// resolver layer may not dial a source or write git storage (ARCH-003), so
-// queueing and running are separated at exactly this seam.
+// StartRepositoryMigration and StartOrganizationMigration hand a recorded
+// migration to the workers that perform it. The resolver layer may not dial a
+// source or write git storage (ARCH-003), so queueing and running split here.
 func (a graphqlSeams) StartRepositoryMigration(id int) {
 	a.s.startGEIRepositoryMigration(id)
 }
@@ -234,13 +227,9 @@ func (a graphqlSeams) StartOrganizationMigration(id int) {
 	a.s.startGEIOrganizationMigration(id)
 }
 
-// RepositoryMigrationLogURL is where a migration's log is served from.
-//
-// GitHub answers migrationLogUrl with a signed URL that expires a day after
-// the migration ends. Bleephub answers with a path on this server behind the
-// same migrator authorization the migration itself is behind, so there is no
-// URL a caller can keep once their access to the organization ends — a signed
-// URL would be exactly that.
+// RepositoryMigrationLogURL returns the log path, served behind the same
+// migrator authorization as the migration itself — not a signed URL a caller
+// could keep after losing org access (which is what GitHub returns).
 func (a graphqlSeams) RepositoryMigrationLogURL(m *store.RepositoryMigration) string {
 	if m == nil || m.MigrationLogKey == "" {
 		return ""
@@ -254,9 +243,8 @@ func (a graphqlSeams) RepositoryMigrationLogURL(m *store.RepositoryMigration) st
 
 // --- graphqlapi.Repos -------------------------------------------------------
 
-// RenameRepository renames a repository on behalf of a GraphQL mutation
-// through the same helper PATCH /repos/{owner}/{repo} uses, so the artifact
-// metadata that embeds the full name moves with it either way.
+// RenameRepository renames through the same helper PATCH /repos/{owner}/{repo}
+// uses, so full-name-embedding metadata moves either way.
 func (a graphqlSeams) RenameRepository(repo *store.Repo, newName string) error {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
@@ -266,10 +254,9 @@ func (a graphqlSeams) RenameRepository(repo *store.Repo, newName string) error {
 	return a.s.renameRepository(owner, name, newName)
 }
 
-// CreateGitRef writes a new reference on behalf of the createRef mutation,
-// through the same helper POST /repos/{owner}/{repo}/git/refs uses, so branch
-// protection, secret scanning and the push machinery cannot diverge between
-// the two surfaces.
+// CreateGitRef writes a reference for the createRef mutation through the same
+// helper POST git/refs uses, so branch protection, secret scanning and the push
+// machinery cannot diverge between surfaces.
 func (a graphqlSeams) CreateGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, oid string) error {
 	stor := a.storageFor(repo)
 	if stor == nil {
@@ -282,8 +269,8 @@ func (a graphqlSeams) CreateGitRef(ctx context.Context, repo *store.Repo, sender
 	return nil
 }
 
-// UpdateGitRef moves a reference for the updateRef mutation; force carries
-// GitHub's non-fast-forward override exactly as PATCH git/refs/{ref} does.
+// UpdateGitRef moves a reference for the updateRef mutation; force is the
+// non-fast-forward override, as in PATCH git/refs/{ref}.
 func (a graphqlSeams) UpdateGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, oid string, force bool) error {
 	stor := a.storageFor(repo)
 	if stor == nil {
@@ -309,10 +296,9 @@ func (a graphqlSeams) DeleteGitRef(ctx context.Context, repo *store.Repo, sender
 	return nil
 }
 
-// MergeBranch merges head into base for the mergeBranch mutation, answering
-// the merge commit's oid or "" when head was already an ancestor of base —
-// the same already-merged answer POST /repos/{owner}/{repo}/merges encodes as
-// its 204.
+// MergeBranch merges head into base for the mergeBranch mutation, returning the
+// merge commit's oid or "" when head was already an ancestor of base (the
+// already-merged answer POST /merges encodes as its 204).
 func (a graphqlSeams) MergeBranch(ctx context.Context, repo *store.Repo, sender *store.User, base, head, commitMessage, authorEmail string) (string, error) {
 	hash, failure := a.s.mergeBranchRefs(repo, sender, base, head, commitMessage, authorEmail)
 	if failure != nil {
@@ -325,9 +311,8 @@ func (a graphqlSeams) MergeBranch(ctx context.Context, repo *store.Repo, sender 
 }
 
 // CreateCommitOnBranch writes the multi-file commit for the
-// createCommitOnBranch mutation. GitHub's message input is a headline and an
-// optional body; git's convention joins them with a blank line, which is also
-// how the web UI's own commits are assembled.
+// createCommitOnBranch mutation, joining headline and optional body with a
+// blank line per git convention.
 func (a graphqlSeams) CreateCommitOnBranch(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, expectedHeadOid string,
 	additions map[string][]byte, deletions []string, headline, body string) (string, error) {
 	stor := a.storageFor(repo)
@@ -346,11 +331,8 @@ func (a graphqlSeams) CreateCommitOnBranch(ctx context.Context, repo *store.Repo
 	return hash.String(), nil
 }
 
-// RevertPullRequest creates the revert branch and opens the pull request that
-// undoes a merged one, answering the new pull request's database id. The
-// branch and commit come from the same helper either surface would use; the
-// pull request goes through the checked store constructor and then collects
-// its CODEOWNERS reviewers exactly as a pull request opened any other way.
+// RevertPullRequest creates the revert branch and opens the PR that undoes a
+// merged one, returning the new PR's database id.
 func (a graphqlSeams) RevertPullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest, sender *store.User, title, body string, draft bool) (int, error) {
 	branch, err := a.s.createRevertBranch(ctx, repo, pr, sender, a.s.externalURL)
 	if err != nil {
@@ -370,15 +352,12 @@ func (a graphqlSeams) RevertPullRequest(ctx context.Context, repo *store.Repo, p
 }
 
 // ReviewPendingDeployments applies a deployment review through the same
-// actions-engine path POST /actions/runs/{id}/pending_deployments runs, so a
-// review submitted over GraphQL releases or fails exactly the jobs a REST one
-// would.
+// actions-engine path POST /actions/runs/{id}/pending_deployments runs.
 func (a graphqlSeams) ReviewPendingDeployments(ctx context.Context, wf *store.Workflow, envIDs []int, state, comment string, reviewer *store.User) ([]string, error) {
 	return a.s.reviewPendingDeployments(ctx, wf, envIDs, state, comment, reviewer)
 }
 
-// storageFor resolves a repository's git storage from its full name, the same
-// lookup every REST git handler performs.
+// storageFor resolves a repository's git storage from its full name.
 func (a graphqlSeams) storageFor(repo *store.Repo) gitStorage.Storer {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
@@ -388,11 +367,8 @@ func (a graphqlSeams) storageFor(repo *store.Repo) gitStorage.Storer {
 }
 
 // GenerateFromTemplate creates a repository from a template for the
-// cloneTemplateRepository mutation. The storage copy is the same
-// generateFromTemplateStorage the REST generate route runs; the orchestration
-// around it — owner resolution, default-branch sync, rollback on a failed
-// copy, the audit event — mirrors that handler so the two surfaces produce
-// identical repositories.
+// cloneTemplateRepository mutation, mirroring the REST generate route's storage
+// copy, owner resolution, default-branch sync, rollback, and audit event.
 func (a graphqlSeams) GenerateFromTemplate(ctx context.Context, template *store.Repo, sender *store.User, ownerLogin, name, description string, includeAllBranches, private bool) (*store.Repo, error) {
 	templateOwner, templateName, ok := store.SplitRepoFullName(template.FullName)
 	if !ok {

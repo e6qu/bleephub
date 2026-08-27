@@ -1,23 +1,15 @@
 package graphqlapi
 
-// The GitHub Enterprise Importer's GraphQL surface: the Migration interface
-// and its two implementors, the source they migrate from, the connection an
-// organization's migrations are read through, and the seven mutations that
-// start, abort and delegate them.
+// The GitHub Enterprise Importer's GraphQL surface: the Migration interface and
+// its two implementors, the migration source, the organization's migration
+// connection, and the seven mutations over them.
 //
-// Authorization is a table row per mutation, like the rest of the mutation
-// surface, and every row resolves the organization from the input and asks
-// ViewerMayMigrateOrg about *that* organization. Cross-tenant isolation falls
-// out of that: a migration exposes an entire organization's data, so owning
-// one organization — or holding the migrator role on it — is nothing at all on
-// another. startOrganizationMigration is the one row whose subject is an
-// enterprise instead, and it demands ownership of the enterprise the target
-// organization will belong to.
-//
-// The read side is gated the same way. Organization.repositoryMigrations
-// refuses a viewer with no migrator standing rather than answering an empty
-// connection, because "there are none" and "you may not look" are different
-// facts and a client should not have to guess which it got.
+// Every authz row resolves the owning organization from the input and checks
+// migrator standing on *that* organization, giving cross-tenant isolation;
+// startOrganizationMigration instead demands ownership of the target
+// enterprise. Organization.repositoryMigrations refuses a viewer with no
+// standing rather than answering an empty connection, so "none" and "may not
+// look" stay distinguishable.
 
 import (
 	"context"
@@ -55,10 +47,9 @@ func (r migrationOrgRule) authorize(s *Resolver, p graphql.ResolveParams, input 
 	return s.requireMigratorStanding(p.Context, org)
 }
 
-// migrationSubjectRule is the policy for a mutation that names a migration
-// rather than the organization it belongs to: the standing is resolved from
-// the migration's owning organization, so aborting somebody else's migration
-// needs standing on their organization and not on yours.
+// migrationSubjectRule is the policy for a mutation naming a migration rather
+// than its organization; standing is resolved from the migration's owning
+// organization.
 type migrationSubjectRule struct {
 	idKey string
 }
@@ -83,11 +74,9 @@ func (r migrationSubjectRule) authorize(s *Resolver, p graphql.ResolveParams, in
 	return s.requireMigratorStanding(p.Context, org)
 }
 
-// migrationEnterpriseRule requires the viewer to own the enterprise the input
-// names. An organization migration creates an organization inside an
-// enterprise, which is an enterprise owner's act, and it is a distinct rule
-// type from the enterprise family's own so the two tables stay independently
-// pinned.
+// migrationEnterpriseRule requires the viewer to own the named enterprise (an
+// org migration creates an org inside it). A distinct type from the enterprise
+// family's own rule so the two tables stay independently pinned.
 type migrationEnterpriseRule struct {
 	idKey string
 }
@@ -111,8 +100,7 @@ func (r migrationEnterpriseRule) authorize(s *Resolver, p graphql.ResolveParams,
 	return nil
 }
 
-// requireMigratorStanding is the one answer to "may this request see or move
-// this organization's migrations".
+// requireMigratorStanding gates seeing or moving an organization's migrations.
 func (s *Resolver) requireMigratorStanding(ctx context.Context, org *store.Org) error {
 	if !s.viewerMayMigrateOrg(ctx, org) {
 		return &ghForbiddenError{
@@ -177,9 +165,9 @@ func (s *Resolver) actorTypeEnum() *graphql.Enum {
 
 // --- projections ------------------------------------------------------------
 
-// migrationSourceToGQL renders a source. The credentials it holds are
-// deliberately absent: no field of MigrationSource serves them, so a migrator
-// cannot read back the token an owner configured.
+// migrationSourceToGQL renders a source. Credentials are deliberately omitted:
+// no MigrationSource field serves them, so a migrator cannot read back the
+// configured token.
 func migrationSourceToGQL(src *store.MigrationSource) map[string]interface{} {
 	if src == nil {
 		return nil
@@ -233,8 +221,7 @@ func organizationMigrationToGQL(m *store.OrganizationMigration) map[string]inter
 	}
 }
 
-// nilOrGQLString renders "" as GraphQL null, which is what a nullable String
-// field means when nothing is recorded.
+// nilOrGQLString renders "" as GraphQL null.
 func nilOrGQLString(value string) interface{} {
 	if value == "" {
 		return nil
@@ -252,11 +239,8 @@ func nilOrGQLInt(value *int) interface{} {
 // --- schema ----------------------------------------------------------------
 
 // addMigrationFieldsToSchema installs the migration types, the organization's
-// migration connection and the migration mutations.
-//
-// It runs after the organization and enterprise families because
-// Organization.repositoryMigrations hangs off the one Organization type and
-// startOrganizationMigration names an Enterprise.
+// migration connection and the mutations. Runs after the organization and
+// enterprise families, which its fields hang off.
 func (s *Resolver) addMigrationFieldsToSchema(orgType, mutationType *graphql.Object, nodeInterface *graphql.Interface, nodeTypes map[string]*graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
@@ -273,10 +257,8 @@ func (s *Resolver) addMigrationFieldsToSchema(orgType, mutationType *graphql.Obj
 	})
 	nodeTypes["MigrationSource"] = sourceType
 
-	// The Migration interface's fields are declared once and reused by
-	// RepositoryMigration: graphql-go checks an implementor field-by-field
-	// against the interface, so building both from one map is what makes the
-	// two provably the same shape rather than two lists kept in step by hand.
+	// Build the interface and RepositoryMigration from one field map so
+	// graphql-go's field-by-field implementor check is provably satisfied.
 	migrationFields := func() graphql.Fields {
 		return graphql.Fields{
 			"continueOnError": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
@@ -355,8 +337,7 @@ func (s *Resolver) addMigrationFieldsToSchema(orgType, mutationType *graphql.Obj
 	s.addMigrationMutations(mutationType, sourceType, repositoryMigrationType, orgMigrationType)
 }
 
-// gqlNodeIDField is the `id: ID!` every Node implementor serves off the
-// projection's nodeID key.
+// gqlNodeIDField is the `id: ID!` served off the projection's nodeID key.
 func gqlNodeIDField() *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(graphql.ID),
@@ -371,8 +352,7 @@ func gqlNodeIDField() *graphql.Field {
 }
 
 // addOrganizationRepositoryMigrations installs
-// Organization.repositoryMigrations, the read surface for an organization's
-// migration history.
+// Organization.repositoryMigrations.
 func (s *Resolver) addOrganizationRepositoryMigrations(orgType *graphql.Object, connectionType *graphql.Object, orderInput *graphql.InputObject) {
 	args := relayConnectionArgs()
 	args["orderBy"] = &graphql.ArgumentConfig{
@@ -433,10 +413,9 @@ func filterRepositoryMigrations(in []*store.RepositoryMigration, keep func(*stor
 	return out
 }
 
-// repositoryMigrationOrderIsDescending reads the orderBy argument. CREATED_AT
-// is the only orderable field GitHub declares, and the store already returns
-// migrations oldest first, so the whole ordering reduces to whether the list
-// is reversed.
+// repositoryMigrationOrderIsDescending reads orderBy. CREATED_AT is GitHub's
+// only orderable field and the store returns oldest first, so ordering reduces
+// to whether to reverse.
 func repositoryMigrationOrderIsDescending(args map[string]interface{}) bool {
 	order, _ := args["orderBy"].(map[string]interface{})
 	direction, _ := order["direction"].(string)
@@ -529,10 +508,8 @@ func (s *Resolver) addStartRepositoryMigrationMutation(mutationType, repositoryM
 				return nil, gqlMissingNode("Organization", stringInput(input, "ownerId"))
 			}
 			source := store.FindMigrationSourceByNodeID(s.store, stringInput(input, "sourceId"))
-			// The source has to belong to the organization the repository
-			// lands in. Without that, a migrator on one organization could
-			// name another organization's source and migrate using its
-			// credentials.
+			// The source must belong to the target org, else a migrator could
+			// name another org's source and migrate with its credentials.
 			if source == nil || source.OwnerOrgID != org.ID {
 				return nil, gqlMissingNode("MigrationSource", stringInput(input, "sourceId"))
 			}
@@ -612,9 +589,8 @@ func (s *Resolver) addStartOrganizationMigrationMutation(mutationType, orgMigrat
 	})
 }
 
-// migrationSourceOrgName is the organization name inside a source
-// organization's URL: GitHub's input names the source by URL alone, so the
-// name it reports has to be derived from it.
+// migrationSourceOrgName derives the org name from a source org URL, which is
+// all GitHub's input carries.
 func migrationSourceOrgName(rawURL string) string {
 	trimmed := strings.TrimSuffix(rawURL, "/")
 	if index := strings.LastIndex(trimmed, "/"); index >= 0 {
@@ -639,11 +615,9 @@ func (s *Resolver) addAbortMigrationMutations(mutationType *graphql.Object) {
 			if migration == nil {
 				return nil, gqlMissingNode("RepositoryMigration", stringInput(input, "migrationId"))
 			}
-			// An abort is a terminal transition, and SetRepositoryMigrationState
-			// refuses to leave a terminal state — so a worker that finishes
-			// after this cannot overwrite the abort with its own verdict, and
-			// aborting an already-finished migration reports false rather than
-			// rewriting history.
+			// SetRepositoryMigrationState refuses to leave a terminal state, so
+			// a late worker cannot overwrite the abort and aborting a finished
+			// migration reports false rather than rewriting history.
 			aborted := s.store.SetRepositoryMigrationState(migration.ID, store.GEIMigrationStateFailed,
 				"the migration was aborted") != nil
 			return map[string]interface{}{"success": aborted}, nil
@@ -677,10 +651,8 @@ func (s *Resolver) addMigratorRoleMutations(mutationType *graphql.Object) {
 }
 
 // registerMigratorRoleMutation installs grantMigratorRole or
-// revokeMigratorRole. The two differ only in direction, and building them from
-// one function is what keeps the grant and the revoke resolving the same actor
-// the same way — a revoke that resolved actors differently from the grant
-// would leave grants nobody could remove.
+// revokeMigratorRole, which differ only in direction. One function keeps grant
+// and revoke resolving actors identically, so no grant becomes unremovable.
 func (s *Resolver) registerMigratorRoleMutation(mutationType *graphql.Object, name string, grant bool) {
 	verb := "revoke the migrator role from"
 	if grant {
@@ -713,18 +685,16 @@ func (s *Resolver) registerMigratorRoleMutation(mutationType *graphql.Object, na
 			changed := s.store.SetOrgMigratorRole(org.ID, actorType, actor, viewer.ID, grant)
 			s.logger.Info().Str("org", org.Login).Str("actor", actor).Str("actor_type", actorType).
 				Bool("granted", grant).Bool("changed", changed).Msgf("%s %s", verb, actor)
-			// success reports that the requested end state holds, not that it
-			// changed: granting a role somebody already has is not a failure,
-			// and reporting one would push callers into read-then-write races.
+			// success reports the requested end state, not whether it changed;
+			// re-granting an existing role is not a failure.
 			return map[string]interface{}{"success": true}, nil
 		},
 	})
 }
 
-// checkMigratorActorExists refuses a grant naming a user or team that does not
-// exist, or a team that belongs to another organization. A grant recorded
-// against a name nobody holds is a grant that silently activates the day
-// somebody registers it.
+// checkMigratorActorExists refuses a grant naming a nonexistent user or team,
+// or a team from another org: a grant against an unheld name would silently
+// activate the day someone registers it.
 func (s *Resolver) checkMigratorActorExists(org *store.Org, actorType, actor string) error {
 	switch strings.ToUpper(actorType) {
 	case "USER":
@@ -741,8 +711,7 @@ func (s *Resolver) checkMigratorActorExists(org *store.Org, actorType, actor str
 	return nil
 }
 
-// gqlSuccessPayload is the `success: Boolean` payload the four migration
-// mutations that report only an outcome all share.
+// gqlSuccessPayload is the shared `success: Boolean` payload.
 func gqlSuccessPayload(name string) *graphql.Object {
 	return graphql.NewObject(graphql.ObjectConfig{
 		Name:   name,
@@ -764,10 +733,8 @@ func boolInputOrDefault(input map[string]interface{}, key string, fallback bool)
 
 // --- node resolution --------------------------------------------------------
 
-// migrationNodeByID resolves the three migration global ids `node(id:)` may be
-// handed. Each is gated on the same migrator standing the rest of the surface
-// is: a global id is not a capability, so guessing one must not reveal an
-// organization's migration history.
+// migrationNodeByID resolves the three migration global ids for `node(id:)`,
+// each gated on migrator standing so guessing an id reveals nothing.
 func (s *Resolver) migrationNodeByID(ctx context.Context, nodeID string) interface{} {
 	if src := store.FindMigrationSourceByNodeID(s.store, nodeID); src != nil {
 		if org := s.store.GetOrgByID(src.OwnerOrgID); org == nil || s.requireMigratorStanding(ctx, org) != nil {

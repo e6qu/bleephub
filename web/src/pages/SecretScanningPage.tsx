@@ -24,7 +24,7 @@ import type {
 
 const enc = encodeURIComponent;
 
-/** A custom pattern as returned by the secret-scanning custom-patterns API. */
+/** A secret-scanning custom pattern. */
 interface CustomPattern {
   id: number;
   name: string;

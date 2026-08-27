@@ -7,19 +7,14 @@ import (
 	"strings"
 )
 
-// UserToJSON converts a User to the GitHub `simple-user` shape — the
-// user object nested inside repos, issues, pulls, comments, reviews,
-// memberships, and installations. The full public/private-user shape
-// (bio, counters, timestamps) belongs only on GET /user and
-// GET /users/{username}; see fullUserJSON.
-// A nil user is GitHub's deleted account: it renders as the `ghost` user
-// rather than JSON null, so no caller has to resolve absence itself.
+// UserToJSON renders a User as GitHub's `simple-user` shape (the user nested
+// inside repos, issues, pulls, and so on); the fuller shape belongs only on GET
+// /user and GET /users/{username}, see fullUserJSON. A nil user renders as the
+// `ghost` account rather than JSON null.
 //
-// baseURL is the instance's external origin. Every hypermedia member of
-// `simple-user` is declared required with format: uri, so they are absolute
-// here exactly as repository hypermedia is: clients such as PyGithub build
-// their next request by resolving an object's own `url`, and a relative
-// value makes them request <base>/api/v3/api/v3/users/{login}/repos.
+// Hypermedia members are absolute against baseURL: `simple-user` declares them
+// format: uri, and clients build their next request by resolving an object's
+// own `url`, so a relative value would double the /api/v3 prefix.
 func UserToJSON(u *User, baseURL string) map[string]interface{} {
 	if u == nil {
 		u = GhostUser()
@@ -50,19 +45,15 @@ func UserToJSON(u *User, baseURL string) map[string]interface{} {
 	}
 }
 
-// AvatarURLFor resolves the `avatar_url` member of an account shape.
-// `simple-user.avatar_url` is required with format: uri, so an account that
-// carries no stored avatar still has to name one; GitHub Enterprise Server
-// serves every account's avatar from the instance itself, at
-// <base>/avatars/u/{id}?v=4, and that is the address rendered here. A stored
-// avatar that is already absolute (a federated identity provider's picture
-// claim) is preserved; a stored relative one is resolved against the base.
+// AvatarURLFor resolves an account's `avatar_url`. An account with no stored
+// avatar still must name one (the field is required, format: uri), defaulting
+// to the instance-served <base>/avatars/u/{id}?v=4 as GitHub Enterprise does.
+// An already-absolute stored value is preserved; a relative one joins the base.
 func AvatarURLFor(stored string, id int, baseURL string) string {
 	switch {
 	case strings.HasPrefix(stored, "http://"), strings.HasPrefix(stored, "https://"):
 		return stored
-	// A single leading slash is a path under the instance base. Reject a
-	// protocol-relative "//host" or "/\host" second character so the result
+	// Reject a protocol-relative "//host" or "/\host" so a leading-slash path
 	// can never point off-origin, then join under the base.
 	case strings.HasPrefix(stored, "/") && !strings.HasPrefix(stored, "//") && !strings.HasPrefix(stored, `/\`):
 		return baseURL + stored
@@ -73,7 +64,7 @@ func AvatarURLFor(stored string, id int, baseURL string) string {
 }
 
 func GhostUser() *User {
-	u := ghostAccounts[ghostAccountID] // copy, so callers cannot mutate the shared record
+	u := ghostAccounts[ghostAccountID] // copy: callers must not mutate the shared record
 	return &u
 }
 
@@ -94,16 +85,13 @@ func WriteGHValidationError(w http.ResponseWriter, resource, field, code string)
 	})
 }
 
-// GhostUser is GitHub's `ghost` account, the stand-in for a user that has
-// been deleted. Its login, id and node_id are the ones github.com serves.
-// ghostAccountID is the fixed database id GitHub assigns the ghost account.
+// ghostAccountID is the fixed database id GitHub assigns the `ghost` account,
+// the stand-in for a deleted user.
 const ghostAccountID = 10137
 
-// ghostAccounts is a store-shaped table of the public stand-in accounts GitHub
-// serves for deleted users. Resolving ghost by id lookup (rather than an inline
-// struct literal at the render site) keeps the placeholder's fields out of the
-// data flow into the rendered login field — the same reason a stored user's
-// login is not treated as an embedded credential.
+// ghostAccounts tables the deleted-user stand-in accounts. Resolving ghost by
+// id lookup keeps the placeholder's fields out of the data flow into the
+// rendered login.
 var ghostAccounts = map[int]User{
 	ghostAccountID: {Login: "ghost", ID: ghostAccountID, NodeID: "U_bleephub_ghost", Type: "User"},
 }

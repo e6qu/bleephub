@@ -1,9 +1,7 @@
 package bleephub
 
-// GitHub Copilot organization REST surface: seat billing (selected
-// users / selected teams), seat listing and per-member seat details,
-// usage metrics, content exclusion, Copilot coding agent permissions,
-// and the repository-scoped Copilot cloud agent configuration.
+// GitHub Copilot organization REST surface: seat billing, seat details, usage
+// metrics, content exclusion, coding-agent permissions, and cloud-agent config.
 
 import (
 	"fmt"
@@ -43,10 +41,9 @@ func (s *Server) registerGHCopilotRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/copilot/cloud-agent/configuration", s.handleGetCopilotCloudAgentConfiguration)
 }
 
-// copilotOrgAdmin resolves the {org} path parameter and enforces the
-// caller is an authenticated organization owner — the audience real
-// GitHub grants the Copilot billing, metrics, and policy surface to.
-// Writes 401/404/403 and returns nil when the gate fails.
+// copilotOrgAdmin resolves {org} and requires an authenticated org owner — the
+// audience GitHub grants the Copilot billing/metrics/policy surface. Writes
+// 401/404/403 and returns nil on failure.
 func (s *Server) copilotOrgAdmin(w http.ResponseWriter, r *http.Request) *store.Org {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -65,7 +62,6 @@ func (s *Server) copilotOrgAdmin(w http.ResponseWriter, r *http.Request) *store.
 	return org
 }
 
-// copilotSeatJSON renders one seat in the copilot-seat-details shape.
 func (s *Server) copilotSeatJSON(seat *store.CopilotSeat, org *store.Org, baseURL string) map[string]interface{} {
 	var assignee interface{}
 	if u := s.store.GetUserByID(seat.UserID); u != nil {
@@ -81,8 +77,7 @@ func (s *Server) copilotSeatJSON(seat *store.CopilotSeat, org *store.Org, baseUR
 	if seat.PendingCancellationDate != "" {
 		pendingCancellation = seat.PendingCancellationDate
 	}
-	// A seat that has never been used reads null on both activity members:
-	// the member genuinely has no activity, and no timestamp is invented.
+	// An unused seat reads null on both activity fields; no timestamp is invented.
 	lastActivityAt, lastActivityEditor := s.CopilotSeatActivityJSON(org.Login, seat.UserID)
 	return map[string]interface{}{
 		"assignee":                  assignee,
@@ -102,9 +97,6 @@ func (s *Server) handleGetCopilotOrganizationDetails(w http.ResponseWriter, r *h
 	if org == nil {
 		return
 	}
-	// The seat split and the feature policy both come from durable state
-	// (gh_copilot_policy.go): the split from recorded Copilot activity, the
-	// policy from what an owner configured.
 	body := map[string]interface{}{"seat_breakdown": s.CopilotSeatBreakdown(org, s.currentTime())}
 	for key, value := range copilotPolicyJSON(s.store.CopilotPolicies.GetCopilotOrgPolicy(org.Login)) {
 		body[key] = value
@@ -131,9 +123,9 @@ func (s *Server) handleListCopilotSeats(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// resolveCopilotSeatUsers maps usernames to active organization members,
-// writing a 422 and returning nil when any username does not resolve —
-// GitHub validates the whole batch before assigning any seat.
+// resolveCopilotSeatUsers maps usernames to active org members, writing a 422
+// and returning nil if any does not resolve — GitHub validates the whole batch
+// before assigning any seat.
 func (s *Server) resolveCopilotSeatUsers(w http.ResponseWriter, org *store.Org, usernames []string) []int {
 	if len(usernames) == 0 {
 		store.WriteGHValidationError(w, "CopilotSeat", "selected_usernames", "missing_field")
@@ -211,8 +203,8 @@ func (s *Server) handleCancelCopilotSeatsForUsers(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, map[string]interface{}{"seats_cancelled": cancelled})
 }
 
-// resolveCopilotSeatTeams maps team names (or slugs) to teams of the
-// organization, writing a 422 and returning nil when any does not resolve.
+// resolveCopilotSeatTeams maps team names or slugs to the org's teams, writing a
+// 422 and returning nil if any does not resolve.
 func (s *Server) resolveCopilotSeatTeams(w http.ResponseWriter, org *store.Org, names []string) []*store.Team {
 	if len(names) == 0 {
 		store.WriteGHValidationError(w, "CopilotSeat", "selected_teams", "missing_field")
@@ -299,9 +291,9 @@ func (s *Server) handleGetCopilotSeatDetailsForUser(w http.ResponseWriter, r *ht
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// The self-lookup arm is intersected with the credential's reach of the org
-	// for the same reason the admin arm is: "I am asking about myself" is a fact
-	// about the bearer, not about the app speaking for them.
+	// The self-lookup arm is intersected with the credential's reach of the org:
+	// "asking about myself" is a fact about the bearer, not the app speaking for
+	// them.
 	username := r.PathValue("username")
 	self := strings.EqualFold(caller.Login, username) && s.viewerReachesOrg(r.Context(), org.Login)
 	if !self && !s.viewerCanAdminOrg(r.Context(), org.Login) {
@@ -330,8 +322,8 @@ func (s *Server) handleGetCopilotSeatDetailsForUser(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, s.copilotSeatJSON(seat, org, s.baseURL(r)))
 }
 
-// copilotMetricsWindow validates the optional since/until query
-// parameters. Returns false after writing a 422 on a malformed value.
+// copilotMetricsWindow validates the optional since/until query parameters,
+// writing a 422 and returning false on a malformed value.
 func copilotMetricsWindow(w http.ResponseWriter, r *http.Request) bool {
 	for _, name := range []string{"since", "until"} {
 		if v := r.URL.Query().Get(name); v != "" {
@@ -357,9 +349,7 @@ func (s *Server) handleCopilotMetricsForOrganization(w http.ResponseWriter, r *h
 	if !copilotMetricsWindow(w, r) {
 		return
 	}
-	// The array is an aggregation of the organization's recorded Copilot
-	// usage: with none recorded it is empty, which is the documented
-	// no-activity response rather than fabricated numbers.
+	// An empty array is the documented no-activity response, not fabricated data.
 	since, until := copilotMetricsWindowBounds(r)
 	writeJSON(w, http.StatusOK, s.CopilotMetricsForOrg(org.Login, "", since, until))
 }
@@ -385,10 +375,9 @@ func (s *Server) handleCopilotMetricsForTeam(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, s.CopilotMetricsForOrg(org.Login, teamSlug, since, until))
 }
 
-// handleCopilotOneDayReport serves the three organization single-day
-// report endpoints. The day query parameter is required; with no Copilot
-// activity ever recorded no daily report is generated, so a valid
-// request gets the documented 204 no-report response.
+// handleCopilotOneDayReport serves the three org single-day report endpoints.
+// The day parameter is required; a day with no recorded activity has no report,
+// so a valid request gets the documented 204.
 func (s *Server) handleCopilotOneDayReport(w http.ResponseWriter, r *http.Request) {
 	org := s.copilotOrgAdmin(w, r)
 	if org == nil {
@@ -403,8 +392,6 @@ func (s *Server) handleCopilotOneDayReport(w http.ResponseWriter, r *http.Reques
 		store.WriteGHValidationError(w, "CopilotMetricsReport", "day", "invalid")
 		return
 	}
-	// A report exists for a day the organization actually used Copilot on;
-	// any other day has none, which is the documented 204.
 	metrics := s.CopilotMetricsForOrg(org.Login, "", day, day)
 	if len(metrics) == 0 {
 		w.WriteHeader(http.StatusNoContent)
@@ -416,10 +403,9 @@ func (s *Server) handleCopilotOneDayReport(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// handleCopilotLatest28DayReport serves the two latest-28-day report
-// endpoints. The report period is the latest complete 28-day window
-// (ending yesterday, UTC); with no Copilot activity recorded there is
-// nothing to download, so download_links is honestly empty.
+// handleCopilotLatest28DayReport serves the two latest-28-day report endpoints.
+// The period is the latest complete 28-day window (ending yesterday, UTC); with
+// no recorded activity download_links is empty.
 func (s *Server) handleCopilotLatest28DayReport(w http.ResponseWriter, r *http.Request) {
 	org := s.copilotOrgAdmin(w, r)
 	if org == nil {
@@ -474,9 +460,8 @@ func (s *Server) handleSetCopilotContentExclusion(w http.ResponseWriter, r *http
 	})
 }
 
-// validContentExclusionRule accepts the documented rule forms: a path
-// string, or an object with exactly one of ifAnyMatch / ifNoneMatch
-// holding a list of strings.
+// validContentExclusionRule accepts the documented rule forms: a path string,
+// or an object with exactly one of ifAnyMatch / ifNoneMatch holding strings.
 func validContentExclusionRule(entry interface{}) bool {
 	switch v := entry.(type) {
 	case string:
@@ -543,7 +528,7 @@ func (s *Server) handleSetCopilotCodingAgentPermissions(w http.ResponseWriter, r
 }
 
 // copilotCodingAgentSelectedGate enforces the 409 the selected-repository
-// sub-resource returns when the organization policy is not "selected".
+// sub-resource returns when the org policy is not "selected".
 func (s *Server) copilotCodingAgentSelectedGate(w http.ResponseWriter, org *store.Org) bool {
 	p := s.store.GetCopilotCodingAgentPermissions(org.Login)
 	if p.EnabledRepositories != "selected" {
@@ -584,8 +569,8 @@ func (s *Server) handleListCopilotCodingAgentRepos(w http.ResponseWriter, r *htt
 	})
 }
 
-// copilotOrgRepoIDs validates every ID references an existing repository
-// owned by the organization, writing a 422 and returning false otherwise.
+// copilotOrgRepoIDs validates every id references an existing repository owned
+// by the org, writing a 422 and returning false otherwise.
 func (s *Server) copilotOrgRepoIDs(w http.ResponseWriter, org *store.Org, ids []int) bool {
 	var invalid []string
 	for _, id := range ids {
@@ -680,13 +665,9 @@ func (s *Server) handleDisableCopilotCodingAgentRepo(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleGetCopilotCloudAgentConfiguration serves the repository's Copilot
-// cloud agent configuration. Real GitHub manages this configuration
-// through the repository settings UI only — the REST surface is
-// read-only — so every repository reports GitHub's defaults: firewall on
-// with the recommended allowlist, Actions workflow approval required,
-// the full review-tool suite and automations enabled, automation triggers
-// restricted to writers, and no MCP configuration.
+// handleGetCopilotCloudAgentConfiguration serves the repository's Copilot cloud
+// agent configuration. GitHub manages this through the settings UI only, so the
+// REST surface is read-only and every repository reports GitHub's defaults.
 func (s *Server) handleGetCopilotCloudAgentConfiguration(w http.ResponseWriter, r *http.Request) {
 	if ghUserFromContext(r.Context()) == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")

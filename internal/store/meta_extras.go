@@ -5,9 +5,9 @@ package store
 func (st *Store) RevokeCredentials(credentials []string) int {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	// One transaction: every credential in the batch is revoked together across
-	// the PAT, user-to-server, refresh and installation token buckets, so a crash
-	// cannot leave part of a revoke request's credentials alive (STORE-001/002).
+	// One transaction across the PAT, user-to-server, refresh and installation
+	// buckets, so a crash cannot leave part of a revoke request alive
+	// (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	revoked := 0
 	for _, c := range credentials {

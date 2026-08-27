@@ -1,14 +1,9 @@
 package graphqlapi
 
-// The issue mutation surface: comment editing and moderation, assignment,
-// sub-issues and dependencies, issue types, custom issue fields, the duplicate
-// relation, and the pending-suggestion queue an agent proposes triage through.
-//
-// Every one writes through the store primitive the equivalent REST route
-// writes through — UpdateCommentBody, AddIssueAssignees, AddSubIssue,
-// CreateIssueType, SetIssueFieldValues, PerformIssueSuggestion — so a change
-// made over GraphQL and the same change made over REST leave the same records
-// and the same timeline behind.
+// The issue mutation surface: comment editing, assignment, sub-issues and
+// dependencies, issue types, custom fields, the duplicate relation, and the
+// pending-suggestion queue. Each writes through the same store primitive the
+// equivalent REST route does, so both surfaces leave identical records.
 
 import (
 	"fmt"
@@ -458,8 +453,7 @@ func (s *Resolver) resolveDeleteIssueComment(p graphql.ResolveParams) (interface
 	if comment == nil {
 		return nil, gqlMissingNode("IssueComment", nodeID)
 	}
-	// The webhook body carries the comment as it was, so it is snapshotted
-	// before the row is destroyed.
+	// Snapshot the comment before the row is destroyed; the webhook body carries it.
 	deleted := s.store.GetComment(comment.ID)
 	if deleted == nil {
 		return nil, gqlMissingNodeType("IssueComment")
@@ -490,9 +484,9 @@ func (s *Resolver) resolveIssueCommentPin(p graphql.ResolveParams, pinned bool) 
 	return map[string]interface{}{"issueComment": optionalObject(commentToGQL(updated, s.store))}, nil
 }
 
-// emitIssueCommentEvent delivers the issue_comment webhook the REST comment
-// routes deliver. A comment on a pull request is an issue comment on GitHub
-// and fires the same event, which is why the subject is looked up either way.
+// emitIssueCommentEvent delivers the issue_comment webhook. A comment on a PR
+// is an issue comment on GitHub and fires the same event, so the subject is
+// looked up either way.
 func (s *Resolver) emitIssueCommentEvent(comment *store.Comment, sender *store.User, action string) {
 	repo, subject := s.commentSubject(comment)
 	if repo == nil || subject == nil {
@@ -512,8 +506,7 @@ func (s *Resolver) emitIssueCommentEvent(comment *store.Comment, sender *store.U
 	s.emitWebhookEvent(repo.FullName, "issue_comment", action, payload)
 }
 
-// commentSubject resolves the repository and the issue or pull request a
-// comment hangs off.
+// commentSubject resolves the repository and the issue or PR a comment hangs off.
 func (s *Resolver) commentSubject(comment *store.Comment) (*store.Repo, interface{}) {
 	if comment == nil {
 		return nil, nil
@@ -542,15 +535,11 @@ const (
 	assigneeChangeReplace
 )
 
-// resolveAssigneeChange is the body the three assignment mutations share. The
-// named actors are resolved to accounts, combined with the subject's current
-// assignees according to the mode, and written through the subject's update
-// primitive so the assigned/unassigned timeline events and the webhook
-// fan-out are the ones the REST assignee routes produce.
-//
-// An assignee offered with `suggest: true` is not assigned: it is recorded as
-// a pending suggestion for applyPendingIssueSuggestions to perform, which is
-// what the flag means on GitHub.
+// resolveAssigneeChange is the body the three assignment mutations share:
+// resolve named actors, combine with current assignees per mode, and write
+// through the subject's update primitive (same timeline/webhook as the REST
+// routes). An assignee with `suggest: true` is queued as a pending suggestion
+// rather than assigned.
 func (s *Resolver) resolveAssigneeChange(p graphql.ResolveParams, mode assigneeChangeMode) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
 	nodeID, _ := gqlInputString(input, "assignableId")
@@ -605,9 +594,9 @@ func (s *Resolver) resolveAssigneeChange(p graphql.ResolveParams, mode assigneeC
 	return nil, gqlMissingNode("Assignable", nodeID)
 }
 
-// assigneesFromInput resolves every way the three mutations name an actor —
-// assigneeIds, actorIds, actorLogins and the assignees[] objects — into the
-// account ids to apply and the ones merely suggested.
+// assigneesFromInput resolves every way the mutations name an actor
+// (assigneeIds, actorIds, actorLogins, assignees[]) into ids to apply and ids
+// merely suggested.
 func (s *Resolver) assigneesFromInput(input map[string]interface{}, mode assigneeChangeMode) (apply, suggest []int, err error) {
 	appendActor := func(nodeID string, suggested bool) error {
 		actor := store.FindUserByNodeID(s.store, nodeID)
@@ -655,8 +644,7 @@ func mustStrings(input map[string]interface{}, key string) []string {
 	return values
 }
 
-// recordAssigneeSuggestion queues a proposed assignment for the pending
-// suggestion queue rather than performing it.
+// recordAssigneeSuggestion queues a proposed assignment rather than performing it.
 func (s *Resolver) recordAssigneeSuggestion(repo *store.Repo, issue *store.Issue, actor *store.User, assigneeID int) {
 	target := assigneeID
 	var actorID *int
@@ -986,8 +974,7 @@ func (s *Resolver) resolveDeleteIssueField(p graphql.ResolveParams) (interface{}
 	if field == nil {
 		return nil, gqlMissingNode("IssueFields", nodeID)
 	}
-	// The payload carries the field as it was, so it is rendered before the
-	// definition is destroyed.
+	// Render before the definition is destroyed; the payload carries it.
 	rendered := s.issueFieldToGQL(field)
 	if !s.store.DeleteIssueField(org, field.ID) {
 		return nil, gqlMissingNodeType("IssueFields")
@@ -1043,8 +1030,7 @@ func (s *Resolver) resolveSetIssueFieldValue(p graphql.ResolveParams) (interface
 		}
 		rendered = append(rendered, renderedOne...)
 	}
-	// setIssueFieldValue replaces the issue's field values with exactly what
-	// it names, which is what SetIssueFieldValues writes.
+	// Replace the issue's field values with exactly what the input names.
 	s.store.SetIssueFieldValues(issue.ID, values)
 	updated := s.store.GetIssue(issue.ID)
 	if updated == nil {
@@ -1079,9 +1065,8 @@ func (s *Resolver) resolveDeleteIssueFieldValue(p graphql.ResolveParams) (interf
 }
 
 // issueFieldWrite turns one IssueFieldCreateOrUpdateInput into the store value
-// to write and the payload member to answer with. A member carrying
-// `suggest: true` writes nothing: it queues a pending suggestion, which is
-// what the flag means.
+// to write and the payload member to answer with. `suggest: true` writes
+// nothing — it queues a pending suggestion.
 func (s *Resolver) issueFieldWrite(repo *store.Repo, issue *store.Issue, spec map[string]interface{}, p graphql.ResolveParams) (map[int]interface{}, []interface{}, error) {
 	nodeID, _ := gqlInputString(spec, "fieldId")
 	org, field := s.issueFieldByNodeID(nodeID)
@@ -1115,8 +1100,8 @@ func (s *Resolver) issueFieldWrite(repo *store.Repo, issue *store.Issue, spec ma
 	return map[int]interface{}{field.ID: value}, []interface{}{rendered}, nil
 }
 
-// issueFieldValueFromInput picks the member of the input that matches the
-// field's data type, refusing one that names a value of the wrong shape.
+// issueFieldValueFromInput picks the input member matching the field's data
+// type, refusing a value of the wrong shape.
 func issueFieldValueFromInput(field *store.IssueField, spec map[string]interface{}) (interface{}, error) {
 	switch field.DataType {
 	case "date":
@@ -1170,8 +1155,8 @@ func issueFieldOptionByNodeID(field *store.IssueField, nodeID string) *store.Iss
 	return nil
 }
 
-// issueFieldOptionRequests reads the options[] member into the shape the store
-// primitives take. An absent list leaves the field's options alone.
+// issueFieldOptionRequests reads options[] into the store shape. An absent list
+// leaves the field's options alone.
 func issueFieldOptionRequests(input map[string]interface{}) []store.IssueFieldOptionRequest {
 	specs := gqlInputObjects(input, "options")
 	if len(specs) == 0 {
@@ -1203,8 +1188,8 @@ func issueFieldVisibilityStored(value string) string {
 	return "all"
 }
 
-// issueFieldByNodeID resolves an IssueFields node id to the organization that
-// owns it and the definition itself.
+// issueFieldByNodeID resolves an IssueFields node id to its owning org and the
+// definition.
 func (s *Resolver) issueFieldByNodeID(nodeID string) (string, *store.IssueField) {
 	if nodeID == "" {
 		return "", nil
@@ -1223,9 +1208,8 @@ func (s *Resolver) issueFieldByNodeID(nodeID string) (string, *store.IssueField)
 	return "", nil
 }
 
-// issueTypeToGQL renders an issue type into the shared IssueType source shape
-// the read surface uses, so a type read back after a mutation is the same
-// object Issue.issueType resolves.
+// issueTypeToGQL renders an issue type into the shared IssueType source shape,
+// so a type read back after a mutation matches what Issue.issueType resolves.
 func issueTypeToGQL(issueType *store.IssueType) map[string]interface{} {
 	if issueType == nil {
 		return nil
@@ -1299,8 +1283,7 @@ func (s *Resolver) resolvePendingIssueSuggestions(p graphql.ResolveParams, apply
 	return map[string]interface{}{"issue": issueToGQL(updated, s.store)}, nil
 }
 
-// pendingSuggestionForRef finds the queued suggestion a
-// PendingIssueSuggestionRef addresses: the actor's pending suggestion of that
+// pendingSuggestionForRef finds the actor's pending suggestion of the ref's
 // kind, aimed at the record the ref names.
 func (s *Resolver) pendingSuggestionForRef(repo *store.Repo, issue *store.Issue, actor *store.User, ref map[string]interface{}) (*store.IssueSuggestion, error) {
 	kind, _ := gqlInputString(ref, "kind")
@@ -1351,8 +1334,8 @@ func pendingSuggestionAction(kind string) (action, idKey string) {
 	return "", ""
 }
 
-// suggestionTargetID resolves the node id a suggestion ref names to the
-// database id the queued suggestion records.
+// suggestionTargetID resolves a suggestion ref's node id to the database id the
+// queued suggestion records.
 func (s *Resolver) suggestionTargetID(idKey, nodeID string) (int, error) {
 	switch idKey {
 	case "assigneeId":
@@ -1379,8 +1362,6 @@ func (s *Resolver) suggestionTargetID(idKey, nodeID string) (int, error) {
 	return 0, gqlMissingNodeType("Node")
 }
 
-// --- shared helpers -----------------------------------------------------------
-
 // issueFromInput resolves the issue a mutation input names.
 func (s *Resolver) issueFromInput(input map[string]interface{}, key string) (*store.Issue, error) {
 	nodeID, _ := gqlInputString(input, key)
@@ -1388,8 +1369,8 @@ func (s *Resolver) issueFromInput(input map[string]interface{}, key string) (*st
 	if issue == nil {
 		return nil, gqlMissingNode("Issue", nodeID)
 	}
-	// The node finder hands back the live row; a detached snapshot is what a
-	// caller may read fields off (STORE-021).
+	// The node finder returns the live row; take a detached snapshot to read
+	// fields off (STORE-021).
 	snapshot := s.store.GetIssue(issue.ID)
 	if snapshot == nil {
 		return nil, gqlMissingNodeType("Issue")
@@ -1409,8 +1390,7 @@ func (s *Resolver) issueAndRepoFromInput(input map[string]interface{}, key strin
 	return issue, repo, nil
 }
 
-// subIssueFromInput resolves addSubIssue's child, which GitHub lets a client
-// name either by node id or by the issue's web URL.
+// subIssueFromInput resolves addSubIssue's child, named by node id or web URL.
 func (s *Resolver) subIssueFromInput(input map[string]interface{}) (*store.Issue, error) {
 	if nodeID, ok := gqlInputString(input, "subIssueId"); ok && nodeID != "" {
 		return s.issueFromInput(input, "subIssueId")
@@ -1457,8 +1437,8 @@ func (s *Resolver) optionalIssueID(input map[string]interface{}, key string) (*i
 	return &id, nil
 }
 
-// optionalRenderedIssue renders an issue that may be absent into the value a
-// nilable payload member may safely hold.
+// optionalRenderedIssue renders a possibly-absent issue into a value a nilable
+// payload member may hold.
 func optionalRenderedIssue(issue *store.Issue, st *store.Store) interface{} {
 	if issue == nil {
 		return nil
@@ -1466,8 +1446,8 @@ func optionalRenderedIssue(issue *store.Issue, st *store.Store) interface{} {
 	return issueToGQL(issue, st)
 }
 
-// optionalStringPtr reads an optional String member as the pointer the store
-// primitives use to distinguish "leave alone" from "set".
+// optionalStringPtr reads an optional String member as a pointer, distinguishing
+// "leave alone" (nil) from "set".
 func optionalStringPtr(input map[string]interface{}, key string) *string {
 	value, ok := gqlInputString(input, key)
 	if !ok {

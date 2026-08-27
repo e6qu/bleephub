@@ -39,14 +39,12 @@ import { NotificationBellIcon } from "../components/octicons.js";
 
 const col = createColumnHelper<GithubNotificationThreadWithSaved>();
 
-/** github.com's inbox views: Inbox is the REST notification list, Saved the
- *  bookmarked threads, Done the threads dismissed with "Done". */
+// Inbox is the REST notification list; Saved and Done are web-only views.
 type NotificationView = "inbox" | "saved" | "done";
 
 const GROUP_BY_REPO_KEY = "bleephub.notifications.group_by_repo";
 
-/** Saved/Done are web-only views served from /ui-data (REST thread shape plus
- *  a `saved` flag). Validated as an array so a contract break surfaces. */
+// Saved/Done are served from /ui-data (REST thread shape plus a `saved` flag).
 async function fetchNotificationView(view: "saved" | "done"): Promise<GithubNotificationThreadWithSaved[]> {
   const body = await ghFetch<unknown>(`/ui-data/notifications?view=${view}&per_page=100`);
   if (!Array.isArray(body)) throw new Error("malformed response: expected a JSON array");
@@ -100,12 +98,9 @@ function ThreadsList({ view, all }: { view: NotificationView; all: boolean }) {
   const queryClient = useQueryClient();
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [activeThread, setActiveThread] = useState<GithubNotificationThread | null>(null);
-  // github.com's inbox filters by repository and by reason; both narrow the
-  // list below the view tabs and the free-text filter.
   const [repoFilter, setRepoFilter] = useState("");
   const [reasonFilter, setReasonFilter] = useState("");
-  // github.com's inbox groups threads under per-repository headers by default;
-  // the flat table stays available and the choice persists per browser.
+  // Grouped by repository by default (github parity); the choice persists per browser.
   const [groupByRepo, setGroupByRepo] = useState(
     () => localStorage.getItem(GROUP_BY_REPO_KEY) !== "flat",
   );
@@ -121,8 +116,7 @@ function ThreadsList({ view, all }: { view: NotificationView; all: boolean }) {
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
   });
-  // The saved view doubles as the inbox's bookmark state (the REST list does
-  // not carry the web-only `saved` flag).
+  // Saved view doubles as the inbox's bookmark state; the REST list omits `saved`.
   const savedQuery = useQuery({
     queryKey: ["notifications", "view", "saved"],
     queryFn: () => fetchNotificationView("saved"),
@@ -144,14 +138,12 @@ function ThreadsList({ view, all }: { view: NotificationView; all: boolean }) {
   const readMut = useMutation({ mutationFn: (id: string) => markThreadRead(id), ...mutationOptions });
   const markAllMut = useMutation({ mutationFn: markAllNotificationsRead, ...mutationOptions });
   const doneMut = useMutation({ mutationFn: (id: string) => markThreadDone(id), ...mutationOptions });
-  // The Saved bookmark lives in the web-only /ui-data namespace.
   const saveMut = useMutation({
     mutationFn: ({ id, saved }: { id: string; saved: boolean }) =>
       ghSend(saved ? "PUT" : "DELETE", `/ui-data/notifications/threads/${enc(id)}/saved`),
     ...mutationOptions,
   });
-  // github.com clears a whole repository's notifications from its group header:
-  // PUT /repos/{owner}/{repo}/notifications marks them all read.
+  // PUT /repos/{owner}/{repo}/notifications marks a whole repo's threads read.
   const markRepoMut = useMutation({
     mutationFn: (fullName: string) => {
       const [owner = "", repo = ""] = fullName.split("/");
@@ -185,8 +177,7 @@ function ThreadsList({ view, all }: { view: NotificationView; all: boolean }) {
     .filter((t) => !repoFilter || repoName(t) === repoFilter)
     .filter((t) => !reasonFilter || t.reason === reasonFilter);
 
-  // Done is a review surface: the server keeps done threads listable but has
-  // no mark-unread/undo endpoint, so rows there only link and toggle Saved.
+  // Done has no mark-unread/undo endpoint, so its rows only link and toggle Saved.
   const readOnly = view === "done";
   const busy = readMut.isPending || doneMut.isPending || saveMut.isPending;
 
@@ -396,7 +387,6 @@ function ThreadsList({ view, all }: { view: NotificationView; all: boolean }) {
   );
 }
 
-/** The Saved bookmark toggle: GitHub's 🔖 in the inbox row. */
 function SaveToggle({
   thread,
   disabled,
@@ -421,7 +411,6 @@ function SaveToggle({
   );
 }
 
-/** Repository owner avatar for a REST thread's loosely-typed repository. */
 function RepoAvatar({ repository, size }: { repository: Record<string, unknown>; size: number }) {
   const owner = repository.owner as { login?: string; avatar_url?: string } | undefined;
   if (!owner?.login) return null;
@@ -516,9 +505,7 @@ function NotificationsByRepo({
                             color: "var(--color-accent)",
                             textDecoration: "none",
                             lineHeight: "1.625rem",
-                            // An unbroken 200+-char subject must wrap instead
-                            // of crushing the row's action buttons under the
-                            // 24px target-size floor.
+                            // Wrap long subjects; keeps action buttons above the 24px target-size floor.
                             overflowWrap: "anywhere",
                             maxWidth: "100%",
                           }}

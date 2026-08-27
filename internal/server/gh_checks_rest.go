@@ -14,10 +14,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// Checks API.
-// CheckRun + CheckSuite are App-owned: real GitHub limits Create/Update to
-// GitHub App installation tokens. Bleephub permission-gates by "checks"
-// scope (read for reads, write for create/update).
+// Checks API. Gated by the "checks" scope (read for reads, write for
+// create/update); on GitHub these writes are App-installation-only.
 
 func (s *Server) registerGHChecksRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/check-runs", s.requirePerm(store.ScopeChecks, store.PermWrite, s.handleCreateCheckRun))
@@ -34,8 +32,8 @@ func (s *Server) registerGHChecksRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/check-suites/{id}/rerequest", s.requirePerm(store.ScopeChecks, store.PermWrite, s.handleRerequestCheckSuite))
 }
 
-// handleRerequestCheckRun resets a completed check run to queued and fires
-// the check_run "rerequested" webhook, asking the owning app to run it again.
+// handleRerequestCheckRun resets a completed check run to queued and fires the
+// check_run "rerequested" webhook.
 func (s *Server) handleRerequestCheckRun(w http.ResponseWriter, r *http.Request) {
 	cr := s.checkRunInRepo(w, r)
 	if cr == nil {
@@ -55,7 +53,7 @@ func (s *Server) handleRerequestCheckRun(w http.ResponseWriter, r *http.Request)
 }
 
 // handleRerequestCheckSuite marks a check suite queued and fires the
-// check_suite "rerequested" webhook, asking apps to re-create their runs.
+// check_suite "rerequested" webhook.
 func (s *Server) handleRerequestCheckSuite(w http.ResponseWriter, r *http.Request) {
 	suite := s.checkSuiteInRepo(w, r)
 	if suite == nil {
@@ -130,8 +128,7 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 		actor = user.Login
 	}
 	s.recordAuditEvent("check_run.create", actor, "", map[string]interface{}{"repo": repoKey, "check_run_id": cr.ID})
-	// A check run created already-completed can be the condition an armed
-	// auto-merge was waiting for.
+	// A check run created already-completed can satisfy an armed auto-merge.
 	if run := s.store.GetCheckRun(cr.ID); run != nil && run.Status == "completed" {
 		s.maybeAutoMergeHeadSHA(repo, run.HeadSHA)
 	}
@@ -139,9 +136,8 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 	writeJSONCreated(w, jsonStringField(checkRunJSON, "url"), checkRunJSON)
 }
 
-// checkRunInRepo resolves the check run named by {id}, answering 404 unless it
-// belongs to the repository in the URL path. Check run ids are global, so the
-// path repository is the only thing that ties the id to a tenant.
+// checkRunInRepo resolves {id}, answering 404 unless it belongs to the path
+// repository. Check run ids are global, so the path repo is the only tenant tie.
 func (s *Server) checkRunInRepo(w http.ResponseWriter, r *http.Request) *store.CheckRun {
 	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -235,8 +231,7 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// A check run transitioning to completed can clear the condition an
-	// armed auto-merge was waiting for.
+	// A check run transitioning to completed can satisfy an armed auto-merge.
 	if run := s.store.GetCheckRun(id); run != nil && run.Status == "completed" {
 		s.maybeAutoMergeHeadSHA(s.store.GetRepoByFullName(run.RepoKey), run.HeadSHA)
 	}
@@ -293,9 +288,8 @@ func (s *Server) handleListCheckRunsForCommit(w http.ResponseWriter, r *http.Req
 	})
 }
 
-// filterCheckRuns applies the documented check_name and status filters, which
-// keep the runs carrying exactly that name and exactly that status. Either sent
-// empty narrows nothing.
+// filterCheckRuns keeps runs matching check_name and status exactly; an empty
+// value for either narrows nothing.
 func filterCheckRuns(runs []*store.CheckRun, name, status string) []*store.CheckRun {
 	if name == "" && status == "" {
 		return runs
@@ -313,16 +307,10 @@ func filterCheckRuns(runs []*store.CheckRun, name, status string) []*store.Check
 	return out
 }
 
-// latestCheckRuns implements the documented default filter: reruns remain
-// addressable with filter=all, while the normal listing exposes only the most
-// recent run of each named check.
-//
-// A check is identified by its name within its suite — an app re-reporting a
-// name it has already reported supersedes the earlier run rather than adding a
-// second one. So the run kept per (suite, name) is the newest, and a suite that
-// reports several differently-named checks keeps all of them: keying on the
-// suite alone would let one check's rerun hide every sibling check beside it,
-// and would collapse a whole suite's listing to a single run.
+// latestCheckRuns implements the default filter=latest: keep only the newest run
+// per (suite, name). A check is identified by its name within its suite, so a
+// rerun supersedes the earlier run; keying on suite alone would collapse every
+// differently-named sibling check into one.
 func latestCheckRuns(runs []*store.CheckRun) []*store.CheckRun {
 	type checkKey struct {
 		suiteID int64
@@ -408,8 +396,7 @@ func (s *Server) handleListCheckRunsForSuite(w http.ResponseWriter, r *http.Requ
 	if suite == nil {
 		return
 	}
-	// The suite listing takes the same documented filters as the commit
-	// listing, minus app_id — a suite already belongs to one app.
+	// Same filters as the commit listing, minus app_id — a suite belongs to one app.
 	q := r.URL.Query()
 	filter := q.Get("filter")
 	if filter == "" {
@@ -435,8 +422,7 @@ func (s *Server) handleListCheckRunsForSuite(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// appIDFromContext returns the AppID associated with the request's auth.
-// Returns 0 for PAT auth (no App context).
+// appIDFromContext returns the request auth's AppID, 0 for PAT auth.
 func appIDFromContext(ctx interface {
 	Value(any) any
 },
@@ -453,9 +439,8 @@ func appIDFromContext(ctx interface {
 	return 0
 }
 
-// checkAppJSON renders the check's owning GitHub App as the integration
-// shape, or null for PAT-created checks (AppID 0), matching real GitHub's
-// nullable app member.
+// checkAppJSON renders the owning App as the integration shape, or null for
+// PAT-created checks (AppID 0).
 func (s *Server) checkAppJSON(appID int) interface{} {
 	if appID == 0 {
 		return nil
@@ -467,9 +452,8 @@ func (s *Server) checkAppJSON(appID int) interface{} {
 	return appToJSON(s.store, app, false, s.publicOrigin())
 }
 
-// checkRunToJSON renders the GitHub check-run shape. base is the external
-// base URL ("" for webhook payloads, which carry relative API paths like the
-// other event payload builders).
+// checkRunToJSON renders the check-run shape. base is "" for webhook payloads,
+// which carry relative API paths.
 func (s *Server) checkRunToJSON(cr *store.CheckRun, base string) map[string]interface{} {
 	if cr == nil {
 		return nil
@@ -516,9 +500,8 @@ func (s *Server) checkRunToJSON(cr *store.CheckRun, base string) map[string]inte
 	}
 }
 
-// checkSuiteToJSON renders the GitHub check-suite shape, resolving the head
-// commit from the repository's real git storage and embedding the repository
-// as a minimal-repository.
+// checkSuiteToJSON renders the check-suite shape, resolving head_commit from
+// real git storage.
 func (s *Server) checkSuiteToJSON(suite *store.CheckSuite, base string) map[string]interface{} {
 	if suite == nil {
 		return nil
@@ -558,9 +541,8 @@ func (s *Server) checkSuiteToJSON(suite *store.CheckSuite, base string) map[stri
 			}
 		}
 	}
-	// head_commit is required and non-nullable. When the commit object can't be
-	// loaded (missing storage, unresolved SHA), fall back to a minimal
-	// simple-commit built from the suite's head SHA rather than emitting null.
+	// head_commit is required and non-nullable; synthesize a minimal simple-commit
+	// from the head SHA when the commit object can't be loaded.
 	if headCommit == nil {
 		headCommit = map[string]interface{}{
 			"id":        suite.HeadSHA,

@@ -1,10 +1,9 @@
 package store
 
-// GraphQL node-ID finders: resolve a global node id to its store record.
-// Node-ID codecs live in store so the GraphQL resolver layer, the REST
-// handlers, and their tests share one format (ARCH-003). Each finder tries
-// the O(1) decoded-database-id fast path (guarded by NodeID equality) and
-// falls back to a scan.
+// GraphQL node-ID finders resolve a global node id to its store record. Codecs
+// live in store so GraphQL, REST, and tests share one format (ARCH-003). Each
+// tries an O(1) decoded-database-id fast path (guarded by NodeID equality), then
+// falls back to a scan. Unlike Get*, these return the live row, not a snapshot.
 
 func FindDiscussionByNodeID(st *Store, nodeID string) *Discussion {
 	st.Mu.RLock()
@@ -134,19 +133,13 @@ func FindUserByNodeID(st *Store, nodeID string) *User {
 	return nil
 }
 
-// FindIssueTypeByNodeID resolves an issue-type node id (moved here from the
-// issue-types REST file in ARCH-003; it has no REST callers).
+// FindIssueTypeByNodeID resolves an issue-type node id.
 func FindIssueTypeByNodeID(st *Store, nodeID string) *IssueType {
 	if nodeID == "" {
 		return nil
 	}
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// O(1) fast path: the node ID embeds the globally-unique database id, so
-	// parse it and look the type up directly instead of walking every org's map
-	// under the lock (GQL-024). The NodeID equality guard rejects a decoded id
-	// that resolves to a different node shape; the scan below remains as a
-	// robustness fallback, matching the other node finders.
 	if id, ok := DecodeNodeDBID(nodeID, "IT_kwDO"); ok {
 		if it := st.IssueTypesByID[id]; it != nil && it.NodeID == nodeID {
 			return it
@@ -178,8 +171,8 @@ func FindPullRequestByNodeID(st *Store, nodeID string) *PullRequest {
 	return nil
 }
 
-// FindReviewByNodeID resolves a pull-request review from its GraphQL node id
-// (PRR_kgDO…). Reviews are keyed by numeric id, so this scans the review map.
+// FindReviewByNodeID resolves a PR review (PRR_kgDO…); reviews lack a fast-path
+// index, so this scans.
 func FindReviewByNodeID(st *Store, nodeID string) *PullRequestReview {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -259,8 +252,7 @@ func FindReleaseByNodeID(st *Store, nodeID string) *Release {
 	return nil
 }
 
-// FindTeamByNodeID resolves a team's global id to the live row, and the org
-// that owns it, in the same live-row convention as the other Find* lookups.
+// FindTeamByNodeID resolves a team's node id to its live row and owning org.
 func FindTeamByNodeID(st *Store, nodeID string) (*Team, *Org) {
 	if nodeID == "" {
 		return nil, nil
@@ -275,8 +267,7 @@ func FindTeamByNodeID(st *Store, nodeID string) (*Team, *Org) {
 	return nil, nil
 }
 
-// FindPackageVersionByNodeID resolves a package version's global id to the
-// live version row and its owning package.
+// FindPackageVersionByNodeID resolves a package version's node id to its live row and owning package.
 func FindPackageVersionByNodeID(st *Store, nodeID string) (*PackageVersion, *Package) {
 	if nodeID == "" {
 		return nil, nil

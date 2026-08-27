@@ -22,7 +22,6 @@ func (s *Server) handleCreateFork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GitHub allows forking public repos and private repos the user can read.
 	if sourceRepo.Private && !s.viewerCanReadRepo(r.Context(), sourceRepo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -42,16 +41,12 @@ func (s *Server) handleCreateFork(w http.ResponseWriter, r *http.Request) {
 		forkName = sourceRepo.Name
 	}
 
-	// Only user-owned forks are supported in this slice; organization forks are
-	// a future extension.
 	if req.Organization != "" {
 		writeGHError(w, http.StatusUnprocessableEntity, "Organization forks are not supported.")
 		return
 	}
 
-	// Forking a private repository copies its code into a new namespace, so
-	// an enterprise governs both whether it may happen at all and where the
-	// fork may land.
+	// An enterprise governs whether a private repo may be forked and where.
 	if refusal := s.enterpriseForbidsPrivateForking(r.Context(), sourceRepo, nil); refusal != "" {
 		writeGHError(w, http.StatusForbidden, refusal)
 		return
@@ -67,8 +62,7 @@ func (s *Server) handleCreateFork(w http.ResponseWriter, r *http.Request) {
 		"source": sourceRepo.FullName,
 		"fork":   fork.FullName,
 	})
-	// `fork` fires on the source repository so `on: fork` workflows there run,
-	// carrying the new fork as `forkee` (ACT-026).
+	// `fork` fires on the source repo (so `on: fork` workflows run there), carrying the new fork as `forkee` (ACT-026).
 	s.emitWebhookEvent(sourceRepo.FullName, "fork", "", map[string]interface{}{
 		"forkee":     fullRepoJSONForViewer(fork, s.store, s.baseURL(r), user),
 		"repository": repoPayload(sourceRepo, s.baseURL(r)),
@@ -92,14 +86,11 @@ func (s *Server) handleListForks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GitHub's forks endpoint takes newest|oldest|stargazers|watchers (default
-	// newest) — a different vocabulary from the repo-list sort. Translate it so
-	// `oldest` is not silently reversed and `stargazers`/`watchers` are not
-	// dropped and returned in created order.
+	// The forks endpoint sort vocabulary (newest|oldest|stargazers|watchers,
+	// default newest) differs from the repo-list sort; translate it.
 	repoSort, direction := "created", "desc"
 	switch r.URL.Query().Get("sort") {
 	case "", "newest":
-		// created, descending
 	case "oldest":
 		direction = "asc"
 	case "stargazers", "watchers": // watchers_count mirrors stargazers_count

@@ -14,9 +14,8 @@ func (s *Server) registerGHEnterpriseDependabotRoutes() {
 	s.route("PUT /api/v3/enterprises/{enterprise}/dependabot/repository-access/default-level", s.requireEnterpriseOwner(s.handleSetEnterpriseDependabotDefaultLevel))
 }
 
-// handleListEnterpriseDependabotAlerts lists Dependabot alerts across every
-// organization-owned repository on the instance. Matching real GitHub,
-// alerts surface only for organizations the caller owns.
+// handleListEnterpriseDependabotAlerts lists Dependabot alerts across the
+// instance, surfacing only organizations the caller owns.
 func (s *Server) handleListEnterpriseDependabotAlerts(w http.ResponseWriter, r *http.Request) {
 	var alerts []*store.DependabotAlert
 	adminAny := false
@@ -97,8 +96,7 @@ func (s *Server) handleGetEnterpriseDependabotRepositoryAccess(w http.ResponseWr
 	s.store.Mu.RUnlock()
 
 	repos := s.dependabotAccessibleRepos(r, ids)
-	// The endpoint paginates the repository list with page/per_page while the
-	// envelope (default_level + list) stays a single object.
+	// Paginate the repository list while the envelope stays a single object.
 	repos = paginateAndLink(w, r, repos)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"default_level":           nullOrString(string(level)),

@@ -1,11 +1,7 @@
 import type { CSSProperties } from "react";
 
-/*
- * Original, deliberately-simple glyphs in the spirit of GitHub's UI
- * (repo / issue / pull-request vocabulary) drawn fresh here — not copied
- * octicon path data. They inherit `currentColor` so callers colour them
- * with the surrounding text colour or a state token.
- */
+// Original glyphs drawn fresh here, not copied octicon path data. They inherit
+// `currentColor` so callers colour them with the surrounding text or a token.
 
 export interface IconProps {
   size?: number | undefined;
@@ -42,7 +38,6 @@ function Svg({
   );
 }
 
-/** Brand mark — a polished chat bubble (a "bleep") using the active theme. */
 export function Mark({ size = 22, style, className }: IconProps) {
   return (
     <svg
@@ -236,8 +231,6 @@ export function SignOutIcon(p: IconProps) {
   );
 }
 
-/* Actions status vocabulary — run / job / step / check states. */
-
 export function CheckCircleIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -256,7 +249,7 @@ export function XCircleIcon(p: IconProps) {
   );
 }
 
-/** Cancelled: circle with a horizontal stop bar. */
+/** Cancelled state. */
 export function StopCircleIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -266,7 +259,7 @@ export function StopCircleIcon(p: IconProps) {
   );
 }
 
-/** Skipped: circle with a diagonal slash. */
+/** Skipped state. */
 export function SkipCircleIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -276,7 +269,7 @@ export function SkipCircleIcon(p: IconProps) {
   );
 }
 
-/** Queued: solid dot. */
+/** Queued state. */
 export function DotFillIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -285,7 +278,7 @@ export function DotFillIcon(p: IconProps) {
   );
 }
 
-/** In-progress: 3/4 arc — callers spin it with the animate-spin class. */
+/** In-progress; callers spin it with the animate-spin class. */
 export function ProgressArcIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -294,7 +287,7 @@ export function ProgressArcIcon(p: IconProps) {
   );
 }
 
-/** Waiting on approval / wait timer: clock face. */
+/** Waiting on approval / wait timer. */
 export function ClockIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -528,7 +521,6 @@ export function GlobeIcon(p: IconProps) {
   );
 }
 
-/** Webhook: an emitting node fanned out to two receivers. */
 export function WebhookIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -540,7 +532,6 @@ export function WebhookIcon(p: IconProps) {
   );
 }
 
-/** Magnifying glass for the global search page. */
 export function SearchIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -550,7 +541,6 @@ export function SearchIcon(p: IconProps) {
   );
 }
 
-/** Plus — the "create new" header menu. */
 export function PlusIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -559,7 +549,6 @@ export function PlusIcon(p: IconProps) {
   );
 }
 
-/** Three-bar "hamburger" — opens the global navigation drawer. */
 export function ThreeBarsIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -568,7 +557,6 @@ export function ThreeBarsIcon(p: IconProps) {
   );
 }
 
-/** Downward caret for menu triggers. */
 export function TriangleDownIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -577,7 +565,6 @@ export function TriangleDownIcon(p: IconProps) {
   );
 }
 
-/** Angle brackets — the "Code" clone button glyph. */
 export function CodeIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -586,7 +573,6 @@ export function CodeIcon(p: IconProps) {
   );
 }
 
-/** Two overlapping sheets — copy to clipboard. */
 export function CopyIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -596,7 +582,6 @@ export function CopyIcon(p: IconProps) {
   );
 }
 
-/** Plain checkmark — confirms a copy succeeded. */
 export function CheckIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -605,7 +590,6 @@ export function CheckIcon(p: IconProps) {
   );
 }
 
-/** Eye — the repository "Watch" counter. */
 export function EyeIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -615,7 +599,6 @@ export function EyeIcon(p: IconProps) {
   );
 }
 
-/** Forked repository — the "Fork" counter. */
 export function RepoForkedIcon(p: IconProps) {
   return (
     <Svg {...p}>

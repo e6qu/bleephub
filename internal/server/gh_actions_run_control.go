@@ -1,10 +1,7 @@
 package bleephub
 
-// Workflow-run control extras: fork-PR run approval, force-cancel,
-// single-job re-run, custom deployment protection rule reviews,
-// per-attempt log download, and per-workflow-file timing. Each endpoint
-// drives the real workflow engine state machine (dispatch, cancel,
-// re-run attempts) the same way the sibling run endpoints do.
+// Workflow-run control extras: fork-PR approval, force-cancel, single-job
+// re-run, deployment protection reviews, per-attempt logs, and workflow timing.
 
 import (
 	"encoding/json"
@@ -31,11 +28,9 @@ func (s *Server) registerGHActionsRunControlRoutes() {
 		s.handleWorkflowFileTiming)
 }
 
-// handleApproveWorkflowRun — POST .../runs/{run_id}/approve.
-// Releases a run held in action_required by the fork-PR contributor
-// approval gate: the run re-enters concurrency admission and its jobs
-// dispatch. A run that isn't waiting for approval is refused (403),
-// matching real GitHub.
+// handleApproveWorkflowRun releases a run held in action_required by the fork-PR
+// approval gate, re-entering concurrency admission. Refuse (403) a run not
+// waiting for approval, matching GitHub.
 func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request) {
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
@@ -54,9 +49,8 @@ func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusForbidden, "This workflow run is not waiting for approval")
 		return
 	}
-	// Concurrency admission, deferred from submit time by the approval
-	// gate: an active run in the same group either loses its lease
-	// (cancel-in-progress) or queues this run behind it.
+	// Concurrency admission, deferred from submit time by the approval gate: an
+	// active run in the same group either loses its lease or queues this run.
 	var activeWf *store.Workflow
 	if wf.ConcurrencyGroup != "" {
 		for _, existing := range s.store.Workflows {
@@ -97,11 +91,8 @@ func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusCreated, map[string]any{})
 }
 
-// handleForceCancelWorkflowRun — POST .../runs/{run_id}/force-cancel.
-// Cancels the run bypassing conditions that would otherwise let it
-// continue (always()/cancelled() jobs, in-flight runners): every
-// non-terminal job completes as cancelled immediately, running jobs are
-// signalled, and the run finalizes with conclusion cancelled.
+// handleForceCancelWorkflowRun cancels the run bypassing conditions that would
+// let it continue (always()/cancelled() jobs, in-flight runners).
 func (s *Server) handleForceCancelWorkflowRun(w http.ResponseWriter, r *http.Request) {
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
@@ -124,10 +115,9 @@ func (s *Server) handleForceCancelWorkflowRun(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusAccepted, map[string]any{})
 }
 
-// forceCancelWorkflow terminates every non-terminal job immediately —
-// unlike cancelWorkflow it does not leave always()/cancelled() jobs
-// eligible for dispatch and does not wait for runners to report back;
-// running jobs are still signalled so their runners abort.
+// forceCancelWorkflow terminates every non-terminal job immediately: unlike
+// cancelWorkflow it leaves no always()/cancelled() job eligible for dispatch and
+// does not wait for runners, though running jobs are still signalled to abort.
 func (s *Server) forceCancelWorkflow(wf *store.Workflow) {
 	s.store.Mu.Lock()
 	wf.CancelRequested = true
@@ -169,10 +159,8 @@ func (s *Server) forceCancelWorkflow(wf *store.Workflow) {
 	s.actions.FinalizeWorkflowIfDone(wf)
 }
 
-// handleRerunWorkflowJob — POST .../actions/jobs/{job_id}/rerun.
-// Re-runs one job (and everything that depends on it) as a new run
-// attempt; every other job carries its previous result over, exactly
-// like rerun-failed-jobs carries successful jobs.
+// handleRerunWorkflowJob re-runs one job and its dependents as a new attempt;
+// every other job carries its previous result over.
 func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) {
 	jobID, err := strconv.ParseInt(r.PathValue("job_id"), 10, 64)
 	if err != nil {
@@ -184,7 +172,6 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// The request body ({enable_debug_logging}) is optional and nullable.
 	var body struct {
 		EnableDebugLogging bool `json:"enable_debug_logging"`
 	}
@@ -220,8 +207,6 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 	def.Env["__serverURL"] = serverURL
 	def.Env["__defaultImage"] = ""
 
-	// Carry over every job except the target and its transitive
-	// dependents (they must re-run because their inputs change).
 	rerunKeys := dependentJobKeys(wf, target.Key)
 	carryOver := map[string]*store.WorkflowJob{}
 	s.store.Mu.RLock()
@@ -239,8 +224,7 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, map[string]any{})
 }
 
-// dependentJobKeys returns the target job key plus every job that
-// transitively depends on it.
+// dependentJobKeys returns the target key plus every job transitively depending on it.
 func dependentJobKeys(wf *store.Workflow, targetKey string) map[string]bool {
 	out := map[string]bool{targetKey: true}
 	for changed := true; changed; {
@@ -261,11 +245,9 @@ func dependentJobKeys(wf *store.Workflow, targetKey string) map[string]bool {
 	return out
 }
 
-// handleReviewCustomDeploymentProtectionRule — POST
-// .../runs/{run_id}/deployment_protection_rule. A protection-rule
-// reviewer approves or rejects the run's pending deployment to the
-// named environment (releasing or failing the waiting jobs), or leaves
-// a comment without deciding (state omitted → recorded as pending).
+// handleReviewCustomDeploymentProtectionRule approves or rejects the run's
+// pending deployment to the named environment, or (state omitted) records a
+// comment without deciding.
 func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWriter, r *http.Request) {
 	_, wf := s.lookupRunFromPath(r)
 	if wf == nil {
@@ -314,8 +296,7 @@ func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWrite
 
 	reviewer := ghUserFromContext(r.Context())
 	if body.State == "" {
-		// Comment-only review: recorded against the run without
-		// resolving the pending deployment.
+		// Comment-only review: recorded without resolving the pending deployment.
 		reviewerID := 0
 		if reviewer != nil {
 			reviewerID = reviewer.ID
@@ -338,10 +319,8 @@ func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWrite
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleRunAttemptLogs — GET .../runs/{run_id}/attempts/{n}/logs.
-// Serves the resolved attempt's log archive in the same layout as the
-// run-level logs endpoint (real GitHub redirects to a signed URL;
-// bleephub returns the zip directly, matching .../runs/{run_id}/logs).
+// handleRunAttemptLogs serves the resolved attempt's log zip. GitHub redirects
+// to a signed URL; bleephub returns the zip directly, matching .../runs/{id}/logs.
 func (s *Server) handleRunAttemptLogs(w http.ResponseWriter, r *http.Request) {
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
@@ -361,11 +340,9 @@ func (s *Server) handleRunAttemptLogs(w http.ResponseWriter, r *http.Request) {
 	s.writeRunLogsZip(r.Context(), w, wf, runID)
 }
 
-// handleWorkflowFileTiming — GET .../actions/workflows/{workflow_id}/timing.
-// Computes the workflow file's billable usage from the run history:
-// the summed job durations of every run (including archived attempts)
-// produced from the file. Bleephub jobs run on Linux runners, so the
-// usage accrues under UBUNTU.
+// handleWorkflowFileTiming sums the billable job durations of every run
+// (including archived attempts) produced from the workflow file. Bleephub runs
+// on Linux runners, so usage accrues under UBUNTU.
 func (s *Server) handleWorkflowFileTiming(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	s.store.DiscoverWorkflowFilesFromGit(repo)

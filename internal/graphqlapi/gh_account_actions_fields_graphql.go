@@ -15,18 +15,9 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// addAccountActionsFields fills in the residual account/git/actions-family
-// members GitHub's Commit, Release and status-rollup types declare that the
-// core schema families did not yet install. It runs after every type family is
-// assembled (all of Commit, Release, StatusContext, StatusCheckRollup, User,
-// Organization, Repository and Ref are registered by then), so it only has to
-// hang the missing fields off the already-built types.
-//
-// Every field is backed by the same real stores the REST surface serves, or
-// resolves to a truthful null/empty where the datum genuinely does not exist on
-// this instance (a commit's signing, a commit made through the web editor, a
-// GitHub App acting on an organization's behalf). None is a stub that implies
-// "none" where the honest state is "unimplemented".
+// addAccountActionsFields hangs the residual Commit, Release and status-rollup
+// members onto the already-built types. Runs after every type family is
+// assembled.
 func (s *Resolver) addAccountActionsFields() {
 	s.addCommitAccountFields()
 	s.addStatusContextFields()
@@ -52,32 +43,26 @@ func (s *Resolver) addCommitAccountFields() {
 		Type:    graphql.NewNonNull(html),
 		Resolve: commitStringSourceHTML("messageBody"),
 	})
-	// committedViaWeb: bleephub records commits from git pushes and the
-	// contents/create-commit APIs; no commit is authored through a web editor,
-	// so the honest value is a constant false.
+	// No commit is authored through a web editor here, so the honest value is false.
 	commitType.AddFieldConfig("committedViaWeb", &graphql.Field{
 		Type:    graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return false, nil },
 	})
-	// pushedDate is deprecated and removed upstream; GitHub answers null. The
-	// deprecation reason is spelled to match the vendored SDL exactly so the
-	// generated-schema parity check stays green.
+	// pushedDate is removed upstream (null). The deprecation reason must match the
+	// vendored SDL exactly for the schema-parity check.
 	commitType.AddFieldConfig("pushedDate", &graphql.Field{
 		Type:              dateTime,
 		DeprecationReason: "`pushedDate` is no longer supported. Removal on 2023-07-01 UTC.",
 		Resolve:           func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
 	})
-	// onBehalfOf is the organization a GitHub App acted for when it created the
-	// commit. bleephub does not attribute commits to an app-on-behalf-of an
-	// organization, so this is a truthful null.
+	// No commit is attributed to an app acting on an org's behalf (null).
 	commitType.AddFieldConfig("onBehalfOf", &graphql.Field{
 		Type:    s.graphqlTypes.organization,
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
 	})
 }
 
-// commitStringSourceHTML renders a commit source string member (the message
-// headline or body) as GitHub-flavoured HTML through the shared renderer.
+// commitStringSourceHTML renders a commit source string member as HTML.
 func commitStringSourceHTML(key string) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (interface{}, error) {
 		src, ok := p.Source.(map[string]interface{})
@@ -136,8 +121,7 @@ func (s *Resolver) addStatusContextFields() {
 	})
 }
 
-// statusContextCreator resolves the account that posted the commit status as an
-// Actor (its own User source map). Null when the record has no creator.
+// statusContextCreator resolves the account that posted the commit status.
 func (s *Resolver) statusContextCreator(p graphql.ResolveParams) (interface{}, error) {
 	src, ok := p.Source.(map[string]interface{})
 	if !ok {
@@ -176,9 +160,7 @@ func (s *Resolver) addStatusCheckRollupFields() {
 			}
 			repoKey, _ := src["repoKey"].(string)
 			sha, _ := src["sha"].(string)
-			// The rollup is a synthetic summary of one commit's checks; GitHub's
-			// opaque id is not reproducible, so derive a stable one from the
-			// commit it summarises.
+			// GitHub's opaque id is not reproducible; derive a stable one from the commit.
 			return "SCR_" + base64.RawURLEncoding.EncodeToString([]byte(repoKey+":"+sha)), nil
 		},
 	})
@@ -191,10 +173,8 @@ func (s *Resolver) addStatusCheckRollupFields() {
 }
 
 // commitSourceFromStatus builds the Commit source a StatusContext or
-// StatusCheckRollup points back at, from the repoKey+sha the rollup builder
-// stamped onto the node. It applies the same repository-visibility gate every
-// git resolver uses: a private repository the viewer cannot read resolves to
-// null rather than leaking its commit graph.
+// StatusCheckRollup points back at, applying the standard private-repo
+// visibility gate.
 func (s *Resolver) commitSourceFromStatus(ctx context.Context, source interface{}) interface{} {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -206,7 +186,7 @@ func (s *Resolver) commitSourceFromStatus(ctx context.Context, source interface{
 }
 
 // commitSourceForRepoSHA resolves (repoFullName, sha) to a Commit source map,
-// or nil when the repository is unreadable or the object is absent.
+// or nil when the repository is unreadable.
 func (s *Resolver) commitSourceForRepoSHA(ctx context.Context, repoFullName, sha string) interface{} {
 	if repoFullName == "" || sha == "" {
 		return nil
@@ -226,7 +206,7 @@ func (s *Resolver) commitSourceForRepoSHA(ctx context.Context, repoFullName, sha
 	commit, err := object.GetCommit(stor, plumbing.NewHash(sha))
 	if err != nil {
 		// The status names a sha the git store no longer has; answer the
-		// minimal object source so id/oid still resolve truthfully.
+		// minimal object source so id/oid still resolve.
 		return gitObjectSourceFields("Commit", repo.FullName, sha)
 	}
 	return gitCommitSource(commit, s.store, repo.FullName)
@@ -343,9 +323,8 @@ func (s *Resolver) addReleaseAccountFields() {
 	s.addReleaseAssetsField(releaseType, uri, dateTime)
 }
 
-// addReleaseAssetsField builds the ReleaseAsset object graph (asset, edge,
-// connection) and hangs Release.releaseAssets off it, backed by the real
-// release-asset store.
+// addReleaseAssetsField builds the ReleaseAsset object graph and hangs
+// Release.releaseAssets off it.
 func (s *Resolver) addReleaseAssetsField(releaseType *graphql.Object, uri, dateTime *graphql.Scalar) {
 	assetType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ReleaseAsset",
@@ -415,8 +394,7 @@ func (s *Resolver) addReleaseAssetsField(releaseType *graphql.Object, uri, dateT
 }
 
 // releaseAssetSource renders a store release asset as the ReleaseAsset source
-// map, mirroring the REST asset URL shape so both surfaces answer the same
-// download location.
+// map, mirroring the REST asset URL shape.
 func (s *Resolver) releaseAssetSource(a *store.ReleaseAsset, repoFullName string, release map[string]interface{}) map[string]interface{} {
 	downloadURL := externalURL(fmt.Sprintf("/api/v3/repos/%s/releases/assets/%d", repoFullName, a.ID))
 	var uploader interface{}
@@ -449,10 +427,8 @@ func releaseAssetField(key string) graphql.FieldResolveFn {
 	}
 }
 
-// releaseTagOID resolves the git object id the release's tag reference points
-// at (an annotated tag object or the commit it names), or "" when the tag is
-// not present in the repository's git store — a draft release whose tag has not
-// been created yet resolves its tag to null.
+// releaseTagOID resolves the git object id the release's tag points at, or ""
+// when the tag is absent (e.g. a draft release whose tag does not yet exist).
 func (s *Resolver) releaseTagOID(ctx context.Context, repoFullName, tag string) string {
 	stor := s.readableGitStorage(ctx, repoFullName)
 	if stor == nil || tag == "" {
@@ -465,8 +441,8 @@ func (s *Resolver) releaseTagOID(ctx context.Context, repoFullName, tag string) 
 	return ref.Hash().String()
 }
 
-// releaseTagCommitOID resolves the commit the release's tag ultimately points
-// at, dereferencing an annotated tag object to its target commit.
+// releaseTagCommitOID resolves the commit the release's tag points at,
+// dereferencing an annotated tag to its target commit.
 func (s *Resolver) releaseTagCommitOID(ctx context.Context, repoFullName, tag string) string {
 	stor := s.readableGitStorage(ctx, repoFullName)
 	if stor == nil || tag == "" {
@@ -489,7 +465,7 @@ func (s *Resolver) releaseTagCommitOID(ctx context.Context, repoFullName, tag st
 }
 
 // readableGitStorage returns the git storage for repoFullName when the viewer
-// may read it, applying the standard private-repo visibility gate.
+// may read it, applying the private-repo visibility gate.
 func (s *Resolver) readableGitStorage(ctx context.Context, repoFullName string) gitStorage.Storer {
 	owner, name, ok := store.SplitRepoFullName(repoFullName)
 	if !ok {
@@ -506,9 +482,8 @@ func (s *Resolver) readableGitStorage(ctx context.Context, repoFullName string) 
 	return stor
 }
 
-// bodyMentionedUsers resolves the accounts a markdown body @-mentions, in first
-// appearance order and de-duplicated. Only logins that name a real account are
-// returned, so the connection reflects genuine users rather than every @token.
+// bodyMentionedUsers resolves the real accounts a markdown body @-mentions, in
+// first-appearance order and de-duplicated.
 func (s *Resolver) bodyMentionedUsers(body string) []*store.User {
 	if body == "" {
 		return nil
@@ -528,8 +503,8 @@ func (s *Resolver) bodyMentionedUsers(body string) []*store.User {
 	return users
 }
 
-// mentionLoginPattern matches an @login at a word boundary, honoring GitHub's
-// login grammar (alphanumerics and single hyphens, up to 39 characters).
+// mentionLoginPattern matches an @login honoring GitHub's login grammar
+// (alphanumerics and single hyphens, up to 39 characters).
 var mentionLoginPattern = regexp.MustCompile(`(?:^|[^a-zA-Z0-9_/])@([a-zA-Z0-9](?:-?[a-zA-Z0-9]){0,38})`)
 
 func firstLine(body string) string {

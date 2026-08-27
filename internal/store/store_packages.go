@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// PackageType values supported by GitHub Packages.
+// Package types supported by GitHub Packages.
 var packageTypes = map[string]bool{
 	"npm":       true,
 	"maven":     true,
@@ -24,10 +24,8 @@ var packageTypes = map[string]bool{
 
 func IsPackageType(t string) bool { return packageTypes[t] }
 
-// Package is a GitHub software package (npm, container, maven, ...).
-// The struct's JSON tags define the persistence row shape (API responses
-// are built by packageToJSON); linkage fields must round-trip through
-// persistence so packages survive a restart.
+// Package is a GitHub software package. JSON tags define the persistence row
+// shape; API responses are built by packageToJSON.
 type Package struct {
 	ID           int        `json:"id"`
 	NodeID       string     `json:"node_id"`
@@ -45,8 +43,7 @@ type Package struct {
 	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
 }
 
-// PackageVersion is a version of a package. JSON tags define the
-// persistence row shape.
+// PackageVersion is a version of a package. JSON tags define the persistence row shape.
 type PackageVersion struct {
 	ID          int                    `json:"id"`
 	NodeID      string                 `json:"node_id"`
@@ -54,8 +51,8 @@ type PackageVersion struct {
 	Version     string                 `json:"name"` // GitHub calls the version "name"
 	Description string                 `json:"description"`
 	Metadata    map[string]interface{} `json:"metadata"`
-	// RegistryManifestDigest is internal persisted registry lookup state;
-	// GitHub REST package-version responses expose container tags in metadata.
+	// RegistryManifestDigest is internal registry lookup state; REST responses
+	// expose container tags in metadata instead.
 	RegistryManifestDigest string     `json:"registry_manifest_digest,omitempty"`
 	URL                    string     `json:"url"`
 	HTMLURL                string     `json:"html_url"`
@@ -66,8 +63,7 @@ type PackageVersion struct {
 	DeletedAt              *time.Time `json:"deleted_at,omitempty"`
 }
 
-// PackageFile is a single file attached to a package version. JSON tags
-// define the persistence row shape.
+// PackageFile is a single file attached to a package version. JSON tags define the persistence row shape.
 type PackageFile struct {
 	ID          int    `json:"id"`
 	NodeID      string `json:"node_id"`
@@ -79,9 +75,8 @@ type PackageFile struct {
 	HTMLURL     string `json:"html_url"`
 	DownloadURL string `json:"download_url"`
 	StoragePath string `json:"storage_path,omitempty"`
-	// UpdatedAt backs GitHub's PackageFile.updatedAt (DateTime!), which the
-	// GraphQL PackageVersion.files connection requires. Set when the file is
-	// written; a file is immutable afterward, so it equals the upload time.
+	// UpdatedAt backs the required GraphQL PackageFile.updatedAt. A file is
+	// immutable, so it equals the upload time.
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -95,11 +90,11 @@ func packageNodeID(id int) string        { return fmt.Sprintf("P_kgDO%08d", id) 
 func packageVersionNodeID(id int) string { return fmt.Sprintf("PV_kgDO%08d", id) }
 func packageFileNodeID(id int) string    { return fmt.Sprintf("PF_kgDO%08d", id) }
 
-// PackageKey is the unique lookup key for a package within an owner scope.
+// PackageKey is the lookup key for a package within an owner scope.
 func PackageKey(pkgType, name string) string { return pkgType + "/" + name }
 
-// sanitizePackagePathSegment escapes path separators so an arbitrary package
-// name or version cannot traverse out of the packages data directory.
+// sanitizePackagePathSegment escapes path separators so a package name or
+// version cannot traverse out of the packages data directory.
 func sanitizePackagePathSegment(s string) string {
 	s = strings.ReplaceAll(s, "\\", "%5C")
 	s = strings.ReplaceAll(s, "/", "%2F")
@@ -175,11 +170,9 @@ func (st *Store) CreatePackage(ownerType, ownerKey, pkgType, name, visibility st
 	return p, true
 }
 
-// GetPackage returns a package by owner/type/name, or nil.
 // clonePackage detaches a package from the stored row (its only reference field
-// is the DeletedAt time pointer) so a reader cannot race the in-place mutations
-// that recomputeVersionCountLocked / DeletePackage / RestorePackage apply to the
-// live package.
+// is DeletedAt) so a reader cannot race the in-place mutations
+// recomputeVersionCountLocked / DeletePackage / RestorePackage apply (STORE-021).
 func clonePackage(p *Package) *Package {
 	if p == nil {
 		return nil
@@ -210,10 +203,9 @@ func (st *Store) ListPackages(ownerKey string) []*Package {
 	return snapshotPackages(out)
 }
 
-// DeletePackage soft-deletes a package: it leaves the by-owner key map
-// (so lists and gets no longer see it, and the name can be reused) while
-// keeping the row, its versions, and its files so the package remains
-// restorable — GitHub's delete/restore contract for packages.
+// DeletePackage soft-deletes a package: it leaves the by-owner map (freeing the
+// name) but keeps the row, versions, and files so it stays restorable, matching
+// GitHub's delete/restore contract.
 func (st *Store) DeletePackage(ownerKey, pkgType, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -232,10 +224,9 @@ func (st *Store) DeletePackage(ownerKey, pkgType, name string) bool {
 	return true
 }
 
-// ListDeletedPackages returns the soft-deleted packages for an owner scope,
-// newest first. Soft-deleted rows leave PackagesByOwnerKey but remain in the
-// authoritative st.Packages map, so this scans it directly — mirrors
-// GitHub's `GET .../packages?state=deleted`.
+// ListDeletedPackages returns an owner's soft-deleted packages, newest first.
+// Deleted rows leave PackagesByOwnerKey but stay in st.Packages, so this scans
+// that directly.
 func (st *Store) ListDeletedPackages(ownerKey string) []*Package {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -249,8 +240,7 @@ func (st *Store) ListDeletedPackages(ownerKey string) []*Package {
 	return snapshotPackages(out)
 }
 
-// GetDeletedPackage returns a soft-deleted package for an owner scope,
-// or nil.
+// GetDeletedPackage returns a soft-deleted package, or nil.
 func (st *Store) GetDeletedPackage(ownerKey, pkgType, name string) *Package {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -262,9 +252,8 @@ func (st *Store) GetDeletedPackage(ownerKey, pkgType, name string) *Package {
 	return nil
 }
 
-// RestorePackage un-deletes a soft-deleted package together with its
-// versions and files. Restore fails when no deleted package exists or
-// when a live package has since claimed the same name.
+// RestorePackage un-deletes a package with its versions and files. Fails when
+// no deleted package exists or a live one has since claimed the name.
 func (st *Store) RestorePackage(ownerKey, pkgType, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -312,11 +301,9 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 	if len(files) > 0 && vdir == "" && st.ObjectByteStore == nil {
 		return nil, fmt.Errorf("package file storage is not configured")
 	}
-	// STORE-042: durable metadata replicates cluster-wide via dqlite, but a local
-	// version directory lives on one node only. With persistence enabled, package
-	// bytes must go to the shared object store or replicas that see the metadata
-	// cannot read the files. Mirror the guard the attestation and code-scanning
-	// stores already enforce.
+	// STORE-042: metadata replicates cluster-wide but a local version directory
+	// lives on one node. With persistence on, bytes must go to the shared object
+	// store or replicas that see the metadata cannot read the files.
 	if len(files) > 0 && st.Persist != nil && st.ObjectByteStore == nil {
 		return nil, fmt.Errorf("package file byte storage requires an object byte store when persistence is enabled")
 	}
@@ -345,11 +332,9 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 		UpdatedAt:   now,
 	}
 	persistedFiles := make([]*PackageFile, 0, len(decodedFiles))
-	// A multi-file version writes each file's bytes before any metadata is
-	// committed. If a later write fails we must remove the bytes already written
-	// for this version, or a partial upload leaves orphaned blobs no metadata
-	// references and nothing ever reclaims (STORE-026). Track them and clean up
-	// on any failure below.
+	// Bytes are written before metadata commits. On a later failure, remove the
+	// bytes already written, or a partial upload leaves orphaned blobs nothing
+	// reclaims (STORE-026).
 	writtenBlobs := make([]string, 0, len(decodedFiles))
 	cleanupWrittenBlobs := func() {
 		for _, path := range writtenBlobs {
@@ -400,10 +385,10 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 	st.PackageVersionsByPackage[p.ID][id] = v
 	st.NextPackageVersionID++
 
-	// One transaction: every file row, the version row, and the package row
-	// commit together, so a crash cannot record files without their version or
-	// a version its package never counted (STORE-001/002). The blob bytes above
-	// stay outside the batch with their own compensation (STORE-026).
+	// Every file, version, and package row commits in one transaction, so a crash
+	// cannot record files without their version or an uncounted version
+	// (STORE-001/002). Blob bytes stay outside the batch, compensated above
+	// (STORE-026).
 	batch := NewPersistBatch(st.Persist)
 	for _, pf := range persistedFiles {
 		st.PackageFiles[pf.ID] = pf
@@ -431,9 +416,7 @@ type PackageFileInput struct {
 	ContentBase64 string `json:"content_base64"`
 }
 
-// GetPackageVersion returns a package version by ID, or nil.
-// clonePackageVersion returns a copy safe to hand outside the store lock
-// (STORE-021): Metadata is the only reference field.
+// clonePackageVersion returns a detached copy (STORE-021); Metadata is the only reference field.
 func clonePackageVersion(v *PackageVersion) *PackageVersion {
 	if v == nil {
 		return nil
@@ -454,8 +437,8 @@ func (st *Store) GetPackageVersion(id int) *PackageVersion {
 	return clonePackageVersion(st.PackageVersions[id])
 }
 
-// ListPackageVersions returns versions for a package, newest first.
-// If includeDeleted is false, deleted versions are omitted.
+// ListPackageVersions returns versions for a package, newest first, omitting
+// deleted ones unless includeDeleted.
 func (st *Store) ListPackageVersions(pkgID int, includeDeleted bool) []*PackageVersion {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -470,7 +453,7 @@ func (st *Store) ListPackageVersions(pkgID int, includeDeleted bool) []*PackageV
 	return snapshotPackageVersions(out)
 }
 
-// DeletePackageVersion marks a version as deleted. The version row and the
+// DeletePackageVersion marks a version deleted. The version row and the
 // package's recomputed count commit in one transaction (STORE-001/002).
 func (st *Store) DeletePackageVersion(id int) bool {
 	st.Mu.Lock()
@@ -536,8 +519,7 @@ func (st *Store) SetPackageVersionRegistryManifestDigest(id int, digest string) 
 func (st *Store) GetPackageFile(id int) *PackageFile {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// A copy so a reader can't mutate the stored file through the getter
-	// (STORE-021); PackageFile is all-value, so a shallow copy detaches.
+	// Detached shallow copy; PackageFile is all-value (STORE-021).
 	f := st.PackageFiles[id]
 	if f == nil {
 		return nil
@@ -581,20 +563,17 @@ func (st *Store) persistPackageVersion(v *PackageVersion) {
 	}
 }
 
-// persistPackageBatchLocked stages a package row into batch instead of
-// committing its own transaction (STORE-001/002). Callers hold st.Mu.
+// persistPackageBatchLocked stages a package row into batch (STORE-001/002). Callers hold st.Mu.
 func (st *Store) persistPackageBatchLocked(batch *PersistBatch, p *Package) {
 	batch.Put("packages", strconv.Itoa(p.ID), p)
 }
 
-// persistPackageVersionBatchLocked stages a version row into batch instead of
-// committing its own transaction (STORE-001/002). Callers hold st.Mu.
+// persistPackageVersionBatchLocked stages a version row into batch (STORE-001/002). Callers hold st.Mu.
 func (st *Store) persistPackageVersionBatchLocked(batch *PersistBatch, v *PackageVersion) {
 	batch.Put("package_versions", strconv.Itoa(v.ID), v)
 }
 
-// persistPackageFileBatchLocked stages a file row into batch instead of
-// committing its own transaction (STORE-001/002). Callers hold st.Mu.
+// persistPackageFileBatchLocked stages a file row into batch (STORE-001/002). Callers hold st.Mu.
 func (st *Store) persistPackageFileBatchLocked(batch *PersistBatch, f *PackageFile) {
 	batch.Put("package_files", strconv.Itoa(f.ID), f)
 }

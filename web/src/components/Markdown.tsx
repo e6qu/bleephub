@@ -3,11 +3,8 @@ import remarkGfm from "remark-gfm";
 import { Link, useParams } from "react-router";
 import type { ComponentPropsWithoutRef } from "react";
 
-/**
- * Flip the Nth task-list marker (`[ ]`↔`[x]`) in the raw markdown source. The
- * ordinal matches the rendered checkbox order (both are document order), so a
- * clicked checkbox's DOM index maps straight to the source marker to toggle.
- */
+// Flip the Nth task-list marker (`[ ]`↔`[x]`) in the source. Marker order
+// equals rendered checkbox order (both document order), so DOM index maps here.
 export function toggleTaskInMarkdown(source: string, index: number, checked: boolean): string {
   let i = -1;
   return source.replace(/^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\]/gm, (whole, prefix: string) => {
@@ -16,12 +13,9 @@ export function toggleTaskInMarkdown(source: string, index: number, checked: boo
   });
 }
 
-// Shared markdown renderer. Defaults to GitHub-flavored markdown. remark-gfm
-// emits task-list (`- [ ]`) checkboxes disabled; we give them an accessible name
-// (WCAG 4.1.2 / the `label` rule — the item text carries the meaning). When an
-// `onToggleTask` handler is supplied (an editable body), the checkboxes become
-// interactive: a click reports its document index so the caller can flip the
-// matching source marker and persist, matching github.com.
+// Give task-list checkboxes an accessible name (WCAG 4.1.2 label rule). With an
+// onToggleTask handler they become interactive, reporting document index so the
+// caller flips the matching source marker.
 function TaskListInput({
   onToggleTask,
   ...props
@@ -48,8 +42,7 @@ function TaskListInput({
   return <input {...props} />;
 }
 
-// Minimal mdast shapes — just the fields the alert transform reads/writes — so
-// this stays free of a direct dependency on the (transitive) mdast typings.
+// Minimal mdast shape to avoid depending on the transitive mdast typings.
 interface MdNode {
   type: string;
   value?: string;
@@ -67,12 +60,9 @@ const ALERT_TITLE: Record<string, string> = {
   CAUTION: "Caution",
 };
 
-// GitHub alert/callout support: a blockquote whose first line is `[!NOTE]`
-// (or TIP / IMPORTANT / WARNING / CAUTION) renders as a coloured admonition
-// with a title instead of a plain quote. remark-gfm does not handle these, so
-// this small transform rewrites matching blockquotes into a styled <div>. It
-// walks the tree by hand rather than pulling in unist-util-visit (a transitive
-// dep the bundle does not otherwise declare).
+// GitHub alerts: rewrite a blockquote starting with `[!NOTE]` (TIP/IMPORTANT/
+// WARNING/CAUTION) into a styled admonition div. remark-gfm doesn't handle
+// these; walk by hand to avoid pulling in unist-util-visit.
 function remarkGithubAlerts() {
   return (tree: MdNode) => {
     for (const node of tree.children ?? []) {
@@ -89,7 +79,7 @@ function remarkGithubAlerts() {
         hName: "div",
         hProperties: { className: ["markdown-alert", `markdown-alert-${type.toLowerCase()}`] },
       };
-      // Prepend a title line ("Note", "Warning", …) styled by the alert class.
+      // Prepend a styled title line ("Note", "Warning", …).
       node.children = [
         {
           type: "paragraph",
@@ -103,11 +93,9 @@ function remarkGithubAlerts() {
   };
 }
 
-// GitHub reference autolinks that remark-gfm doesn't do: `owner/repo#123`,
-// `#123` (same-repo issue/PR), `@user` mentions, and full 40-char commit SHAs.
-// `#123` and SHAs need repo context; without it they're left as plain text (as
-// GitHub also does off a repo). Emails and code spans are skipped — the regex
-// requires a non-word/non-`@` boundary and the walk never enters code/links.
+// Reference autolinks remark-gfm skips: `owner/repo#123`, `#123`, `@user`,
+// 40-char SHAs. `#123` and SHAs need repo context or stay plain text (as GitHub
+// does off a repo). Emails/code spans are skipped by the boundary + walk rules.
 interface LinkContext {
   owner: string;
   repo: string;
@@ -136,8 +124,7 @@ function tokenizeRefs(value: string, ctx: LinkContext | undefined): MdNode[] {
   return out;
 }
 
-// Plugin factory: remark calls it with the LinkContext as its options argument,
-// so it slots into the plugin list as `[remarkGithubRefs, linkContext]`.
+// remark passes LinkContext as the options arg: `[remarkGithubRefs, ctx]`.
 function remarkGithubRefs(ctx?: LinkContext) {
   const walk = (node: MdNode) => {
     if (!node.children || node.type === "link" || node.type === "linkReference") return;
@@ -157,8 +144,7 @@ function remarkGithubRefs(ctx?: LinkContext) {
   };
 }
 
-// Render internal `/ui/...` links (both authored and autolinked) through the
-// router so they navigate in-app instead of triggering a full page load.
+// Route internal `/ui/...` links through the router to avoid a full page load.
 function MarkdownLink({ href, children }: ComponentPropsWithoutRef<"a">) {
   if (href && href.startsWith("/ui/")) {
     return <Link to={href}>{children}</Link>;
@@ -174,9 +160,8 @@ export default function Markdown({
   onToggleTask,
   ...rest
 }: Options & { linkContext?: LinkContext; onToggleTask?: ((index: number, checked: boolean) => void) | undefined }) {
-  // Every markdown body renders inside a route, so the current :owner/:repo
-  // params are the natural reference context for `#123` / SHA autolinks — no
-  // caller needs to thread it. An explicit linkContext still wins (cross-repo).
+  // Default the `#123`/SHA reference context to the route's :owner/:repo;
+  // an explicit linkContext wins for cross-repo rendering.
   const params = useParams();
   const ctx: LinkContext | undefined =
     linkContext ?? (params.owner && params.repo ? { owner: params.owner, repo: params.repo } : undefined);

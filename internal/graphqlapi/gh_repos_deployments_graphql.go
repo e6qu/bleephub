@@ -1,7 +1,7 @@
 package graphqlapi
 
-// Repository.deployments / environments / environment, over the deployment
-// store the REST deployment and environment routes write.
+// Repository.deployments / environments / environment, over the same
+// deployment store the REST routes write.
 
 import (
 	"encoding/json"
@@ -14,7 +14,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// addRepositoryDeploymentFields installs the deployment graph on Repository.
+// addRepositoryDeploymentFields installs Repository.deployments/environments.
 func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 	repoType := types.repository
 	dateTime := s.graphQLStringScalar("DateTime")
@@ -106,8 +106,7 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 			return types.user
 		},
 	})
-	// Expose the reviewer connection for the Actions run graph
-	// (DeploymentRequest.reviewers reuses this exact object).
+	// DeploymentRequest.reviewers reuses this exact object.
 	s.graphqlTypes.deploymentReviewerConnection = s.accountConnectionType(types, "DeploymentReviewer", deploymentReviewer, false, nil)
 	protectionRuleType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "DeploymentProtectionRule",
@@ -183,19 +182,16 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// The mutation surface's payloads name the same objects, so they are
-	// memoized here where they are built.
+	// Memoized here for the mutation surface's payloads.
 	s.graphqlTypes.deployment = deploymentType
 	s.graphqlTypes.deploymentStatus = deploymentStatusType
 	s.graphqlTypes.environment = environmentType
-	// Expose the environment connection for the Actions run graph
-	// (DeploymentReview.environments reuses this exact object).
+	// DeploymentReview.environments reuses this exact object.
 	s.graphqlTypes.environmentConnection = s.accountConnectionType(types, "Environment", environmentType, false, nil)
 
 	// --- Repository fields -------------------------------------------------
 	deploymentConnection := s.accountConnectionType(types, "Deployment", deploymentType, false, nil)
-	// Commit.deployments (assembled later, in the late git-residual pass) serves
-	// this same connection instance.
+	// Commit.deployments (assembled later) serves this same connection instance.
 	s.stashNamedObject(deploymentConnection)
 	repoType.AddFieldConfig("deployments", &graphql.Field{
 		Type: graphql.NewNonNull(deploymentConnection),
@@ -274,10 +270,9 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 }
 
 // repoDeploymentChildConnection is the shared body of Repository.deployments and
-// Repository.environments: filter the rows by an optional name-list argument,
-// order them (ascending unless orderBy asks otherwise), and render them into a
-// paginated connection. The two fields differ only in the row type, the filter
-// field, the sort key and the renderer, which are the closures passed here.
+// Repository.environments: filter rows by an optional name-list argument, order
+// them (ascending unless orderBy asks otherwise), and paginate. The closures
+// supply the row type, filter field, sort key and renderer.
 func repoDeploymentChildConnection[T any](
 	p graphql.ResolveParams,
 	rows []*T,
@@ -317,8 +312,8 @@ func repoDeploymentChildConnection[T any](
 	return paginateGQLItems(items, p.Args)
 }
 
-// deploymentSource renders one deployment, including the commit and ref it
-// points at and the status that last landed on it.
+// deploymentSource renders one deployment with the commit and ref it points at
+// and its latest status.
 func (s *Resolver) deploymentSource(repo *store.Repo, d *store.Deployment, repoSource map[string]interface{}) map[string]interface{} {
 	source := map[string]interface{}{
 		"nodeID":              d.NodeID,
@@ -344,8 +339,7 @@ func (s *Resolver) deploymentSource(repo *store.Repo, d *store.Deployment, repoS
 		source["latestStatus"] = s.deploymentStatusSource(latest, source)
 		source["state"] = strings.ToUpper(string(latest.State))
 	} else {
-		// GitHub reports a deployment with no status yet as null-state, and
-		// `state` is nullable precisely for that case.
+		// A deployment with no status yet has null state.
 		source["state"] = nil
 		source["latestStatus"] = nil
 	}
@@ -363,8 +357,8 @@ func (s *Resolver) deploymentSource(repo *store.Repo, d *store.Deployment, repoS
 	return source
 }
 
-// deploymentStatusSource renders one deployment status. The deployment source
-// is threaded in so DeploymentStatus.deployment resolves without re-reading.
+// deploymentStatusSource renders one deployment status. The deployment source is
+// threaded in so DeploymentStatus.deployment resolves without re-reading.
 func (s *Resolver) deploymentStatusSource(status *store.DeploymentStatus, deployment map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":         status.NodeID,
@@ -381,8 +375,8 @@ func (s *Resolver) deploymentStatusSource(status *store.DeploymentStatus, deploy
 	}
 }
 
-// environmentSource renders one environment with the protection rules the
-// REST environment routes persist and its last completed deployment.
+// environmentSource renders one environment with its protection rules and last
+// completed deployment.
 func (s *Resolver) environmentSource(repo *store.Repo, env *store.Environment, repoSource map[string]interface{}) map[string]interface{} {
 	source := map[string]interface{}{
 		"nodeID":                    env.NodeID,
@@ -401,9 +395,8 @@ func (s *Resolver) environmentSource(repo *store.Repo, env *store.Environment, r
 	return source
 }
 
-// environmentProtectionRules renders the environment's wait timer, required
-// reviewers and branch policy as GitHub's three protection-rule kinds. Only
-// the rules the environment actually configures are reported.
+// environmentProtectionRules renders the wait timer, required reviewers and
+// branch policy the environment actually configures.
 func (s *Resolver) environmentProtectionRules(env *store.Environment) []map[string]interface{} {
 	var rules []map[string]interface{}
 	if env.WaitTimer > 0 {
@@ -437,8 +430,8 @@ func (s *Resolver) environmentProtectionRules(env *store.Environment) []map[stri
 	return rules
 }
 
-// environmentReviewerSources renders the accounts and teams that must approve
-// a deployment to this environment.
+// environmentReviewerSources renders the accounts and teams that must approve a
+// deployment to this environment.
 func (s *Resolver) environmentReviewerSources(env *store.Environment) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(env.Reviewers))
 	for _, reviewer := range env.Reviewers {
@@ -469,8 +462,8 @@ func (s *Resolver) environmentReviewerSources(env *store.Environment) []map[stri
 	return out
 }
 
-// reviewerID coerces a persisted reviewer id, which round-trips through JSON
-// as a float64.
+// reviewerID coerces a persisted reviewer id, which round-trips through JSON as
+// a float64.
 func reviewerID(value interface{}) int {
 	switch typed := value.(type) {
 	case int:
@@ -482,7 +475,7 @@ func reviewerID(value interface{}) int {
 }
 
 // latestCompletedDeployment is the newest deployment to this environment whose
-// last status is a terminal one, which is what GitHub reports.
+// last status is terminal.
 func (s *Resolver) latestCompletedDeployment(repo *store.Repo, env *store.Environment, repoSource map[string]interface{}) map[string]interface{} {
 	deployments := s.store.Deployments.ListDeployments(repo.ID)
 	sort.Slice(deployments, func(i, j int) bool { return deployments[i].ID > deployments[j].ID })
@@ -512,8 +505,8 @@ func completedDeploymentState(state string) bool {
 	return false
 }
 
-// deploymentPayloadJSON renders a deployment's payload as the JSON string
-// GitHub serves it as, or null when the deployment carried none.
+// deploymentPayloadJSON renders a deployment's payload as a JSON string, or null
+// when it carried none.
 func deploymentPayloadJSON(payload map[string]interface{}) interface{} {
 	if len(payload) == 0 {
 		return nil
@@ -525,9 +518,8 @@ func deploymentPayloadJSON(payload map[string]interface{}) interface{} {
 	return string(encoded)
 }
 
-// qualifiedDeploymentRef expands a deployment's ref, which the REST surface
-// accepts as a branch name, tag name or sha, into the fully qualified form
-// Ref reports.
+// qualifiedDeploymentRef expands a deployment's ref (a branch name, tag name or
+// sha) into the fully qualified form Ref reports.
 func qualifiedDeploymentRef(ref string) string {
 	if strings.HasPrefix(ref, "refs/") {
 		return ref

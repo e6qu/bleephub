@@ -8,18 +8,14 @@ import (
 	"time"
 )
 
-// Node-id lookup and event-payload rendering for the Dependabot alert
-// surface, shared by the REST handlers and the GraphQL resolvers so the two
-// cannot describe the same alert differently.
+// Node-id lookup and event-payload rendering for Dependabot alerts, shared by
+// the REST handlers and the GraphQL resolvers.
 
-// LookupDependabotAlertByNodeID returns the alert a GraphQL node id names, as
-// a detached snapshot.
+// LookupDependabotAlertByNodeID returns a detached snapshot of the alert.
 //
-// It is deliberately not spelt Find*ByNodeID. That name is this codebase's
-// signal that the caller receives the LIVE row, and every caller here wants
-// the opposite: the dismissal mutation reads the alert's pre-change state to
-// decide the webhook action, which reading through a live row would report
-// as the post-change state instead.
+// Not spelt Find*ByNodeID (which signals a LIVE row) because the dismissal
+// mutation reads pre-change state to decide the webhook action; a live row
+// would report the post-change state instead.
 func (st *Store) LookupDependabotAlertByNodeID(nodeID string) *DependabotAlert {
 	if nodeID == "" {
 		return nil
@@ -36,16 +32,11 @@ func (st *Store) LookupDependabotAlertByNodeID(nodeID string) *DependabotAlert {
 	return nil
 }
 
-// CreateDependabotAlertIfNewReported is CreateDependabotAlertIfNew with the
-// one fact its caller needs and cannot otherwise learn: whether this call
-// minted the alert or found one already standing.
-//
-// Derivation runs on every dependency submission and on every advisory
-// publication, so it re-derives alerts that already exist far more often than
-// it mints new ones. Without the flag the caller has to choose between
-// delivering a "created" webhook every time derivation runs — which turns one
-// vulnerability into an unbounded stream of duplicate deliveries — and never
-// delivering one at all.
+// CreateDependabotAlertIfNewReported is CreateDependabotAlertIfNew that also
+// reports whether this call minted the alert. Derivation runs on every
+// dependency submission and advisory publication, so the flag lets the caller
+// deliver a "created" webhook only for genuinely new alerts, not on every
+// re-derivation.
 func (st *Store) CreateDependabotAlertIfNewReported(repoKey, pkgName, ecosystem, manifest, vulnID, cveID, severity, summary, description, vulnRange, patched string) (*DependabotAlert, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -63,16 +54,11 @@ func (st *Store) CreateDependabotAlertIfNewReported(repoKey, pkgName, ecosystem,
 	return cloneDependabotAlert(created), true
 }
 
-// ResolveDependabotAlert moves an alert to the state the platform — not a
-// user — put it in: "fixed" when the vulnerable dependency is no longer
-// declared at a vulnerable version, or "open" when a fixed alert's
-// vulnerability is reintroduced.
-//
-// It is separate from UpdateDependabotAlert because that one enforces the
-// user-driven transitions (open ⇄ dismissed) and must keep refusing a client
-// that tries to declare its own alert fixed. Both write through the same live
-// row, and this one leaves a dismissed alert alone: a human decision outranks
-// a re-derivation.
+// ResolveDependabotAlert applies platform-driven transitions ("fixed" when the
+// dependency is no longer vulnerable, "open" on reintroduction). Separate from
+// the user-driven UpdateDependabotAlert (open ⇄ dismissed), which must keep
+// refusing a client's own "fixed". Leaves a dismissed alert alone: a human
+// decision outranks a re-derivation.
 func (st *Store) ResolveDependabotAlert(repoKey string, number int, state DependabotAlertState) (*DependabotAlert, bool) {
 	if state != DependabotStateFixed && state != DependabotStateOpen {
 		return nil, false
@@ -102,7 +88,7 @@ func (st *Store) ResolveDependabotAlert(repoKey string, number int, state Depend
 	return cloneDependabotAlert(live), true
 }
 
-// DependabotAlertState renders an alert's state as the
+// DependabotAlertGraphQLState renders an alert's state as the
 // RepositoryVulnerabilityAlertState enum member GraphQL names.
 func DependabotAlertGraphQLState(state DependabotAlertState) string {
 	switch state {
@@ -118,8 +104,7 @@ func DependabotAlertGraphQLState(state DependabotAlertState) string {
 }
 
 // dependabotDismissReasons maps GraphQL's DismissReason enum onto the REST
-// dismissed_reason spelling the store validates and persists. One dismissal
-// vocabulary, two spellings of it.
+// dismissed_reason spelling the store persists.
 var dependabotDismissReasons = map[string]string{
 	"FIX_STARTED":    "fix_started",
 	"INACCURATE":     "inaccurate",
@@ -128,15 +113,15 @@ var dependabotDismissReasons = map[string]string{
 	"TOLERABLE_RISK": "tolerable_risk",
 }
 
-// DependabotDismissReasonFromGraphQL translates a DismissReason enum member
-// to its stored spelling, reporting false for a value outside the enum.
+// DependabotDismissReasonFromGraphQL translates a DismissReason enum member to
+// its stored spelling, reporting false for a value outside the enum.
 func DependabotDismissReasonFromGraphQL(reason string) (string, bool) {
 	stored, ok := dependabotDismissReasons[strings.ToUpper(strings.TrimSpace(reason))]
 	return stored, ok
 }
 
-// dependabotDismissReasonText renders a stored dismissal reason as the prose
-// GitHub shows on RepositoryVulnerabilityAlert.dismissReason.
+// dependabotDismissReasonText is the prose GitHub shows on
+// RepositoryVulnerabilityAlert.dismissReason.
 var dependabotDismissReasonText = map[string]string{
 	"fix_started":    "A fix has already been started",
 	"inaccurate":     "This alert is inaccurate or incorrect",
@@ -145,14 +130,13 @@ var dependabotDismissReasonText = map[string]string{
 	"tolerable_risk": "Risk is tolerable to this project",
 }
 
-// DependabotDismissReasonText renders a stored dismissal reason as prose, or
-// "" when the alert was never dismissed.
+// DependabotDismissReasonText renders a stored dismissal reason as prose, or ""
+// when the alert was never dismissed.
 func DependabotDismissReasonText(reason string) string {
 	return dependabotDismissReasonText[reason]
 }
 
-// DependabotAlertManifestFilename is the manifest's base name, which GraphQL
-// serves beside the full path.
+// DependabotAlertManifestFilename is the manifest's base name.
 func DependabotAlertManifestFilename(manifestPath string) string {
 	if manifestPath == "" {
 		return ""
@@ -160,10 +144,9 @@ func DependabotAlertManifestFilename(manifestPath string) string {
 	return path.Base(manifestPath)
 }
 
-// DependencyGraphManifestNodeID is the node id a dependency-graph manifest is
-// addressed by. Manifests have no database row of their own — they are a view
-// over the latest submitted snapshots — so the id is derived from the pair
-// that identifies one: the repository and the manifest's path.
+// DependencyGraphManifestNodeID derives a manifest's node id from (repo, path).
+// Manifests have no row of their own; they are a view over the latest
+// submitted snapshots.
 func DependencyGraphManifestNodeID(repoID int, filename string) string {
 	return fmt.Sprintf("DGM_%d_%s", repoID, filename)
 }
@@ -185,12 +168,11 @@ func ParseDependencyGraphManifestNodeID(nodeID string) (repoID int, filename str
 	return id, rest[separator+1:], true
 }
 
-// CWENodeID is the node id a CWE is addressed by. A CWE is a catalogue entry
-// rather than a stored row, so its identifier is its own.
+// CWENodeID is the node id a CWE is addressed by.
 func CWENodeID(cweID string) string { return "CWE_" + NormalizeCWEID(cweID) }
 
-// NormalizeCWEID renders a CWE identifier in its canonical "CWE-79" form,
-// accepting the bare number an advisory may have been created with.
+// NormalizeCWEID renders a CWE identifier in canonical "CWE-79" form, accepting
+// a bare number.
 func NormalizeCWEID(cweID string) string {
 	cweID = strings.TrimSpace(cweID)
 	if cweID == "" {
@@ -202,16 +184,11 @@ func NormalizeCWEID(cweID string) string {
 	return "CWE-" + cweID
 }
 
-// DependabotAlertEventPayload renders the body of a dependabot_alert webhook
-// delivery.
-//
-// It lives in the store rather than beside either caller because both the
-// REST alert routes and the GraphQL dismissal mutation deliver this event,
-// and a subscriber must not be able to tell which surface moved the alert.
-// repository, sender and dismisser arrive already rendered, since their
-// hypermedia is the HTTP layer's to compose. dismisser is nil for an alert
-// that stands; the store records only the dismisser's login, and a
-// subscriber is owed the whole account object.
+// DependabotAlertEventPayload renders a dependabot_alert webhook body. Shared
+// by the REST routes and the GraphQL dismissal mutation so a subscriber can't
+// tell which surface moved the alert. repository, sender and dismisser arrive
+// already rendered (their hypermedia is the HTTP layer's); dismisser is nil
+// for an alert that stands.
 func DependabotAlertEventPayload(alert *DependabotAlert, repository, sender, dismisser map[string]interface{}, action string) map[string]interface{} {
 	if alert == nil {
 		return nil
@@ -262,7 +239,6 @@ func DependabotAlertEventPayload(alert *DependabotAlert, repository, sender, dis
 	return payload
 }
 
-// dependabotAlertDependencyPayload renders the alert's dependency block.
 func dependabotAlertDependencyPayload(alert *DependabotAlert) map[string]interface{} {
 	return map[string]interface{}{
 		"package": map[string]interface{}{
@@ -274,7 +250,6 @@ func dependabotAlertDependencyPayload(alert *DependabotAlert) map[string]interfa
 	}
 }
 
-// dependabotAlertAdvisoryPayload renders the advisory block an alert carries.
 func dependabotAlertAdvisoryPayload(alert *DependabotAlert, identifiers []map[string]interface{}, vulnerability map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"ghsa_id":         alert.VulnerabilityID,
@@ -291,7 +266,6 @@ func dependabotAlertAdvisoryPayload(alert *DependabotAlert, identifiers []map[st
 	}
 }
 
-// nullableInstant renders an optional timestamp as RFC 3339 or JSON null.
 func nullableInstant(at *time.Time) interface{} {
 	if at == nil {
 		return nil
@@ -299,8 +273,8 @@ func nullableInstant(at *time.Time) interface{} {
 	return at.UTC().Format(time.RFC3339)
 }
 
-// nullOrMap renders an absent nested object as a JSON null rather than as an
-// empty object, which a typed SDK decodes very differently.
+// nullOrMap renders an absent nested object as JSON null, not an empty object,
+// which a typed SDK decodes differently.
 func nullOrMap(value map[string]interface{}) interface{} {
 	if value == nil {
 		return nil
@@ -308,8 +282,8 @@ func nullOrMap(value map[string]interface{}) interface{} {
 	return value
 }
 
-// nullOrStringValue renders an empty string as a JSON null, which is how the
-// webhook payload distinguishes "not set" from "set to empty".
+// nullOrStringValue renders "" as JSON null, distinguishing "not set" from
+// "set to empty".
 func nullOrStringValue(value string) interface{} {
 	if value == "" {
 		return nil

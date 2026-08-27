@@ -6,16 +6,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Projects v2 webhooks. GitHub delivers three event names for this family —
-// projects_v2, projects_v2_item and projects_v2_status_update — to the hooks
-// of the account that owns the project. None of them carry a repository,
-// because a project does not belong to one.
+// Projects v2 webhooks: projects_v2, projects_v2_item and projects_v2_status_update,
+// delivered to the owning account's hooks. None carry a repository — a project has none.
 
-// emitProjectV2Event renders and delivers one projects_v2-family event.
-//
-// Delivery is to the owning organization's hooks. A user-owned project has no
-// hook target on this instance, so the event is rendered and dropped rather
-// than misdelivered to an unrelated organization.
+// emitProjectV2Event renders and delivers one projects_v2-family event to the owning
+// organization's hooks. A user-owned project has no hook target here, so its event is dropped.
 func (s *Server) emitProjectV2Event(event store.ProjectV2Event) {
 	if event.Project == nil || event.Event == "" {
 		return
@@ -57,9 +52,8 @@ func (s *Server) emitProjectV2Event(event store.ProjectV2Event) {
 	s.emitOrgWebhookEvent(org.Login, event.Event, event.Action, payload)
 }
 
-// projectV2ChangesPayload renders the before/after diff GitHub puts on the
-// `edited` actions. Each entry is a {from, to} pair under the changed field's
-// name.
+// projectV2ChangesPayload renders the before/after diff on `edited` actions: a
+// {from, to} pair under each changed field's name.
 func projectV2ChangesPayload(changes map[string]store.ProjectV2Change) map[string]interface{} {
 	if len(changes) == 0 {
 		return nil
@@ -85,8 +79,7 @@ func (s *Server) projectV2WebhookPayload(p *store.ProjectV2) map[string]interfac
 		"description":       nullableWebhookString(p.Readme),
 		"owner":             s.projectV2OwnerWebhookPayload(p),
 		"creator":           s.projectV2CreatorJSON(p.CreatorID, s.publicOrigin()),
-		// A deleted project is delivered by value on the deleted action; the
-		// row is gone by then, so these are always null on the wire.
+		// A deleted project is delivered by value; the row is gone, so these are always null.
 		"deleted_at": nil,
 		"deleted_by": nil,
 	}
@@ -98,8 +91,7 @@ func (s *Server) projectV2WebhookPayload(p *store.ProjectV2) map[string]interfac
 	return out
 }
 
-// projectV2OwnerWebhookPayload renders the account the project belongs to, in
-// the nested-object form the rest of the webhook surface uses.
+// projectV2OwnerWebhookPayload renders the account the project belongs to.
 func (s *Server) projectV2OwnerWebhookPayload(p *store.ProjectV2) interface{} {
 	if p.OwnerType == "Organization" {
 		if org := s.store.GetOrgByID(p.OwnerID); org != nil {
@@ -113,9 +105,8 @@ func (s *Server) projectV2OwnerWebhookPayload(p *store.ProjectV2) interface{} {
 	return nil
 }
 
-// projectV2ItemWebhookPayload renders the `projects_v2_item` object. The item
-// names its project and its content by node id rather than embedding them,
-// which is how GitHub keeps this payload small.
+// projectV2ItemWebhookPayload renders the `projects_v2_item` object, naming its
+// project and content by node id rather than embedding them.
 func (s *Server) projectV2ItemWebhookPayload(it *store.ProjectV2Item, project *store.ProjectV2) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":              it.ID,
@@ -135,9 +126,8 @@ func (s *Server) projectV2ItemWebhookPayload(it *store.ProjectV2Item, project *s
 	return out
 }
 
-// projectV2ContentNodeID is the node id of the issue or pull request an item
-// wraps. A draft issue has no separate row, so the item's own node id is its
-// content id — which is what GitHub sends.
+// projectV2ContentNodeID is the node id of the issue or PR an item wraps. A draft
+// issue has no separate row, so the item's own node id is its content id, as GitHub sends.
 func (s *Server) projectV2ContentNodeID(it *store.ProjectV2Item) interface{} {
 	switch it.ContentType {
 	case "Issue":
@@ -154,8 +144,7 @@ func (s *Server) projectV2ContentNodeID(it *store.ProjectV2Item) interface{} {
 	return nil
 }
 
-// projectV2StatusUpdateWebhookPayload renders the
-// `projects_v2_status_update` object.
+// projectV2StatusUpdateWebhookPayload renders the `projects_v2_status_update` object.
 func (s *Server) projectV2StatusUpdateWebhookPayload(u *store.ProjectV2StatusUpdate, project *store.ProjectV2) map[string]interface{} {
 	return map[string]interface{}{
 		"id":              u.ID,
@@ -171,8 +160,7 @@ func (s *Server) projectV2StatusUpdateWebhookPayload(u *store.ProjectV2StatusUpd
 	}
 }
 
-// nullableWebhookString sends an unset optional string as JSON null, which is
-// what GitHub sends for a field the project genuinely has no value for.
+// nullableWebhookString sends an unset optional string as JSON null, as GitHub does.
 func nullableWebhookString(value string) interface{} {
 	if value == "" {
 		return nil

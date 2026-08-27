@@ -6,17 +6,16 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub's codes-of-conduct REST surface. The catalog itself (the two
-// entries and their embedded body texts) lives in internal/store so the
-// GraphQL resolver layer renders from the same data (ARCH-003).
+// Codes-of-conduct REST surface. The catalog lives in internal/store so the
+// GraphQL resolver renders from the same data (ARCH-003).
 
 func (s *Server) registerGHCodesOfConductRoutes() {
 	s.route("GET /api/v3/codes_of_conduct", s.handleListCodesOfConduct)
 	s.route("GET /api/v3/codes_of_conduct/{key}", s.handleGetCodeOfConduct)
 }
 
-// codeOfConductToJSON renders the spec `code-of-conduct` shape. The list
-// endpoint omits body (matching GitHub); the get-by-key endpoint includes it.
+// codeOfConductToJSON renders the `code-of-conduct` shape. The list endpoint
+// omits body (matching GitHub); get-by-key includes it.
 func codeOfConductToJSON(c store.CodeOfConduct, baseURL string, withBody bool) map[string]interface{} {
 	out := map[string]interface{}{
 		"key":      c.Key,

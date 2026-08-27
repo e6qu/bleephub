@@ -7,10 +7,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub immutable releases: a repository toggle plus an organization-level
-// enforcement policy (all / none / selected repositories). The repo-level
-// check endpoint reflects both the repo's own toggle and the owner's
-// enforcement.
+// Immutable releases: a repo toggle plus an org enforcement policy
+// (all/none/selected). The repo check endpoint reflects both.
 
 func (s *Server) registerGHImmutableReleaseRoutes() {
 	s.route("GET /api/v3/orgs/{org}/settings/immutable-releases",
@@ -75,8 +73,8 @@ func (s *Server) handleSetOrgImmutableReleasesSettings(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// validateOrgRepoIDs checks every ID names a repository in the org, writing
-// a 404 on the first that does not.
+// validateOrgRepoIDs checks every ID names a repo in the org, writing a 404 on
+// the first that does not.
 func (s *Server) validateOrgRepoIDs(w http.ResponseWriter, org string, ids []int) bool {
 	for _, id := range ids {
 		repo := s.store.GetRepoByID(id)
@@ -166,8 +164,8 @@ func (s *Server) handleRemoveOrgImmutableReleasesRepo(w http.ResponseWriter, r *
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// resolveRepoForImmutableReleases resolves the repo and requires admin
-// access, writing a 404 on failure.
+// resolveRepoForImmutableReleases resolves the repo and requires admin access,
+// writing a 404 on failure.
 func (s *Server) resolveRepoForImmutableReleases(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
@@ -218,5 +216,3 @@ func (s *Server) handleDisableRepoImmutableReleases(w http.ResponseWriter, r *ht
 	s.store.SetRepoImmutableReleases(repo.FullName, false)
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// --- store ---

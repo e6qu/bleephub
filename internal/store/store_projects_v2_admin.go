@@ -7,19 +7,15 @@ import (
 	"time"
 )
 
-// Projects v2 — the administrative half of the store: project metadata,
-// templates, links to repositories and teams, collaborators, item lifecycle
-// (archive, reorder, draft conversion), status updates, workflows and view
-// configuration. The core create/read paths live in store_projects_v2.go.
+// Projects v2 — the administrative half of the store. Core create/read paths
+// live in store_projects_v2.go.
 
 // ---------------------------------------------------------------------------
 // Snapshots
 //
-// STORE-021: every getter and List* below hands back a detached copy, so a
-// reader cannot race an in-place update on the stored row, and a caller cannot
-// reach past the store's mutators by writing through a returned pointer. The
-// project, item, field and view rows all carry slices or maps, so a shallow
-// struct copy is not enough — each has its own clone.
+// STORE-021: every getter and List* below hands back a detached copy. The row
+// types carry slices or maps, so a shallow struct copy is not enough — each has
+// its own deep clone.
 
 func cloneProjectV2(p *ProjectV2) *ProjectV2 {
 	if p == nil {
@@ -134,9 +130,8 @@ func cloneProjectV2View(v *ProjectV2View) *ProjectV2View {
 // ---------------------------------------------------------------------------
 // Project metadata
 
-// ProjectV2Update is the patch updateProjectV2 applies. A nil member leaves
-// the stored value alone, which is how GraphQL distinguishes "not supplied"
-// from "set to empty".
+// ProjectV2Update is the patch updateProjectV2 applies. A nil member leaves the
+// stored value alone (GraphQL's "not supplied" vs. "set to empty").
 type ProjectV2Update struct {
 	Title            *string
 	ShortDescription *string
@@ -145,8 +140,8 @@ type ProjectV2Update struct {
 	Public           *bool
 }
 
-// UpdateProjectDetails applies a patch to a project and returns the updated
-// snapshot, or nil when no such project exists.
+// UpdateProjectDetails applies a patch and returns the updated snapshot, or nil
+// when no such project exists.
 func (s *ProjectV2Store) UpdateProjectDetails(id int, patch ProjectV2Update) *ProjectV2 {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -201,8 +196,8 @@ func (s *ProjectV2Store) persistProjectLocked(p *ProjectV2) {
 	}
 }
 
-// LinkRepository links a repository to a project. Linking one already linked
-// is a no-op, matching GitHub, which returns the project either way.
+// LinkRepository links a repository to a project. Linking one already linked is
+// a no-op, returning the project either way.
 func (s *ProjectV2Store) LinkRepository(projectID, repoID int) *ProjectV2 {
 	return s.editIDList(projectID, repoID, true, func(p *ProjectV2) *[]int { return &p.LinkedRepoIDs })
 }
@@ -222,9 +217,8 @@ func (s *ProjectV2Store) UnlinkTeam(projectID, teamID int) *ProjectV2 {
 	return s.editIDList(projectID, teamID, false, func(p *ProjectV2) *[]int { return &p.LinkedTeamIDs })
 }
 
-// editIDList adds or removes one ID from a project's link list. Both link
-// lists are sets: a repeated link does not duplicate the entry, and removing
-// an absent one is not an error.
+// editIDList adds or removes one ID from a project's link list, which is a set:
+// a repeated add does not duplicate, and removing an absent one is not an error.
 func (s *ProjectV2Store) editIDList(projectID, id int, add bool, list func(*ProjectV2) *[]int) *ProjectV2 {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -256,8 +250,8 @@ func (s *ProjectV2Store) editIDList(projectID, id int, add bool, list func(*Proj
 	return cloneProjectV2(p)
 }
 
-// UpdateCollaborators applies a set of role grants. A role of "NONE" removes
-// the grant, which is how GitHub spells revocation on this mutation.
+// UpdateCollaborators applies role grants. Role "NONE" revokes the grant (how
+// GitHub spells revocation on this mutation).
 func (s *ProjectV2Store) UpdateCollaborators(projectID int, grants []*ProjectV2Collaborator) *ProjectV2 {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -295,8 +289,7 @@ func (s *ProjectV2Store) UpdateCollaborators(projectID int, grants []*ProjectV2C
 	return cloneProjectV2(p)
 }
 
-// CollaboratorRole returns the role explicitly granted to a user on a project,
-// or "" when the user holds no explicit grant.
+// CollaboratorRole returns the role explicitly granted to a user, or "".
 func (s *ProjectV2Store) CollaboratorRole(projectID, userID int) string {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
@@ -313,9 +306,7 @@ func (s *ProjectV2Store) CollaboratorRole(projectID, userID int) string {
 }
 
 // CopyProject duplicates a project under a (possibly different) owner. Fields
-// and views are always copied — they are the project's shape; items are copied
-// only when includeDraftIssues asks for it, matching copyProjectV2, whose one
-// item-level switch is over draft issues.
+// and views are always copied; items only when includeDraftIssues asks for it.
 func (s *ProjectV2Store) CopyProject(sourceID, ownerID int, ownerType, title string, includeDraftIssues bool, creatorID int) *ProjectV2 {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -331,9 +322,8 @@ func (s *ProjectV2Store) CopyProject(sourceID, ownerID int, ownerType, title str
 	copied.Public = source.Public
 	batch.Put("projects_v2", strconv.Itoa(copied.ID), copied)
 
-	// Field IDs change, so the option IDs an item value points at have to be
-	// remapped as the fields are cloned; without the map every copied item
-	// would carry a dangling single-select option.
+	// Field and option IDs change on clone, so item values must be remapped
+	// through these maps or they would dangle.
 	fieldIDMap := map[int]int{}
 	optionIDMap := map[string]string{}
 	for _, f := range s.FieldsByProj[sourceID] {
@@ -431,9 +421,8 @@ func remapIDs(in []int, mapping map[int]int) []int {
 	return out
 }
 
-// createProjectLocked mints a project row without persisting it on its own, so
-// a caller assembling a larger transaction (CopyProject) can commit it with
-// everything else in one batch. Callers must hold s.Mu.
+// createProjectLocked mints a project row, staging it into batch so a larger
+// transaction (CopyProject) commits it with everything else. Callers hold s.Mu.
 func (s *ProjectV2Store) createProjectLocked(ownerID int, ownerType, title string, creatorID int, batch *PersistBatch) *ProjectV2 {
 	id := s.nextProjectID
 	s.nextProjectID++
@@ -476,9 +465,8 @@ func (s *ProjectV2Store) itemsForProjectLocked(projectID int) []*ProjectV2Item {
 // ---------------------------------------------------------------------------
 // Item lifecycle
 
-// ArchiveItem archives (or unarchives) a project item, returning the updated
-// snapshot. Archiving one already archived leaves the original timestamp, so a
-// repeated call does not rewrite when it happened.
+// ArchiveItem archives or unarchives a project item, returning the updated
+// snapshot. Re-archiving keeps the original ArchivedAt timestamp.
 func (s *ProjectV2Store) ArchiveItem(id int, archived bool) *ProjectV2Item {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -505,9 +493,7 @@ func (s *ProjectV2Store) persistItemLocked(it *ProjectV2Item) {
 }
 
 // MoveItem places an item directly after afterID within its project, or at the
-// head when afterID is 0 — the two cases updateProjectV2ItemPosition models
-// with a nullable afterId. Positions are renumbered densely so the ordering
-// stays total.
+// head when afterID is 0. Positions are renumbered densely to stay total.
 func (s *ProjectV2Store) MoveItem(id, afterID int) (*ProjectV2Item, error) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -561,9 +547,8 @@ func (s *ProjectV2Store) MoveItem(id, afterID int) (*ProjectV2Item, error) {
 	return cloneProjectV2Item(moving), nil
 }
 
-// ConvertDraftToIssue repoints a draft item at a real issue. The draft title
-// and body are cleared: the issue now owns them, and leaving copies behind
-// would let the two drift.
+// ConvertDraftToIssue repoints a draft item at a real issue, clearing the draft
+// title and body so the two cannot drift.
 func (s *ProjectV2Store) ConvertDraftToIssue(itemID, issueID int) (*ProjectV2Item, error) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -585,7 +570,7 @@ func (s *ProjectV2Store) ConvertDraftToIssue(itemID, issueID int) (*ProjectV2Ite
 }
 
 // ClearFieldValue removes an item's value for one field. Clearing an unset
-// field is not an error — clearProjectV2ItemFieldValue is idempotent.
+// field is not an error.
 func (s *ProjectV2Store) ClearFieldValue(itemID, fieldID int) (*ProjectV2Item, error) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -786,8 +771,7 @@ func (s *ProjectV2Store) StatusUpdatesForProject(projectID int) []*ProjectV2Stat
 // Workflows
 
 // CreateWorkflow records an automation rule on a project. GitHub has no
-// create-workflow mutation — rules are made in the web UI — so this is the
-// seam the UI and the seeded defaults write through.
+// create-workflow mutation, so this is the seam the UI and seeded defaults use.
 func (s *ProjectV2Store) CreateWorkflow(projectID int, name string, enabled bool) *ProjectV2Workflow {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -988,20 +972,16 @@ func (s *ProjectV2Store) LookupViewByNodeID(nodeID string) *ProjectV2View {
 // ---------------------------------------------------------------------------
 // Fields
 
-// ProjectV2FieldUpdate is the patch updateProjectV2Field applies. Options
-// replaces the option list wholesale when non-nil, which is the shape
-// updateProjectV2Field takes.
+// ProjectV2FieldUpdate is the patch updateProjectV2Field applies.
 type ProjectV2FieldUpdate struct {
 	Name    *string
-	Options []*ProjectV2SingleSelectOption
-	// Iteration replaces the schedule of an ITERATION field wholesale when
-	// non-nil, the shape updateProjectV2Field's iterationConfiguration takes.
+	Options []*ProjectV2SingleSelectOption // replaces the option list wholesale when non-nil
+	// Iteration replaces an ITERATION field's schedule wholesale when non-nil.
 	Iteration *ProjectV2IterationConfiguration
 }
 
-// UpdateFieldDetails patches a field's name and, for the option-bearing data
-// types, its options. Option IDs survive a rename-free edit so item values
-// keep pointing at the option the author meant.
+// UpdateFieldDetails patches a field's name and, for option-bearing data types,
+// its options. Option IDs survive a rename-free edit so item values stay valid.
 func (s *ProjectV2Store) UpdateFieldDetails(id int, patch ProjectV2FieldUpdate) *ProjectV2Field {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -1040,8 +1020,7 @@ func (s *ProjectV2Store) UpdateFieldDetails(id int, patch ProjectV2FieldUpdate) 
 	}
 	if patch.Iteration != nil && f.DataType == ProjectV2FieldIteration {
 		// Iterations carry no natural key in the input, so an existing
-		// iteration's ID survives by title match; the item values that point at
-		// it stay valid across a rename-free edit.
+		// iteration's ID survives by title match, keeping item values valid.
 		existingIDByTitle := map[string]string{}
 		if f.Iteration != nil {
 			for _, old := range f.Iteration.Iterations {
@@ -1079,11 +1058,9 @@ func (s *ProjectV2Store) UpdateFieldDetails(id int, patch ProjectV2FieldUpdate) 
 // ---------------------------------------------------------------------------
 // Seeded defaults
 //
-// A project created on github.com is not empty: it arrives with the built-in
-// fields every project has (Title, Assignees, Status, Labels, …), a default
-// Status option set, one table view and the three default workflows. A
-// bleephub project that started blank would answer `gh project field-list`
-// with nothing, so the same defaults are seeded here.
+// A project created on github.com arrives with built-in fields, a default
+// Status option set, one table view and three default workflows. bleephub
+// seeds the same so a fresh project is not blank.
 
 // ProjectV2DefaultStatusOptions is the Status option set GitHub seeds.
 var ProjectV2DefaultStatusOptions = []*ProjectV2SingleSelectOption{
@@ -1092,10 +1069,8 @@ var ProjectV2DefaultStatusOptions = []*ProjectV2SingleSelectOption{
 	{Name: "Done", Color: "GREEN", Description: "This has been completed"},
 }
 
-// projectV2BuiltInFields are the non-custom columns every project carries.
-// They are read-only on GitHub — their values come from the underlying issue
-// or pull request rather than from the project — so they are seeded with their
-// GitHub data types and no options.
+// projectV2BuiltInFields are the read-only non-custom columns every project
+// carries; their values come from the underlying issue or pull request.
 var projectV2BuiltInFields = []struct {
 	Name     string
 	DataType ProjectV2FieldDataType
@@ -1109,11 +1084,9 @@ var projectV2BuiltInFields = []struct {
 	{"Reviewers", "REVIEWERS"},
 }
 
-// SeedProjectDefaults gives a freshly created project the fields, view and
-// workflows github.com creates it with, attributing the default view to the
-// account that created the project. It is called by CreateProject; a caller
-// that needs a bare project can build one through the lower-level mutators
-// instead.
+// SeedProjectDefaults gives a fresh project the fields, view and workflows
+// github.com creates it with, attributing the default view to creatorID. Called
+// by CreateProject.
 func (s *ProjectV2Store) SeedProjectDefaults(projectID, creatorID int) {
 	for _, builtIn := range projectV2BuiltInFields {
 		s.CreateField(projectID, builtIn.Name, builtIn.DataType, nil, nil)
@@ -1132,9 +1105,8 @@ func (s *ProjectV2Store) SeedProjectDefaults(projectID, creatorID int) {
 	}
 }
 
-// TouchProject stamps a project as updated. Item and field mutations move the
-// project's own updatedAt on GitHub, and views ordered by UPDATED_AT depend on
-// it, so the write paths that change a project's contents call this.
+// TouchProject stamps a project's updatedAt. Content mutations move it on GitHub
+// and views ordered by UPDATED_AT depend on it, so content write paths call this.
 func (s *ProjectV2Store) TouchProject(id int) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()

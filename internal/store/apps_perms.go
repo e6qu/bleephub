@@ -1,10 +1,8 @@
 package store
 
 // PermScope is a GitHub fine-grained permission name. The values are the
-// exact keys used in an installation token's Permissions map and in the
-// App API, so they must not change — but call sites reference the named
-// constants, making a mistyped scope a compile error rather than a silent
-// always-deny gate.
+// exact keys used in installation-token Permissions maps and the App API;
+// they must not change.
 type PermScope string
 
 const (
@@ -33,9 +31,7 @@ const (
 )
 
 // PermLevel is the entitlement level a credential holds for a PermScope.
-// Level ordering: read < write < admin. "admin" implies write; "write"
-// implies read. (Moved from the server layer in ARCH-003 so the GraphQL
-// resolver layer and the HTTP layer share one definition.)
+// Ordering: read < write < admin, each level implying the ones below it.
 type PermLevel int
 
 const (
@@ -45,10 +41,9 @@ const (
 )
 
 // AccountKind distinguishes the two account namespaces an entitlement can
-// target. Users and organizations are separate namespaces sharing one login
-// space, so authorization checks must not match on login alone.
-// AnyAccount is for resources that hang off an account of either kind,
-// such as a ProjectV2. (Moved from the server layer in ARCH-003.)
+// target. Users and organizations share one login space, so authorization
+// checks must not match on login alone. AnyAccount covers resources that
+// hang off either kind, such as a ProjectV2.
 type AccountKind int
 
 const (

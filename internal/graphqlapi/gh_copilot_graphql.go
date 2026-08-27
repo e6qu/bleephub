@@ -1,13 +1,8 @@
 package graphqlapi
 
-// GitHub Copilot — the GraphQL surface: User.copilotEndpoints, the service
-// endpoints a Copilot client resolves before it connects.
-//
-// bleephub runs no code-completion model, but the endpoints are real
-// configuration rather than a model: they are where a client would send
-// completions, chat, telemetry and experiment traffic, and they are this
-// instance's own URLs. GitHub scopes the field to the authenticated user,
-// so it answers null for anybody else's profile.
+// User.copilotEndpoints — the service endpoints a Copilot client resolves
+// before connecting. bleephub runs no completion model but serves its own
+// URLs. GitHub scopes the field to the authenticated user (null otherwise).
 
 import (
 	"strings"
@@ -39,8 +34,7 @@ func (s *Resolver) addCopilotFieldsToSchema(userType *graphql.Object) {
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			viewer := s.ghUserFromContext(p.Context)
 			login := sponsorsAccountLogin(p.Source)
-			// A client's Copilot endpoints are its own; GitHub does not hand
-			// one account's out through another's profile.
+			// Scoped to the viewer: not served through another account's profile.
 			if viewer == nil || !strings.EqualFold(viewer.Login, login) {
 				return nil, nil
 			}

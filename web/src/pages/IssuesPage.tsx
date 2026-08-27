@@ -97,12 +97,8 @@ import {
 
 // ─── Page-local fetchers (entry-bundle budget: no api.ts additions) ──────
 
-/**
- * Exact issue count by state via the search API's total_count — the list
- * endpoint only bounds the count from below once it paginates. `is:issue`
- * keeps pull requests out of the number. Returns null when the server's
- * answer has no usable total (the caller falls back to a page-derived "N+").
- */
+// Exact count via the search API's total_count; the list endpoint only bounds
+// it from below once paginated. `is:issue` excludes PRs. Null when unavailable.
 async function fetchIssueSearchCount(
   owner: string,
   repo: string,
@@ -156,13 +152,12 @@ const fetchSameOwnerRepos = (owner: string, ownerType: string | undefined) =>
       : `/api/v3/users/${encodeURIComponent(owner)}/repos?per_page=100`,
   );
 
-// Spec issue.labels is (string | object)[] and issue.assignees is optional
-// (WEB-013). bleephub always returns label objects; normalise to the pill shape.
+// Spec issue.labels is (string | object)[]; bleephub always returns objects.
+// Normalise to the pill shape.
 const issueLabelPills = (labels: GithubIssue["labels"]) =>
   labels.flatMap((l) => (typeof l === "object" ? [{ name: l.name ?? "", color: l.color ?? "" }] : []));
 
-/** The /issues list endpoint interleaves pull requests (GitHub models PRs as
- * issues); the Issues page must show only real issues. */
+// The /issues list interleaves PRs (GitHub models PRs as issues); filter them out.
 const isRealIssue = (i: GithubIssue) => !i.pull_request;
 
 const issueAccessors: ListItemAccessors<GithubIssue> = {
@@ -176,11 +171,8 @@ const issueAccessors: ListItemAccessors<GithubIssue> = {
   text: (i) => `${i.title}\n${i.body ?? ""}`,
 };
 
-/**
- * Open/closed issue counts for the list header. Prefers the search API's
- * exact totals; falls back to a first-page count (with a "+" when the page
- * is truncated) that also excludes pull requests.
- */
+// Open/closed counts for the header: prefer the search API's exact totals,
+// fall back to a first-page count ("N+" when truncated).
 function useIssueCounts(owner: string, repo: string): {
   open: number | string | undefined;
   closed: number | string | undefined;
@@ -236,11 +228,10 @@ export function IssuesPage({ view }: { view?: "labels" | "milestones" }) {
 }
 
 function IssueList({ owner, repo }: { owner: string; repo: string }) {
-  // Signed out, "New issue" links to sign-in instead of opening the dialog
-  // (github.com prompts anonymous visitors to log in first).
+  // Signed out, "New issue" links to sign-in, matching github.com.
   const signedIn = useSignedIn();
   const location = useLocation();
-  // Deep links (e.g. a milestone row) pre-filter the list via query params.
+  // Deep links (e.g. a milestone row) pre-filter via query params.
   const [searchParams] = useSearchParams();
   const [state, setState] = useState<"open" | "closed" | "all">(() => {
     const s = searchParams.get("state");
@@ -258,8 +249,8 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
 
-  // The milestone facet filters by title in the UI, but the server's `milestone`
-  // param takes the milestone NUMBER — resolve it from the repo's milestones.
+  // The server's `milestone` param takes the number, not the title the facet
+  // shows — resolve it from the repo's milestones.
   const { data: milestonesForFilter } = useQuery({
     queryKey: ["milestones-for-filter", owner, repo],
     queryFn: () => fetchRepoMilestones(owner, repo, "all"),
@@ -271,10 +262,8 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
     return m ? String(m.number) : undefined;
   }, [filters.milestone, milestonesForFilter]);
 
-  // state + label/author(creator)/assignee/milestone/sort are all carried to the
-  // server so filtering/sorting is correct across every page, not just the loaded
-  // set; filterAndSortItems then re-narrows the loaded set instantly as a client
-  // overlay (consistent with the server order).
+  // Filters/sort go to the server so results are correct across all pages;
+  // filterAndSortItems re-narrows the loaded set as a client overlay.
   const serverSort = sortToServerParams(filters.sort);
   const serverOpts = {
     state,
@@ -284,8 +273,7 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
     milestone: milestoneNumber,
     ...serverSort,
   };
-  // Free-text terms switch the list source to the server-side issue search
-  // (title/body match across the whole repo, not just the loaded pages).
+  // Free-text terms switch to server-side search (title/body across the repo).
   const searchText = (filters.text ?? "").trim();
   const query = useInfiniteQuery({
     queryKey: ["issues", owner, repo, serverOpts, "paged"],
@@ -434,8 +422,7 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-/** GitHub's list-row state icon: open green, closed-completed purple check,
- * closed-as-not-planned gray skip. */
+// List-row state icon: open green, closed-completed check, not-planned gray skip.
 function IssueStateIcon({ state, stateReason }: { state: string; stateReason?: string | null | undefined }) {
   if (state === "open") {
     return (
@@ -462,7 +449,7 @@ function IssueStateIcon({ state, stateReason }: { state: string; stateReason?: s
   );
 }
 
-/** GitHub's milestone (signpost) octicon — not in the shared set. */
+// Milestone octicon — not in the shared set.
 function MilestoneIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" width={12} height={12} fill="currentColor">
@@ -478,8 +465,7 @@ interface PinnedIssueNode {
 }
 
 function PinnedIssuesSection({ owner, repo }: { owner: string; repo: string }) {
-  // Pinned issues ride GraphQL, which refuses anonymous callers — the
-  // section quietly disappears for signed-out visitors.
+  // Pinned issues ride GraphQL, which refuses anonymous callers — hidden signed-out.
   const signedIn = useSignedIn();
   const q = useQuery({
     enabled: signedIn,
@@ -563,7 +549,7 @@ function parseIssueTemplate(filename: string, content: string): IssueTemplate {
       const parsed = parseYaml(m[1] ?? "");
       if (parsed && typeof parsed === "object") fm = parsed as Record<string, unknown>;
     } catch {
-      // Malformed front-matter: treat the whole file as the body.
+      // Malformed front-matter: whole file is the body.
       body = content;
     }
   }
@@ -588,11 +574,9 @@ function NewIssueDialog({ owner, repo, onClose }: { owner: string; repo: string;
   const qc = useQueryClient();
   const navigate = useNavigate();
 
-  // Markdown templates under .github/ISSUE_TEMPLATE. Walk the tree top-down
-  // starting from the bootstrap aggregate (which 200s even on an empty repo,
-  // root_entries: null) — each listing vouches for the next level. A blind
-  // probe of the deep path 404s on template-less repos and the browser logs
-  // that as a console error, which the e2e harness treats as a test failure.
+  // Walk to .github/ISSUE_TEMPLATE level by level from the bootstrap aggregate;
+  // each listing vouches for the next. A blind probe of the deep path 404s on
+  // template-less repos, which logs a console error the e2e harness fails on.
   const templatesQ = useQuery({
     queryKey: ["issue-templates", owner, repo],
     queryFn: async () => {
@@ -644,7 +628,7 @@ function NewIssueDialog({ owner, repo, onClose }: { owner: string; repo: string;
       const tpl = parseIssueTemplate(filename, decodeContentsBase64(file.content ?? ""));
       setTitle(tpl.title ?? "");
       setBody(tpl.body);
-      // Unknown label names are ignored server-side, so pass them through.
+      // Unknown label names are ignored server-side.
       setLabels(tpl.labels);
       setAssignees(tpl.assignees);
       setChoosing(false);
@@ -844,8 +828,7 @@ function SubIssuesSection({ owner, repo, number }: { owner: string; repo: string
   };
   const addMut = useMutation({
     mutationFn: async () => {
-      // The API keys sub-issues by the child's internal id; resolve it from the
-      // number the user typed.
+      // The API keys sub-issues by the child's internal id, not its number.
       const child = await fetchIssueDetail(owner, repo, Number(childNumber.trim()));
       return addSubIssue(owner, repo, number, child.id);
     },
@@ -922,10 +905,8 @@ function SubIssuesSection({ owner, repo, number }: { owner: string; repo: string
 function IssueDetail({ owner, repo, number }: { owner: string; repo: string; number: number }) {
   const counts = useSeededOpenCounts(owner, repo);
   const qc = useQueryClient();
-  // One aggregate request replaces the detail's first-paint fan-out: it seeds
-  // the exact keys the hooks below (and IssueSidebar's labels / assignees)
-  // read, then those hooks are cache hits. On failure nothing is seeded and
-  // every hook fetches standalone as before.
+  // One aggregate request seeds the keys the hooks below read, turning them into
+  // cache hits. On failure they each fetch standalone.
   const bootstrapQ = useQuery({
     queryKey: ["issue-bootstrap", owner, repo, number],
     queryFn: async ({ signal }) => {
@@ -934,16 +915,13 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
         [["issue", owner, repo, number], data.issue],
         [["issue-timeline", owner, repo, number], data.timeline],
         [["labels", owner, repo], data.labels],
-        // The aggregate's milestones are state=ALL — the key IssueSidebar
-        // reads. NewIssue's state=open key is seeded from the same list
-        // filtered client-side, which yields exactly the list the standalone
-        // state=open fetch answers.
+        // Aggregate milestones are state=ALL; the state=open key is seeded from
+        // the same list filtered client-side.
         [["milestones", owner, repo, "all"], data.milestones],
         [["milestones", owner, repo, "open"], data.milestones.filter((m) => m.state === "open")],
         [["assignable-users", owner, repo], data.assignees_available],
       ]);
-      // ["viewer"] and ["current-user"] both GET /api/v3/user; reuse whichever
-      // response the session already holds instead of refetching it here.
+      // ["viewer"] and ["current-user"] both GET /api/v3/user; reuse one.
       mirrorQueryData(qc, ["current-user"], ["viewer"]);
       freshenQueryDefaults(qc, [
         ["repo", owner, repo],
@@ -952,9 +930,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
       ]);
       return data;
     },
-    // No numeric guard: a garbage number (NaN) 404s the bootstrap, which
-    // settles it into the error fallback and the not-found path, exactly
-    // like the old standalone fetch.
+    // No numeric guard: a NaN number 404s the bootstrap into the not-found path.
     enabled: !!owner && !!repo,
     staleTime: SEED_STALE_TIME,
   });
@@ -974,24 +950,21 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
     queryFn: () => fetchIssueTimeline(owner, repo, number),
     enabled: !!issue,
   });
-  // Comments are the "commented" timeline events — used for the count and the
-  // participants list; the full timeline drives the interleaved conversation.
+  // Comments are the "commented" timeline events; the full timeline drives the
+  // interleaved conversation.
   const comments = timeline.filter((i) => i.event === "commented");
   const signedIn = useSignedIn();
   const viewerQ = useQuery({
     queryKey: ["viewer"],
     queryFn: fetchAuthenticatedUser,
-    // Wait for the bootstrap: it mirrors the session's cached /api/v3/user
-    // response onto this key, so mounting first would fetch redundantly.
-    // Anonymous visitors have no viewer to fetch (the read would 401).
+    // Wait for the bootstrap, which mirrors the session's /api/v3/user onto this
+    // key; mounting first would refetch. Anonymous reads would 401.
     enabled: bootstrapSettled && signedIn,
   });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
-  // github.com hides triage/close controls the viewer cannot use: closing,
-  // reopening and title-editing need write access OR issue authorship (GitHub
-  // lets authors close/reopen their own issues). While permissions load, the
-  // neutral (hidden) state renders so nothing 403-able flashes in.
+  // Close/reopen/edit need write access OR issue authorship (authors may
+  // close/reopen their own). Hidden while permissions load so nothing flashes in.
   const { canPush } = useRepoPermissions(owner, repo);
   const isIssueAuthor = viewerLogin !== null && viewerLogin === issue?.user?.login;
   const canClose = canPush || isIssueAuthor;
@@ -1002,12 +975,11 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
     qc.invalidateQueries({ queryKey: ["issue-count-exact", owner, repo] });
   };
   const [closeReason, setCloseReason] = useState<"completed" | "not_planned">("completed");
-  // The comment box's draft lives here so "Close with comment" can post it
-  // together with the state change (github.com's single-click behaviour).
+  // Draft lives here so "Close with comment" posts it with the state change.
   const [commentDraft, setCommentDraft] = useState("");
   const stateMut = useMutation({
     mutationFn: async () => {
-      // github.com posts the pending comment first, then the state change.
+      // Post the pending comment before the state change, as github.com does.
       if (issue?.state === "open" && commentDraft.trim()) {
         await createIssueComment(owner, repo, number, commentDraft);
       }
@@ -1022,7 +994,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
     },
     onSuccess: () => {
       setCommentDraft("");
-      // Close-with-comment posts the composer draft; drop the stored copy too.
+      // Drop the stored composer draft too.
       clearComposerDraft(issueCommentDraftKey(owner, repo, number));
       invalidateIssue();
       qc.invalidateQueries({ queryKey: ["issue-timeline", owner, repo, number] });
@@ -1030,7 +1002,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
   });
   const toggleTaskMut = useMutation({
     mutationFn: (body: string) => updateIssue(owner, repo, number, { body }),
-    // On failure re-fetch so the optimistic checkbox reverts to the persisted body.
+    // Re-fetch so a failed toggle reverts to the persisted body.
     onSettled: invalidateIssue,
   });
   const [editing, setEditing] = useState(false);
@@ -1063,8 +1035,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
   if (isLoading || !issue) return <Spinner label={`loading issue #${number}`} />;
 
   const open = issue.state === "open";
-  // Participants: the opener plus everyone who commented or reviewed —
-  // derived from the timeline so PR-style events count too.
+  // Participants: opener plus everyone who commented or reviewed.
   const participants = Array.from(
     new Set(
       [
@@ -1261,10 +1232,8 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
 
 const MAX_PINNED = 3;
 
-// One GraphQL round-trip serves both the actions menu (isPinned + pin budget)
-// and the sidebar's Development section (closing PRs): the two components
-// share this key + fetcher, so the page issues a single request where it used
-// to issue two.
+// Shared key + fetcher for the actions menu (isPinned + pin budget) and the
+// sidebar Development section (closing PRs): one GraphQL request, not two.
 interface IssueGraphQLMeta {
   repository?: {
     issue?: {
@@ -1308,18 +1277,14 @@ function IssueActionsMenu({
   const [deleting, setDeleting] = useState(false);
   const dismissRef = useDismiss<HTMLDivElement>(openMenu, () => setOpenMenu(false));
 
-  // github.com's viewer-role rules for this menu: pin/transfer/convert need
-  // write access, delete needs repo admin. When neither applies the whole
-  // kebab is hidden (rendered below, after all hooks have run).
+  // Menu roles: pin/transfer/convert need write access, delete needs admin.
+  // Kebab hidden when neither applies.
   const { isAdmin, canPush } = useRepoPermissions(owner, repo);
 
-  // Convert-to-discussion is offered only when the repo has discussions
-  // enabled — derived from the repo payload already loaded for this page,
-  // never probed.
+  // Convert-to-discussion only when discussions are enabled; read off the
+  // already-loaded repo payload, never probed.
   const canConvert = canPush && repoDetail?.has_discussions === true;
 
-  // Pin state + how many pins the repo has left (GitHub caps pins at 3).
-  // Shares one GraphQL request with the Development section via the key.
   // GraphQL refuses anonymous callers; the menu is hidden signed-out anyway.
   const signedIn = useSignedIn();
   const pinStateQ = useQuery({
@@ -1346,7 +1311,7 @@ function IssueActionsMenu({
     },
   });
 
-  // Delete is repo-admin only (github.com hides it from everyone else).
+  // Delete is repo-admin only.
   const canDelete = isAdmin;
 
   const itemStyle = {
@@ -1361,8 +1326,7 @@ function IssueActionsMenu({
     cursor: "pointer",
   } as const;
 
-  // No item applies (read-only viewer, or permissions still loading): no
-  // kebab at all — github.com shows this menu only to collaborators.
+  // No item applies (read-only viewer, or permissions loading): no kebab.
   if (!canPush && !canDelete) return null;
 
   return (
@@ -1472,9 +1436,8 @@ function IssueActionsMenu({
   );
 }
 
-// The GraphQL DiscussionCategory id is the category's node id
-// (store.DiscussionCategoryNodeID: "DGC_kgDO%08d"); the /ui-data convert
-// endpoint takes the numeric store id, which is the node id's trailing digits.
+// The convert endpoint takes the numeric store id — the category node id's
+// trailing digits (store.DiscussionCategoryNodeID: "DGC_kgDO%08d").
 function discussionCategoryDatabaseId(nodeId: string): number | null {
   const digits = /(\d+)$/.exec(nodeId)?.[1];
   return digits ? parseInt(digits, 10) : null;
@@ -1495,8 +1458,7 @@ function ConvertToDiscussionDialog({
   const qc = useQueryClient();
   const [category, setCategory] = useState<string>("");
 
-  // Same key + fetcher DiscussionsPage uses, so a visited Discussions tab
-  // makes this list a cache hit.
+  // Share DiscussionsPage's key + fetcher for a cache hit.
   const categoriesQ = useQuery({
     queryKey: ["discussion-categories", owner, repo],
     queryFn: ({ signal }) => fetchDiscussionCategories(owner, repo, signal),
@@ -1511,8 +1473,7 @@ function ConvertToDiscussionDialog({
         { category_id: categoryId },
       ),
     onSuccess: (d) => {
-      // The conversion closed the issue as not_planned and recorded a
-      // converted_to_discussion timeline event server-side.
+      // The conversion closed the issue as not_planned server-side.
       void qc.invalidateQueries({ queryKey: ["issue", owner, repo, issue.number] });
       void qc.invalidateQueries({ queryKey: ["issue-timeline", owner, repo, issue.number] });
       void qc.invalidateQueries({ queryKey: ["issues", owner, repo] });
@@ -1732,19 +1693,16 @@ function DeleteIssueDialog({
   );
 }
 
-// The issue "Development" section: the pull requests that will close this issue
-// (github.com's "successfully merging a pull request may close this issue"),
-// via the GraphQL Issue.closedByPullRequestsReferences field.
+// Development section: PRs that will close this issue, via GraphQL
+// Issue.closedByPullRequestsReferences.
 interface ClosedByPR {
   number: number;
   title: string;
   state?: string;
 }
 function IssueDevelopmentSection({ owner, repo, number }: { owner: string; repo: string; number: number }) {
-  // Same key + fetcher as the actions menu's pin-state query: TanStack Query
-  // deduplicates the two observers into one GraphQL request per issue.
-  // GraphQL refuses anonymous callers, so signed out this renders its empty
-  // state without fetching.
+  // Same key + fetcher as the actions menu's pin-state query — deduped into one
+  // request. GraphQL refuses anonymous callers, so signed out renders empty.
   const signedIn = useSignedIn();
   const q = useQuery({
     queryKey: ["issue-pin-state", owner, repo, number],
@@ -1783,8 +1741,7 @@ function IssueDevelopmentSection({ owner, repo, number }: { owner: string; repo:
 function LabelsView({ owner, repo }: { owner: string; repo: string }) {
   const counts = useSeededOpenCounts(owner, repo);
   const qc = useQueryClient();
-  // Label management (create/edit/delete) needs write access — github.com
-  // shows read-only labels to everyone else.
+  // Label create/edit/delete needs write access; others see read-only labels.
   const { canPush } = useRepoPermissions(owner, repo);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -1952,7 +1909,7 @@ function LabelDialog({
 function MilestonesView({ owner, repo }: { owner: string; repo: string }) {
   const counts = useSeededOpenCounts(owner, repo);
   const qc = useQueryClient();
-  // Milestone management (create/close/reopen/delete) needs write access.
+  // Milestone create/close/reopen/delete needs write access.
   const { canPush } = useRepoPermissions(owner, repo);
   const [state, setState] = useState<"open" | "closed">("open");
   const [error, setError] = useState<string | null>(null);

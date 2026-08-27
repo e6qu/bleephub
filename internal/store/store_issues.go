@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-// IssueLabel represents a GitHub issue label (named IssueLabel to avoid
-// collision with the agent Label type in store.go).
+// IssueLabel is named to avoid collision with the agent Label type in store.go.
 type IssueLabel struct {
 	ID          int
 	NodeID      string
@@ -20,9 +19,8 @@ type IssueLabel struct {
 	CreatedAt   time.Time
 }
 
-// MilestoneState is a milestone's state; GitHub has only open and closed. A
-// typed string marshals to JSON identically to a plain string. (The "all"
-// filter value used by list endpoints is not a state and stays a plain string.)
+// MilestoneState is a milestone's state; GitHub has only open and closed. (The
+// "all" list filter is not a state and stays a plain string.)
 type MilestoneState string
 
 const (
@@ -30,7 +28,6 @@ const (
 	MilestoneStateClosed MilestoneState = "closed"
 )
 
-// Milestone represents a GitHub milestone.
 type Milestone struct {
 	ID          int
 	NodeID      string
@@ -47,9 +44,8 @@ type Milestone struct {
 }
 
 // LockReason is why a conversation is locked. GitHub accepts only these values
-// (lowercase kebab-case in REST; the GraphQL enum is uppercased when emitted).
-// Typing the field keeps the documented set from drifting into free text. The
-// empty value means "locked without a stated reason".
+// (lowercase kebab-case in REST, uppercased in the GraphQL enum). Empty means
+// locked without a stated reason.
 type LockReason string
 
 const (
@@ -60,7 +56,6 @@ const (
 	LockReasonSpam      LockReason = "spam"
 )
 
-// Issue represents a GitHub issue.
 type Issue struct {
 	ID               int
 	NodeID           string
@@ -82,20 +77,15 @@ type Issue struct {
 	ClosedAt         *time.Time
 	PinnedAt         *time.Time // non-nil while pinned to the repo issues list; doubles as the pin order
 	PinnedByID       int        // user who pinned the issue; 0 when not pinned
-	// LinkedBranches are the branches recorded as the work on this issue; see
-	// linked_branches.go for why the association lives here.
+	// LinkedBranches are the branches recorded as work on this issue; see linked_branches.go.
 	LinkedBranches []LinkedBranch
-	// DuplicateOfID is the issue this one was closed as a duplicate of, set by
-	// closing with a duplicate named and cleared by unmarkIssueAsDuplicate.
+	// DuplicateOfID is the issue this one was closed as a duplicate of (0 = none).
 	DuplicateOfID int
 }
 
-// Comment represents a conversation comment on an issue or PR. Real
-// GitHub stores both in the same table because PRs are issues internally;
-// bleephub mirrors that by discriminating via ParentType ("issue" or
-// "pull_request"). The legacy field name IssueID is preserved for
-// existing call sites and now holds the issue *or* PR database ID
-// depending on ParentType.
+// Comment is a conversation comment on an issue or PR. GitHub stores both in
+// one table (PRs are issues internally); ParentType discriminates and IssueID
+// holds the issue or PR database ID accordingly.
 type Comment struct {
 	ID              int
 	NodeID          string
@@ -124,14 +114,11 @@ func cloneComment(comment *Comment) *Comment {
 	return &copy
 }
 
-// IssueEvent represents an event in an issue's or a pull request's
-// timeline. The Event field matches the GitHub issue-event type names used
-// by the REST API ("opened", "closed", "reopened", "locked", "unlocked",
-// "commented", "labeled", "unlabeled", "assigned", "unassigned",
-// "review_requested", "review_request_removed", "merged", ...).
-// ParentType says which ID space IssueID refers to: "issue" (st.Issues) or
-// "pull_request" (st.PullRequests) — issues and PRs share the per-repo
-// number sequence but have independent global ID sequences.
+// IssueEvent is an event in an issue's or PR's timeline. Event matches GitHub's
+// REST issue-event type names ("opened", "closed", "labeled", ...). ParentType
+// selects the ID space for IssueID — "issue" (st.Issues) or "pull_request"
+// (st.PullRequests): the two share a per-repo number sequence but have
+// independent global ID sequences.
 type IssueEvent struct {
 	ID                  int
 	NodeID              string
@@ -154,11 +141,9 @@ type IssueEvent struct {
 	RenameTo            string
 }
 
-// buildIssueEventLocked creates and registers an IssueEvent in memory with the
-// given parent type, but does not persist it. Callers set any optional fields
-// and then call persistIssueEventLocked exactly once, so the durable row is
-// never first written under the wrong parent type and rewritten (a crash in
-// that window used to file a pull-request event against an unrelated issue).
+// buildIssueEventLocked registers an in-memory IssueEvent but does not persist
+// it. Callers set optional fields then persist once, so the durable row is
+// never first written under the wrong parent type and rewritten. Callers hold st.Mu.
 func (st *Store) buildIssueEventLocked(repoID, issueID, actorID int, event, parentType string) *IssueEvent {
 	e := &IssueEvent{
 		ID:         st.NextIssueEventID,
@@ -181,19 +166,16 @@ func (st *Store) persistIssueEventLocked(e *IssueEvent) {
 	}
 }
 
-// recordIssueEventBatchLocked builds a plain issue-parented IssueEvent and
-// stages its persist into batch instead of committing its own transaction, so
-// the event commits with the issue row it describes in one transaction
-// (STORE-001/002). Callers hold st.Mu.
+// recordIssueEventBatchLocked builds an issue-parented IssueEvent and stages its
+// persist into batch so it commits with the issue row (STORE-001/002). Callers hold st.Mu.
 func (st *Store) recordIssueEventBatchLocked(batch *PersistBatch, repoID, issueID, actorID int, event string) *IssueEvent {
 	e := st.buildIssueEventLocked(repoID, issueID, actorID, event, "issue")
 	batch.Put("issue_events", strconv.Itoa(e.ID), e)
 	return e
 }
 
-// recordPullRequestEventLocked creates an IssueEvent attached to a pull
-// request while st.Mu is already held. commitID and requestedReviewerID are
-// optional (zero-valued when the event type carries neither).
+// recordPullRequestEventLocked attaches an IssueEvent to a PR; callers hold
+// st.Mu. commitID and requestedReviewerID are optional.
 func (st *Store) recordPullRequestEventLocked(repoID, prID, actorID int, event, commitID string, requestedReviewerID int) *IssueEvent {
 	e := st.buildIssueEventLocked(repoID, prID, actorID, event, "pull_request")
 	e.CommitID = commitID
@@ -202,10 +184,9 @@ func (st *Store) recordPullRequestEventLocked(repoID, prID, actorID int, event, 
 	return e
 }
 
-// recordPullRequestEventBatchLocked builds a pull-request IssueEvent and stages
-// its persist into batch instead of committing its own transaction, so a
-// multi-event mutation (e.g. requesting several reviewers) commits every event
-// with the pull-request row atomically (STORE-001/002). Callers hold st.Mu.
+// recordPullRequestEventBatchLocked builds a PR IssueEvent and stages its
+// persist into batch so a multi-event mutation commits every event with the PR
+// row atomically (STORE-001/002). Callers hold st.Mu.
 func (st *Store) recordPullRequestEventBatchLocked(batch *PersistBatch, repoID, prID, actorID int, event, commitID string, requestedReviewerID int) {
 	e := st.buildIssueEventLocked(repoID, prID, actorID, event, "pull_request")
 	e.CommitID = commitID
@@ -213,8 +194,7 @@ func (st *Store) recordPullRequestEventBatchLocked(batch *PersistBatch, repoID, 
 	batch.Put("issue_events", strconv.Itoa(e.ID), e)
 }
 
-// RecordPullRequestEvent creates a public issue event attached to a pull
-// request ("merged", "closed", "reopened", "review_requested", ...).
+// RecordPullRequestEvent records a public issue event attached to a PR.
 func (st *Store) RecordPullRequestEvent(repoID, prID, actorID int, event, commitID string, requestedReviewerID int) *IssueEvent {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -222,9 +202,8 @@ func (st *Store) RecordPullRequestEvent(repoID, prID, actorID int, event, commit
 }
 
 // recordIssueEventWithIDsBatchLocked builds an issue event and stages its
-// persist into batch instead of committing its own transaction, so a multi-event
-// mutation (e.g. relabeling an issue) commits every event with the issue row in
-// one transaction (STORE-001/002). Callers hold st.Mu.
+// persist into batch so a multi-event mutation commits every event with the
+// issue row (STORE-001/002). Callers hold st.Mu.
 func (st *Store) recordIssueEventWithIDsBatchLocked(batch *PersistBatch, repoID, issueID, actorID int, event string, labelID, assigneeID, assignerID, milestoneID, commentID int) {
 	e := st.buildIssueEventLocked(repoID, issueID, actorID, event, "issue")
 	e.LabelID = labelID
@@ -235,9 +214,9 @@ func (st *Store) recordIssueEventWithIDsBatchLocked(batch *PersistBatch, repoID,
 	batch.Put("issue_events", strconv.Itoa(e.ID), e)
 }
 
-// RecordIssueEvent creates a public issue event. The payload map may contain
-// optional related IDs using the same keys GitHub uses: label_id, assignee_id,
-// assigner_id, milestone_id, comment_id, commit_id, commit_url.
+// RecordIssueEvent records a public issue event. payload may carry optional
+// related IDs under GitHub's keys: label_id, assignee_id, assigner_id,
+// milestone_id, comment_id, commit_id, commit_url.
 func (st *Store) RecordIssueEvent(repoID, issueID, actorID int, event string, payload map[string]interface{}) *IssueEvent {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -245,11 +224,10 @@ func (st *Store) RecordIssueEvent(repoID, issueID, actorID int, event string, pa
 }
 
 // RecordIssueOrPREvent records a timeline event against whichever of the issue
-// or pull request in repoID carries `number`, stamping the correct ParentType.
-// Shared issue+PR endpoints (lock/unlock) must use this rather than
-// RecordIssueEvent, which always parents to an issue — a PR event parented to
-// "issue" is filtered out of the PR timeline and can collide into an unrelated
-// issue's events, since the two ID spaces are independent.
+// or PR in repoID carries `number`, stamping the correct ParentType. Shared
+// issue+PR endpoints (lock/unlock) must use this, not RecordIssueEvent: a PR
+// event parented to "issue" is dropped from the PR timeline and can collide
+// into an unrelated issue's events.
 func (st *Store) RecordIssueOrPREvent(repoID, number, actorID int, event string, payload map[string]interface{}) *IssueEvent {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -277,11 +255,8 @@ func (st *Store) RecordIssueOrPREvent(repoID, number, actorID int, event string,
 }
 
 // recordEventLocked builds a complete IssueEvent from payload and persists it in
-// one write. Callers hold st.Mu. parentType is "issue" or "pull_request".
+// one write (STORE-001/002). Callers hold st.Mu. parentType is "issue" or "pull_request".
 func (st *Store) recordEventLocked(repoID, parentID, actorID int, event, parentType string, payload map[string]interface{}) *IssueEvent {
-	// Build the event fully before persisting so the row reaches the database
-	// exactly once, complete, instead of a bare put followed by a re-put with
-	// the string fields filled in (STORE-001/002).
 	e := st.buildIssueEventLocked(repoID, parentID, actorID, event, parentType)
 	e.LabelID = intFromPayload(payload, "label_id")
 	e.AssigneeID = intFromPayload(payload, "assignee_id")
@@ -307,8 +282,7 @@ func (st *Store) recordEventLocked(repoID, parentID, actorID int, event, parentT
 	return e
 }
 
-// intFromPayload extracts an int from a payload map, tolerating float64
-// (the default JSON number type) and int.
+// intFromPayload extracts an int from payload, tolerating float64 (JSON's default) and int.
 func intFromPayload(payload map[string]interface{}, key string) int {
 	v, ok := payload[key]
 	if !ok {
@@ -329,11 +303,9 @@ func intFromPayload(payload map[string]interface{}, key string) int {
 	return 0
 }
 
-// ListIssueEvents returns issue events for a repo, optionally filtered by
-// issue ID (pass 0 to get all repo issue events, pull-request events
-// included — GitHub's repo-level events listing spans both). Per-issue
-// listings exclude pull-request events: a PR's global ID can collide with
-// an issue's. Results are ordered by event ID so pagination is stable.
+// ListIssueEvents returns a repo's issue events, ordered by event ID. issueID 0
+// spans all events including PR events (GitHub's repo-level listing does too); a
+// specific issueID excludes PR events, whose global IDs can collide with issues'.
 func (st *Store) ListIssueEvents(repoID, issueID int) []*IssueEvent {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -351,8 +323,7 @@ func (st *Store) ListIssueEvents(repoID, issueID int) []*IssueEvent {
 	return snapshotSlice(events)
 }
 
-// ListPullRequestEvents returns the issue events attached to a pull
-// request, ordered by event ID.
+// ListPullRequestEvents returns a PR's issue events, ordered by event ID.
 func (st *Store) ListPullRequestEvents(repoID, prID int) []*IssueEvent {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -367,16 +338,14 @@ func (st *Store) ListPullRequestEvents(repoID, prID int) []*IssueEvent {
 	return snapshotSlice(events)
 }
 
-// ListRepoIssueEvents returns all issue events for a repository.
 func (st *Store) ListRepoIssueEvents(repoID int) []*IssueEvent {
 	return snapshotSlice(st.ListIssueEvents(repoID, 0))
 }
 
-// GetIssueEvent returns an issue event by global ID.
+// GetIssueEvent returns a detached copy of an issue event by global ID (STORE-021).
 func (st *Store) GetIssueEvent(id int) *IssueEvent {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// A copy so a reader can't mutate the stored event (STORE-021); all-value.
 	ev := st.IssueEvents[id]
 	if ev == nil {
 		return nil
@@ -387,25 +356,17 @@ func (st *Store) GetIssueEvent(id int) *IssueEvent {
 
 // --- Label CRUD ---
 
-// defaultRepoLabel is one entry of the label set GitHub seeds into a new
-// repository. Name, colour and description are GitHub's own values, verified
-// against the `default: true` rows of a live repository's
-// GET /repos/{owner}/{repo}/labels.
+// defaultRepoLabel is one entry of GitHub's seeded-label set, using GitHub's own
+// name/color/description values.
 type defaultRepoLabel struct {
 	name        string
 	color       string
 	description string
 }
 
-// defaultRepoLabels is the nine-label set every repository GitHub creates
-// starts with, in the order GitHub creates them (which is the order the labels
-// endpoint returns, since it orders by id). They are reported with
-// `"default": true`, which is what distinguishes them from labels a user made.
-//
-// A fork gets this same set rather than a copy of the parent's labels: a fork
-// of a repository carrying extra custom labels lists exactly these nine.
-// Generating from a template likewise produces a new repository with this set,
-// because only the template's files and branches carry over.
+// defaultRepoLabels is the nine-label set GitHub seeds into every new repository,
+// in creation (= id, = listing) order, reported with `"default": true`. Forks
+// and template-generated repos get this same set, not a copy of the parent's labels.
 var defaultRepoLabels = []defaultRepoLabel{
 	{"bug", "d73a4a", "Something isn't working"},
 	{"documentation", "0075ca", "Improvements or additions to documentation"},
@@ -418,9 +379,9 @@ var defaultRepoLabels = []defaultRepoLabel{
 	{"wontfix", "ffffff", "This will not be worked on"},
 }
 
-// ensureDefaultLabelsBatchLocked seeds a new repository with GitHub's default
-// labels, staging their persist into the caller's transaction so the repo row
-// and its labels commit together (STORE-001/002). Callers hold st.Mu.
+// ensureDefaultLabelsBatchLocked seeds a new repo with GitHub's default labels,
+// staging their persist into batch so repo and labels commit together
+// (STORE-001/002). Callers hold st.Mu.
 func (st *Store) ensureDefaultLabelsBatchLocked(batch *PersistBatch, repoID int) {
 	now := st.CurrentTime()
 	for _, d := range defaultRepoLabels {
@@ -440,12 +401,11 @@ func (st *Store) ensureDefaultLabelsBatchLocked(batch *PersistBatch, repoID int)
 	}
 }
 
-// CreateLabel creates a new label in the given repository.
+// CreateLabel creates a label in the repo, or returns nil on a duplicate name.
 func (st *Store) CreateLabel(repoID int, name, description, color string) *IssueLabel {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	// Check for duplicate name in repo
 	for _, l := range st.Labels {
 		if l.RepoID == repoID && l.Name == name {
 			return nil
@@ -470,12 +430,10 @@ func (st *Store) CreateLabel(repoID int, name, description, color string) *Issue
 	return label
 }
 
-// GetLabel returns a label by global ID.
+// GetLabel returns a detached copy of a label by global ID (STORE-021).
 func (st *Store) GetLabel(id int) *IssueLabel {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// A copy so a reader can't mutate the stored label through the getter
-	// (STORE-021); IssueLabel is all-value. Edits go through UpdateLabel by id.
 	lbl := st.Labels[id]
 	if lbl == nil {
 		return nil
@@ -484,7 +442,6 @@ func (st *Store) GetLabel(id int) *IssueLabel {
 	return &clone
 }
 
-// GetLabelByName returns a label by repo and name.
 func (st *Store) GetLabelByName(repoID int, name string) *IssueLabel {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -497,7 +454,7 @@ func (st *Store) GetLabelByName(repoID int, name string) *IssueLabel {
 	return nil
 }
 
-// ListLabels returns all labels for a repository.
+// ListLabels returns a repository's labels in creation order.
 func (st *Store) ListLabels(repoID int) []*IssueLabel {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -507,14 +464,12 @@ func (st *Store) ListLabels(repoID int) []*IssueLabel {
 			labels = append(labels, l)
 		}
 	}
-	// Ascending id is creation order, which is the order GitHub's labels
-	// endpoint returns; map iteration alone would shuffle the list on every
-	// call once a repository holds more than one label.
+	// Ascending id is creation order, which GitHub's labels endpoint returns.
 	sort.Slice(labels, func(i, j int) bool { return labels[i].ID < labels[j].ID })
 	return snapshotSlice(labels)
 }
 
-// UpdateLabel applies a mutation function to a label.
+// UpdateLabel applies fn to a label. Returns false when it does not exist.
 func (st *Store) UpdateLabel(id int, fn func(*IssueLabel)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -529,15 +484,14 @@ func (st *Store) UpdateLabel(id int, fn func(*IssueLabel)) bool {
 	return true
 }
 
-// DeleteLabel removes a label and detaches it from all issues.
+// DeleteLabel removes a label and detaches it from every issue in one
+// transaction, so no issue persists referencing a deleted label.
 func (st *Store) DeleteLabel(id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	if _, ok := st.Labels[id]; !ok {
 		return false
 	}
-	// One transaction: the label delete and every issue it is removed from
-	// commit together, so no issue can persist referencing a deleted label.
 	batch := NewPersistBatch(st.Persist)
 	delete(st.Labels, id)
 	batch.Delete("labels", strconv.Itoa(id))
@@ -558,8 +512,7 @@ func (st *Store) DeleteLabel(id int) bool {
 
 // --- Milestone CRUD ---
 
-// CreateMilestone creates a new milestone in the given repository on
-// behalf of the given creator.
+// CreateMilestone creates a milestone in the repo on behalf of creatorID.
 func (st *Store) CreateMilestone(repoID, creatorID int, title, description, state string, dueOn *time.Time) *Milestone {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -596,9 +549,7 @@ func (st *Store) CreateMilestone(repoID, creatorID int, title, description, stat
 	return ms
 }
 
-// GetMilestone returns a milestone by global ID.
-// cloneMilestone returns a copy safe to hand outside the store lock
-// (STORE-021): DueOn and ClosedAt are the only reference fields.
+// cloneMilestone returns a detached copy safe outside the store lock (STORE-021).
 func cloneMilestone(m *Milestone) *Milestone {
 	if m == nil {
 		return nil
@@ -621,7 +572,6 @@ func (st *Store) GetMilestone(id int) *Milestone {
 	return cloneMilestone(st.Milestones[id])
 }
 
-// GetMilestoneByNumber returns a milestone by repo and number.
 func (st *Store) GetMilestoneByNumber(repoID, number int) *Milestone {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -647,14 +597,12 @@ func (st *Store) ListMilestones(repoID int, state string) []*Milestone {
 		}
 		milestones = append(milestones, ms)
 	}
-	// Map iteration order is random; without a sort the milestones endpoint
-	// answered two identical requests in different orders once a repo had a
-	// second milestone. Number order matches creation order.
+	// Number order (= creation order) gives a stable listing; map order is random.
 	sort.Slice(milestones, func(i, j int) bool { return milestones[i].Number < milestones[j].Number })
 	return snapshotMilestones(milestones)
 }
 
-// UpdateMilestone applies a mutation function to a milestone.
+// UpdateMilestone applies fn to a milestone. Returns false when it does not exist.
 func (st *Store) UpdateMilestone(id int, fn func(*Milestone)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -670,15 +618,14 @@ func (st *Store) UpdateMilestone(id int, fn func(*Milestone)) bool {
 	return true
 }
 
-// DeleteMilestone removes a milestone and detaches it from all issues.
+// DeleteMilestone removes a milestone and detaches it from every issue in one
+// transaction, so no issue persists referencing a deleted milestone.
 func (st *Store) DeleteMilestone(id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	if _, ok := st.Milestones[id]; !ok {
 		return false
 	}
-	// One transaction: the milestone delete and every issue it is detached from
-	// commit together, so no issue can persist referencing a deleted milestone.
 	batch := NewPersistBatch(st.Persist)
 	delete(st.Milestones, id)
 	batch.Delete("milestones", strconv.Itoa(id))
@@ -696,7 +643,6 @@ func (st *Store) DeleteMilestone(id int) bool {
 
 // --- Issue CRUD ---
 
-// CreateIssue creates a new issue in the given repository.
 func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs, assigneeIDs []int, milestoneID int) *Issue {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -733,8 +679,7 @@ func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs,
 	repo.NextIssueNumber++
 	st.Issues[issue.ID] = issue
 	st.indexIssueLocked(issue)
-	// One transaction: the issue row and its "opened" event commit together
-	// (STORE-001/002).
+	// Issue row and "opened" event commit together (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("issues", strconv.Itoa(issue.ID), issue)
 	st.recordIssueEventBatchLocked(batch, repoID, issue.ID, authorID, "opened")
@@ -745,9 +690,7 @@ func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs,
 }
 
 // indexIssueLocked records the issue in the per-repo secondary indexes so
-// GetIssueByNumber and ListIssues resolve in O(issues-in-repo) instead of a
-// full scan of every issue in the store, and the creation-ordered listing
-// needs no per-request sort. Caller holds st.Mu.
+// lookups and creation-ordered listings avoid a full store scan. Caller holds st.Mu.
 func (st *Store) indexIssueLocked(issue *Issue) {
 	m := st.IssuesByRepo[issue.RepoID]
 	if m == nil {
@@ -755,11 +698,9 @@ func (st *Store) indexIssueLocked(issue *Issue) {
 		st.IssuesByRepo[issue.RepoID] = m
 	}
 	m[issue.Number] = issue
-	// Keep the per-repo creation-order slice sorted by (CreatedAt, Number)
-	// ascending. Insertion sorts because the load path replays issues in
-	// arbitrary bucket-key order; live creation appends at the end in O(1)
-	// comparisons. Both keys are immutable after creation and issues never
-	// change repos, so the slice never needs re-sorting.
+	// Insertion-sort into the per-repo (CreatedAt, Number) order slice: the load
+	// path replays in arbitrary order, live creation appends in O(1). Both keys
+	// are immutable, so the slice never needs re-sorting.
 	order := st.IssueOrderByRepo[issue.RepoID]
 	pos := sort.Search(len(order), func(i int) bool {
 		if !order[i].CreatedAt.Equal(issue.CreatedAt) {
@@ -773,8 +714,7 @@ func (st *Store) indexIssueLocked(issue *Issue) {
 	st.IssueOrderByRepo[issue.RepoID] = order
 }
 
-// unindexIssueLocked removes the issue from the per-repo secondary indexes.
-// Caller holds st.Mu.
+// unindexIssueLocked removes the issue from the per-repo indexes. Caller holds st.Mu.
 func (st *Store) unindexIssueLocked(issue *Issue) {
 	if m := st.IssuesByRepo[issue.RepoID]; m != nil {
 		delete(m, issue.Number)
@@ -794,11 +734,8 @@ func (st *Store) unindexIssueLocked(issue *Issue) {
 	}
 }
 
-// GetIssue returns an issue by global ID.
-// cloneIssue returns a deep copy safe to hand outside the store lock
-// (STORE-021): AssigneeIDs, LabelIDs and ClosedAt are the reference fields.
-// Issue writes go through the keyed UpdateIssue(id, fn); the getter's callers
-// only read.
+// cloneIssue returns a deep copy safe outside the store lock (STORE-021);
+// writes go through the keyed UpdateIssue(id, fn).
 func cloneIssue(i *Issue) *Issue {
 	if i == nil {
 		return nil
@@ -830,7 +767,6 @@ func (st *Store) GetIssue(id int) *Issue {
 	return cloneIssue(st.Issues[id])
 }
 
-// GetIssueByNumber returns an issue by repo ID and number.
 func (st *Store) GetIssueByNumber(repoID, number int) *Issue {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -838,8 +774,7 @@ func (st *Store) GetIssueByNumber(repoID, number int) *Issue {
 }
 
 // listIssuesOrderedLocked returns the repo's live issue pointers filtered by
-// state, in (CreatedAt, Number) ascending order via the maintained per-repo
-// order index. Caller holds st.Mu and must detach before returning results.
+// state in (CreatedAt, Number) order. Caller holds st.Mu and must detach results.
 func (st *Store) listIssuesOrderedLocked(repoID int, state string) []*Issue {
 	order := st.IssueOrderByRepo[repoID]
 	issues := make([]*Issue, 0, len(order))
@@ -852,18 +787,15 @@ func (st *Store) listIssuesOrderedLocked(repoID int, state string) []*Issue {
 	return issues
 }
 
-// ListIssues returns issues for a repository, optionally filtered by state,
-// ordered oldest-created first (number tie-break).
-// State filter matches "OPEN"/"CLOSED"; empty or "all" returns all.
+// ListIssues returns a repo's issues oldest-created first. state matches
+// "OPEN"/"CLOSED"; empty or "all" returns all.
 func (st *Store) ListIssues(repoID int, state string) []*Issue {
 	return st.ListIssuesOrderedByCreation(repoID, state, false)
 }
 
-// ListIssuesOrderedByCreation returns issues for a repository filtered by
-// state and ordered by creation time with the per-repo issue number as the
-// tie-break — ascending, or descending (GitHub's default listing order) when
-// desc is true. The order comes from the maintained per-repo index, so no
-// per-request sort happens. Results are detached snapshots (STORE-021).
+// ListIssuesOrderedByCreation returns a repo's issues by creation time (number
+// tie-break), descending (GitHub's default) when desc is true. Detached
+// snapshots (STORE-021).
 func (st *Store) ListIssuesOrderedByCreation(repoID int, state string, desc bool) []*Issue {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -876,7 +808,7 @@ func (st *Store) ListIssuesOrderedByCreation(repoID int, state string, desc bool
 	return snapshotIssues(issues)
 }
 
-// UpdateIssue applies a mutation function to an issue.
+// UpdateIssue applies fn to an issue. Returns false when it does not exist.
 func (st *Store) UpdateIssue(id int, fn func(*Issue)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -892,8 +824,7 @@ func (st *Store) UpdateIssue(id int, fn func(*Issue)) bool {
 	return true
 }
 
-// issueByRepoKeyAndNumber resolves an issue by its repo key and number while
-// holding the store lock. Returns nil when not found.
+// issueByRepoKeyAndNumber resolves an issue by repo key and number; caller holds st.Mu.
 func (st *Store) issueByRepoKeyAndNumber(repoKey string, number int) *Issue {
 	repo := st.ReposByName[repoKey]
 	if repo == nil {
@@ -902,14 +833,13 @@ func (st *Store) issueByRepoKeyAndNumber(repoKey string, number int) *Issue {
 	return st.IssuesByRepo[repo.ID][number]
 }
 
-// issueByRepoIDAndNumber resolves an issue by its repo ID and number while
-// holding the store lock. Returns nil when not found.
+// issueByRepoIDAndNumber resolves an issue by repo ID and number; caller holds st.Mu.
 func (st *Store) issueByRepoIDAndNumber(repoID, number int) *Issue {
 	return st.IssuesByRepo[repoID][number]
 }
 
-// AddIssueAssignees adds assignees to an issue, returning true when the issue
-// exists. Duplicate IDs are ignored; events are recorded for each addition.
+// AddIssueAssignees adds assignees (ignoring duplicates) with an "assigned"
+// event each. Returns true when the issue exists.
 func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -934,8 +864,7 @@ func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []in
 		}
 	}
 	if added {
-		// One transaction: every assigned event and the issue row commit together
-		// (STORE-001/002).
+		// Events and issue row commit together (STORE-001/002).
 		issue.UpdatedAt = st.CurrentTime()
 		batch.Put("issues", strconv.Itoa(issue.ID), issue)
 		if err := batch.Commit(); err != nil {
@@ -945,8 +874,8 @@ func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []in
 	return true
 }
 
-// RemoveIssueAssignees removes assignees from an issue, returning true when
-// the issue exists. Events are recorded for each removal.
+// RemoveIssueAssignees removes assignees with an "unassigned" event each.
+// Returns true when the issue exists.
 func (st *Store) RemoveIssueAssignees(repoID int, issueNumber int, assigneeIDs []int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -967,8 +896,7 @@ func (st *Store) RemoveIssueAssignees(repoID int, issueNumber int, assigneeIDs [
 		}
 	}
 	if removed {
-		// One transaction: every unassigned event and the issue row commit
-		// together (STORE-001/002).
+		// Events and issue row commit together (STORE-001/002).
 		issue.UpdatedAt = st.CurrentTime()
 		batch.Put("issues", strconv.Itoa(issue.ID), issue)
 		if err := batch.Commit(); err != nil {
@@ -978,8 +906,8 @@ func (st *Store) RemoveIssueAssignees(repoID int, issueNumber int, assigneeIDs [
 	return true
 }
 
-// SetIssueLabels replaces all labels on an issue, recording labeled/unlabeled
-// events for the deltas. Returns true when the issue exists.
+// SetIssueLabels replaces an issue's labels, recording labeled/unlabeled events
+// for the deltas. Returns true when the issue exists.
 func (st *Store) SetIssueLabels(repoID int, issueNumber int, labelIDs []int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -995,9 +923,7 @@ func (st *Store) SetIssueLabels(repoID int, issueNumber int, labelIDs []int, act
 	for _, lid := range labelIDs {
 		newSet[lid] = true
 	}
-	// One transaction: every labeled/unlabeled event and the issue row commit
-	// together, so a crash cannot split the event history from the issue's label
-	// set (STORE-001/002).
+	// Events and issue row commit together (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	for _, lid := range issue.LabelIDs {
 		if !newSet[lid] {
@@ -1009,8 +935,7 @@ func (st *Store) SetIssueLabels(repoID int, issueNumber int, labelIDs []int, act
 			st.recordIssueEventWithIDsBatchLocked(batch, repoID, issue.ID, actorID, "labeled", lid, 0, 0, 0, 0)
 		}
 	}
-	// Clone rather than adopt the caller's slice by reference: the request
-	// handler owns labelIDs and may reuse or mutate it after this returns.
+	// Clone: the caller owns labelIDs and may mutate it after this returns.
 	issue.LabelIDs = append([]int(nil), labelIDs...)
 	issue.UpdatedAt = st.CurrentTime()
 	batch.Put("issues", strconv.Itoa(issue.ID), issue)
@@ -1020,8 +945,7 @@ func (st *Store) SetIssueLabels(repoID int, issueNumber int, labelIDs []int, act
 	return true
 }
 
-// ClearIssueLabels removes every label from an issue, recording an unlabeled
-// event for each previously-attached label.
+// ClearIssueLabels removes every label from an issue with an "unlabeled" event each.
 func (st *Store) ClearIssueLabels(repoID int, issueNumber int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1032,8 +956,7 @@ func (st *Store) ClearIssueLabels(repoID int, issueNumber int, actorID int) bool
 	if len(issue.LabelIDs) == 0 {
 		return true
 	}
-	// One transaction: every unlabeled event and the cleared issue row commit
-	// together (STORE-001/002).
+	// Events and cleared issue row commit together (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	for _, lid := range issue.LabelIDs {
 		st.recordIssueEventWithIDsBatchLocked(batch, repoID, issue.ID, actorID, "unlabeled", lid, 0, 0, 0, 0)
@@ -1047,8 +970,8 @@ func (st *Store) ClearIssueLabels(repoID int, issueNumber int, actorID int) bool
 	return true
 }
 
-// AddIssueLabels adds labels to an issue, returning true when the issue
-// exists. Duplicate IDs are ignored; events are recorded for each addition.
+// AddIssueLabels adds labels (ignoring duplicates) with a "labeled" event each.
+// Returns true when the issue exists.
 func (st *Store) AddIssueLabels(repoKey string, issueNumber int, labelIDs []int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1074,8 +997,7 @@ func (st *Store) AddIssueLabels(repoKey string, issueNumber int, labelIDs []int)
 		}
 	}
 	if added {
-		// One transaction: every labeled event and the issue row commit together
-		// (STORE-001/002).
+		// Events and issue row commit together (STORE-001/002).
 		issue.UpdatedAt = st.CurrentTime()
 		batch.Put("issues", strconv.Itoa(issue.ID), issue)
 		if err := batch.Commit(); err != nil {
@@ -1085,8 +1007,8 @@ func (st *Store) AddIssueLabels(repoKey string, issueNumber int, labelIDs []int)
 	return true
 }
 
-// RemoveIssueLabel removes a single label from an issue by name, returning
-// true when the issue and label exist and the label was attached.
+// RemoveIssueLabel removes a single label from an issue by name. Returns true
+// when the issue and label exist.
 func (st *Store) RemoveIssueLabel(repoKey string, issueNumber int, labelName string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1109,8 +1031,7 @@ func (st *Store) RemoveIssueLabel(repoKey string, issueNumber int, labelName str
 		if lid == label.ID {
 			issue.LabelIDs = append(issue.LabelIDs[:idx], issue.LabelIDs[idx+1:]...)
 			issue.UpdatedAt = st.CurrentTime()
-			// One transaction: the issue row and its unlabeled event commit
-			// together (STORE-001/002).
+			// Issue row and "unlabeled" event commit together (STORE-001/002).
 			batch := NewPersistBatch(st.Persist)
 			batch.Put("issues", strconv.Itoa(issue.ID), issue)
 			st.recordIssueEventWithIDsBatchLocked(batch, repo.ID, issue.ID, 0, "unlabeled", label.ID, 0, 0, 0, 0)
@@ -1135,8 +1056,7 @@ func (st *Store) LockIssue(repoKey string, issueNumber int, lockReason string) b
 	issue.Locked = true
 	issue.ActiveLockReason = LockReason(lockReason)
 	issue.UpdatedAt = st.CurrentTime()
-	// One transaction: the issue row and its "locked" event commit together
-	// (STORE-001/002).
+	// Issue row and "locked" event commit together (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("issues", strconv.Itoa(issue.ID), issue)
 	st.recordIssueEventBatchLocked(batch, issue.RepoID, issue.ID, 0, "locked")
@@ -1157,8 +1077,7 @@ func (st *Store) UnlockIssue(repoKey string, issueNumber int) bool {
 	issue.Locked = false
 	issue.ActiveLockReason = ""
 	issue.UpdatedAt = st.CurrentTime()
-	// One transaction: the issue row and its "unlocked" event commit together
-	// (STORE-001/002).
+	// Issue row and "unlocked" event commit together (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("issues", strconv.Itoa(issue.ID), issue)
 	st.recordIssueEventBatchLocked(batch, issue.RepoID, issue.ID, 0, "unlocked")
@@ -1168,14 +1087,12 @@ func (st *Store) UnlockIssue(repoKey string, issueNumber int) bool {
 	return true
 }
 
-// MaxPinnedIssuesPerRepo mirrors GitHub's cap on issues pinned to a
-// repository's issues list.
+// MaxPinnedIssuesPerRepo mirrors GitHub's cap on pinned issues per repository.
 const MaxPinnedIssuesPerRepo = 3
 
-// PinIssue pins an issue to its repository's issues list on behalf of actorID.
-// Pinning an already-pinned issue is a no-op. GitHub caps pinned issues at
-// three per repository; the count is checked and the pin applied under one
-// lock so two concurrent pins cannot both squeeze under the cap.
+// PinIssue pins an issue on behalf of actorID; already-pinned is a no-op. The
+// cap check and pin happen under one lock so two concurrent pins cannot both
+// squeeze under the cap.
 func (st *Store) PinIssue(issueID, actorID int) error {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1199,8 +1116,7 @@ func (st *Store) PinIssue(issueID, actorID int) error {
 	issue.PinnedAt = &now
 	issue.PinnedByID = actorID
 	issue.UpdatedAt = now
-	// One transaction: the issue row and its "pinned" event commit together
-	// (STORE-001/002).
+	// Issue row and "pinned" event commit together (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("issues", strconv.Itoa(issue.ID), issue)
 	st.recordIssueEventBatchLocked(batch, issue.RepoID, issue.ID, actorID, "pinned")
@@ -1210,9 +1126,8 @@ func (st *Store) PinIssue(issueID, actorID int) error {
 	return nil
 }
 
-// UnpinIssue clears an issue's pinned state on behalf of actorID. It reports
-// whether the issue had been pinned; unpinning an unpinned issue is a no-op
-// (mirroring removeReaction's idempotence). A missing issue reports false.
+// UnpinIssue clears an issue's pinned state on behalf of actorID, reporting
+// whether it had been pinned. Missing or unpinned issue reports false.
 func (st *Store) UnpinIssue(issueID, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1223,8 +1138,7 @@ func (st *Store) UnpinIssue(issueID, actorID int) bool {
 	issue.PinnedAt = nil
 	issue.PinnedByID = 0
 	issue.UpdatedAt = st.CurrentTime()
-	// One transaction: the issue row and its "unpinned" event commit together
-	// (STORE-001/002).
+	// Issue row and "unpinned" event commit together (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("issues", strconv.Itoa(issue.ID), issue)
 	st.recordIssueEventBatchLocked(batch, issue.RepoID, issue.ID, actorID, "unpinned")
@@ -1234,8 +1148,7 @@ func (st *Store) UnpinIssue(issueID, actorID int) bool {
 	return true
 }
 
-// ListPinnedIssues returns the repository's pinned issues in pin order
-// (oldest pin first, the order GitHub shows them).
+// ListPinnedIssues returns a repository's pinned issues, oldest pin first (GitHub's order).
 func (st *Store) ListPinnedIssues(repoID int) []*Issue {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1269,8 +1182,8 @@ func (st *Store) DeleteIssue(issueID int) bool {
 	delete(st.Issues, issueID)
 	st.unindexIssueLocked(issue)
 	batch.Delete("issues", strconv.Itoa(issueID))
-	// The zero repoID keeps the cascade's repo-wide event sweep inert (no
-	// event carries RepoID 0); the issue-scoped clauses do all the work.
+	// repoID 0 keeps the cascade's repo-wide event sweep inert (no event carries
+	// RepoID 0); the issue-scoped clauses do the work.
 	st.deleteRepoIssueAndPullChildrenLocked(batch, 0, map[int]bool{issueID: true}, nil)
 	if err := batch.Commit(); err != nil {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "issues", Key: strconv.Itoa(issueID), Err: err})
@@ -1278,14 +1191,11 @@ func (st *Store) DeleteIssue(issueID int) bool {
 	return true
 }
 
-// TransferIssue moves an issue into targetRepoID, allocating the target
-// repository's next issue number the same way CreateIssue does. Labels are
-// re-matched by name in the target repository (created there when
-// createLabelsIfMissing, dropped otherwise), the milestone and pinned state do
-// not follow the issue, and the issue's existing timeline events are re-homed
-// so its history survives the move. Returns the moved issue, or nil when the
-// issue or target repository is missing or the target is the issue's own
-// repository.
+// TransferIssue moves an issue into targetRepoID with a fresh issue number.
+// Labels re-match by name in the target (created when createLabelsIfMissing,
+// else dropped); milestone and pinned state do not follow; timeline events are
+// re-homed so history survives. Returns nil when the issue or target is missing
+// or the target is the issue's own repo.
 func (st *Store) TransferIssue(issueID, targetRepoID, actorID int, createLabelsIfMissing bool) *Issue {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1298,8 +1208,7 @@ func (st *Store) TransferIssue(issueID, targetRepoID, actorID int, createLabelsI
 		return nil
 	}
 	batch := NewPersistBatch(st.Persist)
-	// Labels belong to a repository, so the source repo's label IDs must not
-	// travel: re-match by name against the target's labels.
+	// Labels are per-repo, so source label IDs must not travel: re-match by name.
 	newLabelIDs := []int{}
 	for _, lid := range issue.LabelIDs {
 		src := st.Labels[lid]
@@ -1337,21 +1246,20 @@ func (st *Store) TransferIssue(issueID, targetRepoID, actorID int, createLabelsI
 	issue.Number = target.NextIssueNumber
 	target.NextIssueNumber++
 	issue.LabelIDs = newLabelIDs
-	issue.MilestoneID = 0 // milestones are per-repo and do not follow the issue
+	issue.MilestoneID = 0 // per-repo, does not follow the issue
 	issue.PinnedAt = nil  // GitHub unpins on transfer
 	issue.PinnedByID = 0
 	issue.UpdatedAt = st.CurrentTime()
 	st.indexIssueLocked(issue)
-	// Re-home the existing timeline so per-issue event listings (filtered by
-	// RepoID) keep showing the issue's history after the move.
+	// Re-home the timeline so per-issue listings (filtered by RepoID) still show history.
 	for _, e := range st.IssueEvents {
 		if e.ParentType == "issue" && e.IssueID == issue.ID && e.RepoID == oldRepoID {
 			e.RepoID = target.ID
 			batch.Put("issue_events", strconv.Itoa(e.ID), e)
 		}
 	}
-	// One transaction: the moved issue row, its re-homed events, any created
-	// labels, and the "transferred" event commit together (STORE-001/002).
+	// Moved issue, re-homed events, created labels, and "transferred" event
+	// commit together (STORE-001/002).
 	batch.Put("issues", strconv.Itoa(issue.ID), issue)
 	st.recordIssueEventBatchLocked(batch, target.ID, issue.ID, actorID, "transferred")
 	if err := batch.Commit(); err != nil {
@@ -1360,8 +1268,7 @@ func (st *Store) TransferIssue(issueID, targetRepoID, actorID int, createLabelsI
 	return cloneIssue(issue)
 }
 
-// ListIssueComments returns all conversation comments for the issue with the
-// given repo key and number.
+// ListIssueComments returns an issue's conversation comments by repo key and number.
 func (st *Store) ListIssueComments(repoKey string, issueNumber int) []*Comment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1378,18 +1285,15 @@ func (st *Store) ListIssueComments(repoKey string, issueNumber int) []*Comment {
 	return snapshotComments(comments)
 }
 
-// GetIssueComment returns a comment by global ID.
 func (st *Store) GetIssueComment(id int) *Comment {
 	return st.GetComment(id)
 }
 
-// DeleteIssueComment removes a comment by id. Returns true if removed.
 func (st *Store) DeleteIssueComment(id int) bool {
 	return st.DeleteComment(id)
 }
 
-// ListRepoIssueComments returns all issue comments across the repo, oldest
-// first.
+// ListRepoIssueComments returns all of a repo's issue comments, oldest first.
 func (st *Store) ListRepoIssueComments(repoID int) []*Comment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1403,8 +1307,7 @@ func (st *Store) ListRepoIssueComments(repoID int) []*Comment {
 	return snapshotComments(comments)
 }
 
-// PinIssueComment marks a comment as pinned. Returns true when the comment
-// exists.
+// PinIssueComment marks a comment pinned. Returns true when it exists.
 func (st *Store) PinIssueComment(commentID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1420,8 +1323,7 @@ func (st *Store) PinIssueComment(commentID int) bool {
 	return true
 }
 
-// UnpinIssueComment clears a comment's pinned flag. Returns true when the
-// comment exists.
+// UnpinIssueComment clears a comment's pinned flag. Returns true when it exists.
 func (st *Store) UnpinIssueComment(commentID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1437,21 +1339,19 @@ func (st *Store) UnpinIssueComment(commentID int) bool {
 	return true
 }
 
-// BuildIssueTimeline returns a synthesized timeline for an issue by
-// interleaving issue events and issue comments ordered by created_at.
+// BuildIssueTimeline synthesizes an issue's timeline by interleaving events and
+// comments by created_at.
 func (st *Store) BuildIssueTimeline(repo *Repo, issueID int, baseURL string) []map[string]interface{} {
-	// ListIssueEvents and ListCommentsFor take st.Mu.RLock themselves;
-	// holding it across the calls would re-acquire the read lock and can
-	// deadlock against a queued writer.
+	// Don't hold st.Mu across these: they RLock themselves, and re-acquiring the
+	// read lock can deadlock against a queued writer.
 	events := st.ListIssueEvents(repo.ID, issueID)
 	comments := st.ListCommentsFor("issue", issueID)
 
 	items := make([]timelineItem, 0, len(events)+len(comments))
 	for _, e := range events {
-		// The comment entries below carry the conversation; GitHub's timeline
-		// has no separate "commented" event row, and rendering the stored one
-		// would duplicate every comment under the event's id (whose reactions
-		// endpoint 404s — comment ids and event ids are different spaces).
+		// Skip stored "commented" events: the comment entries below carry the
+		// conversation, and rendering these would duplicate every comment under
+		// an event id (a different id space, whose reactions endpoint 404s).
 		if e.Event == "commented" {
 			continue
 		}
@@ -1464,7 +1364,7 @@ func (st *Store) BuildIssueTimeline(repo *Repo, issueID int, baseURL string) []m
 		if !items[i].CreatedAt.Equal(items[j].CreatedAt) {
 			return items[i].CreatedAt.Before(items[j].CreatedAt)
 		}
-		// Events before comments at identical timestamps for stability.
+		// Events before comments at equal timestamps, for stability.
 		if items[i].kind != items[j].kind {
 			return items[i].kind == "event"
 		}
@@ -1487,7 +1387,6 @@ func (st *Store) BuildIssueTimeline(repo *Repo, issueID int, baseURL string) []m
 	return out
 }
 
-// timelineItem is a helper used only by BuildIssueTimeline.
 type timelineItem struct {
 	CreatedAt time.Time `json:"-"`
 	kind      string
@@ -1511,16 +1410,13 @@ func (ti timelineItem) Id() int {
 
 // --- Comment CRUD ---
 
-// CreateComment creates a new conversation comment on an issue. Use
-// CreateCommentFor for PR conversation comments — real GitHub stores
-// both in the same table; bleephub mirrors that via ParentType.
+// CreateComment creates a conversation comment on an issue; use CreateCommentFor for PRs.
 func (st *Store) CreateComment(issueID, authorID int, body string) *Comment {
 	return st.CreateCommentFor("issue", issueID, authorID, body)
 }
 
-// CreateCommentFor creates a comment on an issue (parentType="issue") or
-// pull request (parentType="pull_request"). The parent must already
-// exist in the matching store.
+// CreateCommentFor creates a comment on an "issue" or "pull_request" parent,
+// which must already exist. Returns nil otherwise.
 func (st *Store) CreateCommentFor(parentType string, parentID, authorID int, body string) *Comment {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1552,12 +1448,10 @@ func (st *Store) CreateCommentFor(parentType string, parentID, authorID int, bod
 	st.Comments[c.ID] = c
 	st.CommentCounts[CommentCountKey(parentType, parentID)]++
 	st.indexCommentLocked(c)
-	// One transaction: the comment row and its "commented" event commit
-	// together (STORE-001/002).
+	// Comment row and "commented" event commit together (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("comments", strconv.Itoa(c.ID), c)
-	// Record a timeline event for issue comments (PR comments get their own
-	// review-comment machinery elsewhere).
+	// Only issue comments get a timeline event; PR comments use review-comment machinery.
 	if parentType == "issue" {
 		if issue := st.Issues[parentID]; issue != nil {
 			st.recordIssueEventWithIDsBatchLocked(batch, issue.RepoID, issue.ID, authorID, "commented", 0, 0, 0, 0, c.ID)
@@ -1569,20 +1463,18 @@ func (st *Store) CreateCommentFor(parentType string, parentID, authorID int, bod
 	return cloneComment(c)
 }
 
-// ListComments returns all conversation comments for an issue.
 func (st *Store) ListComments(issueID int) []*Comment {
 	return snapshotComments(st.ListCommentsFor("issue", issueID))
 }
 
-// GetComment returns a comment by global ID.
 func (st *Store) GetComment(id int) *Comment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return cloneComment(st.Comments[id])
 }
 
-// CommentRepoID returns the ID of the repository owning the comment's parent
-// issue or pull request, or 0 when the parent no longer exists.
+// CommentRepoID returns the repo ID owning the comment's parent, or 0 when the
+// parent no longer exists.
 func (st *Store) CommentRepoID(c *Comment) int {
 	if c == nil {
 		return 0
@@ -1602,8 +1494,8 @@ func (st *Store) CommentRepoID(c *Comment) int {
 	return 0
 }
 
-// DeleteComment removes a comment by id. Returns true if removed. The comment
-// row and its reactions delete in one transaction (STORE-001/002).
+// DeleteComment removes a comment and its reactions in one transaction
+// (STORE-001/002). Returns true if removed.
 func (st *Store) DeleteComment(id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1633,27 +1525,22 @@ func CommentCountKey(parentType string, parentID int) string {
 	return parentType + "\x1f" + strconv.Itoa(parentID)
 }
 
-// CountCommentsFor returns the number of conversation comments on the given
-// parent (parentType "issue" or "pull_request") via the maintained index,
-// avoiding a full scan of every comment in the store. Caller must NOT hold
-// st.Mu.
+// CountCommentsFor returns the comment count on a parent via the maintained
+// index. Caller must NOT hold st.Mu.
 func (st *Store) CountCommentsFor(parentType string, parentID int) int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return st.CommentCounts[CommentCountKey(parentType, parentID)]
 }
 
-// countCommentsForLocked is the lock-free variant for callers already holding
-// st.Mu (the JSON serializers gather under one lock).
+// CountCommentsForLocked is the variant for callers already holding st.Mu.
 func (st *Store) CountCommentsForLocked(parentType string, parentID int) int {
 	return st.CommentCounts[CommentCountKey(parentType, parentID)]
 }
 
-// ResolveCommentParent resolves the issue or pull request with the given
-// repo + number and returns its kind, global ID, number, and locked flag in a
-// single read-locked pass. Callers must not read the mutable Locked flag off a
-// shared *Issue/*PullRequest pointer themselves — SetIssueOrPRLock mutates it
-// under the write lock, so the read has to happen under st.Mu here.
+// ResolveCommentParent resolves the issue or PR at repo + number, returning its
+// kind, global ID, number, and locked flag in one read-locked pass. Read Locked
+// here rather than off a shared pointer: SetIssueOrPRLock mutates it under the write lock.
 func (st *Store) ResolveCommentParent(repoID, number int) (parentType string, parentID, parentNumber int, locked, found bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1670,10 +1557,8 @@ func (st *Store) ResolveCommentParent(repoID, number int) (parentType string, pa
 	return "", 0, 0, false, false
 }
 
-// SetIssueOrPRLock toggles the locked flag on the issue or PR with the
-// given repo + number. Returns true if a target was found and updated;
-// false when no issue or PR matches. The reason is recorded only when
-// locked=true.
+// SetIssueOrPRLock sets the locked flag on the issue or PR at repo + number
+// (reason recorded only when locked). Returns false when none matches.
 func (st *Store) SetIssueOrPRLock(repoID, number int, locked bool, reason string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1708,9 +1593,8 @@ func (st *Store) SetIssueOrPRLock(repoID, number int, locked bool, reason string
 	return false
 }
 
-// UpdateCommentBody mutates a comment's body and records the edit metadata
-// (LastEditedAt + EditorID). Returns the updated comment or nil if no
-// comment matches the id.
+// UpdateCommentBody sets a comment's body and edit metadata (LastEditedAt,
+// EditorID). Returns the updated comment or nil when no comment matches.
 func (st *Store) UpdateCommentBody(id, editorID int, body string) *Comment {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1729,9 +1613,7 @@ func (st *Store) UpdateCommentBody(id, editorID int, body string) *Comment {
 	return cloneComment(c)
 }
 
-// LookupCommentByNodeID returns the comment with the given GraphQL node ID,
-// or nil if not found. Used by minimize / unminimize mutations that target
-// comments via their global node ID.
+// LookupCommentByNodeID returns the comment with the given GraphQL node ID, or nil.
 func (st *Store) LookupCommentByNodeID(nodeID string) *Comment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1748,10 +1630,9 @@ func (st *Store) LookupCommentByNodeID(nodeID string) *Comment {
 	return nil
 }
 
-// SetCommentMinimization sets or clears a comment's minimization state.
-// reason is one of OFF_TOPIC / OUTDATED / RESOLVED / DUPLICATE / SPAM /
-// ABUSE to minimize; pass an empty string to unminimize. minimizerID is
-// the user who performed the action (ignored when clearing).
+// SetCommentMinimization sets or clears a comment's minimization. reason is
+// OFF_TOPIC / OUTDATED / RESOLVED / DUPLICATE / SPAM / ABUSE to minimize, or
+// empty to unminimize (minimizerID ignored when clearing).
 func (st *Store) SetCommentMinimization(id, minimizerID int, reason string) *Comment {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1772,8 +1653,7 @@ func (st *Store) SetCommentMinimization(id, minimizerID int, reason string) *Com
 	return cloneComment(c)
 }
 
-// ListCommentsFor returns all conversation comments for an issue
-// (parentType="issue") or pull request (parentType="pull_request").
+// ListCommentsFor returns the conversation comments on an "issue" or "pull_request" parent.
 func (st *Store) ListCommentsFor(parentType string, parentID int) []*Comment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1785,10 +1665,9 @@ func (st *Store) ListCommentsFor(parentType string, parentID int) []*Comment {
 	return snapshotComments(comments)
 }
 
-// indexCommentLocked / unindexCommentLocked maintain CommentsByParent alongside
-// Comments and CommentCounts, so a comment's parent can be resolved without
-// scanning every comment in the store. Comment parents are immutable, so no
-// re-indexing is needed on edit. Caller holds st.Mu.
+// indexCommentLocked / unindexCommentLocked maintain CommentsByParent so a
+// parent's comments resolve without a full scan. Parents are immutable, so
+// edits need no re-indexing. Caller holds st.Mu.
 func (st *Store) indexCommentLocked(c *Comment) {
 	key := CommentCountKey(c.ParentType, c.IssueID)
 	st.CommentsByParent[key] = append(st.CommentsByParent[key], c)

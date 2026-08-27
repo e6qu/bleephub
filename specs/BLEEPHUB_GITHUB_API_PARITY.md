@@ -4,7 +4,7 @@ Status: **active generated parity ratchet**. Original audit: 2026-05-12. Last ve
 
 ## Goal
 
-Every Bleephub client surface should behave like GitHub or GitHub Enterprise Server after changing coordinates only:
+Every Bleephub client surface should behave like GitHub or GitHub Enterprise Server after changing coordinates alone:
 
 - REST: `http(s)://<host>/api/v3/...`
 - GraphQL: `http(s)://<host>/api/graphql`
@@ -13,7 +13,7 @@ Every Bleephub client surface should behave like GitHub or GitHub Enterprise Ser
 - GitHub Actions runner protocol: `http(s)://<host>/_apis/...`
 - Web UI: GitHub-shaped information architecture backed by the same public APIs and durable state
 
-GitHub Enterprise Server coordinates are intentional. Official clients already swap their base URL this way.
+The GitHub Enterprise Server coordinates are intentional: official clients already swap their base URL this way.
 
 ## Executable inventory
 
@@ -26,11 +26,11 @@ GitHub Enterprise Server coordinates are intentional. Official clients already s
 - literal GitHub Actions event producers plus the scheduled-workflow implementation and test; and
 - every ledger row, normalized category, severity, and status.
 
-`scripts/parity_inventory.py --check` regenerates the snapshot in memory and fails CI on any drift. `BUGS.md` remains the human-editable source for findings, but its totals and status vocabulary are checked by the same parser. A new route, UI page, resolver, event producer, OpenAPI update, or ledger edit therefore cannot disappear into prose or pass with an outdated coverage claim.
+`scripts/parity_inventory.py --check` regenerates the snapshot in memory and fails CI on any drift. `BUGS.md` remains the human-editable source for findings; the same parser checks its totals and status vocabulary. A new route, UI page, resolver, event producer, OpenAPI update, or ledger edit therefore cannot disappear into prose or pass with an outdated coverage claim.
 
 [`rest-semantic-contracts.json`](rest-semantic-contracts.json) is the companion per-operation semantic matrix. For all 1,216 official operations it records path/query/header parameters and constraints, required request-body fields by media type, documented success and error statuses, security alternatives and scopes, pagination inputs, conditional-request declarations, and mutation obligations for reload persistence, event emission, and failure atomicity. The current pin contains 342 body-bearing operations, 277 required bodies, 283 paginated operations, and 582 state-changing operations.
 
-The matrix deliberately distinguishes a described obligation from behavioural evidence. For example, the current OpenAPI pin declares no conditional-request headers even though GitHub supports conditional requests broadly; that produces an explicit zero rather than a false green. Runtime status/shape observation, credential/resource authorization matrices, stable pagination/Link tests, reload tests, event tests, and injected storage-failure tests remain the evidence layers named in the matrix's `coverage_boundary`.
+The matrix deliberately distinguishes a described obligation from behavioural evidence. For example, the current OpenAPI pin declares no conditional-request headers even though GitHub supports conditional requests broadly, so it records an explicit zero rather than a false green. Runtime status/shape observation, credential/resource authorization matrices, stable pagination/Link tests, reload tests, event tests, and injected storage-failure tests remain the evidence layers named in the matrix's `coverage_boundary`.
 
 ## What was verified
 
@@ -38,7 +38,7 @@ The matrix deliberately distinguishes a described obligation from behavioural ev
 
 The registered `/api/v3` surface covered the vendored GitHub REST description plus documented GitHub Enterprise Server-only operations. `TestRegisteredAPIv3RoutesExistInGitHubSpec` rejected invented GitHub-namespace routes, and the runtime OpenAPI observer rejected new response-member/type drift. The vendored description lives at `third_party/github-openapi.json.gz` and is refreshed by `scripts/update-github-openapi.sh`.
 
-This proved route legitimacy and every response shape exercised by tests. It did **not** prove every status, validation branch, permission combination, pagination edge, webhook, or storage failure for every registered operation. GitHub's REST API is versioned, so the vendored description and compatibility tests remained a ratchet rather than a one-time completeness claim.
+This proved route legitimacy and every response shape the tests exercised. It did **not** prove every status, validation branch, permission combination, pagination edge, webhook, or storage failure for every registered operation. GitHub's REST API is versioned, so the vendored description and compatibility tests remain a ratchet, not a one-time completeness claim.
 
 ### Real state and byte planes
 
@@ -50,7 +50,7 @@ This proved route legitimacy and every response shape exercised by tests. It did
 
 ### Authentication, Apps, and events
 
-The earlier semantic-gap list had become stale. The current implementation and tests covered:
+The earlier semantic-gap list is stale. The current implementation and tests cover:
 
 - GitHub App installations with `repository_selection: all|selected` and selected-repository token downscoping;
 - installation and installation-repositories lifecycle events;
@@ -61,41 +61,41 @@ The earlier semantic-gap list had become stale. The current implementation and t
 
 ### UI organization and themes
 
-The application shell used GitHub's global navigation model. Repository pages used full-width repository context chrome, the familiar primary repository tab order, real Watch/Fork/Star actions, a separate content toolbar, and an administrative overflow/settings group. The browser mutations used GitHub's public repository APIs; a read-only `/ui-data` adapter normalized expected `404` viewer-state checks so ordinary page rendering did not emit console resource errors.
+The application shell uses GitHub's global navigation model. Repository pages use full-width repository context chrome, the familiar primary repository tab order, real Watch/Fork/Star actions, a separate content toolbar, and an administrative overflow/settings group. Browser mutations use GitHub's public repository APIs; a read-only `/ui-data` adapter normalizes expected `404` viewer-state checks so ordinary page rendering emits no console resource errors.
 
-The visual system retained GitHub/Primer light and dark surface/semantic tokens, then added a deliberately more saturated blue/cyan/purple/pink brand layer. Both themes were browser-asserted. Primer's token and color-mode model remained the reference for contrast and theme separation: <https://primer.style/product/primitives/>.
+The visual system retains GitHub/Primer light and dark surface/semantic tokens, then adds a deliberately more saturated blue/cyan/purple/pink brand layer. Both themes are browser-asserted. Primer's token and color-mode model remains the reference for contrast and theme separation: <https://primer.style/product/primitives/>.
 
 ### Retained GitHub Classroom product
 
-Bleephub retained GitHub Classroom as an authenticated browser product while preserving GitHub's six read-only Classroom REST endpoints for the official `go-github` client and GitHub Classroom extension. Organization administrators created, renamed, archived, and deleted classrooms; managed linked or identifier-only rosters; created individual or group assignments; configured deadlines, permissions, feedback pull requests, team limits, and command-based autograding; and exported or imported a lossless transition bundle.
+Bleephub retains GitHub Classroom as an authenticated browser product while preserving GitHub's six read-only Classroom REST endpoints for the official `go-github` client and GitHub Classroom extension. Organization administrators create, rename, archive, and delete classrooms; manage linked or identifier-only rosters; create individual or group assignments; configure deadlines, permissions, feedback pull requests, team limits, and command-based autograding; and export or import a lossless transition bundle.
 
-Assignment acceptance generated an organization-owned repository from the real starter git tree, granted the student or group access, created the configured Feedback pull request, installed a real GitHub Actions workflow, and recorded its baseline commit. Submission counts, subsequent commit counts, passing state, and exported points were derived from repository history and completed autograding jobs rather than accepted from management requests. The obsolete `/internal/classrooms...` seed routes no longer existed.
+Assignment acceptance generates an organization-owned repository from the real starter git tree, grants the student or group access, creates the configured Feedback pull request, installs a real GitHub Actions workflow, and records its baseline commit. Submission counts, subsequent commit counts, passing state, and exported points derive from repository history and completed autograding jobs rather than from management requests. The obsolete `/internal/classrooms...` seed routes no longer exist.
 
 ## What is truly left
 
 ### GitHub Marketplace product and application programming interface
 
-GitHub Marketplace no longer depended on operator ingress. GitHub App and OAuth App owners created and published listings and pricing plans through authenticated settings; the routed browser directory supported personal and administered-organization purchases, free trials, setup/installation handoff, upgrades, downgrades, and cancellations. Dedicated listing webhooks emitted signed ping and `marketplace_purchase` deliveries, and official publisher REST reads were isolated by GitHub App JSON Web Token or Basic client credentials. Listings, plans, independent per-app subscriptions, pending billing transitions, installations, and delivery history persisted across restart, with atomic subscription/installation creation.
+GitHub Marketplace no longer depends on operator ingress. GitHub App and OAuth App owners create and publish listings and pricing plans through authenticated settings; the routed browser directory supports personal and administered-organization purchases, free trials, setup/installation handoff, upgrades, downgrades, and cancellations. Dedicated listing webhooks emit signed ping and `marketplace_purchase` deliveries, and GitHub App JSON Web Token or Basic client credentials isolate official publisher REST reads. Listings, plans, independent per-app subscriptions, pending billing transitions, installations, and delivery history persist across restart, and subscription/installation creation is atomic.
 
-Official `go-github`, Dockerized `gh api`, backend HTTP, SQLite failure/restart, component, and real Chromium light/dark coverage proved the producer-to-buyer workflow. The obsolete `/internal/marketplace/purchases` route no longer existed.
+Official `go-github`, Dockerized `gh api`, backend HTTP, SQLite failure/restart, component, and real Chromium light/dark coverage prove the producer-to-buyer workflow. The obsolete `/internal/marketplace/purchases` route no longer exists.
 
 ### 1. Hosted-compute onboarding still enters through an operator route
 
-These are real stored implementations after ingestion, but their creation/onboarding path is not yet GitHub-user- or producer-shaped:
+These are real stored implementations after ingestion, but their creation/onboarding path is not yet GitHub-user- or producer-shaped.
 
 | Domain | Current ingress | Required completion path |
 |---|---|---|
 | Hosted-compute network settings | `/internal/orgs/.../network-settings` | GitHub/Azure private-network onboarding workflow that provisions the settings resource before public configuration APIs reference it |
 
-CodeQL databases no longer belonged in this table. The official CodeQL Action's uploads-host raw ZIP request produced the durable database, validated the database bundle and real commit, and replaced the prior language database atomically. Fine-grained personal access tokens likewise entered through authenticated account settings with one-time credential disclosure and organization approval.
+CodeQL databases no longer belong in this table. The official CodeQL Action's uploads-host raw ZIP request produces the durable database, validates the database bundle and real commit, and replaces the prior language database atomically. Fine-grained personal access tokens likewise enter through authenticated account settings with one-time credential disclosure and organization approval.
 
-The runner execution controller (`/internal/exec/...`) and operator diagnostics (`/internal/{metrics,status,storage}`) were not classified as GitHub API gaps: they are Bleephub control-plane interfaces, and user-facing UI pages already read public GitHub/health routes instead of them.
+The runner execution controller (`/internal/exec/...`) and operator diagnostics (`/internal/{metrics,status,storage}`) are not GitHub API gaps: they are Bleephub control-plane interfaces, and user-facing UI pages already read public GitHub/health routes instead.
 
 ### 2. GraphQL schema coverage is ratcheted and the remaining surface is quantified
 
-The official public schema from `docs.github.com` is digest-pinned and checked for upstream drift. A full authenticated introspection-equivalent snapshot of Bleephub is compared structurally against it: type kinds, fields, arguments, input fields, enum values, interfaces, possible types, and nested null/list signatures. The exact compatibility-gap set is allowlisted and may only change through review; a canonical introspection snapshot rejects accidental schema drift.
+The official public schema from `docs.github.com` is digest-pinned and checked for upstream drift. A full authenticated introspection-equivalent snapshot of Bleephub is compared structurally against it: type kinds, fields, arguments, input fields, enum values, interfaces, possible types, and nested null/list signatures. The exact compatibility-gap set is allowlisted and changes only through review; a canonical introspection snapshot rejects accidental schema drift.
 
-The generated coverage report is intentionally blunt: the current official schema has 1,806 types and 8,341 object/input fields; Bleephub exposes 276 types, shares 210 official types, implements 782 official fields, and matches 546 field signatures exactly. It currently records 319 compatibility gaps, 1,596 missing types, and 1,208 missing fields on shared types. Official-client query tests still prove the consumer subset behaves, while [`graphql-schema-coverage.json`](graphql-schema-coverage.json) prevents that subset from being mistaken for full GitHub GraphQL coverage.
+The generated coverage report is intentionally blunt: the current official schema has 1,806 types and 8,341 object/input fields; Bleephub exposes 276 types, shares 210 official types, implements 782 official fields, and matches 546 field signatures exactly. It records 319 compatibility gaps, 1,596 missing types, and 1,208 missing fields on shared types. Official-client query tests prove the consumer subset behaves, while [`graphql-schema-coverage.json`](graphql-schema-coverage.json) keeps that subset from being mistaken for full GitHub GraphQL coverage.
 
 ### 3. REST semantic coverage is observed, not exhaustive
 
@@ -108,11 +108,11 @@ The route and response observer cannot prove unexecuted branches. Remaining audi
 5. object-store and git-store failure atomicity on every byte-owning operation;
 6. official `gh`, `go-github`, Git, package/registry, runner, and Terraform-adjacent consumers rather than hand-built request-only coverage.
 
-GitHub explicitly recommends following redirects, consuming pagination links, using conditional requests, and treating repeated `4xx`/`5xx` responses as real errors; those behaviors remain part of parity even when the JSON body matches.
+GitHub explicitly recommends following redirects, consuming pagination links, using conditional requests, and treating repeated `4xx`/`5xx` responses as real errors; those behaviors stay part of parity even when the JSON body matches.
 
 ### 4. UI page-by-page visual and workflow parity remains broader than the shared shell
 
-The shared chrome and repository Code experience are now close to GitHub and theme-complete, but the long-tail pages still need page-level comparison and workflow coverage. Highest-value next slices are:
+The shared chrome and repository Code experience are now close to GitHub and theme-complete, but the long-tail pages still need page-level comparison and workflow coverage. The highest-value next slices are:
 
 1. repository Settings organization and the remaining Secret scanning/Dependabot security subpages;
 2. issue and pull-request timelines, review controls, and file-diff interactions;
@@ -124,7 +124,7 @@ The shared chrome and repository Code experience are now close to GitHub and the
 
 ### 5. Live service validation remains separate
 
-Bleephub local fidelity does not validate a particular deployment's cloud infrastructure. Live deployment validation remains an infrastructure concern, not a Bleephub API signature defect.
+Bleephub local fidelity does not validate a particular deployment's cloud infrastructure. Live deployment validation is an infrastructure concern, not a Bleephub API signature defect.
 
 ## Acceptance criteria for future parity work
 
@@ -139,4 +139,4 @@ Bleephub local fidelity does not validate a particular deployment's cloud infras
 
 ## Historical phase summary
 
-Phases 153-155 registered the broad Apps, OAuth, repositories, issues, pull requests, checks, webhooks, teams, releases, deployments, environments, security, Git data, Actions, notifications, and administration surfaces. Later branches completed the vendored REST registration set, GraphQL consumer surfaces, runner protocol, public ingestion, durable state/byte planes, Pages publication, release-provider workflows, and the routed React UI. Per-operation history belongs in `git log` and pull requests; this document keeps only the current proof boundary and remaining gaps.
+Phases 153-155 registered the broad Apps, OAuth, repositories, issues, pull requests, checks, webhooks, teams, releases, deployments, environments, security, Git data, Actions, notifications, and administration surfaces. Later branches completed the vendored REST registration set, GraphQL consumer surfaces, runner protocol, public ingestion, durable state/byte planes, Pages publication, release-provider workflows, and the routed React UI. Per-operation history belongs in `git log` and pull requests; this document keeps only the current proof boundary and the remaining gaps.

@@ -1,29 +1,20 @@
 package store
 
-// Repository redirects.
-//
-// GitHub keeps the name a repository used to answer to. A rename or a transfer
-// leaves the old "owner/name" pointing at the repository under its new name,
-// and every surface that resolves a repository — the REST API and both git
-// transports — answers a moved repository with a redirect rather than a 404.
-// That is what keeps a clone already on a developer's machine, a stored URL, or
-// a webhook receiver's bookmark working across a rename.
-//
-// The record is a fold-insensitive map from the vacated "owner/name" to the
-// repository id, so it survives further renames: the repository is resolved by
-// id at redirect time, not by the name it happened to carry when it moved.
+// Repository redirects: a rename or transfer leaves the old "owner/name"
+// resolving to the repository under its new name, and every resolver (REST and
+// both git transports) answers a move with a redirect, not a 404. The record is
+// a fold-insensitive map from vacated "owner/name" to repository id, resolved by
+// id at redirect time so it survives further renames.
 
-// recordRepoRedirectLocked remembers that oldFull now resolves to repoID, and
-// retires any redirect that pointed at newFull — a name that is live again is
-// not a name that redirects. Caller must hold st.Mu for writing.
+// recordRepoRedirectLocked records that oldFull resolves to repoID and retires
+// any redirect at newFull — a live name does not redirect. Caller holds st.Mu (write).
 func (st *Store) recordRepoRedirectLocked(oldFull, newFull string, repoID int) {
 	if st.RepoRedirects == nil {
 		st.RepoRedirects = make(map[string]int)
 	}
 	delete(st.RepoRedirects, FoldName(newFull))
 	st.RepoRedirects[FoldName(oldFull)] = repoID
-	// A repository that moves away and back again would otherwise redirect to
-	// itself forever, so a name is never both live and redirecting.
+	// A repository that moves away and back must not redirect to itself.
 	for from, id := range st.RepoRedirects {
 		if id == repoID && from == FoldName(newFull) {
 			delete(st.RepoRedirects, from)
@@ -31,9 +22,8 @@ func (st *Store) recordRepoRedirectLocked(oldFull, newFull string, repoID int) {
 	}
 }
 
-// dropRepoRedirectsLocked retires every redirect that resolves to repoID. A
-// deleted repository leaves nothing to redirect to. Caller must hold st.Mu for
-// writing.
+// dropRepoRedirectsLocked retires every redirect resolving to repoID (a deleted
+// repository leaves nothing to redirect to). Caller holds st.Mu (write).
 func (st *Store) dropRepoRedirectsLocked(repoID int) {
 	for from, id := range st.RepoRedirects {
 		if id == repoID {
@@ -43,9 +33,8 @@ func (st *Store) dropRepoRedirectsLocked(repoID int) {
 }
 
 // RedirectedRepo resolves a repository by a name it used to answer to,
-// returning a detached snapshot of the repository that name now names, or nil
-// when the name never moved. A name that is live again wins over its own
-// redirect, so this reports a move only for a name nothing currently occupies.
+// returning a detached snapshot (STORE-021) or nil. A live name wins over its
+// own redirect, so this reports a move only for a name nothing occupies.
 func (st *Store) RedirectedRepo(fullName string) *Repo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

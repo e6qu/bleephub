@@ -8,26 +8,20 @@ import (
 )
 
 // Pinned repositories power the profile Overview grid. GitHub exposes pins only
-// over GraphQL (no REST API), so — like the wiki — these live under the
-// browser-only /ui-data namespace rather than an invented /api/v3 path.
-// `s.route` auto-wraps /ui-data with authenticateUIData.
+// over GraphQL, so these live under /ui-data rather than an invented /api/v3 path.
 func (s *Server) registerGHPinnedRoutes() {
 	s.route("GET /ui-data/users/{username}/pinned", s.handleListPinnedRepos)
 	s.route("PUT /ui-data/users/{username}/pinned", s.handleSetPinnedRepos)
-	// Organization profiles pin repositories the same way (GraphQL/web-only on
-	// real GitHub): any viewer may read the list, only an org owner may edit it.
 	s.route("GET /ui-data/orgs/{org}/pinned", s.handleListOrgPinnedRepos)
 	s.route("PUT /ui-data/orgs/{org}/pinned", s.handleSetOrgPinnedRepos)
 }
 
-// pinnedReposJSON resolves the user's pinned full names to repo JSON the viewer
-// can read, preserving pin order.
 func (s *Server) pinnedReposJSON(r *http.Request, u *store.User) []map[string]interface{} {
 	return s.pinnedRepoListJSON(r, s.store.ListPinnedRepos(u.ID))
 }
 
-// pinnedRepoListJSON renders an ordered pinned full-name list as the repo JSON
-// rows the viewer can read, preserving pin order.
+// pinnedRepoListJSON renders an ordered full-name list as repo JSON rows the
+// viewer can read, preserving order.
 func (s *Server) pinnedRepoListJSON(r *http.Request, names []string) []map[string]interface{} {
 	viewer := ghUserFromContext(r.Context())
 	out := make([]map[string]interface{}, 0, len(names))
@@ -60,7 +54,7 @@ func (s *Server) handleSetPinnedRepos(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Only the account owner (or a site admin) may edit their pins.
+	// Only the account owner or a site admin may edit these pins.
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil || (viewer.ID != u.ID && !viewer.SiteAdmin) {
 		writeGHError(w, http.StatusForbidden, "You can only change your own pinned repositories.")
@@ -99,7 +93,7 @@ func (s *Server) handleSetOrgPinnedRepos(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Only an organization owner (or a site admin) may edit the org's pins.
+	// Only an org owner or a site admin may edit the org's pins.
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil || !s.viewerCanAdminOrg(r.Context(), org.Login) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")

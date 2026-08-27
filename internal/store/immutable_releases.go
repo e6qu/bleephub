@@ -55,8 +55,7 @@ func (st *Store) AddOrgImmutableReleasesRepo(orgLogin string, repoID int) {
 	}
 }
 
-// RemoveOrgImmutableReleasesRepo removes one repository from the selected
-// list.
+// RemoveOrgImmutableReleasesRepo removes one repository from the selected list.
 func (st *Store) RemoveOrgImmutableReleasesRepo(orgLogin string, repoID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -76,8 +75,7 @@ func (st *Store) RemoveOrgImmutableReleasesRepo(orgLogin string, repoID int) {
 	}
 }
 
-// ListOrgImmutableReleasesRepos returns the selected repositories sorted by
-// ID.
+// ListOrgImmutableReleasesRepos returns the selected repositories sorted by ID.
 func (st *Store) ListOrgImmutableReleasesRepos(orgLogin string) []*Repo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

@@ -1,13 +1,9 @@
 package bleephub
 
-// GitHub Actions concurrency-group REST surface
-// (/repos/{o}/{r}/actions/concurrency_groups and
-// /repos/{o}/{r}/actions/runs/{run_id}/concurrency_groups): reflects the
-// real concurrency state the workflow engine tracks — a run with a
-// `concurrency:` group either holds the group's lease (status
-// in_progress, position 0) or queues behind the holder (status pending,
-// position 1+, ordered by submission time). Bleephub implements
-// workflow-level concurrency; job-level leases don't exist.
+// GitHub Actions concurrency-group REST surface. A run with a `concurrency:`
+// group either holds the group's lease (in_progress, position 0) or queues
+// behind the holder (pending, position 1+, by submission time). Bleephub
+// implements workflow-level concurrency only; job-level leases don't exist.
 
 import (
 	"github.com/e6qu/bleephub/internal/graphqlapi"
@@ -27,8 +23,7 @@ func (s *Server) registerGHActionsConcurrencyRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/concurrency_groups", s.handleRunConcurrencyGroups)
 }
 
-// concurrencyGroupMember is one run holding or waiting for a group's
-// lease. Position 0 = holder (in_progress); 1+ = queued (pending).
+// concurrencyGroupMember is one run in a group. Position 0 = holder; 1+ = queued.
 type concurrencyGroupMember struct {
 	wf       *store.Workflow
 	position int
@@ -41,9 +36,8 @@ func (m concurrencyGroupMember) status() string {
 	return "pending"
 }
 
-// concurrencyGroupsForRepo collects the repo's active concurrency
-// groups: group name → ordered members (holder first, then pending runs
-// by submission time).
+// concurrencyGroupsForRepo maps group name to ordered members: holder first,
+// then pending runs by submission time.
 func (s *Server) concurrencyGroupsForRepo(repo string) map[string][]concurrencyGroupMember {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
@@ -73,9 +67,8 @@ func (s *Server) concurrencyGroupsForRepo(repo string) map[string][]concurrencyG
 			out[group] = append(out[group], concurrencyGroupMember{wf: wf, position: len(out[group])})
 		}
 	}
-	// A group whose only members would start at position >= 1 (no holder)
-	// still lists them as pending from position 1, matching the queue
-	// semantics: position 0 is reserved for the lease holder.
+	// With no holder, queued members start at position 1: position 0 is
+	// reserved for the lease holder.
 	for group, members := range out {
 		if len(members) > 0 && members[0].wf.Status == store.WorkflowStatusPendingConcurrency {
 			for i := range members {
@@ -104,9 +97,8 @@ func runMemberJSON(m concurrencyGroupMember, baseURL, repo string) map[string]an
 	}
 }
 
-// handleListConcurrencyGroups — GET .../actions/concurrency_groups.
-// Lists the repo's active groups with the time the current holder
-// acquired the lease (null while the group has only queued members).
+// handleListConcurrencyGroups lists the repo's active groups; last_acquired_at
+// is null while a group has only queued members.
 func (s *Server) handleListConcurrencyGroups(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -173,10 +165,8 @@ func (s *Server) handleListConcurrencyGroups(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// handleGetConcurrencyGroup — GET .../actions/concurrency_groups/{name}.
-// Returns the group's live members; 404 when the group has no active
-// items. ?ahead_of_run= narrows to the members ahead of that run in the
-// queue (422 when the run isn't a member).
+// handleGetConcurrencyGroup returns the group's live members; 404 when empty.
+// ?ahead_of_run= narrows to members ahead of that run (422 when not a member).
 func (s *Server) handleGetConcurrencyGroup(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -216,8 +206,8 @@ func (s *Server) handleGetConcurrencyGroup(w http.ResponseWriter, r *http.Reques
 		}
 		members = ahead
 	} else if aheadOfJob := r.URL.Query().Get("ahead_of_job"); aheadOfJob != "" {
-		// Bleephub implements workflow-level concurrency only; no job
-		// holds a group lease, so no member can match a job id.
+		// Workflow-level concurrency only: no job holds a lease, so no
+		// member can match a job id.
 		writeGHError(w, http.StatusUnprocessableEntity,
 			fmt.Sprintf("job %s is not a member of concurrency group %q", aheadOfJob, name))
 		return
@@ -238,11 +228,9 @@ func (s *Server) handleGetConcurrencyGroup(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// handleRunConcurrencyGroups — GET .../runs/{run_id}/concurrency_groups.
-// Lists the groups the run participates in by configuration; the run's
-// member entry carries its live queue position (0 = holding the lease),
-// and a completed run renders its group with no members (lease
-// released).
+// handleRunConcurrencyGroups lists the groups a run participates in; the run's
+// member entry carries its live queue position (0 = holding the lease), and a
+// completed run renders its group with no members.
 func (s *Server) handleRunConcurrencyGroups(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return

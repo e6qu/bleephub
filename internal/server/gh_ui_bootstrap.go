@@ -16,92 +16,17 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// Browser-only page-bootstrap aggregations. The SPA's repo home, issue detail,
-// PR detail, and insights pages each fan out into 16-23 REST calls; these
-// endpoints collapse each page into one request. Real GitHub has no such REST
-// operations (github.com hydrates its pages server-side), so they live under
-// /ui-data — inventing them under /api/v3 is a defect the route-definition
-// gates reject. (`s.route` auto-wraps /ui-data patterns with
-// authenticateUIData.)
+// Browser-only page-bootstrap aggregations. Each SPA page fans out into 16-23
+// REST calls; these endpoints collapse a page into one request. GitHub has no
+// such REST operations, so they live under /ui-data, not /api/v3.
 //
-// Every sub-payload is produced by executing the SAME registered handler the
-// standalone endpoint runs (an in-process sub-request through the identical
-// authorization chain, including the requirePerm wrapper where the standalone
-// route has one), so each sub-object is byte-identical to the standalone
-// endpoint's body and the SPA can hydrate its TanStack Query caches from it.
-// List sub-payloads are the standalone endpoint's FIRST page with default
-// pagination (per_page=30, no Link headers are forwarded) unless a key's
-// comment names an explicit query. A nullable
-// sub-resource whose standalone endpoint would answer non-2xx (missing README,
-// no releases, empty repo) is null; a list whose standalone endpoint answers
-// 204 (contributors on an empty repo) is []. Repo resolution and 404 semantics
-// are those of GET /api/v3/repos/{owner}/{repo}: unknown repos and private
-// repos the viewer cannot read are an identical 404, before any sub-request
-// runs.
-//
-// Response key schema (keys are stable; the value shapes are owned by the
-// standalone endpoints named in each comment):
-//
-//	GET /ui-data/bootstrap/repos/{owner}/{repo}
-//	  repo                 GET /api/v3/repos/{o}/{r}
-//	  readme               GET .../readme                        (null when 404)
-//	  root_entries         GET .../contents/ (default ref root)  (null when unavailable)
-//	  branches             { first_page: GET .../branches?per_page=100, total_count: int }
-//	  tags                 { first_page: GET .../tags?per_page=100,     total_count: int }
-//	                       (per_page=100 matches the UI's branch/tag hooks,
-//	                       so the seeded cache is the page they re-fetch)
-//	  languages            GET .../languages
-//	  contributors         GET .../contributors                  ([] when 204)
-//	  latest_release       GET .../releases/latest               (null when 404)
-//	  latest_commit        GET .../commits/{default_branch}      (null on empty repo)
-//	  pulls_open_count     int — open pull requests
-//	  issues_open_count    int — open issues EXCLUDING pull requests
-//	  discussions_enabled  bool
-//
-//	GET /ui-data/repos/{owner}/{repo}/tree-meta?ref={ref}&path={dir}
-//	  ref, path            echoed (ref defaults to the default branch)
-//	  latest_commit        commits-list-shaped commit JSON: the newest commit
-//	                       touching {dir} (the tip itself for the root)
-//	  entries              [{ name, path, type(file|dir|symlink|submodule),
-//	                         size, latest: { sha, message_headline,
-//	                         author_login, author_date } | null }]
-//
-//	GET /ui-data/bootstrap/repos/{owner}/{repo}/issues/{number}
-//	  issue                GET .../issues/{number}
-//	  comments             GET .../issues/{number}/comments
-//	  timeline             GET .../issues/{number}/timeline
-//	  labels               GET .../labels (repo labels)
-//	  milestones           GET .../milestones?state=all
-//	                       (KEY CHANGE: previously state=open — the UI's
-//	                       milestone picker queries state=all, so the seeded
-//	                       cache key now matches the query the page issues)
-//	  assignees_available  GET .../assignees
-//
-//	GET /ui-data/bootstrap/repos/{owner}/{repo}/pulls/{number}
-//	  pull                 GET .../pulls/{number} (includes diff stats)
-//	  timeline             GET .../issues/{number}/timeline
-//	  comments             GET .../issues/{number}/comments (conversation)
-//	  reviews              GET .../pulls/{number}/reviews
-//	  review_comments      GET .../pulls/{number}/comments
-//	  requested_reviewers  GET .../pulls/{number}/requested_reviewers
-//	  check_runs           GET .../commits/{head_sha}/check-runs
-//	  combined_status      GET .../commits/{head_sha}/status
-//	  files_summary        { changed_files, additions, deletions } (from the pull)
-//	  labels               GET .../labels (repo labels; same source as the issue aggregate)
-//	  milestones           GET .../milestones?state=all (same source as the issue aggregate)
-//	  assignees_available  GET .../assignees (same source as the issue aggregate)
-//
-//	GET /ui-data/bootstrap/repos/{owner}/{repo}/insights?period={24h|3d|1w|1m}
-//	  period               echoed (defaults to 1w; anything else is a 422)
-//	  merged_prs_count     PRs with merged_at inside the window
-//	  opened_prs_count     PRs with created_at inside the window
-//	  closed_issues_count  issues with closed_at inside the window
-//	  new_issues_count     issues with created_at inside the window
-//	  active_contributors  distinct default-branch commit authors in the window
-//	  top_contributors     first 10 of [{ login, commits }] (commits desc; login
-//	                       is the resolved account, else the raw author name)
-//	  commit_activity      GET .../stats/commit_activity (52 Sunday weeks)
-//	  languages            GET .../languages
+// Every sub-payload is produced by running the SAME registered handler the
+// standalone endpoint runs (in-process, through the identical authorization
+// chain), so each sub-object is byte-identical and the SPA can hydrate its
+// TanStack Query caches from it. Lists are the standalone endpoint's first page
+// (per_page=30) unless a key names an explicit query; a non-2xx nullable
+// sub-resource embeds null, a 204 list embeds []. Repo resolution and 404
+// semantics match GET /api/v3/repos/{owner}/{repo}, before any sub-request runs.
 func (s *Server) registerGHUIBootstrapRoutes() {
 	s.route("GET /ui-data/bootstrap/repos/{owner}/{repo}", s.handleUIBootstrapRepo)
 	s.route("GET /ui-data/repos/{owner}/{repo}/tree-meta", s.handleUITreeMeta)
@@ -110,12 +35,8 @@ func (s *Server) registerGHUIBootstrapRoutes() {
 	s.route("GET /ui-data/bootstrap/repos/{owner}/{repo}/insights", s.handleUIBootstrapInsights)
 }
 
-// uiConditionalWriter gives these GET endpoints the same strong-ETag +
-// If-None-Match 304 semantics the REST middleware provides: that layer only
-// activates for /api/ paths, so /ui-data responses would otherwise ship
-// unvalidated. writeJSON discovers conditionalJSON by walking the writer
-// chain, so wrapping the outer writer in each handler is sufficient — the
-// gzip layer sits outside and is unaffected.
+// uiConditionalWriter gives these GET endpoints the strong-ETag / If-None-Match
+// 304 semantics the REST middleware provides only for /api/ paths.
 type uiConditionalWriter struct {
 	http.ResponseWriter
 	ifNoneMatch string
@@ -129,15 +50,13 @@ func (w *uiConditionalWriter) conditionalJSON(etag string, status int) bool {
 	return etagMatches(w.ifNoneMatch, etag)
 }
 
-// uiConditional wraps a response writer for the aggregate's final writeJSON.
 func uiConditional(w http.ResponseWriter, r *http.Request) http.ResponseWriter {
 	return &uiConditionalWriter{ResponseWriter: w, ifNoneMatch: r.Header.Get("If-None-Match")}
 }
 
-// bufferedResponse captures one in-process sub-request's response. It
-// deliberately implements neither Unwrap nor conditionalJSON, so the inner
-// writeJSON emits plain identity bytes: only the OUTER response is ETag'd
-// (uiConditionalWriter) and gzipped (compressionMiddleware covers /ui-data/).
+// bufferedResponse captures one in-process sub-request's response. It implements
+// neither Unwrap nor conditionalJSON, so the inner writeJSON emits plain
+// identity bytes; only the outer response is ETag'd and gzipped.
 type bufferedResponse struct {
 	header http.Header
 	status int
@@ -156,19 +75,15 @@ func (b *bufferedResponse) WriteHeader(status int) { b.status = status }
 func (b *bufferedResponse) Write(p []byte) (int, error) { return b.buf.Write(p) }
 
 // body returns the captured body without writeJSON's trailing newline, so it
-// embeds into the aggregate as a json.RawMessage byte-identical to the
-// standalone endpoint's JSON document.
+// embeds byte-identically to the standalone endpoint's JSON document.
 func (b *bufferedResponse) body() []byte {
 	return bytes.TrimSuffix(b.buf.Bytes(), []byte("\n"))
 }
 
-// uiSubGET executes an already-registered GET handler in-process against a
-// synthetic request that mirrors the standalone endpoint: the real /api/v3
-// URL path (so requirePerm's path-derived checks evaluate exactly as they
-// would on the standalone route), the caller's authenticated context, and any
-// extra path values the inner handler reads. The outer /ui-data pattern's
-// {owner}/{repo} (and {number}, where present) survive the clone; extras are
-// supplied via pathValues.
+// uiSubGET runs an already-registered GET handler in-process against a synthetic
+// request mirroring the standalone endpoint: the real /api/v3 path (so
+// requirePerm's path-derived checks evaluate identically), the caller's context,
+// and any extra path values via pathValues.
 func uiSubGET(r *http.Request, handler http.HandlerFunc, path string, query url.Values, pathValues map[string]string) *bufferedResponse {
 	req := r.Clone(r.Context())
 	req.Method = http.MethodGet
@@ -179,8 +94,7 @@ func uiSubGET(r *http.Request, handler http.HandlerFunc, path string, query url.
 	}
 	req.URL = &url.URL{Path: path, RawQuery: rawQuery}
 	req.RequestURI = ""
-	// The inner handlers vary their representation on Accept
-	// (vnd.github.sha/diff/patch); the aggregate always embeds JSON.
+	// Inner handlers vary on Accept (vnd.github.sha/diff/patch); force JSON.
 	req.Header = r.Header.Clone()
 	req.Header.Set("Accept", "application/json")
 	for name, value := range pathValues {
@@ -191,11 +105,10 @@ func uiSubGET(r *http.Request, handler http.HandlerFunc, path string, query url.
 	return resp
 }
 
-// uiSubListTotal reruns a paginated list handler with per_page=1 and reads the
-// total off the rel="last" Link target (lastPage == total when per_page is 1).
-// The count therefore reflects exactly what the standalone endpoint would
-// enumerate — no re-derivation of its filtering. A response without a Link
-// header holds the entire list (0 or 1 items).
+// uiSubListTotal reruns a list handler with per_page=1 and reads the total off
+// the rel="last" Link target (lastPage == total at per_page 1), so the count
+// reflects exactly the standalone endpoint's filtering. No Link header means the
+// whole list fit (0 or 1 items).
 func uiSubListTotal(r *http.Request, handler http.HandlerFunc, path string, query url.Values, pathValues map[string]string) int {
 	q := url.Values{}
 	for name, values := range query {
@@ -231,9 +144,8 @@ func uiSubListTotal(r *http.Request, handler http.HandlerFunc, path string, quer
 	return len(items)
 }
 
-// uiSubJSONOrNull embeds a 2xx sub-response verbatim; anything else becomes
-// JSON null ("resource unavailable" — a missing README, no releases yet, an
-// empty repository).
+// uiSubJSONOrNull embeds a 2xx sub-response verbatim; anything else becomes JSON
+// null (resource unavailable).
 func uiSubJSONOrNull(resp *bufferedResponse) json.RawMessage {
 	if resp.status < 200 || resp.status > 299 || resp.buf.Len() == 0 {
 		return json.RawMessage("null")
@@ -241,9 +153,8 @@ func uiSubJSONOrNull(resp *bufferedResponse) json.RawMessage {
 	return json.RawMessage(resp.body())
 }
 
-// uiSubJSONOrEmptyList is uiSubJSONOrNull for list sub-resources whose
-// standalone endpoint can answer 204 with no body (contributors on an empty
-// repository): the aggregate embeds [] so list consumers always see a list.
+// uiSubJSONOrEmptyList is uiSubJSONOrNull for list sub-resources, embedding []
+// instead of null so list consumers always see a list.
 func uiSubJSONOrEmptyList(resp *bufferedResponse) json.RawMessage {
 	out := uiSubJSONOrNull(resp)
 	if string(out) == "null" {
@@ -252,9 +163,8 @@ func uiSubJSONOrEmptyList(resp *bufferedResponse) json.RawMessage {
 	return out
 }
 
-// uiRelaySubResponse forwards a failed core sub-response (status and body)
-// verbatim, so the aggregate refuses exactly where and how the standalone
-// endpoint refuses.
+// uiRelaySubResponse forwards a failed sub-response verbatim, so the aggregate
+// refuses exactly where and how the standalone endpoint does.
 func uiRelaySubResponse(w http.ResponseWriter, resp *bufferedResponse) {
 	if ct := resp.Header().Get("Content-Type"); ct != "" {
 		w.Header().Set("Content-Type", ct)
@@ -278,8 +188,7 @@ func (s *Server) handleUIBootstrapRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The UI's branch/tag hooks fetch per_page=100; embedding that page keeps
-	// the seeded cache byte-identical to the request the page would repeat.
+	// The UI's branch/tag hooks fetch per_page=100; embed that same page.
 	first100 := url.Values{"per_page": {"100"}}
 	branches := uiSubGET(r, s.handleListBranches, api+"/branches", first100, nil)
 	tags := uiSubGET(r, s.handleListTags, api+"/tags", first100, nil)
@@ -292,9 +201,8 @@ func (s *Server) handleUIBootstrapRepo(w http.ResponseWriter, r *http.Request) {
 		map[string]string{"ref": repo.DefaultBranch})
 
 	writeJSON(uiConditional(w, r), http.StatusOK, map[string]interface{}{
-		"repo":   json.RawMessage(repoResp.body()),
-		"readme": uiSubJSONOrNull(readme),
-		// The contents listing of "" is the default-ref root tree.
+		"repo":         json.RawMessage(repoResp.body()),
+		"readme":       uiSubJSONOrNull(readme),
 		"root_entries": uiSubJSONOrNull(rootEntries),
 		"branches": map[string]interface{}{
 			"first_page":  uiSubJSONOrEmptyList(branches),
@@ -308,8 +216,7 @@ func (s *Server) handleUIBootstrapRepo(w http.ResponseWriter, r *http.Request) {
 		"contributors":   uiSubJSONOrEmptyList(contributors),
 		"latest_release": uiSubJSONOrNull(latestRelease),
 		"latest_commit":  uiSubJSONOrNull(latestCommit),
-		// GitHub's open_issues_count mixes PRs in; the repo home tab counters
-		// need the real split, counted on the store side.
+		// GitHub's open_issues_count mixes PRs in; the tab counters need the split.
 		"pulls_open_count":    len(s.store.ListPullRequests(repo.ID, "OPEN")),
 		"issues_open_count":   len(s.store.ListIssues(repo.ID, "OPEN")),
 		"discussions_enabled": store.RepoHasDiscussions(repo),
@@ -375,9 +282,9 @@ func (s *Server) handleUIBootstrapPull(w http.ResponseWriter, r *http.Request) {
 
 	timeline := uiSubGET(r, s.handleListIssueTimeline, api+"/issues/"+number+"/timeline", nil, nil)
 	comments := uiSubGET(r, s.handleListIssueComments, api+"/issues/"+number+"/comments", nil, nil)
-	// The reviews / requested-reviewers / check-runs standalone routes are
-	// registered behind requirePerm; run the identical chain so a scoped
-	// credential is refused exactly as it would be on the standalone endpoint.
+	// The reviews / requested-reviewers / check-runs routes sit behind
+	// requirePerm; run the identical chain so a scoped credential is refused
+	// exactly as on the standalone endpoint.
 	reviews := uiSubGET(r, s.requirePerm(store.ScopePullRequests, store.PermRead, s.handleListPRReviews),
 		api+"/pulls/"+number+"/reviews", nil, nil)
 	reviewComments := uiSubGET(r, s.handleListPRComments, api+"/pulls/"+number+"/comments", nil, nil)
@@ -387,8 +294,7 @@ func (s *Server) handleUIBootstrapPull(w http.ResponseWriter, r *http.Request) {
 		api+"/commits/"+pull.Head.SHA+"/check-runs", nil, map[string]string{"sha": pull.Head.SHA})
 	combinedStatus := uiSubGET(r, s.handleGetCombinedStatus,
 		api+"/commits/"+pull.Head.SHA+"/status", nil, map[string]string{"ref": pull.Head.SHA})
-	// The PR sidebar shares the issue sidebar's pickers, so the PR aggregate
-	// embeds the same labels / milestones / assignees sources.
+	// The PR sidebar shares the issue sidebar's label/milestone/assignee pickers.
 	labels := uiSubGET(r, s.handleListLabels, api+"/labels", nil, nil)
 	milestones := uiSubGET(r, s.handleListMilestones, api+"/milestones",
 		url.Values{"state": {"all"}}, nil)
@@ -462,9 +368,8 @@ func (s *Server) handleUIBootstrapInsights(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Contributor activity inside the window, attributed like the standalone
-	// contributors endpoint: signatures resolve to an account when possible,
-	// otherwise they count under the raw author name.
+	// Contributor activity in the window, attributed like the contributors
+	// endpoint: a signature resolves to an account, else the raw author name.
 	commits, _ := s.defaultBranchCommits(repo)
 	commitsByLogin := map[string]int{}
 	for _, c := range commits {
@@ -508,9 +413,8 @@ func (s *Server) handleUIBootstrapInsights(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// treeMetaLogWalkCap bounds the tree-meta commit walk: entries whose newest
-// touching commit is older than this many commits from the tip stay
-// unattributed (latest: null) rather than making the request unbounded.
+// treeMetaLogWalkCap bounds the tree-meta commit walk; entries whose newest
+// touching commit lies beyond it stay unattributed (latest: null).
 const treeMetaLogWalkCap = 400
 
 type uiTreeMetaEntry struct {
@@ -519,8 +423,7 @@ type uiTreeMetaEntry struct {
 	Type string `json:"type"`
 	Size int64  `json:"size"`
 	// Latest is the newest commit touching this entry (prefix match for
-	// directories, so a rename or edit anywhere under it counts), or null if
-	// none was found within treeMetaLogWalkCap commits of the tip.
+	// directories), or null if none within treeMetaLogWalkCap commits of the tip.
 	Latest *uiTreeMetaLatest `json:"latest"`
 }
 
@@ -610,15 +513,12 @@ func (s *Server) handleUITreeMeta(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// attributeTreeMetaEntries walks the history newest-to-oldest ONCE, assigning
-// each still-unattributed entry the first (newest) commit whose first-parent
-// diff touches it, and returning the newest commit that touches dirPath (the
-// directory's own path-scoped tip; the walk tip itself for the root). Touch
-// matching is the same equality-or-"prefix/" rule as commitTouchesPath, over
-// both diff sides so renames into and out of an entry count. The walk stops
-// once everything is attributed or after treeMetaLogWalkCap commits; whatever
-// is still unattributed keeps latest == nil. This single pass replaces the
-// UI's per-entry `commits?path=` fan-out.
+// attributeTreeMetaEntries walks history newest-to-oldest once, assigning each
+// entry the newest commit whose first-parent diff touches it and returning the
+// newest commit touching dirPath (the walk tip for the root). Touch matching is
+// the equality-or-"prefix/" rule over both diff sides, so renames count. The
+// walk stops when all entries are attributed or after treeMetaLogWalkCap
+// commits, replacing the UI's per-entry commits?path= fan-out.
 func (s *Server) attributeTreeMetaEntries(tip *object.Commit, dirPath string, entries []*uiTreeMetaEntry) *object.Commit {
 	touches := func(changed []string, target string) bool {
 		for _, candidate := range changed {
@@ -646,8 +546,8 @@ func (s *Server) attributeTreeMetaEntries(tip *object.Commit, dirPath string, en
 
 		changed, err := commitChangedPaths(commit)
 		if err != nil {
-			// Best effort: an unreadable object ends the walk; remaining
-			// entries stay unattributed rather than failing the page.
+			// Best effort: an unreadable object ends the walk rather than
+			// failing the page.
 			return storer.ErrStop
 		}
 		if dirLatest == nil && touches(changed, dirPath) {
@@ -682,9 +582,8 @@ func (s *Server) attributeTreeMetaEntries(tip *object.Commit, dirPath string, en
 	return dirLatest
 }
 
-// commitChangedPaths lists the paths a commit touches against its first
-// parent, both diff sides (mirroring commitTouchesPath); a root commit touches
-// everything in its tree.
+// commitChangedPaths lists the paths a commit touches against its first parent,
+// both diff sides; a root commit touches everything in its tree.
 func commitChangedPaths(commit *object.Commit) ([]string, error) {
 	tree, err := commit.Tree()
 	if err != nil {

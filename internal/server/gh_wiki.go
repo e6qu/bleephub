@@ -9,16 +9,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Wiki is git-backed on real GitHub with NO REST API, so these routes live
-// under the browser-only /ui-data namespace rather than /api/v3 — inventing a
-// GitHub-namespaced path is a defect the route-definition tests reject. They are
-// the browser's view of the `<repo>.wiki.git` repository, not a second store:
-// every read here projects that repository's tip commit and every write here is
-// a commit on it (store_wiki_git.go), so a page edited in the UI is in the next
-// clone and a page pushed over git is on the next page load. A repository whose
-// wiki is disabled (has_wiki=false) reports 404 for the whole surface, matching
-// a disabled wiki on github.com.
-// (`s.route` auto-wraps /ui-data patterns with authenticateUIData.)
+// Wiki has no REST API on GitHub, so these routes live under /ui-data, not
+// /api/v3 (a GitHub-namespaced path here fails the route-definition tests).
+// They are the browser's view of the `<repo>.wiki.git` repository: reads
+// project its tip commit, writes commit to it (store_wiki_git.go), so UI and
+// git edits share one history. has_wiki=false 404s the whole surface.
 func (s *Server) registerGHWikiRoutes() {
 	s.registerGHWikiSettingsRoutes()
 	s.route("GET /ui-data/repos/{owner}/{repo}/wiki/pages", s.handleListWikiPages)
@@ -30,7 +25,7 @@ func (s *Server) registerGHWikiRoutes() {
 }
 
 // wikiRepoForRead resolves the repo and enforces read access + wiki-enabled,
-// writing the 404 itself when the caller should not see it.
+// writing a 404 when the caller should not see it.
 func (s *Server) wikiRepoForRead(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil || !repo.HasWiki {
@@ -56,8 +51,7 @@ func (s *Server) wikiRepoForWrite(w http.ResponseWriter, r *http.Request) *store
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	// The same policy the git transport applies to a push, asked in the one
-	// place it is decided.
+	// Same policy the git transport applies to a push.
 	if !s.viewerMayEditWiki(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to edit the wiki.")
 		return nil
@@ -102,9 +96,8 @@ func (s *Server) handlePutWikiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title string `json:"title"`
-		Body  string `json:"body"`
-		// Message is the optional edit summary recorded on the revision.
+		Title   string `json:"title"`
+		Body    string `json:"body"`
 		Message string `json:"message"`
 	}
 	if !decodeJSONBody(w, r, &req) {
@@ -132,8 +125,7 @@ func (s *Server) handlePutWikiPage(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 		action = "created"
 	}
-	// A browser edit is a commit, so it raises the same gollum event a push of
-	// that commit would have raised.
+	// A browser edit is a commit: raise the same gollum event a push would.
 	s.emitGollumEvent(repo, user, wikiPageChangeFor(page, action, s.store.WikiTipSHA(repo.FullName)), s.baseURL(r))
 	writeJSON(w, status, wikiPageJSON(page))
 }
@@ -151,8 +143,7 @@ func (s *Server) handleDeleteWikiPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListWikiPageRevisions lists a page's edit history newest first. Rows
-// carry a short body preview rather than the full body; the single-revision
-// read below returns the complete snapshot.
+// carry a body preview; the single-revision read returns the full snapshot.
 func (s *Server) handleListWikiPageRevisions(w http.ResponseWriter, r *http.Request) {
 	repo := s.wikiRepoForRead(w, r)
 	if repo == nil {
@@ -207,8 +198,7 @@ func wikiRevisionJSON(rev *store.WikiPageRevision, withBody bool) map[string]int
 	return out
 }
 
-// wikiBodyPreview truncates a revision body to a short listing preview on a
-// rune boundary.
+// wikiBodyPreview truncates a body to a listing preview on a rune boundary.
 func wikiBodyPreview(body string) string {
 	const max = 140
 	if len(body) <= max {

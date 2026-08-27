@@ -5,17 +5,11 @@ import (
 )
 
 // renameRepository renames owner/name to newName and carries the artifact
-// metadata that embeds the repository's full name across with it.
-//
-// It is one function rather than one per caller because the carry is the part
-// that is easy to forget: a rename that moves the repository row but not the
-// artifact index leaves every cache entry and workflow artifact addressed by a
-// name nothing answers to. PATCH /repos/{owner}/{repo} and the GraphQL
-// updateRepository mutation both rename through here, so neither can be the
-// one that forgets.
-//
-// A failed carry is rolled back, so the caller sees either both halves or
-// neither.
+// metadata (which embeds the full name) with it. Both PATCH /repos and the
+// GraphQL updateRepository mutation route through here so neither forgets the
+// carry — a moved row without a moved artifact index orphans every cache entry
+// and workflow artifact. A failed carry is rolled back: the caller sees both
+// halves or neither.
 func (s *Server) renameRepository(owner, name, newName string) error {
 	if !s.store.RenameRepo(owner, name, newName) {
 		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.

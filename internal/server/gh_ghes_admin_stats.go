@@ -7,9 +7,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// registerGHESAdminStatsRoutes closes the classic-token-only GHES
-// installation administration surface. These paths intentionally have no
-// enterprise slug: they address the appliance itself.
+// registerGHESAdminStatsRoutes registers the GHES appliance administration
+// surface. These paths carry no enterprise slug: they address the appliance itself.
 func (s *Server) registerGHESAdminStatsRoutes() {
 	admin := s.requireGHESSiteAdmin
 	s.registerGHESPreReceiveRoutes(admin)
@@ -45,9 +44,8 @@ func (s *Server) requireGHESSiteAdmin(next http.HandlerFunc) http.HandlerFunc {
 			writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 			return
 		}
-		// GHES deliberately hides this surface from authenticated non-admins,
-		// and from a site admin's narrow/delegated credentials (fine-grained
-		// PAT, app or installation token) — those must not administer the box.
+		// Hide this surface from non-admins, and from a site admin's delegated
+		// credentials (fine-grained PAT, app or installation token).
 		if !user.SiteAdmin || !credentialConveysSiteAdmin(r.Context()) {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
@@ -65,8 +63,7 @@ func (s *Server) handleGHESLicense(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	s.store.Mu.RUnlock()
-	// A development GHES appliance has an effectively unmetered local
-	// license. Keep every numeric relationship internally consistent.
+	// A development appliance is effectively unmetered; keep the seat math consistent.
 	seats := used
 	if seats < 1 {
 		seats = 1

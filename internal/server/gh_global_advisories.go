@@ -12,19 +12,17 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Global security advisories (GET /advisories and GET /advisories/{ghsa_id}).
-// The global database view is backed by the repository security-advisory
-// store: a repository advisory enters the global database when it is
-// published, and stays there (with withdrawn_at set) if later withdrawn.
+// Global security advisories, a view over the repository security-advisory
+// store: a repo advisory enters when published and stays (withdrawn_at set)
+// if later withdrawn.
 
 func (s *Server) registerGHGlobalAdvisoriesRoutes() {
 	s.route("GET /api/v3/advisories", s.handleListGlobalAdvisories)
 	s.route("GET /api/v3/advisories/{ghsa_id}", s.handleGetGlobalAdvisory)
 }
 
-// advisoryDateInRange evaluates GitHub's date-range filter syntax: an exact
-// date ("2023-06-01"), a range ("2023-01-01..2023-06-30"), or an open range
-// (">=2023-01-01", "<=2023-06-30", ">2023-01-01", "<2023-06-30").
+// advisoryDateInRange evaluates GitHub's date-range filter syntax: exact date,
+// closed range (a..b), or open range (>=, <=, >, <).
 func advisoryDateInRange(t time.Time, expr string) bool {
 	day := t.UTC().Format("2006-01-02")
 	switch {
@@ -47,9 +45,8 @@ func advisoryDateInRange(t time.Time, expr string) bool {
 func (s *Server) handleListGlobalAdvisories(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	// The global database only contains reviewed advisories (repository
-	// advisories are GitHub-reviewed by publication); the documented default
-	// for the type filter is "reviewed".
+	// The global database holds only reviewed advisories; the type filter
+	// defaults to "reviewed".
 	typeFilter := q.Get("type")
 	if typeFilter == "" {
 		typeFilter = "reviewed"
@@ -82,11 +79,7 @@ func (s *Server) handleListGlobalAdvisories(w http.ResponseWriter, r *http.Reque
 			}
 		}
 		// The ecosystem and affects filters match against the advisory's
-		// package coordinates. They used to reject every advisory outright,
-		// on the reasoning that repository advisories carry no coordinates —
-		// which stopped being true once vulnerabilities recorded a package,
-		// leaving a documented filter that returned an empty list whatever
-		// the instance actually held.
+		// package coordinates.
 		if v := q.Get("ecosystem"); v != "" && !advisoryAffectsEcosystem(a, v) {
 			continue
 		}
@@ -159,8 +152,7 @@ func (s *Server) handleListGlobalAdvisories(w http.ResponseWriter, r *http.Reque
 	}
 	page := filtered[start:end]
 
-	// Cursor-based Link header, matching the global advisories endpoint's
-	// before/after pagination.
+	// Cursor-based Link header (before/after pagination).
 	var links []string
 	if end < len(filtered) {
 		next := *r.URL
@@ -229,8 +221,7 @@ func decodeAdvisoryCursor(cursor string) (int, bool) {
 	return idx, true
 }
 
-// globalAdvisoryToJSON renders the spec `global-advisory` shape from a
-// published repository advisory.
+// globalAdvisoryToJSON renders the `global-advisory` shape.
 func (s *Server) globalAdvisoryToJSON(a *store.SecurityAdvisory, baseURL string) map[string]interface{} {
 	repo := s.store.GetRepoByID(a.RepoID)
 
@@ -261,9 +252,8 @@ func (s *Server) globalAdvisoryToJSON(a *store.SecurityAdvisory, baseURL string)
 	}
 	if len(vulnerabilities) == 0 && a.VulnerableVersionRange != "" {
 		vulnerabilities = append(vulnerabilities, map[string]interface{}{
-			// Repository advisories carry a version range but no package
-			// coordinates. package itself is nullable, but its ecosystem/name
-			// are not — emit a null package rather than null members.
+			// package is nullable but its ecosystem/name are not; emit a null
+			// package rather than null members.
 			"package":                  nil,
 			"vulnerable_version_range": a.VulnerableVersionRange,
 			"first_patched_version":    nil,
@@ -324,9 +314,8 @@ func (s *Server) globalAdvisoryToJSON(a *store.SecurityAdvisory, baseURL string)
 	return out
 }
 
-// advisoryAffectsEcosystem reports whether any of the advisory's
-// vulnerabilities names a package in the given ecosystem, comparing the
-// folded ecosystem keys so a "pypi" query and a "pip" advisory agree.
+// advisoryAffectsEcosystem reports whether any vulnerability names a package in
+// the ecosystem, folding keys so a "pypi" query and a "pip" advisory agree.
 func advisoryAffectsEcosystem(a *store.SecurityAdvisory, ecosystem string) bool {
 	want := store.NormalizeAdvisoryEcosystem(ecosystem)
 	for _, v := range a.Vulnerabilities {
@@ -337,11 +326,10 @@ func advisoryAffectsEcosystem(a *store.SecurityAdvisory, ecosystem string) bool 
 	return false
 }
 
-// advisoryAffectsAnyPackage evaluates the `affects` filter: a comma-separated
-// list of package names, each optionally carrying a version
-// ("lodash@4.17.20"). A bare name matches the package however it is
-// versioned; a name with a version matches only when that version falls
-// inside the advisory's vulnerable range, under the ecosystem's own ordering.
+// advisoryAffectsAnyPackage evaluates the `affects` filter: comma-separated
+// package names, each optionally versioned ("lodash@4.17.20"). A versioned
+// name matches only when that version falls in the vulnerable range under the
+// ecosystem's own ordering.
 func advisoryAffectsAnyPackage(a *store.SecurityAdvisory, affects string) bool {
 	for _, entry := range strings.Split(affects, ",") {
 		entry = strings.TrimSpace(entry)

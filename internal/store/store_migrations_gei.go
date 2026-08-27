@@ -1,22 +1,12 @@
 package store
 
 // GitHub Enterprise Importer (GEI): the entities behind GitHub's GraphQL
-// migration surface.
-//
-// The REST export migrations in store_migrations.go move data *out* of this
-// instance. GEI moves it *in*: a MigrationSource names somewhere to migrate
-// from, a RepositoryMigration brings one repository across, and an
-// OrganizationMigration brings a whole organization across as a fan-out of
-// repository migrations.
-//
-// Everything is keyed by the organization that owns it, so one organization's
-// migrations, sources and migrator grants are never reachable from another —
-// the isolation property the authorization rules in the server and GraphQL
-// layers rest on.
+// migration surface (data moving *in*, versus the REST exports in
+// store_migrations.go). Everything is keyed by owning organization, giving the
+// tenant isolation the authorization rules depend on.
 //
 // STORE-021: every getter and List* returns a detached snapshot;
-// FindMigrationSourceByNodeID and friends return the LIVE row, because they
-// are the write path's lookup.
+// Find*ByNodeID returns the LIVE row (the write path's lookup).
 
 import (
 	"fmt"
@@ -53,8 +43,7 @@ func ValidMigrationSourceType(value string) bool {
 }
 
 // GEIMigrationState values — GitHub's MigrationState enum. A repository
-// migration is created QUEUED, a worker claims it into IN_PROGRESS, and it
-// ends in SUCCEEDED, FAILED or FAILED_VALIDATION.
+// migration goes QUEUED → IN_PROGRESS → SUCCEEDED/FAILED/FAILED_VALIDATION.
 const (
 	GEIMigrationStateNotStarted        = "NOT_STARTED"
 	GEIMigrationStateQueued            = "QUEUED"
@@ -65,9 +54,8 @@ const (
 	GEIMigrationStateFailed            = "FAILED"
 )
 
-// The extra states an organization migration passes through: GitHub's
-// OrganizationMigrationState is MigrationState plus the three phases of
-// bringing an organization across.
+// Extra states for an organization migration: OrganizationMigrationState is
+// MigrationState plus these three phases.
 const (
 	OrgMigrationStatePreRepoMigration  = "PRE_REPO_MIGRATION"
 	OrgMigrationStateRepoMigration     = "REPO_MIGRATION"
@@ -84,24 +72,20 @@ func GEIMigrationTerminal(state string) bool {
 	return false
 }
 
-// MigrationSource is a place repositories are migrated from: a GitHub
-// instance, an Azure DevOps organization, a Bitbucket Server or a GitLab.
-//
-// The credentials are held here because a migration started from this source
-// tomorrow needs them as much as one started today, and they are never served:
-// no GraphQL field, no REST field and no UI surface reads them back. The only
-// consumer is the migration worker, in-process.
+// MigrationSource is a place repositories are migrated from. Its stored
+// credentials are never served — only the in-process migration worker reads
+// them.
 type MigrationSource struct {
 	ID     int    `json:"id"`
 	NodeID string `json:"node_id"`
-	// OwnerOrgID is the organization the source belongs to. Every read and
-	// write of this source is authorized against that organization.
+	// OwnerOrgID is the org every read/write of this source is authorized
+	// against.
 	OwnerOrgID int    `json:"owner_org_id"`
 	Name       string `json:"name"`
 	Type       string `json:"type"`
 	URL        string `json:"url"`
-	// AccessToken authenticates against the source; GitHubPAT authenticates
-	// against the target when the source hands back signed archive URLs.
+	// AccessToken authenticates against the source; GitHubPAT against the
+	// target for signed archive URLs.
 	AccessToken string    `json:"access_token,omitempty"`
 	GitHubPAT   string    `json:"github_pat,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -113,60 +97,45 @@ type RepositoryMigration struct {
 	ID     int    `json:"id"`
 	NodeID string `json:"node_id"`
 	// OwnerOrgID is the organization the imported repository lands in.
-	OwnerOrgID int `json:"owner_org_id"`
-	SourceID   int `json:"source_id"`
-	// RepositoryName is the name the imported repository takes here.
+	OwnerOrgID     int    `json:"owner_org_id"`
+	SourceID       int    `json:"source_id"`
 	RepositoryName string `json:"repository_name"`
-	// SourceURL is the repository being migrated from.
-	SourceURL string `json:"source_url"`
-	State     string `json:"state"`
-	// FailureReason is set when State is a failure state, and is what the
-	// GraphQL failureReason field serves.
-	FailureReason string `json:"failure_reason,omitempty"`
-	// WarningsCount counts the recoverable problems the migration ran into
-	// and continued past; WarningLog is what the migration log reports them
-	// as.
+	SourceURL      string `json:"source_url"`
+	State          string `json:"state"`
+	FailureReason  string `json:"failure_reason,omitempty"`
+	// WarningsCount is len(WarningLog): recoverable problems continued past.
 	WarningsCount   int      `json:"warnings_count"`
 	WarningLog      []string `json:"warning_log,omitempty"`
 	ContinueOnError bool     `json:"continue_on_error"`
 	LockSource      bool     `json:"lock_source"`
 	SkipReleases    bool     `json:"skip_releases"`
-	// TargetRepoVisibility is "public", "private" or "internal"; empty means
-	// the migration keeps the source's visibility, which for a source this
-	// server cannot interrogate means private.
+	// TargetRepoVisibility is public/private/internal; empty keeps the
+	// source's visibility, which for an un-interrogable source means private.
 	TargetRepoVisibility string `json:"target_repo_visibility,omitempty"`
 	GitArchiveURL        string `json:"git_archive_url,omitempty"`
 	MetadataArchiveURL   string `json:"metadata_archive_url,omitempty"`
-	// MigrationLogKey names the object holding this migration's log in the
-	// byte store. It is empty until the migration reaches a terminal state.
+	// MigrationLogKey is empty until the migration reaches a terminal state.
 	MigrationLogKey string `json:"migration_log_key,omitempty"`
-	// OrgMigrationID links a repository migration created as part of an
-	// organization migration back to it; 0 for a standalone one.
+	// OrgMigrationID links back to the org migration that fanned this out; 0
+	// if standalone.
 	OrgMigrationID int `json:"org_migration_id,omitempty"`
-	// StartedByUserID is the account that started the migration. Everything
-	// the migration creates in the target — the repository, the migrated
-	// records — is attributed to it, because a migration acts on somebody's
-	// authority and the result must say whose.
+	// StartedByUserID owns everything the migration creates in the target.
 	StartedByUserID int `json:"started_by_user_id,omitempty"`
-	// TargetRepoID is the repository this migration created, recorded the
-	// moment it exists. A migration interrupted and resumed continues into
-	// that repository and no other: matching by name instead would let anyone
-	// who can create a repository in the organization plant one under the name
-	// a queued migration is about to use and receive its contents.
+	// TargetRepoID is the repository this migration created. A resumed
+	// migration continues into that repo by ID, not by name: name-matching
+	// would let someone pre-plant a repo under a queued migration's name and
+	// receive its contents.
 	TargetRepoID int `json:"target_repo_id,omitempty"`
-	// SourceRepoLock is the full name of the repository on *this* instance
-	// that lock_source froze for the duration of the migration, or "" when
-	// the source is somewhere else and nothing here can be frozen. The lock
-	// is held for exactly as long as the migration is not terminal, which is
-	// why the migration's own state is the only thing that releases it.
+	// SourceRepoLock is the full name of the repo on *this* instance that
+	// lock_source froze, or "" when the source is elsewhere. Held until the
+	// migration is terminal, so its state is the only thing that releases it.
 	SourceRepoLock string    `json:"source_repo_lock,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
-// OrganizationMigration is a whole organization coming across. It owns the
-// repository migrations it fans out into, and its remaining count is derived
-// from their states rather than stored twice.
+// OrganizationMigration is a whole organization coming across, fanning out
+// into repository migrations.
 type OrganizationMigration struct {
 	ID     int    `json:"id"`
 	NodeID string `json:"node_id"`
@@ -179,20 +148,18 @@ type OrganizationMigration struct {
 	TargetOrgID   int    `json:"target_org_id,omitempty"`
 	State         string `json:"state"`
 	FailureReason string `json:"failure_reason,omitempty"`
-	// TotalRepositoriesCount is nil until the source has been enumerated:
-	// before then the instance genuinely does not know how many there are.
+	// TotalRepositoriesCount is nil until the source has been enumerated.
 	TotalRepositoriesCount     *int   `json:"total_repositories_count,omitempty"`
 	RemainingRepositoriesCount *int   `json:"remaining_repositories_count,omitempty"`
 	SourceAccessToken          string `json:"source_access_token,omitempty"`
-	// StartedByUserID is the account that started the migration; the target
-	// organization and everything under it is created as that account.
+	// StartedByUserID owns the target org and everything created under it.
 	StartedByUserID int       `json:"started_by_user_id,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
-// OrgMigratorRole is one grant of the organization migrator role. Actor is a
-// user login or a team slug, distinguished by ActorType ("USER" or "TEAM").
+// OrgMigratorRole is one grant of the org migrator role. Actor is a user login
+// or team slug, per ActorType ("USER" | "TEAM").
 type OrgMigratorRole struct {
 	OrgID     int       `json:"org_id"`
 	ActorType string    `json:"actor_type"`
@@ -340,10 +307,7 @@ func (st *Store) ListMigrationSources(ownerOrgID int) []*MigrationSource {
 
 // --- repository migrations ---
 
-// NewRepositoryMigration is the create input for a repository migration. It is
-// a struct rather than a dozen positional parameters because the GraphQL input
-// carries a dozen fields and a positional list of them is unreadable at the
-// call site and unsafe to extend.
+// NewRepositoryMigration is the create input for a repository migration.
 type NewRepositoryMigration struct {
 	OwnerOrgID           int
 	SourceID             int
@@ -460,10 +424,8 @@ func (st *Store) ClaimRepositoryMigration(id int) bool {
 	return true
 }
 
-// SetRepositoryMigrationState records a terminal (or intermediate) state with
-// its reason. It refuses to move a migration out of a terminal state, which is
-// what makes an abort final: a worker finishing after the abort cannot
-// overwrite it with SUCCEEDED.
+// SetRepositoryMigrationState records a state and reason. It refuses to leave a
+// terminal state, so a worker finishing after an abort cannot overwrite it.
 func (st *Store) SetRepositoryMigrationState(id int, state, failureReason string) *RepositoryMigration {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -508,10 +470,8 @@ func (st *Store) SetRepositoryMigrationTargetRepo(id, repoID int) bool {
 	return true
 }
 
-// SetRepositoryMigrationSourceLock records that this migration holds
-// lock_source over a repository on this instance. It refuses once the
-// migration is terminal, so a worker finishing after an abort cannot re-freeze
-// a repository nobody is migrating any more.
+// SetRepositoryMigrationSourceLock records the lock_source freeze. It refuses
+// once terminal, so a late worker cannot re-freeze an unmigrated repository.
 func (st *Store) SetRepositoryMigrationSourceLock(id int, fullName string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -539,9 +499,9 @@ func (st *Store) SetRepositoryMigrationLogKey(id int, key string) bool {
 	return true
 }
 
-// AbortQueuedRepositoryMigrations fails every not-yet-started migration of one
-// organization and returns how many it aborted. A migration already in
-// progress is left alone: GitHub's abortQueuedMigrations names the queue.
+// AbortQueuedRepositoryMigrations fails every QUEUED migration of an org and
+// returns how many. In-progress migrations are left alone (GitHub's
+// abortQueuedMigrations names the queue).
 func (st *Store) AbortQueuedRepositoryMigrations(ownerOrgID int, reason string) int {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -575,8 +535,8 @@ func (st *Store) ListUnfinishedRepositoryMigrations() []int {
 	return out
 }
 
-// RequeueRepositoryMigration returns an in-progress migration to the queue. It
-// is how work a dead process left behind becomes claimable again.
+// RequeueRepositoryMigration returns an in-progress migration to the queue, so
+// work a dead process left behind becomes claimable again.
 func (st *Store) RequeueRepositoryMigration(id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -767,14 +727,9 @@ func (st *Store) ListOrgMigratorRoles(orgID int) []*OrgMigratorRole {
 	return out
 }
 
-// UserHoldsOrgMigratorRole reports whether a user may perform migration
-// operations on an organization by virtue of a migrator grant.
-//
-// A grant reaches the user directly, through a team they belong to, or through
-// the enterprise-wide grant the enterprise that owns the organization holds.
-// All three are properties of *this* organization: an enterprise grant reaches
-// only the organizations of the enterprise that issued it, and a team grant
-// only the teams of the organization it names, so a migrator on one tenant is
+// UserHoldsOrgMigratorRole reports whether a migrator grant reaches the user
+// on this org — directly, through a team, or through the owning enterprise's
+// grant. Every path is scoped to this org, so a migrator on one tenant is
 // nothing on another.
 func (st *Store) UserHoldsOrgMigratorRole(orgID int, user *User) bool {
 	if user == nil {
@@ -817,8 +772,8 @@ func (st *Store) UserHoldsOrgMigratorRole(orgID int, user *User) bool {
 
 // --- persistence load ---
 
-// loadGEIMigrationBuckets restores the GEI layer. It runs during store
-// construction, before the store is reachable, so it takes no lock.
+// loadGEIMigrationBuckets restores the GEI layer during construction (no lock:
+// the store is not yet reachable).
 func (st *Store) loadGEIMigrationBuckets() error {
 	if err := st.loadBucket("migration_sources", func(raw []byte) error {
 		var src MigrationSource

@@ -52,9 +52,8 @@ func (st *Store) GetAssignableIssueTypeForRepo(repo *Repo, id int) *IssueType {
 	return it
 }
 
-// issueTypeForIssueLocked resolves the issue's assigned type while st.Mu is
-// held. It returns nil when the repo no longer resolves, the repo is not owned
-// by an organization, or the assigned definition was removed.
+// IssueTypeForIssueLocked resolves the issue's assigned type; call with st.Mu
+// held. Returns nil when the repo is gone, not org-owned, or the type was removed.
 func (st *Store) IssueTypeForIssueLocked(issue *Issue) *IssueType {
 	if issue == nil || issue.IssueTypeID == 0 {
 		return nil
@@ -95,8 +94,7 @@ func (st *Store) CreateIssueType(orgLogin, name string, description, color *stri
 	return it
 }
 
-// UpdateIssueType replaces the mutable fields of an issue type.
-// Returns nil when the issue type does not exist in the org.
+// UpdateIssueType replaces the mutable fields of an issue type, or returns nil if absent.
 func (st *Store) UpdateIssueType(orgLogin string, id int, name string, description, color *string, isEnabled bool) *IssueType {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

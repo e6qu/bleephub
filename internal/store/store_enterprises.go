@@ -6,19 +6,12 @@ import (
 	"time"
 )
 
-// Enterprise-scoped state. bleephub plays the role of a single GitHub
-// Enterprise Server instance, so exactly one enterprise exists; its slug is
-// configuration (BLEEPHUB_ENTERPRISE_SLUG), not store state. Everything the
-// enterprise REST surfaces mutate — enterprise teams, code security
-// configurations, Dependabot repository access, GitHub Actions cache limits,
-// Actions OIDC custom property inclusions, and the Copilot coding agent
-// policy — lives here and persists.
+// Enterprise-scoped state. Exactly one enterprise exists; its slug is
+// configuration (BLEEPHUB_ENTERPRISE_SLUG), not store state.
 
-// EnterpriseTeam is a team scoped to the enterprise rather than to one
-// organization. Membership is direct (user IDs); organization assignments
-// depend on OrganizationSelectionType: "disabled" assigns none, "all"
-// assigns every organization on the instance, "selected" assigns exactly
-// SelectedOrgLogins.
+// EnterpriseTeam is a team scoped to the enterprise, not one organization.
+// OrganizationSelectionType governs org assignments: "disabled" none, "all"
+// every org on the instance, "selected" exactly SelectedOrgLogins.
 type EnterpriseTeam struct {
 	ID                        int       `json:"id"`
 	Name                      string    `json:"name"`
@@ -35,7 +28,7 @@ type EnterpriseTeam struct {
 
 // EnterpriseCodeSecurityConfiguration mirrors GitHub's
 // code-security-configuration schema with target_type "enterprise". Feature
-// fields hold the enabled/disabled/not_set enum values the API accepts.
+// fields hold enabled/disabled/not_set enum values.
 type EnterpriseCodeSecurityConfiguration struct {
 	ID                                    int       `json:"id"`
 	Name                                  string    `json:"name"`
@@ -65,19 +58,15 @@ type EnterpriseCodeSecurityConfiguration struct {
 	UpdatedAt                             time.Time `json:"updated_at"`
 }
 
-// EnterpriseCodeSecurityAttachment records one repository's attachment to an
-// enterprise code security configuration. Persisted individually so the
-// repoID→configID association survives reload; a repository has at most one
-// attached configuration.
+// EnterpriseCodeSecurityAttachment persists one repo's config attachment. A
+// repository has at most one attached configuration.
 type EnterpriseCodeSecurityAttachment struct {
 	RepoID   int `json:"repo_id"`
 	ConfigID int `json:"config_id"`
 }
 
 // DependabotDefaultLevel is an enterprise's Dependabot default repository
-// access level. The empty value means "never set" (serialised as null); the
-// two real values are the constants below. A typed string marshals to JSON
-// identically to a plain string.
+// access level. Empty means "never set" (serialized as null).
 type DependabotDefaultLevel string
 
 const (
@@ -85,10 +74,9 @@ const (
 	DependabotDefaultLevelInternal DependabotDefaultLevel = "internal"
 )
 
-// EnterpriseSettings holds the singleton enterprise-level settings the REST
-// surfaces mutate. Persisted as one row under the "enterprise_settings"
-// bucket; zero-value fields fall back to defaultEnterpriseSettings values on
-// first access paths that seed them in NewStore.
+// EnterpriseSettings holds the singleton enterprise-level settings, persisted
+// as one row under the "enterprise_settings" bucket. normalizeEnterpriseSettings
+// seeds zero-value fields with defaults.
 type EnterpriseSettings struct {
 	// Enterprise administration settings.
 	Announcement                    *EnterpriseAnnouncement                    `json:"announcement,omitempty"`
@@ -126,21 +114,19 @@ type EnterpriseSettings struct {
 	DependabotAccessibleRepoIDs []int                  `json:"dependabot_accessible_repo_ids"`
 	DependabotDefaultLevel      DependabotDefaultLevel `json:"dependabot_default_level"` // "" = never set (null); else public|internal
 
-	// GitHub Actions cache policy. GitHub Enterprise Server ships with a
-	// 14-day retention limit and a 10 GB per-repository storage limit.
+	// GitHub Actions cache policy. GHES defaults: 14-day retention, 10 GB
+	// per-repository storage.
 	ActionsCacheRetentionDays int `json:"actions_cache_retention_days"`
 	ActionsCacheSizeGB        int `json:"actions_cache_size_gb"`
 	ActionsDefaultCacheSizeGB int `json:"actions_default_cache_size_gb"`
 
-	// GitHub Actions OIDC custom property inclusions (repository custom
-	// properties included in OIDC token claims), in insertion order.
+	// Repository custom properties included in OIDC token claims, in insertion
+	// order.
 	OIDCCustomProperties      []string `json:"oidc_custom_properties"`
 	OIDCIncludeEnterpriseSlug bool     `json:"oidc_include_enterprise_slug"`
 
-	// Enterprise-wide Actions policy. These settings are intentionally stored
-	// independently from organization policy: organization settings may
-	// narrow an enterprise policy but cannot replace its persisted source of
-	// truth.
+	// Enterprise-wide Actions policy, stored independently of org policy: org
+	// settings may narrow it but cannot replace this source of truth.
 	ActionsEnabledOrganizations     string                       `json:"actions_enabled_organizations"`
 	ActionsAllowedActions           string                       `json:"actions_allowed_actions"`
 	ActionsSHAPinningRequired       bool                         `json:"actions_sha_pinning_required"`
@@ -157,17 +143,16 @@ type EnterpriseSettings struct {
 	CopilotCodingAgentOrgs   []string `json:"copilot_coding_agent_orgs"`
 }
 
-// EnterpriseAnnouncement is the enterprise-wide banner returned by the
-// announcement API. ExpiresAt is kept as the caller's RFC3339 representation
-// because GitHub returns an ISO-8601 string and null has distinct semantics.
+// EnterpriseAnnouncement is the enterprise-wide banner. ExpiresAt stays a
+// string (GitHub returns ISO-8601, and null has distinct semantics).
 type EnterpriseAnnouncement struct {
 	Announcement    string  `json:"announcement"`
 	ExpiresAt       *string `json:"expires_at"`
 	UserDismissible bool    `json:"user_dismissible"`
 }
 
-// EnterpriseCodeSecurity is the legacy enterprise security policy. GitHub
-// keeps this API for compatibility alongside code-security configurations.
+// EnterpriseCodeSecurity is the legacy enterprise security policy GitHub keeps
+// alongside code-security configurations.
 type EnterpriseCodeSecurity struct {
 	AdvancedSecurityEnabledForNewRepositories                  bool    `json:"advanced_security_enabled_for_new_repositories"`
 	AdvancedSecurityEnabledNewUserNamespaceRepos               bool    `json:"advanced_security_enabled_new_user_namespace_repos"`
@@ -179,8 +164,7 @@ type EnterpriseCodeSecurity struct {
 }
 
 // EnterpriseAuditLogStream is a durable audit-log delivery configuration.
-// VendorSpecific contains encrypted/opaque connection settings and is never
-// rendered back to clients.
+// VendorSpecific holds opaque connection settings, never rendered to clients.
 type EnterpriseAuditLogStream struct {
 	ID             int                    `json:"id"`
 	StreamType     string                 `json:"stream_type"`
@@ -371,10 +355,8 @@ func (st *Store) CreateEnterpriseTeam(name, description, selectionType string, g
 	return t
 }
 
-// GetEnterpriseTeam returns an enterprise team by slug, or nil.
-// cloneEnterpriseTeam returns a deep copy safe to hand outside the store lock
-// (STORE-021): GroupID, MemberIDs and SelectedOrgLogins are the reference
-// fields. The mutators below re-fetch the live row by id.
+// cloneEnterpriseTeam deep-copies a team so callers hold a row detached from
+// the stored one (STORE-021); mutators re-fetch the live row by ID.
 func cloneEnterpriseTeam(t *EnterpriseTeam) *EnterpriseTeam {
 	if t == nil {
 		return nil
@@ -394,8 +376,7 @@ func cloneEnterpriseTeam(t *EnterpriseTeam) *EnterpriseTeam {
 }
 
 // cloneEnterpriseCodeSecurityConfig deep-copies a configuration so callers hold
-// a row detached from the stored one (its only reference fields are three
-// optional scalars).
+// a row detached from the stored one (STORE-021).
 func cloneEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityConfiguration) *EnterpriseCodeSecurityConfiguration {
 	if c == nil {
 		return nil
@@ -416,6 +397,7 @@ func cloneEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityConfiguration) *
 	return &clone
 }
 
+// GetEnterpriseTeam returns an enterprise team by slug, or nil.
 func (st *Store) GetEnterpriseTeam(slug string) *EnterpriseTeam {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -436,9 +418,6 @@ func (st *Store) ListEnterpriseTeams() []*EnterpriseTeam {
 
 // ListEnterpriseCustomProperties returns detached snapshots of the
 // enterprise-level repository custom property definitions, ordered by name.
-// GetEnterpriseCustomProperty/UpsertEnterpriseCustomProperty write the same
-// map; this is the enumeration the GraphQL Enterprise.repositoryCustomProperties
-// connection reads.
 func (st *Store) ListEnterpriseCustomProperties() []*CustomProperty {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -450,15 +429,12 @@ func (st *Store) ListEnterpriseCustomProperties() []*CustomProperty {
 	return snapshotCustomProperties(out)
 }
 
-// UpdateEnterpriseTeam applies the non-nil fields. Renaming re-slugs the team
-// exactly as GitHub does. Returns false when the new slug collides with a
-// different existing team.
+// UpdateEnterpriseTeam applies the non-nil fields, re-slugging on rename.
+// Returns false when the new slug collides with a different team.
 func (st *Store) UpdateEnterpriseTeam(t *EnterpriseTeam, name, description, selectionType, notificationSetting *string, groupID **string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	// Re-fetch the live row: the caller holds a detached clone from
-	// GetEnterpriseTeam, so mutate the stored team and sync fresh state back
-	// into the caller's pointer for rendering.
+	// Caller holds a detached clone; mutate the live row and sync back into t.
 	live := st.EnterpriseTeams[t.ID]
 	if live == nil {
 		return false
@@ -692,14 +668,12 @@ func (st *Store) ListEnterpriseCodeSecurityConfigs() []*EnterpriseCodeSecurityCo
 	return snapshotEnterpriseCodeSecurityConfigs(out)
 }
 
-// TouchEnterpriseCodeSecurityConfig bumps updated_at and persists after a
-// caller-applied field mutation. Callers mutate under this lock via mutate.
+// TouchEnterpriseCodeSecurityConfig runs mutate under the lock, then bumps
+// updated_at and persists.
 func (st *Store) TouchEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityConfiguration, mutate func()) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	// The caller holds a detached clone from GetEnterpriseCodeSecurityConfig;
-	// mutate() applies its edits to that clone, which we then commit onto the
-	// live row so concurrent readers observe the update through a stable pointer.
+	// Caller holds a detached clone; mutate edits it, then commit onto the live row.
 	live := st.EnterpriseCodeSecurityConfigs[c.ID]
 	if live == nil {
 		return
@@ -724,9 +698,7 @@ func (st *Store) DeleteEnterpriseCodeSecurityConfig(id int) (deleted, conflict b
 	if c.DefaultForNewRepos != "none" {
 		return false, true
 	}
-	// One transaction: dropping the config and detaching every repo attached to
-	// it must not disagree across a crash, or a surviving attachment would point
-	// at a config that no longer exists.
+	// One transaction: a surviving attachment must never outlive its config.
 	batch := NewPersistBatch(st.Persist)
 	delete(st.EnterpriseCodeSecurityConfigs, id)
 	for repoID, cfgID := range st.EnterpriseCodeSecurityRepoConfigs {
@@ -790,7 +762,7 @@ func (st *Store) ListEnterpriseCodeSecurityConfigRepos(configID int) []*Repo {
 func (st *Store) SetEnterpriseCodeSecurityConfigDefault(c *EnterpriseCodeSecurityConfiguration, defaultForNewRepos string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	// c is a detached clone; commit the change onto the live row.
+	// Caller holds a detached clone; commit onto the live row.
 	live := st.EnterpriseCodeSecurityConfigs[c.ID]
 	if live == nil {
 		return

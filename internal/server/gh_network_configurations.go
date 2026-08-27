@@ -8,11 +8,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub hosted compute networking: organizations create network
-// configurations that bind hosted compute (Actions) to network settings
-// resources. On real GitHub the settings resources are provisioned by the
-// Azure private networking onboarding flow, not the REST API; bleephub
-// mirrors that with the /internal/orgs/{org}/network-settings seed endpoint.
+// Hosted-compute networking: orgs bind Actions compute to network settings
+// resources. GitHub provisions the settings resources via Azure onboarding,
+// not the REST API; bleephub seeds them via /internal/orgs/{org}/network-settings.
 
 func (s *Server) registerGHNetworkConfigurationRoutes() {
 	s.route("GET /api/v3/orgs/{org}/settings/network-configurations",
@@ -28,8 +26,7 @@ func (s *Server) registerGHNetworkConfigurationRoutes() {
 	s.route("GET /api/v3/orgs/{org}/settings/network-settings/{network_settings_id}",
 		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgNetworkSettings)))
 
-	// Seed endpoint standing in for the Azure private networking onboarding
-	// flow that provisions network settings resources on real GitHub.
+	// Stands in for the Azure onboarding flow that provisions network settings.
 	s.route("POST /internal/orgs/{org}/network-settings",
 		s.requireSiteAdminHandler(s.orgGated(s.handleSeedOrgNetworkSettings)))
 }
@@ -221,5 +218,3 @@ func networkSettingsJSON(res *store.NetworkSettingsResource) map[string]interfac
 	}
 	return out
 }
-
-// --- store ---

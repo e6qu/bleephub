@@ -35,8 +35,7 @@ function PinIcon() {
   );
 }
 
-// github.com renders each timeline event with a distinct octicon in the gutter;
-// mirror that instead of a single generic dot. Unmapped events keep the dot.
+// Distinct octicon per event, like github.com; unmapped events keep the dot.
 function eventIcon(event: string): ReactNode {
   switch (event) {
     case "reviewed":
@@ -94,8 +93,7 @@ export function reviewStateText(state: string): string {
 
 const shortSha = (sha: string) => sha.slice(0, 7);
 
-/** A short-sha rendered as a link when the event carries a web URL. Small
- * link targets get inline-block + tall line-height for WCAG target size. */
+// Short-sha link. inline-block + tall line-height meets WCAG target size.
 function ShaRef({ sha, href }: { sha: string; href?: string | undefined }) {
   if (!href) {
     return <code style={{ fontSize: "0.78rem" }}>{shortSha(sha)}</code>;
@@ -117,9 +115,7 @@ function ShaRef({ sha, href }: { sha: string; href?: string | undefined }) {
   );
 }
 
-// A single non-comment timeline event (labeled / assigned / renamed / reviewed /
-// closed / …) as github.com renders it in an issue or PR conversation. Shared by
-// the issue and pull-request conversations so both interleave events identically.
+// A non-comment timeline event, shared by the issue and PR conversations.
 export function TimelineEventRow({ item }: { item: GithubTimelineItem }) {
   // "committed" rows have a git author instead of an account actor.
   const actorAccount = item.actor ?? item.user ?? null;
@@ -186,7 +182,7 @@ export function TimelineEventRow({ item }: { item: GithubTimelineItem }) {
       break;
     }
     case "committed": {
-      // First line of the commit message, the way github.com shows it.
+      // First line of the commit message.
       const subject = (item.message ?? "").split("\n")[0] ?? "";
       text = (
         <>
@@ -255,7 +251,7 @@ export function TimelineEventRow({ item }: { item: GithubTimelineItem }) {
       );
       break;
     default:
-      // Render unrecognised events honestly by their wire name.
+      // Render unrecognised events by their wire name.
       text = <>{item.event.replaceAll("_", " ")}</>;
   }
 

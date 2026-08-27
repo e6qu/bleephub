@@ -10,13 +10,10 @@ import (
 )
 
 // Repository.rulesets — the GraphQL view of the rulesets the REST surface
-// already serves. `gh ruleset list` reads rulesets only through GraphQL, so
-// without this field the command fails outright with "Cannot query field
-// \"rulesets\" on type \"Repository\"" no matter what REST holds.
+// serves. `gh ruleset list` reads rulesets only through GraphQL.
 
 // addRulesetFieldsToSchema installs Repository.rulesets and Repository.ruleset.
-// It runs after the repository and organization types exist, because a
-// ruleset's `source` is one of them.
+// Runs after the repository and organization types exist (a ruleset's source is one).
 func (s *Resolver) addRulesetFieldsToSchema(repoType, orgType *graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	targetEnum := s.sharedEnum("RepositoryRulesetTarget", "BRANCH", "PUSH", "REPOSITORY", "TAG")
@@ -82,16 +79,12 @@ func (s *Resolver) addRulesetFieldsToSchema(repoType, orgType *graphql.Object) {
 		},
 	})
 
-	// Wire the rule/ruleset detail surface: RepositoryRule.parameters and
-	// .repositoryRuleset, RepositoryRuleConnection.edges,
-	// RepositoryRuleset.conditions and .bypassActors. It closes the
-	// rule↔ruleset cycle with AddFieldConfig, so it runs once all three
-	// objects exist.
+	// Wire the rule/ruleset detail surface, closing the rule↔ruleset cycle with
+	// AddFieldConfig — runs once all three objects exist.
 	s.installRuleDetailTypes(ruleType, ruleConnection, rulesetType)
 
-	// Ref.rules (gh_final_residue_graphql.go) reuses this one
-	// RepositoryRuleConnection instance; stash it so the residue installer can
-	// reach it by GitHub name rather than minting a duplicate.
+	// Ref.rules reuses this one RepositoryRuleConnection; stash it so the residue
+	// installer reaches it by name rather than minting a duplicate.
 	s.stashNamedObject(ruleConnection)
 
 	rulesetEdge := graphql.NewObject(graphql.ObjectConfig{
@@ -111,9 +104,8 @@ func (s *Resolver) addRulesetFieldsToSchema(repoType, orgType *graphql.Object) {
 		},
 	})
 
-	// Organization.ruleset / Organization.rulesets return the same two types,
-	// so they are recorded for the account surface rather than re-minted
-	// there (graphql-go rejects two types with one name).
+	// Record these for the account surface so Organization.ruleset(s) reuses them
+	// rather than re-minting (graphql-go rejects two types with one name).
 	accountTypes := s.accountSurfaceRegistry()
 	accountTypes.ruleset = rulesetType
 	accountTypes.rulesetConnection = rulesetConnection
@@ -189,8 +181,7 @@ func (s *Resolver) addRulesetFieldsToSchema(repoType, orgType *graphql.Object) {
 	})
 }
 
-// repoFromGraphQLSource resolves the stored repository a Repository field is
-// being resolved on, from the source map the repository renderer produced.
+// repoFromGraphQLSource resolves the stored repository from a Repository source map.
 func (s *Resolver) repoFromGraphQLSource(source interface{}) (*store.Repo, error) {
 	fields, ok := source.(map[string]interface{})
 	if !ok {
@@ -201,10 +192,8 @@ func (s *Resolver) repoFromGraphQLSource(source interface{}) (*store.Repo, error
 	return s.store.GetRepo(owner, name), nil
 }
 
-// sharedRepositoryRuleTypeEnum is the rule-type enum GitHub declares on
-// RepositoryRule.type, limited to the rule types bleephub's ruleset store
-// actually records. A subset of the official values is still an exact match
-// for every value it does declare.
+// sharedRepositoryRuleTypeEnum is RepositoryRule.type, limited to the rule types
+// bleephub's ruleset store records (a subset of GitHub's values).
 func (s *Resolver) sharedRepositoryRuleTypeEnum() *graphql.Enum {
 	return s.sharedEnum("RepositoryRuleType",
 		"CREATION", "UPDATE", "DELETION", "REQUIRED_LINEAR_HISTORY", "REQUIRED_DEPLOYMENTS",
@@ -216,17 +205,15 @@ func (s *Resolver) sharedRepositoryRuleTypeEnum() *graphql.Enum {
 }
 
 // rulesetToGraphQL renders one stored ruleset as its GraphQL source map. The
-// `source` member names the account the ruleset is configured on — the
-// repository for a repository ruleset, the organization for one inherited from
-// the owning organization — which is how `gh ruleset list` labels each row.
+// source member names the account it is configured on: the repository, or the
+// organization for an inherited one.
 func (s *Resolver) rulesetToGraphQL(ruleset *store.Ruleset, repo *store.Repo) map[string]interface{} {
 	rules := make([]map[string]interface{}, 0, len(ruleset.Rules))
 	for i, rule := range ruleset.Rules {
 		rules = append(rules, map[string]interface{}{
 			"id":   fmt.Sprintf("RR_%d_%d", ruleset.ID, i),
 			"type": strings.ToUpper(rule.Type),
-			// Private keys backing RepositoryRule.parameters: the stored REST
-			// spelling of the rule type and its snake_case parameter map.
+			// Private keys backing RepositoryRule.parameters.
 			"_type":       rule.Type,
 			"_parameters": rule.Parameters,
 		})
@@ -261,19 +248,17 @@ func (s *Resolver) rulesetToGraphQL(ruleset *store.Ruleset, repo *store.Repo) ma
 		"_conditions":   rulesetConditionsSource(ruleset),
 		"_bypassActors": append([]store.RulesetBypassActor(nil), ruleset.BypassActors...),
 	}
-	// Back-reference each rule to its ruleset for RepositoryRule.repositoryRuleset.
-	// The self-reference is bounded by query depth at execution time and by the
-	// visited-pointer set of the typed-nil source audit.
+	// Back-reference each rule to its ruleset for RepositoryRule.repositoryRuleset;
+	// the cycle is bounded by query depth and the typed-nil audit's visited set.
 	for _, rule := range rules {
 		rule["_ruleset"] = result
 	}
 	return result
 }
 
-// rulesetConditionsSource renders a ruleset's conditions as the source map
-// backing RepositoryRuleConditions. Only the ref_name condition is modeled;
-// include/exclude are always non-nil arrays so the non-null RefNameConditionTarget
-// list fields never resolve to null.
+// rulesetConditionsSource renders a ruleset's conditions. Only ref_name is
+// modeled; include/exclude are non-nil arrays so the non-null list fields never
+// resolve to null.
 func rulesetConditionsSource(ruleset *store.Ruleset) map[string]interface{} {
 	include := ruleset.Conditions.RefName.Include
 	if include == nil {

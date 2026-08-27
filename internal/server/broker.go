@@ -15,19 +15,16 @@ import (
 const messagePollTimeout = 30 * time.Second
 
 func (s *Server) registerBrokerRoutes() {
-	// Sessions
 	s.route("POST /_apis/v1/AgentSession/{poolId}", s.requireAgentSession(s.handleCreateSession))
 	s.route("DELETE /_apis/v1/AgentSession/{poolId}/{sessionId}", s.requireAgentSession(s.handleDeleteSession))
 
-	// Message polling
 	s.route("GET /_apis/v1/Message/{poolId}", s.requireAgentSession(s.handleGetMessage))
 	s.route("DELETE /_apis/v1/Message/{poolId}/{messageId}", s.requireAgentSession(s.handleDeleteMessage))
 }
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
-	// The registered agent behind the session token is the routing source of
-	// truth: it holds the labels from config-time registration and the scope
-	// that decides which jobs — and therefore which secrets — it may receive.
+	// The agent behind the session token carries the scope that decides which
+	// jobs — and therefore which secrets — the runner may receive.
 	caller, err := s.callerRunner(r)
 	if err == nil && caller.Agent == nil {
 		err = fmt.Errorf("opening a session needs an agent session token, not a job runtime token")
@@ -47,8 +44,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	ownerName, _ := raw["ownerName"].(string)
 
-	// A session request naming a different agent is refused rather than
-	// quietly rebound to the authenticated one.
+	// Refuse a session request naming a different agent than the authenticated one.
 	if agentRaw, ok := raw["agent"].(map[string]interface{}); ok {
 		if id, ok := agentRaw["id"].(float64); ok && int(id) != agent.ID {
 			writeGHError(w, http.StatusForbidden, "Session agent does not match the authenticated runner")
@@ -99,11 +95,9 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Mu.Unlock()
 
-	// Deleting its session is the last thing a runner does. An ephemeral
-	// runner is deregistered here rather than the moment its job finished,
-	// because a registration removed mid-teardown cannot authenticate the
-	// calls the runner has still to make — closing its job request and this
-	// session. pullPendingMessage is what holds it to one job.
+	// Deregister an ephemeral runner only now, not when its job finished: a
+	// registration removed mid-teardown cannot authenticate the runner's
+	// remaining calls.
 	s.removeEphemeralAgent(retiring)
 
 	if s.metrics != nil {
@@ -114,9 +108,9 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// sessionOwnedBy reports whether the runner credential on a request owns the
-// session it addresses. Sessions are keyed by an id the runner echoes back;
-// without this the id alone would be the credential.
+// sessionOwnedBy reports whether the request's runner credential owns the
+// addressed session. Sessions are keyed by an id the runner echoes back, so
+// without this check the id alone would be the credential.
 func sessionOwnedBy(session *store.Session, caller *runnerPrincipal) bool {
 	if session == nil || caller == nil || caller.Agent == nil {
 		return false
@@ -124,11 +118,10 @@ func sessionOwnedBy(session *store.Session, caller *runnerPrincipal) bool {
 	return session.Agent != nil && session.Agent.ID == caller.Agent.ID
 }
 
-// handleGetMessage long-polls for a job message (30s timeout). Queued
-// pending messages are PULLED here rather than pushed: a runner polls
-// continuously even while running a job (cancellation channel), and the
-// official runner drops job messages that land during worker teardown —
-// so job delivery only happens on a poll from a free agent.
+// handleGetMessage long-polls for a job message (30s timeout). Pending
+// messages are pulled on a poll, not pushed: the official runner drops job
+// messages that land during worker teardown, so delivery must wait for a
+// poll from a free agent.
 func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("sessionId")
 	caller, err := s.callerRunner(r)
@@ -153,8 +146,8 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	if msg := s.actions.PullPendingMessage(session, caller.Scope); msg != nil {
 		s.logger.Info().Int64("messageId", msg.MessageID).Msg("delivering pending message to runner")
 		if err := deliverJSON(w, msg); err != nil {
-			// The queue entry is only given up once the runner has the bytes;
-			// a dropped connection must not lose the job.
+			// Requeue on a dropped connection: the job is only given up once
+			// the runner has the bytes.
 			s.actions.RequeuePendingMessage(msg)
 			s.logger.Warn().Err(err).Int64("messageId", msg.MessageID).Msg("message delivery failed — requeued")
 		}
@@ -177,9 +170,9 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// deliverJSON writes a message and pushes it out to the client, reporting
-// whether the bytes actually left. Delivery of a queued job is only committed
-// on success, so this cannot use the fire-and-forget writeJSON.
+// deliverJSON writes a message and reports whether the bytes actually left,
+// so a queued job's delivery can be committed only on success — unlike the
+// fire-and-forget writeJSON.
 func deliverJSON(w http.ResponseWriter, v interface{}) error {
 	body, err := json.Marshal(v)
 	if err != nil {

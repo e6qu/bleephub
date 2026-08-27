@@ -2,10 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { ListFilterState } from "../types.js";
 import { SearchIcon, IssueOpenedIcon, IssueClosedIcon } from "./octicons.js";
 
-/**
- * Accessors that pull the filterable dimensions out of an issue or PR list
- * item so ListControls can stay generic across both list pages.
- */
+/** Pulls the filterable dimensions out of an issue or PR list item. */
 export interface ListItemAccessors<T> {
   labels: (item: T) => { name: string }[];
   author: (item: T) => string | null;
@@ -14,9 +11,8 @@ export interface ListItemAccessors<T> {
   comments: (item: T) => number;
   createdAt: (item: T) => string;
   updatedAt: (item: T) => string;
-  /** Haystack for the free-text filter (title + body). Optional: when the
-   * caller doesn't provide it, free-text terms are kept in the box but the
-   * client-side substring filter is skipped. */
+  /** Haystack for the free-text filter. When omitted, the substring filter is
+   * skipped but terms stay in the box. */
   text?: (item: T) => string;
 }
 
@@ -78,8 +74,7 @@ export function filterAndSortItems<T>(
   }
   const text = (filters.text ?? "").trim().toLowerCase();
   if (text && acc.text) {
-    // Every free-text term must appear somewhere in the haystack, the way
-    // github.com ANDs search terms.
+    // AND semantics: every term must appear in the haystack, like github.com.
     const terms = text.split(/\s+/);
     out = out.filter((i) => {
       const hay = acc.text!(i).toLowerCase();
@@ -105,8 +100,7 @@ export function filterAndSortItems<T>(
 /** Compose the GitHub-style search token string from the active filters. */
 function composeQuery(kind: "issue" | "pr", state: "open" | "closed" | "all", f: ListFilterState): string {
   const tokens = [`is:${kind === "pr" ? "pr" : "issue"}`];
-  // github.com has no `is:all` qualifier — "all" is simply the absence of an
-  // open/closed filter.
+  // No `is:all` qualifier exists — "all" is the absence of an open/closed token.
   if (state !== "all") tokens.push(`is:${state}`);
   if (f.label) tokens.push(`label:${quoteToken(f.label)}`);
   if (f.author) tokens.push(`author:${f.author}`);
@@ -124,10 +118,8 @@ function quoteToken(v: string): string {
 }
 
 /**
- * Parse a GitHub-style query back into filter state (state + dimensions).
- * Anything that isn't a recognised qualifier — bare words and unknown
- * `key:value` tokens alike — is kept as free text rather than silently
- * dropped, and applied as a title/body substring filter.
+ * Parse a GitHub-style query into filter state. Unrecognised qualifiers and
+ * bare words are kept as free text (a title/body substring filter), never dropped.
  */
 export function parseQuery(
   raw: string,
@@ -158,8 +150,7 @@ export function parseQuery(
       case "is":
       case "state":
         if (val === "open" || val === "closed") state = val;
-        // is:issue / is:pr restate the page, so they are neither filters
-        // nor free text.
+        // is:issue / is:pr restate the page — drop, not free text.
         break;
       case "label":
         filters.label = val;
@@ -180,7 +171,6 @@ export function parseQuery(
         else freeText.push(m[0]!);
         break;
       default:
-        // Unknown qualifier — keep it as free text, never drop input.
         freeText.push(m[0]!);
     }
   }
@@ -230,10 +220,8 @@ function Select({
 }
 
 /**
- * GitHub's issues/PRs list filter bar + Open/Closed count header. The search
- * box reflects the active filter tokens (and re-parses them on submit); the
- * dropdowns drive the client-side label/author/assignee/milestone filters plus
- * the sort. `state` (open/closed) is server-driven by the page.
+ * Issues/PRs filter bar + Open/Closed count header. The search box reflects the
+ * active filter tokens and re-parses them on submit; `state` is server-driven.
  */
 export function ListControls<T>({
   kind,
@@ -258,9 +246,8 @@ export function ListControls<T>({
   onFilters: (f: ListFilterState) => void;
   accessors: ListItemAccessors<T>;
   actions?: ReactNode;
-  /** Count of the currently-visible (client-filtered) list, announced to
-   * screen readers — the client-side dropdown filters re-narrow the list with
-   * no refetch/spinner, so without this a blind user gets no feedback. */
+  /** Visible (client-filtered) count, announced to screen readers — dropdown
+   * filters re-narrow the list with no refetch, so this is the only feedback. */
   resultCount?: number | undefined;
 }) {
   const [queryDraft, setQueryDraft] = useState<string | null>(null);
@@ -315,7 +302,6 @@ export function ListControls<T>({
           {resultCount} {kind === "pr" ? (resultCount === 1 ? "pull request" : "pull requests") : resultCount === 1 ? "issue" : "issues"}
         </span>
       )}
-      {/* Search + actions row */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <form
           className="flex min-w-0 flex-1 items-center gap-2"
@@ -342,7 +328,6 @@ export function ListControls<T>({
         {actions}
       </div>
 
-      {/* Count header + filter dropdowns */}
       <div
         className="flex flex-wrap items-center justify-between gap-3"
         style={{

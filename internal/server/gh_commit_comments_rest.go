@@ -10,13 +10,6 @@ import (
 )
 
 // Commit Comments API.
-// Real GH endpoints:
-//   GET    /repos/{o}/{r}/comments                          list repo comments
-//   GET    /repos/{o}/{r}/commits/{sha}/comments            list comments for commit
-//   POST   /repos/{o}/{r}/commits/{sha}/comments            create
-//   GET    /repos/{o}/{r}/comments/{id}                     get
-//   PATCH  /repos/{o}/{r}/comments/{id}                     update
-//   DELETE /repos/{o}/{r}/comments/{id}                     delete
 
 func (s *Server) registerGHCommitCommentsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/comments", s.handleListRepoCommitComments)
@@ -96,7 +89,6 @@ func (s *Server) handleCreateCommitComment(w http.ResponseWriter, r *http.Reques
 	sha := r.PathValue("commit_sha")
 	c := s.store.CommitComments.Create(repo.ID, sha, user.ID, req.Body, req.Path, req.Position, req.Line)
 	commitCommentJSON := commitCommentToJSON(c, s.store, s.baseURL(r), repo)
-	// `commit_comment` fires so `on: commit_comment` workflows run (ACT-026).
 	s.emitWebhookEvent(repo.FullName, "commit_comment", "created", map[string]interface{}{
 		"action":     "created",
 		"comment":    commitCommentJSON,
@@ -217,9 +209,8 @@ func commitCommentToJSON(c *store.CommitComment, st *store.Store, baseURL string
 		"html_url":           fmt.Sprintf("%s/%s/commit/%s#commitcomment-%d", baseURL, repo.FullName, c.CommitID, c.ID),
 		"author_association": store.AuthorAssociation(st, c.AuthorID, repo),
 	}
-	// path/position/line are required-but-nullable on GitHub's commit-comment
-	// schema: a commit-level comment carries them as null rather than omitting
-	// them. Emit them unconditionally so the response validates.
+	// path/position/line are required-but-nullable: emit them unconditionally,
+	// null for a commit-level comment.
 	if c.Path != "" {
 		out["path"] = c.Path
 	} else {

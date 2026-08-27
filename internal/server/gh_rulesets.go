@@ -18,8 +18,7 @@ func (s *Server) registerGHRulesetRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteRuleset))
 	s.route("GET /api/v3/repos/{owner}/{repo}/rules/branches/{branch}", s.requirePerm(store.ScopeMetadata, store.PermRead, s.handleListBranchRules))
 	// /rulesets/{ruleset_id}/history and /rulesets/rule-suites/{rule_suite_id}
-	// both occupy two segments after /rulesets and cannot both be registered
-	// directly with Go 1.22's mux; dispatch on the literal segments.
+	// collide under Go 1.22's mux; dispatch on the literal segments.
 	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{p1}/{p2}", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleRepoRulesetTwoSegDispatch))
 	s.route("GET /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}/history/{version_id}", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleGetRulesetVersion))
 
@@ -67,7 +66,6 @@ func (s *Server) handleRepoRulesetTwoSegDispatch(w http.ResponseWriter, r *http.
 	}
 }
 
-// handleGetRepoRuleSuite serves GET /repos/{owner}/{repo}/rulesets/rule-suites/{rule_suite_id}.
 func (s *Server) handleGetRepoRuleSuite(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -138,8 +136,8 @@ func (s *Server) handleOrgRulesetThreeSegDispatch(method string) http.HandlerFun
 	}
 }
 
-// requireOrgAdmin enforces an organization-administration permission and
-// verifies the caller is an admin of the target organization.
+// requireOrgAdmin enforces the permission and verifies the caller admins the
+// target organization.
 func (s *Server) requireOrgAdmin(scope store.PermScope, level store.PermLevel, next http.HandlerFunc) http.HandlerFunc {
 	return s.requirePerm(scope, level, func(w http.ResponseWriter, r *http.Request) {
 		org := s.store.GetOrg(r.PathValue("org"))
@@ -351,8 +349,8 @@ func (s *Server) handleListRulesetHistory(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, out)
 }
 
-// rulesetVersionJSON renders the GitHub ruleset-version shape (plus the
-// ruleset snapshot as `state` for the single-version endpoints).
+// rulesetVersionJSON renders the ruleset-version shape (plus the ruleset
+// snapshot as `state` when withState).
 func rulesetVersionJSON(v store.RulesetVersion, withState bool) map[string]interface{} {
 	actor := map[string]interface{}{}
 	if v.ActorID != 0 {
@@ -432,8 +430,7 @@ func rulesetToJSON(rs *store.Ruleset, includeBody bool) map[string]interface{} {
 		"updated_at":              rs.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	if includeBody {
-		// ref_name.include/exclude are non-nullable arrays: emit [] not null for
-		// an empty condition, whether rs is a stored record or a clone.
+		// ref_name.include/exclude are non-nullable: emit [] not null.
 		conds := rs.Conditions
 		conds.RefName.Include = jsonArray(conds.RefName.Include)
 		conds.RefName.Exclude = jsonArray(conds.RefName.Exclude)
@@ -778,8 +775,8 @@ func rulesetSuiteHasEnforcement(suite *store.RulesetSuite, enforcement string) b
 			return true
 		}
 	}
-	// Persisted suites created before per-rule evaluations were stored still
-	// expose enough aggregate information to answer the filter faithfully.
+	// Suites persisted before per-rule evaluations existed answer the filter
+	// from aggregate fields.
 	if len(suite.RuleEvaluations) == 0 {
 		if enforcement == "evaluate" {
 			return suite.EvaluationResult != nil

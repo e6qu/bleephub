@@ -1,15 +1,8 @@
 package bleephub
 
-// GitHub Copilot — the subscription policy, seat activity and usage
-// aggregation behind the billing and metrics endpoints.
-//
-// gh_copilot.go registers the documented REST routes. Everything those
-// routes used to answer with a constant now comes from durable state:
-// the plan and feature policy from CopilotPolicyStore, a seat's
-// last-activity members from recorded usage, and the metrics arrays from
-// aggregating that usage. GitHub publishes no REST write surface for the
-// policy or for usage (both are written by the settings UI and by the
-// editors themselves), so the two writers live under /ui-data.
+// Copilot subscription policy, seat activity and usage aggregation behind
+// the billing and metrics endpoints. GitHub publishes no REST write surface
+// for policy or usage, so the two writers live under /ui-data.
 
 import (
 	"net/http"
@@ -27,8 +20,6 @@ func (s *Server) registerGHCopilotPolicyRoutes() {
 	s.route("POST /ui-data/orgs/{org}/copilot/usage", s.handleRecordCopilotUsage)
 }
 
-// copilotPolicyJSON is the policy half of the copilot-organization-details
-// response, shared by the REST billing endpoint and the /ui-data reader.
 func copilotPolicyJSON(policy *store.CopilotOrgPolicy) map[string]interface{} {
 	return map[string]interface{}{
 		"public_code_suggestions": policy.PublicCodeSuggestions,
@@ -40,9 +31,8 @@ func copilotPolicyJSON(policy *store.CopilotOrgPolicy) map[string]interface{} {
 	}
 }
 
-// CopilotSeatActivityJSON renders a seat's activity members. A seat that
-// has never been used reads as null on both — the member genuinely has no
-// activity, rather than the instance having no way to record it.
+// CopilotSeatActivityJSON renders a seat's activity members; an unused seat
+// reads as null on both, matching GitHub.
 func (s *Server) CopilotSeatActivityJSON(orgLogin string, userID int) (lastActivityAt, lastActivityEditor interface{}) {
 	activity := s.store.CopilotPolicies.GetCopilotSeatActivity(orgLogin, userID)
 	if activity == nil {
@@ -101,9 +91,8 @@ func (s *Server) handleSetCopilotPolicy(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, copilotPolicyJSON(policy))
 }
 
-// handleRecordCopilotUsage files a day of Copilot usage for a member. It
-// is the writer behind every metrics figure and every seat's
-// last-activity members; without it those would have nothing to report.
+// handleRecordCopilotUsage files a day of Copilot usage for a member; it is
+// the writer behind the metrics figures and seat last-activity fields.
 func (s *Server) handleRecordCopilotUsage(w http.ResponseWriter, r *http.Request) {
 	org := s.copilotOrgAdmin(w, r)
 	if org == nil {
@@ -132,9 +121,8 @@ func (s *Server) handleRecordCopilotUsage(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Usage can only be attributed to a member who actually holds a seat:
-	// otherwise the metrics would count activity the organization is not
-	// billed for.
+	// Attribute usage only to a member holding a seat, else metrics count
+	// unbilled activity.
 	if s.store.GetCopilotSeat(org.Login, member.ID) == nil {
 		store.WriteGHValidationError(w, "CopilotUsage", "username", "member does not hold a Copilot seat")
 		return
@@ -181,12 +169,9 @@ func (s *Server) handleListCopilotUsage(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, rows)
 }
 
-// ---------------------------------------------------------------------------
-// metrics rendering
-
 // CopilotMetricsForOrg aggregates recorded usage into GitHub's
-// copilot-usage-metrics-day array for the organization, optionally
-// narrowed to one team and to a [since, until] window.
+// copilot-usage-metrics-day array, optionally narrowed to one team and a
+// [since, until] window.
 func (s *Server) CopilotMetricsForOrg(orgLogin, teamSlug, since, until string) []map[string]interface{} {
 	records := s.store.CopilotPolicies.ListCopilotUsage(orgLogin, teamSlug, since, until)
 	days := store.AggregateCopilotMetrics(records)
@@ -252,9 +237,8 @@ func copilotMetricsDayJSON(day store.CopilotDailyMetrics) map[string]interface{}
 	}
 }
 
-// CopilotUsageDaysForOrg lists the days the organization has recorded
-// usage for, newest first. The single-day report endpoints answer 204 when
-// the requested day is not one of them.
+// CopilotUsageDaysForOrg lists the days with recorded usage, newest first.
+// The single-day report endpoints answer 204 for a day not in this list.
 func (s *Server) CopilotUsageDaysForOrg(orgLogin string) []string {
 	seen := map[string]bool{}
 	days := []string{}
@@ -269,9 +253,8 @@ func (s *Server) CopilotUsageDaysForOrg(orgLogin string) []string {
 	return days
 }
 
-// CopilotSeatBreakdown counts the organization's seats the way the billing
-// endpoint reports them, with the active/inactive split answered from real
-// recorded activity rather than assumed.
+// CopilotSeatBreakdown counts the org's seats as the billing endpoint
+// reports them, with the active/inactive split from recorded activity.
 func (s *Server) CopilotSeatBreakdown(org *store.Org, now time.Time) map[string]interface{} {
 	seats := s.store.ListCopilotSeats(org.Login)
 	total, pendingCancellation, addedThisCycle, pendingInvitation, active := len(seats), 0, 0, 0, 0
@@ -299,8 +282,8 @@ func (s *Server) CopilotSeatBreakdown(org *store.Org, now time.Time) map[string]
 	}
 }
 
-// copilotMetricsWindowBounds reads the documented since/until query
-// parameters as YYYY-MM-DD day bounds.
+// copilotMetricsWindowBounds reads since/until query params as YYYY-MM-DD
+// day bounds.
 func copilotMetricsWindowBounds(r *http.Request) (since, until string) {
 	trim := func(value string) string {
 		value = strings.TrimSpace(value)

@@ -1,8 +1,4 @@
-/*
- * GitHub's language dot colors for the ~20 languages a forge actually shows.
- * Values mirror github/linguist's languages.yml swatches. Anything unlisted
- * gets the neutral gray GitHub uses for unknown languages.
- */
+// Language dot colors mirroring github/linguist's languages.yml; unlisted → neutral gray.
 export const LANGUAGE_COLORS: Record<string, string> = {
   Go: "#00ADD8",
   TypeScript: "#3178c6",

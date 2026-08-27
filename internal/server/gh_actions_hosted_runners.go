@@ -1,12 +1,8 @@
 package bleephub
 
-// GitHub-hosted runners REST surface for organizations and enterprises:
-// runner CRUD, the GitHub-owned /
-// partner image catalogs, custom image definitions + versions, machine
-// sizes, platforms, static-IP limits, and the runner-group hosted-runner
-// listing. Hosted runners are org-scoped configuration resources backed
-// by the store and persisted; the catalogs return GitHub's documented
-// catalog values.
+// GitHub-hosted runners REST surface for organizations and enterprises.
+// Runners are store-backed config; the image/machine/platform catalogs
+// return GitHub's documented values.
 
 import (
 	"fmt"
@@ -18,8 +14,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// hostedRunnerMachineSpec mirrors the actions-hosted-runner-machine-spec
-// schema (SDK-shape names kept verbatim).
 type hostedRunnerMachineSpec struct {
 	ID        string
 	CPUCores  int
@@ -27,8 +21,6 @@ type hostedRunnerMachineSpec struct {
 	StorageGB int
 }
 
-// hostedRunnerCuratedImage mirrors the actions-hosted-runner-curated-image
-// schema for the GitHub-owned and partner image catalogs.
 type hostedRunnerCuratedImage struct {
 	ID          string
 	Platform    string
@@ -37,8 +29,7 @@ type hostedRunnerCuratedImage struct {
 	Source      string
 }
 
-// hostedRunnerMachineSpecs is GitHub's documented larger-runner machine
-// size ladder ("About larger runners": vCPU / RAM / SSD per size).
+// hostedRunnerMachineSpecs is GitHub's documented larger-runner size ladder.
 var hostedRunnerMachineSpecs = []hostedRunnerMachineSpec{
 	{ID: "4-core", CPUCores: 4, MemoryGB: 16, StorageGB: 150},
 	{ID: "8-core", CPUCores: 8, MemoryGB: 32, StorageGB: 300},
@@ -47,9 +38,7 @@ var hostedRunnerMachineSpecs = []hostedRunnerMachineSpec{
 	{ID: "64-core", CPUCores: 64, MemoryGB: 208, StorageGB: 2040},
 }
 
-// hostedRunnerGitHubOwnedImages lists the GitHub-owned runner images
-// (the actions/runner-images Ubuntu and Windows Server images), with
-// the image sizes GitHub documents for its hosted-runner image catalog.
+// hostedRunnerGitHubOwnedImages is GitHub's documented github-owned image catalog.
 var hostedRunnerGitHubOwnedImages = []hostedRunnerCuratedImage{
 	{ID: "ubuntu-24.04", Platform: "linux-x64", SizeGB: 86, DisplayName: "24.04", Source: "github"},
 	{ID: "ubuntu-22.04", Platform: "linux-x64", SizeGB: 86, DisplayName: "22.04", Source: "github"},
@@ -57,18 +46,14 @@ var hostedRunnerGitHubOwnedImages = []hostedRunnerCuratedImage{
 	{ID: "windows-2022", Platform: "win-x64", SizeGB: 256, DisplayName: "2022", Source: "github"},
 }
 
-// hostedRunnerPartnerImages is the partner image catalog as documented
-// in GitHub's REST API description for the partner-images endpoint.
+// hostedRunnerPartnerImages is GitHub's documented partner image catalog.
 var hostedRunnerPartnerImages = []hostedRunnerCuratedImage{
 	{ID: "ubuntu-20.04", Platform: "linux-x64", SizeGB: 86, DisplayName: "20.04", Source: "partner"},
 }
 
-// hostedRunnerPlatforms are the platform identifiers GitHub-hosted
-// runners can be created for.
 var hostedRunnerPlatforms = []string{"linux-x64", "linux-arm64", "win-x64", "win-arm64"}
 
-// hostedRunnerStaticIPMaximum is GitHub's documented limit on static
-// public IP addresses across an organization's hosted runners.
+// hostedRunnerStaticIPMaximum is GitHub's documented per-org static public IP limit.
 const hostedRunnerStaticIPMaximum = 50
 
 func (s *Server) registerGHHostedRunnerRoutes() {
@@ -108,10 +93,6 @@ func (s *Server) registerGHHostedRunnerRoutes() {
 		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListRunnerGroupHostedRunners)))
 }
 
-// --- Store methods ---
-
-// --- JSON renderers ---
-
 func hostedRunnerMachineSpecJSON(spec hostedRunnerMachineSpec) map[string]any {
 	return map[string]any{
 		"id":         spec.ID,
@@ -149,9 +130,8 @@ func curatedImageByID(catalog []hostedRunnerCuratedImage, id string) (hostedRunn
 	return hostedRunnerCuratedImage{}, false
 }
 
-// hostedRunnerJSON renders the actions-hosted-runner shape. status
-// overrides the runner's steady state (e.g. "Deleting" on the DELETE
-// response); pass "" for the stored state.
+// hostedRunnerJSON renders the actions-hosted-runner shape. status overrides
+// the steady state (e.g. "Deleting" on DELETE); pass "" for "Ready".
 func hostedRunnerJSON(hr *store.HostedRunner, status string) map[string]any {
 	if status == "" {
 		status = "Ready"
@@ -190,8 +170,7 @@ func hostedRunnerCustomImageJSON(img *store.HostedRunnerCustomImage) map[string]
 	totalSize := 0
 	latest := ""
 	var latestCreated time.Time
-	// Versions append in generation order, so on equal timestamps the
-	// later entry is the newer version.
+	// Versions append in generation order; on equal timestamps the later entry wins.
 	for _, v := range img.Versions {
 		totalSize += v.SizeGB
 		if latest == "" || !v.CreatedOn.Before(latestCreated) {
@@ -221,8 +200,6 @@ func hostedRunnerCustomImageVersionJSON(v *store.HostedRunnerCustomImageVersion)
 	}
 }
 
-// --- Runner handlers ---
-
 func (s *Server) handleListHostedRunners(w http.ResponseWriter, r *http.Request) {
 	target, ok := s.runnerGroupTarget(w, r)
 	if !ok {
@@ -242,9 +219,8 @@ func (s *Server) handleListHostedRunners(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// resolveHostedRunnerImage resolves an image reference (id + source +
-// optional version) against the catalogs / the org's custom image
-// definitions. Returns a filled-in template or an error message.
+// resolveHostedRunnerImage resolves an image reference against the catalogs or
+// the target's custom image definitions, returning a filled template or an error message.
 func (s *Server) resolveHostedRunnerImage(target store.RunnerScope, id, source, version string) (*store.HostedRunner, string) {
 	out := &store.HostedRunner{ImageID: id, ImageSource: source, ImageVersion: version}
 	switch source {
@@ -271,8 +247,7 @@ func (s *Server) resolveHostedRunnerImage(target store.RunnerScope, id, source, 
 		if img != nil && store.CustomImageMatchesTarget(img, target) {
 			for _, v := range img.Versions {
 				if version == "" || version == "latest" || v.Version == version {
-					// Versions append in generation order, so on equal
-					// timestamps the later entry is the newer version.
+					// Versions append in generation order; on equal timestamps the later entry wins.
 					if ver == nil || !v.CreatedOn.Before(ver.CreatedOn) {
 						ver = v
 					}
@@ -385,8 +360,8 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusCreated, hostedRunnerJSON(hr, ""))
 }
 
-// lookupHostedRunner resolves the path's hosted_runner_id within the owning
-// organization or enterprise; nil + handled response when missing.
+// lookupHostedRunner resolves hosted_runner_id within the owning target;
+// nil with a handled response when missing.
 func (s *Server) lookupHostedRunner(w http.ResponseWriter, r *http.Request) *store.HostedRunner {
 	target, ok := s.runnerGroupTarget(w, r)
 	if !ok {
@@ -525,8 +500,7 @@ func (s *Server) handleDeleteHostedRunner(w http.ResponseWriter, r *http.Request
 		s.store.Persist.MustDelete("hosted_runners", strconv.Itoa(hr.ID))
 	}
 	s.store.Mu.Unlock()
-	// Real GitHub deletes asynchronously and answers 202 with the runner
-	// in its Deleting state.
+	// GitHub deletes asynchronously: 202 with the runner in its Deleting state.
 	writeJSON(w, http.StatusAccepted, hostedRunnerJSON(hr, "Deleting"))
 }
 
@@ -553,8 +527,6 @@ func (s *Server) handleListRunnerGroupHostedRunners(w http.ResponseWriter, r *ht
 		"runners":     runners,
 	})
 }
-
-// --- Catalog handlers ---
 
 func (s *Server) handleHostedRunnerGitHubOwnedImages(w http.ResponseWriter, r *http.Request) {
 	images := make([]map[string]any, 0, len(hostedRunnerGitHubOwnedImages))
@@ -612,8 +584,6 @@ func (s *Server) handleHostedRunnerLimits(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// --- Custom image handlers ---
-
 func (s *Server) handleListHostedRunnerCustomImages(w http.ResponseWriter, r *http.Request) {
 	target, ok := s.runnerGroupTarget(w, r)
 	if !ok {
@@ -632,8 +602,8 @@ func (s *Server) handleListHostedRunnerCustomImages(w http.ResponseWriter, r *ht
 	})
 }
 
-// lookupCustomImage resolves the path's image_definition_id within the owning
-// organization or enterprise; nil + handled response when missing.
+// lookupCustomImage resolves image_definition_id within the owning target;
+// nil with a handled response when missing.
 func (s *Server) lookupCustomImage(w http.ResponseWriter, r *http.Request) *store.HostedRunnerCustomImage {
 	target, ok := s.runnerGroupTarget(w, r)
 	if !ok {
@@ -687,9 +657,8 @@ func (s *Server) handleListHostedRunnerCustomImageVersions(w http.ResponseWriter
 	s.store.Mu.RLock()
 	versions := append([]*store.HostedRunnerCustomImageVersion(nil), img.Versions...)
 	s.store.Mu.RUnlock()
-	// Newest first, matching real GitHub's version listing. Versions
-	// append in generation order, so reversing the copy orders equal
-	// timestamps correctly too.
+	// Newest first. Versions append in generation order, so reversing before the
+	// stable sort orders equal timestamps correctly too.
 	for i, j := 0, len(versions)-1; i < j; i, j = i+1, j-1 {
 		versions[i], versions[j] = versions[j], versions[i]
 	}

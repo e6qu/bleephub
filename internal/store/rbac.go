@@ -5,10 +5,8 @@ import (
 	"strings"
 )
 
-// repoPermissionsJSON is the `permissions` block of a serialized repository:
-// the viewer's own capabilities on it. It lives beside the predicates it
-// projects rather than in the serializer, so the RBAC vocabulary stays in one
-// file.
+// repoPermissionsJSON is a serialized repository's `permissions` block: the
+// viewer's own capabilities on it.
 func repoPermissionsJSON(st *Store, viewer *User, repo *Repo) map[string]bool {
 	return map[string]bool{
 		"admin": CanAdminRepo(st, viewer, repo),
@@ -17,18 +15,14 @@ func repoPermissionsJSON(st *Store, viewer *User, repo *Repo) map[string]bool {
 	}
 }
 
-// SecretEqual compares two credential strings in constant time.
-//
-// The comparison must not short-circuit on the first differing byte: several of
-// these are reachable unauthenticated and unthrottled — the OAuth token
-// endpoint accepts a client secret from any caller — which is exactly the shape
-// a byte-at-a-time timing oracle needs. Use this for every comparison of secret
-// material: client secrets, CSRF tokens, webhook signatures, download tokens.
+// SecretEqual compares two credential strings in constant time. Use it for all
+// secret material (client secrets, CSRF tokens, webhook signatures, download
+// tokens): some comparisons are reachable unauthenticated and unthrottled,
+// exactly the shape a byte-at-a-time timing oracle needs.
 func SecretEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-// CanAdminRepo checks if a user has admin rights to a repository.
 func CanAdminRepo(st *Store, user *User, repo *Repo) bool {
 	if user == nil {
 		return false
@@ -38,9 +32,8 @@ func CanAdminRepo(st *Store, user *User, repo *Repo) bool {
 	return canAccessRepoLocked(st, user, repo, "admin")
 }
 
-// CanPushRepo checks if a user can push to a repository.
-// Push requires ownership, a sufficient organization base permission, team
-// push permission, or collaborator push/admin access.
+// CanPushRepo reports whether user can push: ownership, sufficient org base
+// permission, team push, or collaborator push/admin access.
 func CanPushRepo(st *Store, user *User, repo *Repo) bool {
 	if user == nil {
 		return false
@@ -50,10 +43,9 @@ func CanPushRepo(st *Store, user *User, repo *Repo) bool {
 	return canAccessRepoLocked(st, user, repo, "push")
 }
 
-// CanReadRepoAsUser checks if a user can read a repository.
-// Public repos are readable by all. Private repos require ownership, org
-// membership, team access, or collaborator pull access.
-// Must not be called with st.Mu held; it takes the read lock itself.
+// CanReadRepoAsUser reports read access: public repos are readable by all,
+// private repos require ownership, org membership, team access, or collaborator
+// pull access. Must not be called with st.Mu held; it takes the read lock.
 func CanReadRepoAsUser(st *Store, user *User, repo *Repo) bool {
 	if !repo.Private {
 		return true
@@ -67,17 +59,15 @@ func CanReadRepoAsUser(st *Store, user *User, repo *Repo) bool {
 }
 
 // canAccessRepoLocked is the single human-principal repository capability
-// calculation. Callers already hold st.Mu. Keeping the organization base role,
-// team role, and direct-collaborator role in one lattice prevents read and
-// write surfaces from assigning different rights to the same principal.
+// calculation; callers hold st.Mu. Org base role, team role, and
+// direct-collaborator role live in one lattice so read and write surfaces never
+// assign different rights to the same principal.
 func canAccessRepoLocked(st *Store, user *User, repo *Repo, required string) bool {
 	if user == nil || repo == nil {
 		return false
 	}
-	// A user-namespace access grant admits an enterprise owner temporarily,
-	// with the full capability set: the grant exists so an administrator can
-	// intervene in a managed account's repository, which read-only standing
-	// could not do.
+	// A user-namespace grant admits an enterprise owner with the full capability
+	// set, so an admin can intervene in a managed account's repository.
 	if userNamespaceGrantAdmitsLocked(st, user, repo) {
 		return true
 	}
@@ -92,8 +82,7 @@ func canAccessRepoLocked(st *Store, user *User, repo *Repo, required string) boo
 	if org := st.OrgsByLogin[orgLogin]; org != nil {
 		if membership := st.Memberships[MembershipKey(orgLogin, user.ID)]; membership != nil &&
 			membership.State == MembershipStateActive {
-			// Organization owners administer every repository regardless of
-			// the base permission assigned to ordinary members.
+			// Org owners administer every repository regardless of the members' base permission.
 			if membership.Role == OrgRoleAdmin ||
 				repositoryPermissionAtLeast(st.enterpriseClampedBasePermissionLocked(org), required) {
 				return true
@@ -120,7 +109,6 @@ func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName st
 		if !PermissionAtLeast(team.Permission, minPermission) {
 			continue
 		}
-		// Check if repo is in team's repo list
 		repoFound := false
 		for _, rn := range team.RepoNames {
 			if rn == repoFullName {
@@ -131,7 +119,6 @@ func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName st
 		if !repoFound {
 			continue
 		}
-		// Check if user is a team member
 		for _, mid := range team.MemberIDs {
 			if mid == userID {
 				return true
@@ -158,10 +145,9 @@ func RepoCollaboratorPermissionAtLeastLocked(st *Store, repoFullName, login, min
 	return repositoryPermissionAtLeast(perm, minPerm)
 }
 
-// repositoryPermissionAtLeast compares GitHub's organization base-repository
-// permission values with repository capability names. An empty stored value is
-// GitHub's default "read"; "pull" and "push" are the collaborator/team wire
-// names for the same read/write levels.
+// repositoryPermissionAtLeast compares org base-permission values against
+// capability names. An empty stored value is GitHub's default "read"; "pull"
+// and "push" are the collaborator/team wire names for read/write.
 func repositoryPermissionAtLeast(granted, required string) bool {
 	levels := map[string]int{
 		"none":  0,
@@ -177,8 +163,7 @@ func repositoryPermissionAtLeast(granted, required string) bool {
 	return levels[granted] >= levels[required]
 }
 
-// PermissionAtLeast returns true if perm is at least minPerm.
-// Permission hierarchy: pull < push < admin.
+// PermissionAtLeast reports whether perm ranks at least minPerm (pull < push < admin).
 func PermissionAtLeast(perm, minPerm TeamPermission) bool {
 	levels := map[TeamPermission]int{TeamPermissionPull: 1, TeamPermissionPush: 2, TeamPermissionAdmin: 3}
 	return levels[perm] >= levels[minPerm]

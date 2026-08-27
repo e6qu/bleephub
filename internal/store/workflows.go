@@ -12,13 +12,11 @@ const (
 	WorkflowStatusRunning            WorkflowStatus = "running"
 	WorkflowStatusCompleted          WorkflowStatus = "completed"
 	WorkflowStatusPendingConcurrency WorkflowStatus = "pending_concurrency"
-	// WorkflowStatusWaiting holds runs whose environment-targeting jobs
-	// await a deployment review (required reviewers on the environment).
+	// WorkflowStatusWaiting holds runs awaiting a deployment review on a
+	// reviewer-protected environment.
 	WorkflowStatusWaiting WorkflowStatus = "waiting"
-	// WorkflowStatusActionRequired holds runs triggered by a pull request
-	// from a fork when the repository's fork-PR contributor-approval
-	// policy requires a maintainer to approve the run before any job
-	// dispatches (POST .../runs/{run_id}/approve releases it).
+	// WorkflowStatusActionRequired holds fork-PR runs awaiting maintainer
+	// approval before any job dispatches (.../runs/{run_id}/approve releases it).
 	WorkflowStatusActionRequired WorkflowStatus = "action_required"
 )
 
@@ -31,13 +29,12 @@ const (
 	JobStatusRunning   JobStatus = "running"
 	JobStatusCompleted JobStatus = "completed"
 	JobStatusSkipped   JobStatus = "skipped"
-	// JobStatusWaiting holds jobs targeting a reviewer-protected
-	// environment until the run's pending deployment is approved.
+	// JobStatusWaiting holds jobs targeting a reviewer-protected environment
+	// until the run's pending deployment is approved.
 	JobStatusWaiting JobStatus = "waiting"
 )
 
-// Result is the terminal outcome of a workflow or job. The empty value
-// means in-flight (no outcome yet).
+// Result is the terminal outcome of a workflow or job; empty means in-flight.
 type Result string
 
 const (
@@ -46,9 +43,8 @@ const (
 	ResultFailure   Result = "failure"
 	ResultCancelled Result = "cancelled"
 	ResultSkipped   Result = "skipped"
-	// ResultStartupFailure marks runs that never produced jobs because
-	// the workflow failed at startup (invalid reusable-workflow ref,
-	// unparseable definition) — real GitHub's conclusion for these.
+	// ResultStartupFailure marks runs that produced no jobs (invalid
+	// reusable-workflow ref, unparseable definition), matching GitHub.
 	ResultStartupFailure Result = "startup_failure"
 )
 
@@ -62,15 +58,14 @@ type Workflow struct {
 	Jobs         map[string]*WorkflowJob `json:"jobs"`
 	Env          map[string]string       `json:"env,omitempty"`
 	Permissions  PermissionDef           `json:"permissions,omitempty"`
-	Status       WorkflowStatus          `json:"status"` // "running", "completed", "pending_concurrency"
-	// PendingDeployments holds one record per reviewer-protected
-	// environment the run is waiting on; EnvApprovals records every
-	// approve/reject review submitted for the run.
+	Status       WorkflowStatus          `json:"status"`
+	// PendingDeployments holds one record per reviewer-protected environment
+	// the run waits on; EnvApprovals records every review submitted.
 	PendingDeployments []*PendingDeployment `json:"pendingDeployments,omitempty"`
 	EnvApprovals       []*EnvApproval       `json:"envApprovals,omitempty"`
-	Result             Result               `json:"result"` // "success", "failure", "cancelled"
+	Result             Result               `json:"result"`
 	CreatedAt          time.Time            `json:"createdAt"`
-	MaxParallel        int                  `json:"-"` // compatibility fallback for directly-constructed runs
+	MaxParallel        int                  `json:"-"` // fallback for directly-constructed runs
 	MatrixMaxParallel  map[string]int       `json:"-"`
 	CancelTimeout      func()               `json:"-"` // stops the timeout watcher goroutine
 	EventName          string               `json:"eventName,omitempty"`
@@ -80,32 +75,25 @@ type Workflow struct {
 	Inputs             map[string]string    `json:"inputs,omitempty"`
 	ConcurrencyGroup   string               `json:"concurrencyGroup,omitempty"`
 	CancelInProgress   bool                 `json:"-"`
-	// ConcurrencyAcquiredAt records when this run took its concurrency
-	// group's lease (started running while holding the group); zero for
-	// runs without a group or still queued behind the group.
+	// ConcurrencyAcquiredAt is when this run took its concurrency group's
+	// lease; zero without a group or while still queued behind it.
 	ConcurrencyAcquiredAt time.Time `json:"-"`
-	// Attempt is the 1-based run_attempt; zero means first attempt
-	// (reruns bump it and archive the prior attempt in
-	// Store.WorkflowAttempts).
+	// Attempt is the 1-based run_attempt (zero means first); reruns bump it
+	// and archive the prior attempt in Store.WorkflowAttempts.
 	Attempt int `json:"attempt,omitempty"`
-	// CancelRequested marks a run whose cancellation was requested;
-	// in-flight jobs are winding down and always()/cancelled() jobs may
-	// still dispatch. The run finalizes with conclusion cancelled.
+	// CancelRequested marks a run winding down; always()/cancelled() jobs may
+	// still dispatch, and it finalizes with conclusion cancelled.
 	CancelRequested bool `json:"-"`
-	// EventPayload is the triggering webhook payload (github.event).
-	// In-flight runs aren't persisted, so neither is this.
+	// EventPayload is the triggering webhook payload (github.event); not
+	// persisted (in-flight runs aren't).
 	EventPayload map[string]interface{} `json:"-"`
-	// TypedInputs is the typed `inputs` expression context (boolean /
-	// number inputs carry real types); Inputs keeps the string forms.
+	// TypedInputs is the typed `inputs` context; Inputs keeps the string forms.
 	TypedInputs map[string]interface{} `json:"-"`
 
-	// WorkflowFileID / WorkflowFilePath identify the originating workflow
-	// FILE (the YAML on disk), which is stable across every run produced
-	// from it. GitHub's WorkflowRun.workflow_id and .path reference the
-	// file, not the run, so these must be carried separately from RunID.
-	// Populated at submit/dispatch time by resolving the registered
-	// [WorkflowFile] for (repo, name); zero/"" when no backing file is
-	// known yet (resolved lazily in workflowRunJSON).
+	// WorkflowFileID / WorkflowFilePath identify the originating workflow FILE,
+	// which GitHub's WorkflowRun.workflow_id/.path reference (not the run), so
+	// they are carried separately from RunID. Zero/"" until resolved lazily in
+	// workflowRunJSON.
 	WorkflowFileID   int64  `json:"workflowFileId,omitempty"`
 	WorkflowFilePath string `json:"workflowFilePath,omitempty"`
 	CheckSuiteID     int64  `json:"checkSuiteId,omitempty"`
@@ -118,8 +106,8 @@ type WorkflowJob struct {
 	PlanID          string                 `json:"planId,omitempty"`
 	DisplayName     string                 `json:"displayName"`
 	Needs           []string               `json:"needs,omitempty"`
-	Status          JobStatus              `json:"status"` // "pending", "queued", "running", "completed", "skipped"
-	Result          Result                 `json:"result"` // "success", "failure", "cancelled", "skipped"
+	Status          JobStatus              `json:"status"`
+	Result          Result                 `json:"result"`
 	Outputs         map[string]string      `json:"outputs,omitempty"`
 	MatrixValues    map[string]interface{} `json:"matrix,omitempty"`
 	ContinueOnError bool                   `json:"continueOnError,omitempty"`
@@ -129,14 +117,14 @@ type WorkflowJob struct {
 	MatrixGroup     string                 `json:"matrixGroup,omitempty"`
 	Summary         string                 `json:"summary,omitempty"`
 	Def             *JobDef                `json:"-"`
-	// Hidden marks synthetic reusable-workflow gate/collector nodes the
-	// jobs API never lists (real GitHub shows only the called jobs).
+	// Hidden marks synthetic reusable-workflow gate/collector nodes the jobs
+	// API never lists.
 	Hidden bool `json:"hidden,omitempty"`
 	// CheckRunID links the job to the check run mirroring it.
 	CheckRunID int64 `json:"checkRunId,omitempty"`
-	// ConcurrencyGroup is the evaluated jobs.<id>.concurrency.group. It is
-	// persisted separately from Def so a waiting job survives a restart
-	// without re-evaluating against changed dependency outputs.
+	// ConcurrencyGroup is the evaluated jobs.<id>.concurrency.group, persisted
+	// separately from Def so a waiting job survives a restart without
+	// re-evaluating against changed dependency outputs.
 	ConcurrencyGroup string `json:"concurrencyGroup,omitempty"`
 	CancelInProgress bool   `json:"cancelInProgress,omitempty"`
 }
@@ -180,9 +168,8 @@ func (wf *Workflow) AttemptNumber() int {
 }
 
 func (st *Store) PersistWorkflowRecord(wf *Workflow) {
-	// Every engine mutation site already funnels through here under the store
-	// write lock, so this is also where the derived run-id/concurrency-group
-	// indexes are kept in step with the workflow's state.
+	// Every engine mutation funnels through here under the write lock, so the
+	// derived run-id/concurrency-group indexes are kept in step here too.
 	st.SyncWorkflowIndexesLocked(wf)
 	if st.Persist != nil && wf != nil {
 		st.Persist.MustPut("workflows", wf.ID, wf)

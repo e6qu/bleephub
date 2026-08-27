@@ -1,24 +1,12 @@
 package graphqlapi
 
-// Schema-fidelity shells: the abstract-interface and union cluster. GitHub
-// declares a family of interfaces and two unions over data this instance does
-// not reach through any resolved field (the Copilot Agentic trait, the shared
-// Comment/Updatable/Deletable traits, the profile/package/pinnable owner
-// traits, the issue-field traits and the projects-v2 value union). bleephub
-// does not retrofit these interfaces onto its concrete objects, so no field
-// returns them; they exist only so the introspected schema matches GitHub's
-// shape. graphql-go admits an interface with no possible types and a union
-// whose members are otherwise reachable, so each is published through
-// registerExtraSchemaType without an implementer.
-//
-// Every field is transcribed signature-exact against the vendored SDL
-// (third_party/github-graphql-schema.graphql.gz): nullability and arguments
-// included. Named field/argument types are never re-minted — they are reached
-// from the concrete objects that already carry them (User, Organization,
-// IssueComment, Issue, Team, Repository and the two issue-field unions) or
-// obtained through the memoized enum/input constructors — so no second type of
-// any name enters the schema. This builder runs last, once every family it
-// reaches into is assembled.
+// Schema-fidelity shells: the abstract-interface and union cluster GitHub
+// declares but no resolved field returns. These interfaces are not retrofitted
+// onto concrete objects; they exist only so the introspected schema matches
+// GitHub's shape, published through registerExtraSchemaType without an
+// implementer. Every field is transcribed signature-exact against the vendored
+// SDL, reaching named field/argument types from the concrete objects that carry
+// them so no second type of any name enters the schema. Runs last.
 
 import "github.com/graphql-go/graphql"
 
@@ -26,9 +14,8 @@ func init() {
 	schemaShellBuilders = append(schemaShellBuilders, (*Resolver).addInterfaceShells)
 }
 
-// nilResolveType is the ResolveType every shell here carries: these interfaces
-// and unions are never returned by a resolved field, so nothing dispatches
-// through them.
+// nilResolveType is the ResolveType every shell carries: nothing dispatches
+// through these, since no resolved field returns them.
 func nilResolveType(graphql.ResolveTypeParams) *graphql.Object { return nil }
 
 // paginationArgs is the four Relay window arguments, freshly minted so no two
@@ -42,8 +29,8 @@ func paginationArgs() graphql.FieldConfigArgument {
 	}
 }
 
-// shellCopyArgs clones a concrete field definition's arguments into the config
-// shape an interface field needs, reusing every argument type instance.
+// shellCopyArgs clones a concrete field's arguments into the config shape an
+// interface field needs, reusing every argument type instance.
 func shellCopyArgs(def *graphql.FieldDefinition) graphql.FieldConfigArgument {
 	if def == nil || len(def.Args) == 0 {
 		return nil
@@ -60,9 +47,8 @@ func shellCopyArgs(def *graphql.FieldDefinition) graphql.FieldConfigArgument {
 }
 
 // shellFieldFrom transcribes an interface field from the concrete object that
-// already carries it: same output type instance, same argument set. Returns nil
-// when the concrete object or field is absent so a missing dependency surfaces
-// as an omitted field rather than a nil-typed one.
+// carries it. Returns nil when the object or field is absent, so a missing
+// dependency surfaces as an omitted field rather than a nil-typed one.
 func shellFieldFrom(obj *graphql.Object, name string) *graphql.Field {
 	if obj == nil {
 		return nil
@@ -85,9 +71,8 @@ func shellCopyFields(obj *graphql.Object, names ...string) graphql.Fields {
 	return fields
 }
 
-// shellNamedOutput reaches the named output type under a concrete field (the
-// connection/object below its NonNull/List wrappers) so a shell can name the
-// very same instance the concrete field returns.
+// shellNamedOutput reaches the named output type under a concrete field (below
+// its NonNull/List wrappers) so a shell can name the same instance.
 func shellNamedOutput(obj *graphql.Object, field string) graphql.Type {
 	if obj == nil {
 		return nil
@@ -101,8 +86,8 @@ func shellNamedOutput(obj *graphql.Object, field string) graphql.Type {
 }
 
 // shellArgType reaches the input type of one argument on a concrete field, so a
-// shell can name the same input instance (used for DiscussionOrder, which is
-// minted inline on Repository.discussions rather than memoized).
+// shell can name the same input instance (e.g. DiscussionOrder, minted inline on
+// Repository.discussions rather than memoized).
 func shellArgType(obj *graphql.Object, field, arg string) graphql.Input {
 	if obj == nil {
 		return nil
@@ -131,7 +116,6 @@ func (s *Resolver) addInterfaceShells() {
 	issueFieldDate := unionMemberObject(s.graphqlTypes.issueFieldsUnion, "IssueFieldDate")
 
 	// --- Agentic -----------------------------------------------------------
-	// Four nullable String channel fields; no named-type dependency.
 	agentic := s.mutationInterface("Agentic", func() graphql.Fields {
 		return graphql.Fields{
 			"viewerCopilotAgentCreatesChannel":     gqlField(graphql.String),
@@ -187,16 +171,13 @@ func (s *Resolver) addInterfaceShells() {
 	}, nilResolveType)
 
 	// --- MemberStatusable --------------------------------------------------
-	// Team carries the full memberStatuses signature (pagination + orderBy:
-	// UserStatusOrder), returning UserStatusConnection!.
 	memberStatusable := s.mutationInterface("MemberStatusable", func() graphql.Fields {
 		return shellCopyFields(team, "memberStatuses")
 	}, nilResolveType)
 
 	// --- PackageOwner ------------------------------------------------------
-	// packages carries GitHub's eight arguments; the concrete Organization
-	// field exposes only the four window arguments, so the remaining four are
-	// reconstructed against the reused enum/input instances.
+	// The concrete Organization.packages exposes only the four window arguments;
+	// GitHub's other four are reconstructed here against the reused instances.
 	packageOwner := s.mutationInterface("PackageOwner", func() graphql.Fields {
 		packageConn := shellNamedOutput(org, "packages")
 		orderDirection := s.sharedEnum("OrderDirection", "ASC", "DESC")
@@ -222,9 +203,6 @@ func (s *Resolver) addInterfaceShells() {
 	}, nilResolveType)
 
 	// --- ProfileOwner ------------------------------------------------------
-	// Organization carries every ProfileOwner field with GitHub's exact
-	// signatures (email nullable, the pinnable-item windows and their
-	// PinnableItemType filters).
 	profileOwner := s.mutationInterface("ProfileOwner", func() graphql.Fields {
 		return shellCopyFields(org,
 			"anyPinnableItems", "email", "id", "itemShowcase", "location",
@@ -238,10 +216,8 @@ func (s *Resolver) addInterfaceShells() {
 	}, nilResolveType)
 
 	// --- RepositoryDiscussionAuthor ---------------------------------------
-	// repositoryDiscussions carries eight arguments; the concrete field omits
-	// orderBy (DiscussionOrder) and states ([DiscussionState!]), reconstructed
-	// against the reused instances (DiscussionOrder is minted inline on
-	// Repository.discussions, so it is reached from there).
+	// The concrete field omits orderBy (DiscussionOrder) and states; both are
+	// reconstructed here, reaching DiscussionOrder from Repository.discussions.
 	repositoryDiscussionAuthor := s.mutationInterface("RepositoryDiscussionAuthor", func() graphql.Fields {
 		discussionConn := s.namedObject("DiscussionConnection")
 		discussionState := s.sharedEnum("DiscussionState", "CLOSED", "OPEN")
@@ -264,8 +240,6 @@ func (s *Resolver) addInterfaceShells() {
 	}, nilResolveType)
 
 	// --- RepositoryDiscussionCommentAuthor --------------------------------
-	// The concrete Organization field already matches GitHub's six-argument
-	// signature exactly.
 	repositoryDiscussionCommentAuthor := s.mutationInterface("RepositoryDiscussionCommentAuthor", func() graphql.Fields {
 		return shellCopyFields(org, "repositoryDiscussionComments")
 	}, nilResolveType)
@@ -282,8 +256,7 @@ func (s *Resolver) addInterfaceShells() {
 	}, nilResolveType)
 
 	// --- TeamReviewRequestable --------------------------------------------
-	// name is String! on this interface (Team's own name is nullable), so it
-	// is built directly rather than copied.
+	// name is String! here (Team's own name is nullable), so it is built directly.
 	teamReviewRequestable := s.mutationInterface("TeamReviewRequestable", func() graphql.Fields {
 		return graphql.Fields{
 			"id":   gqlNonNull(graphql.ID),
@@ -297,10 +270,8 @@ func (s *Resolver) addInterfaceShells() {
 		return []*graphql.Object{org, user}
 	}, nilResolveType)
 
-	// ProjectV2IssueFieldValues is deliberately not built here: the misc shell
-	// cluster (gh_shells_misc_graphql.go) already mints and registers a union
-	// of that name over the same five IssueField*Value members. Minting a
-	// second instance would make schema construction reject the duplicate name.
+	// ProjectV2IssueFieldValues is built by gh_shells_misc_graphql.go instead; a
+	// second instance of that name would be rejected as a duplicate.
 
 	s.registerExtraSchemaType(
 		agentic,

@@ -1,12 +1,8 @@
 import { useEffect, useRef } from "react";
 
-/*
- * Session-scoped comment-draft durability, github.com-style: typing in a
- * comment box, navigating away and returning restores the half-typed text.
- * Drafts live in sessionStorage under `bleephub:draft:{key}` (same scope the
- * PR "Viewed" files and review-summary drafts already use), so they survive
- * in-app navigation and reloads but not a new browser session.
- */
+// Session-scoped comment-draft durability: drafts live in sessionStorage under
+// `bleephub:draft:{key}`, surviving in-app navigation and reloads but not a new
+// browser session.
 
 const STORAGE_PREFIX = "bleephub:draft:";
 
@@ -14,7 +10,7 @@ function storageKeyFor(key: string): string {
   return STORAGE_PREFIX + key;
 }
 
-/** Remove a stored draft — call on successful submit so the posted text never resurfaces. */
+/** Remove a stored draft — call on successful submit. */
 export function clearComposerDraft(key: string): void {
   try {
     sessionStorage.removeItem(storageKeyFor(key));
@@ -24,21 +20,16 @@ export function clearComposerDraft(key: string): void {
 }
 
 /**
- * Mirror a controlled composer's value into sessionStorage.
- *
- * On mount (and whenever `key` changes, e.g. a reply box retargeting another
- * parent comment), an empty composer adopts the stored draft via `onChange`.
- * Every subsequent value change writes through: non-blank values are stored,
- * blank ones remove the entry (so clearing the box drops the draft). A null
- * key disables the hook entirely — callers without a stable identity (or
- * modal editors GitHub does not persist) opt out by passing null.
+ * Mirror a controlled composer's value into sessionStorage. On mount (and when
+ * `key` changes) an empty composer adopts the stored draft via `onChange`;
+ * blank values remove the entry. A null key disables the hook.
  */
 export function useComposerDraft(
   key: string | null,
   value: string,
   onChange: (v: string) => void,
 ): void {
-  // The latest onChange without making the effect re-run on unstable callbacks.
+  // Keep the effect from re-running on unstable onChange callbacks.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const restoredKey = useRef<string | null>(null);
@@ -56,8 +47,7 @@ export function useComposerDraft(
           /* storage unavailable */
         }
         if (stored) {
-          // Skip the write pass: the restored value flows back through this
-          // effect on the next render and writes itself through then.
+          // Skip the write pass; the restored value writes itself on re-render.
           onChangeRef.current(stored);
           return;
         }

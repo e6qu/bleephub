@@ -15,16 +15,10 @@ import {
 } from "../components/ui.js";
 import { confirmAction } from "../components/confirmAction.js";
 
-// The Sponsors fetch wrappers live in this lazy page rather than in api.ts:
-// api.ts is reachable from the entry chunk, and the entry sits against its
-// 160 KB budget.
+// Fetch wrappers and this icon live in the lazy page, not the shared modules
+// reachable from the entry chunk, to protect the entry bundle budget.
 const enc = encodeURIComponent;
 
-/**
- * The Sponsors heart. It is defined here rather than in the shared octicon
- * module because that module is reachable from the entry chunk, and this is
- * the only page that draws it.
- */
 function HeartIcon({ size = 16 }: { size?: number }) {
   return (
     <svg viewBox="0 0 16 16" width={size} height={size} fill="currentColor" aria-hidden="true">
@@ -140,10 +134,7 @@ const fetchSponsorsDashboard = (login: string, signal?: AbortSignal) =>
 const fetchViewerSponsoring = (signal?: AbortSignal) =>
   ghFetch<SponsorshipRow[]>("/ui-data/sponsors/sponsoring", signal);
 
-/**
- * Money is integer cents everywhere on the wire; this is the only place it
- * becomes a display string, and it does so without floating-point division.
- */
+// Format integer cents as dollars without floating-point division.
 export function formatCents(cents: number): string {
   const sign = cents < 0 ? "-" : "";
   const absolute = Math.abs(cents);

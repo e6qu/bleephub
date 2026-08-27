@@ -10,20 +10,15 @@ import (
 
 // The three label mutations GitHub exposes over its Labelable interface:
 // addLabelsToLabelable, removeLabelsFromLabelable and clearLabelsFromLabelable.
-// `gh issue edit --add-label` / `--remove-label` speak only these — the REST
-// label routes exist, but gh does not use them for editing, so an instance
-// without the mutations fails the command outright rather than degrading.
-//
-// All three go through the store's Set*Labels primitives, which record the
-// labeled/unlabeled timeline events, and then through the same webhook
-// change fan-out the REST handlers use, so a label applied through GraphQL is
-// indistinguishable from one applied through REST.
+// `gh issue edit --add-label` / `--remove-label` speak only these, not the REST
+// label routes. All three go through the store's Set*Labels primitives and the
+// same webhook fan-out the REST handlers use, so a GraphQL label change is
+// indistinguishable from a REST one.
 
-// gqlLabelableInterface returns GitHub's Labelable interface (memoized), with
-// the label connection Issue and PullRequest already expose. It has to exist
-// before either concrete type is constructed: graphql-go reads an object's
-// interface list once, so a type that does not claim Labelable at
-// construction can never become one of its possible types.
+// gqlLabelableInterface returns GitHub's Labelable interface (memoized). It must
+// exist before either concrete type is constructed: graphql-go reads an object's
+// interface list once, so a type that does not claim Labelable at construction
+// can never become one of its possible types.
 func (s *Resolver) gqlLabelableInterface() *graphql.Interface {
 	if s.graphqlTypes.labelable != nil {
 		return s.graphqlTypes.labelable
@@ -52,10 +47,9 @@ func (s *Resolver) gqlLabelableInterface() *graphql.Interface {
 	return s.graphqlTypes.labelable
 }
 
-// gqlLabelUpdateInput memoizes GitHub's LabelUpdateInput — a label id with an
-// optional confidence/rationale/suggest triple. Both AddLabelsToLabelableInput
-// and UpdateIssueInput name it, so the one memoized instance is shared through
-// this getter to keep the two definitions identical regardless of build order.
+// gqlLabelUpdateInput memoizes GitHub's LabelUpdateInput. Both
+// AddLabelsToLabelableInput and UpdateIssueInput share the one instance so their
+// definitions stay identical regardless of build order.
 func (s *Resolver) gqlLabelUpdateInput() *graphql.InputObject {
 	return s.mutationInput("LabelUpdateInput", graphql.InputObjectConfigFieldMap{
 		"confidence": gqlInputOf(s.sharedEnum("IssueEventConfidenceLevel", "HIGH", "LOW", "MEDIUM")),
@@ -65,7 +59,6 @@ func (s *Resolver) gqlLabelUpdateInput() *graphql.InputObject {
 	})
 }
 
-// addLabelMutationsToSchema registers the three Labelable mutations.
 func (s *Resolver) addLabelMutationsToSchema(mutationType *graphql.Object) {
 	labelable := s.gqlLabelableInterface()
 	labelIDList := graphql.NewList(graphql.NewNonNull(graphql.ID))
@@ -75,9 +68,8 @@ func (s *Resolver) addLabelMutationsToSchema(mutationType *graphql.Object) {
 		Fields: graphql.InputObjectConfigFieldMap{
 			"labelableId": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"labelIds":    &graphql.InputObjectFieldConfig{Type: labelIDList},
-			// labels: [LabelUpdateInput!] — the richer add form, each label
-			// carrying an optional rationale/suggest flag. Shares the one memoized
-			// LabelUpdateInput with UpdateIssueInput.labels via the getter.
+			// The richer add form: each label carries an optional
+			// rationale/suggest flag.
 			"labels": gqlListOf(s.gqlLabelUpdateInput()),
 		},
 	})
@@ -139,9 +131,8 @@ func (s *Resolver) addLabelMutationsToSchema(mutationType *graphql.Object) {
 
 // resolveLabelChange is the body all three mutations share. combine receives
 // the subject's current label ids and the ids the input named, and returns the
-// set the subject should end up with — which is then written through the
-// store's replace-the-set primitive so the labeled/unlabeled deltas are
-// recorded once, whichever mutation asked.
+// set the subject should end up with, written through the store's
+// replace-the-set primitive so the deltas are recorded once.
 func (s *Resolver) resolveLabelChange(p graphql.ResolveParams, combine func(existing, named []int) []int) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
 	nodeID, _ := input["labelableId"].(string)
@@ -152,8 +143,8 @@ func (s *Resolver) resolveLabelChange(p graphql.ResolveParams, combine func(exis
 		if repo == nil {
 			return nil, gqlMissingNodeType("Repository")
 		}
-		// The node finders hand back the live row; the label set the delta is
-		// computed against has to be a snapshot taken before the write.
+		// FindIssueByNodeID returns the live row; snapshot the label set
+		// before the write so the delta is computed against pre-write state.
 		before := s.store.GetIssue(issue.ID)
 		if before == nil {
 			return nil, gqlMissingNodeType("Issue")
@@ -205,8 +196,7 @@ func (s *Resolver) resolveLabelChange(p graphql.ResolveParams, combine func(exis
 }
 
 // derefLabelIDs flattens resolveGQLLabelIDs's "absent means leave alone"
-// pointer into the empty set: for these mutations an absent labelIds names no
-// label rather than declining to say.
+// pointer to the empty set: for these mutations an absent labelIds names no label.
 func derefLabelIDs(ids *[]int) []int {
 	if ids == nil {
 		return nil
@@ -215,7 +205,7 @@ func derefLabelIDs(ids *[]int) []int {
 }
 
 // unionLabelIDs appends the named ids the subject does not already carry,
-// preserving the existing order so an add does not reshuffle the label list.
+// preserving existing order.
 func unionLabelIDs(existing, named []int) []int {
 	out := append([]int(nil), existing...)
 	present := make(map[int]bool, len(existing))
@@ -246,10 +236,9 @@ func withoutLabelIDs(existing, named []int) []int {
 	return out
 }
 
-// labelableMutationTarget resolves the repository an addLabelsToLabelable /
-// removeLabelsFromLabelable / clearLabelsFromLabelable input names. It is
-// mutationTargetIssueOrPullRequest under the key these three use, kept
-// separate only so the refusal names the interface the caller addressed.
+// labelableMutationTarget resolves the repository a Labelable input names. It
+// wraps mutationTargetIssueOrPullRequest so the refusal names the Labelable
+// interface the caller addressed.
 func labelableMutationTarget(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	issueOrPR := mutationTargetIssueOrPullRequest(key)
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {

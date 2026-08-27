@@ -13,9 +13,8 @@ import (
 func (s *Server) personalAccessTokenWebUser(w http.ResponseWriter, r *http.Request) (*store.User, *http.Request) {
 	ctx := s.authenticateRequest(r)
 	user := ghUserFromContext(ctx)
-	// The settings UI is a browser-authenticated surface. A signed-in browser
-	// must be able to create its first personal access token; requiring a
-	// pre-existing PAT here would make that flow circular.
+	// Accept a browser session so a signed-in user can create their first PAT;
+	// requiring a pre-existing PAT would make that flow circular.
 	if user == nil || (ghPersonalAccessTokenFromContext(ctx) == nil && s.sessionFromRequest(r) == nil) {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return nil, r
@@ -135,8 +134,8 @@ func (s *Server) handleCreatePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 	if user == nil {
 		return
 	}
-	// Minting or revoking a credential is a sensitive action under GitHub's
-	// sudo mode, so an enterprise demanding proof of presence gets it here.
+	// Minting or revoking a credential is a sudo-mode action; enforce proof of
+	// presence when the enterprise demands it.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -224,8 +223,8 @@ func (s *Server) handleDeletePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 	if user == nil {
 		return
 	}
-	// Minting or revoking a credential is a sensitive action under GitHub's
-	// sudo mode, so an enterprise demanding proof of presence gets it here.
+	// Minting or revoking a credential is a sudo-mode action; enforce proof of
+	// presence when the enterprise demands it.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}

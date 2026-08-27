@@ -1,8 +1,5 @@
-/**
- * Format the elapsed time between two ISO timestamps as GitHub renders
- * job/step durations ("1h 2m 3s", "42s"). Returns "—" while the end
- * isn't known yet (in-flight) or when either timestamp is unparsable.
- */
+// Elapsed time between two ISO timestamps, GitHub-style ("1h 2m 3s", "42s").
+// "—" while in-flight or when either timestamp is unparsable.
 export function formatDuration(startISO: string | null, endISO: string | null): string {
   if (!startISO || !endISO) return "—";
   const ms = new Date(endISO).getTime() - new Date(startISO).getTime();

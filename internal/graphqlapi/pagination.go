@@ -4,23 +4,11 @@ import (
 	"sort"
 )
 
-// Relay-style GraphQL connection pagination, moved from the server package
-// with the resolver layer (ARCH-003).
+// Relay-style GraphQL connection pagination.
 
 // repaginateConnection re-slices an already-built connection source map to
-// honor the Relay connection arguments (first/after, last/before) supplied to
-// an embedded connection field (e.g. PullRequest.reviews, Issue.comments).
-//
-// Embedded connections are materialised eagerly into a source map whose
-// "nodes" holds the full, already-rendered node list. The field resolver
-// passes that source map plus its own p.Args here; this reuses paginateGQL so
-// the slice, pageInfo (hasNextPage/hasPreviousPage), startCursor/endCursor and
-// totalCount match the top-level connections exactly.
-//
-// `last`/`before` page from the end: select the window of size `last` ending
-// just before `before` (or at the end), mirroring GitHub's backward
-// pagination. When no connection args are present the full list is returned
-// unsliced with a correct (all-false) pageInfo and cursors spanning the list.
+// honor the Relay connection arguments supplied to an embedded connection
+// field (e.g. PullRequest.reviews).
 func repaginateConnection(src interface{}, args map[string]interface{}) interface{} {
 	conn, ok := src.(map[string]interface{})
 	if !ok {
@@ -28,23 +16,16 @@ func repaginateConnection(src interface{}, args map[string]interface{}) interfac
 	}
 	nodes, ok := conn["nodes"].([]map[string]interface{})
 	if !ok {
-		// Some connections store []interface{} (empty or heterogeneous); leave
-		// them untouched rather than guess at a node shape.
+		// Some connections store []interface{}; leave them untouched.
 		return src
 	}
-	// Keep one implementation of the four Relay window arguments. The old
-	// forward-only path dropped `before` whenever `first` was present, so
-	// clients walking a bounded window received nodes outside that window.
 	return paginateGQLMaps(nodes, args)
 }
 
-// sortGQLNodesByCreatedAt orders already-rendered connection nodes oldest
-// first, with the numeric "_dbID" as a stable tiebreaker. Embedded
-// connections are built by iterating a Go map (nondeterministic order) and
-// formatting createdAt to second precision (so equal-second nodes collide);
-// without a deterministic order, cursor pagination boundaries would shift
-// between requests for the same page. "_dbID" is a private key the GraphQL
-// schema never exposes.
+// sortGQLNodesByCreatedAt orders nodes oldest first, breaking ties by "_dbID".
+// A deterministic order is required: nodes are built from map iteration and
+// createdAt is only second-precision, so without it cursor page boundaries
+// would shift between requests for the same page.
 func sortGQLNodesByCreatedAt(nodes []map[string]interface{}) {
 	sort.Slice(nodes, func(a, b int) bool {
 		ca, _ := nodes[a]["createdAt"].(string)
@@ -58,8 +39,7 @@ func sortGQLNodesByCreatedAt(nodes []map[string]interface{}) {
 	})
 }
 
-// intArg coerces a GraphQL Int argument (which may arrive as int, int64, or
-// float64 depending on the variable/literal path) to an int.
+// intArg coerces a GraphQL Int argument (int, int64, or float64) to an int.
 func intArg(args map[string]interface{}, key string) (int, bool) {
 	v, ok := args[key]
 	if !ok || v == nil {
@@ -76,22 +56,14 @@ func intArg(args map[string]interface{}, key string) (int, bool) {
 	return 0, false
 }
 
-// buildConnectionWindow renders nodes[startIdx:endIdx] into a connection map
-// with edges/cursors and a correct pageInfo, matching paginateGQL's shape.
-// gqlConnItem is one element of a GraphQL connection whose expensive node
-// rendering is deferred until pagination has chosen the page. Sorting and
-// cursor resolution run on the lightweight identity, so a `search(first:1)`
-// over a large instance renders a single node instead of every match (GQL-026).
+// gqlConnItem is one connection element whose node rendering is deferred until
+// pagination has chosen the page. Sorting and cursor resolution run on the
+// identity alone, so `search(first:1)` renders one node, not every match.
 type gqlConnItem struct {
-	// identity is the stable node id (what gqlNodeIdentity would return for the
-	// rendered node), used for identity-cursor resolution.
 	identity string
-	// render is invoked only for items inside the returned window.
-	render func() map[string]interface{}
+	render   func() map[string]interface{}
 }
 
-// resolveConnectionIndexForItems mirrors resolveConnectionIndex but matches on
-// the lightweight identity so no node is rendered to resolve a cursor.
 func resolveConnectionIndexForItems(items []gqlConnItem, cursor string, fallbackIdx int) int {
 	if id := connectionCursorID(cursor); id != "" {
 		for i := range items {
@@ -103,9 +75,8 @@ func resolveConnectionIndexForItems(items []gqlConnItem, cursor string, fallback
 	return fallbackIdx
 }
 
-// paginateGQLItems applies the same cursor/first/last windowing as
-// paginateGQLMaps, but over lazy items: only the items inside the final window
-// are rendered.
+// paginateGQLItems windows lazy items like paginateGQLMaps, rendering only
+// those inside the final window.
 func paginateGQLItems(items []gqlConnItem, args map[string]interface{}) map[string]interface{} {
 	total := len(items)
 	start := 0
@@ -113,8 +84,8 @@ func paginateGQLItems(items []gqlConnItem, args map[string]interface{}) map[stri
 
 	if after, ok := args["after"].(string); ok && after != "" {
 		afterIndex := resolveConnectionIndexForItems(items, after, decodeCursor(after))
-		// Saturate before adding one: cursor:<MaxInt> must describe an empty
-		// window, not wrap start negative and unexpectedly return page one.
+		// Saturate before +1 so cursor:<MaxInt> describes an empty window
+		// rather than wrapping start negative and returning page one.
 		if afterIndex >= total {
 			start = total
 		} else {
@@ -148,9 +119,8 @@ func paginateGQLItems(items []gqlConnItem, args map[string]interface{}) map[stri
 			start = end - last
 		}
 	}
-	// A supplied first bounds the window, including first: 0, which asks for
-	// the connection's metadata with no nodes. Folding zero into "unspecified"
-	// answered such a request with the default page instead of an empty one.
+	// first: 0 is valid (metadata, no nodes); it must not fold into the
+	// unspecified default-page path below.
 	if first, ok := intArg(args, "first"); ok && first >= 0 {
 		if first > 100 {
 			first = 100
@@ -171,9 +141,8 @@ func paginateGQLItems(items []gqlConnItem, args map[string]interface{}) map[stri
 }
 
 func buildConnectionWindowLazy(items []gqlConnItem, startIdx, endIdx, total int) map[string]interface{} {
-	// Keep this final rendering boundary safe even when a new caller computes
-	// a malformed window. Cursor values are untrusted client input, and both
-	// addition and conversion can otherwise produce an out-of-range slice.
+	// Clamp: cursor values are untrusted client input that can otherwise
+	// produce an out-of-range slice below.
 	if total < 0 || total > len(items) {
 		total = len(items)
 	}
@@ -216,15 +185,8 @@ func buildConnectionWindowLazy(items []gqlConnItem, startIdx, endIdx, total int)
 	}
 }
 
-// paginateGQL implements Relay-style cursor pagination for GraphQL connections.
-// toGQL converts each item into a map[string]interface{} that becomes the
-// GraphQL node. Use a closure to thread extra state (e.g. *Store) into toGQL.
-// resolveItemCursorIndex returns the current index of the item a connection
-// cursor identifies (by its stable identity), or the recorded fallback index
-// when the cursor is legacy/index-only or the item is gone. Keeps forward
-// pagination stable when items are inserted before the boundary (GQL-019).
 // identityOr returns the item's stable identity, or "" when no extractor is
-// supplied (the cursor then degrades to an index-only cursor).
+// supplied (the cursor then degrades to index-only).
 func identityOr[T any](identity func(T) string, item T) string {
 	if identity == nil {
 		return ""
@@ -232,6 +194,9 @@ func identityOr[T any](identity func(T) string, item T) string {
 	return identity(item)
 }
 
+// resolveItemCursorIndex returns the current index of the item a cursor
+// identifies, or fallbackIdx when the cursor is index-only or the item is gone.
+// Keeps forward pagination stable across inserts before the boundary (GQL-019).
 func resolveItemCursorIndex[T any](items []T, cursor string, identity func(T) string, fallbackIdx int) int {
 	if id := connectionCursorID(cursor); id != "" && identity != nil {
 		for i, item := range items {
@@ -243,13 +208,13 @@ func resolveItemCursorIndex[T any](items []T, cursor string, identity func(T) st
 	return fallbackIdx
 }
 
+// paginateGQL is Relay forward (first/after) pagination; toGQL renders each
+// node, threading extra state (e.g. *Store) via a closure.
 func paginateGQL[T any](items []T, first int, after string, toGQL func(T) map[string]interface{}, identity func(T) string) map[string]interface{} {
 	total := len(items)
 
-	// Real GitHub caps connection page size at 100 and rejects non-positive
-	// values; clamp defensively so an attacker-supplied `first` (negative or
-	// huge enough to overflow startIdx+first) can never produce an
-	// out-of-range slice expression below.
+	// GitHub caps page size at 100 and rejects non-positive values; clamp so a
+	// hostile `first` cannot overflow startIdx+first into an out-of-range slice.
 	if first <= 0 {
 		first = 30
 	}

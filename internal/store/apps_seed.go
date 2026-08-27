@@ -9,10 +9,8 @@ import (
 	"time"
 )
 
-// SeedApp creates a GitHub App from a caller-supplied spec with a deterministic
-// id, slug, and private key. Idempotent: if an app with the same id or slug is
-// already present (e.g. loaded from persistence), it is returned unchanged with
-// created=false. Errors only if the supplied PEM is not a usable RSA key.
+// SeedApp creates a GitHub App from a spec. Idempotent on matching id or slug:
+// returns the existing app unchanged with created=false.
 func (st *Store) SeedApp(spec AppSeedSpec, pemKey, ownerLogin string) (app *App, created bool, err error) {
 	normKey, err := normalizeRSAPrivateKeyPEM(pemKey)
 	if err != nil {
@@ -90,10 +88,8 @@ func (st *Store) SeedApp(spec AppSeedSpec, pemKey, ownerLogin string) (app *App,
 	return app, true, nil
 }
 
-// SeedInstallation creates an installation of a seeded App on a target,
-// optionally with a deterministic id. Idempotent per (app, target login): an
-// existing installation on the same account is returned unchanged. Returns nil
-// if the app doesn't exist.
+// SeedInstallation installs a seeded App on a target. Idempotent per (app,
+// target login). Returns nil if the app doesn't exist.
 func (st *Store) SeedInstallation(appID, explicitID int, targetType string, targetID int, targetLogin string, perms map[string]string, events []string) *Installation {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -152,20 +148,18 @@ func (st *Store) SeedInstallation(appID, explicitID int, targetType string, targ
 	return inst
 }
 
-// AppSeedSpec describes one pre-registered GitHub App to create at startup,
-// so a coordinate-only consumer holds the same (app id + private key + org)
-// coordinates against bleephub that it would against real GitHub — where an
-// App is registered out of band and the consumer keeps its id + PEM as
-// secrets. Supplied via BLEEPHUB_SEED_APPS (inline JSON array) or
-// BLEEPHUB_SEED_APPS_FILE (path to a JSON array).
+// AppSeedSpec describes one GitHub App to pre-register at startup, so a
+// coordinate-only consumer holds the same (app id + private key + org)
+// coordinates against bleephub as against real GitHub. Supplied via
+// BLEEPHUB_SEED_APPS (inline JSON) or BLEEPHUB_SEED_APPS_FILE (path).
 type AppSeedSpec struct {
-	ID             int                    `json:"id"`                   // deterministic, caller-chosen app id (required)
+	ID             int                    `json:"id"`                   // required
 	Slug           string                 `json:"slug"`                 // defaults to Slugify(name)
 	Name           string                 `json:"name"`                 // required
 	ClientID       string                 `json:"client_id"`            // defaults to Iv1.<id>
-	PrivateKeyPEM  string                 `json:"private_key_pem"`      // caller-supplied RSA key (PKCS1 or PKCS8)
+	PrivateKeyPEM  string                 `json:"private_key_pem"`      // RSA key (PKCS1 or PKCS8)
 	PrivateKeyFile string                 `json:"private_key_pem_file"` // alternative to inline PEM
-	Owner          string                 `json:"owner"`                // owning user login (required)
+	Owner          string                 `json:"owner"`                // required
 	Permissions    map[string]string      `json:"permissions"`
 	Events         []string               `json:"events"`
 	WebhookURL     string                 `json:"webhook_url"`
@@ -173,10 +167,8 @@ type AppSeedSpec struct {
 	Installations  []InstallationSeedSpec `json:"installations"`
 }
 
-// normalizeRSAPrivateKeyPEM validates a caller-supplied RSA private key (PKCS1
-// "RSA PRIVATE KEY" or PKCS8 "PRIVATE KEY") and re-encodes it as PKCS1 — the
-// form the app-JWT verifier (parseAndVerifyAppJWT) expects. The consumer keeps
-// the same key, so app JWTs they sign verify against the stored key.
+// normalizeRSAPrivateKeyPEM validates a PKCS1 or PKCS8 RSA key and re-encodes
+// it as PKCS1, the form parseAndVerifyAppJWT expects.
 func normalizeRSAPrivateKeyPEM(pemStr string) (string, error) {
 	block, _ := pem.Decode([]byte(pemStr))
 	if block == nil {
@@ -201,12 +193,11 @@ func normalizeRSAPrivateKeyPEM(pemStr string) (string, error) {
 	return string(out), nil
 }
 
-// InstallationSeedSpec pre-creates an installation of the seeded App on a
-// given account, so the consumer can mint an installation token by
-// coordinates alone (no /internal use).
+// InstallationSeedSpec pre-installs the seeded App on an account so the
+// consumer can mint an installation token by coordinates alone.
 type InstallationSeedSpec struct {
-	ID          int               `json:"id"`          // deterministic installation id (optional)
-	Account     string            `json:"account"`     // org/user login to install on (required)
+	ID          int               `json:"id"`          // optional
+	Account     string            `json:"account"`     // required
 	TargetType  string            `json:"target_type"` // "Organization" | "User"; default Organization
 	Permissions map[string]string `json:"permissions"`
 	Events      []string          `json:"events"`

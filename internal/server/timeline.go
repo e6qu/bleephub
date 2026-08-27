@@ -13,13 +13,12 @@ import (
 )
 
 const (
-	// logFileCap bounds a single runner-uploaded log file. Content past
-	// the cap is dropped and the truncation is marked in the stored log
-	// so readers see it happened.
+	// logFileCap bounds a single runner-uploaded log file; overflow is dropped
+	// and marked in the stored log.
 	logFileCap = 4 << 20
 
-	// consoleLineCap bounds the live console capture per job. When the
-	// cap trims lines, consoleTruncationMarker is appended once.
+	// consoleLineCap bounds the live console capture per job; trimming appends
+	// consoleTruncationMarker once.
 	consoleLineCap     = 10000
 	stepSummaryCap     = 1 << 20
 	timelineRequestCap = 4 << 20
@@ -31,10 +30,8 @@ var (
 )
 
 func (s *Server) registerTimelineRoutes() {
-	// Every route here writes into one job's plan and addresses that plan by
-	// its {planId}, so each is gated on the runtime token of the job the
-	// {planId} resolves to. Binding to the {scopeId} segment instead would
-	// leave the path parameter the handlers actually read unchecked.
+	// Every route addresses a plan by {planId}, so each gates on that plan's job
+	// token — the {scopeId} segment is not what the handlers read.
 
 	// Timeline CRUD
 	s.route("POST /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/timeline", s.requirePlanJob(s.handleCreateTimeline))
@@ -59,10 +56,7 @@ func (s *Server) handleCreateTimeline(w http.ResponseWriter, r *http.Request) {
 	timelineID := r.PathValue("timelineId")
 	s.logger.Debug().Str("timelineId", timelineID).Msg("create/update timeline")
 
-	// The handler ignores the body — the timeline is opaque to bleephub
-	// and the body's shape is whatever Azure DevOps' AzurePipelines task
-	// happens to send today. Discard explicitly so it's visible in code
-	// that there's no decode step. Drain to free the underlying conn.
+	// The timeline is opaque to bleephub; drain the body to free the conn.
 	_, _ = io.Copy(io.Discard, r.Body)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -103,10 +97,9 @@ func (s *Server) handleUpdateRecords(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// decodeTimelineRecords decodes a timeline-record PATCH body. The official
-// actions/runner wraps the records in a VssJsonCollectionWrapper
-// ({"count": N, "value": [...]}); a bare array is accepted too so direct
-// callers don't have to build the wrapper.
+// decodeTimelineRecords decodes a timeline-record PATCH body. actions/runner
+// wraps records in a VssJsonCollectionWrapper ({"count", "value"}); a bare array
+// is accepted too.
 func decodeTimelineRecords(body []byte) ([]*store.TimelineRecord, error) {
 	var wrapper struct {
 		Value []*store.TimelineRecord `json:"value"`
@@ -121,9 +114,8 @@ func decodeTimelineRecords(body []byte) ([]*store.TimelineRecord, error) {
 	return bare, nil
 }
 
-// upsertTimelineRecords folds the PATCHed records into the plan's stored
-// set, keyed by record ID. Returns copies of the post-merge records for
-// the response body.
+// upsertTimelineRecords folds the PATCHed records into the plan's stored set,
+// keyed by record ID, returning copies for the response body.
 func (s *Server) upsertTimelineRecords(planID string, records []*store.TimelineRecord) []*store.TimelineRecord {
 	s.store.Mu.Lock()
 	defer s.store.Mu.Unlock()
@@ -153,10 +145,9 @@ func (s *Server) upsertTimelineRecords(planID string, records []*store.TimelineR
 	return out
 }
 
-// mergeTimelineRecord folds a newer runner update into the stored record.
-// The runner PATCHes the same record repeatedly as state advances and a
-// later update may omit fields it isn't changing, so a present field never
-// regresses to empty.
+// mergeTimelineRecord folds a newer runner update into the stored record. The
+// runner re-PATCHes the same record as state advances, often omitting unchanged
+// fields, so a present field never regresses to empty.
 func mergeTimelineRecord(stored, incoming *store.TimelineRecord) {
 	if incoming.ParentID != "" {
 		stored.ParentID = incoming.ParentID
@@ -192,9 +183,8 @@ func mergeTimelineRecord(stored, incoming *store.TimelineRecord) {
 
 func (s *Server) handleCreateLog(w http.ResponseWriter, r *http.Request) {
 	logID := s.actions.NextLogID()
-	// Log ids come from one counter shared by every plan, so the id alone
-	// would be the only thing standing between a job and another job's log
-	// content. Record which plan reserved it.
+	// Log ids come from one counter shared by every plan; record which plan
+	// reserved it so a job cannot reach another job's log by id alone.
 	s.artifactStore.ClaimLog(logID, r.PathValue("planId"))
 	s.logger.Debug().Int("logId", logID).Msg("create log container")
 
@@ -223,15 +213,15 @@ func (s *Server) handleUploadLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The runner may upload a log in multiple blocks — append. Bound the
-	// stored size at logFileCap, keeping the head and marking the cut.
+	// The runner may upload a log in multiple blocks; append, capping at
+	// logFileCap and marking the cut.
 	s.store.Mu.Lock()
 	existing := s.store.LogFiles[logID]
 	next := append(append([]byte(nil), existing...), body...)
 	next = s.store.RedactLogBytesLocked(r.PathValue("planId"), next)
 	switch {
 	case bytes.HasSuffix(existing, logTruncationMarker):
-		// Already capped; later blocks are dropped past the marker.
+		// Already capped; drop later blocks.
 		next = append([]byte(nil), existing...)
 	case len(next) <= logFileCap:
 	default:
@@ -274,8 +264,7 @@ func (s *Server) handleWebConsoleLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Capture log lines keyed by jobID for the management dashboard.
-	// Capped at consoleLineCap; trimming appends the marker line once.
+	// Capture log lines keyed by jobID, capped at consoleLineCap.
 	if planID != "" && len(lines) > 0 {
 		job := s.actions.LookupJobByPlanID(planID)
 		s.store.Mu.Lock()
@@ -284,7 +273,7 @@ func (s *Server) handleWebConsoleLog(w http.ResponseWriter, r *http.Request) {
 			existing := s.store.LogLines[job.ID]
 			switch {
 			case len(existing) > 0 && existing[len(existing)-1] == consoleTruncationMarker:
-				// Already capped; later lines are dropped past the marker.
+				// Already capped; drop later lines.
 			case len(existing)+len(lines) <= consoleLineCap:
 				s.store.LogLines[job.ID] = append(existing, lines...)
 			default:
@@ -303,10 +292,9 @@ func (s *Server) handleWebConsoleLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"count": len(lines)})
 }
 
-// decodeConsoleLines decodes a web-console-log POST body. The official
-// actions/runner sends a TimelineRecordFeedLinesWrapper
-// ({"count": N, "value": [...], "stepId": ...}); a bare line array is
-// accepted too so direct callers don't have to build the wrapper.
+// decodeConsoleLines decodes a web-console-log POST body. actions/runner sends a
+// TimelineRecordFeedLinesWrapper ({"count", "value", "stepId"}); a bare line
+// array is accepted too.
 func decodeConsoleLines(body []byte) ([]string, error) {
 	var wrapper struct {
 		Value []string `json:"value"`

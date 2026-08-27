@@ -248,8 +248,8 @@ func (s *Server) handleDeleteCodeScanningAnalysis(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Capture the set (ref, tool) before deleting so the response can point at
-	// the next analysis in the chain.
+	// Capture (ref, tool) before deleting so the response can point at the next
+	// analysis in the chain.
 	a := s.store.GetCodeScanningAnalysis(repo.FullName, id)
 	if a == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -259,11 +259,10 @@ func (s *Server) handleDeleteCodeScanningAnalysis(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// GitHub answers 200 with code-scanning-analysis-deletion, not 204: deleting
-	// an analysis walks a chain within its set. next_analysis_url is the next
-	// deletable analysis (no confirmation needed) and is null once only the
-	// final analysis remains; confirm_delete_url deletes that final analysis
-	// (with ?confirm_delete). Both are null when the set is empty.
+	// GitHub answers 200 with code-scanning-analysis-deletion, not 204: deletion
+	// walks a chain within the set. next_analysis_url is the next deletable
+	// analysis (null once only the final one remains); confirm_delete_url deletes
+	// that final analysis (with ?confirm_delete). Both null when the set is empty.
 	base := s.baseURL(r)
 	var nextAnalysisURL, confirmDeleteURL interface{} // nil marshals to null
 	if remaining := s.store.ListCodeScanningAnalyses(repo.FullName, a.Ref, a.ToolName); len(remaining) > 0 {
@@ -323,15 +322,10 @@ func (s *Server) handleCreateSARIFUpload(w http.ResponseWriter, r *http.Request)
 }
 
 // codeScanningRequestCanWriteRepo accepts a human collaborator with push access
-// and an installation token entitled to security events over the repository —
-// GitHub Actions' built-in token is installation-shaped rather than a human
-// collaborator, and asking only the user-scoped predicate would reject the
-// official CodeQL producer.
-//
-// The installation arm used to be reachability alone, beside the user arm
-// rather than intersected with a grant, which is how an installation created on
-// the attacker's own account downloaded any private repository's CodeQL
-// database — source-code-equivalent.
+// or an installation token entitled to security events over the repository.
+// The installation arm must intersect the grant, not reachability alone: an
+// installation on the attacker's own account otherwise reached any private
+// repository's CodeQL database (source-code-equivalent).
 func (s *Server) codeScanningRequestCanWriteRepo(r *http.Request, repo *store.Repo) bool {
 	return s.viewerHasRepoPermission(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite)
 }
@@ -426,7 +420,6 @@ func (s *Server) handleGetCodeScanningDefaultSetup(w http.ResponseWriter, r *htt
 			out["state"] = "configured"
 			out["languages"] = setup.Languages
 			out["query_suite"] = setup.QuerySuite
-			// Default setup runs on GitHub's weekly periodic schedule.
 			out["schedule"] = "weekly"
 			if setup.RunnerType != "" {
 				out["runner_type"] = setup.RunnerType
@@ -442,8 +435,7 @@ func (s *Server) handleGetCodeScanningDefaultSetup(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, out)
 }
 
-// codeQLDefaultSetupLanguages is the language set accepted by the update
-// endpoint (the code-scanning-default-setup-update schema enum).
+// codeQLDefaultSetupLanguages is the code-scanning-default-setup-update enum.
 var codeQLDefaultSetupLanguages = map[string]bool{
 	"actions":               true,
 	"c-cpp":                 true,
@@ -767,8 +759,7 @@ func (s *Server) handleCommitCodeScanningAutofix(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// The body is optional on real GitHub; target_ref defaults to the
-	// repository's default branch.
+	// Body optional; target_ref defaults to the repository's default branch.
 	var req struct {
 		TargetRef string `json:"target_ref"`
 		Message   string `json:"message"`
@@ -798,7 +789,6 @@ func (s *Server) handleCommitCodeScanningAutofix(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// The target branch must already exist.
 	branchRef := plumbing.NewBranchReferenceName(branch)
 	ref, err := stor.Reference(branchRef)
 	if err != nil || ref == nil {
@@ -818,9 +808,8 @@ func (s *Server) handleCommitCodeScanningAutofix(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusInternalServerError, "resolve branch tree: "+err.Error())
 		return
 	}
-	// A FindEntry failure means the branch does not carry the flagged file;
-	// the autofix commit then creates it. Every other read failure is a real
-	// storage error and fails loud.
+	// A FindEntry failure means the branch lacks the flagged file (the commit
+	// creates it); every other read failure is a real storage error and fails loud.
 	if entry, findErr := tree.FindEntry(inst.Path); findErr == nil {
 		blob, err := object.GetBlob(stor, entry.Hash)
 		if err != nil {
@@ -860,9 +849,8 @@ func (s *Server) handleCommitCodeScanningAutofix(w http.ResponseWriter, r *http.
 	})
 }
 
-// applyAutofixEdit produces the fixed file content for an autofix commit:
-// the generated remediation line is inserted immediately above the alert's
-// flagged start line (or at the top of a file the branch does not have yet).
+// applyAutofixEdit inserts the remediation line immediately above the alert's
+// flagged start line (or at the top of a file the branch does not yet have).
 func applyAutofixEdit(content string, inst store.CodeScanningAlertInstance, description string) string {
 	lines := strings.Split(content, "\n")
 	idx := inst.StartLine - 1
@@ -881,8 +869,7 @@ func applyAutofixEdit(content string, inst store.CodeScanningAlertInstance, desc
 
 // --- CodeQL databases ---
 
-// codeQLLanguages are the languages the CodeQL variant-analysis API
-// accepts, matching GitHub's code-scanning-variant-analysis-language enum.
+// codeQLLanguages is the code-scanning-variant-analysis-language enum.
 var codeQLLanguages = map[string]bool{
 	"actions": true, "cpp": true, "csharp": true, "go": true, "java": true,
 	"javascript": true, "python": true, "ruby": true, "rust": true, "swift": true,
@@ -938,8 +925,8 @@ func (s *Server) handleGetCodeQLDatabase(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// With the Accept header set to the database's content type, real
-	// GitHub redirects to a download URL for the archive bytes.
+	// With Accept set to the database's content type, GitHub redirects to a
+	// download URL for the archive bytes.
 	if strings.Contains(r.Header.Get("Accept"), db.ContentType) {
 		loc := fmt.Sprintf("%s/code-scanning/repos/%s/codeql/databases/%s/download", s.baseURL(r), repo.FullName, db.Language)
 		http.Redirect(w, r, loc, http.StatusFound)
@@ -1036,11 +1023,10 @@ func (s *Server) handleUploadCodeQLDatabase(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusCreated)
 }
 
-// validateCodeQLDatabaseBundle checks the relocatable ZIP shape emitted by
-// `codeql database bundle`: one database root contains codeql-database.yml
-// (or the legacy .dbinfo manifest) and a non-empty db-{language} dataset.
-// Paths and entry types are validated without extracting attacker-controlled
-// content onto the filesystem.
+// validateCodeQLDatabaseBundle checks the relocatable ZIP emitted by `codeql
+// database bundle`: one database root holding codeql-database.yml (or legacy
+// .dbinfo) and a non-empty db-{language} dataset. Validates paths and entry
+// types without extracting attacker-controlled content to disk.
 func validateCodeQLDatabaseBundle(content []byte, language string) error {
 	zr, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
 	if err != nil {
@@ -1135,9 +1121,8 @@ func (s *Server) handleDownloadCodeQLDatabase(w http.ResponseWriter, r *http.Req
 
 // --- CodeQL variant analyses ---
 
-// variantAnalysisRepoIdentifierJSON renders the compact repository
-// identifier shape (code-scanning-variant-analysis-repository) used in
-// scanned/skipped repository groups.
+// variantAnalysisRepoIdentifierJSON renders the compact
+// code-scanning-variant-analysis-repository shape.
 func variantAnalysisRepoIdentifierJSON(repo *store.Repo) map[string]interface{} {
 	return map[string]interface{}{
 		"id":               repo.ID,
@@ -1284,9 +1269,9 @@ func (s *Server) handleCreateCodeQLVariantAnalysis(w http.ResponseWriter, r *htt
 	for _, owner := range req.RepositoryOwners {
 		targets = append(targets, s.store.ListRepoFullNamesByOwner(owner)...)
 	}
-	// Repository lists are a github.com saved-list feature bleephub does not
-	// model; a named list resolves to no repositories, so an analysis driven
-	// only by lists fails with no_repos_queried below.
+	// Repository lists (a github.com saved-list feature) are unmodeled: a named
+	// list resolves to no repositories, so a lists-only analysis fails below with
+	// no_repos_queried.
 
 	va, err := s.store.CreateCodeQLVariantAnalysis(repo.FullName, user.ID, req.Language, queryPack, targets)
 	if err != nil {

@@ -7,11 +7,9 @@ import { useSignedIn } from "../session.js";
 import { SignInPrompt } from "./SignInPrompt.js";
 
 /**
- * GitHub's repo "Go to file" fuzzy finder (the `t` shortcut / "Go to file"
- * button). Loads the full recursive tree at the current ref, subsequence-matches
- * the query against file paths (preferring basename hits), and navigates to the
- * chosen blob. Dialog + combobox/listbox with ↑/↓/Enter/Esc, focus trapped in
- * the dialog and restored to the opener on close.
+ * Repo "Go to file" fuzzy finder (`t` shortcut). Subsequence-matches the query
+ * against file paths, preferring basename hits. Combobox/listbox dialog with
+ * ↑/↓/Enter/Esc; focus trapped and restored to the opener on close.
  */
 
 function subsequenceMatch(path: string, needle: string): boolean {
@@ -39,8 +37,7 @@ export function GoToFile({
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // The recursive git-tree read is auth-gated on the server (401
-  // anonymously); the dialog asks signed-out visitors to sign in instead.
+  // The recursive git-tree read 401s anonymously; prompt sign-in instead.
   const signedIn = useSignedIn();
   const treeQ = useQuery({
     queryKey: ["repo-tree-recursive", owner, repo, gitRef],

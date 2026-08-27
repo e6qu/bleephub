@@ -44,10 +44,6 @@ func (s *Server) requirePagesRead(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// --- Store ---
-
-// --- Handlers ---
-
 func (s *Server) handlePagesDeploymentCreate(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
@@ -112,9 +108,7 @@ func (s *Server) handlePagesDeploymentCreate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// The publish happens here, synchronously: the site's content becomes
-	// the artifact and its status flips to built. The stored deployment is
-	// therefore already terminal.
+	// Publish is synchronous, so the deployment is already terminal here.
 	s.store.Misc.Mu.Lock()
 	site.Status = "built"
 	if s.store.Misc.Persist != nil {
@@ -249,10 +243,8 @@ func (s *Server) readPagesDeploymentArtifact(ctx context.Context, repoFullName s
 	if err != nil {
 		return nil, fmt.Errorf("create Pages deployment artifact request: %w", err)
 	}
-	// Route the artifact fetch through the SSRF address gate rather than
-	// http.DefaultClient: the artifact URL is produced by the deployment run,
-	// but gating the actual dial keeps it from reaching an internal/metadata
-	// address. The request context already bounds the timeout.
+	// Route through the SSRF address gate: the artifact URL comes from the
+	// deployment run and must not dial an internal/metadata address.
 	pagesClient := &http.Client{Transport: newAddressCheckedHTTPTransport(false)}
 	resp, err := pagesClient.Do(req)
 	if err != nil {
@@ -311,8 +303,6 @@ func pagesDeploymentTerminal(status string) bool {
 	return false
 }
 
-// repoOwnsFinalizedArtifact reports whether the repository owns a finalized
-// Actions artifact with the given ID.
 func (s *Server) repoOwnsFinalizedArtifact(repoFullName string, artifactID int64) bool {
 	s.artifactStore.Mu.RLock()
 	defer s.artifactStore.Mu.RUnlock()
@@ -356,11 +346,9 @@ func (s *Server) handlePagesHealthCheck(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// pagesDomainHealthJSON runs the real domain checks bleephub can perform
-// locally: a DNS resolution and syntactic domain classification. Checks
-// that would require probing GitHub's Pages edge (A-record targets,
-// Fastly/Cloudflare classification, live HTTPS probes) are omitted rather
-// than fabricated — every member is optional in the health-check schema.
+// pagesDomainHealthJSON runs the checks bleephub can perform locally (DNS
+// resolution, syntactic classification). Checks needing GitHub's Pages edge are
+// omitted rather than fabricated; every member is optional in the schema.
 func pagesDomainHealthJSON(ctx context.Context, host string, httpsEnforced bool) map[string]interface{} {
 	lookupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -393,7 +381,7 @@ func pagesDomainHealthJSON(ctx context.Context, host string, httpsEnforced bool)
 	}
 }
 
-// validPagesDomain applies hostname syntax rules (RFC 1123 labels).
+// validPagesDomain checks RFC 1123 label syntax.
 func validPagesDomain(host string) bool {
 	if host == "" || len(host) > 253 {
 		return false

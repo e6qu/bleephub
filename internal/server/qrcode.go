@@ -4,32 +4,21 @@ import (
 	"fmt"
 )
 
-// A minimal QR Code encoder (ISO/IEC 18004), enough to render an otpauth://
-// provisioning URI so an authenticator app can scan it instead of the user
-// transcribing a 32-character secret.
-//
-// Scope is deliberately narrow — byte mode, error-correction level M, versions
-// 1 through 10 (213 bytes) — because that is the whole of what a provisioning
-// URI needs. Anything longer is refused rather than silently truncated.
-//
-// The server emits the module matrix and the browser draws it as an SVG, so
-// the code inherits the page's colours in both themes and carries a real
-// accessible name, which a rasterized image could not.
+// A minimal QR Code encoder (ISO/IEC 18004) for otpauth:// provisioning URIs.
+// Scope is narrow — byte mode, EC level M, versions 1..10 (213 bytes) — which
+// is all a provisioning URI needs; anything longer is refused, not truncated.
+// The server emits the module matrix and the browser draws it as themed SVG.
 
 const (
-	// qrECLevelM is the two-bit error-correction level indicator for level M
-	// (~15% recovery) — the level authenticator QR codes conventionally use.
+	// qrECLevelM is the 2-bit EC level indicator for level M (~15% recovery).
 	qrECLevelM = 0b00
-	// qrByteMode is the four-bit mode indicator for 8-bit byte mode.
-	qrByteMode = 0b0100
-	// qrMaxVersion bounds the encoder; see the package comment.
+	// qrByteMode is the 4-bit mode indicator for 8-bit byte mode.
+	qrByteMode   = 0b0100
 	qrMaxVersion = 10
 )
 
-// qrVersionSpec is the block structure of one version at error-correction
-// level M: how the data codewords are split into Reed-Solomon blocks, how many
-// error-correction codewords each block carries, and where the alignment
-// patterns sit. Values are from ISO/IEC 18004 tables 9 and E.1.
+// qrVersionSpec is one version's block structure at EC level M (ISO/IEC 18004
+// tables 9 and E.1): RS block split, EC codewords per block, alignment centers.
 type qrVersionSpec struct {
 	ecPerBlock   int
 	group1Blocks int
@@ -58,14 +47,11 @@ var qrVersionsLevelM = [qrMaxVersion + 1]qrVersionSpec{
 	10: {ecPerBlock: 26, group1Blocks: 4, group1Data: 43, group2Blocks: 1, group2Data: 44, alignment: []int{6, 28, 50}},
 }
 
-// qrRemainderBits is the number of zero bits appended after the interleaved
-// codeword stream so it exactly fills the symbol (ISO/IEC 18004 table 1).
+// qrRemainderBits is the zero bits appended after the codeword stream so it
+// fills the symbol (ISO/IEC 18004 table 1).
 var qrRemainderBits = [qrMaxVersion + 1]int{0, 0, 7, 7, 7, 7, 7, 0, 0, 0, 0}
 
-// ─── GF(256) arithmetic for Reed-Solomon ────────────────────────────────────
-
-// The field is GF(2^8) modulo x^8+x^4+x^3+x^2+1 (0x11D) with 2 as generator,
-// as specified for QR Codes.
+// GF(2^8) modulo 0x11D with 2 as generator, as specified for QR Codes.
 var (
 	qrGFExp [512]byte
 	qrGFLog [256]byte
@@ -93,8 +79,8 @@ func qrGFMul(a, b byte) byte {
 	return qrGFExp[int(qrGFLog[a])+int(qrGFLog[b])]
 }
 
-// qrGeneratorPoly builds the degree-`degree` Reed-Solomon generator
-// polynomial (x-2^0)(x-2^1)…, coefficients high-order first.
+// qrGeneratorPoly builds the degree-`degree` RS generator polynomial
+// (x-2^0)(x-2^1)…, coefficients high-order first.
 func qrGeneratorPoly(degree int) []byte {
 	poly := []byte{1}
 	for i := 0; i < degree; i++ {
@@ -108,8 +94,8 @@ func qrGeneratorPoly(degree int) []byte {
 	return poly
 }
 
-// qrErrorCorrection returns the `count` error-correction codewords for one
-// data block (the remainder of the block polynomial divided by the generator).
+// qrErrorCorrection returns the `count` EC codewords for one data block (the
+// block polynomial's remainder modulo the generator).
 func qrErrorCorrection(data []byte, count int) []byte {
 	generator := qrGeneratorPoly(count)
 	remainder := make([]byte, count)
@@ -125,8 +111,6 @@ func qrErrorCorrection(data []byte, count int) []byte {
 	}
 	return remainder
 }
-
-// ─── Symbol construction ────────────────────────────────────────────────────
 
 type qrSymbol struct {
 	size     int
@@ -152,8 +136,8 @@ func (q *qrSymbol) setFunction(row, col int, dark bool) {
 
 func (q *qrSymbol) isFunction(row, col int) bool { return q.function[row*q.size+col] }
 
-// qrEncode renders text as a QR Code and returns one string per row, each
-// character '0' (light) or '1' (dark).
+// qrEncode renders text as a QR Code, one string per row, each char '0' (light)
+// or '1' (dark).
 func qrEncode(text string) ([]string, error) {
 	version, spec, err := qrSelectVersion(len(text))
 	if err != nil {
@@ -192,8 +176,8 @@ func qrEncode(text string) ([]string, error) {
 	return rows, nil
 }
 
-// qrSelectVersion picks the smallest version whose level-M capacity holds
-// `length` bytes in byte mode.
+// qrSelectVersion picks the smallest version whose level-M byte-mode capacity
+// holds `length` bytes.
 func qrSelectVersion(length int) (int, qrVersionSpec, error) {
 	for version := 1; version <= qrMaxVersion; version++ {
 		spec := qrVersionsLevelM[version]
@@ -204,8 +188,8 @@ func qrSelectVersion(length int) (int, qrVersionSpec, error) {
 	return 0, qrVersionSpec{}, fmt.Errorf("qr: %d bytes exceed the version-%d capacity of this encoder", length, qrMaxVersion)
 }
 
-// qrCharCountBits is the width of the character-count field in byte mode: 8
-// bits up to version 9, 16 bits from version 10.
+// qrCharCountBits is the byte-mode character-count field width: 8 bits up to
+// version 9, 16 from version 10.
 func qrCharCountBits(version int) int {
 	if version < 10 {
 		return 8
@@ -213,9 +197,9 @@ func qrCharCountBits(version int) int {
 	return 16
 }
 
-// qrCodewords assembles the final interleaved codeword stream: the encoded
-// data segment, padded to capacity, split into Reed-Solomon blocks, each with
-// its error-correction codewords, interleaved as the standard requires.
+// qrCodewords assembles the interleaved codeword stream: the data segment
+// padded to capacity, split into RS blocks with their EC codewords, interleaved
+// as the standard requires.
 func qrCodewords(version int, spec qrVersionSpec, data []byte) []byte {
 	bits := &qrBitBuffer{}
 	bits.append(qrByteMode, 4)
@@ -231,7 +215,7 @@ func qrCodewords(version int, spec qrVersionSpec, data []byte) []byte {
 	for bits.length%8 != 0 {
 		bits.append(0, 1)
 	}
-	// Alternating pad codewords, as specified.
+	// Alternating pad codewords.
 	for pad := 0xec; bits.length < capacityBits; pad ^= 0xec ^ 0x11 {
 		bits.append(pad, 8)
 	}
@@ -291,8 +275,7 @@ func (b *qrBitBuffer) append(value, width int) {
 }
 
 func (q *qrSymbol) drawFunctionPatterns(version int, spec qrVersionSpec) {
-	// Timing patterns run the full width and height; the finder patterns
-	// overwrite their ends.
+	// Timing patterns run full width and height; finders overwrite their ends.
 	for i := 0; i < q.size; i++ {
 		q.setFunction(6, i, i%2 == 0)
 		q.setFunction(i, 6, i%2 == 0)
@@ -304,7 +287,7 @@ func (q *qrSymbol) drawFunctionPatterns(version int, spec qrVersionSpec) {
 	centers := spec.alignment
 	for i, row := range centers {
 		for j, col := range centers {
-			// The three corners are occupied by finder patterns.
+			// Skip the three finder-occupied corners.
 			last := len(centers) - 1
 			if (i == 0 && j == 0) || (i == 0 && j == last) || (i == last && j == 0) {
 				continue
@@ -312,14 +295,13 @@ func (q *qrSymbol) drawFunctionPatterns(version int, spec qrVersionSpec) {
 			q.drawAlignment(row, col)
 		}
 	}
-	// Reserve the format area with a placeholder; the real bits are written
-	// once the mask is chosen.
+	// Reserve the format area; the real bits are written once the mask is chosen.
 	q.drawFormatBits(0)
 	q.drawVersionBits(version)
 }
 
-// drawFinder draws one 7×7 finder pattern (centred at row, col) together with
-// its light separator, which is why the loop runs from -4 to 4.
+// drawFinder draws one 7×7 finder pattern centred at row, col with its light
+// separator (hence the -4..4 loop).
 func (q *qrSymbol) drawFinder(row, col int) {
 	for dr := -4; dr <= 4; dr++ {
 		for dc := -4; dc <= 4; dc++ {
@@ -337,8 +319,8 @@ func (q *qrSymbol) drawAlignment(row, col int) {
 	}
 }
 
-// drawFormatBits writes both copies of the 15-bit format information: the
-// error-correction level and mask, protected by a BCH(15,5) code.
+// drawFormatBits writes both copies of the 15-bit format info (EC level + mask,
+// BCH(15,5)-protected).
 func (q *qrSymbol) drawFormatBits(mask int) {
 	data := qrECLevelM<<3 | mask
 	remainder := data
@@ -363,12 +345,12 @@ func (q *qrSymbol) drawFormatBits(mask int) {
 	for i := 8; i < 15; i++ {
 		q.setFunction(q.size-15+i, 8, bit(i))
 	}
-	// The module below the top-left of the bottom-left finder is always dark.
+	// Always-dark module below the bottom-left finder.
 	q.setFunction(q.size-8, 8, true)
 }
 
-// drawVersionBits writes the 18-bit version information (BCH(18,6)), present
-// only from version 7.
+// drawVersionBits writes the 18-bit version info (BCH(18,6)), present only from
+// version 7.
 func (q *qrSymbol) drawVersionBits(version int) {
 	if version < 7 {
 		return
@@ -386,8 +368,8 @@ func (q *qrSymbol) drawVersionBits(version int) {
 	}
 }
 
-// drawCodewords lays the codeword stream into the symbol in the standard
-// two-module-wide upward/downward zigzag from the bottom-right corner.
+// drawCodewords lays the codeword stream into the symbol in the two-module-wide
+// zigzag from the bottom-right corner.
 func (q *qrSymbol) drawCodewords(codewords []byte, remainderBits int) {
 	total := len(codewords)*8 + remainderBits
 	index := 0
@@ -417,8 +399,8 @@ func (q *qrSymbol) drawCodewords(codewords []byte, remainderBits int) {
 	}
 }
 
-// applyMask XORs one of the eight standard mask patterns over the data
-// modules. It is an involution, so calling it twice restores the symbol.
+// applyMask XORs one of the eight mask patterns over the data modules. It is an
+// involution: calling it twice restores the symbol.
 func (q *qrSymbol) applyMask(mask int) {
 	for row := 0; row < q.size; row++ {
 		for col := 0; col < q.size; col++ {
@@ -451,8 +433,8 @@ func (q *qrSymbol) applyMask(mask int) {
 	}
 }
 
-// penalty scores a masked symbol by the four standard rules; the mask with the
-// lowest score is the one a scanner reads most reliably.
+// penalty scores a masked symbol by the four standard rules; the lowest score
+// reads most reliably.
 func (q *qrSymbol) penalty() int {
 	const (
 		n1, n2, n3, n4 = 3, 3, 40, 10

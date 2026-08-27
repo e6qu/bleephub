@@ -11,9 +11,6 @@ import { TeamMembersPanel, TeamReposPanel, TeamChildrenPanel } from "./TeamsPage
 const fetchOrgTeam = (org: string, slug: string) =>
   ghFetch<GithubOrgTeam>(`/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}`);
 
-// Org-context team detail: the Members / Repositories / Child-teams surface
-// github.com opens when you click a team on the org Teams tab. Reuses the same
-// panels as the operations Teams page against the org REST endpoints.
 export function OrgTeamDetailPage() {
   const { org = "", slug = "" } = useParams<{ org: string; slug: string }>();
   const [tab, setTab] = useState<"members" | "repos" | "children">("members");

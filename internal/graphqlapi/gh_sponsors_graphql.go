@@ -1,14 +1,11 @@
 package graphqlapi
 
-// GitHub Sponsors — the GraphQL surface: the Sponsorable interface User
-// and Organization both implement, the listing/tier/goal/featured-item
-// object graph, the sponsorship and activity feeds, the newsletters, and
-// the nine mutations GitHub publishes.
+// GitHub Sponsors — the GraphQL surface: the Sponsorable interface, the
+// listing/tier/goal/featured-item object graph, the sponsorship and activity
+// feeds, the newsletters, and the mutations.
 //
-// Sponsors is a GraphQL-only product on real GitHub (there is no REST
-// API), so this file is the client-facing contract. Every money field is
-// integer United States cents read straight off the store's invoice
-// ledger, and every privacy decision goes through one predicate:
+// Sponsors is GraphQL-only on GitHub (no REST). Every money field is integer
+// US cents from the store ledger, and every privacy decision goes through
 // sponsorshipVisible.
 
 import (
@@ -20,9 +17,8 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// sponsorsTypeRegistry memoizes the Sponsors type graph. It hangs off the
-// resolver's registry so the interface, the unions and the connections are
-// each minted once per assembled schema.
+// sponsorsTypeRegistry memoizes the Sponsors type graph so the interface,
+// unions and connections are each minted once per assembled schema.
 type sponsorsTypeRegistry struct {
 	sponsorable      *graphql.Interface
 	sponsorUnion     *graphql.Union
@@ -76,8 +72,8 @@ func (s *Resolver) sponsorsOrderInput(name, fieldEnumName string, fieldValues ..
 	return input
 }
 
-// sponsorsConnectionType mints a Relay connection (and its edge) over the
-// node type, memoized by connection name.
+// sponsorsConnectionType mints a Relay connection (and edge) over the node type,
+// memoized by connection name.
 func (s *Resolver) sponsorsConnectionType(name string, nodeType graphql.Output, extra graphql.Fields) *graphql.Object {
 	types := s.sponsorsTypes()
 	if conn := types.connections[name]; conn != nil {
@@ -126,9 +122,8 @@ func (s *Resolver) sponsorsAccountGQL(login string) map[string]interface{} {
 	return nil
 }
 
-// sponsorsAccountLogin reads the login off a Sponsorable source map. Every
-// Sponsorable field resolves through it, so a User source and an
-// Organization source are handled by one code path.
+// sponsorsAccountLogin reads the login off a Sponsorable source map, so User and
+// Organization sources share one code path.
 func sponsorsAccountLogin(source interface{}) string {
 	m, _ := source.(map[string]interface{})
 	if m == nil {
@@ -156,8 +151,8 @@ func (s *Resolver) resolveSponsorsAccount(nodeID string) (login string, ok bool)
 	return "", false
 }
 
-// sponsorsAccountFromInput reads the (id, login) pair every Sponsors
-// mutation input offers for an account, preferring the global id.
+// sponsorsAccountFromInput reads the (id, login) pair a Sponsors mutation input
+// offers, preferring the global id.
 func (s *Resolver) sponsorsAccountFromInput(input map[string]interface{}, idKey, loginKey string) string {
 	if nodeID, _ := input[idKey].(string); nodeID != "" {
 		if login, ok := s.resolveSponsorsAccount(nodeID); ok {
@@ -188,10 +183,9 @@ func (s *Resolver) sponsorableExists(login string) (string, bool) {
 // ---------------------------------------------------------------------------
 // privacy
 
-// sponsorshipVisible is the one privacy predicate the whole Sponsors
-// surface uses. A private sponsorship exists, for reading purposes, only
-// for its sponsor, for the maintainer receiving it, and for a site
-// administrator; to anybody else it must not even be countable.
+// sponsorshipVisible is the one privacy predicate the Sponsors surface uses. A
+// private sponsorship is readable only by its sponsor, the receiving maintainer
+// and a site admin; to anyone else it is not even countable.
 func (s *Resolver) sponsorshipVisible(p graphql.ResolveParams, sponsorship *store.Sponsorship) bool {
 	if sponsorship == nil {
 		return false
@@ -421,9 +415,8 @@ func (s *Resolver) sponsorsGoalType() *graphql.Object {
 	return types.goal
 }
 
-// sponsorableInterfaceType is the Sponsorable interface. Its fields are
-// declared through a thunk because they name SponsorsListing, Sponsorship
-// and the connections, each of which names Sponsorable back.
+// sponsorableInterfaceType is the Sponsorable interface, its fields declared
+// through a thunk because they name types that name Sponsorable back.
 func (s *Resolver) sponsorableInterfaceType() *graphql.Interface {
 	types := s.sponsorsTypes()
 	if types.sponsorable != nil {
@@ -527,8 +520,7 @@ func (s *Resolver) sponsorsTierType() *graphql.Object {
 						return s.sponsorsListingGQL(s.store.Sponsors.GetSponsorsListing(sponsorsSourceInt(p.Source, "_listingID"))), nil
 					},
 				},
-				// A tier one price point below this one, at the same
-				// frequency: what a sponsor is offered when they downgrade.
+				// The next tier down at the same frequency (a downgrade).
 				"closestLesserValueTier": &graphql.Field{
 					Type: s.sponsorsTierType(),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -559,8 +551,7 @@ func (s *Resolver) sponsorsTierType() *graphql.Object {
 							return nil, nil
 						}
 						listing := s.store.Sponsors.GetSponsorsListing(tier.ListingID)
-						// Draft/published/retired state and the tier's
-						// sponsorships are the maintainer's business alone.
+						// The maintainer's business alone.
 						if listing == nil || !s.viewerCanAdminAccount(p.Context, listing.SponsorableLogin) {
 							return nil, nil
 						}
@@ -670,9 +661,7 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 				"id":   &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
 				"slug": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 				"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-				// bleephub runs no Stripe integration, so a listing has no active
-				// Stripe Connect account; the field is present (its type exists)
-				// and answers a truthful null rather than being missing.
+				// No Stripe integration, so this always answers null.
 				"activeStripeConnectAccount": &graphql.Field{
 					Type:    s.gqlStripeConnectAccountType(),
 					Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
@@ -698,8 +687,7 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 						return optionalObject(s.sponsorsAccountGQL(sponsorsSourceString(p.Source, "_sponsorableLogin"))), nil
 					},
 				},
-				// The fiscal host is the organization receiving payouts on
-				// the maintainer's behalf, when they have one.
+				// The org receiving payouts on the maintainer's behalf, if any.
 				"fiscalHost": &graphql.Field{
 					Type: s.graphqlTypes.organization,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -714,9 +702,7 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 						return orgToGraphQL(org), nil
 					},
 				},
-				// Payout and contact configuration is the maintainer's:
-				// GitHub returns null for it to everybody else, and so must
-				// this — the field is not missing, it is not theirs.
+				// Payout and contact config is the maintainer's; null to others.
 				"contactEmailAddress":      s.sponsorsMaintainerOnlyField(graphql.String, func(l *store.SponsorsListing) interface{} { return nullableString(l.ContactEmail) }),
 				"billingCountryOrRegion":   s.sponsorsMaintainerOnlyField(graphql.String, func(l *store.SponsorsListing) interface{} { return nullableString(l.BillingCountryOrRegion) }),
 				"residenceCountryOrRegion": s.sponsorsMaintainerOnlyField(graphql.String, func(l *store.SponsorsListing) interface{} { return nullableString(l.ResidenceCountryOrRegion) }),
@@ -760,8 +746,7 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 							return nil, nil
 						}
 						includeUnpublished, _ := p.Args["includeUnpublished"].(bool)
-						// Unpublished tiers are drafts; only the maintainer
-						// may see they exist.
+						// Unpublished tiers are drafts, visible to the maintainer only.
 						if includeUnpublished && !s.viewerCanAdminAccount(p.Context, listing.SponsorableLogin) {
 							includeUnpublished = false
 						}
@@ -779,10 +764,9 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 }
 
 // gqlStripeConnectAccountType is GitHub's StripeConnectAccount object
-// (memoized). bleephub never populates one — SponsorsListing.activeStripeConnectAccount
-// is always null — but the type has to exist with GitHub's signature for that
-// field to name it. Its members are declared through a thunk because
-// sponsorsListing points back at SponsorsListing, which points here.
+// (memoized). It is never populated, but must exist for
+// SponsorsListing.activeStripeConnectAccount to name it; the back-reference to
+// SponsorsListing needs the thunk.
 func (s *Resolver) gqlStripeConnectAccountType() *graphql.Object {
 	return s.mutationObjectLazy("StripeConnectAccount", func() graphql.Fields {
 		return graphql.Fields{
@@ -796,8 +780,8 @@ func (s *Resolver) gqlStripeConnectAccountType() *graphql.Object {
 	})
 }
 
-// sponsorsMaintainerOnlyField builds a listing field that answers only for
-// a viewer who can administer the sponsorable, exactly as GitHub does.
+// sponsorsMaintainerOnlyField builds a listing field that answers only for a
+// viewer who can administer the sponsorable.
 func (s *Resolver) sponsorsMaintainerOnlyField(fieldType graphql.Output, read func(*store.SponsorsListing) interface{}) *graphql.Field {
 	return &graphql.Field{
 		Type: fieldType,
@@ -847,9 +831,8 @@ func (s *Resolver) sponsorshipType() *graphql.Object {
 						return optionalObject(s.sponsorsAccountGQL(sponsorsSourceString(p.Source, "_sponsorableLogin"))), nil
 					},
 				},
-				// GitHub keeps `sponsor` and `maintainer` on the type as
-				// deprecated User-typed views of the two sides; a client
-				// written before sponsorEntity existed still resolves.
+				// Deprecated User-typed views of the two sides, kept so a
+				// client written before sponsorEntity existed still resolves.
 				"sponsor": &graphql.Field{
 					Type:              s.graphqlTypes.user,
 					DeprecationReason: "`Sponsorship.sponsor` will be removed. Use `Sponsorship.sponsorEntity` instead. Removal on 2020-10-01 UTC.",
@@ -1040,10 +1023,9 @@ func (s *Resolver) sponsorLifetimeValueConnectionType() *graphql.Object {
 	return s.sponsorsConnectionType("SponsorAndLifetimeValueConnection", s.sponsorLifetimeValueType(), nil)
 }
 
-// sponsorshipConnection renders a sponsorship connection, dropping the
-// private sponsorships the viewer may not see and totalling the recurring
-// monthly price of the ones that survive — so the total can never leak the
-// value of a sponsorship the viewer cannot read.
+// sponsorshipConnection renders a sponsorship connection, dropping private
+// sponsorships the viewer may not see and totalling only the survivors, so the
+// total cannot leak a hidden sponsorship's value.
 func (s *Resolver) sponsorshipConnection(p graphql.ResolveParams, rows []*store.Sponsorship, includePrivate bool) map[string]interface{} {
 	visible := s.visibleSponsorships(p, rows)
 	kept := make([]*store.Sponsorship, 0, len(visible))
@@ -1070,9 +1052,8 @@ func (s *Resolver) sponsorshipConnection(p graphql.ResolveParams, rows []*store.
 // ---------------------------------------------------------------------------
 // Sponsorable interface fields — shared by User and Organization
 
-// sponsorableFields is the whole Sponsorable field set. It is built once
-// and installed on the interface, on User and on Organization, so the three
-// can never drift.
+// sponsorableFields is the whole Sponsorable field set, built once and installed
+// on the interface, User and Organization so the three cannot drift.
 func (s *Resolver) sponsorableFields() graphql.Fields {
 	dateTime := s.graphQLStringScalar("DateTime")
 	sponsorOrder := s.sponsorsOrderInput("SponsorOrder", "SponsorOrderField", "LOGIN", "RELEVANCE")
@@ -1093,7 +1074,7 @@ func (s *Resolver) sponsorableFields() graphql.Fields {
 				if listing == nil {
 					return nil, nil
 				}
-				// An unpublished profile is visible to its maintainer only.
+				// Unpublished profile: maintainer only.
 				if !listing.IsPublic && !s.viewerCanAdminAccount(p.Context, login) {
 					return nil, nil
 				}
@@ -1277,9 +1258,7 @@ func (s *Resolver) sponsorableFields() graphql.Fields {
 					}
 					rows = append(rows, sponsorship)
 				}
-				// A sponsor always sees their own sponsorships, private or
-				// not; sponsorshipConnection's privacy filter answers for
-				// everyone else.
+				// A sponsor always sees their own sponsorships, private or not.
 				return s.sponsorshipConnection(p, rows, true), nil
 			},
 		},
@@ -1315,8 +1294,7 @@ func (s *Resolver) sponsorableFields() graphql.Fields {
 				if listing == nil {
 					return paginateGQLMaps(nil, p.Args), nil
 				}
-				// Drafts belong to the maintainer; published updates are for
-				// the sponsors who paid for them.
+				// Drafts are the maintainer's; published updates are for sponsors.
 				maintainer := s.viewerCanAdminAccount(p.Context, login)
 				viewer := s.ghUserFromContext(p.Context)
 				sponsoring := viewer != nil && s.store.Sponsors.GetSponsorshipBetween(viewer.Login, login, true) != nil
@@ -1340,7 +1318,7 @@ func (s *Resolver) sponsorableFields() graphql.Fields {
 			}),
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				login := sponsorsAccountLogin(p.Source)
-				// What each sponsor has paid is the maintainer's ledger.
+				// The maintainer's ledger.
 				if !s.viewerCanAdminAccount(p.Context, login) {
 					return paginateGQLMaps(nil, p.Args), nil
 				}
@@ -1365,8 +1343,7 @@ func (s *Resolver) sponsorableFields() graphql.Fields {
 			},
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				login := sponsorsAccountLogin(p.Source)
-				// GitHub returns this only to the account itself or to a
-				// manager of the organization: it is their spending.
+				// The account's own spending; account or org manager only.
 				if !s.viewerCanAdminAccount(p.Context, login) {
 					return nil, nil
 				}
@@ -1398,8 +1375,8 @@ func sponsorsTimeArg(args map[string]interface{}, key string) *time.Time {
 	return &utc
 }
 
-// resolveSponsorsActivities applies the action, period and window filters
-// to a sponsorable's activity feed.
+// resolveSponsorsActivities applies the action, period and window filters to a
+// sponsorable's activity feed.
 func (s *Resolver) resolveSponsorsActivities(p graphql.ResolveParams) (interface{}, error) {
 	login := sponsorsAccountLogin(p.Source)
 	includeAsSponsor, _ := p.Args["includeAsSponsor"].(bool)
@@ -1444,8 +1421,7 @@ func (s *Resolver) resolveSponsorsActivities(p graphql.ResolveParams) (interface
 		}
 		private := activity.CurrentPrivacyLevel == store.SponsorshipPrivacyPrivate
 		if private {
-			// A private sponsorship's activity is readable by the two
-			// parties to it and nobody else, whatever includePrivate says.
+			// Readable by the two parties only, whatever includePrivate says.
 			if !includePrivate {
 				continue
 			}
@@ -1462,8 +1438,8 @@ func (s *Resolver) resolveSponsorsActivities(p graphql.ResolveParams) (interface
 // schema assembly
 
 // addSponsorsFieldsToSchema installs the Sponsors surface: the Sponsorable
-// fields on User and Organization, the Query.sponsorables root field, the
-// node types, and every mutation.
+// fields on User/Organization, Query.sponsorables, the node types, and the
+// mutations.
 func (s *Resolver) addSponsorsFieldsToSchema(userType, orgType, queryType, mutationType *graphql.Object, nodeTypes map[string]*graphql.Object) {
 	types := s.sponsorsTypes()
 	types.pendingUserType = userType
@@ -1510,17 +1486,14 @@ func (s *Resolver) addSponsorsFieldsToSchema(userType, orgType, queryType, mutat
 
 	s.addSponsorsMutations(mutationType)
 
-	// The two SponsorsCountryOrRegionCode members of CreateSponsorsListingInput.
-	// The input is minted anonymously inside the create mutation, so the two
-	// fields are added to the assembled type here rather than at the mutation's
-	// declaration site.
+	// The input is minted anonymously inside the create mutation, so these two
+	// fields are added to the assembled type here.
 	s.addCreateSponsorsListingInputResidueFields(mutationType)
 }
 
 // addCreateSponsorsListingInputResidueFields declares the billing and residence
-// country-or-region members on CreateSponsorsListingInput. They are input
-// declarations only: the create resolver does not read them, matching a
-// bleephub that records no bank-account geography.
+// country-or-region members on CreateSponsorsListingInput; the create resolver
+// does not read them (no bank-account geography is recorded).
 func (s *Resolver) addCreateSponsorsListingInputResidueFields(mutationType *graphql.Object) {
 	field, ok := mutationType.Fields()["createSponsorsListing"]
 	if !ok {
@@ -1540,9 +1513,8 @@ func (s *Resolver) addCreateSponsorsListingInputResidueFields(mutationType *grap
 	input.AddFieldConfig("residenceCountryOrRegionCode", &graphql.InputObjectFieldConfig{Type: code})
 }
 
-// gqlSponsorsCountryOrRegionCodeEnum is GitHub's SponsorsCountryOrRegionCode —
-// the ISO 3166-1 alpha-2 codes a sponsorable's bank account or residence may
-// name (memoized through the shared enum registry).
+// gqlSponsorsCountryOrRegionCodeEnum is GitHub's SponsorsCountryOrRegionCode,
+// the ISO 3166-1 alpha-2 codes (memoized through the shared enum registry).
 func (s *Resolver) gqlSponsorsCountryOrRegionCodeEnum() *graphql.Enum {
 	return s.graphQLEnum("SponsorsCountryOrRegionCode",
 		"AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT",

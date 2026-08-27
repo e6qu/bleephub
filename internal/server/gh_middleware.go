@@ -53,21 +53,19 @@ func githubAPIVersionFromContext(ctx context.Context) string {
 	return version
 }
 
-// ctxInvalidCredential marks a request that presented an Authorization header
-// which resolved to nothing. Absent credentials are anonymous; presented ones
-// that do not verify are rejected, never downgraded to anonymous.
+// ctxInvalidCredential marks a request whose Authorization header resolved to
+// nothing. A presented-but-unverified credential is rejected, never downgraded
+// to anonymous.
 const ctxInvalidCredential contextKey = "gh-invalid-credential" // #nosec G101 -- typed context key, not a credential.
 
-// ghUserFromContext extracts the authenticated user from the request context.
 func ghUserFromContext(ctx context.Context) *store.User {
 	u, _ := ctx.Value(ctxUser).(*store.User)
 	return u
 }
 
 // contextWithUser carries an authenticated user on a context built outside the
-// HTTP middleware — the SSH transport has no request to attach one to. A nil
-// user is left off entirely so ghUserFromContext keeps returning nil rather
-// than a typed nil.
+// HTTP middleware (the SSH transport has no request). A nil user is left off so
+// ghUserFromContext returns nil rather than a typed nil.
 func contextWithUser(ctx context.Context, user *store.User) context.Context {
 	if user == nil {
 		return ctx
@@ -75,48 +73,36 @@ func contextWithUser(ctx context.Context, user *store.User) context.Context {
 	return context.WithValue(ctx, ctxUser, user)
 }
 
-// ghAppFromContext extracts the JWT-authenticated app from the request context.
 func ghAppFromContext(ctx context.Context) *store.App {
 	a, _ := ctx.Value(ctxApp).(*store.App)
 	return a
 }
 
-// ghInstallationFromContext extracts the installation associated with the request,
-// if authenticated by a ghs_ installation token. Returns nil for other auth shapes.
-// Consumed by gh_apps_rest.go (installation introspection) and the permission
-// decorator.
+// ghInstallationFromContext returns the installation when the request
+// authenticated with a ghs_ installation token, nil otherwise.
 func ghInstallationFromContext(ctx context.Context) *store.Installation {
 	i, _ := ctx.Value(ctxInstallation).(*store.Installation)
 	return i
 }
 
-// ghInstallationTokenFromContext extracts the installation token used to authenticate
-// the request, if any. Consumed by gh_apps_perms.go (permission decorator) and
-// gh_apps_rest.go (introspection endpoints).
 func ghInstallationTokenFromContext(ctx context.Context) *store.InstallationToken {
 	t, _ := ctx.Value(ctxInstallationToken).(*store.InstallationToken)
 	return t
 }
 
-// ghUserToServerTokenFromContext extracts the gho_/ghu_ token used to authenticate,
-// if any. Consumed by gh_apps_perms.go (permission decorator's user-to-server path).
 func ghUserToServerTokenFromContext(ctx context.Context) *store.UserToServerToken {
 	t, _ := ctx.Value(ctxUserToServerToken).(*store.UserToServerToken)
 	return t
 }
 
-// jobTokenPrincipal is the caller a workflow's GITHUB_TOKEN authenticates as on
-// the REST surface: a single repository plus its least-privilege API permission
-// set (ACT-014). requirePerm gates its access to Repo alone, at the granted
-// scopes/levels.
+// jobTokenPrincipal is the caller a workflow's GITHUB_TOKEN authenticates as: a
+// single repository plus its least-privilege permission set (ACT-014).
+// requirePerm gates access to Repo alone, at the granted scopes/levels.
 type jobTokenPrincipal struct {
 	Repo  string
 	Perms map[string]string
 }
 
-// ghJobTokenFromContext extracts the workflow GITHUB_TOKEN principal, if the
-// request authenticated with one. Consumed by requirePerm and
-// credentialMayAccessTarget.
 func ghJobTokenFromContext(ctx context.Context) *jobTokenPrincipal {
 	t, _ := ctx.Value(ctxJobToken).(*jobTokenPrincipal)
 	return t
@@ -127,15 +113,12 @@ func ghPersonalAccessTokenFromContext(ctx context.Context) *store.Token {
 	return t
 }
 
-// credentialConveysSiteAdmin reports whether the request's credential SHAPE is
-// allowed to exercise site-administrator (or enterprise-owner) authority. A
-// browser session or a classic PAT — the account's broad credentials — may;
-// a fine-grained PAT, an OAuth/GitHub-App user-to-server token, an installation
-// token, or a bare app JWT is deliberately narrow or delegated and must never
-// confer appliance administration, even when its user record is a SiteAdmin.
-// Without this, a site admin who authorizes any app, or mints a fine-grained
-// PAT scoped to a single repo, would hand that narrow credential full control
-// of the instance (the admin gates check only user.SiteAdmin).
+// credentialConveysSiteAdmin reports whether the credential SHAPE may exercise
+// site-admin/enterprise-owner authority. Only broad credentials (browser
+// session, classic PAT) qualify; a fine-grained PAT, a user-to-server or
+// installation token, or a bare app JWT never confers appliance administration
+// even when its user record is a SiteAdmin, since the admin gates check only
+// user.SiteAdmin.
 func credentialConveysSiteAdmin(ctx context.Context) bool {
 	if pat := ghPersonalAccessTokenFromContext(ctx); pat != nil && pat.FineGrained {
 		return false
@@ -145,16 +128,14 @@ func credentialConveysSiteAdmin(ctx context.Context) bool {
 		ghAppFromContext(ctx) == nil
 }
 
-// ghHeadersMiddleware injects GitHub-compatible response headers on /api/ routes
-// and sets the authenticated user in request context.
+// ghHeadersMiddleware injects GitHub response headers on the REST surface and
+// sets the authenticated user in request context.
 func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
-		// Activate for the REST API plus the uploads-host and authenticated
-		// CodeQL storage paths. The official CodeQL Action posts database
-		// bundles to /repos/... on uploads.github.com rather than /api/v3/.
-		// Runner protocol (/_apis/) remains unaffected.
+		// /repos/ and /code-scanning/ are the uploads-host paths the CodeQL
+		// Action posts to; the runner protocol (/_apis/) stays unaffected.
 		if !strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/repos/") && !strings.HasPrefix(path, "/code-scanning/") {
 			next.ServeHTTP(w, r)
 			return
@@ -163,9 +144,8 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 		ctx := s.authenticateRequest(r)
 		r = r.WithContext(ctx)
 		apiVersion := defaultGitHubAPIVersion
-		// Calendar API versions apply to REST. GraphQL has one continuously
-		// evolving schema, so a REST version header must not accidentally
-		// retire an otherwise valid /api/graphql request.
+		// Calendar versions apply to REST only; GraphQL has one evolving schema,
+		// so a REST version header must not retire a valid /api/graphql request.
 		isVersionedREST := path == "/api/v3" || strings.HasPrefix(path, "/api/v3/") ||
 			strings.HasPrefix(path, "/repos/") || strings.HasPrefix(path, "/code-scanning/")
 		if isVersionedREST {
@@ -173,9 +153,8 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 				apiVersion = requested
 			}
 
-			// GitHub keeps calendar API versions alive for a published support
-			// window. A caller that explicitly asks for anything else receives
-			// 410 rather than silently running against a different contract.
+			// An unsupported explicit version is 410, not a silent run against a
+			// different contract.
 			if !isSupportedGitHubAPIVersion(apiVersion) {
 				rw := &ghResponseWriter{ResponseWriter: w, path: path, apiVersion: apiVersion}
 				writeGHError(rw, http.StatusGone, "The requested API version is no longer supported.")
@@ -185,18 +164,15 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, ctxGitHubAPIVersion, apiVersion)
 		r = r.WithContext(ctx)
 
-		// A credential that was presented and did not resolve is an error, not
-		// an anonymous request: continuing would silently downgrade a revoked,
-		// expired or forged token to "no credential" and answer whatever the
-		// public surface allows.
+		// A presented-but-unresolved credential is a 401, never a downgrade to
+		// anonymous.
 		if bad, _ := ctx.Value(ctxInvalidCredential).(bool); bad {
 			writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 			return
 		}
 
-		// A suspended installation's tokens are dead for the entire API
-		// surface (real GitHub fails every request made with the app's
-		// credentials while suspended), not just for minting new tokens.
+		// A suspended installation's tokens are dead across the whole API
+		// surface, not just for minting new tokens.
 		if susp, _ := ctx.Value(ctxSuspendedInstallation).(bool); susp {
 			writeGHError(w, http.StatusForbidden, "This installation has been suspended")
 			return
@@ -206,23 +182,17 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// X-OAuth-Scopes reports the scopes of whichever credential
-		// authenticated the request; authenticateRequest already resolved it,
-		// so re-parsing the header here would be a second, divergent parse.
 		var token *store.Token
 		if pat := ghPersonalAccessTokenFromContext(ctx); pat != nil {
 			token = pat
 		} else if uts := ghUserToServerTokenFromContext(ctx); uts != nil {
-			// Materialize a transient classic token so the response writer can
-			// emit X-OAuth-Scopes for OAuth/GitHub-App user-to-server tokens,
-			// matching real GitHub.
+			// Materialize a transient token so X-OAuth-Scopes can be emitted for
+			// user-to-server tokens.
 			token = &store.Token{Value: uts.Token, UserID: uts.UserID, Scopes: uts.Scopes}
 		}
 
-		// Wrap response writer to inject headers
 		resource := apiRateResource(path)
-		// GitHub documents GET /rate_limit as not consuming the primary rate
-		// limit; it observes the current core window instead.
+		// GET /rate_limit observes the core window without consuming it.
 		consumed := path != "/api/v3/rate_limit"
 		rate := s.rateLimitSnapshot(r, resource, consumed)
 		ctx = context.WithValue(ctx, ctxAPIRateLimit, rate)
@@ -237,8 +207,7 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 			ifNoneMatch:    r.Header.Get("If-None-Match"),
 			rateLimit:      rate,
 		}
-		// A conditional GET that ends in 304 must not be billed; give the
-		// consumed unit back and let the 304's X-RateLimit-* headers reflect it.
+		// A conditional GET that ends in 304 is not billed; refund the unit.
 		if consumed {
 			rw.refundRate = func() apiRateSnapshot { return s.refundRateLimit(refundReq, resource) }
 		}
@@ -256,10 +225,8 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// authScheme splits an Authorization header into its lower-cased scheme and
-// the credential. HTTP auth schemes are case-insensitive (RFC 7235), and
-// GitHub accepts "token"/"Bearer"/"Basic" in any case (octokit sends "bearer"),
-// so match case-insensitively rather than on an exact-case prefix.
+// authScheme splits an Authorization header into its lower-cased scheme and the
+// credential; HTTP auth schemes are case-insensitive (RFC 7235).
 func authScheme(auth string) (scheme, credential string) {
 	s, cred, found := strings.Cut(auth, " ")
 	if !found {
@@ -268,39 +235,27 @@ func authScheme(auth string) (scheme, credential string) {
 	return strings.ToLower(s), cred
 }
 
-// authenticateRequest parses the Authorization header and returns a context
-// with the authenticated user/app/installation set. Used by both /api/
-// middleware and git HTTP handlers.
-//
-// A header that resolves to nothing sets ctxInvalidCredential rather than
-// falling through to the anonymous path; ghHeadersMiddleware turns that into
-// the 401 the caller earned. Callers outside that middleware must consult the
-// flag themselves — resolving to no principal is not the same answer as
-// "no credential was offered".
-// resolveBearerCredential resolves one token string (from an Authorization
-// "token"/"bearer" scheme, or from the password half of Basic — the
-// x-access-token convention) to a credential. It returns the augmented context,
-// the human principal the token belongs to (nil for app/installation/runner
-// credentials, which carry no personal user), and whether the token resolved to
-// anything. It deliberately does NOT place a resolved user on the context: a
-// suspended user must not gain a principal, so the sole caller decides that
-// after checking user.Suspended.
+// resolveBearerCredential resolves one token string (bearer/token scheme, or
+// the password half of Basic under the x-access-token convention) to a
+// credential, returning the augmented context, the human principal the token
+// belongs to (nil for app/installation/runner credentials), and whether it
+// resolved. It does NOT place the resolved user on the context: a suspended
+// user must not gain a principal, so the sole caller decides after checking
+// user.Suspended.
 func (s *Server) resolveBearerCredential(ctx context.Context, tokenStr string) (context.Context, *store.User, bool) {
 	switch {
 	case looksLikeJWT(tokenStr):
 		if app, err := s.store.ParseAndVerifyAppJWT(tokenStr); err == nil {
 			return context.WithValue(ctx, ctxApp, app), nil, true
 		}
-		// A workflow's GITHUB_TOKEN is an HS256 job runtime token, not an App
-		// JWT. Recognize it as a repo-scoped, least-privilege principal so its
-		// /api/v3 calls are gated by the workflow's resolved permissions rather
-		// than rejected wholesale (ACT-014). A session token (no Repo) is left
-		// for the runner-protocol gate, exactly as before.
+		// A workflow's GITHUB_TOKEN is an HS256 job token, not an App JWT.
+		// Recognize it as a repo-scoped least-privilege principal so its calls
+		// are gated by the workflow's permissions (ACT-014). A session token (no
+		// Repo) is left for the runner-protocol gate.
 		if claims, err := parseRunnerToken(tokenStr); err == nil && claims.Aud == runnerAudJob && claims.Repo != "" {
 			principal := &jobTokenPrincipal{Repo: claims.Repo, Perms: claims.Perms}
-			// The token acts as github-actions[bot] for handler attribution,
-			// exactly as an installation token acts as its app's bot user; the
-			// gate itself is governed by the jobTokenPrincipal, not this user.
+			// Acts as github-actions[bot] for attribution; the gate is governed
+			// by the jobTokenPrincipal, not this user.
 			return context.WithValue(ctx, ctxJobToken, principal), store.ActionsBotUser(), true
 		}
 		return ctx, nil, false
@@ -348,27 +303,23 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 		case scheme == "basic":
 			if decoded, err := base64.StdEncoding.DecodeString(cred); err == nil {
 				parts := strings.SplitN(string(decoded), ":", 2)
-				// An empty password is the anonymous Basic form the OCI
-				// registry clients send; it offers no credential to reject.
+				// An empty password is the anonymous Basic form OCI registry
+				// clients send; it offers no credential to reject.
 				credentialResolved = len(parts) == 2 && parts[1] == ""
 				if len(parts) == 2 && parts[1] != "" {
-					// The password half carries the bearer token (git and OCI
-					// clients send `x-access-token:<token>` or `<anything>:<pat>`),
-					// so resolve it through the same switch as the token scheme —
-					// ghs_/ghu_/gho_ passwords authenticate identically here.
+					// The password half carries the bearer token, so resolve it
+					// through the same switch as the token scheme.
 					if c2, u, ok := s.resolveBearerCredential(ctx, parts[1]); ok {
 						ctx, user, credentialResolved = c2, u, true
 					} else if s.clientCredentialsVerify(parts[0], parts[1]) {
-						// client_id:client_secret for the OAuth app management
-						// endpoints. It authenticates an app, not a user, and
-						// those handlers verify it again themselves.
+						// client_id:client_secret for OAuth app management
+						// endpoints, which re-verify it themselves.
 						credentialResolved = true
 					}
 				}
 			}
 		}
-		// Runner protocol credentials authenticate a runner rather than a
-		// user, so they resolve to no principal here — but they are real
+		// Runner-protocol credentials resolve to no principal but are real
 		// credentials this server minted and verifies, not rejects.
 		if !credentialResolved && runnerCredentialVerifies(runnerCredentialOffered(scheme, cred)) {
 			credentialResolved = true
@@ -377,10 +328,9 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 			ctx = context.WithValue(ctx, ctxInvalidCredential, true)
 		}
 	}
-	// A browser session augments the request only when NO Authorization header
-	// was offered. A request that presents an explicit (even invalid) token is
-	// judged on that token alone: falling back to the cookie would let a revoked
-	// or expired bearer be silently served as the cookie's user.
+	// Fall back to the browser session only when NO Authorization header was
+	// offered; a request presenting a token is judged on that token alone, so a
+	// revoked bearer is never silently served as the cookie's user.
 	if user == nil && !authOffered {
 		if session := s.sessionFromRequest(r); session != nil {
 			user = s.store.GetUserByID(session.UserID)
@@ -396,11 +346,9 @@ func (s *Server) authenticateRequest(r *http.Request) context.Context {
 	return ctx
 }
 
-// runnerCredentialOffered returns the credential a request offers to the
-// runner protocol, or "" when it offers none. Alongside bearer and token,
-// actions/runner presents its registration and removal tokens under the
-// RemoteAuth scheme — a scheme that names no user credential, so the
-// user-facing resolution above never looks at it.
+// runnerCredentialOffered returns the credential a request offers the runner
+// protocol, or "". Registration/removal tokens arrive under the RemoteAuth
+// scheme, which the user-facing resolution never inspects.
 func runnerCredentialOffered(scheme, credential string) string {
 	switch scheme {
 	case "token", "bearer", "remoteauth":
@@ -409,9 +357,9 @@ func runnerCredentialOffered(scheme, credential string) string {
 	return ""
 }
 
-// runnerCredentialVerifies reports whether a bearer credential is one of the
-// runner-protocol credentials this server signs: an agent session or job
-// token, or a registration/removal token.
+// runnerCredentialVerifies reports whether a bearer credential is one this
+// server signs for the runner protocol: an agent session/job token, or a
+// registration/removal token.
 func runnerCredentialVerifies(token string) bool {
 	if token == "" {
 		return false
@@ -439,10 +387,8 @@ type ghResponseWriter struct {
 	method      string
 	ifNoneMatch string
 	rateLimit   apiRateSnapshot
-	// refundRate hands the consumed rate-limit unit back and returns the
-	// post-refund snapshot; set only when the middleware actually consumed a
-	// unit, and invoked when the response turns out to be a 304 (which GitHub
-	// does not bill). nil when nothing was consumed (e.g. GET /rate_limit).
+	// refundRate refunds the consumed rate-limit unit and returns the
+	// post-refund snapshot; set only when a unit was consumed, invoked on a 304.
 	refundRate  func() apiRateSnapshot
 	wroteHeader bool
 }
@@ -455,8 +401,8 @@ func (rw *ghResponseWriter) conditionalJSON(etag string, status int) bool {
 	return etagMatches(rw.ifNoneMatch, etag)
 }
 
-// etagMatches reports whether an If-None-Match header value matches etag,
-// honouring the wildcard (`*`) and weak-validator (`W/`) forms GitHub accepts.
+// etagMatches reports whether an If-None-Match value matches etag, honouring
+// the wildcard (`*`) and weak-validator (`W/`) forms.
 func etagMatches(ifNoneMatch, etag string) bool {
 	for _, candidate := range strings.Split(ifNoneMatch, ",") {
 		candidate = strings.TrimSpace(candidate)
@@ -470,15 +416,13 @@ func etagMatches(ifNoneMatch, etag string) bool {
 func (rw *ghResponseWriter) WriteHeader(code int) {
 	if !rw.wroteHeader {
 		rw.wroteHeader = true
-		// A 304 Not Modified is a conditional-request hit GitHub does not bill:
-		// refund the unit consumed in middleware so this response's X-RateLimit-*
-		// headers (and the caller's remaining budget) reflect the non-consumption.
+		// A 304 is not billed: refund the unit so this response's X-RateLimit-*
+		// headers reflect the non-consumption.
 		if code == http.StatusNotModified && rw.refundRate != nil {
 			rw.rateLimit = rw.refundRate()
 		}
 		h := rw.Header()
 
-		// Upgrade Content-Type to include charset
 		if ct := h.Get("Content-Type"); ct == "application/json" {
 			h.Set("Content-Type", "application/json; charset=utf-8")
 		}
@@ -508,17 +452,13 @@ func (rw *ghResponseWriter) WriteHeader(code int) {
 			apiVersion = defaultGitHubAPIVersion
 		}
 		h.Set("X-GitHub-Api-Version", apiVersion)
-		// A handler that served a custom media type (raw, html, object, diff,
-		// patch) has already reported it; only an untouched response is the
-		// plain JSON representation.
+		// A handler that served a custom media type already set this header.
 		if h.Get("X-GitHub-Media-Type") == "" {
 			h.Set("X-GitHub-Media-Type", "github.v3; format=json")
 		}
 
-		// Activity feeds and the notifications list advertise a polling
-		// interval so clients pace their (now conditional, ETag-backed) polling
-		// (REST-031). Only on GET, and never override a handler that already
-		// set one.
+		// Activity feeds and the notifications list advertise a polling interval
+		// (REST-031). GET only, never overriding a handler that set one.
 		if rw.method == http.MethodGet && h.Get("X-Poll-Interval") == "" {
 			if interval := pollIntervalForPath(rw.path); interval > 0 {
 				h.Set("X-Poll-Interval", strconv.Itoa(interval))
@@ -528,10 +468,9 @@ func (rw *ghResponseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-// pollIntervalForPath returns GitHub's advertised polling interval in seconds
-// for the activity event feeds and the notifications list — the endpoints that
-// carry X-Poll-Interval — and 0 for everything else. The issues-events resource
-// (`.../issues/events`) is a plain list, not an activity feed, and carries none.
+// pollIntervalForPath returns the advertised X-Poll-Interval in seconds for the
+// activity event feeds and notifications list, 0 otherwise. `.../issues/events`
+// is a plain list, not an activity feed, and carries none.
 func pollIntervalForPath(path string) int {
 	if strings.Contains(path, "/issues/events") {
 		return 0
@@ -549,14 +488,11 @@ func pollIntervalForPath(path string) int {
 	return 0
 }
 
-// writeLastModified advertises the modification time of a feed and, when the
-// caller sent a matching If-Modified-Since, short-circuits with a bodyless 304
-// (REST-031). It sets Last-Modified to newest (truncated to HTTP second
-// precision) and returns true when it wrote the 304, so the handler must stop.
-//
-// A zero newest (an empty feed) advertises nothing and never 304s. Per RFC 7232
-// §3.3 If-None-Match takes precedence, so If-Modified-Since is ignored whenever
-// an If-None-Match is present — writeJSON's ETag path evaluates that instead.
+// writeLastModified sets Last-Modified to newest and, on a matching
+// If-Modified-Since, writes a bodyless 304 and returns true so the handler stops
+// (REST-031). A zero newest advertises nothing and never 304s. Per RFC 7232
+// §3.3, If-None-Match takes precedence, so If-Modified-Since is ignored whenever
+// one is present.
 func writeLastModified(w http.ResponseWriter, r *http.Request, newest time.Time) bool {
 	if newest.IsZero() {
 		return false
@@ -576,7 +512,7 @@ func writeLastModified(w http.ResponseWriter, r *http.Request, newest time.Time)
 }
 
 // Unwrap lets net/http's ResponseController reach optional interfaces on the
-// real writer even though GitHub headers are injected through this wrapper.
+// wrapped writer.
 func (rw *ghResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
 
 func (rw *ghResponseWriter) Flush() {

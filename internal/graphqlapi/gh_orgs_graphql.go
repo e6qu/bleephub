@@ -15,16 +15,12 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 	uri := s.graphQLStringScalar("URI")
 	orgType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Organization",
-		// ProjectV2Owner is declared at construction for the reason the User
-		// type declares it: graphql-go memoizes an object's interface list on
-		// first read, so it cannot be added afterwards.
+		// All interfaces must be declared at construction: graphql-go memoizes
+		// an object's interface list on first read and cannot add them later.
 		Interfaces: []*graphql.Interface{
 			nodeInterface, s.graphqlTypes.repositoryOwner,
 			s.projectV2OwnerInterfaceType(),
-			// ProjectOwner (classic projects), for the same memoization reason.
 			s.projectOwnerInterfaceType(),
-			// Sponsorable is declared here for the same reason
-			// ProjectV2Owner is: graphql-go memoizes the interface list.
 			s.sponsorableInterfaceType(),
 		},
 		Fields: graphql.Fields{
@@ -53,8 +49,7 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 		},
 	})
-	// Registered so later schema families (Team.organization in the pull
-	// request file) reuse the one Organization type instead of forking it.
+	// Registered so later families (e.g. Team.organization) reuse this type.
 	s.graphqlTypes.organization = orgType
 
 	orgEdgeType := graphql.NewObject(graphql.ObjectConfig{
@@ -75,11 +70,9 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 		},
 	})
 
-	// Registered so the enterprise family's policy-override connections
-	// return the one OrganizationConnection the rest of the schema uses.
+	// Registered so the enterprise family reuses this OrganizationConnection.
 	s.graphqlTypes.organizationConnection = orgConnectionType
 
-	// Add organizations field to User type (for viewer.organizations)
 	userType.AddFieldConfig("organizations", &graphql.Field{
 		Type: graphql.NewNonNull(orgConnectionType),
 		Args: relayConnectionArgs(),
@@ -92,7 +85,7 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 
 			orgs := s.store.ListOrgsByUser(dbID)
 
-			// Sort by creation time (newest first)
+			// Newest first, tie-broken by id for stable cursors.
 			sort.Slice(orgs, func(i, j int) bool {
 				if !orgs[i].CreatedAt.Equal(orgs[j].CreatedAt) {
 					return orgs[i].CreatedAt.After(orgs[j].CreatedAt)
@@ -108,7 +101,6 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 		},
 	})
 
-	// Add organization query to queryType
 	queryType.AddFieldConfig("organization", &graphql.Field{
 		Type: orgType,
 		Args: graphql.FieldConfigArgument{
@@ -128,7 +120,6 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 	return orgType
 }
 
-// orgToGraphQL converts an Org to a map for GraphQL resolvers.
 func orgToGraphQL(org *store.Org) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":       org.NodeID,

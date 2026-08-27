@@ -19,11 +19,10 @@ func (st *Store) ListOrgPinnedRepos(orgLogin string) ([]string, bool) {
 	return out, true
 }
 
-// SetOrgPinnedRepos replaces the org's pinned list with the given full names,
-// mirroring the user pin semantics (SetPinnedRepos): order preserved,
-// duplicates and repos that do not exist dropped, capped at MaxPinnedRepos.
-// Org pins additionally require the repository be owned by the org — a repo
-// under any other owner is dropped. Returns the stored list. Persists the org.
+// SetOrgPinnedRepos replaces the org's pinned list, mirroring SetPinnedRepos
+// (order preserved, duplicates and nonexistent repos dropped, capped at
+// MaxPinnedRepos) and additionally requiring each repo be owned by the org.
+// Returns the stored list.
 func (st *Store) SetOrgPinnedRepos(orgLogin string, fullNames []string) ([]string, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

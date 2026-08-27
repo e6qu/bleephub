@@ -5,24 +5,17 @@ import (
 	"time"
 )
 
-// RepoToJSON converts a Repo to the GitHub `repository` shape (also a
-// valid `minimal-repository`). The hypermedia *_url members carry the
-// literal URI-template placeholders real GitHub emits ({/sha}, {+path},
-// …). Counters for features bleephub does not model (forks, size) are
-// 0; watchers mirrors stargazers exactly as on real GitHub; the has_*
-// toggles reflect the surfaces bleephub actually serves. Must not be
-// called with st.Mu held: it derives open_issues_count from the store.
+// RepoToJSON converts a Repo to the GitHub `repository` shape. watchers
+// mirrors stargazers, as on real GitHub. Must not be called with st.Mu held:
+// it derives open_issues_count from the store.
 func RepoToJSON(repo *Repo, st *Store, baseURL string) map[string]interface{} {
 	return RepoToJSONForViewer(repo, st, baseURL, nil)
 }
 
 func RepoToJSONForViewer(repo *Repo, st *Store, baseURL string, viewer *User) map[string]interface{} {
-	// Read every mutable repo field off a private snapshot: UpdateRepo mutates
-	// description, topics, homepage, timestamps, etc. under st.Mu.Lock, so
-	// reading the live pointer here would race a concurrent writer. The
-	// snapshot takes st.Mu only for the copy — the store lookups below
-	// (GetOrg / CountOpenIssues / …) take their own locks, so they must run
-	// after the snapshot releases the lock, never nested under it.
+	// Snapshot first: reading the live pointer would race UpdateRepo. The
+	// store lookups below take their own locks, so they must run after the
+	// snapshot releases st.Mu, never nested under it.
 	repo = st.SnapRepo(repo)
 	ownerJSON := map[string]interface{}{}
 	if repo.OwnerType == "Organization" {

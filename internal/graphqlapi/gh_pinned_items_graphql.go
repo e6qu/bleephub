@@ -1,12 +1,9 @@
 package graphqlapi
 
-// Profile pinned items, shared by User and Organization.
-//
-// A profile's pins are the repositories and gists its owner chose to show
-// first. bleephub stores them as the owner's ordered list of repository full
-// names (User.PinnedRepos / Org.PinnedRepos, written by the profile-pin
-// surface), so the connection reports exactly those, in the order the owner
-// put them in, filtered to the ones the request may see.
+// Profile pinned items, shared by User and Organization. Pins are stored as the
+// owner's ordered list of repository full names (User.PinnedRepos /
+// Org.PinnedRepos); the connection reports them in order, filtered to what the
+// request may see.
 
 import (
 	"github.com/graphql-go/graphql"
@@ -14,9 +11,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// pinnedItemsOwner is the half of an account the pinned-item fields need: how
-// to read its pins, its pinnable repositories and gists, and whether the
-// request may change the pins.
+// pinnedItemsOwner is the account state the pinned-item fields read: its pins,
+// its pinnable repositories and gists, and whether the request may change pins.
 type pinnedItemsOwner struct {
 	login              string
 	pinned             []string
@@ -25,8 +21,8 @@ type pinnedItemsOwner struct {
 	viewerCanChangePin bool
 }
 
-// addPinnedItemFields installs the pinned-item family on User and
-// Organization: both carry the same six members over the same union.
+// addPinnedItemFields installs the pinned-item family on User and Organization:
+// both carry the same six members over the same union.
 func (s *Resolver) addPinnedItemFields(types *accountSurfaceTypes) {
 	pinnableItem := s.gqlPinnableItemUnion(types)
 	pinnableItemType := s.sharedEnum("PinnableItemType",
@@ -53,7 +49,7 @@ func (s *Resolver) addPinnedItemFields(types *accountSurfaceTypes) {
 	})
 
 	// The two accounts differ only in how their pins and pinnable content are
-	// read, so the six fields are installed from one description of each.
+	// read, so the six fields install from one description of each.
 	for _, account := range []struct {
 		object *graphql.Object
 		owner  func(p graphql.ResolveParams) (*pinnedItemsOwner, error)
@@ -147,8 +143,7 @@ func (s *Resolver) addPinnedItemFields(types *accountSurfaceTypes) {
 	}
 }
 
-// gqlPinnableItemUnion is GitHub's PinnableItem: the two kinds of record a
-// profile may pin.
+// gqlPinnableItemUnion is GitHub's PinnableItem.
 func (s *Resolver) gqlPinnableItemUnion(types *accountSurfaceTypes) *graphql.Union {
 	if types.pinnableItem != nil {
 		return types.pinnableItem
@@ -169,10 +164,8 @@ func (s *Resolver) gqlPinnableItemUnion(types *accountSurfaceTypes) *graphql.Uni
 	return types.pinnableItem
 }
 
-// pinnedItemsOwnerForUser reads an account's pins and pinnable content. Only
-// the repositories and gists the request may see are pinnable or reported as
-// pinned: a pinned private repository must not become visible through the
-// profile.
+// pinnedItemsOwnerForUser reads a user's pins and pinnable content. Only what
+// the request may see counts, so a pinned private repository stays hidden.
 func (s *Resolver) pinnedItemsOwnerForUser(p graphql.ResolveParams) (*pinnedItemsOwner, error) {
 	user, err := s.userFromSource(p.Source)
 	if err != nil {
@@ -188,8 +181,7 @@ func (s *Resolver) pinnedItemsOwnerForUser(p graphql.ResolveParams) (*pinnedItem
 	}, nil
 }
 
-// pinnedItemsOwnerForOrg does the same for an organization profile. An
-// organization owns no gists, so only its repositories are pinnable.
+// pinnedItemsOwnerForOrg does the same for an org, which owns no gists.
 func (s *Resolver) pinnedItemsOwnerForOrg(p graphql.ResolveParams) (*pinnedItemsOwner, error) {
 	org, err := s.orgFromSource(p.Source)
 	if err != nil {
@@ -204,8 +196,8 @@ func (s *Resolver) pinnedItemsOwnerForOrg(p graphql.ResolveParams) (*pinnedItems
 	}, nil
 }
 
-// pinnedItemConnItems renders the account's pins in the order the owner chose,
-// dropping any whose repository the request may not see.
+// pinnedItemConnItems renders the account's pins in order, dropping any whose
+// repository the request may not see.
 func (s *Resolver) pinnedItemConnItems(owner *pinnedItemsOwner, args map[string]interface{}) []gqlConnItem {
 	if !pinnableTypeWanted(args, "REPOSITORY") {
 		return nil
@@ -229,9 +221,8 @@ func (s *Resolver) pinnedItemConnItems(owner *pinnedItemsOwner, args map[string]
 	return items
 }
 
-// pinnableItemConnItems renders everything the account could pin: the
-// repositories it owns and the gists it owns, as far as the request can see
-// them.
+// pinnableItemConnItems renders everything the account could pin — its
+// repositories and gists — as far as the request can see them.
 func (s *Resolver) pinnableItemConnItems(owner *pinnedItemsOwner, args map[string]interface{}) []gqlConnItem {
 	var items []gqlConnItem
 	if pinnableTypeWanted(args, "REPOSITORY") {
@@ -244,9 +235,8 @@ func (s *Resolver) pinnableItemConnItems(owner *pinnedItemsOwner, args map[strin
 		}
 	}
 	if pinnableTypeWanted(args, "GIST") {
-		// gistToGQL leaves `owner` out of the source when the account is
-		// missing, which is what keeps the absent child from becoming a
-		// typed-nil map.
+		// gistToGQL omits `owner` when the account is missing, keeping the
+		// absent child from becoming a typed-nil map.
 		var ownerSource map[string]interface{}
 		if account := s.store.LookupUserByLogin(owner.login); account != nil {
 			ownerSource = userToGraphQL(account)
@@ -266,16 +256,15 @@ func (s *Resolver) pinnableItemConnItems(owner *pinnedItemsOwner, args map[strin
 	return items
 }
 
-// pinnableRepositorySource renders a repository as the PinnableItem union
-// member it is.
+// pinnableRepositorySource renders a repository as a PinnableItem member.
 func pinnableRepositorySource(st *store.Store, repo *store.Repo) map[string]interface{} {
 	source := repoToGraphQL(st, st.SnapRepo(repo))
 	source["__typename"] = "Repository"
 	return source
 }
 
-// pinnableTypeWanted reports whether the `types` argument admits a kind. An
-// absent argument admits every kind, which is GitHub's default.
+// pinnableTypeWanted reports whether the `types` argument admits a kind; an
+// absent argument admits every kind (GitHub's default).
 func pinnableTypeWanted(args map[string]interface{}, kind string) bool {
 	wanted := stringListArg(args["types"])
 	if len(wanted) == 0 {

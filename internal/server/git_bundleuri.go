@@ -19,56 +19,34 @@ import (
 
 // bundle-uri: bootstrapping a clone from a bundle the client fetches itself.
 //
-// A bundle is a repository's refs and a packfile of everything they reach, in
-// one file. A client that has one can unbundle it, record the tips it carried
-// and then negotiate the rest with an ordinary fetch — so the bulk of a clone
-// arrives from the object store and only what has happened since the bundle was
-// made travels through this server.
+// A bundle is a repository's refs plus a packfile of everything they reach. A
+// client unbundles it, records the tips, and negotiates only the rest with an
+// ordinary fetch, so the bulk of a clone arrives from the object store.
 //
-// WHAT MAKES THE BUNDLE CORRECT
+// The bundle is built from the same enumeration as a full clone, so it is exactly
+// what a clone at that instant would deliver. Its name is derived from the exact
+// set of tips it covers, so a repository whose refs moved has no bundle under its
+// current name and the next request builds one — the name is the staleness check.
 //
-// It is built out of the same enumeration a full clone is built from: the tips
-// of every reference, the objects they reach, and the packfile that carries
-// them, which the pack-reuse path assembles from the stored packs. So a bundle
-// is exactly what a clone at that instant would have delivered, and a client
-// that unbundles it holds a complete, connected object graph — nothing is
-// promised to it that the fetch that follows would not also have supplied.
-//
-// It goes stale the moment a reference moves, and its name says so: the key is
-// derived from the exact set of tips it covers, so a repository whose refs have
-// changed has no bundle under the name its current tips hash to, and the next
-// request builds one. Nothing has to remember when a bundle was made or compare
-// it against anything — the name is the comparison — and a bundle no longer
-// named by any live ref state is swept once it is older than any URL that could
-// still be pointing at it.
-//
-// The access model is the one packfile-uris uses: a presigned GET, minted only
-// after the caller has passed the repository's read gate, expiring shortly
-// after. git_packuris.go carries that argument in full.
+// Access mirrors packfile-uris: a presigned GET minted only after the caller
+// passed the repository's read gate, expiring shortly after (see git_packuris.go).
 
-// gitBundleURICommand is the protocol v2 command that serves a bundle list, and
-// the capability that advertises it.
+// gitBundleURICommand is the protocol v2 command that serves a bundle list.
 const gitBundleURICommand = "bundle-uri"
 
-// gitBundleDirectory is where a repository's bundles live, beside the packs
-// they are built from.
+// gitBundleDirectory is where a repository's bundles live.
 const gitBundleDirectory = "objects/bundle"
 
 // gitBundleExtension is the suffix of a bundle key.
 const gitBundleExtension = ".bundle"
 
-// gitBundleRetention is how long a bundle no longer named by the current ref
-// state is kept before it is swept.
-//
-// A URL handed out just before a push lands still has gitPackURIExpiry left to
-// run against a bundle that is stale the instant it was issued, so the floor is
-// that expiry; the margin above it is what keeps a client that started its
-// download at the last permitted moment from having the object removed out from
-// under it mid-transfer.
+// gitBundleRetention is how long a stale bundle is kept before sweeping. The
+// floor is gitPackURIExpiry — a URL minted just before a push still runs that
+// long against a now-stale bundle — plus a margin so a download started at the
+// last permitted moment is not removed mid-transfer.
 const gitBundleRetention = time.Hour
 
-// gitBundleListVersion is the version of the bundle-list format this server
-// speaks, and the only one git defines.
+// gitBundleListVersion is the bundle-list format version, the only one git defines.
 const gitBundleListVersion = 1
 
 // gitBundleTip is one reference a bundle carries.
@@ -77,13 +55,9 @@ type gitBundleTip struct {
 	hash plumbing.Hash
 }
 
-// serveGitBundleURIV2 answers the bundle-uri command with the bundles a client
-// may bootstrap from.
-//
-// A repository with no references has nothing to bootstrap from, and one whose
-// packs have no address — a memory or local-directory backend — has no bundle a
-// client could fetch; both are answered with an empty list, which the protocol
-// defines as "no bundles" rather than as a failure.
+// serveGitBundleURIV2 answers the bundle-uri command. A repository with no refs,
+// or one whose packs have no address (memory/local backend), gets an empty list —
+// the protocol's "no bundles" rather than a failure.
 func serveGitBundleURIV2(ctx context.Context, stor storer.Storer, arguments []string, out io.Writer) error {
 	if len(arguments) > 0 {
 		return fmt.Errorf("bundle-uri: unexpected argument: '%s'", arguments[0])
@@ -125,15 +99,9 @@ func serveGitBundleURIV2(ctx context.Context, stor storer.Storer, arguments []st
 	return encoder.Flush()
 }
 
-// gitBundleTips lists the references a bundle carries, sorted by name so the
-// same repository state always produces the same bundle.
-//
-// HEAD is listed alongside the references under refs/, which is what `git
-// bundle create --all` does and what makes the bundle a repository on its own:
-// a client cloning straight from it has no other way to learn which branch to
-// check out. The bundle-uri client ignores it — it turns only refs/heads/ into
-// the refs/bundles/ entries it negotiates from — so naming it costs that path
-// nothing.
+// gitBundleTips lists the references a bundle carries, sorted by name for
+// determinism. HEAD is listed alongside refs/ (as `git bundle create --all` does)
+// so a client cloning straight from the bundle knows which branch to check out.
 func gitBundleTips(stor storer.Storer) ([]gitBundleTip, error) {
 	iter, err := stor.IterReferences()
 	if err != nil {
@@ -159,13 +127,10 @@ func gitBundleTips(stor storer.Storer) ([]gitBundleTip, error) {
 	return tips, nil
 }
 
-// gitBundleID names a bundle by the ref state it covers.
-//
-// Every object a bundle carries is reachable from its tips, so two bundles over
-// the same tips carry the same objects and one name is enough to decide whether
-// the stored bundle still describes the repository. A digest rather than the
-// list itself because the name is a key in the object store, and a repository
-// with many references has a ref list far longer than a key may be.
+// gitBundleID names a bundle by the ref state it covers. Two bundles over the same
+// tips carry the same objects, so the name alone decides whether the stored bundle
+// still describes the repository. A digest, not the list, because the name is an
+// object-store key and a ref list can exceed a key's length.
 func gitBundleID(tips []gitBundleTip) string {
 	digest := sha256.New()
 	for _, tip := range tips {
@@ -174,34 +139,25 @@ func gitBundleID(tips []gitBundleTip) string {
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
-// gitBundlePublications serializes the publication of one bundle key inside
-// this process, and reference-counts its entries so an idle key costs nothing.
-//
-// The keys are what make it necessary. A bundle is named by the ref state it
-// covers, so every client that clones between two pushes wants the same one,
-// and without a gate a burst of them would each read the repository and write
-// the same object back — the cost of publishing multiplied by the number of
-// people who happened to arrive before the first publication finished.
+// gitBundlePublications serializes publication of one bundle key within this
+// process and reference-counts entries so an idle key costs nothing. Without the
+// gate, a burst of clients between two pushes would each read the repository and
+// write back the same object.
 var gitBundlePublications = struct {
 	mu    sync.Mutex
 	gates map[string]*gitBundleGate
 }{gates: map[string]*gitBundleGate{}}
 
-// gitBundleGate is one key's gate and the number of callers holding a reference
-// to it.
+// gitBundleGate is one key's gate and its holder count.
 type gitBundleGate struct {
 	mu      sync.Mutex
 	waiting int
 }
 
-// publishGitBundleOnce publishes a bundle unless another caller in this process
-// is already publishing that exact one, in which case it waits and takes the
-// bundle that caller published.
-//
-// The object store is re-consulted after the wait rather than before, because
-// what the waiter is waiting for is precisely the key appearing; a caller that
-// finds it there has nothing left to do, and one that does not — the publisher
-// failed, or the object was swept between the two — publishes it itself.
+// publishGitBundleOnce publishes a bundle unless another caller in this process is
+// already publishing that exact one, in which case it waits and takes theirs. The
+// store is re-consulted after the wait: a waiter that finds the key is done, one
+// that does not (the publisher failed, or it was swept) publishes it itself.
 func publishGitBundleOnce(ctx context.Context, stor storer.Storer, packDir *gitstore.S3FS, name string, tips []gitBundleTip) error {
 	gitBundlePublications.mu.Lock()
 	gate := gitBundlePublications.gates[name]
@@ -233,22 +189,17 @@ func publishGitBundleOnce(ctx context.Context, stor storer.Storer, packDir *gits
 	return nil
 }
 
-// publishGitBundle builds the bundle for a ref state and writes it to the
-// object store under its own name.
-//
-// The bundle is streamed rather than assembled: the pack it ends with is the
-// repository's, and holding a repository in memory to hand it to the uploader
-// would make the cost of serving a bundle the size of the repository rather
-// than the size of a buffer.
+// publishGitBundle builds the bundle for a ref state and writes it to the object
+// store. It streams rather than buffering, so serving a bundle costs a buffer
+// rather than the size of the repository.
 func publishGitBundle(ctx context.Context, stor storer.Storer, packDir *gitstore.S3FS, name string, tips []gitBundleTip) error {
 	reader, writer := io.Pipe()
 	go func() {
 		_ = writer.CloseWithError(writeGitBundle(writer, stor, tips))
 	}()
 	err := packDir.PutStream(ctx, name, reader)
-	// Closing the read end unblocks a writer that is still producing bytes the
-	// upload will never take, which is what keeps a failed upload from leaving
-	// the goroutine parked on a pipe nobody reads.
+	// Closing the read end unblocks a writer still producing bytes the upload
+	// will never take, so a failed upload does not park the goroutine on a dead pipe.
 	_ = reader.CloseWithError(err)
 	if err != nil {
 		return fmt.Errorf("publish bundle %s: %w", name, err)
@@ -259,13 +210,10 @@ func publishGitBundle(ctx context.Context, stor storer.Storer, packDir *gitstore
 // gitBundleSignature opens a version 2 bundle.
 const gitBundleSignature = "# v2 git bundle\n"
 
-// writeGitBundle writes a bundle: the signature, the reference each object id
-// is reached by, a blank line, and the packfile of everything they reach.
-//
-// The pack is built by the ordinary fetch path, so it is the same pack a clone
-// of this repository would receive — including the stored entry regions the
-// reuse path copies rather than re-encodes. The bundle lists no prerequisites,
-// which is what makes it usable by a client holding nothing at all.
+// writeGitBundle writes a bundle: signature, the ref each object id is reached by,
+// a blank line, and the packfile of everything they reach. The pack comes from the
+// ordinary fetch path (same as a clone would receive), and the bundle lists no
+// prerequisites, so a client holding nothing can use it.
 func writeGitBundle(out io.Writer, stor storer.Storer, tips []gitBundleTip) error {
 	if _, err := io.WriteString(out, gitBundleSignature); err != nil {
 		return err
@@ -293,14 +241,9 @@ func writeGitBundle(out io.Writer, stor storer.Storer, tips []gitBundleTip) erro
 	return writeGitPackfile(newGitBandWriter(out, gitSidebandNone, false), stor, plan, false)
 }
 
-// pruneGitBundles removes the bundles a repository no longer has a use for:
-// everything but the one just published, once it is older than any URL that
-// could still be pointing at it.
-//
-// A failure to remove one is not a failure of the request that found it. The
-// bundle it could not delete is an object in a store that already holds the
-// repository, the next publication tries again, and the client waiting on this
-// answer has nothing to gain from being told.
+// pruneGitBundles removes every bundle but the one just published, once it is
+// older than any URL that could still point at it. A failed removal is not this
+// request's failure: the next publication retries.
 func pruneGitBundles(packDir *gitstore.S3FS, keep string) {
 	entries, err := packDir.ReadDir(gitBundleDirectory)
 	if err != nil {

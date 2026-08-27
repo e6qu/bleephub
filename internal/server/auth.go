@@ -25,68 +25,39 @@ import (
 )
 
 func (s *Server) registerAuthRoutes() {
-	// Every runner protocol credential is signed with this key. Resolving it
-	// here makes a misconfigured key a startup failure instead of a runtime
-	// one on the first runner connection.
+	// Resolve the runner signing key at startup so a misconfigured key fails
+	// fast rather than on the first runner connection.
 	if _, err := runnerSigningKey(); err != nil {
 		s.logger.Fatal().Err(err).Msg("failed to initialize the runner protocol signing key")
 	}
 
 	s.registerExternalIdentityRoutes()
-	// Runner registration (GHES-style). config.sh presents the
-	// administration:write-minted registration token here.
+	// Runner registration (GHES-style): config.sh presents the
+	// administration:write registration token here.
 	s.route("POST /api/v3/actions/runner-registration", s.handleRunnerRegistration)
 
-	// Five runner protocol routes stand outside the authentication decorators
-	// (requireRunnerAuth and the wrappers built on it) — the runner protocol
-	// allowlist. Two are registered here; the other three are registered next
-	// to their handlers:
-	//
-	//   - GET /_apis/connectionData (below): service discovery. The runner
-	//     reads it before it holds any credential, and the response is a fixed
-	//     table of service GUIDs and paths carrying no tenant state.
-	//   - POST /_apis/v1/auth (below, plus the trailing-slash variant): the
-	//     OAuth token exchange. It carries its own credential — an RSA
-	//     client_assertion verified against the public key the agent
-	//     registered — so it cannot take a bearer token it has yet to be
-	//     issued.
-	//   - POST /_apis/v1/Agent/{poolId} (agents.go): agent registration,
-	//     reached before an agent session exists. It authenticates on the
-	//     registration token config.sh was given rather than on a bearer
-	//     session token.
-	//   - GET /_apis/v1/artifacts/{artifactId}/download (artifacts.go): the
-	//     blob URL the REST `.../artifacts/{id}/zip` redirect lands on. It
-	//     additionally accepts a GitHub credential with read access to the
-	//     owning repository.
-	//   - GET /_apis/artifactcache/caches/{cacheId} (artifacts.go): the cache
-	//     archiveLocation the toolkit fetches with an unauthenticated client,
-	//     exactly as it fetches real GitHub's pre-signed blob URL; the
-	//     unguessable `sig` query parameter is its credential.
-	//
-	// TestRunnerProtocolRejectsUnauthenticatedCalls sweeps the registered
-	// route table and fails if any other /_apis/ or /twirp/ route answers an
-	// unauthenticated call with anything but 401, so a sixth undecorated
-	// route cannot be added by accident.
+	// Five runner-protocol routes stand outside requireRunnerAuth — the runner
+	// protocol allowlist. Each is reached before the caller holds a session
+	// bearer token and carries its own credential (an RSA client_assertion, the
+	// registration token config.sh holds, or an unguessable signed blob URL) or
+	// no tenant state at all. The other three are registered next to their
+	// handlers (agents.go, artifacts.go).
+	// TestRunnerProtocolRejectsUnauthenticatedCalls fails if any other /_apis/
+	// or /twirp/ route answers an unauthenticated call with anything but 401, so
+	// a sixth cannot be added by accident.
 
-	// Connection data (service discovery). Runner-protocol allowlist entry:
-	// the runner reads it before it holds any credential, and the response is
-	// a fixed table of service GUIDs and paths carrying no tenant state.
+	// Service discovery, read before the runner holds any credential; the
+	// response carries no tenant state.
 	s.route("GET /_apis/connectionData", s.handleConnectionData)
 
-	// OAuth token exchange. Runner-protocol allowlist entry: it carries its
-	// own credential — an RSA client_assertion verified against the public key
-	// the agent registered — so it cannot take a bearer token it has yet to be
-	// issued.
+	// OAuth token exchange: carries its own RSA client_assertion credential.
 	s.route("POST /_apis/v1/auth/", s.handleOAuthToken)
 	s.route("POST /_apis/v1/auth", s.handleOAuthToken)
 }
 
-// handleRunnerRegistration returns the tenant URL and the credential the
-// runner presents when it adds or removes its agent. The runner calls this
-// during `config.sh --url <url> --token <token>` and `config.sh remove
-// --token <token>`, sending the administration:write registration or removal
-// token as its Authorization credential — real GitHub uses the RemoteAuth
-// scheme, and octokit-shaped clients send it as a bearer token.
+// handleRunnerRegistration returns the tenant URL and the credential the runner
+// presents to add or remove its agent, authenticating on the administration:write
+// registration/removal token config.sh was given.
 func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info().Msg("runner registration request")
 
@@ -105,9 +76,8 @@ func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// The tenant credential handed back may only carry the operation the
-	// presented token was minted for: exchanging a removal token for one that
-	// registers a runner would make the two indistinguishable.
+	// The tenant credential may carry only the operation the presented token was
+	// minted for: a removal token must not be exchangeable for a registering one.
 	purpose, err := runnerPurposeForEvent(req.RunnerEvent)
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, err.Error())
@@ -128,8 +98,8 @@ func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request
 
 	serverURL := s.baseURL(r)
 
-	// The runner extracts org/repo from the tenant URL for display purposes.
-	// If the original --url had a path (e.g. /owner/repo), preserve it.
+	// Preserve any path on the original --url (e.g. /owner/repo); the runner
+	// extracts org/repo from the tenant URL for display.
 	if req.URL != "" {
 		if parsed, err := url.Parse(req.URL); err == nil && parsed.Path != "" {
 			serverURL += parsed.Path
@@ -145,11 +115,9 @@ func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// runnerSetupCredential verifies the config-time token on a request — the
-// credential config.sh holds before it has exchanged its client_assertion —
-// accepting the RemoteAuth scheme real GitHub's runner uses alongside the
-// bearer and token schemes. A token whose purpose is not among the ones the
-// caller accepts is an error, never a decoded credential.
+// runnerSetupCredential verifies the config-time token config.sh holds before it
+// has exchanged its client_assertion, accepting the RemoteAuth, bearer, and token
+// schemes. A token whose purpose is not among those the caller accepts is an error.
 func runnerSetupCredential(r *http.Request, purposes []string) (runnerRegistrationClaims, error) {
 	scheme, cred := authScheme(r.Header.Get("Authorization"))
 	switch scheme {
@@ -163,10 +131,9 @@ func runnerSetupCredential(r *http.Request, purposes []string) (runnerRegistrati
 	return parseRunnerRegistrationToken(cred, purposes)
 }
 
-// runnerPurposeForEvent maps the runner_event config.sh sends to the credential
-// purpose that operation needs. An unrecognized event is refused rather than
-// defaulted: defaulting would decide, for a caller that named nothing, which of
-// the two operations its token authorizes.
+// runnerPurposeForEvent maps runner_event to the credential purpose it needs. An
+// unrecognized event is refused, never defaulted: defaulting would pick which
+// operation an unnamed token authorizes.
 func runnerPurposeForEvent(event string) (string, error) {
 	switch event {
 	case "register":
@@ -177,8 +144,7 @@ func runnerPurposeForEvent(event string) (string, error) {
 	return "", fmt.Errorf("unsupported runner_event %q", event)
 }
 
-// serviceDefinition matches the internal ServiceDefinition format
-// that the runner SDK expects in ConnectionData.
+// serviceDefinition is the ConnectionData ServiceDefinition shape the runner SDK expects.
 type serviceDefinition struct {
 	ServiceType       string        `json:"serviceType"`
 	Identifier        string        `json:"identifier"`
@@ -244,29 +210,22 @@ func (s *Server) handleConnectionData(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// The token exchange the runner performs against authorizationUrl: the OAuth
-// 2.0 client credentials grant, with the client authenticated by an RSA
-// assertion rather than a secret. The runner builds the request from
-// VssOAuthGrant.ClientCredentials and VssOAuthJwtBearerClientCredential, so
-// the grant type is client_credentials and the assertion travels in
-// client_assertion — not the jwt-bearer authorization grant, which no runner
-// sends.
+// The runner performs an OAuth 2.0 client-credentials grant with an RSA
+// client_assertion rather than a secret, so grant_type is client_credentials and
+// the assertion travels in client_assertion.
 const (
 	runnerGrantType           = "client_credentials"
 	runnerClientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 )
 
 // agentAuthorizationURL is the token endpoint an agent exchanges its RSA
-// client_assertion at. It is handed to the runner in its authorization record
-// and named in the challenge unauthenticated runner requests answer with.
+// client_assertion at, named in the challenge unauthenticated runners receive.
 func (s *Server) agentAuthorizationURL(r *http.Request) string {
 	return s.baseURL(r) + "/_apis/v1/auth/"
 }
 
-// handleOAuthToken exchanges a runner-signed client_assertion JWT for a
-// session access token. The runner registered its RSA public key on
-// /_apis/v1/Agent/{poolId}; the assertion's iss claim names the agent's
-// ClientID and must verify against that stored public key.
+// handleOAuthToken exchanges a runner-signed client_assertion JWT for a session
+// access token, verifying the assertion against the agent's registered public key.
 func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "failed to parse form body: "+err.Error())
@@ -309,10 +268,8 @@ func writeOAuthError(w http.ResponseWriter, status int, code, desc string) {
 	_, _ = w.Write(body)
 }
 
-// verifyAgentClientAssertion validates an RSA JWT signed by the agent's
-// registered private key. Current runners use PS256 while older supported
-// runners use RS256. The JWT's iss claim must match a known agent ClientID;
-// the signature is verified against that agent's public key.
+// verifyAgentClientAssertion validates an RSA JWT (RS256 or PS256) signed by the
+// agent's registered private key; the iss claim must name a known agent ClientID.
 func (s *Server) verifyAgentClientAssertion(token string) (*store.Agent, error) {
 	parts := strings.SplitN(token, ".", 3)
 	if len(parts) != 3 {
@@ -382,9 +339,8 @@ func (s *Server) verifyAgentClientAssertion(token string) (*store.Agent, error) 
 	return agent, nil
 }
 
-// agentRSAPublicKey reconstructs an *rsa.PublicKey from the modulus+exponent
-// pair the runner sent during agent registration. The runner encodes both as
-// standard base64, per the Azure DevOps agent protocol.
+// agentRSAPublicKey reconstructs an *rsa.PublicKey from the base64 modulus+exponent
+// pair the runner sent at registration (Azure DevOps agent protocol).
 func agentRSAPublicKey(pk *store.AgentPublicKey) (*rsa.PublicKey, error) {
 	modBytes, err := base64.StdEncoding.DecodeString(pk.Modulus)
 	if err != nil {
@@ -414,35 +370,24 @@ func base64url(data []byte) string {
 
 // --- runner protocol credentials ---
 //
-// Three credentials carry runner identity, all signed with one process key:
-//
-//	registration token — minted by an administration:write caller, presented
-//	                     by config.sh to register an agent
-//	agent client id    — handed back at registration; the RSA client_assertion
-//	                     names it as `iss`
-//	bearer token       — the agent session token from the client_assertion
-//	                     exchange, and the per-job runtime token in the job
-//	                     message
-//
-// All three carry the repository or organization scope they may act for, so
-// no route has to trust a claim it cannot verify.
+// Three credentials carry runner identity, all signed with one process key: the
+// registration token config.sh presents, the agent client id the client_assertion
+// names as iss, and the bearer token (agent session or per-job runtime token).
+// Each carries the repo/org scope it may act for, so no route trusts an
+// unverifiable claim.
 
 const (
-	// runnerTokenTTL bounds a bearer credential to the longest a GitHub
-	// Actions job may run. The runner re-exchanges its client_assertion when
-	// the session token expires.
+	// runnerTokenTTL bounds a bearer credential to the longest a GitHub Actions
+	// job may run.
 	runnerTokenTTL = 6 * time.Hour
 
-	// runnerRegistrationTTL matches the ~1h expiry real GitHub puts on a
-	// runner registration/removal token.
+	// runnerRegistrationTTL matches real GitHub's ~1h registration/removal token expiry.
 	runnerRegistrationTTL = time.Hour
 
-	// runnerClockSkew tolerates a small clock difference between the server
-	// that minted a credential and the one verifying it.
+	// runnerClockSkew tolerates clock difference between the minting and verifying server.
 	runnerClockSkew = 60 * time.Second
 
-	// envRunnerSigningKey pins the signing key so replicas of one deployment
-	// accept each other's runner credentials.
+	// envRunnerSigningKey pins the signing key so replicas accept each other's credentials.
 	envRunnerSigningKey = "BLEEPHUB_RUNNER_TOKEN_KEY"
 )
 
@@ -458,11 +403,9 @@ const (
 	runnerPurposeRemoval      = "removal"
 )
 
-// The config-time purposes a route accepts. `config.sh` holds a registration
-// token and `config.sh remove` a removal token; the one call both make — the
-// pool lookup of the runner's own name — accepts either. Naming the set at the
-// route keeps a registration token from deleting a runner and a removal token
-// from adding one.
+// Config-time purposes a route accepts: config.sh holds a registration token,
+// config.sh remove a removal token, and the shared pool lookup accepts either.
+// Naming the set at the route keeps each token to its own operation.
 var (
 	runnerPurposesRegister = []string{runnerPurposeRegistration}
 	runnerPurposesRemove   = []string{runnerPurposeRemoval}
@@ -470,11 +413,9 @@ var (
 )
 
 // runnerSigningKey resolves the HMAC key backing every runner credential.
-// BLEEPHUB_RUNNER_TOKEN_KEY (base64, at least 32 bytes) pins it; without it
-// the key is generated once per process. Process-local is correct here for
-// the same reason it is for the OIDC signing key: runner sessions and job
-// tokens are only meaningful against the dispatch state that issued them, and
-// that state does not survive a restart.
+// BLEEPHUB_RUNNER_TOKEN_KEY (base64, >=32 bytes) pins it; otherwise it is
+// generated once per process, which is correct because runner sessions and job
+// tokens only mean anything against dispatch state that does not survive a restart.
 var runnerSigningKey = sync.OnceValues(loadRunnerSigningKey)
 
 func loadRunnerSigningKey() ([]byte, error) {
@@ -495,9 +436,8 @@ func loadRunnerSigningKey() ([]byte, error) {
 	return key, nil
 }
 
-// runnerMAC signs data with the runner protocol key. registerAuthRoutes
-// resolves the key at startup, so a failure here is unreachable state rather
-// than a condition to degrade around.
+// runnerMAC signs data with the runner protocol key, resolved at startup, so an
+// error here is unreachable rather than a condition to degrade around.
 func runnerMAC(data string) []byte {
 	key, err := runnerSigningKey()
 	if err != nil {
@@ -508,11 +448,9 @@ func runnerMAC(data string) []byte {
 	return mac.Sum(nil)
 }
 
-// runnerScopeFromRequest reads the scope a registration/JIT request acts for
-// off its path parameters: {owner}/{repo} for the repository surface, {org}
-// for the organization surface, or {enterprise} for the enterprise surface.
-// The named target must exist — a runner credential for a target that is not
-// there would be a credential for nothing, and real GitHub answers 404.
+// runnerScopeFromRequest reads the scope a request acts for from its path params
+// ({owner}/{repo}, {org}, or {enterprise}). The target must exist — a credential
+// for a missing target is a credential for nothing, and GitHub answers 404.
 func (s *Server) runnerScopeFromRequest(r *http.Request) (store.RunnerScope, error) {
 	owner, repo := r.PathValue("owner"), r.PathValue("repo")
 	if owner != "" && repo != "" {
@@ -527,9 +465,8 @@ func (s *Server) runnerScopeFromRequest(r *http.Request) (store.RunnerScope, err
 		if resolved == nil {
 			return store.RunnerScope{}, fmt.Errorf("organization %s not found", org)
 		}
-		// Scope by the canonical login: GetOrg resolves case-insensitively, and
-		// a scope carrying the request's casing would not match later
-		// canonical-name scope comparisons.
+		// Scope by the canonical login: a scope carrying the request's casing
+		// would not match later canonical-name comparisons.
 		return store.RunnerScope{Org: resolved.Login}, nil
 	}
 	if enterprise := r.PathValue("enterprise"); enterprise != "" {
@@ -541,8 +478,7 @@ func (s *Server) runnerScopeFromRequest(r *http.Request) (store.RunnerScope, err
 	return store.RunnerScope{}, fmt.Errorf("request path names neither a repository, organization, nor enterprise")
 }
 
-// signedBlob encodes payload and appends its MAC, producing an opaque
-// credential that cannot be constructed without the signing key.
+// signedBlob encodes payload and appends its MAC into an opaque credential.
 func signedBlob(prefix string, payload any) (string, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -580,9 +516,8 @@ func parseSignedBlob(prefix, token string, out any) error {
 	return nil
 }
 
-// runnerRegistrationClaims is the payload of the opaque one-shot token
-// config.sh presents. Real GitHub's is "A" + a base64-ish blob; this one keeps
-// that shape and carries its own scope and expiry so registration needs no
+// runnerRegistrationClaims is the payload of the opaque one-shot token config.sh
+// presents; it carries its own scope and expiry so registration needs no
 // server-side token registry.
 type runnerRegistrationClaims struct {
 	Scope   store.RunnerScope `json:"scope"`
@@ -627,18 +562,10 @@ func parseRunnerRegistrationToken(token string, purposes []string) (runnerRegist
 	return claims, nil
 }
 
-// newAgentClientID mints the clientId the runner stores in its credentials and
-// echoes back as the client_assertion issuer.
-//
-// It is a bare GUID because that is what the runner deserializes it into —
-// anything else fails at configuration with a type conversion error, whatever
-// the server thinks the field means. The agent's scope therefore lives on its
-// record rather than inside this value.
-//
-// A GUID is guessable in a way a signed blob is not, and that is fine here:
-// the clientId only names which agent's public key to verify against. What
-// authenticates is the RSA signature over the assertion, which an attacker
-// cannot produce without the runner's private key.
+// newAgentClientID mints the clientId the runner stores and echoes as the
+// client_assertion issuer. It is a bare GUID because that is what the runner
+// deserializes it into; the GUID only names which agent's public key to verify
+// against — the RSA signature is what authenticates, so guessability is harmless.
 func newAgentClientID(scope store.RunnerScope) (string, error) {
 	if scope.Empty() {
 		return "", fmt.Errorf("agent clientId needs a repository, organization, or enterprise scope")
@@ -655,18 +582,16 @@ type runnerTokenClaims struct {
 	Nbf int64  `json:"nbf"`
 	Exp int64  `json:"exp"`
 	Scp string `json:"scp"`
-	// Repo and Perms are carried only by a per-job runtime token (GITHUB_TOKEN,
-	// aud=="actions"). They bind the token to a single repository and the
-	// workflow's resolved least-privilege API permission set so the REST gate
-	// can scope its /api/v3 access (ACT-014). Absent on session tokens.
+	// Repo and Perms are carried only by a per-job runtime token (aud=="actions"),
+	// binding it to one repo and the workflow's least-privilege permission set so
+	// the REST gate can scope its /api/v3 access (ACT-014). Absent on session tokens.
 	Repo  string            `json:"repo,omitempty"`
 	Perms map[string]string `json:"perms,omitempty"`
 }
 
 const runnerTokenScp = "Actions.Results:write Actions.Pipelines:read"
 
-// signRunnerClaims serializes and HS256-signs a runner bearer credential. Only
-// this server can produce one, and only parseRunnerToken accepts one.
+// signRunnerClaims HS256-signs a runner bearer credential; only parseRunnerToken accepts one.
 func signRunnerClaims(claims runnerTokenClaims) string {
 	payload, err := json.Marshal(claims)
 	if err != nil {
@@ -676,8 +601,7 @@ func signRunnerClaims(claims runnerTokenClaims) string {
 	return signing + "." + base64url(runnerMAC(signing))
 }
 
-// makeJWT mints an HS256-signed bearer credential for sub. The runner parses
-// it as a JWT to read its expiry.
+// makeJWT mints an HS256 bearer credential for sub.
 func makeJWT(sub, aud string) string {
 	now := time.Now()
 	return signRunnerClaims(runnerTokenClaims{
@@ -690,9 +614,9 @@ func makeJWT(sub, aud string) string {
 	})
 }
 
-// makeJobJWT mints a per-job runtime token (GITHUB_TOKEN) bound to one
-// repository and the workflow's resolved least-privilege API permission set.
-// The REST gate reads repo+perms to scope the token's /api/v3 access (ACT-014).
+// makeJobJWT mints a per-job runtime token (GITHUB_TOKEN) bound to one repo and
+// the workflow's least-privilege permission set, which the REST gate reads to
+// scope /api/v3 access (ACT-014).
 func makeJobJWT(sub, repo string, perms map[string]string) string {
 	now := time.Now()
 	return signRunnerClaims(runnerTokenClaims{
@@ -707,9 +631,8 @@ func makeJobJWT(sub, repo string, perms map[string]string) string {
 	})
 }
 
-// parseRunnerToken verifies a bearer credential's signature and time bounds
-// before any claim is readable. Verification failure returns an error, never
-// claims.
+// parseRunnerToken verifies a bearer credential's signature and time bounds before
+// any claim is readable; failure returns an error, never claims.
 func parseRunnerToken(token string) (*runnerTokenClaims, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
@@ -764,26 +687,22 @@ type runnerPrincipal struct {
 	Setup  bool               // the registration/removal token config.sh holds
 }
 
-// IsJobToken reports whether the caller presented a per-job runtime token
-// rather than an agent session token.
+// IsJobToken reports whether the caller presented a per-job runtime token.
 func (p *runnerPrincipal) IsJobToken() bool {
 	return p != nil && p.Claims != nil && p.Claims.Aud == runnerAudJob
 }
 
 const ctxRunner contextKey = "runner-principal"
 
-// runnerFromContext returns the principal requireRunnerAuth verified, or nil
-// on a route that is not gated.
+// runnerFromContext returns the principal requireRunnerAuth verified, or nil.
 func runnerFromContext(ctx context.Context) *runnerPrincipal {
 	p, _ := ctx.Value(ctxRunner).(*runnerPrincipal)
 	return p
 }
 
-// callerRunner resolves the verified runner behind a request: the principal
-// requireRunnerAuth put in the context, or, when a handler is reached without
-// it, the credential on the request itself. The handler never sees an
-// unverified caller, so the authorization it performs does not depend on a
-// route having been registered with the right decorator.
+// callerRunner resolves the verified runner behind a request: the context
+// principal, or the request's own credential when a handler is reached without
+// one, so authorization never depends on the route's decorator.
 func (s *Server) callerRunner(r *http.Request) (*runnerPrincipal, error) {
 	if p := runnerFromContext(r.Context()); p != nil {
 		return p, nil
@@ -799,16 +718,12 @@ func bearerCredential(r *http.Request) (string, bool) {
 	return cred, true
 }
 
-// actionArchiveUser is the user half of the basic credential the runner
-// presents when it downloads an action archive. ActionManager.CreateAuthHeader
-// builds `Basic base64("x-access-token:<token>")` out of the token the
-// ActionDownloadInfo response handed it, so the token travels as the password.
+// actionArchiveUser is the user half of the basic credential the runner presents
+// to download an action archive; the token travels as the password.
 const actionArchiveUser = "x-access-token"
 
-// actionArchiveCredential reads the token off an action archive download.
-// Unlike the rest of the runner protocol this request is made by a plain HTTP
-// client rather than the runner's service stack, and it carries whatever the
-// download info response named — never a bearer token it negotiated itself.
+// actionArchiveCredential reads the token off an action archive download, made by
+// a plain HTTP client that sends whatever the download-info response named.
 func actionArchiveCredential(r *http.Request) (string, bool) {
 	scheme, cred := authScheme(r.Header.Get("Authorization"))
 	if scheme != "basic" || cred == "" {
@@ -825,8 +740,7 @@ func actionArchiveCredential(r *http.Request) (string, bool) {
 	return token, true
 }
 
-// authenticateRunner resolves the caller of a runner protocol route to a
-// verified principal.
+// authenticateRunner resolves a runner protocol caller to a verified principal.
 func (s *Server) authenticateRunner(r *http.Request) (*runnerPrincipal, error) {
 	raw := r.Header.Get("Authorization")
 	if raw == "" {
@@ -843,8 +757,8 @@ func (s *Server) authenticateRunner(r *http.Request) (*runnerPrincipal, error) {
 }
 
 // runnerPrincipalForToken verifies a runner bearer credential and resolves the
-// identity behind it. Every route reaches it, whichever header shape the
-// credential arrived in, so a token admits exactly the same caller either way.
+// identity behind it, so a token admits the same caller whichever header shape
+// carried it.
 func (s *Server) runnerPrincipalForToken(token string) (*runnerPrincipal, error) {
 	claims, err := parseRunnerToken(token)
 	if err != nil {
@@ -871,25 +785,19 @@ func (s *Server) runnerPrincipalForToken(token string) (*runnerPrincipal, error)
 	}
 }
 
-// challengeRunnerAuth refuses a runner protocol request that carries no usable
-// credential, and names the scheme that would satisfy it.
-//
-// The WWW-Authenticate header is what drives the runner's token exchange. It
-// opens every session by sending a request with no credential attached and
-// acquires one only when the refusal is a challenge it recognizes: a 401
-// carrying a WWW-Authenticate value containing "Bearer". A bare 401 is read as
-// the route's own answer, and no token is ever requested.
+// challengeRunnerAuth refuses a runner request that carries no usable credential.
+// The WWW-Authenticate: Bearer header is what drives the runner's token exchange —
+// it opens every session with no credential and acquires one only from a 401 whose
+// WWW-Authenticate contains "Bearer"; a bare 401 is read as the route's own answer.
 func (s *Server) challengeRunnerAuth(w http.ResponseWriter, r *http.Request, err error) {
 	s.logger.Debug().Err(err).Str("path", r.URL.Path).Msg("runner protocol request rejected")
 	w.Header().Set("WWW-Authenticate", fmt.Sprintf("Bearer authorization_uri=%q", s.agentAuthorizationURL(r)))
 	writeGHError(w, http.StatusUnauthorized, "Must authenticate to use the runner protocol")
 }
 
-// requireRunnerAuth gates a runner protocol route on a verified runner
-// credential and hands the principal to the handler through the request
-// context. Every /_apis/ and /twirp/ route outside the five-entry runner
-// protocol allowlist (see registerAuthRoutes) goes through here or one of
-// the wrappers built on it.
+// requireRunnerAuth gates a runner protocol route on a verified credential and
+// hands the principal to the handler via context. Every /_apis/ and /twirp/ route
+// outside the five-entry allowlist (see registerAuthRoutes) passes through here.
 func (s *Server) requireRunnerAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, err := s.authenticateRunner(r)
@@ -901,9 +809,8 @@ func (s *Server) requireRunnerAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// requireJobToken gates a route on a per-job runtime token — the credential
-// the runner's worker holds while executing one job. An agent session token
-// is not accepted: these routes act on a single job's plan.
+// requireJobToken gates a route on a per-job runtime token; an agent session token
+// is not accepted, since these routes act on a single job's plan.
 func (s *Server) requireJobToken(next http.HandlerFunc) http.HandlerFunc {
 	return s.requireRunnerAuth(func(w http.ResponseWriter, r *http.Request) {
 		if !runnerFromContext(r.Context()).IsJobToken() {
@@ -914,14 +821,10 @@ func (s *Server) requireJobToken(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
-// requireActionArchiveToken gates an action archive download on the job
-// runtime token the ActionDownloadInfo response handed the runner.
-//
-// The archive is fetched by a plain HTTP client that attaches the download
-// info's token as basic auth under the x-access-token user, so that shape has
-// to be read here or the runner cannot present the credential it was given at
-// all. What is accepted is the same job runtime token as everywhere else,
-// verified the same way: the encoding differs, the entitlement does not.
+// requireActionArchiveToken gates an action archive download on the job runtime
+// token the ActionDownloadInfo response handed the runner. The archive is fetched
+// by a plain HTTP client sending the token as basic auth under x-access-token, so
+// that shape is read here; the entitlement is the same job token verified the same way.
 func (s *Server) requireActionArchiveToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, ok := actionArchiveCredential(r)
@@ -943,12 +846,10 @@ func (s *Server) requireActionArchiveToken(next http.HandlerFunc) http.HandlerFu
 	}
 }
 
-// requireRunnerSetupCredential gates a route the runner reaches during
-// `config.sh`, before it has exchanged its client_assertion: the token
-// config.sh was given is accepted for the named purposes, alongside the agent
-// session a configured runner holds. Either way the handler is handed a
-// principal carrying the verified scope, so the tenant confinement downstream
-// is the same on both paths.
+// requireRunnerSetupCredential gates a route the runner reaches during config.sh,
+// before it has exchanged its client_assertion: the config-time token is accepted
+// for the named purposes, as is a configured runner's agent session. Both paths
+// hand the handler a principal carrying the verified scope.
 func (s *Server) requireRunnerSetupCredential(purposes []string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, err := runnerSetupCredential(r, purposes)
@@ -961,8 +862,8 @@ func (s *Server) requireRunnerSetupCredential(purposes []string, next http.Handl
 	}
 }
 
-// requireAgentSession gates a route on an agent session token — the
-// credential the runner listener holds. A job runtime token is not an agent.
+// requireAgentSession gates a route on an agent session token; a job runtime token
+// is not an agent.
 func (s *Server) requireAgentSession(next http.HandlerFunc) http.HandlerFunc {
 	return s.requireRunnerAuth(func(w http.ResponseWriter, r *http.Request) {
 		if runnerFromContext(r.Context()).Agent == nil {

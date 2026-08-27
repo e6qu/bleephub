@@ -1,11 +1,8 @@
 package graphqlapi
 
-// The remaining Team members GitHub declares beyond the roster/repository
-// core: the pending-invitation and member-status connections, the team's
-// visible ProjectsV2, the review-request delegation settings, and the
-// (deprecated) subscription pair. They live here rather than in
-// gh_teams_graphql.go to keep that file's shape stable; addTeamFields wires
-// this installer with a single call.
+// The remaining Team members beyond the roster/repository core: pending
+// invitations, member statuses, visible ProjectsV2, review-request delegation,
+// and the deprecated subscription pair.
 
 import (
 	"sort"
@@ -16,7 +13,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// addTeamExtraFields completes the Team type, driving it to GitHub parity.
+// addTeamExtraFields completes the Team type.
 func (s *Resolver) addTeamExtraFields(types *accountSurfaceTypes) {
 	teamType := s.graphqlTypes.team
 
@@ -27,16 +24,13 @@ func (s *Resolver) addTeamExtraFields(types *accountSurfaceTypes) {
 	s.addTeamSubscriptionFields(teamType)
 }
 
-// addTeamInvitationsField wires Team.invitations: the organization's pending
-// invitations that name this team. GitHub returns these as an
-// OrganizationInvitationConnection whose node is the shared
-// OrganizationInvitation object the enterprise family already minted; the
-// connection type itself is new here, built over that reused node so the two
-// families do not declare the node twice.
+// addTeamInvitationsField wires Team.invitations: the org's pending invitations
+// naming this team. The connection reuses the enterprise family's
+// OrganizationInvitation node so it is not declared twice.
 func (s *Resolver) addTeamInvitationsField(teamType *graphql.Object, types *accountSurfaceTypes) {
 	invitationNode := s.reachOrganizationInvitationType()
-	// A missing node type would mean the enterprise family changed shape; guard
-	// so the schema still builds (the field then resolves truthfully empty).
+	// Guard against the enterprise family changing shape: a nil node still builds
+	// (the field then resolves empty).
 	var connection *graphql.Object
 	if invitationNode != nil {
 		connection = s.accountConnectionType(types, "OrganizationInvitation", invitationNode, false, nil)
@@ -56,8 +50,7 @@ func (s *Resolver) addTeamInvitationsField(teamType *graphql.Object, types *acco
 			if err != nil || team == nil {
 				return paginateGQLItems(nil, p.Args), err
 			}
-			// Pending invitations are membership-administration data; an
-			// outsider to the organization must not enumerate them.
+			// Membership-administration data: an org outsider must not enumerate it.
 			if !s.viewerIsOrgMember(p.Context, org.Login) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
@@ -78,10 +71,9 @@ func (s *Resolver) addTeamInvitationsField(teamType *graphql.Object, types *acco
 	})
 }
 
-// reachOrganizationInvitationType reaches the OrganizationInvitation object the
-// enterprise family builds, without re-declaring it. The enterprise surface is
-// installed before the account surface, so the path
-// Enterprise.ownerInfo -> failedInvitations -> nodes is populated by now.
+// reachOrganizationInvitationType reaches the enterprise family's
+// OrganizationInvitation object without re-declaring it, via
+// Enterprise.ownerInfo -> failedInvitations -> nodes (built by now).
 func (s *Resolver) reachOrganizationInvitationType() *graphql.Object {
 	enterprise := s.graphqlTypes.enterprise
 	if enterprise == nil {
@@ -93,7 +85,7 @@ func (s *Resolver) reachOrganizationInvitationType() *graphql.Object {
 }
 
 // orgInvitationToGQL renders a pending invitation as the OrganizationInvitation
-// source map the enterprise node's default resolvers read by key.
+// source map the enterprise node's resolvers read by key.
 func (s *Resolver) orgInvitationToGQL(inv *store.OrgInvitation, org *store.Org) map[string]interface{} {
 	invitationType := "USER"
 	if inv.UserID == 0 {
@@ -141,9 +133,8 @@ func (s *Resolver) orgInvitationToGQL(inv *store.OrgInvitation, org *store.Org) 
 	}
 }
 
-// addTeamMemberStatusesField wires Team.memberStatuses: the status messages the
-// team's members have set. It reuses the org surface's UserStatusConnection and
-// UserStatus types so both name the same connection.
+// addTeamMemberStatusesField wires Team.memberStatuses, reusing the org
+// surface's UserStatusConnection and UserStatus types.
 func (s *Resolver) addTeamMemberStatusesField(teamType *graphql.Object, types *accountSurfaceTypes) {
 	connection := s.accountConnectionType(types, "UserStatus", s.gqlUserStatusType(), false, nil)
 	teamType.AddFieldConfig("memberStatuses", &graphql.Field{
@@ -159,8 +150,7 @@ func (s *Resolver) addTeamMemberStatusesField(teamType *graphql.Object, types *a
 			if err != nil || team == nil {
 				return paginateGQLItems(nil, p.Args), err
 			}
-			// A secret team's roster (and thus whose statuses these are) is
-			// visible only within the organization.
+			// A secret team's roster is visible only within the organization.
 			if team.Privacy == store.TeamPrivacySecret && !s.viewerIsOrgMember(p.Context, org.Login) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
@@ -197,11 +187,9 @@ func (s *Resolver) addTeamMemberStatusesField(teamType *graphql.Object, types *a
 	})
 }
 
-// addTeamProjectsV2Fields wires Team.projectV2 / Team.projectsV2. A team's
-// Projects tab on github.com lists its owning organization's projects (bleephub
-// models no team-to-project collaborator association of its own), so both
-// resolve through the team's organization exactly as Repository.projectsV2
-// resolves through the repository's owner.
+// addTeamProjectsV2Fields wires Team.projectV2 / Team.projectsV2 through the
+// team's organization (bleephub models no team-to-project association), as
+// Repository.projectsV2 resolves through the repository's owner.
 func (s *Resolver) addTeamProjectsV2Fields(teamType *graphql.Object) {
 	projectType := s.projectV2GraphQLTypes()
 	connection := s.gqlConnectionType("ProjectV2", projectType)
@@ -233,9 +221,8 @@ func (s *Resolver) addTeamProjectsV2Fields(teamType *graphql.Object) {
 	})
 }
 
-// addTeamReviewDelegationFields wires the four review-request delegation
-// members off the team's stored TeamReviewAssignment. An unconfigured team
-// (nil assignment) is GitHub's "not enabled": false / null.
+// addTeamReviewDelegationFields wires the review-request delegation members off
+// the team's TeamReviewAssignment; a nil assignment is "not enabled" (false / null).
 func (s *Resolver) addTeamReviewDelegationFields(teamType *graphql.Object) {
 	assignment := func(p graphql.ResolveParams) *store.TeamReviewAssignment {
 		team, _, err := s.teamFromSource(p.Source)
@@ -280,10 +267,9 @@ func (s *Resolver) addTeamReviewDelegationFields(teamType *graphql.Object) {
 	})
 }
 
-// addTeamSubscriptionFields wires the (deprecated) Subscribable pair. bleephub
-// models no per-team notification subscription, so a present viewer may
-// subscribe (viewerCanSubscribe) and reads the default UNSUBSCRIBED state; an
-// anonymous viewer gets false / null.
+// addTeamSubscriptionFields wires the deprecated Subscribable pair. No per-team
+// subscription is modeled: a present viewer may subscribe and reads the default
+// UNSUBSCRIBED; an anonymous viewer gets false / null.
 func (s *Resolver) addTeamSubscriptionFields(teamType *graphql.Object) {
 	subState := s.sharedEnum("SubscriptionState", "IGNORED", "SUBSCRIBED", "UNSUBSCRIBED")
 	teamType.AddFieldConfig("viewerCanSubscribe", &graphql.Field{

@@ -6,11 +6,9 @@ import (
 	"time"
 )
 
-// Mannequins are the placeholder identities an import creates for authors who
-// have no account on this instance: github's model for "someone wrote this,
-// but nobody here is them yet". An attribution invitation asks a real account
-// to claim one; claiming is the target's act, so the invitation records the
-// ask rather than performing the reattribution.
+// Mannequins are placeholder identities an import creates for authors with no
+// account here. An attribution invitation only records the ask; claiming is
+// the target's own act.
 
 type Mannequin struct {
 	ID         int       `json:"id"`
@@ -31,9 +29,8 @@ type AttributionInvitation struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// EnsureMannequin answers the org's mannequin for login, minting one when the
-// import meets that author for the first time. Idempotent by (org, login), so
-// a resumed migration does not multiply placeholders.
+// EnsureMannequin returns the org's mannequin for login, minting one if
+// absent. Idempotent by (org, login) so a resumed migration does not duplicate.
 func (st *Store) EnsureMannequin(orgID int, login, email string) *Mannequin {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -63,7 +60,7 @@ func (st *Store) EnsureMannequin(orgID int, login, email string) *Mannequin {
 	return cloneMannequin(m)
 }
 
-// FindMannequinByNodeID resolves a mannequin's global id to the live row.
+// FindMannequinByNodeID returns the live row (not a snapshot) for a node ID.
 func FindMannequinByNodeID(st *Store, nodeID string) *Mannequin {
 	if nodeID == "" {
 		return nil
@@ -78,7 +75,7 @@ func FindMannequinByNodeID(st *Store, nodeID string) *Mannequin {
 	return nil
 }
 
-// ListMannequins answers an org's mannequins as detached snapshots.
+// ListMannequins returns an org's mannequins as detached snapshots.
 func (st *Store) ListMannequins(orgID int) []*Mannequin {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -91,9 +88,8 @@ func (st *Store) ListMannequins(orgID int) []*Mannequin {
 	return out
 }
 
-// CreateAttributionInvitation records the ask that source's work be claimed by
-// target. One open invitation per source: github refuses a second invitation
-// while one is pending, because two accounts cannot both be the author.
+// CreateAttributionInvitation records that source's work be claimed by target.
+// GitHub allows only one open invitation per source.
 func (st *Store) CreateAttributionInvitation(orgID int, sourceNodeID, targetNodeID string) (*AttributionInvitation, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

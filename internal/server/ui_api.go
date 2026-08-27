@@ -9,12 +9,11 @@ func (s *Server) registerUIAPIRoutes() {
 	s.route("GET /ui-data/repos/{owner}/{repo}/commits", s.handleUIListCommits)
 	s.route("GET /ui-data/repos/{owner}/{repo}/viewer", s.handleUIRepoViewer)
 
-	// GitHub's web package views expose repository-associated packages and
-	// version assets that its public REST API does not. Keep those browser
-	// adapters outside /api/v3 so the REST namespace remains spec-exact.
+	// Browser package adapters kept outside /api/v3 so the REST namespace stays
+	// spec-exact.
 	s.route("GET /ui-data/repos/{owner}/{repo}/packages", s.handleListRepoPackages)
-	// The web Packages tab lists every package type at once; the public REST
-	// endpoints require a single package_type. These aggregate without one.
+	// The web Packages tab lists every package type at once; the REST endpoints
+	// require a single package_type. These aggregate without one.
 	s.route("GET /ui-data/users/{username}/packages", s.handleUIListUserPackages)
 	s.route("GET /ui-data/orgs/{org}/packages", s.handleUIListOrgPackages)
 	s.route("GET /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}", s.handleGetRepoPackage)
@@ -31,10 +30,9 @@ func (s *Server) registerUIAPIRoutes() {
 }
 
 // handleUIRepoViewer gives the browser one successful read for viewer-specific
-// repository chrome. GitHub's public Star and Subscription existence checks
-// correctly return 404 when absent; issuing those expected checks as page
-// resources would still produce browser console errors. Mutations continue to
-// use the public GitHub REST endpoints.
+// repository chrome, avoiding the console errors the public Star/Subscription
+// existence checks' expected 404s would log. Mutations still use the REST
+// endpoints.
 func (s *Server) handleUIRepoViewer(w http.ResponseWriter, r *http.Request) {
 	ctx := s.authenticateRequest(r)
 	user := ghUserFromContext(ctx)

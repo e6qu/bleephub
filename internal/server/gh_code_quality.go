@@ -1,7 +1,6 @@
 package bleephub
 
-// GitHub code quality setup REST surface (repository-scoped): the
-// stored configuration for periodic code quality analysis.
+// Repository-scoped code quality setup REST surface.
 
 import (
 	"encoding/json"
@@ -125,8 +124,8 @@ func (s *Server) handleUpdateCodeQualitySetup(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// The update schema forbids unknown members and requires at least
-	// one of state / runner_type / runner_label / languages.
+	// The update schema forbids unknown members and requires at least one of
+	// state, runner_type, runner_label, languages.
 	var raw map[string]json.RawMessage
 	if !decodeJSONBody(w, r, &raw) {
 		return
@@ -195,8 +194,7 @@ func (s *Server) handleUpdateCodeQualitySetup(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusUnprocessableEntity, "runner_label is required")
 		return
 	}
-	// The periodic analysis schedule exists exactly while the setup is
-	// configured; "weekly" is the only schedule GitHub offers.
+	// The schedule exists exactly while configured; "weekly" is the only one.
 	if setup.State == "configured" {
 		setup.Schedule = "weekly"
 	} else {
@@ -205,9 +203,7 @@ func (s *Server) handleUpdateCodeQualitySetup(w http.ResponseWriter, r *http.Req
 	now := time.Now().UTC()
 	setup.UpdatedAt = &now
 	s.store.SetCodeQualitySetup(setup)
-	// bleephub applies the configuration synchronously and runs no
-	// analysis workflow, so the documented plain-success response (200
-	// with an empty object) is the honest one — 202 is reserved for an
-	// update that scheduled an analysis run.
+	// 200 with an empty object; 202 is reserved for an update that scheduled
+	// an analysis run, which bleephub never does.
 	writeJSON(w, http.StatusOK, map[string]interface{}{})
 }

@@ -7,27 +7,17 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// Projects v2 — the ProjectV2ItemFieldValue union in full.
-//
-// GitHub splits the union two ways. Six members are stored values with a
-// lifecycle of their own — text, number, date, single select, multi select and
-// iteration — and each implements Node and ProjectV2ItemFieldValueCommon. The
-// other six are the built-in columns, whose value is not stored on the item at
-// all but read off the issue or pull request the item points at: its labels,
-// its milestone, its repository, its assignees, its reviewers and the pull
-// requests linked to it.
-//
-// All twelve have to exist even on an instance where nobody uses the built-in
-// columns, because `gh project item-list` sends one fragment naming every
-// member and a client's query is validated against the whole schema before a
-// single resolver runs. Missing members made every `gh project` subcommand
-// fail validation, not just the ones reading those columns.
+// Projects v2 — the ProjectV2ItemFieldValue union in full. Six members are
+// stored values (text, number, date, single select, multi select, iteration),
+// each implementing Node and ProjectV2ItemFieldValueCommon; the other six are
+// built-in columns read off the item's issue or pull request. All twelve must
+// exist — `gh project item-list` sends one fragment naming every member, and
+// the query is validated against the whole schema before any resolver runs.
 
-// projectV2FieldValueTypes builds every member of the ProjectV2ItemFieldValue
-// union and the union itself, and returns the union. graphql-go fixes a
-// union's member list and an object's interface list at construction, so all
-// twelve members and the common interface are made here in one pass rather
-// than added to a union that already exists.
+// projectV2FieldValueTypes builds every union member and the union itself.
+// graphql-go fixes a union's members and an object's interfaces at
+// construction, so all twelve members and the common interface are made here in
+// one pass.
 func (s *Resolver) projectV2FieldValueTypes() *graphql.Union {
 	if s.graphqlTypes.projectV2ItemFieldValueUnionMemo != nil {
 		return s.graphqlTypes.projectV2ItemFieldValueUnionMemo
@@ -48,13 +38,12 @@ func (s *Resolver) projectV2FieldValueTypes() *graphql.Union {
 	return s.graphqlTypes.projectV2ItemFieldValueUnionMemo
 }
 
-// projectV2StoredValueTypes builds the six members that carry a value stored
-// on the item, each implementing Node and ProjectV2ItemFieldValueCommon.
+// projectV2StoredValueTypes builds the six members carrying a value stored on
+// the item, each implementing Node and ProjectV2ItemFieldValueCommon.
 func (s *Resolver) projectV2StoredValueTypes(common *graphql.Interface) []*graphql.Object {
 	interfaces := []*graphql.Interface{s.graphqlTypes.node, common}
-	// The common members name the ProjectV2Item type, which is built from the
-	// item connection, which builds this union — so they are produced behind a
-	// thunk, evaluated once the whole graph exists rather than mid-construction.
+	// The common members name ProjectV2Item, which is built from the item
+	// connection that builds this union, so they go behind a thunk.
 	withCommon := func(own func() graphql.Fields) graphql.FieldsThunk {
 		return func() graphql.Fields {
 			fields := own()
@@ -130,9 +119,7 @@ func (s *Resolver) projectV2StoredValueTypes(common *graphql.Interface) []*graph
 					Type:    graphql.NewList(graphql.NewNonNull(s.projectV2MultiSelectOptionType())),
 					Resolve: sourceKeyResolver("options"),
 				},
-				// GitHub renders the selection as a comma-separated string too,
-				// so a client that wants the label without walking the list has
-				// one.
+				// The comma-separated rendering of the selection.
 				"value": &graphql.Field{
 					Type:    graphql.NewNonNull(graphql.String),
 					Resolve: sourceKeyResolver("value"),
@@ -151,8 +138,7 @@ func (s *Resolver) projectV2StoredValueTypes(common *graphql.Interface) []*graph
 }
 
 // projectV2MultiSelectOptionType is the option object a multi-select value
-// lists, memoized because the value type and any future field type both name
-// it and a schema may declare a name once.
+// lists, memoized so its name is declared once.
 func (s *Resolver) projectV2MultiSelectOptionType() *graphql.Object {
 	if s.graphqlTypes.projectV2MultiSelectOption != nil {
 		return s.graphqlTypes.projectV2MultiSelectOption
@@ -179,7 +165,7 @@ func (s *Resolver) projectV2MultiSelectOptionType() *graphql.Object {
 }
 
 // projectV2ItemFieldValueCommonInterface is the interface the stored value
-// members share. Its ResolveType is the same discriminator the union uses.
+// members share, using the union's discriminator as its ResolveType.
 func (s *Resolver) projectV2ItemFieldValueCommonInterface() *graphql.Interface {
 	if s.graphqlTypes.projectV2ValueCommonInterface != nil {
 		return s.graphqlTypes.projectV2ValueCommonInterface
@@ -205,9 +191,8 @@ func (s *Resolver) projectV2ItemFieldValueCommonInterface() *graphql.Interface {
 	return s.graphqlTypes.projectV2ValueCommonInterface
 }
 
-// projectV2ValueTypeFor maps a rendered value's discriminator onto its
-// concrete type. The union and the common interface share it, so a value can
-// never resolve as one type through one path and another through the other.
+// projectV2ValueTypeFor maps a rendered value's discriminator onto its concrete
+// type. Shared by the union and the common interface so both agree.
 func (s *Resolver) projectV2ValueTypeFor(value interface{}) *graphql.Object {
 	src, _ := value.(map[string]interface{})
 	switch src["kind"] {
@@ -238,9 +223,8 @@ func (s *Resolver) projectV2ValueTypeFor(value interface{}) *graphql.Object {
 	}
 }
 
-// projectV2ValueCommonFields is the member set ProjectV2ItemFieldValueCommon
-// declares, built fresh per type because graphql-go binds a *graphql.Field to
-// the object it is defined on.
+// projectV2ValueCommonFields is the ProjectV2ItemFieldValueCommon member set,
+// built fresh per type because graphql-go binds a *graphql.Field to its object.
 func (s *Resolver) projectV2ValueCommonFields() graphql.Fields {
 	dateTime := s.graphQLStringScalar("DateTime")
 	return graphql.Fields{
@@ -274,18 +258,15 @@ func (s *Resolver) projectV2ValueCommonFields() graphql.Fields {
 // projectV2ContentDerivedValueTypes builds the six members whose value is read
 // off the item's content rather than stored on the item.
 func (s *Resolver) projectV2ContentDerivedValueTypes() []*graphql.Object {
-	// Every member below is declared behind a thunk. These types are built
-	// while the issue family is assembling, before the pull-request family has
-	// created the PullRequestConnection and RequestedReviewer types they name;
-	// a thunk defers the reference to schema construction, by which time every
-	// family has registered.
+	// Every member is behind a thunk: these are built while the issue family
+	// assembles, before the pull-request family creates the
+	// PullRequestConnection and RequestedReviewer types they name.
 	fieldField := func() *graphql.Field {
 		return &graphql.Field{
 			Type:    graphql.NewNonNull(s.projectV2FieldConfigurationUnion()),
 			Resolve: sourceKeyResolver("field"),
 		}
 	}
-	// connectionOf renders a stored node list as a paginated connection.
 	connectionOf := func(key string) graphql.FieldResolveFn {
 		return func(p graphql.ResolveParams) (interface{}, error) {
 			src, ok := p.Source.(map[string]interface{})
@@ -377,10 +358,9 @@ func (s *Resolver) projectV2ContentDerivedValueTypes() []*graphql.Object {
 	}
 }
 
-// projectV2BuiltInFieldValue renders the value of one built-in column for an
-// item, reading it off the issue or pull request the item points at. A draft
-// issue has no content, so every built-in column is null on it — which is what
-// github.com shows.
+// projectV2BuiltInFieldValue renders one built-in column for an item, reading it
+// off the item's issue or pull request. A draft issue has no content, so every
+// built-in column is null on it, matching github.com.
 func projectV2BuiltInFieldValue(st *store.Store, it *store.ProjectV2Item, field *store.ProjectV2Field) map[string]interface{} {
 	out := map[string]interface{}{
 		"kind":  string(field.DataType),
@@ -451,10 +431,9 @@ func projectV2BuiltInFieldValue(st *store.Store, it *store.ProjectV2Item, field 
 			"state": string(milestone.State),
 		}
 	case "REVIEWERS", "LINKED_PULL_REQUESTS", "TITLE":
-		// TITLE is the item's own title rather than a field value, and the
-		// reviewer and linked-pull-request columns have no stored backing on
-		// this instance. A column with nothing to show is absent from the
-		// connection, which is how GitHub reports an unset value.
+		// TITLE is the item's own title, not a field value; reviewers and linked
+		// pull requests have no stored backing here. An unset column is absent
+		// from the connection, as GitHub reports it.
 		return nil
 	default:
 		return nil

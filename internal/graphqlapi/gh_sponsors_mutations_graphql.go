@@ -1,11 +1,8 @@
 package graphqlapi
 
-// GitHub Sponsors — the mutation surface: the nine mutations GitHub
-// publishes, their authorization policy, and the payloads they return.
-//
-// Every mutation goes through registerMutation, so each has a row in
-// sponsorsMutationAuthz (folded into graphqlMutationAuthz) and cannot
-// reach the store without standing over the account whose money or
+// GitHub Sponsors mutation surface: the nine mutations, their authorization
+// policy, and their payloads. Each has a row in sponsorsMutationAuthz, so it
+// cannot reach the store without standing over the account whose money or
 // profile it touches.
 
 import (
@@ -15,16 +12,13 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// sponsorsRule is the Sponsors authorization policy shape: a lookup that
-// names the account the mutation acts for, and the requirement that the
-// caller may administer it.
+// sponsorsRule authorizes a mutation over the account it acts for, requiring
+// the caller may administer it.
 //
-// Two accounts appear in these inputs and they mean different things. The
-// sponsor is who pays, so every mutation that spends money or changes a
-// payment authorizes over the sponsor. The sponsorable is whose profile it
-// is, so every listing and tier mutation authorizes over the sponsorable.
-// Reversing either would let any signed-in account either spend somebody
-// else's money or rewrite somebody else's Sponsors profile.
+// The sponsor pays, so money/payment mutations authorize over the sponsor; the
+// sponsorable owns the profile, so listing/tier mutations authorize over the
+// sponsorable. Reversing either would let any account spend another's money or
+// rewrite another's profile.
 type sponsorsRule struct {
 	target func(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) (string, error)
 }
@@ -50,8 +44,7 @@ func (r sponsorsRule) authorize(s *Resolver, p graphql.ResolveParams, input map[
 	return nil
 }
 
-// sponsorsTargetSponsor names the paying account: the one the input gives,
-// or the viewer when it gives none.
+// sponsorsTargetSponsor names the paying account: the input's, or the viewer.
 func sponsorsTargetSponsor(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) (string, error) {
 	if login := s.sponsorsAccountFromInput(input, "sponsorId", "sponsorLogin"); login != "" {
 		return login, nil
@@ -69,8 +62,8 @@ func sponsorsTargetSponsor(s *Resolver, p graphql.ResolveParams, input map[strin
 	return viewer.Login, nil
 }
 
-// sponsorsTargetSponsorRequired is sponsorsTargetSponsor for the bulk
-// mutation, whose sponsorLogin is non-null.
+// sponsorsTargetSponsorRequired is sponsorsTargetSponsor for the bulk mutation,
+// whose sponsorLogin is non-null.
 func sponsorsTargetSponsorRequired(s *Resolver, _ graphql.ResolveParams, input map[string]interface{}) (string, error) {
 	login, _ := input["sponsorLogin"].(string)
 	resolved, ok := s.sponsorableExists(login)
@@ -80,9 +73,8 @@ func sponsorsTargetSponsorRequired(s *Resolver, _ graphql.ResolveParams, input m
 	return resolved, nil
 }
 
-// sponsorsTargetSponsorable names the account whose Sponsors profile the
-// mutation edits: the one the input gives, or the viewer when it gives
-// none.
+// sponsorsTargetSponsorable names the account whose Sponsors profile is edited:
+// the input's, or the viewer.
 func sponsorsTargetSponsorable(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) (string, error) {
 	if login := s.sponsorsAccountFromInput(input, "sponsorableId", "sponsorableLogin"); login != "" {
 		return login, nil
@@ -100,8 +92,7 @@ func sponsorsTargetSponsorable(s *Resolver, p graphql.ResolveParams, input map[s
 	return viewer.Login, nil
 }
 
-// sponsorsTargetTierOwner names the sponsorable whose listing owns the
-// tier the mutation names.
+// sponsorsTargetTierOwner names the sponsorable whose listing owns the tier.
 func sponsorsTargetTierOwner(s *Resolver, _ graphql.ResolveParams, input map[string]interface{}) (string, error) {
 	nodeID, _ := input["tierId"].(string)
 	tier := s.store.Sponsors.FindSponsorsTierByNodeID(nodeID)
@@ -115,9 +106,8 @@ func sponsorsTargetTierOwner(s *Resolver, _ graphql.ResolveParams, input map[str
 	return listing.SponsorableLogin, nil
 }
 
-// sponsorsMutationAuthz is the Sponsors half of the mutation policy table.
-// It is merged into graphqlMutationAuthz at package init so the whole
-// policy still lives in one map for the coverage sweep.
+// sponsorsMutationAuthz is the Sponsors half of the mutation policy table,
+// merged into graphqlMutationAuthz at init so one map serves the coverage sweep.
 var sponsorsMutationAuthz = map[string]mutationRule{
 	"createSponsorship":            sponsorsRule{target: sponsorsTargetSponsor},
 	"createSponsorships":           sponsorsRule{target: sponsorsTargetSponsorRequired},
@@ -149,8 +139,8 @@ func sponsorsClientMutationID(input map[string]interface{}) interface{} {
 	return nil
 }
 
-// sponsorsAccountInput is the (id, login) pair for one side of a
-// sponsorship, plus clientMutationId, that most Sponsors inputs carry.
+// sponsorsPartyInputFields is the (id, login) pair for each side of a
+// sponsorship plus clientMutationId, shared by most Sponsors inputs.
 func sponsorsPartyInputFields() graphql.InputObjectConfigFieldMap {
 	return graphql.InputObjectConfigFieldMap{
 		"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
@@ -161,8 +151,8 @@ func sponsorsPartyInputFields() graphql.InputObjectConfigFieldMap {
 	}
 }
 
-// sponsorsResolveParties reads both sides of a sponsorship out of an
-// input, defaulting the sponsor to the viewer.
+// sponsorsResolveParties reads both sides of a sponsorship, defaulting the
+// sponsor to the viewer.
 func (s *Resolver) sponsorsResolveParties(p graphql.ResolveParams, input map[string]interface{}) (sponsor, sponsorable SponsorsAccount, err error) {
 	sponsorLogin, err := sponsorsTargetSponsor(s, p, input)
 	if err != nil {
@@ -203,9 +193,9 @@ func (s *Resolver) sponsorsAccount(login string) (SponsorsAccount, bool) {
 	return SponsorsAccount{}, false
 }
 
-// sponsorsTierForSponsorable resolves the tier a sponsorship names, or the
-// cheapest published tier of the right frequency when the input names an
-// amount instead — the path GitHub takes for a custom amount.
+// sponsorsTierForSponsorable resolves the tier a sponsorship names, or — when
+// it names an amount instead — the custom-amount tier, else the dearest
+// published tier the amount covers.
 func (s *Resolver) sponsorsTierForSponsorable(input map[string]interface{}, sponsorableLogin string, recurring bool) (*store.SponsorsTier, int, error) {
 	listing := s.store.Sponsors.GetSponsorsListingForAccount(sponsorableLogin)
 	if listing == nil {
@@ -222,8 +212,6 @@ func (s *Resolver) sponsorsTierForSponsorable(input map[string]interface{}, spon
 	if amount <= 0 {
 		return nil, 0, fmt.Errorf("a tierId or a positive amount in cents is required")
 	}
-	// No tier named: take the custom-amount tier when the maintainer
-	// published one, else the dearest published tier the amount covers.
 	var custom, best *store.SponsorsTier
 	for _, tier := range s.store.Sponsors.ListSponsorsTiers(listing.ID, false) {
 		if tier.IsOneTime == recurring {

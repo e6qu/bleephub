@@ -6,22 +6,14 @@ import { MutationError } from "./MutationError.js";
 import { MarkdownComposer } from "./MarkdownComposer.js";
 import { clearComposerDraft } from "../hooks/useComposerDraft.js";
 
-/** Draft-durability key for an issue/PR conversation composer (shared with
- * the close-with-comment path, which posts the same draft). */
+/** Draft-durability key, shared with the close-with-comment path. */
 export const issueCommentDraftKey = (owner: string, repo: string, number: number) =>
   `issue-comment:${owner}/${repo}/${number}`;
 
 /**
- * Comment composer for an issue or pull request. GitHub models a PR's
- * conversation on the shared issue-comments endpoint, so the same box serves
- * both surfaces. On success it invalidates `invalidateKeys` (the comment list,
- * and usually the issue/PR detail so its comment count refreshes) and clears
- * the field. `extraActions` renders to the left of the Comment button — used to
- * place the "Close/Reopen" control alongside the box, as github.com does.
- *
- * The draft can optionally be lifted by the caller via `body`/`onBodyChange`
- * (both must be given together) — github.com's "Close with comment" needs the
- * page to read the draft to post it alongside the state change.
+ * Comment composer for an issue or PR — GitHub serves both from the shared
+ * issue-comments endpoint. Pass `body`/`onBodyChange` together to let the
+ * caller own the draft (needed for "Close with comment").
  */
 export function CommentComposer({
   owner,
@@ -37,7 +29,6 @@ export function CommentComposer({
   number: number;
   invalidateKeys: QueryKey[];
   extraActions?: ReactNode;
-  /** Controlled draft value; when provided with onBodyChange, the caller owns the draft. */
   body?: string | undefined;
   onBodyChange?: ((body: string) => void) | undefined;
 }) {

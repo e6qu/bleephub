@@ -14,28 +14,23 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// scheduleFiredKeys dedupes cron firings: a (repo, file, cron) tuple
-// fires at most once per minute even if the ticker drifts.
+// scheduleFiredKeys dedupes cron firings: a (repo, file, cron) tuple fires at
+// most once per minute even if the ticker drifts.
 type scheduleFiredKeys struct {
 	mu   sync.Mutex
 	seen map[string]time.Time
 }
 
-// maxScheduleCatchup bounds how many missed minutes one tick replays. A scan
-// that overran the minute boundary used to silently skip every intervening
-// minute (their schedules never fired); the dispatcher now replays them,
-// deduped by the per-minute firing claim. The bound keeps a longer stall from
-// unleashing an unbounded burst of scans.
+// maxScheduleCatchup bounds how many missed minutes one tick replays, so a
+// long stall cannot unleash an unbounded burst of scans.
 const maxScheduleCatchup = 10 * time.Minute
 
 // startScheduleDispatcher launches the minute-aligned loop that fires
-// `on: schedule:` workflows, the server-side clock real GitHub runs for
-// cron triggers.
+// `on: schedule:` workflows.
 func (s *Engine) startScheduleDispatcher(ctx context.Context) {
 	s.goBackground(func() {
 		// Seed the cursor at the current minute so a fresh process does not
-		// replay history; catch-up only covers minutes skipped by an overrun
-		// scan within this process's lifetime.
+		// replay history.
 		lastFired := s.currentTime().Truncate(time.Minute)
 		for {
 			now := s.currentTime()
@@ -48,9 +43,8 @@ func (s *Engine) startScheduleDispatcher(ctx context.Context) {
 			case <-timer.C:
 			}
 			tickTime := s.currentTime()
-			// Injected per-tick hooks: the server rides its login-session
-			// reaping and org-invitation reconciliation (STORE-034) on this
-			// minute clock rather than running a second one.
+			// Per-tick hooks ride this minute clock (login-session reaping,
+			// org-invitation reconciliation, STORE-034).
 			for _, hook := range s.onScheduleTick {
 				hook(tickTime)
 			}
@@ -60,12 +54,11 @@ func (s *Engine) startScheduleDispatcher(ctx context.Context) {
 }
 
 // FireSchedulesThrough replays every whole minute in (lastFired, now] so a scan
-// that overran a minute boundary does not drop the minutes it skipped. Catch-up
-// is bounded by maxScheduleCatchup, and the returned cursor (the last minute
-// processed) is threaded into the next tick.
+// that overran a minute boundary does not drop the minutes it skipped, bounded
+// by maxScheduleCatchup. It returns the last minute processed.
 func (s *Engine) FireSchedulesThrough(lastFired, now time.Time) time.Time {
 	current := now.Truncate(time.Minute)
-	if current.Before(lastFired) { // clock skew: never move the cursor backwards
+	if current.Before(lastFired) { // clock skew: never move the cursor backward
 		return lastFired
 	}
 	minute := lastFired.Truncate(time.Minute).Add(time.Minute)
@@ -79,18 +72,15 @@ func (s *Engine) FireSchedulesThrough(lastFired, now time.Time) time.Time {
 }
 
 // scheduleIndex caches the parsed `on: schedule:` timetable for each
-// repository's default branch, keyed by that branch's tip commit. Reading and
-// YAML-parsing every workflow file of every repository once per minute (the old
-// dispatcher behavior) is pure waste when nothing changed: workflow content at
-// a given tip commit is immutable, so a cache invalidated on tip movement lets
-// the per-minute scan reduce to cheap cron-matching against pre-parsed
-// schedules. Only schedule-bearing workflows are retained; parse and cron
-// validation (including the five-minute-floor filter) happen once at build
-// time rather than every tick.
+// repository's default branch, keyed by that branch's tip commit. Workflow
+// content at a given tip is immutable, so invalidating on tip movement reduces
+// the per-minute scan to cron-matching against pre-parsed schedules. Only
+// schedule-bearing workflows are retained; parse and cron validation happen at
+// build time, not every tick.
 type scheduleIndex struct {
 	mu       sync.Mutex
 	entries  map[string]*scheduleIndexEntry
-	rebuilds atomic.Int64 // observability: how many times an entry was (re)built
+	rebuilds atomic.Int64
 }
 
 type scheduleIndexEntry struct {
@@ -100,8 +90,7 @@ type scheduleIndexEntry struct {
 }
 
 // indexedWorkflowSchedule is one schedule-bearing workflow file with its cron
-// entries already parsed. content is retained so a firing needs no second git
-// read.
+// entries parsed. content is retained so a firing needs no second git read.
 type indexedWorkflowSchedule struct {
 	fileName string
 	content  []byte
@@ -115,10 +104,9 @@ type indexedCronEntry struct {
 }
 
 // lookup returns the cached schedule for repoKey, rebuilding via build() when
-// the entry is absent or its (defaultBranch, tipSHA) key no longer matches. The
-// build runs outside the lock — git reads and YAML parsing are slow, and a
-// given tip SHA yields identical content, so a rare concurrent duplicate build
-// is harmless.
+// the entry is absent or its (defaultBranch, tipSHA) key no longer matches.
+// build runs outside the lock; a given tip SHA yields identical content, so a
+// rare concurrent duplicate build is harmless.
 func (si *scheduleIndex) lookup(repoKey, defaultBranch, tipSHA string, build func() []indexedWorkflowSchedule) []indexedWorkflowSchedule {
 	si.mu.Lock()
 	if e, ok := si.entries[repoKey]; ok && e.tipSHA == tipSHA && e.defaultBranch == defaultBranch {
@@ -140,8 +128,7 @@ func (si *scheduleIndex) lookup(repoKey, defaultBranch, tipSHA string, build fun
 	return built
 }
 
-// retain drops cache entries for repositories no longer present, keeping the
-// index bounded as repos are deleted.
+// retain drops cache entries for repositories no longer present.
 func (si *scheduleIndex) retain(live map[string]struct{}) {
 	si.mu.Lock()
 	defer si.mu.Unlock()
@@ -153,9 +140,8 @@ func (si *scheduleIndex) retain(live map[string]struct{}) {
 }
 
 // buildScheduleIndex reads and parses every schedule-bearing workflow file at
-// definitionRef, validating each cron entry once (invalid crons and
-// sub-five-minute intervals are logged and dropped here, not re-warned every
-// minute).
+// definitionRef. Invalid crons and sub-five-minute intervals are logged and
+// dropped here, not re-warned every minute.
 func (s *Engine) buildScheduleIndex(repoKey, definitionRef string, stor gitStorage.Storer) []indexedWorkflowSchedule {
 	var out []indexedWorkflowSchedule
 	for name, content := range ListWorkflowFilesAtRef(stor, definitionRef) {
@@ -190,8 +176,8 @@ func (s *Engine) buildScheduleIndex(repoKey, definitionRef string, stor gitStora
 }
 
 // FireDueSchedules triggers every schedule-bearing workflow from each
-// repository's explicit default branch whose cron matches the given minute.
-// Separated from the ticker so tests drive it with a fixed clock.
+// repository's default branch whose cron matches the given minute. Separated
+// from the ticker so tests drive it with a fixed clock.
 func (s *Engine) FireDueSchedules(now time.Time) {
 	minute := now.Truncate(time.Minute)
 	if err := s.store.RefreshFromPersistenceIfStale(); err != nil {
@@ -246,12 +232,10 @@ func (s *Engine) FireDueSchedules(now time.Time) {
 						continue
 					}
 					scheduledMinute = minute.In(location)
-					// Dedup on the wall-clock minute rather than the UTC instant:
-					// on a DST fall-back the same local minute recurs at two UTC
-					// instants and must fire once, not twice. Reconstructing the
-					// civil minute collapses both to one canonical claim. (A
-					// spring-forward gap simply never matches, as with any
-					// wall-clock cron.)
+					// Dedup on the wall-clock minute, not the UTC instant: on a
+					// DST fall-back the same local minute recurs at two UTC
+					// instants and must fire once. Reconstructing the civil
+					// minute collapses both to one canonical claim.
 					claimMinute = time.Date(scheduledMinute.Year(), scheduledMinute.Month(), scheduledMinute.Day(), scheduledMinute.Hour(), scheduledMinute.Minute(), 0, 0, location)
 				}
 				if !entry.cs.matches(scheduledMinute) {
@@ -267,10 +251,8 @@ func (s *Engine) FireDueSchedules(now time.Time) {
 					continue
 				}
 				if err := s.fireScheduledWorkflow(repoKey, wf.fileName, wf.content, entry.cron); err != nil {
-					// The claim was taken before firing; a transient submit
-					// failure would otherwise consume this occurrence with no
-					// run and no retry. Release it so another replica or a
-					// later attempt can pick it up.
+					// The claim was taken before firing; release it on a
+					// transient failure so a later attempt can pick it up.
 					if relErr := s.releaseScheduleFiring(claimKey, claimMinute); relErr != nil {
 						s.logger.Error().Err(relErr).Str("repo", repoKey).Str("file", wf.fileName).Str("cron", entry.cron).Msg("failed to release scheduled workflow claim after firing error")
 					}
@@ -292,8 +274,7 @@ func scheduleInactive(repo *store.Repo, now time.Time) bool {
 	return !lastActivity.IsZero() && now.Sub(lastActivity) >= 60*24*time.Hour
 }
 
-// markScheduleFired records a firing; false means this (key, minute)
-// already fired.
+// markScheduleFired records a firing; false means this (key, minute) already fired.
 func (s *Engine) markScheduleFired(key string, minute time.Time) (bool, error) {
 	s.store.Mu.RLock()
 	persist := s.store.Persist
@@ -313,8 +294,8 @@ func (s *Engine) markScheduleFired(key string, minute time.Time) (bool, error) {
 	return true, nil
 }
 
-// releaseScheduleFiring undoes a claim taken by markScheduleFired when the
-// firing it guarded failed, so the occurrence can be retried rather than lost.
+// releaseScheduleFiring undoes a markScheduleFired claim whose firing failed,
+// so the occurrence can be retried.
 func (s *Engine) releaseScheduleFiring(key string, minute time.Time) error {
 	s.store.Mu.RLock()
 	persist := s.store.Persist
@@ -330,13 +311,10 @@ func (s *Engine) releaseScheduleFiring(key string, minute time.Time) error {
 	return nil
 }
 
-// fireScheduledWorkflow submits one schedule-triggered run. The schedule
-// event has no webhook delivery on real GitHub — it only starts the run;
-// its payload carries the matching cron line.
-// fireScheduledWorkflow returns a non-nil error only for a *transient* failure
-// whose claim the caller should release for retry. Permanent conditions (repo
-// or git storage gone, ref that does not resolve) are logged and swallowed —
-// releasing their claim would only thrash.
+// fireScheduledWorkflow submits one schedule-triggered run (no webhook on real
+// GitHub). It returns a non-nil error only for a transient failure whose claim
+// the caller should release for retry; permanent conditions (repo or git
+// storage gone, ref that does not resolve) are logged and swallowed.
 func (s *Engine) fireScheduledWorkflow(repoKey, fileName string, content []byte, cron string) error {
 	repo := s.store.GetRepoByFullName(repoKey)
 	if repo == nil {
@@ -351,8 +329,8 @@ func (s *Engine) fireScheduledWorkflow(repoKey, fileName string, content []byte,
 	parts := SplitRepoKeyParts(repoKey)
 	stor := s.store.GetGitStorage(parts[0], parts[1])
 	if stor == nil {
-		// A concurrent persistence refresh can drop the storer between the
-		// scan and here; ResolveRefSha would dereference a nil storer.
+		// A concurrent persistence refresh can drop the storer between the scan
+		// and here; ResolveRefSha would dereference a nil storer.
 		s.logger.Error().Str("repo", repoKey).Str("cron", cron).Msg("scheduled workflow rejected because git storage is unavailable")
 		return nil
 	}
@@ -398,8 +376,8 @@ type cronSchedule struct {
 }
 
 // minimumInterval returns the shortest interval this cron's minute/hour masks
-// can produce. Day/month filters can only make occurrences farther apart, so
-// this is a conservative enforcement of GitHub's five-minute floor.
+// can produce. Day/month filters only spread occurrences farther apart, so this
+// conservatively enforces GitHub's five-minute floor.
 func (cs *cronSchedule) minimumInterval() time.Duration {
 	var minutes []int
 	for hour := 0; hour < 24; hour++ {
@@ -437,8 +415,8 @@ var cronDowNames = map[string]int{
 	"SUN": 0, "MON": 1, "TUE": 2, "WED": 3, "THU": 4, "FRI": 5, "SAT": 6,
 }
 
-// parseCron parses a 5-field cron expression (minute hour day-of-month
-// month day-of-week) with lists, ranges, steps, and month/day names.
+// parseCron parses a 5-field cron expression (minute hour day-of-month month
+// day-of-week) with lists, ranges, steps, and month/day names.
 func parseCron(expr string) (*cronSchedule, error) {
 	fields := strings.Fields(strings.TrimSpace(expr))
 	if len(fields) != 5 {
@@ -469,9 +447,8 @@ func parseCron(expr string) (*cronSchedule, error) {
 	return cs, nil
 }
 
-// parseCronField parses one field into a bitset. star reports whether
-// the field was unrestricted ("*"), which matters for the day-of-month /
-// day-of-week OR rule.
+// parseCronField parses one field into a bitset. star reports whether the field
+// was unrestricted ("*"), which matters for the day-of-month/day-of-week OR rule.
 func parseCronField(field string, lo, hi int, names map[string]int) (bits uint64, star bool, err error) {
 	resolve := func(tok string) (int, error) {
 		if names != nil {
@@ -528,9 +505,8 @@ func parseCronField(field string, lo, hi int, names map[string]int) (bits uint64
 	return bits, star, nil
 }
 
-// matches reports whether the schedule fires at t (minute precision).
-// Standard cron rule: when both day-of-month and day-of-week are
-// restricted, either matching suffices.
+// matches reports whether the schedule fires at t (minute precision). Standard
+// cron rule: when both day-of-month and day-of-week are restricted, either match suffices.
 func (c *cronSchedule) matches(t time.Time) bool {
 	if c.min&(1<<uint(t.Minute())) == 0 {
 		return false

@@ -9,42 +9,32 @@ import (
 	"time"
 )
 
-// Verifiable domains are the GraphQL-first domain-verification lifecycle:
-// an enterprise or organization adds a domain, receives a DNS verification
-// token with an expiry, and then verifies (the TXT record was found) or
-// approves (an owner vouches for it without DNS) the domain. The enterprise
-// half backs the same Enterprise.VerifiedDomains list the notification
-// delivery restriction and the /ui-data verified-domains routes read, so a
-// domain verified over GraphQL restricts notification delivery exactly as
-// one written through the UI surface does.
+// Verifiable domains implement the domain-verification lifecycle: an owner
+// adds a domain, gets a DNS token, then verifies or approves it. Enterprise
+// rows feed Enterprise.VerifiedDomains, which the notification-delivery
+// restriction and the /ui-data verified-domains routes read.
 
-// VerifiableDomainNodeIDPrefix is the node-id prefix for VerifiableDomain
-// rows, following the "<prefix><zero-padded id>" convention the other
-// enterprise-account records use.
+// VerifiableDomainNodeIDPrefix is the node-id prefix for VerifiableDomain rows.
 const VerifiableDomainNodeIDPrefix = "VD_kgDN"
 
-// Verifiable domain owner types. GitHub's VerifiableDomainOwner union admits
-// an enterprise or an organization.
+// GitHub's VerifiableDomainOwner union admits an enterprise or an organization.
 const (
 	VerifiableDomainOwnerEnterprise   = "Enterprise"
 	VerifiableDomainOwnerOrganization = "Organization"
 )
 
-// VerifiableDomainTokenTTL is how long a verification token stays usable —
-// GitHub's DNS TXT verification token expires after seven days.
+// VerifiableDomainTokenTTL matches GitHub's seven-day DNS TXT token expiry.
 const VerifiableDomainTokenTTL = 7 * 24 * time.Hour
 
-// VerifiableDomain is one domain on an owner's verification ledger. Owner is
-// an enterprise or an organization; OwnerType distinguishes them because
-// their ids are drawn from different sequences.
+// VerifiableDomain is one domain on an owner's verification ledger. OwnerType
+// ("Enterprise" or "Organization") disambiguates OwnerID, which is drawn from
+// separate id sequences.
 type VerifiableDomain struct {
-	ID     int    `json:"id"`
-	NodeID string `json:"node_id"`
-	// OwnerType is "Enterprise" or "Organization".
+	ID        int    `json:"id"`
+	NodeID    string `json:"node_id"`
 	OwnerType string `json:"owner_type"`
 	OwnerID   int    `json:"owner_id"`
-	// Domain is stored normalized: lower case, no leading "@", no
-	// trailing dot (NormalizeVerifiedDomain).
+	// Domain is stored normalized (NormalizeVerifiedDomain).
 	Domain            string    `json:"domain"`
 	VerificationToken string    `json:"verification_token"`
 	TokenExpiresAt    time.Time `json:"token_expires_at"`
@@ -68,9 +58,7 @@ func (st *Store) persistVerifiableDomainLocked(d *VerifiableDomain) {
 	}
 }
 
-// newVerifiableDomainToken mints the random challenge value the owner is
-// asked to publish in DNS. It is a credential-shaped value, so it comes from
-// the system's CSPRNG like the API tokens do.
+// newVerifiableDomainToken mints the DNS challenge value from the CSPRNG.
 func newVerifiableDomainToken() string {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
@@ -79,9 +67,8 @@ func newVerifiableDomainToken() string {
 	return "bleephub-domain-verification=" + hex.EncodeToString(buf)
 }
 
-// CreateVerifiableDomain adds a domain to an owner's ledger with a fresh
-// verification token. It returns nil and an error when the domain does not
-// normalize to a domain at all or the owner already carries it.
+// CreateVerifiableDomain adds a domain with a fresh token, erroring when it
+// does not normalize or the owner already carries it.
 func (st *Store) CreateVerifiableDomain(ownerType string, ownerID int, domain string) (*VerifiableDomain, error) {
 	cleaned := NormalizeVerifiedDomain(domain)
 	if cleaned == "" {
@@ -126,9 +113,8 @@ func FindVerifiableDomainByNodeID(st *Store, nodeID string) *VerifiableDomain {
 	return nil
 }
 
-// VerifyVerifiableDomain marks the domain verified — the simulator's stand-in
-// for the DNS TXT lookup finding the token — unless the token has expired,
-// in which case the caller must regenerate it first.
+// VerifyVerifiableDomain marks the domain verified (the stand-in for a DNS TXT
+// lookup), erroring when the token has expired.
 func (st *Store) VerifyVerifiableDomain(id int) (*VerifiableDomain, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -146,8 +132,8 @@ func (st *Store) VerifyVerifiableDomain(id int) (*VerifiableDomain, error) {
 	return snapshotVerifiableDomain(row), nil
 }
 
-// ApproveVerifiableDomain marks the domain approved: an owner vouching for a
-// domain they cannot complete DNS verification for.
+// ApproveVerifiableDomain marks the domain approved: an owner vouching for it
+// without DNS verification.
 func (st *Store) ApproveVerifiableDomain(id int) *VerifiableDomain {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -162,9 +148,9 @@ func (st *Store) ApproveVerifiableDomain(id int) *VerifiableDomain {
 	return snapshotVerifiableDomain(row)
 }
 
-// RegenerateVerifiableDomainToken replaces the domain's verification token
-// and restarts its expiry window. Verified or approved status is not
-// revoked — regenerating is how an owner recovers from an expired token.
+// RegenerateVerifiableDomainToken replaces the token and restarts its expiry,
+// leaving verified/approved status intact — the recovery path from an expired
+// token.
 func (st *Store) RegenerateVerifiableDomainToken(id int) *VerifiableDomain {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -180,7 +166,7 @@ func (st *Store) RegenerateVerifiableDomainToken(id int) *VerifiableDomain {
 	return snapshotVerifiableDomain(row)
 }
 
-// DeleteVerifiableDomain removes a domain and returns a detached snapshot of
+// DeleteVerifiableDomain removes a domain, returning a detached snapshot of
 // what was removed, or nil.
 func (st *Store) DeleteVerifiableDomain(id int) *VerifiableDomain {
 	st.Mu.Lock()
@@ -214,10 +200,8 @@ func (st *Store) ListVerifiableDomains(ownerType string, ownerID int) []*Verifia
 }
 
 // resyncEnterpriseVerifiedDomainsLocked recomputes the enterprise's flat
-// VerifiedDomains list — the one the notification-delivery restriction and
-// the /ui-data verified-domains surface read — from the domain rows that are
-// verified or approved. Rows owned by organizations do not feed it. Callers
-// hold st.Mu.
+// VerifiedDomains list from its verified-or-approved rows; organization-owned
+// rows do not feed it. Callers hold st.Mu.
 func (st *Store) resyncEnterpriseVerifiedDomainsLocked(changed *VerifiableDomain) {
 	if changed == nil || changed.OwnerType != VerifiableDomainOwnerEnterprise {
 		return
@@ -238,10 +222,9 @@ func (st *Store) resyncEnterpriseVerifiedDomainsLocked(changed *VerifiableDomain
 	st.persistEnterpriseLocked(e)
 }
 
-// reconcileEnterpriseDomainRowsLocked makes the domain-row ledger agree with
-// a flat verified-domain list written through SetEnterpriseVerifiedDomains:
-// names without a row gain a verified one, and rows whose names left the
-// list are dropped. Callers hold st.Mu.
+// reconcileEnterpriseDomainRowsLocked reconciles the domain-row ledger with a
+// flat list from SetEnterpriseVerifiedDomains: missing names gain a verified
+// row, dropped names lose theirs. Callers hold st.Mu.
 func (st *Store) reconcileEnterpriseDomainRowsLocked(enterpriseID int, names []string) {
 	wanted := make(map[string]bool, len(names))
 	for _, name := range names {

@@ -26,13 +26,11 @@ export function OverviewPage() {
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 5000,
   });
-  // Shared with MetricsPage: one ["metrics"] query at one interval. This page
-  // used to declare the same key with its own 3s interval, so the two fought.
+  // Shared with MetricsPage: one ["metrics"] query at one interval.
   const { metrics, isLoading, isError, isOperatorOnly } = useMetricsData();
   const { data: workflows, isError: workflowsError } = useRecentWorkflows(OVERVIEW_RUNS_LIMIT);
 
-  // A transport fault is a failure; a refusal is not. Only the first gets an
-  // error surface — the second is explained in place of the figures below.
+  // A transport fault errors; a refusal is explained in place of the figures.
   if (isError) return <InlineError title="Failed to load overview" />;
   if (isLoading || (!metrics && !isOperatorOnly)) return <Spinner label="loading overview" />;
 

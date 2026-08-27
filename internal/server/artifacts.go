@@ -22,13 +22,12 @@ import (
 // maxCacheEntryBytes is GitHub's per-entry Actions cache limit.
 const maxCacheEntryBytes = 10 << 30
 
-// maxArtifactChunkBytes is GitHub's per-artifact size limit, applied to a
-// single upload body so a client cannot stream an unbounded one.
+// maxArtifactChunkBytes is GitHub's per-artifact size limit, bounding a single
+// upload body.
 const maxArtifactChunkBytes = 10 << 30
 
-// artifactByIDForCaller returns an artifact's metadata regardless of
-// finalization, for the access checks that must answer before the body is
-// read. Data is left out: only the ownership fields matter here.
+// artifactByIDForCaller returns an artifact's metadata (no Data) for the access
+// checks that run before the body is read.
 func (s *Server) artifactByIDForCaller(id int64) (*store.Artifact, bool) {
 	s.artifactStore.Mu.RLock()
 	defer s.artifactStore.Mu.RUnlock()
@@ -42,35 +41,29 @@ func (s *Server) artifactByIDForCaller(id int64) (*store.Artifact, bool) {
 }
 
 func (s *Server) registerArtifactRoutes() {
-	// Twirp-style artifact service (JSON over HTTP, @actions/artifact v4).
-	// The toolkit calls these with the job's runtime token.
+	// Twirp artifact service (@actions/artifact v4), called with the job token.
 	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", s.requireJobToken(s.handleCreateArtifact))
 	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact", s.requireJobToken(s.handleFinalizeArtifact))
 	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts", s.requireJobToken(s.handleListArtifacts))
 	s.route("POST /twirp/github.actions.results.api.v1.ArtifactService/GetSignedArtifactURL", s.requireJobToken(s.handleGetSignedArtifactURL))
 
-	// Artifact upload/download blob endpoints. Download is also where the
-	// REST `.../artifacts/{id}/zip` redirect lands, so it additionally accepts
-	// a GitHub credential with read access to the owning repository.
+	// Download also serves the REST `.../artifacts/{id}/zip` redirect, so it
+	// additionally accepts a GitHub credential with repo read access.
 	s.route("PUT /_apis/v1/artifacts/{artifactId}/upload", s.requireJobToken(s.handleUploadArtifact))
 	s.route("GET /_apis/v1/artifacts/{artifactId}/download", s.handleDownloadArtifact)
 
-	// Actions cache API used by actions/cache. The @actions/cache toolkit
-	// reserves at the plural `caches` path (getCacheApiUrl('caches')) and
-	// looks up at the singular `cache?keys=`.
+	// The @actions/cache toolkit reserves at the plural `caches` path and looks
+	// up at the singular `cache?keys=`.
 	s.route("POST /_apis/artifactcache/caches", s.requireJobToken(s.handleCacheReserve))
 	s.route("GET /_apis/artifactcache/cache", s.requireJobToken(s.handleCacheLookup))
 	s.route("PATCH /_apis/artifactcache/caches/{cacheId}", s.requireJobToken(s.handleCacheUpload))
 	s.route("POST /_apis/artifactcache/caches/{cacheId}", s.requireJobToken(s.handleCacheFinalize))
-	// Cache download is the archiveLocation URL the toolkit fetches with an
-	// unauthenticated client, exactly as it fetches real GitHub's pre-signed
-	// blob URL; the unguessable `sig` query parameter is its credential.
+	// Cache download is fetched unauthenticated (a pre-signed blob URL on real
+	// GitHub); the unguessable `sig` query parameter is its credential.
 	s.route("GET /_apis/artifactcache/caches/{cacheId}", s.handleCacheDownload)
 
-	// Public GitHub Actions cache REST surface (the `gh` CLI + the
-	// actions/github-script management calls hit these). Repo-scoped by the
-	// {owner}/{repo} path params, backed by the same CacheEntry store the
-	// @actions/cache toolkit writes to.
+	// Public Actions cache REST surface, repo-scoped by the path params, backed
+	// by the same CacheEntry store the toolkit writes to.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/caches", s.handleListRepoCaches)
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/caches",
 		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleDeleteRepoCachesByKey))
@@ -97,7 +90,6 @@ func repoCacheJSON(entry *store.CacheEntry) map[string]any {
 	}
 }
 
-// handleListRepoCaches — GET .../actions/caches.
 func (s *Server) handleListRepoCaches(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -124,10 +116,8 @@ func (s *Server) handleListRepoCaches(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleDeleteRepoCachesByKey — DELETE .../actions/caches?key=&ref=.
-// GitHub deletes every cache matching the key (optionally narrowed by
-// ref) and returns the deleted entries. ref isn't tracked per-entry, so
-// it's accepted and matched leniently (bleephub stores one ref).
+// handleDeleteRepoCachesByKey deletes every cache matching key. ref isn't
+// tracked per-entry, so it's accepted and matched leniently.
 func (s *Server) handleDeleteRepoCachesByKey(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	key := r.URL.Query().Get("key")
@@ -167,7 +157,6 @@ func (s *Server) handleDeleteRepoCachesByKey(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// handleDeleteRepoCacheByID — DELETE .../actions/caches/{cache_id}.
 func (s *Server) handleDeleteRepoCacheByID(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	id, err := strconv.ParseInt(r.PathValue("cache_id"), 10, 64)
@@ -194,7 +183,6 @@ func (s *Server) handleDeleteRepoCacheByID(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleRepoCacheUsage — GET .../actions/cache/usage.
 func (s *Server) handleRepoCacheUsage(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -212,12 +200,9 @@ func (s *Server) handleRepoCacheUsage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// removeCacheFromDisk deletes a cache's on-disk copy. No-op in in-memory mode.
-// evictRepoCacheOverLimit enforces the per-repository cache budget after a
-// finalize. When a repo's finalized caches exceed maxRepoCacheBytes it deletes
+// evictRepoCacheOverLimit enforces the per-repository cache budget, evicting
 // least-recently-used entries (oldest LastAccessedAt first, id breaking ties)
-// until the repo is back under budget — GitHub's cache eviction policy. Byte
-// deletes run outside the lock, matching the delete handlers' pattern.
+// until the repo is back under budget. Byte deletes run outside the lock.
 func (s *Server) evictRepoCacheOverLimit(ctx context.Context, repo string) {
 	as := s.artifactStore
 	as.Mu.Lock()
@@ -287,9 +272,9 @@ func (s *Server) removeCacheBytes(ctx context.Context, id int64) error {
 
 // --- Artifact Twirp handlers ---
 
-// runArtifactScope resolves the workflow run an artifact call names and
-// checks it against the caller's job scope. An absent or unknown run id is an
-// error: it must never widen the call to every run on the instance.
+// runArtifactScope resolves the named workflow run and checks it against the
+// caller's job scope. An absent or unknown run id is an error, never a widening
+// to every run on the instance.
 func (s *Server) runArtifactScope(w http.ResponseWriter, r *http.Request, backendID string) (*store.Workflow, bool) {
 	if backendID == "" {
 		writeGHError(w, http.StatusBadRequest, "workflow_run_backend_id is required")
@@ -480,9 +465,8 @@ func (s *Server) handleFinalizeArtifact(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request) {
-	// The @actions/artifact v4 client scopes ListArtifacts to its own run via
-	// workflow_run_backend_id, and so must this handler: an absent run id is a
-	// bad request, never a listing of every artifact on the instance.
+	// Scoped to the caller's run: an absent run id is a bad request, never a
+	// listing of every artifact on the instance.
 	var req struct {
 		WorkflowRunBackendID string `json:"workflow_run_backend_id"`
 		NameFilter           *struct {
@@ -568,12 +552,10 @@ func (s *Server) handleGetSignedArtifactURL(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// mayReadArtifact resolves the repository an artifact belongs to and answers
-// whether this caller may read it. A job runtime token reads only its own
-// repository's artifacts; every other caller is resolved to a GitHub identity
-// and needs read access on the owning repository, so an anonymous caller gets
-// public repositories only. An artifact with no owning repository is
-// unreadable rather than public — a sequential id must never be a wildcard.
+// mayReadArtifact answers whether this caller may read an artifact. A job token
+// reads only its own repository's artifacts; every other caller needs read
+// access on the owning repository. An artifact with no owning repository is
+// unreadable, never a wildcard on a sequential id.
 func (s *Server) mayReadArtifact(r *http.Request, art *store.Artifact) bool {
 	if art.RepoFullName == "" {
 		return false
@@ -778,8 +760,8 @@ func (s *Server) handleCacheUpload(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, fmt.Sprintf("Content-Range end %d exceeds the %d byte cache entry limit", end, int64(maxCacheEntryBytes)))
 		return
 	}
-	// The declared range bounds the read: a body longer than the range it
-	// claims is rejected by the length check below rather than buffered.
+	// The declared range bounds the read; a body longer than it claims is
+	// rejected by the length check below rather than buffered.
 	chunk, err := io.ReadAll(http.MaxBytesReader(w, r.Body, declared+1))
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "read body: "+err.Error())
@@ -859,10 +841,9 @@ func (s *Server) handleCacheFinalize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !entry.Finalized {
-		// The declared size may not exceed the bytes that actually arrived —
-		// that is what bounds the buffer assembleCacheChunks allocates.
-		// Overlapping chunks make `received` larger than the archive, never
-		// smaller.
+		// The declared size may not exceed the bytes that arrived; that bounds
+		// the buffer assembleCacheChunks allocates. Overlapping chunks make
+		// `received` larger than the archive, never smaller.
 		if req.Size > entry.Received || req.Size != entry.Size {
 			uploaded, ranged := entry.Received, entry.Size
 			s.artifactStore.Mu.Unlock()
@@ -893,18 +874,15 @@ func (s *Server) handleCacheFinalize(w http.ResponseWriter, r *http.Request) {
 	}
 	s.artifactStore.Mu.Unlock()
 
-	// Enforce the per-repository cache budget, evicting LRU entries if this
-	// finalize pushed the repo over it.
 	s.evictRepoCacheOverLimit(r.Context(), repo)
 
 	s.logger.Debug().Int64("id", id).Int64("size", entry.Size).Msg("cache finalized")
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleCacheDownload serves the archiveLocation URL handed out by lookup.
-// The cache toolkit fetches it without the runtime token (on real GitHub it
-// is a pre-signed blob URL), so access is gated by the unguessable sig query
-// parameter instead of bearer auth.
+// handleCacheDownload serves the archiveLocation URL from lookup. The toolkit
+// fetches it without the runtime token, so access is gated by the unguessable
+// sig query parameter instead of bearer auth.
 func (s *Server) handleCacheDownload(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseCacheID(w, r)
 	if !ok {
@@ -938,11 +916,9 @@ func (s *Server) handleCacheDownload(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// assembleCacheChunks lays the received chunks into one buffer of exactly
-// size bytes. Chunks may arrive in any order and may overlap — the toolkit
-// uploads them concurrently — but they must cover [0, size) with no hole: a
-// gap would mean serving back an archive padded with zeroes the client never
-// uploaded, so it is an error instead.
+// assembleCacheChunks lays the received chunks into one buffer of exactly size
+// bytes. Chunks may arrive out of order and overlap, but they must cover
+// [0, size) with no hole; a gap is an error rather than a zero-padded archive.
 func assembleCacheChunks(chunks []store.CacheChunk, size int64) ([]byte, error) {
 	ordered := append([]store.CacheChunk(nil), chunks...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Start < ordered[j].Start })
@@ -977,10 +953,8 @@ func newCacheDownloadTokenFromReader(random io.Reader) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// cacheScopeRepo resolves the repository an Actions cache request acts for.
-// The @actions/cache toolkit authenticates every cache call with the job's
-// runtime token, which requireJobToken has already verified; the principal's
-// scope is the repository the dispatched job runs as.
+// cacheScopeRepo resolves the repository an Actions cache request acts for,
+// from the verified job token's scope.
 func (s *Server) cacheScopeRepo(w http.ResponseWriter, r *http.Request) (string, bool) {
 	caller, err := s.callerRunner(r)
 	if err != nil || caller.Scope.Repo == "" {
@@ -991,31 +965,26 @@ func (s *Server) cacheScopeRepo(w http.ResponseWriter, r *http.Request) (string,
 	return caller.Scope.Repo, true
 }
 
-// repoForJobScope maps a verified job runtime token's sub — the plan
-// scopeIdentifier of a dispatched job — to the repository that job runs as.
-// The plan must exist: a token naming no plan is a token for nothing.
-//
-// An operator-submitted job (/internal/exec/submit) names no repository, and
-// answers "" rather than an error. That empty scope is the narrowest one
-// there is, not a wildcard — runnerScope.coversRepo is false for every
-// repository — so such a token reaches its own plan and nothing repository
-// scoped. Failing here instead left those jobs unable to report a timeline,
-// a log line or their own completion.
+// repoForJobScope maps a verified job token's plan scope to the repository that
+// job runs as. An operator-submitted job (/internal/exec/submit) names no
+// repository and answers "" — the narrowest scope, not a wildcard, since
+// coversRepo is false for every repository — so it reaches its own plan and
+// nothing else. Failing instead would leave those jobs unable to report a
+// timeline, a log line, or their own completion.
 func (s *Server) repoForJobScope(scopeID string) (string, error) {
 	if scopeID == "" {
 		return "", fmt.Errorf("job token carries no plan scope")
 	}
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	// Dispatch-time record first: O(1), no message parse, and it outlives the
-	// GC of the secret-bearing job message.
+	// Dispatch-time record first: O(1) and it outlives the GC of the
+	// secret-bearing job message.
 	if planID, ok := s.store.PlanIDByScope[scopeID]; ok {
 		if ps, ok := s.store.PlanScopes[planID]; ok && ps.ScopeID == scopeID {
 			return ps.Repo, nil
 		}
 	}
-	// Fallback for jobs seeded outside the dispatch path (tests): parse each
-	// job's message.
+	// Fallback for jobs seeded outside the dispatch path (tests).
 	for _, job := range s.store.Jobs {
 		if plan, repo := store.JobMessageScopeAndRepo(job.Message); plan != "" && plan == scopeID {
 			return repo, nil
@@ -1024,8 +993,8 @@ func (s *Server) repoForJobScope(scopeID string) (string, error) {
 	return "", fmt.Errorf("no job with plan scope %q", scopeID)
 }
 
-// parseContentRange parses the "bytes <start>-<end>/<total>" header the
-// @actions/cache toolkit sends on every ranged chunk PATCH (total is "*").
+// parseContentRange parses the "bytes <start>-<end>/<total>" header sent on
+// each ranged chunk PATCH (total is "*").
 func parseContentRange(header string) (start, end int64, err error) {
 	if header == "" {
 		return 0, 0, fmt.Errorf("Content-Range header is required")

@@ -115,8 +115,7 @@ interface OrgMemberPrivileges {
   web_commit_signoff_required: boolean;
 }
 
-// Org Settings › Member privileges: base repository permission, member repo
-// creation, and org-wide commit signoff — all via PATCH /orgs/{org}.
+// Org Settings › Member privileges — all via PATCH /orgs/{org}.
 function MemberPrivilegesPanel({ org }: { org: string }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -186,9 +185,7 @@ interface OrgActionsPermissions { enabled_repositories: string; allowed_actions:
 interface OrgWorkflowPermissions { default_workflow_permissions: string; can_approve_pull_request_reviews: boolean }
 const orgActionsBase = (org: string) => `/api/v3/orgs/${encodeURIComponent(org)}/actions/permissions`;
 
-// Org Settings › Actions: which repositories may run Actions, the allowed-actions
-// policy, and the default GITHUB_TOKEN workflow permissions — mirrors the repo
-// Actions settings against the org-level endpoints.
+// Org Settings › Actions — mirrors the repo Actions settings against the org endpoints.
 function OrgActionsPanel({ org }: { org: string }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -268,9 +265,7 @@ function OrgActionsPanel({ org }: { org: string }) {
   );
 }
 
-// Org Settings › Secrets and variables. Reuses the shared secrets manager against
-// an org scope — the same encryption, CRUD, and visibility (all/private/selected)
-// logic as the repo Secrets page, now reachable from the org nav.
+// Org Settings › Secrets and variables — reuses the shared secrets manager at org scope.
 function OrgSecretsPanel({ org }: { org: string }) {
   const scope: SecretsScope = { kind: "org", org };
   return (
@@ -304,8 +299,7 @@ interface CodeSecurityConfig {
   private_vulnerability_reporting?: string;
 }
 const cscBase = (org: string) => `/api/v3/orgs/${encodeURIComponent(org)}/code-security/configurations`;
-// enabled/disabled/not_set feature toggles offered on the create form; each maps
-// to the identically-named code-security-configuration field.
+// Feature toggles (enabled/disabled/not_set), each a code-security-configuration field.
 const CSC_TOGGLES: { key: keyof CodeSecurityConfig; label: string }[] = [
   { key: "dependency_graph", label: "Dependency graph" },
   { key: "dependabot_alerts", label: "Dependabot alerts" },
@@ -317,9 +311,7 @@ const CSC_TOGGLES: { key: keyof CodeSecurityConfig; label: string }[] = [
 ];
 const CSC_STATES = ["not_set", "enabled", "disabled"];
 
-// Org Settings › Code security › Configurations: author reusable security
-// configurations (feature toggles + enforcement), set one as the default for new
-// repositories, and delete them. Server: /orgs/{org}/code-security/configurations.
+// Org Settings › Code security › Configurations. Server: /orgs/{org}/code-security/configurations.
 function OrgCodeSecurityPanel({ org }: { org: string }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -928,7 +920,7 @@ function PropertiesPanel({ org }: { org: string }) {
   );
 }
 
-/** Renders a custom property value (string or multi_select array) for display. */
+/** Format a custom property value (string or multi_select array). */
 function formatPropertyValue(value: unknown): string {
   return Array.isArray(value) ? value.join(", ") : String(value);
 }

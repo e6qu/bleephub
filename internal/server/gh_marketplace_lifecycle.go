@@ -1,15 +1,9 @@
 package bleephub
 
-// GitHub Marketplace — the rest of the purchase lifecycle and the listing's
-// publication metadata.
-//
-// gh_marketplace.go owns the purchase/plan-change/cancellation surface and
-// the `purchased`, `changed` and `cancelled` webhook actions. This file adds
-// the two actions that describe a change that has been *scheduled* rather
-// than applied — `pending_change` and `pending_change_cancelled` — plus the
-// route that revokes a scheduled change, the Marketplace category taxonomy,
-// and the listing profile the GraphQL MarketplaceListing type is rendered
-// from.
+// GitHub Marketplace: the scheduled-change webhook actions (pending_change,
+// pending_change_cancelled), the route that revokes a scheduled change, the
+// category taxonomy, and listing profiles. gh_marketplace.go owns the
+// purchase/plan-change/cancellation surface.
 
 import (
 	"net/http"
@@ -30,10 +24,9 @@ func (s *Server) registerGHMarketplaceLifecycleRoutes() {
 // ---------------------------------------------------------------------------
 // pending-change webhooks
 
-// marketplacePendingPurchaseView renders the subscription as it will stand
-// once the scheduled change takes effect. GitHub's `pending_change` payload
-// describes the *upcoming* state in `marketplace_purchase` and the current
-// one in `previous_marketplace_purchase`, so a subscriber can diff them.
+// marketplacePendingPurchaseView renders the subscription as it will stand once
+// the scheduled change takes effect — the `pending_change` payload carries this
+// upcoming state in marketplace_purchase and the current one in previous_marketplace_purchase.
 func marketplacePendingPurchaseView(purchase *store.MarketplacePurchase, plan *store.MarketplacePlan) *store.MarketplacePurchase {
 	upcoming := store.CloneMarketplacePurchase(purchase)
 	pending := purchase.PendingChange
@@ -76,10 +69,9 @@ func (s *Server) emitMarketplacePendingChange(listing *store.MarketplaceListing,
 	s.emitMarketplaceWebhook(listing, "marketplace_purchase", "pending_change", payload)
 }
 
-// emitMarketplacePendingChangeCancelled fires `pending_change_cancelled`
-// for a scheduled change the account revoked before it took effect. The
-// purchase passed in is the one that still carries the pending change, so
-// the payload can say what was called off.
+// emitMarketplacePendingChangeCancelled fires `pending_change_cancelled` for a
+// scheduled change revoked before it took effect. The passed purchase still
+// carries the pending change, so the payload can say what was called off.
 func (s *Server) emitMarketplacePendingChangeCancelled(listing *store.MarketplaceListing, purchase *store.MarketplacePurchase, sender *store.User) {
 	pending := purchase.PendingChange
 	if listing == nil || pending == nil {
@@ -324,9 +316,8 @@ func (s *Server) handlePutMarketplaceListingProfile(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, marketplaceProfileJSON(profile))
 }
 
-// viewerOwnsMarketplaceListing reports whether the account publishes the
-// app the listing is for. It is the same ownership test the settings
-// surface applies, expressed over a listing rather than a publisher path.
+// viewerOwnsMarketplaceListing reports whether the account publishes the app the
+// listing is for.
 func (s *Server) viewerOwnsMarketplaceListing(user *store.User, listing *store.MarketplaceListing) bool {
 	if user == nil || listing == nil {
 		return false

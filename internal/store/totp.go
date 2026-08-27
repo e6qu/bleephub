@@ -14,33 +14,27 @@ import (
 	"time"
 )
 
-// RFC 6238 time-based one-time passwords, with the parameter set every
-// mainstream authenticator app (Google Authenticator, 1Password, Aegis, Duo)
-// assumes when a provisioning URI omits them: HMAC-SHA1, 6 digits, a 30-second
-// step. They are spelled out in the otpauth:// URI anyway so a scanner never
-// has to guess.
+// RFC 6238 TOTP with the defaults every mainstream authenticator app assumes:
+// HMAC-SHA1, 6 digits, 30-second step. Stated explicitly in the otpauth:// URI
+// so a scanner never has to guess.
 const (
-	// TOTPDigits is the code length (RFC 6238 §5.3 truncation).
+	// TOTPDigits is the code length (RFC 6238 §5.3).
 	TOTPDigits = 6
 	// TOTPPeriod is the time step.
 	TOTPPeriod = 30 * time.Second
-	// TOTPDriftSteps is how many steps either side of the current one are
-	// accepted, absorbing clock skew between the server and the phone. One step
-	// is the RFC 6238 §5.2 recommendation: it bounds the validity window at
-	// three steps (90s) instead of letting a code live indefinitely.
+	// TOTPDriftSteps accepts codes this many steps either side of now, absorbing
+	// clock skew (RFC 6238 §5.2). One step bounds validity to 90s.
 	TOTPDriftSteps = 1
-	// totpSecretBytes is the shared-secret length. RFC 4226 §4 requires at
-	// least 128 bits and recommends 160 — the HMAC-SHA1 output width.
+	// totpSecretBytes is the shared-secret length: 160 bits, the HMAC-SHA1 width
+	// (RFC 4226 §4 requires ≥128, recommends 160).
 	totpSecretBytes = 20
 )
 
-// base32NoPad is the alphabet authenticator apps expect in the `secret`
-// parameter of an otpauth:// URI: RFC 4648 base32, unpadded.
+// base32NoPad is the encoding of the otpauth:// `secret` parameter: RFC 4648 base32, unpadded.
 var base32NoPad = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// NewTOTPSecret draws a fresh shared secret and returns its unpadded base32
-// encoding. It is the only value that must ever leave the store in the clear,
-// and only once, at enrolment.
+// NewTOTPSecret draws a fresh shared secret as unpadded base32. It is the only
+// value that leaves the store in the clear, and only once, at enrolment.
 func NewTOTPSecret() (string, error) {
 	raw := make([]byte, totpSecretBytes)
 	if _, err := rand.Read(raw); err != nil {
@@ -49,23 +43,20 @@ func NewTOTPSecret() (string, error) {
 	return base32NoPad.EncodeToString(raw), nil
 }
 
-// totpStep is the RFC 6238 counter T for an instant: the number of whole
-// periods since the Unix epoch (T0 = 0).
+// totpStep is the RFC 6238 counter T: whole periods since the Unix epoch.
 func totpStep(at time.Time) int64 {
 	return at.UTC().Unix() / int64(TOTPPeriod/time.Second)
 }
 
-// totpCodeAt computes the code for one counter value. An unparseable secret is
-// an error rather than a silently wrong code.
+// totpCodeAt computes the code for one counter value; an unparseable secret errors.
 func totpCodeAt(secret string, counter int64) (string, error) {
 	key, err := decodeTOTPSecret(secret)
 	if err != nil {
 		return "", err
 	}
 	if counter < 0 {
-		// RFC 4226 counts an unsigned 8-byte counter from the epoch. A negative
-		// value means the clock is set before 1970; refusing is better than
-		// wrapping it into a huge counter and returning a confidently wrong code.
+		// RFC 4226's counter is unsigned; a negative value (clock before 1970)
+		// would wrap into a huge counter and a confidently wrong code.
 		return "", fmt.Errorf("two-factor counter %d precedes the epoch", counter)
 	}
 	var message [8]byte
@@ -98,9 +89,8 @@ func decodeTOTPSecret(secret string) ([]byte, error) {
 	return key, nil
 }
 
-// normalizeOTPInput strips the separators authenticator apps and password
-// managers paste in ("123 456") so a correct code is not rejected on
-// formatting.
+// normalizeOTPInput strips separators apps paste in ("123 456") so formatting
+// doesn't reject a correct code.
 func normalizeOTPInput(code string) string {
 	return strings.Map(func(r rune) rune {
 		if r == ' ' || r == '-' || r == '\t' {
@@ -110,13 +100,10 @@ func normalizeOTPInput(code string) string {
 	}, strings.TrimSpace(code))
 }
 
-// verifyTOTP reports whether code is valid for the secret at `at`, and returns
-// the counter it matched so the caller can burn that step. Steps at or below
-// minStep are refused: a code is single-use, so replaying an intercepted one
-// inside its own 90-second window does not authenticate a second time.
-//
-// The digit comparison is constant-time. The loop over the drift window is not
-// secret-dependent (the window is a public constant), so it leaks nothing.
+// verifyTOTP reports whether code is valid at `at` and returns the matched
+// counter so the caller can burn that step. Steps ≤ minStep are refused to keep
+// a code single-use (no replay within its 90s window). The digit compare is
+// constant-time; the drift loop is over a public constant, so it leaks nothing.
 func verifyTOTP(secret, code string, at time.Time, minStep int64) (int64, bool) {
 	candidate := normalizeOTPInput(code)
 	if len(candidate) != TOTPDigits {
@@ -144,9 +131,8 @@ func verifyTOTP(secret, code string, at time.Time, minStep int64) (int64, bool) 
 	return 0, false
 }
 
-// OTPAuthURI renders the standard provisioning URI an authenticator app reads
-// from a QR code. Every parameter is stated explicitly rather than left to the
-// scanner's defaults.
+// OTPAuthURI renders the provisioning URI an authenticator reads from a QR
+// code, stating every parameter explicitly:
 //
 //	otpauth://totp/Issuer:account?secret=…&issuer=Issuer&algorithm=SHA1&digits=6&period=30
 func OTPAuthURI(issuer, account, secret string) string {
@@ -164,8 +150,8 @@ func OTPAuthURI(issuer, account, secret string) string {
 	query.Set("algorithm", "SHA1")
 	query.Set("digits", strconv.Itoa(TOTPDigits))
 	query.Set("period", strconv.Itoa(int(TOTPPeriod/time.Second)))
-	// The label is a path segment: url.URL.String escapes it correctly, which
-	// url.Values.Encode would not (it would turn ':' into %3A in a query).
+	// The label is a path segment; url.URL escapes it correctly where a query
+	// encoder would turn ':' into %3A.
 	uri := url.URL{Scheme: "otpauth", Host: "totp", Path: "/" + label, RawQuery: query.Encode()}
 	return uri.String()
 }

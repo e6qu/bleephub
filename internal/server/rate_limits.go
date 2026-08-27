@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// apiRateWindow is one credential/resource primary-rate-limit window. Tokens
-// are never retained: the map key contains only a SHA-256 digest of the
-// presented authorization value (or the anonymous remote address).
+// apiRateWindow is one credential/resource primary-rate-limit window. The map
+// key holds only a SHA-256 digest of the credential (or the anonymous address),
+// never the token itself.
 type apiRateWindow struct {
 	Limit     int
 	Used      int
@@ -41,23 +41,19 @@ var apiRateResourceLimits = map[string]int{
 	"scim":                        15000,
 	"search":                      30,
 	"source_import":               100,
-	// auth is an internal, IP-scoped per-minute budget for the unauthenticated
-	// credential-verifying auth-flow endpoints (password and token sign-in). It
-	// throttles brute-force guessing without blocking a human's few attempts. It
-	// is not a GitHub-exposed resource and never appears in /rate_limit.
+	// auth is an internal, IP-scoped per-minute anti-brute-force budget for the
+	// sign-in endpoints. It is not GitHub-exposed and never appears in
+	// /rate_limit.
 	"auth": authFlowRateLimit,
 }
 
-// authFlowRateLimit bounds credential-verifying auth-flow attempts per client
-// IP (or presented credential) per minute. Set well above the login rate a
-// shared-NAT office produces, yet far below an automated guesser's, so it
-// throttles brute force without locking out legitimate users behind one IP.
+// authFlowRateLimit bounds sign-in attempts per client IP per minute — above a
+// shared-NAT office's login rate, below an automated guesser's.
 const authFlowRateLimit = 60
 
-// apiRateResponseResources is the exact object currently described by
-// GitHub's REST schema. code_scanning_upload has a distinct request-header
-// bucket on GHES versions, but is not a permitted property in the current
-// /rate_limit response schema.
+// apiRateResponseResources is the exact set the current /rate_limit response
+// schema permits. code_scanning_upload has its own bucket but is not a
+// permitted property here.
 var apiRateResponseResources = []string{
 	"actions_runner_registration",
 	"code_scanning_autofix",
@@ -73,11 +69,9 @@ var apiRateResponseResources = []string{
 	"source_import",
 }
 
-// containsPathSegments reports whether path contains the given "/a/b" run as
-// WHOLE segments. A plain substring test cannot be used against user-controlled
-// path segments: repository names are free text, so `/repos/octo/important/...`
-// contains "/import" and `/repos/octo/scim/...` contains "/scim/" without
-// either being the endpoint whose budget those substrings stand for.
+// containsPathSegments reports whether path contains "/a/b" as whole segments.
+// A plain substring test misfires on free-text repo names: `/repos/octo/import`
+// contains "/import" without being the import endpoint.
 func containsPathSegments(path, segments string) bool {
 	for offset := 0; ; {
 		index := strings.Index(path[offset:], segments)
@@ -134,20 +128,16 @@ func apiRateIdentity(r *http.Request) string {
 	if authorization := r.Header.Get("Authorization"); authorization != "" {
 		scheme, credential := authScheme(authorization)
 		identity := strings.TrimSpace(authorization)
-		// "token" and "Bearer" are interchangeable ways to present the same
-		// GitHub credential. Keying on the raw header would let a client double
-		// its budget merely by alternating schemes (or their casing).
+		// "token" and "Bearer" present the same credential; key on the credential
+		// so alternating schemes/casing cannot double the budget.
 		if credential != "" && (scheme == "token" || scheme == "bearer") {
 			identity = credential
 		}
 		sum := sha256.Sum256([]byte(identity))
 		return fmt.Sprintf("auth:%x", sum)
 	}
-	// A browser session is an authenticated user credential even though its
-	// opaque HttpOnly cookie deliberately never becomes an Authorization
-	// header. Key it by the resolved principal, not by the cookie secret: this
-	// gives every browser session the authenticated budget and prevents a user
-	// from multiplying that budget by opening more sessions.
+	// Key a browser session by the resolved principal, not the cookie, so extra
+	// sessions cannot multiply the authenticated budget.
 	if user := ghUserFromContext(r.Context()); user != nil {
 		return fmt.Sprintf("user:%d", user.ID)
 	}
@@ -155,15 +145,10 @@ func apiRateIdentity(r *http.Request) string {
 	if parsed, _, err := net.SplitHostPort(host); err == nil {
 		host = parsed
 	}
-	// Behind the TLS-terminating reverse proxy every anonymous request
-	// carries the proxy's address as RemoteAddr, which would collapse all
-	// proxy-fronted anonymous callers into one shared budget. There is no
-	// configured trusted-proxy list, so honor the leftmost X-Forwarded-For
-	// entry only when the direct peer is loopback or private — i.e. the
-	// request can only have arrived through our own proxy, which sanitizes
-	// any client-supplied X-Forwarded-For before appending the real client.
-	// A public peer's header stays untrusted: it could mint fresh budgets at
-	// will.
+	// Trust the leftmost X-Forwarded-For only when the direct peer is
+	// loopback/private (arrived through our own proxy, which sanitizes the
+	// header). A public peer's header stays untrusted, else it could mint fresh
+	// budgets at will.
 	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
 		if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); forwarded != "" {
 			host = forwarded
@@ -176,26 +161,22 @@ func apiRateIdentity(r *http.Request) string {
 }
 
 // isBrowserSessionRequest reports whether the request was authenticated by the
-// first-party browser session cookie: no Authorization header was presented
-// and the principal was still resolved — exactly the apiRateIdentity branch
-// that keys the window "user:{id}". PATs, OAuth/app tokens and Basic auth all
-// arrive as an Authorization header, so they never match.
+// browser session cookie: no Authorization header, principal still resolved.
+// Tokens and Basic auth carry an Authorization header, so they never match.
 func isBrowserSessionRequest(r *http.Request) bool {
 	return r.Header.Get("Authorization") == "" && ghUserFromContext(r.Context()) != nil
 }
 
-// rateWindowKeyAndLimit resolves the per-identity window key, the applicable
-// limit, and the effective resource name (unknown resources fall back to core;
-// the unauthenticated core budget is the smaller IP-scoped one). Shared by the
-// consume path (rateLimitSnapshot) and the 304 refund path.
+// rateWindowKeyAndLimit resolves the per-identity window key, limit, and
+// effective resource (unknown resources fall back to core). Shared by the
+// consume path and the 304 refund path.
 func (s *Server) rateWindowKeyAndLimit(r *http.Request, resource string) (key string, limit int, effective string) {
 	limit, ok := apiRateResourceLimits[resource]
 	if !ok {
 		resource, limit = "core", apiRateResourceLimits["core"]
 	}
-	// GitHub's unauthenticated budgets are IP-scoped and deliberately much
-	// smaller than an authenticated caller's: core drops from 5000 to 60/hour
-	// and Search drops from 30 to 10/minute.
+	// Unauthenticated budgets are IP-scoped and smaller: core 5000→60/hour,
+	// search 30→10/minute.
 	if r.Header.Get("Authorization") == "" && ghUserFromContext(r.Context()) == nil {
 		switch resource {
 		case "core":
@@ -207,15 +188,12 @@ func (s *Server) rateWindowKeyAndLimit(r *http.Request, resource string) (key st
 	return apiRateIdentity(r) + "\x1f" + resource, limit, resource
 }
 
-// refundRateLimit returns one consumed unit to the caller's window and reports
-// the window's post-refund snapshot. GitHub does not bill a conditional request
-// that results in 304, but bleephub consumes in middleware before the handler
-// decides the response is not-modified, so the unit is handed back here.
+// refundRateLimit returns one consumed unit to the caller's window. A 304 is
+// not billed on GitHub, but middleware consumes before the handler decides
+// not-modified, so the unit is handed back here.
 func (s *Server) refundRateLimit(r *http.Request, resource string) apiRateSnapshot {
 	key, limit, effective := s.rateWindowKeyAndLimit(r, resource)
-	// A browser-session request never consumed a core unit (see
-	// rateLimitSnapshot), so a 304 has nothing to hand back; report the same
-	// read-only core snapshot the consume path produced.
+	// A browser-session request never consumed a core unit, so nothing to refund.
 	if effective == "core" && isBrowserSessionRequest(r) {
 		return s.rateLimitSnapshot(r, resource, false)
 	}
@@ -224,7 +202,6 @@ func (s *Server) refundRateLimit(r *http.Request, resource string) apiRateSnapsh
 	defer s.rateLimitsMu.Unlock()
 	window := s.rateLimits[key]
 	if window == nil || !now.Before(window.Reset) {
-		// The window rolled over (or never existed); there is nothing to refund.
 		return apiRateSnapshot{Resource: effective, Limit: limit, Remaining: limit,
 			Reset: now.Add(apiRateWindowDuration(effective)).Unix()}
 	}
@@ -242,13 +219,10 @@ func (s *Server) refundRateLimit(r *http.Request, resource string) apiRateSnapsh
 
 func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume bool) apiRateSnapshot {
 	key, limit, resource := s.rateWindowKeyAndLimit(r, resource)
-	// The first-party web UI does not spend API quota on GitHub, and the SPA
-	// fires 16-23 calls per page — billing them against core would cap a
+	// The SPA fires 16-23 calls per page; billing them against core would cap a
 	// browser user at a few hundred page views per hour. A session request
-	// therefore observes the core window read-only (honest X-RateLimit-*
-	// headers, remaining stays pinned) instead of consuming from it. Every
-	// non-core budget (search, code_search, graphql, ...) still bills the
-	// session normally: those windows guard expensive scans, not page loads.
+	// observes the core window read-only (honest headers, remaining pinned).
+	// Non-core budgets (search, graphql, ...) still bill the session normally.
 	if consume && resource == "core" && isBrowserSessionRequest(r) {
 		consume = false
 	}
@@ -283,12 +257,9 @@ func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume boo
 	return snapshot
 }
 
-// rateLimitAuthFlow throttles the unauthenticated credential-verifying auth
-// endpoints (password and token sign-in) per client IP, so they cannot be
-// brute-forced. It deliberately does not gate the device/OAuth token-exchange
-// endpoints, which legitimately poll and carry their own interval/slow_down
-// handling. The refusal matches the primary-rate-limit shape used elsewhere: a
-// 403 with Retry-After.
+// rateLimitAuthFlow throttles the sign-in endpoints per client IP against
+// brute force, refusing with a 403 + Retry-After. It does not gate the
+// device/OAuth token-exchange endpoints, which legitimately poll.
 func (s *Server) rateLimitAuthFlow(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !authFlowRateLimitExempt(r) {
@@ -304,12 +275,9 @@ func (s *Server) rateLimitAuthFlow(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// authFlowRateLimitExempt reports whether a request is local/dev/e2e traffic
-// rather than the remote brute-force vector the auth-flow limiter guards.
-// Production auth always arrives through the reverse proxy, which tags
-// X-Forwarded-For with the real client (then keyed and limited per that
-// client); only a direct loopback peer carrying no forwarded client — the local
-// binary, dev, and the e2e harness hitting 127.0.0.1 — is exempt.
+// authFlowRateLimitExempt exempts local/dev/e2e traffic. Production auth arrives
+// through the proxy (tagged with X-Forwarded-For and limited per client); only a
+// direct loopback peer carrying no forwarded client is exempt.
 func authFlowRateLimitExempt(r *http.Request) bool {
 	if r.Header.Get("X-Forwarded-For") != "" {
 		return false

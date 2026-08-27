@@ -1,15 +1,12 @@
 package graphqlapi
 
-// Projects classic (v1) — the sixteen-mutation write surface GitHub still
-// serves for classic boards: project lifecycle (create/update/delete, clone,
-// import), columns (add/update/delete/move), cards (add/update/delete/move,
+// Projects classic (v1) — the write surface for classic boards: project
+// lifecycle (create/update/delete/clone/import), columns, cards (including
 // note-to-issue conversion) and repository links.
 //
-// Every mutation goes through registerMutation, so each one below has a row
-// in graphqlMutationAuthz (merged at init) and cannot reach the store without
-// the entitlement that row names: the repository's Projects permission at
-// write for a repo-scoped board, or membership of the owning account for an
-// account-owned one — the same pair the classic REST handlers enforce.
+// Each mutation carries a graphqlMutationAuthz row: the repository's Projects
+// permission at write for a repo-scoped board, or membership of the owning
+// account for an account-owned one — as the classic REST handlers enforce.
 
 import (
 	"fmt"
@@ -22,25 +19,23 @@ import (
 // ---------------------------------------------------------------------------
 // Authorization
 
-// projectClassicTarget is what a classic-project mutation acts on: the
-// repository behind a repo-scoped board, or the owning account of an
-// account-owned one. Exactly one side is populated.
+// projectClassicTarget is what a classic-project mutation acts on: the repo
+// behind a repo-scoped board, or the owning account of an account-owned one.
+// Exactly one side is populated.
 type projectClassicTarget struct {
 	repo       *store.Repo
 	ownerType  string // "User" or "Organization" when account-scoped
 	ownerLogin string
 	project    *store.ProjectClassic
-	// missing answers both "no such node" and "you may not see it", for the
-	// same reason the repository rule keeps them indistinguishable.
+	// missing answers both "no such node" and "you may not see it"
+	// indistinguishably.
 	missing error
 }
 
-// projectClassicRule is the policy for a mutation whose subject is a classic
-// board (or something inside one). A repo-scoped board is written under the
-// repository's Projects grant at write with push standing — what the REST
-// classic handlers demand — and an account-owned board by the owning user or
-// the owning organization's members, with the credential's Projects grant
-// over that account.
+// projectClassicRule is the policy for a mutation on a classic board (or
+// something inside one): the repository's Projects grant at write with push
+// standing for a repo-scoped board, or the owning account's membership plus its
+// Projects grant for an account-owned one.
 type projectClassicRule struct {
 	target func(s *Resolver, input map[string]interface{}) projectClassicTarget
 }
@@ -73,8 +68,7 @@ func (r projectClassicRule) authorize(s *Resolver, p graphql.ResolveParams, inpu
 	if target.ownerType == "Organization" {
 		belongs := s.viewerIsOrgMember(p.Context, target.ownerLogin) || s.viewerCanAdminAccount(p.Context, target.ownerLogin)
 		// A private board under an account the viewer does not belong to is
-		// answered as absent rather than as forbidden — saying "forbidden"
-		// would confirm the board exists.
+		// answered as absent, not forbidden — "forbidden" would confirm it exists.
 		if target.project != nil && !target.project.Public && !belongs {
 			return target.missing
 		}
@@ -99,9 +93,8 @@ func (r projectClassicRule) authorize(s *Resolver, p graphql.ResolveParams, inpu
 	return nil
 }
 
-// projectClassicTargetOwner resolves a createProject ownerId — a Repository,
-// Organization or User global id — to the account or repository the board
-// would belong to.
+// projectClassicTargetOwner resolves a createProject ownerId (a Repository,
+// Organization or User global id) to the board's would-be owner.
 func projectClassicTargetOwner(key string) func(*Resolver, map[string]interface{}) projectClassicTarget {
 	return func(s *Resolver, input map[string]interface{}) projectClassicTarget {
 		nodeID, _ := input[key].(string)
@@ -122,8 +115,8 @@ func projectClassicTargetOwner(key string) func(*Resolver, map[string]interface{
 	}
 }
 
-// projectClassicTargetOwnerName is projectClassicTargetOwner for
-// importProject, whose input names the owner by login rather than by id.
+// projectClassicTargetOwnerName is projectClassicTargetOwner for importProject,
+// whose input names the owner by login.
 func projectClassicTargetOwnerName(key string) func(*Resolver, map[string]interface{}) projectClassicTarget {
 	return func(s *Resolver, input map[string]interface{}) projectClassicTarget {
 		login, _ := input[key].(string)
@@ -145,8 +138,8 @@ func projectClassicTargetOwnerName(key string) func(*Resolver, map[string]interf
 	}
 }
 
-// projectClassicTargetFrom walks from a project row to the repository or
-// account whose standing decides the write.
+// projectClassicTargetFrom walks from a project row to the repository or account
+// whose standing decides the write.
 func (s *Resolver) projectClassicTargetFrom(project *store.ProjectClassic, missing error) projectClassicTarget {
 	target := projectClassicTarget{missing: missing}
 	if project == nil {
@@ -197,11 +190,8 @@ func projectClassicTargetCard(key string) func(*Resolver, map[string]interface{}
 	}
 }
 
-// projectClassicCloneRule is the policy for cloneProject, whose input names
-// two subjects: the board being read and the owner the copy lands under.
-// Either refusal stands alone — a bearer who can read a template but write
-// nowhere may not mint a project, and a bearer with write on an account may
-// not clone a board they cannot see.
+// projectClassicCloneRule is the policy for cloneProject: read on the source
+// board and write on the destination owner, each enforced independently.
 type projectClassicCloneRule struct{}
 
 func (projectClassicCloneRule) check() error { return nil }
@@ -217,10 +207,8 @@ func (projectClassicCloneRule) authorize(s *Resolver, p graphql.ResolveParams, i
 }
 
 // projectClassicConvertRule is the policy for convertProjectCardNoteToIssue:
-// write on the card's board, plus the standing createIssue itself demands on
-// the repository the issue is opened in (Issues at write, read standing — an
-// outside contributor may file issues, but not through a board they cannot
-// write).
+// write on the card's board, plus the standing createIssue demands on the
+// target repository.
 type projectClassicConvertRule struct{}
 
 func (projectClassicConvertRule) check() error { return nil }
@@ -235,8 +223,7 @@ func (projectClassicConvertRule) authorize(s *Resolver, p graphql.ResolveParams,
 }
 
 // projectClassicLinkRule is the policy for link/unlinkRepositoryToProject:
-// write on the board, and the repository must at least be visible to the
-// caller — an unreadable repository is answered as absent.
+// write on the board, and the repository visible to the caller (else absent).
 type projectClassicLinkRule struct{}
 
 func (projectClassicLinkRule) check() error { return nil }
@@ -286,10 +273,8 @@ func init() {
 // ---------------------------------------------------------------------------
 // Resolver helpers
 
-// projectClassicByNodeID answers a detached snapshot of the board a mutation
-// names, with GitHub's not-found wording when it does not resolve. The policy
-// row has already authorized the caller, so this is a lookup rather than a
-// second check.
+// projectClassicByNodeID answers a detached snapshot of the named board (the
+// policy row already authorized the caller), or GitHub's not-found error.
 func (s *Resolver) projectClassicByNodeID(nodeID string) (*store.ProjectClassic, error) {
 	live := store.FindProjectClassicByNodeID(s.store, nodeID)
 	if live == nil {
@@ -314,10 +299,9 @@ func (s *Resolver) projectClassicCardByNodeID(nodeID string) (*store.ProjectCard
 	return s.store.GetProjectCard(live.ID), nil
 }
 
-// projectClassicAdmitsRepo reports whether content from (or a link to) `repo`
-// belongs on the board: the board's own repository for a repo-scoped one, or
-// the owning account's repositories and explicitly linked ones for an
-// account-owned board.
+// projectClassicAdmitsRepo reports whether content from (or a link to) repo
+// belongs on the board: the board's own repository, or the owning account's
+// repositories and explicitly linked ones.
 func projectClassicAdmitsRepo(p *store.ProjectClassic, repo *store.Repo) bool {
 	if p.RepoKey != "" {
 		return p.RepoKey == repo.FullName
@@ -333,9 +317,8 @@ func projectClassicAdmitsRepo(p *store.ProjectClassic, repo *store.Repo) bool {
 	return false
 }
 
-// connectionEdgeForNode picks the edge whose node has the given global id out
-// of a rendered connection source, so a mutation payload's edge carries the
-// same cursor the connection itself would serve.
+// connectionEdgeForNode picks the edge for the given global id out of a rendered
+// connection, so the payload's edge carries the cursor the connection would serve.
 func connectionEdgeForNode(conn map[string]interface{}, nodeID string) interface{} {
 	edges, _ := conn["edges"].([]map[string]interface{})
 	for _, edge := range edges {
@@ -364,8 +347,7 @@ func (s *Resolver) projectClassicCardEdge(columnID int, cardNodeID string) inter
 	return connectionEdgeForNode(paginateGQLMaps(nodes, nil), cardNodeID)
 }
 
-// projectClassicTemplateColumns is the column set each GitHub-provided
-// template seeds.
+// projectClassicTemplateColumns is the column set each template seeds.
 var projectClassicTemplateColumns = map[string][]string{
 	"BASIC_KANBAN":             {"To do", "In progress", "Done"},
 	"AUTOMATED_KANBAN_V2":      {"To do", "In progress", "Done"},
@@ -373,8 +355,7 @@ var projectClassicTemplateColumns = map[string][]string{
 	"BUG_TRIAGE":               {"Needs triage", "High priority", "Low priority", "Closed"},
 }
 
-// createProjectClassicForTarget mints the board a create/clone/import lands
-// as, under whichever owner the already-authorized target names.
+// createProjectClassicForTarget mints the board under the authorized target's owner.
 func (s *Resolver) createProjectClassicForTarget(target projectClassicTarget, creatorID int, name, body string, public bool) *store.ProjectClassic {
 	if target.repo != nil {
 		return s.store.CreateProjectClassic(target.repo, creatorID, name, body, "open")
@@ -395,7 +376,6 @@ func (s *Resolver) addProjectsClassicMutations(mutationType *graphql.Object) {
 func (s *Resolver) addProjectClassicLifecycleMutations(mutationType *graphql.Object) {
 	projectType := s.projectClassicType()
 
-	// createProject
 	s.registerMutation(mutationType, "createProject", &graphql.Field{
 		Type: s.mutationPayload("CreateProjectPayload", graphql.Fields{
 			"project": gqlField(projectType),
@@ -444,7 +424,6 @@ func (s *Resolver) addProjectClassicLifecycleMutations(mutationType *graphql.Obj
 		},
 	})
 
-	// updateProject
 	s.registerMutation(mutationType, "updateProject", &graphql.Field{
 		Type: s.mutationPayload("UpdateProjectPayload", graphql.Fields{
 			"project": gqlField(projectType),
@@ -485,7 +464,6 @@ func (s *Resolver) addProjectClassicLifecycleMutations(mutationType *graphql.Obj
 		},
 	})
 
-	// deleteProject
 	s.registerMutation(mutationType, "deleteProject", &graphql.Field{
 		Type: s.mutationPayload("DeleteProjectPayload", graphql.Fields{
 			"owner": gqlField(s.projectOwnerInterfaceType()),
@@ -500,8 +478,7 @@ func (s *Resolver) addProjectClassicLifecycleMutations(mutationType *graphql.Obj
 			if err != nil {
 				return nil, err
 			}
-			// The owner is rendered from the snapshot taken before the delete:
-			// after it the row is gone.
+			// Render the owner before the delete removes the row.
 			owner, _ := s.projectClassicOwnerSource(project)
 			if !s.store.DeleteProjectClassic(project.ID) {
 				return nil, gqlMissingNode("Project", nodeID)
@@ -512,7 +489,6 @@ func (s *Resolver) addProjectClassicLifecycleMutations(mutationType *graphql.Obj
 		},
 	})
 
-	// cloneProject
 	s.registerMutation(mutationType, "cloneProject", &graphql.Field{
 		Type: s.mutationPayload("CloneProjectPayload", graphql.Fields{
 			"jobStatusId": gqlField(graphql.String),
@@ -551,10 +527,8 @@ func (s *Resolver) addProjectClassicLifecycleMutations(mutationType *graphql.Obj
 			if clone == nil {
 				return nil, fmt.Errorf("project creation failed")
 			}
-			// The board's structure is copied: every column, in order. Cards
-			// are not — GitHub's clone copies the frame, not the work — and
-			// classic workflows do not exist here, so includeWorkflows has
-			// nothing further to copy.
+			// Copy columns only; GitHub's clone copies the frame, not the cards,
+			// and no classic workflows exist for includeWorkflows to copy.
 			for _, column := range s.store.ListProjectColumns(source.ID) {
 				s.store.CreateProjectColumn(clone.ID, column.Name)
 			}
@@ -565,7 +539,6 @@ func (s *Resolver) addProjectClassicLifecycleMutations(mutationType *graphql.Obj
 		},
 	})
 
-	// importProject
 	cardImportInput := s.mutationInput("ProjectCardImport", graphql.InputObjectConfigFieldMap{
 		"number":     gqlNonNullInt(),
 		"repository": gqlNonNullString(),
@@ -648,7 +621,6 @@ func (s *Resolver) addProjectClassicColumnMutations(mutationType *graphql.Object
 	columnType := s.projectClassicColumnType()
 	_, columnEdgeType := s.projectClassicConnectionPair("ProjectColumn", columnType)
 
-	// addProjectColumn
 	s.registerMutation(mutationType, "addProjectColumn", &graphql.Field{
 		Type: s.mutationPayload("AddProjectColumnPayload", graphql.Fields{
 			"columnEdge": gqlField(columnEdgeType),
@@ -677,7 +649,6 @@ func (s *Resolver) addProjectClassicColumnMutations(mutationType *graphql.Object
 		},
 	})
 
-	// updateProjectColumn
 	s.registerMutation(mutationType, "updateProjectColumn", &graphql.Field{
 		Type: s.mutationPayload("UpdateProjectColumnPayload", graphql.Fields{
 			"projectColumn": gqlField(columnType),
@@ -707,7 +678,6 @@ func (s *Resolver) addProjectClassicColumnMutations(mutationType *graphql.Object
 		},
 	})
 
-	// deleteProjectColumn
 	s.registerMutation(mutationType, "deleteProjectColumn", &graphql.Field{
 		Type: s.mutationPayload("DeleteProjectColumnPayload", graphql.Fields{
 			"deletedColumnId": gqlField(graphql.ID),
@@ -734,7 +704,6 @@ func (s *Resolver) addProjectClassicColumnMutations(mutationType *graphql.Object
 		},
 	})
 
-	// moveProjectColumn
 	s.registerMutation(mutationType, "moveProjectColumn", &graphql.Field{
 		Type: s.mutationPayload("MoveProjectColumnPayload", graphql.Fields{
 			"columnEdge": gqlField(columnEdgeType),
@@ -777,7 +746,6 @@ func (s *Resolver) addProjectClassicCardMutations(mutationType *graphql.Object) 
 	cardType := s.projectClassicCardType()
 	_, cardEdgeType := s.projectClassicConnectionPair("ProjectCard", cardType)
 
-	// addProjectCard
 	s.registerMutation(mutationType, "addProjectCard", &graphql.Field{
 		Type: s.mutationPayload("AddProjectCardPayload", graphql.Fields{
 			"cardEdge":      gqlField(cardEdgeType),
@@ -840,7 +808,6 @@ func (s *Resolver) addProjectClassicCardMutations(mutationType *graphql.Object) 
 		},
 	})
 
-	// updateProjectCard
 	s.registerMutation(mutationType, "updateProjectCard", &graphql.Field{
 		Type: s.mutationPayload("UpdateProjectCardPayload", graphql.Fields{
 			"projectCard": gqlField(cardType),
@@ -869,7 +836,6 @@ func (s *Resolver) addProjectClassicCardMutations(mutationType *graphql.Object) 
 		},
 	})
 
-	// deleteProjectCard
 	s.registerMutation(mutationType, "deleteProjectCard", &graphql.Field{
 		Type: s.mutationPayload("DeleteProjectCardPayload", graphql.Fields{
 			"column":        gqlField(columnType),
@@ -896,7 +862,6 @@ func (s *Resolver) addProjectClassicCardMutations(mutationType *graphql.Object) 
 		},
 	})
 
-	// moveProjectCard
 	s.registerMutation(mutationType, "moveProjectCard", &graphql.Field{
 		Type: s.mutationPayload("MoveProjectCardPayload", graphql.Fields{
 			"cardEdge": gqlField(cardEdgeType),
@@ -927,8 +892,7 @@ func (s *Resolver) addProjectClassicCardMutations(mutationType *graphql.Object) 
 				}
 				position = fmt.Sprintf("after:%d", after.ID)
 			}
-			// The store refuses a destination column in another project, which
-			// the policy row never authorized.
+			// The store refuses a destination column in another project.
 			if err := s.store.MoveProjectCard(card, column.ID, position); err != nil {
 				return nil, err
 			}
@@ -942,7 +906,6 @@ func (s *Resolver) addProjectClassicCardMutations(mutationType *graphql.Object) 
 		},
 	})
 
-	// convertProjectCardNoteToIssue
 	s.registerMutation(mutationType, "convertProjectCardNoteToIssue", &graphql.Field{
 		Type: s.mutationPayload("ConvertProjectCardNoteToIssuePayload", graphql.Fields{
 			"projectCard": gqlField(cardType),
@@ -987,8 +950,7 @@ func (s *Resolver) addProjectClassicCardMutations(mutationType *graphql.Object) 
 			if issue == nil {
 				return nil, fmt.Errorf("issue creation failed")
 			}
-			// Parity with createIssue's GraphQL path: the issues/opened webhook
-			// fires for the issue the conversion mints.
+			// As createIssue's GraphQL path does: fire the issues/opened webhook.
 			s.emitWebhookEvent(repo.FullName, "issues", "opened", s.buildIssuesPayload(repo, issue, user, "opened"))
 			converted := s.store.ConvertProjectCardToIssue(card, issue.ID)
 			if converted == nil {

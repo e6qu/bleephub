@@ -257,9 +257,8 @@ func (s *Server) handlePagesContent(w http.ResponseWriter, r *http.Request) {
 		contentType = http.DetectContentType(content)
 	}
 	w.Header().Set("Content-Type", contentType)
-	// Pages publishes repository-controlled HTML. A sandbox without
-	// allow-same-origin lets sites run their own scripts while preventing those
-	// scripts from reading the authenticated Bleephub origin.
+	// Sandbox without allow-same-origin: repository-controlled Pages HTML runs
+	// its own scripts but cannot read the authenticated Bleephub origin.
 	w.Header().Set("Content-Security-Policy", "sandbox allow-forms allow-modals allow-popups allow-scripts")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("X-Content-Type-Options", "nosniff")

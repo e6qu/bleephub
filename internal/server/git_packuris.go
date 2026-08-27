@@ -13,65 +13,37 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// packfile-uris: answering a fetch with the address of a packfile instead of
-// its bytes.
+// packfile-uris: answer a fetch with the address of a stored pack instead of
+// its bytes. A stored pack is a correct answer under the same containment +
+// disjointness test git_packreuse.go uses for pack reuse. The answer splits in
+// two: the packfile-uris section names the packs the client fetches itself, and
+// the packfile section carries the objects those packs do not supply.
 //
-// A stored pack is already an immutable object in the object store, and
-// git_packreuse.go establishes when one of them is a correct answer to a
-// particular fetch: every object it holds is in the plan, and no two chosen
-// packs hold the same object. Those are the same two conditions a URI needs,
-// because the client indexes whatever it downloads into its own object
-// database — so a pack it fetches by URI delivers exactly the objects a pack
-// copied onto the wire would have delivered. The difference is only which
-// process moves the bytes.
+// The split happens only when the client sends the packfile-uris argument, and
+// the offer is recomputed per request over immutable packs, so a client that
+// cannot fetch a URI can simply retry the fetch.
 //
-// The answer therefore splits in two. The packfile-uris section names the
-// stored packs the client fetches itself, and the packfile section that follows
-// carries the objects those packs do not supply, which for a full clone of a
-// compacted repository is nothing at all.
-//
-// The split is only ever made at the client's invitation. A client that did not
-// send the packfile-uris argument is never sent the section, and is answered
-// with every object it asked for the way it always was. A client that did send
-// it and then cannot fetch a URI it was given ends the fetch without a complete
-// object graph and has to run it again — which it can, because the offer is
-// recomputed for every request and the packs it names are immutable: the same
-// fetch is answerable as many times as it is asked.
-//
-// AUTHORIZATION
-//
-// A presigned URL carries its own permission: whoever holds it can GET that one
-// key until it expires, and the object store never consults bleephub. So the
-// URL is a credential, and the only safe place to mint one is behind the gate
-// that already decided the caller may read the repository. Both transports do
-// exactly that before a fetch command is ever decoded — smart HTTP in
-// authorizeGitHTTP, which requires store.PermRead on store.ScopeContents before
-// handleGitUploadPack reads a byte of the body, and SSH in the same permission
-// check before serveGitProtocolV2 is entered. Nothing below is reachable
-// without having passed one of them.
+// AUTHORIZATION: a presigned URL is a bearer credential the object store honors
+// without consulting bleephub, so one is minted only behind the read gate. Both
+// transports pass it before a fetch command is decoded — smart HTTP in
+// authorizeGitHTTP (PermRead on ScopeContents before handleGitUploadPack), SSH
+// in the same check before serveGitProtocolV2. Nothing here is reachable
+// otherwise.
 
-// gitPackURIExpiry is how long a presigned pack URL stays usable.
-//
-// It has to outlast this response: git downloads the URIs after it has finished
-// reading the fetch reply, so the window has to cover the remainder pack still
-// being streamed, the client's own retries, and a slow link between the two.
-// It must not outlast much more than that, because for its lifetime the URL is
-// a bearer credential for one object that the object store will honour without
-// asking this server anything — including after the caller's session ends, its
-// token is revoked or its access to the repository is withdrawn. Ten minutes is
-// well past what an ordinary fetch needs and far short of the lifetime of any
-// credential the URL stands in for, so a copy that escapes — into a proxy log,
-// a shell history, a crash dump — has stopped working while the incident that
-// produced it is still the same incident.
+// gitPackURIExpiry is how long a presigned pack URL stays usable. It must
+// outlast the response (git fetches URIs after reading the reply, covering the
+// remainder stream, retries, and a slow link) but not much more, since it is a
+// bearer credential the object store honors even after the caller's session
+// ends or access is revoked. Ten minutes covers an ordinary fetch and is far
+// short of the credential it stands in for.
 const gitPackURIExpiry = 10 * time.Minute
 
-// gitPackURIObjectIDLength is the width of the object id that opens each line
-// of the packfile-uris section: the packfile's own name, which is what the
-// client's index-pack reports for the bytes it downloaded.
+// gitPackURIObjectIDLength is the width of the object id opening each
+// packfile-uris line: the packfile's name, which index-pack reports for the
+// downloaded bytes.
 const gitPackURIObjectIDLength = 2 * len(plumbing.ZeroHash)
 
-// gitPackURI is one line of the packfile-uris section: the name of the packfile
-// behind the URL, and the URL.
+// gitPackURI is one packfile-uris line: the packfile name and its URL.
 type gitPackURI struct {
 	id  string
 	uri string
@@ -81,13 +53,12 @@ type gitPackURI struct {
 type gitPackURIOffer struct {
 	uris []gitPackURI
 	plan *gitPackPlan
-	// offloaded are the stored packs the URIs name. Their objects are the ones
-	// the remainder pack does not repeat.
+	// offloaded are the stored packs the URIs name; the remainder does not
+	// repeat their objects.
 	offloaded []*gitStoredPack
 }
 
-// remainder lists the objects of the plan that no offloaded pack carries, in
-// the plan's own order.
+// remainder lists the plan objects no offloaded pack carries, in plan order.
 func (o *gitPackURIOffer) remainder() []plumbing.Hash {
 	carried := map[plumbing.Hash]bool{}
 	for _, pack := range o.offloaded {
@@ -104,8 +75,8 @@ func (o *gitPackURIOffer) remainder() []plumbing.Hash {
 	return remainder
 }
 
-// gitParsePackURIProtocols reads the value of a packfile-uris fetch argument:
-// the transfer protocols the client is willing to fetch a packfile over.
+// gitParsePackURIProtocols reads a packfile-uris argument: the transfer
+// protocols the client will fetch a packfile over.
 func gitParsePackURIProtocols(value string) []string {
 	var protocols []string
 	for _, field := range strings.Split(value, ",") {
@@ -118,14 +89,10 @@ func gitParsePackURIProtocols(value string) []string {
 	return protocols
 }
 
-// gitPackURIOffload decides whether this fetch is answered with URIs, and
-// returns the offer when it is.
-//
-// Nothing is offered unless the client asked, unless the repository's packs
-// live somewhere a URL can address — object storage, where a presigned GET
-// exists; a memory or local-directory backend has no such address and the
-// answer is simply the ordinary packfile — and unless the stored packs pass the
-// same containment and disjointness test that governs pack reuse.
+// gitPackURIOffload returns an offer when this fetch is answered with URIs, and
+// nil otherwise: nothing is offered unless the client asked, the packs live in
+// object storage (where a presigned GET exists), and they pass the same
+// containment/disjointness test that governs pack reuse.
 func gitPackURIOffload(ctx context.Context, stor storer.Storer, request *gitUploadRequest, plan *gitPackPlan) (*gitPackURIOffer, error) {
 	if len(request.packURIProtocols) == 0 {
 		return nil, nil
@@ -158,10 +125,9 @@ func gitPackURIOffload(ctx context.Context, stor storer.Storer, request *gitUplo
 			return nil, nil
 		}
 		offer.uris = append(offer.uris, gitPackURI{id: id, uri: signed})
-		// A pack only counts as offloaded once there is a URI for it, because
-		// what the remainder owes is decided from this list: a pack recorded
-		// here without an address would have its objects left out of both
-		// halves of the answer.
+		// Record as offloaded only once it has a URI: the remainder is computed
+		// from this list, so a pack here without an address would drop its
+		// objects from both halves of the answer.
 		offer.offloaded = append(offer.offloaded, pack)
 	}
 	if len(offer.uris) == 0 {
@@ -170,13 +136,10 @@ func gitPackURIOffload(ctx context.Context, stor storer.Storer, request *gitUplo
 	return offer, nil
 }
 
-// gitPackObjectID reads the object id out of a packfile's base name.
-//
-// The name is what the client is told to expect from indexing the bytes it
-// downloads — index-pack reports a pack by the checksum that closes it, which
-// is the same id the file is named for. So a name that is not exactly "pack-"
-// followed by an object id in lowercase hex names a file this server cannot
-// make that promise about, and it is carried as objects instead.
+// gitPackObjectID reads the object id from a packfile's base name — the id
+// index-pack reports for the downloaded bytes. A name that is not "pack-"
+// followed by lowercase-hex names a file we cannot promise that about, so it is
+// carried as objects instead.
 func gitPackObjectID(name string) (string, bool) {
 	id, named := strings.CutPrefix(name, "pack-")
 	if !named || len(id) != gitPackURIObjectIDLength {
@@ -190,9 +153,8 @@ func gitPackObjectID(name string) (string, bool) {
 	return id, true
 }
 
-// gitPackURIProtocolAllowed reports whether a URL is one the client said it can
-// fetch. The client lists the transfer protocols it supports, and a URL in any
-// other protocol is one it would have to refuse, so it is never offered.
+// gitPackURIProtocolAllowed reports whether a URL's scheme is one the client
+// listed as fetchable.
 func gitPackURIProtocolAllowed(signed string, protocols []string) bool {
 	parsed, err := url.Parse(signed)
 	if err != nil {
@@ -207,8 +169,8 @@ func gitPackURIProtocolAllowed(signed string, protocols []string) bool {
 	return false
 }
 
-// writeGitPackURIsSection writes the packfile-uris section: one line per URI,
-// each the name of the packfile behind it followed by the URL.
+// writeGitPackURIsSection writes the packfile-uris section: one "name url" line
+// per URI.
 func writeGitPackURIsSection(writer *gitV2Writer, offer *gitPackURIOffer) error {
 	if err := writer.line("packfile-uris\n"); err != nil {
 		return err
@@ -221,14 +183,9 @@ func writeGitPackURIsSection(writer *gitV2Writer, offer *gitPackURIOffer) error 
 	return writer.delim()
 }
 
-// sendGitOffloadedPackfile writes the packfile section of an answer whose
-// stored packs the client is fetching for itself: the objects those packs do
-// not carry, and nothing else.
-//
-// A full clone of a compacted repository owes nothing here, and the empty
-// packfile that results — a header stating no entries and a checksum over it —
-// is sent all the same, because the protocol makes the packfile section the end
-// of every fetch response rather than an optional one.
+// sendGitOffloadedPackfile writes the packfile section carrying only the
+// objects the offloaded packs do not. An empty packfile is still sent (the
+// protocol makes this section mandatory), e.g. a full clone of a compacted repo.
 func sendGitOffloadedPackfile(stor storer.Storer, out io.Writer, request *gitUploadRequest, offer *gitPackURIOffer, mode gitSidebandMode) error {
 	band := newGitBandWriter(out, mode, !request.noProgress)
 	remainder := offer.remainder()
@@ -247,16 +204,14 @@ func sendGitOffloadedPackfile(stor storer.Storer, out io.Writer, request *gitUpl
 	return band.finish()
 }
 
-// gitPackURIFetchArgument is the fetch argument a client sends to say it will
-// fetch packfiles itself, and the capability this server advertises to invite
-// it.
+// gitPackURIFetchArgument is both the fetch argument the client sends and the
+// capability this server advertises.
 const gitPackURIFetchArgument = "packfile-uris"
 
-// gitPackOffloadSupported reports whether this deployment can address its
-// stored packs and bundles with a URL at all. Only object storage can: a
-// presigned GET is a property of the object store, and a repository kept in
-// memory or in a local directory has no address a client could fetch from — so
-// neither packfile-uris nor bundle-uri is advertised there.
+// gitPackOffloadSupported reports whether stored packs are URL-addressable at
+// all. Only object storage is (a presigned GET is its property); memory and
+// local-directory backends have no such address, so neither packfile-uris nor
+// bundle-uri is advertised there.
 func gitPackOffloadSupported() bool {
 	return gitstore.IsS3GitStorage()
 }

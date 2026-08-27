@@ -9,33 +9,12 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// The shared Comment/UpdatableComment/Minimizable/Deletable trait fields GitHub
-// puts on every concrete comment type. CommitComment, IssueComment, GistComment
-// and PullRequestReviewComment each carry the same content projections
-// (bodyHTML/bodyText), the same edit-history surface (editor/lastEditedAt/
-// includesCreatedEdit/userContentEdits), the same minimize surface, and the
-// same viewer-permission family. Rendering them from one place keeps the four
-// types answering identically and truthfully:
-//
-//   - bleephub records no per-edit diff history, so userContentEdits is a real
-//     empty connection (never invented edits) and, on the types that do not
-//     model edits at all, editor/lastEditedAt/includesCreatedEdit resolve to
-//     GitHub's zero values.
-//   - createdViaEmail is legitimately always false: bleephub has no
-//     email-reply ingestion path, so no comment was ever created via one.
-//   - the viewerCan* family answers from real repository (or gist) permission,
-//     so a viewer without write access — or a stranger to a private repo — is
-//     told the truth (false) rather than leaked a capability they do not hold.
-//
-// The authz-dependent fields resolve the backing store record from the source
-// map's node id rather than trusting pre-baked source keys, so every producer
-// of a comment source (the *ToGQL builders and the review-thread inline
-// builder) gains these fields without being touched.
+// Shared Comment-trait fields for the four concrete comment types. Authz-dependent
+// fields resolve the backing store record from the source map's node id, so every
+// *ToGQL builder gains them untouched.
 
-// commentAuthz is the repository (or gist) and author backing a comment source,
-// resolved once per field so the viewerCan* family and the repository/parent
-// back-references answer from real ownership. repo is nil for gist comments,
-// which carry gistOwnerID instead.
+// commentAuthz is the repo (or gist) and author backing a comment source. repo is
+// nil for gist comments, which carry gistOwnerID instead.
 type commentAuthz struct {
 	repo        *store.Repo
 	authorID    int
@@ -45,9 +24,6 @@ type commentAuthz struct {
 
 // ---- shared enums -----------------------------------------------------------
 
-// commentAuthorAssociationEnum is GitHub's CommentAuthorAssociation, memoized by
-// graphQLEnum so the four comment types share the one enum the IssueComment type
-// first minted.
 func (s *Resolver) commentAuthorAssociationEnum() *graphql.Enum {
 	return s.graphQLEnum(
 		"CommentAuthorAssociation",
@@ -56,9 +32,6 @@ func (s *Resolver) commentAuthorAssociationEnum() *graphql.Enum {
 	)
 }
 
-// gqlCommentCannotUpdateReasonEnum is GitHub's CommentCannotUpdateReason, the
-// enum viewerCannotUpdateReasons returns. graphQLEnum memoizes it by name, so it
-// is the single shared enum regardless of which family first references it.
 func (s *Resolver) gqlCommentCannotUpdateReasonEnum() *graphql.Enum {
 	return s.graphQLEnum(
 		"CommentCannotUpdateReason",
@@ -69,15 +42,13 @@ func (s *Resolver) gqlCommentCannotUpdateReasonEnum() *graphql.Enum {
 
 // ---- viewer permission logic ------------------------------------------------
 
-// commentViewerIsAuthor reports whether the signed-in viewer wrote the comment.
 func (s *Resolver) commentViewerIsAuthor(ctx context.Context, az commentAuthz) bool {
 	v := s.ghUserFromContext(ctx)
 	return v != nil && az.authorID != 0 && v.ID == az.authorID
 }
 
-// commentViewerCanModerate reports whether the viewer holds the standing that
-// lets them act on somebody else's comment: repository write for a repo comment,
-// gist ownership for a gist comment.
+// commentViewerCanModerate reports whether the viewer may act on someone else's
+// comment: repo write for a repo comment, gist ownership for a gist comment.
 func (s *Resolver) commentViewerCanModerate(ctx context.Context, az commentAuthz) bool {
 	if az.isGist {
 		v := s.ghUserFromContext(ctx)
@@ -86,15 +57,10 @@ func (s *Resolver) commentViewerCanModerate(ctx context.Context, az commentAuthz
 	return az.repo != nil && s.viewerCanPushRepo(ctx, az.repo)
 }
 
-// commentViewerCanUpdate reports whether the viewer may edit the comment: its
-// author, or a moderator of the surrounding repository/gist.
 func (s *Resolver) commentViewerCanUpdate(ctx context.Context, az commentAuthz) bool {
 	return s.commentViewerIsAuthor(ctx, az) || s.commentViewerCanModerate(ctx, az)
 }
 
-// commentCannotUpdateReasons is the real reason list behind viewerCanUpdate: an
-// empty list when the viewer may update, LOGIN_REQUIRED for an anonymous
-// viewer, INSUFFICIENT_ACCESS for a signed-in viewer without the standing.
 func (s *Resolver) commentCannotUpdateReasons(ctx context.Context, az commentAuthz) []interface{} {
 	if s.ghUserFromContext(ctx) == nil {
 		return []interface{}{"LOGIN_REQUIRED"}
@@ -127,7 +93,6 @@ func commentSourceString(source interface{}, key string) string {
 
 // ---- content-trait field constructors --------------------------------------
 
-// commentBodyHTMLField renders the markdown body to HTML (HTML!).
 func (s *Resolver) commentBodyHTMLField() *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(s.graphQLStringScalar("HTML")),
@@ -137,7 +102,6 @@ func (s *Resolver) commentBodyHTMLField() *graphql.Field {
 	}
 }
 
-// commentBodyTextField renders the markdown body to plain text (String!).
 func (s *Resolver) commentBodyTextField() *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(graphql.String),
@@ -147,8 +111,7 @@ func (s *Resolver) commentBodyTextField() *graphql.Field {
 	}
 }
 
-// commentCreatedViaEmailField is GitHub's createdViaEmail: always false, because
-// bleephub has no email-reply ingestion path.
+// commentCreatedViaEmailField: always false; bleephub has no email-reply ingestion.
 func commentCreatedViaEmailField() *graphql.Field {
 	return &graphql.Field{
 		Type:    graphql.NewNonNull(graphql.Boolean),
@@ -156,9 +119,8 @@ func commentCreatedViaEmailField() *graphql.Field {
 	}
 }
 
-// commentPublishedAtField is publishedAt: the moment a published comment became
-// visible, which for bleephub — where a comment is public the instant it is
-// created — equals createdAt.
+// commentPublishedAtField: publishedAt equals createdAt (a comment is public the
+// instant it is created).
 func (s *Resolver) commentPublishedAtField() *graphql.Field {
 	return &graphql.Field{
 		Type: s.graphQLStringScalar("DateTime"),
@@ -171,8 +133,8 @@ func (s *Resolver) commentPublishedAtField() *graphql.Field {
 	}
 }
 
-// commentUserContentEditsField is the edit-history connection. bleephub records
-// no per-edit diff history, so it is a real, well-formed empty connection.
+// commentUserContentEditsField: a well-formed empty connection; bleephub records
+// no per-edit diff history.
 func (s *Resolver) commentUserContentEditsField() *graphql.Field {
 	return &graphql.Field{
 		Type: s.gqlUserContentEditConnectionType(),
@@ -188,8 +150,8 @@ func (s *Resolver) commentUserContentEditsField() *graphql.Field {
 	}
 }
 
-// commentZeroBoolField is a Boolean! that resolves false — the truthful answer
-// for an edit/minimize flag on a type bleephub does not model that state for.
+// commentZeroBoolField is a Boolean! resolving false, for an edit/minimize flag
+// bleephub does not model.
 func commentZeroBoolField() *graphql.Field {
 	return &graphql.Field{
 		Type:    graphql.NewNonNull(graphql.Boolean),
@@ -197,8 +159,8 @@ func commentZeroBoolField() *graphql.Field {
 	}
 }
 
-// commentNullField is a nullable member that resolves null — the truthful
-// answer for an editor / lastEditedAt / minimizedReason a type does not track.
+// commentNullField is a nullable member resolving null, for an editor /
+// lastEditedAt / minimizedReason a type does not track.
 func commentNullField(t graphql.Output) *graphql.Field {
 	return &graphql.Field{
 		Type:    t,
@@ -206,8 +168,6 @@ func commentNullField(t graphql.Output) *graphql.Field {
 	}
 }
 
-// commentViewerBoolField resolves a viewerCan*/viewerDidAuthor predicate against
-// the real authz context extracted from the source.
 func (s *Resolver) commentViewerBoolField(extract func(interface{}) commentAuthz, pred func(context.Context, commentAuthz) bool) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
@@ -217,8 +177,6 @@ func (s *Resolver) commentViewerBoolField(extract func(interface{}) commentAuthz
 	}
 }
 
-// commentCannotUpdateReasonsField resolves the real
-// [CommentCannotUpdateReason!]! list.
 func (s *Resolver) commentCannotUpdateReasonsField(extract func(interface{}) commentAuthz) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(s.gqlCommentCannotUpdateReasonEnum()))),
@@ -228,8 +186,6 @@ func (s *Resolver) commentCannotUpdateReasonsField(extract func(interface{}) com
 	}
 }
 
-// commentAuthorAssociationField resolves authorAssociation from the real repo
-// (or gist) membership.
 func (s *Resolver) commentAuthorAssociationField(extract func(interface{}) commentAuthz) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(s.commentAuthorAssociationEnum()),
@@ -249,8 +205,8 @@ func (s *Resolver) commentAuthorAssociationField(extract func(interface{}) comme
 	}
 }
 
-// commentRepositoryField resolves the repository: Repository! back-reference,
-// gated so a private repo never leaks to a viewer without read access.
+// commentRepositoryField resolves the repository back-reference, gated so a
+// private repo never leaks to a viewer without read access.
 func (s *Resolver) commentRepositoryField(extract func(interface{}) commentAuthz) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(s.graphqlTypes.repository),
@@ -267,8 +223,7 @@ func (s *Resolver) commentRepositoryField(extract func(interface{}) commentAuthz
 	}
 }
 
-// commentPathField resolves a URI! whose value is the given path builder's
-// result (resourcePath is the path, url is externalURL of the same path).
+// commentPathField resolves a URI!; external wraps the built path in externalURL.
 func (s *Resolver) commentPathField(build func(interface{}) string, external bool) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(s.graphQLStringScalar("URI")),
@@ -286,7 +241,6 @@ func (s *Resolver) commentPathField(build func(interface{}) string, external boo
 // CommitComment
 // ============================================================================
 
-// commitCommentAuthz resolves a commit comment's repo + author from its node id.
 func (s *Resolver) commitCommentAuthz(source interface{}) commentAuthz {
 	c := store.FindCommitCommentByNodeID(s.store, commentSourceString(source, "nodeID"))
 	if c == nil {
@@ -295,7 +249,6 @@ func (s *Resolver) commitCommentAuthz(source interface{}) commentAuthz {
 	return commentAuthz{repo: s.store.GetRepoByID(c.RepoID), authorID: c.AuthorID}
 }
 
-// commitCommentResourcePath builds /{owner}/{repo}/commit/{sha}#commitcomment-{id}.
 func (s *Resolver) commitCommentResourcePath(source interface{}) string {
 	c := store.FindCommitCommentByNodeID(s.store, commentSourceString(source, "nodeID"))
 	if c == nil {
@@ -308,8 +261,6 @@ func (s *Resolver) commitCommentResourcePath(source interface{}) string {
 	return fmt.Sprintf("/%s/commit/%s#commitcomment-%d", repo.FullName, c.CommitID, c.ID)
 }
 
-// enrichCommitCommentType installs the 23 Comment-trait fields CommitComment was
-// missing.
 func (s *Resolver) enrichCommitCommentType() {
 	obj := s.graphqlTypes.commitComment
 	if obj == nil {
@@ -330,7 +281,6 @@ func (s *Resolver) enrichCommitCommentType() {
 	obj.AddFieldConfig("includesCreatedEdit", commentZeroBoolField())
 	obj.AddFieldConfig("isMinimized", commentZeroBoolField())
 	obj.AddFieldConfig("minimizedReason", commentNullField(graphql.String))
-	// updatedAt and position come off the store record.
 	obj.AddFieldConfig("updatedAt", &graphql.Field{
 		Type: graphql.NewNonNull(dateTime),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -380,7 +330,6 @@ func (s *Resolver) enrichCommitCommentType() {
 // IssueComment
 // ============================================================================
 
-// issueCommentContext resolves an issue comment's record and its repo.
 func (s *Resolver) issueCommentContext(source interface{}) (*store.Comment, *store.Repo) {
 	c := store.FindIssueCommentByNodeID(s.store, commentSourceString(source, "nodeID"))
 	if c == nil {
@@ -424,10 +373,8 @@ func (s *Resolver) issueCommentResourcePath(source interface{}) string {
 	return fmt.Sprintf("/%s/%s/%d#issuecomment-%d", repo.FullName, lane, number, c.ID)
 }
 
-// enrichIssueCommentType installs the 19 fields IssueComment was missing. The
-// edit/minimize surface already lives on the type (from the Comment store
-// record), so only the content projections, back-references, the pin surface
-// and the viewer family are added here.
+// enrichIssueCommentType adds the content projections, back-references, pin
+// surface and viewer family; the edit/minimize surface already lives on the type.
 func (s *Resolver) enrichIssueCommentType() {
 	obj := s.graphqlTypes.issueComment
 	if obj == nil {
@@ -458,9 +405,8 @@ func (s *Resolver) enrichIssueCommentType() {
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			c, _ := s.issueCommentContext(p.Source)
 			if c == nil || c.ParentType == "pull_request" {
-				// A pull-request conversation comment has no backing Issue row
-				// in bleephub (PRs and issues share only the per-repo number
-				// counter), so there is nothing truthful to return here.
+				// A PR conversation comment has no backing Issue row (PRs and
+				// issues share only the per-repo number counter).
 				return nil, nil
 			}
 			iss := s.store.GetIssue(c.IssueID)
@@ -481,8 +427,7 @@ func (s *Resolver) enrichIssueCommentType() {
 			return pullRequestToGQL(pr, s.store), nil
 		},
 	})
-	// bleephub records the pin flag (isPinned already resolves it) but not who
-	// pinned or when, so pinnedAt/pinnedBy are the truthful null.
+	// bleephub records the pin flag but not who pinned or when.
 	obj.AddFieldConfig("pinnedAt", commentNullField(dateTime))
 	obj.AddFieldConfig("pinnedBy", commentNullField(s.graphqlTypes.user))
 	obj.AddFieldConfig("viewerDidAuthor", s.commentViewerBoolField(extract, s.commentViewerIsAuthor))
@@ -528,9 +473,6 @@ func (s *Resolver) prrcResourcePath(source interface{}) string {
 	return fmt.Sprintf("/%s/pull/%d#discussion_r%d", repo.FullName, pr.Number, c.ID)
 }
 
-// enrichPullRequestReviewCommentType installs the 33 fields the review-comment
-// type was missing: the Comment trait, the diff-position family, the commit and
-// pull-request back-references, and the viewer family.
 func (s *Resolver) enrichPullRequestReviewCommentType() {
 	obj := s.graphqlTypes.pullRequestReviewComment
 	if obj == nil {
@@ -588,8 +530,7 @@ func (s *Resolver) enrichPullRequestReviewCommentType() {
 		Type: graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			c, _, _ := s.prrcContext(p.Source)
-			// A comment whose diff position no longer maps to the current diff
-			// is outdated; bleephub clears Position when that happens.
+			// bleephub clears Position when the diff position no longer maps.
 			return c != nil && c.Position == nil, nil
 		},
 	})
@@ -654,7 +595,6 @@ func (s *Resolver) enrichPullRequestReviewCommentType() {
 	obj.AddFieldConfig("viewerCannotUpdateReasons", s.commentCannotUpdateReasonsField(extract))
 }
 
-// prrcIntPtrField resolves a nullable Int off the review-comment record.
 func (s *Resolver) prrcIntPtrField(pick func(*store.PRReviewComment) *int) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.Int,
@@ -671,7 +611,6 @@ func (s *Resolver) prrcIntPtrField(pick func(*store.PRReviewComment) *int) *grap
 	}
 }
 
-// prrcCommitField resolves a nullable Commit off a sha picked from the record.
 func (s *Resolver) prrcCommitField(pick func(*store.PRReviewComment) string) *graphql.Field {
 	return &graphql.Field{
 		Type: s.graphqlTypes.commit,
@@ -689,10 +628,8 @@ func (s *Resolver) prrcCommitField(pick func(*store.PRReviewComment) string) *gr
 // GistComment
 // ============================================================================
 
-// addGistCommentFields installs the 19 Comment-trait fields GistComment was
-// missing. It is called from gqlGistCommentType, after the gist and repository
-// families exist, and reads the gistID/authorID keys the gist-comment source
-// carries.
+// addGistCommentFields adds GistComment's Comment-trait fields. Called from
+// gqlGistCommentType after the gist and repository families exist.
 func (s *Resolver) addGistCommentFields(obj *graphql.Object) {
 	extract := s.gistCommentAuthz
 	dateTime := s.graphQLStringScalar("DateTime")
@@ -740,8 +677,6 @@ func (s *Resolver) addGistCommentFields(obj *graphql.Object) {
 	obj.AddFieldConfig("viewerCannotUpdateReasons", s.commentCannotUpdateReasonsField(extract))
 }
 
-// gistCommentAuthz resolves a gist comment's owner + author from the gistID and
-// authorID keys the source carries.
 func (s *Resolver) gistCommentAuthz(source interface{}) commentAuthz {
 	m := commentSourceMap(source)
 	authorID, _ := m["authorID"].(int)
@@ -752,11 +687,9 @@ func (s *Resolver) gistCommentAuthz(source interface{}) commentAuthz {
 	return az
 }
 
-// enrichCommentTypes installs the shared Comment-trait, back-reference and
-// viewer-permission fields on the comment types built before the repository,
-// issue and pull-request families existed. GistComment is enriched in place by
-// gqlGistCommentType, which runs after those families. Called once from
-// initGraphQLSchema after every referenced type is assembled.
+// enrichCommentTypes enriches the comment types built before the repository,
+// issue and pull-request families existed. GistComment is enriched separately by
+// gqlGistCommentType. Called once after every referenced type is assembled.
 func (s *Resolver) enrichCommentTypes() {
 	s.enrichCommitCommentType()
 	s.enrichIssueCommentType()

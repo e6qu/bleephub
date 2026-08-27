@@ -38,8 +38,7 @@ type GistScope = "yours" | "public" | "starred";
 
 export function GistsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  // Anonymous visitors see public gists only: "yours" and "starred" are
-  // viewer-scoped lists whose reads 401 without a session.
+  // "yours" and "starred" 401 without a session; anonymous sees "public" only.
   const signedIn = useSignedIn();
   const location = useLocation();
   const [scope, setScope] = useState<GistScope>(signedIn ? "yours" : "public");
@@ -111,18 +110,12 @@ function gistsQueryFn(scope: GistScope) {
   }
 }
 
-/**
- * Card-style gist rows mirroring gist.github.com: description linking to the
- * permalink page, visibility, file count, updated time, and a snippet preview
- * of the first file.
- */
 function GistList({ scope }: { scope: GistScope }) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState("");
   const [mutationError, setMutationError] = useState<string | null>(null);
 
-  // Anonymous visitors have no viewer (the read would 401); owner-only row
-  // actions simply stay hidden.
+  // The viewer read 401s anonymously; owner-only row actions stay hidden.
   const signedIn = useSignedIn();
   const viewer = useQuery({
     queryKey: ["current-user"],
@@ -260,11 +253,8 @@ function GistCard({
   );
 }
 
-/**
- * First-file snippet preview. List responses omit file content (as on real
- * GitHub), so the preview hydrates the gist lazily — concurrency-capped,
- * cached — and shows the first few lines.
- */
+// List responses omit file content, so hydrate the gist lazily
+// (concurrency-capped, cached) for the first-file snippet preview.
 const SNIPPET_LINES = 8;
 
 function GistSnippet({ gist, filename, eager }: { gist: BleephubGist; filename: string; eager: boolean }) {

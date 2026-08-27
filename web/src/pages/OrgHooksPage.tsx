@@ -17,11 +17,8 @@ import { MutationError } from "../components/MutationError.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { WebhookForm, ORG_WEBHOOK_EVENT_CATALOG, type WebhookFormValues } from "../components/WebhookForm.js";
 
-// Page-local hook writers. The entry-resident createOrgHook/updateOrgHook
-// wrappers have no `secret` member in their config types, so the org form
-// posts/patches through these lazy-page fetchers instead of widening api.ts.
-// On PATCH, a blank/absent config.secret keeps the stored secret
-// (internal/server/gh_org_hooks_rest.go mirrors the repo-hook handler).
+// Lazy-page hook writers, kept off the entry bundle. On PATCH, a blank/absent
+// config.secret keeps the stored secret (mirrors the repo-hook handler).
 const createOrgHookFull = (org: string, values: WebhookFormValues) =>
   ghPostJSON<GithubOrgWebhook>(`/api/v3/orgs/${encodeURIComponent(org)}/hooks`, {
     name: "web",
@@ -46,7 +43,6 @@ const patchOrgHookFull = (org: string, id: number, values: WebhookFormValues) =>
     },
   });
 
-/** Organization webhooks: list, create, edit, ping, enable/disable, and delete. */
 export function OrgHooksPage() {
   const { org = "" } = useParams<{ org: string }>();
   const qc = useQueryClient();

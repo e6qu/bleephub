@@ -137,8 +137,7 @@ func (s *Server) handleAcceptRepoInvitation(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Accepting an invitation makes the user a collaborator, which fires GitHub's
-	// `member` event (action "added") so `on: member` workflows run (ACT-026).
+	// Accepting adds the user as a collaborator, firing the member "added" event.
 	if repo := s.store.GetRepoByFullName(repoKey); repo != nil {
 		s.emitWebhookEvent(repoKey, "member", "added", map[string]interface{}{
 			"action":     "added",
@@ -199,6 +198,3 @@ func invitationJSON(inv *store.RepoInvitation, repo *store.Repo, st *store.Store
 		"expired":     false,
 	}
 }
-
-// GetRepoByFullName lives with the other repository accessors in
-// store_repos.go.

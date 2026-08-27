@@ -1,9 +1,8 @@
 # Browser user-journey inventory
 
-This is the acceptance inventory for Bleephub's browser product. A journey is
-complete when it has a discoverable entry point, a durable URL where one is
-useful, loading/empty/error feedback, and a server operation that preserves the
-GitHub-compatible REST contract.
+Acceptance inventory for Bleephub's browser product. A journey is complete when
+it has a discoverable entry point, a durable URL where useful, loading/empty/error
+feedback, and a server operation that preserves the GitHub-compatible REST contract.
 
 ## Repository work
 
@@ -43,8 +42,7 @@ step environment/shell/working-directory/timeout/continue-on-error, implicit
 success guards, job timeouts, concurrency replacement, artifacts, caches, logs,
 and summaries all flow through the runner-compatible APIs. Finalized
 artifact/cache metadata and identifier high-water marks use the durable
-SQLite/dqlite store, while archive bytes use the configured Actions object
-store.
+SQLite/dqlite store; archive bytes use the configured Actions object store.
 
 ## Git storage and Pages
 
@@ -60,11 +58,10 @@ store.
 | Serve or remove published content | Pages hostname/path routing backed by the configured object store; disable removes the publication |
 
 Git storage retries transient S3 initialization failures instead of poisoning
-the process. Prefix rename lists a stable snapshot before deleting the source,
-and prefix deletion repeatedly drains the first page, avoiding continuation
-tokens invalidated by mutation. Pages publication metadata is durable and its
-content is stored with the same object-storage discipline as other binary
-payloads.
+the process. Prefix rename snapshots a stable list before deleting the source;
+prefix deletion repeatedly drains the first page, avoiding continuation tokens
+invalidated by mutation. Pages publication metadata is durable; its content uses
+the same object-storage discipline as other binary payloads.
 
 ## Classroom
 
@@ -89,8 +86,8 @@ payloads.
 | Run on an installation without a Docker CLI | Creation falls back to a persisted workspace lifecycle instead of returning 500 |
 | Use machines, secrets, export, publish, organization access, and administration automation | GitHub-compatible Codespaces REST API |
 
-The workspace fallback is deliberately an internal storage detail. Public
-responses remain within GitHub's Codespaces response schema.
+The workspace fallback is an internal storage detail; public responses stay
+within GitHub's Codespaces response schema.
 
 ## Identity, organizations, administration, and ecosystem
 
@@ -135,16 +132,14 @@ responses remain within GitHub's Codespaces response schema.
 | OAuth App ownership stopped at create/list and OAuth flows required hand-copying client identifiers | Added edit/rotate/delete settings with grant revocation and populate web/device flows from the signed-in owner's registered GitHub and OAuth Apps |
 | GitHub App installation-token search returned no private repositories because handlers tested the synthetic bot user's memberships | Routed every repository-backed search family through the credential-aware Metadata reach gate, including installation/token repository narrowing and GitHub App user-token intersection; added real Octokit and official `go-github` journeys |
 
-The GitHub-compatible API is substantially larger than the browser product.
-Endpoint-level parity and deliberate API-only automation surfaces continue to
-be ratcheted by the OpenAPI shape/behavior suites; this inventory prevents an
-API endpoint from being mistaken for a broken browser link or an undiscoverable
-human journey.
+The GitHub-compatible API is much larger than the browser product. The OpenAPI
+shape/behavior suites keep ratcheting endpoint-level parity and deliberate
+API-only automation surfaces; this inventory keeps an API endpoint from being
+mistaken for a broken browser link or an undiscoverable human journey.
 
 ## API fidelity regression gates
 
-API coverage is enforced as a set equality, not inferred from a collection of
-happy-path tests:
+API coverage is enforced as set equality, not inferred from happy-path tests:
 
 - Every registered `/api/v3` operation must exist in the pinned GitHub OpenAPI
   definition.
@@ -156,10 +151,10 @@ happy-path tests:
 - Every registered operation must appear exactly once in the HTTP fuzz route
   inventory, and a reachability test proves the multi-byte selector can select
   every entry.
-- Successful responses reached by the test suite are checked against the
-  pinned OpenAPI schema.
-- The official `go-github` SDK suite boots a real Bleephub server and now runs
-  in CI rather than merely compiling.
+- The test suite checks the successful responses it reaches against the pinned
+  OpenAPI schema.
+- The official `go-github` SDK suite boots a real Bleephub server and runs in
+  CI rather than merely compiling.
 - Semantics OpenAPI cannot express—qualifier grammar, filtering, ordering,
   validation, and derived label formats—are pinned as compatibility vectors in
   both server regression tests and the SDK suite.
@@ -169,5 +164,5 @@ happy-path tests:
 
 The definition and route gates provide 100% operation-level coverage. They do
 not pretend OpenAPI describes server semantics; any discovered dotcom
-behavioral difference must become a focused compatibility vector so that exact
+behavioral difference must become a focused compatibility vector so exact
 request/response behavior cannot regress silently.

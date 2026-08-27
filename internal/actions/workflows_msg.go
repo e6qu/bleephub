@@ -13,23 +13,17 @@ import (
 )
 
 // BuildJobMessageFromDef builds a job message from a WorkflowDef-based job,
-// supporting both run: and uses: steps.
+// handling both run: and uses: steps.
 func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wfJob *store.WorkflowJob, planID, timelineID string, requestID int64, defaultImage string) (map[string]interface{}, error) {
 	jd := wfJob.Def
 	scopeID := uuid.New().String()
-	// GITHUB_TOKEN is scoped to this workflow's repository and the least-
-	// privilege permission set its `permissions:` block resolves to (ACT-014).
-	// Minting stays behind the server-injected seam: mint and verify share
-	// the runner MAC key, and signature drift would break every runner job
-	// at lease time.
+	// GITHUB_TOKEN is scoped to this repository and the least-privilege
+	// permissions its `permissions:` block resolves to (ACT-014).
 	jobToken := s.mintJobToken(scopeID, wf, jd)
 
-	// Determine the job container; empty means host mode (the run was
-	// submitted with hostMode and the YAML declares no container) — the
-	// runner then executes the job directly, like real GitHub. A bare
+	// Empty image means host mode: the runner executes the job directly. A bare
 	// image string rides as-is; the object form (`container:` with
-	// env/ports/volumes/options) becomes a full mapping token so none
-	// of those fields drop.
+	// env/ports/volumes/options) becomes a full mapping token.
 	image := defaultImage
 	var jobContainer interface{}
 	if img := jd.ContainerImage(); img != "" {
@@ -41,7 +35,6 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 		jobContainer = jobContainerValue(image)
 	}
 
-	// Build steps
 	steps := make([]map[string]interface{}, 0, len(jd.Steps))
 	for i, step := range jd.Steps {
 		if step.Shell == "" {
@@ -53,7 +46,6 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 		stepID := uuid.New().String()
 
 		if step.Run != "" {
-			// Script step
 			displayName := step.Name
 			if displayName == "" {
 				displayName = fmt.Sprintf("Run %s", truncateDisplay(step.Run, 40))
@@ -92,7 +84,6 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 			applyStepExecutionOptions(messageStep, step)
 			steps = append(steps, messageStep)
 		} else if step.Uses != "" {
-			// Action step
 			nameWithOwner, path, ref, isLocal := store.ParseActionRef(step.Uses)
 			displayName := step.Name
 			if displayName == "" {
@@ -121,7 +112,6 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 				}
 			}
 
-			// Build inputs MappingToken from with:
 			inputEntries := make([]interface{}, 0, len(step.With))
 			for k, v := range step.With {
 				inputEntries = append(inputEntries, map[string]interface{}{
@@ -148,30 +138,23 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 		}
 	}
 
-	// Build env context data
 	envPairs := make([]string, 0)
-	// Workflow-level env
 	for k, v := range wf.Env {
 		if k != "__serverURL" && k != "__defaultImage" {
 			envPairs = append(envPairs, k, v)
 		}
 	}
-	// Job-level env overrides
 	for k, v := range jd.Env {
 		envPairs = append(envPairs, k, v)
 	}
 
-	// Build needs context
 	needsCtx := BuildNeedsContext(wf, wfJob)
 
-	// Job outputs are evaluated by the official runner after all steps have
-	// finished. The request wire field is a mapping TemplateToken, not an
-	// unevaluated server-side expression map: JobRunner evaluates this token
-	// against its final steps context and returns the resolved VariableValue
-	// map in the JobCompleted plan event.
+	// Job outputs ride as a mapping TemplateToken, not an unevaluated
+	// server-side expression map: the runner evaluates it against its final
+	// steps context and returns resolved values in the JobCompleted event.
 	jobOutputs := jobOutputsToken(jd.Outputs)
 
-	// Build matrix context
 	var matrixCtx interface{}
 	if len(wfJob.MatrixValues) > 0 {
 		matrixCtx = toPipelineContextData(anyMap(wfJob.MatrixValues))
@@ -179,28 +162,17 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 
 	runID := strconv.Itoa(wf.RunID)
 
-	// The github context (event metadata + defaults) is assembled by
-	// githubRunnerContext below; the secrets/vars lookup must resolve a
-	// real repository because repository, organization and environment
-	// secrets are scoped by that persisted state.
 	repoFullName := wf.RepoFullName
 
-	// Build secrets context and mask array
 	secretsPairs := make([]string, 0)
 	maskArray := make([]interface{}, 0)
 
-	// Always include GITHUB_TOKEN
 	secretsPairs = append(secretsPairs, "GITHUB_TOKEN", jobToken)
 	maskArray = append(maskArray, map[string]interface{}{"type": "regex", "value": regexp.QuoteMeta(jobToken)})
 
-	// Org → repo → environment secrets and variables merge (highest
-	// scope wins); every secret value rides the mask list so the runner
-	// scrubs it from logs. Jobs inside a reusable-workflow call with an
-	// explicit `secrets:` map receive ONLY the mapped names.
-	//
-	// The official runner builds its `secrets` expression context from
-	// message.Variables entries flagged isSecret (Variables.
-	// ToSecretsContext) — NOT from contextData — so every secret also
+	// Every secret rides the mask list so the runner scrubs it from logs. The
+	// official runner builds its `secrets` context from message.Variables
+	// entries flagged isSecret, NOT from contextData, so every secret also
 	// rides the variables map under its own name.
 	variables := map[string]interface{}{
 		"system.github.job":                      varVal(wfJob.Key),
@@ -214,8 +186,6 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 		"DistributedTask.EnableCompositeActions": varVal("true"),
 	}
 	varsPairs := make([]string, 0)
-	// The receiver is dereferenced unconditionally above (mintJobToken), so a
-	// nil-receiver guard here would be dead code that only misleads analysis.
 	if s.store != nil && repoFullName != "" {
 		secretsMap, varsMap, err := s.CollectJobSecretsAndVars(repoFullName, jd.EnvironmentName())
 		if err != nil {
@@ -240,8 +210,8 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 		}
 	}
 
-	// Build inputs context: called jobs get the call's resolved (typed)
-	// inputs; workflow_dispatch runs their typed inputs; else strings.
+	// Called jobs get the call's resolved typed inputs; workflow_dispatch runs
+	// their typed inputs; else strings.
 	var inputsCtx interface{}
 	switch {
 	case jd.Call != nil && jd.CallRole == "" && jd.Call.ResolvedInputs() != nil:
@@ -306,8 +276,8 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 		},
 		"contextData": map[string]interface{}{
 			"github": toPipelineContextData(githubRunnerContext(s, wf, wfJob, serverURL, jobToken)),
-			// Built runner-agnostic; the broker rebinds this to the leasing
-			// agent at delivery (ACT-051, rebindRunnerContext).
+			// Built runner-agnostic; the broker rebinds it to the leasing agent
+			// at delivery (ACT-051).
 			"runner":   RunnerContextData(nil),
 			"env":      DictContextData(envPairs...),
 			"vars":     DictContextData(varsPairs...),
@@ -328,9 +298,8 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 	}, nil
 }
 
-// jobOutputsToken encodes a workflow job's declared outputs in the exact
-// TemplateToken mapping consumed by actions/runner. A job without outputs
-// omits the optional wire value by returning nil.
+// jobOutputsToken encodes declared outputs as the TemplateToken mapping
+// actions/runner consumes, or nil when there are none.
 func jobOutputsToken(outputs map[string]string) interface{} {
 	if len(outputs) == 0 {
 		return nil
@@ -342,13 +311,10 @@ func jobOutputsToken(outputs map[string]string) interface{} {
 	return mappingToken(entries)
 }
 
-// templateToken converts a workflow string into the runner's template
-// token: a plain literal when it carries no ${{ }}, else a
-// BasicExpression token — `format('...', expr...)` with {N}
-// placeholders — which is the shape real GitHub sends so the RUNNER
-// evaluates the expressions against its contexts (matrix, env, steps,
-// ...). Literal-only emission left scripts with raw `${{ matrix.os }}`
-// text reaching the shell.
+// templateToken converts a workflow string into the runner's template token: a
+// plain literal when it carries no ${{ }}, else a BasicExpression token
+// (`format('...', expr...)` with {N} placeholders) so the RUNNER evaluates the
+// expressions against its contexts rather than raw text reaching the shell.
 func templateToken(s string) map[string]interface{} {
 	if !strings.Contains(s, "${{") {
 		return map[string]interface{}{"type": 0, "lit": s}
@@ -356,9 +322,8 @@ func templateToken(s string) map[string]interface{} {
 	return map[string]interface{}{"type": 3, "expr": templateToFormatExpr(s)}
 }
 
-// templateToFormatExpr rewrites "a ${{ x }} b" into
-// "format('a {0} b', x)"; a string that is exactly one template becomes
-// the bare inner expression.
+// templateToFormatExpr rewrites "a ${{ x }} b" into "format('a {0} b', x)"; a
+// string that is exactly one template becomes the bare inner expression.
 func templateToFormatExpr(s string) string {
 	escape := func(part string) string {
 		part = strings.ReplaceAll(part, "'", "''")
@@ -391,8 +356,7 @@ func templateToFormatExpr(s string) string {
 	return fmt.Sprintf("format('%s', %s)", fmtStr.String(), strings.Join(exprs, ", "))
 }
 
-// sortedKeys returns a map's keys in sorted order so context payloads
-// are deterministic across runs.
+// sortedKeys returns a map's keys sorted so context payloads are deterministic.
 func sortedKeys(m map[string]string) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -405,9 +369,8 @@ func sortedKeys(m map[string]string) []string {
 // anyMap widens a typed-inputs map for toPipelineContextData.
 func anyMap(m map[string]interface{}) map[string]interface{} { return m }
 
-// githubRunnerContext assembles the full `github` context the runner
-// receives: the server-side context map (including the triggering event
-// payload) plus the runner-session keys.
+// githubRunnerContext assembles the full `github` context: the server-side
+// context map plus the runner-session keys.
 func githubRunnerContext(s *Engine, wf *store.Workflow, wfJob *store.WorkflowJob, serverURL, jobToken string) map[string]interface{} {
 	m := s.GithubContextMap(wf)
 	m["server_url"] = serverURL
@@ -428,26 +391,20 @@ func githubRunnerContext(s *Engine, wf *store.Workflow, wfJob *store.WorkflowJob
 	return m
 }
 
-// forkPullRequestWithholdsSecrets reports whether a run must be denied the
-// repository's, organization's and environment's secrets: "with the exception
-// of GITHUB_TOKEN, secrets are not passed to the runner when a workflow is
-// triggered from a forked repository". A fork contributor authors the workflow
-// file the `pull_request` run executes, so handing that run the base
-// repository's secrets hands them to the contributor — and no approval gate
-// changes that, because approval only decides whether the run starts.
-//
-// pull_request_target is deliberately excluded: it runs the BASE repository's
-// workflow definition in the base context and does receive secrets, which is
-// the whole distinction between the two triggers.
+// forkPullRequestWithholdsSecrets reports whether a run is denied all secrets
+// but GITHUB_TOKEN: a fork contributor authors the `pull_request` workflow, so
+// its run must not see the base repository's secrets, and approval only decides
+// whether the run starts. pull_request_target is excluded — it runs the BASE
+// workflow in the base context and does receive secrets.
 func forkPullRequestWithholdsSecrets(wf *store.Workflow) bool {
 	return wf.EventName == "pull_request" && pullRequestIsFromFork(wf.EventPayload, wf.RepoFullName)
 }
 
 // EffectiveCallSecrets resolves the secrets a job inside a reusable-workflow
-// call actually receives, narrowing the repository's set once per call in the
-// nesting chain from the outermost inwards. `secrets: inherit` inherits the
-// CALLING workflow's secrets — which, for a nested call, is whatever the
-// enclosing call already narrowed them to, not the repository's full set.
+// call receives, narrowing the repository's set once per call from the
+// outermost inwards. `secrets: inherit` inherits the CALLING workflow's
+// secrets, which for a nested call is whatever the enclosing call narrowed them
+// to, not the repository's full set.
 func EffectiveCallSecrets(s *Engine, wf *store.Workflow, binding *store.WorkflowCallBinding, repoSecrets map[string]string) (map[string]string, error) {
 	if binding == nil {
 		return repoSecrets, nil
@@ -466,9 +423,9 @@ func EffectiveCallSecrets(s *Engine, wf *store.Workflow, binding *store.Workflow
 	return RemapCallSecrets(s, wf, binding, callerSecrets)
 }
 
-// RemapCallSecrets applies a reusable-workflow call's explicit `secrets:`
-// map: the called job receives ONLY the mapped names, with each value
-// template (`${{ secrets.X }}`) evaluated against the caller's secrets.
+// RemapCallSecrets applies a call's explicit `secrets:` map: the called job
+// receives ONLY the mapped names, each value template evaluated against the
+// caller's secrets.
 func RemapCallSecrets(s *Engine, wf *store.Workflow, binding *store.WorkflowCallBinding, callerSecrets map[string]string) (map[string]string, error) {
 	secretsCtx := make(map[string]interface{}, len(callerSecrets))
 	for k, v := range callerSecrets {
@@ -493,8 +450,8 @@ func RemapCallSecrets(s *Engine, wf *store.Workflow, binding *store.WorkflowCall
 
 // toPipelineContextData converts a Go value into the runner's
 // PipelineContextData JSON encoding: bare strings, {"t":3,"d":bool},
-// {"t":4,"d":number}, {"t":1,"a":[...]} arrays, and
-// {"t":2,"d":[{"k":...,"v":...}]} dictionaries.
+// {"t":4,"d":number}, {"t":1,"a":[...]} arrays, {"t":2,"d":[{"k",..,"v":..}]}
+// dictionaries.
 func toPipelineContextData(v interface{}) interface{} {
 	switch t := v.(type) {
 	case nil:
@@ -529,12 +486,10 @@ func toPipelineContextData(v interface{}) interface{} {
 	}
 }
 
-// buildServiceContainers converts parsed ServiceDefs to the runner's
-// jobServiceContainers wire shape: a mapping TemplateToken of alias →
-// container-spec mapping token. The official runner DESERIALIZES this
-// field as a TemplateToken (mapping = {"type":2,"map":[{Key,Value}]}),
-// not plain JSON — a raw map fails its template validation at job
-// start ("The template is not valid. Unexpected value ”").
+// buildServiceContainers converts ServiceDefs to the jobServiceContainers wire
+// shape: a mapping TemplateToken of alias → container-spec token. The runner
+// deserializes this field as a TemplateToken, NOT plain JSON — a raw map fails
+// its template validation at job start.
 func buildServiceContainers(services map[string]*store.ServiceDef) interface{} {
 	if len(services) == 0 {
 		return nil
@@ -549,11 +504,10 @@ func buildServiceContainers(services map[string]*store.ServiceDef) interface{} {
 	return mappingToken(entries)
 }
 
-// containerSpecToken builds the container-spec mapping token shared by
-// object-form `container:` and each `services:` entry. Keys follow the
-// runner's ContainerInfo reader: image / env / ports / volumes /
-// options. Strings route through templateToken so ${{ }} expressions
-// inside them still evaluate runner-side.
+// containerSpecToken builds the container-spec token shared by object-form
+// `container:` and each `services:` entry, keyed per the runner's ContainerInfo
+// reader (image/env/ports/volumes/options). Strings route through templateToken
+// so ${{ }} expressions still evaluate runner-side.
 func containerSpecToken(image string, env map[string]string, ports []interface{}, volumes []string, options string) map[string]interface{} {
 	entries := []interface{}{mappingEntry("image", templateToken(image))}
 	if len(env) > 0 {
@@ -583,12 +537,10 @@ func containerSpecToken(image string, env map[string]string, ports []interface{}
 	return mappingToken(entries)
 }
 
-// mappingToken wraps key/value entries as a mapping TemplateToken.
 func mappingToken(entries []interface{}) map[string]interface{} {
 	return map[string]interface{}{"type": 2, "map": entries}
 }
 
-// mappingEntry is one {Key, Value} pair of a mapping token.
 func mappingEntry(key string, value interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"Key":   map[string]interface{}{"type": 0, "lit": key},
@@ -619,9 +571,8 @@ func scalarOrTemplateToken(value interface{}) map[string]interface{} {
 	return scalarToken(value)
 }
 
-// scalarToken encodes a YAML scalar (string / number / bool) as the
-// matching literal TemplateToken — `ports:` entries in particular
-// parse as numbers (`- 80`) or strings (`- "8080:80"`).
+// scalarToken encodes a YAML scalar (string/number/bool) as the matching
+// literal TemplateToken; `ports:` entries parse as numbers or strings.
 func scalarToken(v interface{}) map[string]interface{} {
 	switch t := v.(type) {
 	case string:
@@ -645,8 +596,8 @@ func sortedServiceNames(m map[string]*store.ServiceDef) []string {
 }
 
 // BuildNeedsContext builds the "needs" PipelineContextData from completed
-// dependency outputs. Jobs inside a reusable-workflow call see sibling
-// needs under their unprefixed keys; the synthetic gate never appears.
+// dependency outputs. Jobs inside a reusable-workflow call see sibling needs
+// under unprefixed keys; the synthetic gate never appears.
 func BuildNeedsContext(wf *store.Workflow, wfJob *store.WorkflowJob) interface{} {
 	if len(wfJob.Needs) == 0 {
 		return DictContextData()
@@ -656,7 +607,6 @@ func BuildNeedsContext(wf *store.Workflow, wfJob *store.WorkflowJob) interface{}
 		binding = wfJob.Def.Call
 	}
 
-	// Build a nested dict: needs.<job>.outputs.<name> = value, needs.<job>.result = "success"
 	entries := make([]map[string]interface{}, 0, len(wfJob.Needs))
 	for _, depKey := range wfJob.Needs {
 		depJob, ok := wf.Jobs[depKey]
@@ -670,7 +620,6 @@ func BuildNeedsContext(wf *store.Workflow, wfJob *store.WorkflowJob) interface{}
 			depKey = strings.TrimPrefix(depKey, binding.CallerKey+"/")
 		}
 
-		// Build outputs sub-dict
 		outputEntries := make([]map[string]interface{}, 0, len(depJob.Outputs))
 		for k, v := range depJob.Outputs {
 			outputEntries = append(outputEntries, map[string]interface{}{
@@ -678,7 +627,6 @@ func BuildNeedsContext(wf *store.Workflow, wfJob *store.WorkflowJob) interface{}
 			})
 		}
 
-		// Each dep is a dict with "result" and "outputs"
 		depEntries := []map[string]interface{}{
 			{"k": "result", "v": string(depJob.Result)},
 			{"k": "outputs", "v": map[string]interface{}{"t": 2, "d": outputEntries}},
@@ -693,7 +641,6 @@ func BuildNeedsContext(wf *store.Workflow, wfJob *store.WorkflowJob) interface{}
 	return map[string]interface{}{"t": 2, "d": entries}
 }
 
-// stepCondition returns the condition string for a step.
 func stepCondition(ifExpr string) string {
 	if ifExpr == "" {
 		return "success()"
@@ -704,14 +651,14 @@ func stepCondition(ifExpr string) string {
 	return "success() && (" + ifExpr + ")"
 }
 
-// DictContextData builds a PipelineContextData DictionaryContextData.
-// Args are alternating key, value strings.
+// DictContextData builds a DictionaryContextData from alternating key/value
+// strings.
 func DictContextData(kvs ...string) map[string]interface{} {
 	entries := make([]map[string]interface{}, 0, len(kvs)/2)
 	for i := 0; i+1 < len(kvs); i += 2 {
 		entries = append(entries, map[string]interface{}{
 			"k": kvs[i],
-			"v": kvs[i+1], // String values are bare JSON strings
+			"v": kvs[i+1],
 		})
 	}
 	return map[string]interface{}{
@@ -727,12 +674,9 @@ func varVal(value string) map[string]interface{} {
 	}
 }
 
-// RunnerContextData builds the `runner` pipeline context (os/arch/name and the
-// OS-appropriate tool_cache/temp paths). A queued job message is built before a
-// runner is known, so a nil agent yields generic defaults; the broker rebinds
-// this block to the actual leasing agent at delivery (ACT-051) so
-// `${{ runner.os }}`, `runner.arch` and `runner.name` reflect the runner that
-// ran the job rather than a fixed placeholder.
+// RunnerContextData builds the `runner` context (os/arch/name and OS-specific
+// tool_cache/temp paths). A nil agent yields generic defaults; the broker
+// rebinds this to the leasing agent at delivery (ACT-051).
 func RunnerContextData(agent *store.Agent) map[string]interface{} {
 	osName, arch, name := "Linux", "X64", "test-runner"
 	if agent != nil {
@@ -758,9 +702,9 @@ func RunnerContextData(agent *store.Agent) map[string]interface{} {
 	)
 }
 
-// runnerContextOS maps a registered agent to the canonical `runner.os` value
-// GitHub exposes ("Linux"/"Windows"/"macOS"). A self-reported OS label wins
-// over the free-form OS description.
+// runnerContextOS maps an agent to the canonical `runner.os` value
+// ("Linux"/"Windows"/"macOS"), preferring a self-reported label over the
+// free-form OS description.
 func runnerContextOS(agent *store.Agent) string {
 	for _, l := range agent.Labels {
 		switch strings.ToLower(l.Name) {
@@ -782,9 +726,9 @@ func runnerContextOS(agent *store.Agent) string {
 	}
 }
 
-// runnerContextArch maps a registered agent to the canonical `runner.arch`
-// value ("X64"/"ARM"/"ARM64"), preferring a self-reported architecture label
-// and falling back to tokens in the OS description.
+// runnerContextArch maps an agent to the canonical `runner.arch` value
+// ("X64"/"ARM"/"ARM64"), preferring a self-reported label and falling back to
+// tokens in the OS description.
 func runnerContextArch(agent *store.Agent) string {
 	for _, l := range agent.Labels {
 		switch strings.ToLower(l.Name) {
@@ -808,10 +752,8 @@ func runnerContextArch(agent *store.Agent) string {
 }
 
 // rebindRunnerContext rewrites the `contextData.runner` block of a serialized
-// job message to reflect the agent that leased it. It is idempotent — a
-// redelivered message is simply rebound to whichever runner next takes it. The
-// original bytes are returned unchanged if the message is not a job request in
-// the expected shape.
+// job message to reflect the leasing agent. Idempotent. Returns the original
+// bytes unchanged if the message is not a job request in the expected shape.
 func rebindRunnerContext(bodyJSON string, agent *store.Agent) string {
 	if agent == nil {
 		return bodyJSON

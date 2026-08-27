@@ -12,25 +12,12 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// Browser-only pull request operations. Real GitHub serves both from its web
-// UI only — "Commit suggestion" has no REST operation, and hiding whitespace
-// is the web diff's `w=1` toggle — so they live under /ui-data rather than an
-// invented /api/v3 path (`s.route` auto-wraps /ui-data with
-// authenticateUIData).
-//
-//	GET /ui-data/repos/{owner}/{repo}/pulls/{number}/files[?ignore_whitespace=1]
-//	  Without the flag: byte-for-byte the REST /pulls/{number}/files list (the
-//	  same diff source), so the UI can use this one URL for both modes. With
-//	  ignore_whitespace=1 the per-file patch is recomputed comparing lines
-//	  whitespace-insensitively: a line whose only difference is whitespace is
-//	  context, hunks that become empty disappear, files left with no hunks
-//	  drop from the list, and additions/deletions/changes are recomputed.
-//
-//	POST /ui-data/repos/{owner}/{repo}/pulls/{number}/review-comments/{comment_id}/apply-suggestion
-//	  Applies the FIRST ```suggestion fence of that review comment to the
-//	  commented RIGHT-side line range on the PR head branch, committed through
-//	  the same guarded commit machinery the contents API uses, authored by the
-//	  caller with the comment author as Co-authored-by. Returns {"sha": ...}.
+// Browser-only pull request operations. GitHub serves both from its web UI
+// only ("Commit suggestion" has no REST operation, hiding whitespace is the
+// web diff's `w=1` toggle), so they live under /ui-data. The files endpoint
+// with ignore_whitespace=1 recomputes each patch whitespace-insensitively;
+// apply-suggestion commits the first ```suggestion fence onto the PR head
+// branch, co-authored by the comment author.
 func (s *Server) registerGHPullsUIDataRoutes() {
 	s.route("GET /ui-data/repos/{owner}/{repo}/pulls/{number}/files", s.handleUIPullFiles)
 	s.route("POST /ui-data/repos/{owner}/{repo}/pulls/{number}/review-comments/{comment_id}/apply-suggestion", s.handleUIApplySuggestion)
@@ -59,7 +46,6 @@ func (s *Server) handleUIPullFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q := r.URL.Query().Get("ignore_whitespace"); q != "1" && q != "true" {
-		// Flag off: identical to the REST files endpoint, from the same diff.
 		writeJSON(w, http.StatusOK, paginateAndLink(w, r, files))
 		return
 	}
@@ -71,9 +57,9 @@ func (s *Server) handleUIPullFiles(w http.ResponseWriter, r *http.Request) {
 		status, _ := file["status"].(string)
 		patch, _ := file["patch"].(string)
 		ch := changes[name]
-		// Added/removed files, binary files (no patch), and files whose change
-		// could not be re-derived keep the REST endpoint's rendering — hiding
-		// whitespace never hides a whole-file addition or removal.
+		// Added/removed/binary files, and changes that can't be re-derived,
+		// keep the REST rendering: hiding whitespace never hides a whole-file
+		// addition or removal.
 		if ch == nil || patch == "" || status == "added" || status == "removed" {
 			out = append(out, file)
 			continue
@@ -85,7 +71,7 @@ func (s *Server) handleUIPullFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		wsPatch, adds, dels, ok := wsInsensitiveUnifiedPatch(fromLines, toLines)
 		if !ok {
-			// The bounded diff gave up (pathological file); keep the original.
+			// Bounded diff gave up; keep the original.
 			out = append(out, file)
 			continue
 		}
@@ -102,8 +88,8 @@ func (s *Server) handleUIPullFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 // pullRequestDiffChanges re-derives the merge-base→head tree diff the REST
-// files endpoint renders (same storage, same refs, same DiffTree), keyed by
-// the filename pullRequestChangedFiles reports for each change.
+// files endpoint renders, keyed by the filename pullRequestChangedFiles
+// reports for each change.
 func pullRequestDiffChanges(st *store.Store, repo *store.Repo, pr *store.PullRequest) map[string]*object.Change {
 	source, err := pullRequestDiffSource(st, repo, pr)
 	if err != nil || source == nil {
@@ -124,8 +110,8 @@ func pullRequestDiffChanges(st *store.Store, repo *store.Repo, pr *store.PullReq
 	return out
 }
 
-// changeFileLines loads both sides of a change as line slices; reports false
-// for binary content or unreadable blobs.
+// changeFileLines loads both sides of a change as line slices; ok=false for
+// binary content or unreadable blobs.
 func changeFileLines(ch *object.Change) (from, to []string, ok bool) {
 	fromFile, toFile, err := ch.Files()
 	if err != nil || fromFile == nil || toFile == nil {
@@ -149,7 +135,7 @@ func changeFileLines(ch *object.Change) (from, to []string, ok bool) {
 }
 
 // splitContentLines splits file content on "\n", treating a trailing newline
-// as a terminator rather than an extra empty line.
+// as a terminator, not an extra empty line.
 func splitContentLines(content string) []string {
 	if content == "" {
 		return nil
@@ -161,8 +147,8 @@ func splitContentLines(content string) []string {
 	return lines
 }
 
-// wsStripLine removes every whitespace character from a line, so two lines
-// compare equal exactly when they differ only in whitespace (git diff -w).
+// wsStripLine removes all whitespace from a line, so two lines compare equal
+// exactly when they differ only in whitespace (git diff -w).
 func wsStripLine(line string) string {
 	var b strings.Builder
 	for _, r := range line {
@@ -203,9 +189,8 @@ func wsDiffEdits(ka, kb []string) ([]wsEdit, bool) {
 	}
 	off := n + m
 	v := make([]int, 2*(n+m)+1)
-	// trace[d] snapshots v for k ∈ [-(d-1), d-1] before iteration d runs —
-	// exactly the diagonals iteration d-1 wrote and iteration d's backtrack
-	// step reads.
+	// trace[d] snapshots v for k ∈ [-(d-1), d-1] before iteration d runs — the
+	// diagonals the backtrack step reads.
 	trace := make([][]int, 0, maxD+1)
 	dFound := -1
 	for d := 0; d <= maxD && dFound < 0; d++ {
@@ -245,8 +230,7 @@ func wsDiffEdits(ka, kb []string) ([]wsEdit, bool) {
 		return nil, false
 	}
 
-	// snapAt reads trace[d]'s value for diagonal k (0 outside the window,
-	// matching the zero-initialised forward array).
+	// snapAt reads trace[d]'s value for diagonal k (0 outside the window).
 	snapAt := func(d, k int) int {
 		snapshot := trace[d]
 		base := d - 1
@@ -296,11 +280,10 @@ func wsDiffEdits(ka, kb []string) ([]wsEdit, bool) {
 	return edits, true
 }
 
-// wsInsensitiveUnifiedPatch diffs the two line slices comparing
-// whitespace-stripped lines, and renders GitHub's `patch` form (hunks only,
-// 3 context lines, no diff/index preamble). Context lines — including lines
-// that differ only in whitespace — show the new (b) side text. ok=false means
-// the bounded diff gave up.
+// wsInsensitiveUnifiedPatch diffs the line slices on whitespace-stripped
+// lines and renders GitHub's `patch` form (hunks only, 3 context lines, no
+// preamble). Context lines show the new (b) side text. ok=false means the
+// bounded diff gave up.
 func wsInsensitiveUnifiedPatch(a, b []string) (patch string, adds, dels int, ok bool) {
 	ka := make([]string, len(a))
 	for i, line := range a {
@@ -347,8 +330,8 @@ func wsInsensitiveUnifiedPatch(a, b []string) (patch string, adds, dels int, ok 
 			i++
 			continue
 		}
-		// Grow the hunk: subsequent changes separated by ≤ 2*ctx context lines
-		// merge into it, as git does.
+		// Grow the hunk: changes separated by ≤ 2*ctx context lines merge in,
+		// as git does.
 		last := i
 		j := i + 1
 		gap := 0
@@ -407,7 +390,7 @@ func wsInsensitiveUnifiedPatch(a, b []string) (patch string, adds, dels int, ok 
 	return buf.String(), adds, dels, true
 }
 
-// hunkRange renders one side of a @@ header, omitting ",1" like git does.
+// hunkRange renders one side of a @@ header, omitting ",1" as git does.
 func hunkRange(start, length int) string {
 	if length == 1 {
 		return strconv.Itoa(start)
@@ -417,8 +400,8 @@ func hunkRange(start, length int) string {
 
 // --- apply suggestion ---
 
-// firstSuggestionBlock extracts the body of the first ```suggestion fence.
-// ok=false when the body carries no (terminated) suggestion fence.
+// firstSuggestionBlock extracts the body of the first ```suggestion fence;
+// ok=false when there is no terminated fence.
 func firstSuggestionBlock(body string) ([]string, bool) {
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
@@ -489,9 +472,8 @@ func (s *Server) handleUIApplySuggestion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// The suggestion commits onto the PR's head branch, which lives in the
-	// head repository (a fork for cross-repo PRs) — push access is judged
-	// there, exactly where the commit lands.
+	// The commit lands on the PR head branch in the head repo (a fork for
+	// cross-repo PRs), so push access is judged there.
 	headRepo := store.PullRequestHeadRepo(s.store, pr)
 	if headRepo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -548,10 +530,8 @@ func (s *Server) handleUIApplySuggestion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Outdated detection: when the head has moved past the commented commit,
-	// the target lines must still read exactly as they did when the comment
-	// was made — the pragmatic equivalent of resolving the comment's
-	// commit_id chain. Any drift in the range is a 409.
+	// Outdated detection: when the head moved past the commented commit, the
+	// target lines must still read as they did at comment time, else 409.
 	if comment.CommitID != "" && comment.CommitID != headHash.String() {
 		commented, foundAtComment := gitFileContent(stor, plumbing.NewHash(comment.CommitID), comment.Path)
 		if !foundAtComment {

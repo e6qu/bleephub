@@ -2,15 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchMetrics, isForbidden } from "../api.js";
 import type { BleephubMetrics, BleephubStatus } from "../types.js";
 
-/**
- * Shared hook for metrics + status data used by OverviewPage and MetricsPage.
- *
- * These counters are instance diagnostics and the server only serves them to
- * site admins. A refusal is therefore an answer about the viewer, not a
- * failure of the request, and is reported separately from `isError` so the
- * pages can explain it instead of alarming about it. It is also final: no
- * retry and no polling once refused.
- */
+// Server serves these counters to site admins only; a refusal is reported
+// via isOperatorOnly (not isError), with no retry and no polling once refused.
 export function useMetricsData(): {
   metrics: BleephubMetrics | undefined;
   status: BleephubStatus | undefined;

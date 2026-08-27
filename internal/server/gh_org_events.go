@@ -9,20 +9,16 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Activity event feeds — GET /orgs/{org}/events, GET /events, and the
-// /users/{username}/events family — all render from one derivation over
-// the real recorded state on the store: issues opened and closed, pull
-// requests opened, and issue comments created on public repositories.
-// Every event carries the stable identity and the recorded creation
-// timestamp of the row it derives from, so feeds are identical across
-// requests and honestly empty when nothing happened.
+// Activity event feeds. Events are derived from recorded store state (issues
+// opened/closed, pull requests opened, issue comments) and carry the source
+// row's stable identity and timestamp, so a feed is deterministic across
+// requests.
 
 func (s *Server) registerGHOrgEventsRoutes() {
 	s.route("GET /api/v3/orgs/{org}/events", s.handleListOrgEvents)
 }
 
-// activityEventID derives a stable numeric event ID from the underlying
-// row: a per-event-kind prefix plus the row's own ID.
+// activityEventID derives a stable event ID: a per-kind prefix plus the row ID.
 func activityEventID(kind, rowID int) string {
 	return fmt.Sprintf("%d%09d", kind, rowID)
 }
@@ -60,11 +56,10 @@ func activityEventOrgJSON(org *store.Org, baseURL string) map[string]interface{}
 	}
 }
 
-// deriveActivityEvents renders the activity events for the given
-// repositories. When org is non-nil every event carries the org block
-// (the organization feed shape). Source rows are gathered under the read
-// lock and rendered outside it — the JSON builders (issueToJSON and
-// friends) take the store lock themselves.
+// deriveActivityEvents renders activity events for the given repositories;
+// a non-nil org adds the org block. Source rows are gathered under the read
+// lock and rendered outside it, since the JSON builders take the lock
+// themselves.
 func (s *Server) deriveActivityEvents(base string, repos map[int]*store.Repo, org *store.Org) []activityEvent {
 	s.store.Mu.RLock()
 	var issues []*store.Issue
@@ -180,8 +175,7 @@ func (s *Server) deriveActivityEvents(base string, repos map[int]*store.Repo, or
 	return events
 }
 
-// sortActivityEvents orders a feed newest-first, with the stable event ID
-// as the tiebreaker for same-instant rows.
+// sortActivityEvents orders a feed newest-first, tiebreaking on event ID.
 func sortActivityEvents(events []activityEvent) {
 	sort.SliceStable(events, func(i, j int) bool {
 		if !events[i].createdAt.Equal(events[j].createdAt) {
@@ -201,8 +195,8 @@ func activityEventsJSON(events []activityEvent) []map[string]interface{} {
 	return out
 }
 
-// newestActivityTime returns the most recent createdAt across events, or the
-// zero time for an empty feed — the Last-Modified basis for the activity feeds.
+// newestActivityTime returns the most recent createdAt — the Last-Modified
+// basis for the feeds — or the zero time for an empty feed.
 func newestActivityTime(events []activityEvent) time.Time {
 	var newest time.Time
 	for _, ev := range events {
@@ -213,8 +207,7 @@ func newestActivityTime(events []activityEvent) time.Time {
 	return newest
 }
 
-// publicReposByID returns every non-private repository keyed by ID — the
-// repository universe of the public activity feeds.
+// publicReposByID returns every non-private repository keyed by ID.
 func (s *Server) publicReposByID() map[int]*store.Repo {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
@@ -228,7 +221,7 @@ func (s *Server) publicReposByID() map[int]*store.Repo {
 }
 
 func (s *Server) handleListOrgEvents(w http.ResponseWriter, r *http.Request) {
-	// GitHub requires authentication for the per-org activity feed.
+	// GitHub requires authentication for the per-org feed.
 	if ghUserFromContext(r.Context()) == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
@@ -239,7 +232,6 @@ func (s *Server) handleListOrgEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The public feed covers the org's non-private repositories.
 	s.store.Mu.RLock()
 	orgRepos := map[int]*store.Repo{}
 	for _, repo := range s.store.Repos {

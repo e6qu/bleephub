@@ -1,29 +1,10 @@
 package graphqlapi
 
-// The GraphQL organization audit-log surface: Organization.auditLog's return
-// type graph, served from the real audit store (store.AuditEntry rows written
-// by RecordAuditEntry through the REST handlers and the enterprise mutations).
-//
-// GitHub models the audit log as a union, OrganizationAuditEntry, of ~60
-// concrete *AuditEntry objects, each implementing the AuditEntry interface
-// (the fifteen shared actor/created-at members), Node, and the
-// OrganizationAuditEntryData mixin (organization*), with the repo-scoped
-// members additionally implementing RepositoryAuditEntryData. bleephub only
-// records a handful of the actions those types describe, so only the concrete
-// types whose `action` the store actually produces are built here; an audit
-// entry whose action has no modeled type is omitted from the connection rather
-// than rendered as the wrong type. The modeled set:
-//
-//	org.create                       -> OrgCreateAuditEntry
-//	org.block_user                   -> OrgBlockUserAuditEntry
-//	org.unblock_user                 -> OrgUnblockUserAuditEntry
-//	org.remove_outside_collaborator  -> OrgRemoveOutsideCollaboratorAuditEntry
-//	repo.create                      -> RepoCreateAuditEntry
-//	repo.destroy                     -> RepoDestroyAuditEntry
-//
-// Every field on every type here is a transcription of GitHub's SDL — no field
-// is invented, so the schema stays signature-exact against the union members
-// it emits.
+// Organization.auditLog and its OrganizationAuditEntry union, served from
+// store.AuditEntry rows. GitHub models ~60 concrete entry types; only the few
+// whose action the store actually produces are built here. An entry whose
+// action has no modeled type is omitted from the connection rather than
+// rendered as the wrong type.
 
 import (
 	"strconv"
@@ -34,9 +15,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// auditEntryTypeName maps a stored action string to the concrete
-// OrganizationAuditEntry member that models it, or "" when the action has no
-// modeled type (and is therefore omitted from the connection).
+// auditEntryTypeName maps a stored action to its concrete
+// OrganizationAuditEntry member, or "" when the action has no modeled type.
 func auditEntryTypeName(action string) string {
 	switch action {
 	case "org.create":
@@ -57,12 +37,8 @@ func auditEntryTypeName(action string) string {
 	return ""
 }
 
-// --- shared type/field construction ----------------------------------------
-
-// auditObject memoizes an object type that declares interfaces. mutationObject
-// cannot be used because it constructs objects without an Interfaces list;
-// the shared mutationObjects memo is reused so the audit types are minted once
-// like every other object in the package.
+// auditObject memoizes an object type that declares interfaces, which
+// mutationObject cannot (it builds objects without an Interfaces list).
 func (s *Resolver) auditObject(name string, ifaces []*graphql.Interface, fields graphql.Fields) *graphql.Object {
 	if existing := s.memoizedMutationObject(name); existing != nil {
 		return existing
@@ -81,7 +57,7 @@ func mergeAuditFields(dst graphql.Fields, srcs ...graphql.Fields) graphql.Fields
 	return dst
 }
 
-// auditEntryBaseFields is the AuditEntry interface's fifteen shared members.
+// auditEntryBaseFields is the AuditEntry interface's shared members.
 func (s *Resolver) auditEntryBaseFields() graphql.Fields {
 	uri := s.graphQLStringScalar("URI")
 	precise := s.graphQLStringScalar("PreciseDateTime")
@@ -102,7 +78,6 @@ func (s *Resolver) auditEntryBaseFields() graphql.Fields {
 	}
 }
 
-// orgAuditDataFields is the OrganizationAuditEntryData interface's members.
 func (s *Resolver) orgAuditDataFields() graphql.Fields {
 	uri := s.graphQLStringScalar("URI")
 	return graphql.Fields{
@@ -113,7 +88,6 @@ func (s *Resolver) orgAuditDataFields() graphql.Fields {
 	}
 }
 
-// repoAuditDataFields is the RepositoryAuditEntryData interface's members.
 func (s *Resolver) repoAuditDataFields() graphql.Fields {
 	uri := s.graphQLStringScalar("URI")
 	return graphql.Fields{
@@ -139,9 +113,8 @@ func (s *Resolver) gqlOperationTypeEnum() *graphql.Enum {
 		"ACCESS", "AUTHENTICATION", "CREATE", "MODIFY", "REMOVE", "RESTORE", "TRANSFER")
 }
 
-// gqlBotType returns the shared Bot object the pull-request review-request
-// union already mints. The AuditEntryActor union names it, and graphql-go
-// refuses two objects of one name, so it is reused rather than re-created.
+// gqlBotType returns the shared Bot object the review-request union mints;
+// reused because graphql-go refuses two objects of one name.
 func (s *Resolver) gqlBotType() *graphql.Object {
 	if union := s.graphqlTypes.requestedReviewerUnion; union != nil {
 		for _, t := range union.Types() {
@@ -175,8 +148,7 @@ func (s *Resolver) gqlAuditEntryActorUnion() *graphql.Union {
 }
 
 // resolveAuditEntryConcrete dispatches a rendered audit-entry source to its
-// concrete object. It serves the union and all three interfaces the concrete
-// types implement.
+// concrete object; serves the union and all three interfaces.
 func (s *Resolver) resolveAuditEntryConcrete(p graphql.ResolveTypeParams) *graphql.Object {
 	m, ok := p.Value.(map[string]interface{})
 	if !ok {
@@ -219,8 +191,6 @@ func (s *Resolver) gqlRepoAuditDataInterface() *graphql.Interface {
 		s.resolveAuditEntryConcrete)
 }
 
-// orgAuditInterfaces / repoAuditInterfaces are the interface sets each concrete
-// type declares.
 func (s *Resolver) orgAuditInterfaces() []*graphql.Interface {
 	return []*graphql.Interface{s.gqlAuditEntryInterface(), s.graphqlTypes.node, s.gqlOrgAuditDataInterface()}
 }
@@ -231,8 +201,6 @@ func (s *Resolver) repoAuditInterfaces() []*graphql.Interface {
 		s.gqlOrgAuditDataInterface(), s.gqlRepoAuditDataInterface(),
 	}
 }
-
-// --- concrete member types --------------------------------------------------
 
 func (s *Resolver) gqlOrgCreateAuditEntryType() *graphql.Object {
 	return s.auditObject("OrgCreateAuditEntry", s.orgAuditInterfaces(),
@@ -253,8 +221,6 @@ func (s *Resolver) gqlOrgUnblockUserAuditEntryType() *graphql.Object {
 		mergeAuditFields(s.blockedUserFields(), s.auditEntryBaseFields(), s.orgAuditDataFields()))
 }
 
-// blockedUserFields are the members OrgBlockUserAuditEntry and
-// OrgUnblockUserAuditEntry declare beyond the shared set.
 func (s *Resolver) blockedUserFields() graphql.Fields {
 	uri := s.graphQLStringScalar("URI")
 	return graphql.Fields{
@@ -308,8 +274,6 @@ func (s *Resolver) gqlRepoDestroyAuditEntryType() *graphql.Object {
 		}, s.auditEntryBaseFields(), s.orgAuditDataFields(), s.repoAuditDataFields()))
 }
 
-// --- union, edge, connection -----------------------------------------------
-
 func (s *Resolver) gqlOrganizationAuditEntryUnion() *graphql.Union {
 	return s.mutationUnion("OrganizationAuditEntry", func() []*graphql.Object {
 		return []*graphql.Object{
@@ -331,8 +295,6 @@ func (s *Resolver) gqlOrganizationAuditEntryEdgeType() *graphql.Object {
 	})
 }
 
-// gqlOrganizationAuditEntryConnectionType is the OrganizationAuditEntryConnection
-// object the parent wires Organization.auditLog to return.
 func (s *Resolver) gqlOrganizationAuditEntryConnectionType() *graphql.Object {
 	return s.mutationObject("OrganizationAuditEntryConnection", graphql.Fields{
 		"edges":      &graphql.Field{Type: graphql.NewList(s.gqlOrganizationAuditEntryEdgeType())},
@@ -342,15 +304,9 @@ func (s *Resolver) gqlOrganizationAuditEntryConnectionType() *graphql.Object {
 	})
 }
 
-// --- connection resolver ----------------------------------------------------
-
-// organizationAuditLogConnection reads the org's stored audit events and
-// returns a paginated OrganizationAuditEntryConnection source. Organization.
-// auditLog is owner-only on GitHub, so a viewer who does not administer the
-// organization receives an empty connection (never an error, so a broader
-// query is not aborted). Entries whose action has no modeled concrete type are
-// omitted. The parent hands this method the org and its own p.Args (first/last/
-// after/before/orderBy/query).
+// organizationAuditLogConnection paginates the org's stored audit events.
+// auditLog is owner-only, so a non-admin viewer gets an empty connection (never
+// an error, so a broader query is not aborted).
 func (s *Resolver) organizationAuditLogConnection(p graphql.ResolveParams, org *store.Org) (interface{}, error) {
 	if org == nil || !s.viewerCanAdminAccount(p.Context, org.Login) {
 		return paginateGQLItems(nil, nil), nil
@@ -358,8 +314,8 @@ func (s *Resolver) organizationAuditLogConnection(p graphql.ResolveParams, org *
 
 	entries := s.store.ListOrgAuditEntries(org.Login)
 
-	// The store keeps the log newest-first; CREATED_AT DESC (GitHub's default)
-	// keeps that order, CREATED_AT ASC reverses it.
+	// The store keeps the log newest-first (CREATED_AT DESC, GitHub's default);
+	// CREATED_AT ASC reverses it.
 	if orderBy, ok := p.Args["orderBy"].(map[string]interface{}); ok {
 		if dir, _ := orderBy["direction"].(string); dir == "ASC" {
 			for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
@@ -389,8 +345,8 @@ func (s *Resolver) organizationAuditLogConnection(p graphql.ResolveParams, org *
 	return paginateGQLItems(items, p.Args), nil
 }
 
-// auditEntryMatchesQuery is the connection's `query` filter: every whitespace
-// term must appear in the entry's action, actor, org or data.
+// auditEntryMatchesQuery requires every whitespace term to appear in the
+// entry's action, actor, org or data.
 func auditEntryMatchesQuery(e *store.AuditEntry, phrase string) bool {
 	text := strings.ToLower(strings.Join([]string{e.Action, e.Actor, e.Org}, " "))
 	for k, v := range e.Data {
@@ -406,8 +362,6 @@ func auditEntryMatchesQuery(e *store.AuditEntry, phrase string) bool {
 	}
 	return true
 }
-
-// --- source rendering -------------------------------------------------------
 
 func auditDataString(e *store.AuditEntry, key string) string {
 	if e.Data == nil {
@@ -430,10 +384,9 @@ func auditOperationType(action string) interface{} {
 	return nil
 }
 
-// auditEntryBaseSource renders the AuditEntry, Node and OrganizationAuditEntryData
-// members shared by every modeled type. Optional object members are held as an
-// untyped nil (absent key) rather than a typed-nil map, per the connection
-// typed-nil contract.
+// auditEntryBaseSource renders the members shared by every modeled type.
+// Optional object members are held as an absent key, not a typed-nil map, per
+// the connection typed-nil contract.
 func (s *Resolver) auditEntryBaseSource(typeName string, e *store.AuditEntry) map[string]interface{} {
 	m := map[string]interface{}{
 		"_auditType":    typeName,
@@ -458,9 +411,8 @@ func (s *Resolver) auditEntryBaseSource(typeName string, e *store.AuditEntry) ma
 		}
 	}
 
-	// The organization the entry is attributed to: its own org, or — for the
-	// repo-scoped entries the store records with no org — the owner of the
-	// repository the data names.
+	// Attribute to the entry's own org, or — for repo-scoped entries recorded
+	// with no org — the owner of the repository the data names.
 	orgLogin := e.Org
 	if orgLogin == "" {
 		if full := auditDataString(e, "repo"); full != "" {
@@ -480,8 +432,7 @@ func (s *Resolver) auditEntryBaseSource(typeName string, e *store.AuditEntry) ma
 	return m
 }
 
-// setAuditUser fills the shared `user` (the user affected by the action) from a
-// login, when one is stored.
+// setAuditUser fills the `user` affected by the action from a stored login.
 func (s *Resolver) setAuditUser(m map[string]interface{}, login string) {
 	if login == "" {
 		return
@@ -512,8 +463,7 @@ func (s *Resolver) renderAuditEntry(typeName string, e *store.AuditEntry) map[st
 			}
 		}
 	case "OrgInviteMemberAuditEntry":
-		// email is the invitee address the invitation carried; organizationInvitation
-		// stays null once the invitation is consumed or expired.
+		// organizationInvitation stays null once the invitation is consumed or expired.
 		if email := auditDataString(e, "email"); email != "" {
 			m["email"] = email
 		}
@@ -527,8 +477,8 @@ func (s *Resolver) renderAuditEntry(typeName string, e *store.AuditEntry) map[st
 	return m
 }
 
-// fillRepositoryAuditData renders the RepositoryAuditEntryData members and the
-// repo visibility from the repository the entry's data names.
+// fillRepositoryAuditData renders the RepositoryAuditEntryData members and
+// visibility from the repository the entry's data names.
 func (s *Resolver) fillRepositoryAuditData(m map[string]interface{}, e *store.AuditEntry) {
 	full := auditDataString(e, "repo")
 	if full == "" {

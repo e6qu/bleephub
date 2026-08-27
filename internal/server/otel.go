@@ -25,27 +25,16 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Observability bundles trace + log SDK shutdown + a zerolog Writer
-// that mirrors entries to the OTel logs SDK. Mirror of
-// `backends/core.Observability` — bleephub is a separate Go module
-// without backend-core as a dep, so the bridge lives here.
+// Observability bundles trace + log SDK shutdown with a zerolog Writer that
+// mirrors entries to the OTel logs SDK.
 type Observability struct {
 	LogWriter *OTelLogWriter
 	Shutdown  func(context.Context) error
 }
 
-// InitObservability sets up both tracer + logger providers when any OTLP
-// exporter endpoint is configured (the general OTEL_EXPORTER_OTLP_ENDPOINT or
-// any per-signal endpoint). Returns a zero-value Observability with a no-op
-// Shutdown when OTel is disabled.
-//
-// Components-decoupled invariant intact.
-
-// otelExporterConfigured reports whether OTLP export is configured. The
-// otlp*http exporters honour the per-signal endpoint variables in addition to
-// the general one, so gating solely on OTEL_EXPORTER_OTLP_ENDPOINT silently
-// disabled telemetry for an operator who set only, say,
-// OTEL_EXPORTER_OTLP_TRACES_ENDPOINT (CORE-022).
+// otelExporterConfigured reports whether OTLP export is configured. The exporters
+// honour per-signal endpoint variables too, so gating solely on the general
+// OTEL_EXPORTER_OTLP_ENDPOINT silently disabled a per-signal-only setup (CORE-022).
 func otelExporterConfigured() bool {
 	for _, v := range []string{
 		"OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -107,9 +96,7 @@ func InitObservability(serviceName string) (*Observability, error) {
 	)
 	otel.SetMeterProvider(mp)
 
-	// A runtime-metrics startup failure means the caller asked for OTEL
-	// (endpoint set) but the meter pipeline is broken; surface it and tear down
-	// like every other exporter failure above rather than booting half-wired.
+	// Tear down on a runtime-metrics failure rather than booting half-wired.
 	if err := runtime.Start(runtime.WithMinimumReadMemStatsInterval(15 * time.Second)); err != nil {
 		_ = tp.Shutdown(context.Background())
 		_ = lp.Shutdown(context.Background())
@@ -125,8 +112,7 @@ func InitObservability(serviceName string) (*Observability, error) {
 	}, nil
 }
 
-// OTelLogWriter — zerolog → OTel logs bridge. Implements io.Writer so
-// it slots into zerolog.MultiLevelWriter alongside ConsoleWriter.
+// OTelLogWriter bridges zerolog to the OTel logs SDK as an io.Writer.
 type OTelLogWriter struct {
 	logger otellog.Logger
 }
@@ -137,9 +123,7 @@ func (w *OTelLogWriter) Write(p []byte) (int, error) {
 	}
 	var entry map[string]any
 	if err := json.Unmarshal(p, &entry); err != nil {
-		// A line that isn't the expected zerolog JSON must not silently vanish
-		// from the OTel pipeline: emit it verbatim (no structured attributes)
-		// so it stays observable.
+		// Emit a non-JSON line verbatim rather than dropping it from the pipeline.
 		var record otellog.Record
 		record.SetObservedTimestamp(time.Now())
 		record.SetBody(attribute.StringValue(strings.TrimRight(string(p), "\n")))
@@ -159,8 +143,7 @@ func (w *OTelLogWriter) Write(p []byte) (int, error) {
 	record.SetSeverityText(severityText)
 	for k, v := range entry {
 		switch k {
-		// trace_id/span_id are promoted to the record's trace context via the
-		// emit context below, not duplicated as free-form attributes.
+		// trace_id/span_id go into the record's trace context below, not attributes.
 		case "level", "message", "time", "trace_id", "span_id":
 			continue
 		}
@@ -170,11 +153,9 @@ func (w *OTelLogWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// logEmitContext reconstructs the trace context a log line was produced under so
-// the OTel logs SDK stamps the emitted record's trace_id/span_id and logs
-// correlate with their span (CORE-007). It reads the trace_id/span_id fields the
-// request logger records; a line without a valid pair emits under the background
-// context (unchanged behavior for spanless startup/background logs).
+// logEmitContext reconstructs a log line's trace context from its trace_id/span_id
+// fields so the emitted record correlates with its span (CORE-007). A line without a
+// valid pair emits under the background context.
 func logEmitContext(entry map[string]any) context.Context {
 	traceHex, _ := entry["trace_id"].(string)
 	spanHex, _ := entry["span_id"].(string)

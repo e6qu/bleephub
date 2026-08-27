@@ -15,13 +15,9 @@ func (s *Server) registerGHGraphQLRoutes() {
 	s.route("POST /api/graphql", s.handleGraphQL)
 }
 
-// handleGraphQL executes a GraphQL query.
-//
-// The endpoint requires authentication. GitHub's /graphql rejects every
-// anonymous request with 401 and has no public read surface at all, which
-// matters here for more than parity: resolvers reach the store directly, so an
-// anonymous caller admitted at this door is a caller inside every connection
-// the schema exposes.
+// handleGraphQL executes a GraphQL query. Authentication is required: resolvers
+// reach the store directly, so an anonymous caller admitted here is inside every
+// connection the schema exposes (GitHub's /graphql likewise rejects anonymous with 401).
 func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 	if ghUserFromContext(r.Context()) == nil &&
 		ghInstallationTokenFromContext(r.Context()) == nil &&
@@ -72,10 +68,9 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 			Msg("graphql errors")
 	}
 
-	// Re-shape errors[] into GitHub's wire form: real GitHub adds a
-	// non-spec top-level "type" member (NOT_FOUND, FORBIDDEN, ...) that
-	// graphql-go's FormattedError cannot carry, so the envelope is built
-	// by hand instead of serializing graphql.Result directly.
+	// Build the errors[] envelope by hand: GitHub adds a non-spec top-level
+	// "type" member (NOT_FOUND, FORBIDDEN, ...) that graphql-go's FormattedError
+	// cannot carry.
 	out := map[string]interface{}{"data": result.Data}
 	if len(result.Errors) > 0 {
 		errItems := make([]map[string]interface{}, 0, len(result.Errors))

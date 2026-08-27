@@ -53,11 +53,8 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 		tagName := ref.Name().Short()
 		tags = append(tags, map[string]interface{}{
 			"name": tagName,
-			// github.com advertises the API-shaped archive endpoints here
-			// (https://api.github.com/repos/{o}/{r}/zipball/refs/tags/{tag}),
-			// which 302 to codeload. Advertising bleephub's internal codeload
-			// URL instead handed clients a link that skips the documented
-			// endpoint entirely.
+			// Advertise the API-shaped archive endpoints (which 302 to
+			// codeload), not bleephub's internal codeload URL.
 			"zipball_url": base + "/api/v3/repos/" + repo.FullName + "/zipball/refs/tags/" + tagName,
 			"tarball_url": base + "/api/v3/repos/" + repo.FullName + "/tarball/refs/tags/" + tagName,
 			"commit": map[string]interface{}{
@@ -68,13 +65,8 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 		})
 		return nil
 	})
-	// github.com lists the newest version first, not ascending by name: a
-	// client reading tags[0] as "latest" must get v2.0.0, not v1.0.0. The
-	// order is a version-aware descending compare — kubernetes/kubernetes
-	// answers v1.38.0-alpha.0 before v1.36.4 (plain descending text would
-	// put v1.9.x first), nodejs/node answers every v26.x before every v25.x,
-	// and golang/go answers weekly.* before release.* before go1.* (so it is
-	// not chronological either).
+	// Version-aware descending order, so a client reading tags[0] as "latest"
+	// gets v2.0.0 not v1.0.0 (and v1.38 before v1.9, not plain text order).
 	sort.Slice(tags, func(i, j int) bool {
 		return compareTagNames(fmt.Sprint(tags[i]["name"]), fmt.Sprint(tags[j]["name"])) > 0
 	})
@@ -85,12 +77,9 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, tags))
 }
 
-// compareTagNames orders two tag names the way github.com's tag list does:
-// version-aware, so embedded numbers compare as numbers (v1.38 > v1.9) and a
-// prerelease sorts below the release it qualifies (v1.36.0 > v1.36.0-rc.1),
-// with everything else falling back to a byte compare (weekly.* > release.* >
-// go1.*). It returns >0 when a sorts after b, so handleListTags can sort
-// descending — newest first, which is what a client reading tags[0] expects.
+// compareTagNames orders tag names version-aware: embedded numbers compare as
+// numbers (v1.38 > v1.9), a prerelease sorts below its release (v1.36.0 >
+// v1.36.0-rc.1), else a byte compare. Returns >0 when a sorts after b.
 func compareTagNames(a, b string) int {
 	ar, br := versionRuns(a), versionRuns(b)
 	for i := 0; i < len(ar) && i < len(br); i++ {
@@ -112,9 +101,8 @@ func compareTagNames(a, b string) int {
 	if len(ar) == len(br) {
 		return 0
 	}
-	// One name is a prefix of the other. A '-' starts a semver prerelease, and
-	// a prerelease ranks below its release; any other continuation ranks above
-	// the shorter name.
+	// One name is a prefix of the other. A '-' continuation (semver prerelease)
+	// ranks below the shorter name; any other continuation ranks above it.
 	longer, sign := br, -1
 	if len(ar) > len(br) {
 		longer, sign = ar, 1
@@ -142,8 +130,7 @@ func isASCIIDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 func isDigitRun(s string) bool { return s != "" && isASCIIDigit(s[0]) }
 
-// compareNumericRuns compares two all-digit runs as numbers of unbounded
-// width, so no tag name can overflow the comparison.
+// compareNumericRuns compares two all-digit runs as unbounded-width numbers.
 func compareNumericRuns(a, b string) int {
 	a = strings.TrimLeft(a, "0")
 	b = strings.TrimLeft(b, "0")
@@ -196,16 +183,13 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 
 	base := s.baseURL(r)
 
-	// Empty path means list all refs.
 	if refPath == "" {
 		s.listRefs(w, r, base, repo.FullName, stor, "")
 		return
 	}
 
-	// refPath may be a namespace like "heads" or "heads/main", or a deeper
-	// path like "heads/feature/foo". GitHub first tries to resolve the exact
-	// path as a single reference; if that fails, it treats the path as a
-	// namespace and lists everything underneath.
+	// Try the exact path as a single reference first; on miss, treat it as a
+	// namespace and list everything underneath.
 	fullRef := plumbing.ReferenceName("refs/" + refPath)
 	if ref, err := stor.Reference(fullRef); err == nil {
 		writeJSON(w, http.StatusOK, refToJSON(stor, base, repo.FullName, ref))
@@ -232,10 +216,8 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 
-	// A namespace holding no refs is a 404 on github.com, whatever its depth —
-	// GET /git/refs/tags on a repository without tags, GET /git/refs/bogusns
-	// and GET /git/refs/HEAD all answer 404, not an empty array. (Only the
-	// modern GET /git/matching-refs/{ref} returns [] for an empty match.)
+	// An empty namespace is a 404 here, not []; only the modern
+	// GET /git/matching-refs/{ref} returns [] for an empty match.
 	if len(items) == 0 {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -271,9 +253,6 @@ func (s *Server) listRefs(w http.ResponseWriter, r *http.Request, baseURL, fullN
 	sort.Slice(items, func(i, j int) bool {
 		return fmt.Sprint(items[i]["ref"]) < fmt.Sprint(items[j]["ref"])
 	})
-	// GitHub paginates the ref listing at 30 per page with Link headers, the
-	// same as the modern GET /git/matching-refs/{ref} this legacy path shares
-	// its shape with.
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, items))
 }
 
@@ -304,9 +283,8 @@ func gitObjectTypeName(stor gitStorage.Storer, hash plumbing.Hash) string {
 	return objectTypeName(encoded.Type())
 }
 
-// encodeNodeID returns a deterministic base64 GraphQL global node id for the
-// given type and local identifier. It mirrors the shape GitHub uses for opaque
-// node IDs without requiring a persistent node-id table.
+// encodeNodeID returns a deterministic base64 node id for the type and local
+// identifier, avoiding a persistent node-id table.
 func encodeNodeID(typ string, id int, suffix string) string {
 	var payload string
 	if suffix != "" {
@@ -337,9 +315,8 @@ func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The list response is the short-branch shape: commit carries
-	// exactly {sha, url} (the full commit object belongs to the
-	// single-branch endpoint).
+	// Short-branch shape: commit carries only {sha, url}; the full commit
+	// object belongs to the single-branch endpoint.
 	base := s.baseURL(r)
 	var protectedFilter *bool
 	switch raw := r.URL.Query().Get("protected"); raw {
@@ -450,7 +427,6 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// refPath is like "heads/branch-name" or "tags/v1.0".
 	fullRef := plumbing.ReferenceName("refs/" + r.PathValue("ref"))
 	if failure := s.deleteGitRef(r.Context(), repo, stor, ghUserFromContext(r.Context()), fullRef, s.baseURL(r)); failure != nil {
 		failure.write(w)
@@ -459,7 +435,6 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// resolveCommit looks up a commit object from storage by hash.
 func resolveCommit(stor storer.EncodedObjectStorer, hash plumbing.Hash) *object.Commit {
 	obj, err := object.GetCommit(stor, hash)
 	if err != nil {

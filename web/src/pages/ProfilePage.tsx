@@ -58,7 +58,7 @@ import {
 } from "../components/octicons.js";
 
 type NavTab = "overview" | "repositories" | "projects" | "packages" | "stars";
-// followers/following are reachable from the header counts, not the tab row.
+// followers/following are reached from the header counts, not the tab row.
 type ProfileTab = NavTab | "followers" | "following";
 const TABS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
   { key: "overview", label: "Overview", icon: <RepoIcon size={15} /> },
@@ -88,16 +88,14 @@ export function ProfilePage() {
 
   if (profile.isLoading) return <Spinner label="loading profile" />;
   if (profile.isError || !profile.data) {
-    // Unknown login → github.com's full-page 404; other failures keep the banner.
+    // Unknown login → full-page 404; other failures keep the banner.
     if (isNotFoundError(profile.error)) return <RepoNotFound />;
     return <InlineError title="Failed to load profile" detail={String(profile.error)} />;
   }
 
   return (
-    // min-w-0 on both grid children: without it the implicit (phone) and 1fr
-    // (desktop) tracks inherit the min-content width of wide descendants —
-    // e.g. the contribution-graph table — and force page-level horizontal
-    // scroll instead of letting inner overflow-x-auto wrappers scroll.
+    // min-w-0 on both grid children so wide descendants (the contribution
+    // graph) scroll their own wrapper instead of forcing page-level scroll.
     <div className="grid gap-6 md:grid-cols-[296px_minmax(0,1fr)]">
       <ProfileSidebar profile={profile.data} orgs={orgs.data} />
       <div className="min-w-0">
@@ -116,7 +114,6 @@ export function ProfilePage() {
   );
 }
 
-/** Underline tab nav mirroring github.com/{login} (Overview/Repositories/Projects/Packages/Stars). */
 function ProfileTabs({
   login,
   active,
@@ -181,15 +178,10 @@ function Counter({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * Follow/Unfollow control for another user's profile. Renders nothing on the
- * viewer's own profile. The follow state comes from GET user/following/{login}
- * (204/404); the button toggles it via PUT/DELETE and refreshes both.
- */
+// Follow state comes from GET user/following/{login} (204/404); hidden on the
+// viewer's own profile and for anonymous visitors (viewerLogin null).
 function FollowButton({ login }: { login: string }) {
   const qc = useQueryClient();
-  // Anonymous visitors have no viewer (the read would 401); viewerLogin
-  // stays null and the button renders nothing, matching the null-viewer path.
   const signedIn = useSignedIn();
   const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const viewerLogin = typeof viewer.data?.login === "string" ? viewer.data.login : null;
@@ -285,7 +277,7 @@ function ProfileSidebar({
 
 // ─── Achievements (profile sidebar badges) ──────────────────────────────────────
 
-/** Distinctive stand-in glyph per badge (no GitHub artwork). */
+// Stand-in glyphs (no GitHub artwork).
 const ACHIEVEMENT_EMOJI: Record<string, string> = {
   "pull-shark": "🦈",
   yolo: "🎲",
@@ -298,11 +290,7 @@ const ACHIEVEMENT_EMOJI: Record<string, string> = {
 const fetchUserAchievements = (login: string) =>
   ghFetch<GithubAchievement[]>(`/ui-data/users/${encodeURIComponent(login)}/achievements`);
 
-/**
- * The profile sidebar "Achievements" badge row, server-computed from stored
- * activity (GET /ui-data/users/{login}/achievements). Like github.com, the
- * whole section is hidden when the user has earned nothing.
- */
+// Hidden when the user has earned nothing.
 function AchievementsSection({ login }: { login: string }) {
   const { data } = useQuery({
     queryKey: ["user-achievements", login],
@@ -383,9 +371,8 @@ function MetaRow({ icon, children }: { icon?: React.ReactNode; children: React.R
 function ProfileOverview({ login }: { login: string }) {
   const readme = useQuery({
     queryKey: ["profile-readme", login],
-    // The profile README is the README of the <login>/<login> repo. The
-    // /ui-data wrapper answers 200 with readme: null when absent (the common
-    // case) — probing the readme endpoint directly would log a console 404.
+    // /ui-data wrapper answers 200 with readme: null when absent; probing the
+    // readme endpoint directly would log a console 404.
     queryFn: async () => {
       const out = await ghFetch<{ readme: { content: string } | null }>(
         `/ui-data/users/${encodeURIComponent(login)}/profile-readme`,
@@ -438,7 +425,6 @@ function ProfileOverview({ login }: { login: string }) {
 
 function PinnedSection({ login }: { login: string }) {
   const qc = useQueryClient();
-  // Signed out there is no "self" — the viewer read would 401.
   const signedIn = useSignedIn();
   const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const isSelf = typeof viewer.data?.login === "string" && viewer.data.login === login;
@@ -447,7 +433,7 @@ function PinnedSection({ login }: { login: string }) {
   const muted = { fontSize: "0.85rem", color: "var(--color-fg-muted)" } as const;
 
   const pinned = pinnedQ.data ?? [];
-  // On another user's profile with no pins, GitHub hides the section entirely.
+  // Hide the section on another user's profile that has no pins.
   if (pinnedQ.isLoading) return null;
   if (!isSelf && pinned.length === 0) return null;
 
@@ -633,8 +619,7 @@ function ProfileRepos({ login }: { login: string }) {
   const [pageStack, setPageStack] = useState<string[]>([]);
   const [localPage, setLocalPage] = useState(1);
 
-  // Server-side portion of the controls: type sources/forks and the
-  // updated/name sorts map straight onto the repos list API's query params.
+  // type sources/forks and updated/name sorts map onto server query params.
   const serverFilters = useMemo(
     () => ({
       type: type === "sources" ? "sources" : type === "forks" ? "forks" : undefined,
@@ -642,9 +627,8 @@ function ProfileRepos({ login }: { login: string }) {
     }),
     [type, sortKey],
   );
-  // Search text, the Archived type and the Stars sort have no server-side
-  // query (as on real GitHub's REST list) — walk every page (capped) so
-  // matches on later pages are still found, then finish client-side.
+  // Search text, Archived type and Stars sort have no server query — walk
+  // every page (capped) and finish client-side.
   const needsWalk = filter.trim() !== "" || type === "archived" || sortKey === "stars";
 
   const resetPaging = () => {
@@ -663,8 +647,8 @@ function ProfileRepos({ login }: { login: string }) {
     queryFn: () =>
       walkRepoPages(
         (f, u) => fetchUserReposByLoginPage(login, f, u),
-        // The archived filter needs the unfiltered set (archived repos can be
-        // sources or forks); other walks keep the server-side type narrowing.
+        // archived repos can be sources or forks, so archived needs the
+        // unfiltered set; other walks keep the server-side type narrowing.
         type === "archived" ? { sort: serverFilters.sort } : serverFilters,
       ),
     enabled: needsWalk,
@@ -864,8 +848,7 @@ type StarsSort = "recent" | "stars" | "name";
 function ProfileStars({ login }: { login: string }) {
   const [sortKey, setSortKey] = useState<StarsSort>("recent");
   const [page, setPage] = useState(1);
-  // Walk every page (capped) so a profile with >30 stars isn't silently
-  // truncated to the server's first page; sort and paginate locally.
+  // Walk every page (capped), then sort and paginate locally.
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["user-starred", login],
     queryFn: () => walkNumberedPages<BleephubRepo>(`/api/v3/users/${encodeURIComponent(login)}/starred`),
@@ -935,7 +918,7 @@ function ProfileStars({ login }: { login: string }) {
 // ─── Packages tab ───────────────────────────────────────────────────────────────
 
 function ProfilePackages({ login }: { login: string }) {
-  // Package reads 401 anonymously, so this tab asks visitors to sign in.
+  // Package reads 401 anonymously.
   const signedIn = useSignedIn();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["user-packages", login],
@@ -987,7 +970,7 @@ function ProfilePackages({ login }: { login: string }) {
 // ─── Projects tab (ProjectsV2) ──────────────────────────────────────────────────
 
 function ProfileProjects({ login }: { login: string }) {
-  // Project reads 401 anonymously, so this tab asks visitors to sign in.
+  // Project reads 401 anonymously.
   const signedIn = useSignedIn();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["user-projects-v2", login],
@@ -1074,11 +1057,8 @@ function ProfileFollows({ login, kind }: { login: string; kind: "followers" | "f
   );
 }
 
-/**
- * A follower/following row hydrated with the account's name/bio/location —
- * fetched lazily per row (concurrency-capped, cached under the same key the
- * profile page uses) — plus the Follow/Unfollow control.
- */
+// Hydrates each row's name/bio/location lazily (concurrency-capped, cached
+// under the profile page's key).
 function FollowAccountCard({ account }: { account: FollowAccount }) {
   const { data } = useQuery({
     queryKey: ["user-profile", account.login],

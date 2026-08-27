@@ -9,14 +9,13 @@ import (
 )
 
 // accessUserNamespaceRepository and createAttributionInvitation: the two
-// administrative mutations over managed accounts and imported identities.
-// The first records a temporary access grant honored inside the repository
-// capability lattice itself; the second records the ask that a mannequin's
-// work be claimed by a real account.
+// administrative mutations over managed accounts and imported identities. The
+// first records a temporary access grant; the second records the ask that a
+// mannequin's work be claimed by a real account.
 
 func init() {
 	// accessUserNamespaceRepository's row lives in the enterprise family's
-	// registry, whose sweep pins every enterprise-scoped rule in one place.
+	// registry.
 	for name, rule := range map[string]mutationRule{
 		"createAttributionInvitation": attributionInvitationRule{},
 	} {
@@ -27,9 +26,8 @@ func init() {
 	}
 }
 
-// attributionInvitationRule requires ownership of the organization the
-// invitation is issued under: attribution rewrites authorship, which is
-// governance, not participation.
+// attributionInvitationRule requires ownership of the org: attribution
+// rewrites authorship, which is governance, not participation.
 type attributionInvitationRule struct{}
 
 func (attributionInvitationRule) check() error { return nil }
@@ -50,8 +48,7 @@ func (attributionInvitationRule) authorize(s *Resolver, p graphql.ResolveParams,
 	return nil
 }
 
-// gqlMannequinType is GitHub's Mannequin object, memoized so the attribution
-// mutations and Organization.mannequins name one instance.
+// gqlMannequinType is GitHub's Mannequin object (memoized).
 func (s *Resolver) gqlMannequinType() *graphql.Object {
 	return s.mutationObject("Mannequin", graphql.Fields{
 		"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
@@ -128,11 +125,9 @@ func (s *Resolver) addEMUMutationsToSchema(mutationType *graphql.Object) {
 			if repo == nil {
 				return nil, gqlMissingNode("Repository", str(input["repositoryId"]))
 			}
-			// The repository must live in a user namespace whose account the
-			// enterprise manages. bleephub's managed-account analogue is an
-			// enterprise membership under an enterprise-configured identity
-			// provider — the closest truthful reading of "managed user" for
-			// an instance whose accounts are IdP-provisioned.
+			// The repository must live in a user namespace the enterprise
+			// manages. bleephub's managed-account analogue is an enterprise
+			// membership under an enterprise-configured identity provider.
 			owner, _, ok := store.SplitRepoFullName(repo.FullName)
 			if !ok {
 				return nil, gqlMissingNode("Repository", str(input["repositoryId"]))
@@ -167,8 +162,7 @@ func (s *Resolver) addEMUMutationsToSchema(mutationType *graphql.Object) {
 	})
 	mannequinType := s.gqlMannequinType()
 
-	// Claimable is the union of identities whose work can be claimed: the
-	// mannequin holding it, or the user it would move to.
+	// Claimable: the mannequin holding the work, or the user it would move to.
 	claimable := graphql.NewUnion(graphql.UnionConfig{
 		Name:  "Claimable",
 		Types: []*graphql.Object{mannequinType, s.graphqlTypes.user},

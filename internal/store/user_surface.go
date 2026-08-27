@@ -8,8 +8,7 @@ import (
 	"time"
 )
 
-// CountPrivateRepos returns the number of private repositories owned by
-// the given account login.
+// CountPrivateRepos returns the number of private repositories owned by login.
 func (st *Store) CountPrivateRepos(login string) int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -23,8 +22,7 @@ func (st *Store) CountPrivateRepos(login string) int {
 	return n
 }
 
-// CountSecretGists returns the number of secret (non-public) gists the
-// user owns.
+// CountSecretGists returns the number of non-public gists the user owns.
 func (st *Store) CountSecretGists(userID int) int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -37,8 +35,8 @@ func (st *Store) CountSecretGists(userID int) int {
 	return n
 }
 
-// CountRepoCollaboratorsForOwner returns the number of distinct
-// collaborators across the account's repositories.
+// CountRepoCollaboratorsForOwner returns the number of distinct collaborators
+// across the account's repositories.
 func (st *Store) CountRepoCollaboratorsForOwner(login string) int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -55,8 +53,8 @@ func (st *Store) CountRepoCollaboratorsForOwner(login string) int {
 	return len(distinct)
 }
 
-// DiskUsageKBForOwner sums the on-disk size of the account's
-// repositories in kilobytes (memory-backed git storage occupies no disk).
+// DiskUsageKBForOwner sums the account's repository sizes in kilobytes
+// (memory-backed git storage occupies no disk).
 func (st *Store) DiskUsageKBForOwner(login string) int64 {
 	st.Mu.RLock()
 	prefix := login + "/"
@@ -94,9 +92,8 @@ func (st *Store) ListUserEmails(userID int) []UserEmail {
 	return out
 }
 
-// AddUserEmails appends new email addresses to the user's account.
-// Returns (nil, false) when any address is already registered, matching
-// real GitHub's 422 on duplicates.
+// AddUserEmails appends new email addresses to the user's account, returning
+// (nil, false) when any address is already registered (GitHub's 422).
 func (st *Store) AddUserEmails(userID int, emails []string) ([]UserEmail, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -123,8 +120,7 @@ func (st *Store) AddUserEmails(userID int, emails []string) ([]UserEmail, bool) 
 	return added, true
 }
 
-// DeleteUserEmails removes email addresses from the user's account. The
-// primary address cannot be removed.
+// DeleteUserEmails removes email addresses; the primary address cannot be removed.
 func (st *Store) DeleteUserEmails(userID int, emails []string) deleteEmailsResult {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -167,9 +163,8 @@ func (st *Store) DeleteUserEmails(userID int, emails []string) deleteEmailsResul
 	return DeleteEmailsOK
 }
 
-// SetPrimaryEmailVisibility updates the visibility of the primary email
-// address and returns the updated entries, or nil when the user has no
-// primary email.
+// SetPrimaryEmailVisibility updates the primary email's visibility, returning
+// the updated entries or nil when the user has no primary email.
 func (st *Store) SetPrimaryEmailVisibility(userID int, visibility string) []UserEmail {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -193,9 +188,8 @@ func (st *Store) SetPrimaryEmailVisibility(userID int, visibility string) []User
 	return updated
 }
 
-// setPrimaryEmailResult reports the outcome of SetPrimaryUserEmail. Exported
-// values mirror the deleteEmailsResult convention: only the outcomes callers
-// branch on are exported.
+// setPrimaryEmailResult reports the outcome of SetPrimaryUserEmail. Only the
+// outcomes callers branch on are exported.
 type setPrimaryEmailResult int
 
 const (
@@ -205,11 +199,10 @@ const (
 	SetPrimaryEmailUnverified
 )
 
-// SetPrimaryUserEmail promotes one of the user's existing verified email
-// addresses to primary (the github.com Settings → Emails web action; the REST
-// API cannot change the primary address). The demoted primary keeps its entry;
-// the promoted address inherits the old primary's visibility when it has none
-// of its own. Returns the updated entries, primary first.
+// SetPrimaryUserEmail promotes a verified address to primary (a web-only
+// action; the REST API cannot change the primary). The promoted address
+// inherits the old primary's visibility when it has none. Returns the updated
+// entries, primary first.
 func (st *Store) SetPrimaryUserEmail(userID int, email string) ([]UserEmail, setPrimaryEmailResult) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -254,8 +247,8 @@ func (st *Store) SetPrimaryUserEmail(userID int, email string) ([]UserEmail, set
 	return out, SetPrimaryEmailOK
 }
 
-// setPrimaryEmailLocked changes the account's primary email address
-// (PATCH /user `email`). Caller must hold st.Mu.
+// SetPrimaryEmailLocked changes the account's primary email address (PATCH
+// /user `email`). Caller must hold st.Mu.
 func (st *Store) SetPrimaryEmailLocked(u *User, email string) {
 	u.Email = email
 	materializeEmailsLocked(u)
@@ -283,10 +276,8 @@ func (st *Store) UpdateUserProfile(userID int, fn func(*User)) *User {
 	return u
 }
 
-// IsInteractionGroup reports whether name is one of the three groups GitHub
-// accepts as an interaction limit. The REST routes and the three GraphQL
-// set-limit mutations both ask it, so neither can accept a limit the other
-// refuses.
+// IsInteractionGroup reports whether limit is a group GitHub accepts as an
+// interaction limit. Shared by the REST routes and GraphQL set-limit mutations.
 func IsInteractionGroup(limit string) bool {
 	switch limit {
 	case "existing_users", "contributors_only", "collaborators_only":
@@ -295,9 +286,8 @@ func IsInteractionGroup(limit string) bool {
 	return false
 }
 
-// InteractionLimitExpiry translates GitHub's expiry vocabulary into the
-// instant a limit set at from lapses. An empty expiry is GitHub's default of
-// one day.
+// InteractionLimitExpiry translates GitHub's expiry vocabulary into the instant
+// a limit set at from lapses. An empty expiry defaults to one day.
 func InteractionLimitExpiry(expiry string, from time.Time) (time.Time, bool) {
 	switch expiry {
 	case "", "one_day":
@@ -314,8 +304,8 @@ func InteractionLimitExpiry(expiry string, from time.Time) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// SetUserInteractionLimit records (or clears, with limit == "") the
-// account-level interaction limit.
+// SetUserInteractionLimit records, or clears with limit == "", the account-level
+// interaction limit.
 func (st *Store) SetUserInteractionLimit(userID int, limit string, expiresAt *time.Time) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -329,8 +319,8 @@ func (st *Store) SetUserInteractionLimit(userID int, limit string, expiresAt *ti
 	return true
 }
 
-// GetUserInteractionLimit returns the active limit and its expiry, or
-// ("", zero) when no unexpired limit is set.
+// GetUserInteractionLimit returns the active limit and its expiry, or ("", zero)
+// when no unexpired limit is set.
 func (st *Store) GetUserInteractionLimit(userID int) (string, time.Time) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -344,9 +334,8 @@ func (st *Store) GetUserInteractionLimit(userID int) (string, time.Time) {
 	return u.InteractionLimit, *u.InteractionLimitExpiry
 }
 
-// ListUserFilteredIssues returns issues visible through GET /user/issues
-// for the given filter (assigned, created, mentioned, subscribed, repos,
-// all). Repository read access is checked by the caller.
+// ListUserFilteredIssues returns issues visible through GET /user/issues for the
+// given filter. Repository read access is checked by the caller.
 func (st *Store) ListUserFilteredIssues(user *User, filter string) []IssueWithRepo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -407,9 +396,8 @@ func (st *Store) CountIssueComments(issueID int) int {
 	return n
 }
 
-// ActionsBillingUsageForOwner derives GitHub Actions usage line items
-// from completed workflow-run jobs in repositories owned by the account.
-// Quantities are per-job minutes rounded up, matching GitHub's metering.
+// ActionsBillingUsageForOwner derives Actions usage line items from completed
+// workflow-run jobs. Quantities are per-job minutes rounded up (GitHub's metering).
 func (st *Store) ActionsBillingUsageForOwner(ownerLogin string) []BillingUsageItem {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -442,11 +430,9 @@ func (st *Store) ActionsBillingUsageForOwner(ownerLogin string) []BillingUsageIt
 	return out
 }
 
-// actionsLinuxPricePerMinute is GitHub's published Linux-runner
-// per-minute price used on billing usage reports.
+// actionsLinuxPricePerMinute is GitHub's published Linux-runner per-minute price.
 const actionsLinuxPricePerMinute = 0.008
 
-// BillingUsageItem is one metered usage line derived from real run state.
 type BillingUsageItem struct {
 	Date         time.Time
 	Product      string
@@ -464,9 +450,8 @@ type IssueWithRepo struct {
 	Repo  *Repo  `json:"-"`
 }
 
-// materializeEmailsLocked seeds the multi-email list from the legacy
-// single Email field the first time email state is touched. Caller must
-// hold st.Mu.
+// materializeEmailsLocked seeds the multi-email list from the single Email
+// field on first touch. Caller must hold st.Mu.
 func materializeEmailsLocked(u *User) {
 	if len(u.Emails) == 0 && u.Email != "" {
 		u.Emails = []UserEmail{{Email: u.Email, Primary: true, Verified: true, Visibility: "private"}}

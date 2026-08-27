@@ -19,11 +19,9 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// Source archives. The /api/v3 tarball/zipball endpoints answer 302 with a
-// Location on the codeload-style legacy URL (the same URL shape the tags API
-// advertises in tarball_url/zipball_url); the legacy URL streams a real
-// archive built from the git tree at that ref, with GitHub's
-// "{owner}-{repo}-{shortsha}/" top-level directory.
+// Source archives. The /api/v3 tarball/zipball endpoints 302 to the
+// codeload-style legacy URL, which streams an archive built from the git tree
+// at that ref with GitHub's "{owner}-{repo}-{shortsha}/" top-level directory.
 
 func (s *Server) handleGetTarball(w http.ResponseWriter, r *http.Request) {
 	s.redirectArchive(w, r, "legacy.tar.gz")
@@ -54,10 +52,8 @@ func (s *Server) redirectArchive(w http.ResponseWriter, r *http.Request, format 
 	http.Redirect(w, r, s.baseURL(r)+"/"+repo.FullName+"/"+format+"/"+ref, http.StatusFound)
 }
 
-// tryHandleArchiveRequest serves the codeload-style legacy archive URLs
-// (/{owner}/{repo}/legacy.tar.gz/{ref} and /{owner}/{repo}/legacy.zip/{ref})
-// from the catch-all, beside the git smart HTTP protocol. Returns true when
-// the request was an archive download.
+// tryHandleArchiveRequest serves the legacy archive URLs from the catch-all,
+// beside the git smart HTTP protocol. Returns true when it handled the request.
 func (s *Server) tryHandleArchiveRequest(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false
@@ -77,7 +73,6 @@ func (s *Server) tryHandleArchiveRequest(w http.ResponseWriter, r *http.Request)
 	return false
 }
 
-// archiveEntry is one file in an archive, materialized from the git tree.
 type archiveEntry struct {
 	path    string
 	mode    filemode.FileMode
@@ -154,7 +149,7 @@ func (s *Server) serveArchive(w http.ResponseWriter, r *http.Request, format, ow
 }
 
 // collectArchiveEntries flattens a git tree into archive entries, sorted by
-// path for deterministic archives.
+// path for determinism.
 func collectArchiveEntries(stor gitStorage.Storer, tree *object.Tree) ([]archiveEntry, error) {
 	flat, err := flattenTree(tree)
 	if err != nil {
@@ -168,20 +163,12 @@ func collectArchiveEntries(stor gitStorage.Storer, tree *object.Tree) ([]archive
 	entries := make([]archiveEntry, 0, len(paths))
 	for _, p := range paths {
 		te := flat[p]
-		// A gitlink (mode 160000) names a commit in the *submodule's*
-		// repository, which this repository does not contain — reading it as a
-		// blob fails with ErrObjectNotFound and turned every archive of a
-		// repository with a submodule into a 500. `git archive` (and therefore
-		// github.com's archives) emits an empty directory at the submodule's
-		// path instead, verified against `git archive --format=tar` on a
-		// repository with a submodule: the entry is "vendor/sub/", a directory
-		// with no content.
-		//
-		// The filter lives here rather than in the shared flattenTree because
-		// its other caller, threeWayMergedTree, *needs* the gitlink: it carries
-		// the entry through buildTreeFromPaths mode-and-hash intact, so a merge
-		// preserves the submodule. Dropping gitlinks from flattenTree would
-		// silently delete every submodule from a merge commit.
+		// A gitlink (mode 160000) names a commit in the submodule's repository,
+		// which this repository does not hold; reading it as a blob would 500.
+		// Match `git archive` and emit an empty directory at the submodule path.
+		// The filter lives here, not in the shared flattenTree, because
+		// threeWayMergedTree needs the gitlink intact to preserve submodules in
+		// a merge.
 		if te.Mode == filemode.Submodule {
 			entries = append(entries, archiveEntry{path: p, mode: filemode.Dir})
 			continue
@@ -209,8 +196,7 @@ func writeTarGz(w io.Writer, prefix string, entries []archiveEntry, when time.Ti
 	for _, e := range entries {
 		switch e.mode {
 		case filemode.Dir:
-			// An empty directory, which in a git tree can only be a submodule's
-			// mount point; git archive writes it with a trailing slash.
+			// Submodule mount point; git archive writes it with a trailing slash.
 			if err := tw.WriteHeader(&tar.Header{
 				Name:     prefix + e.path + "/",
 				Typeflag: tar.TypeDir,
@@ -265,8 +251,8 @@ func writeZip(w io.Writer, prefix string, entries []archiveEntry, when time.Time
 		hdr := &zip.FileHeader{Name: prefix + e.path, Method: zip.Deflate, Modified: when}
 		switch e.mode {
 		case filemode.Dir:
-			// Submodule mount point: an empty directory entry, named with the
-			// trailing slash zip readers require to treat it as one.
+			// Submodule mount point; the trailing slash is what makes zip
+			// readers treat it as a directory.
 			hdr.Name += "/"
 			hdr.Method = zip.Store
 			hdr.SetMode(0o755 | os.ModeDir)

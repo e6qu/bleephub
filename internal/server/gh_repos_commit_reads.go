@@ -118,10 +118,8 @@ func commitUnifiedDiff(commit *object.Commit) (string, error) {
 }
 
 // commitFormatPatch renders a commit as a git-format-patch (mbox), matching
-// what github serves for the .patch media type: the `From <sha> Mon Sep 17 …`
-// magic line, From:/Date:/Subject: [PATCH] headers, the message body, a `---`
-// separator, the unified diff, and a git-version signature. Unlike the .diff
-// media type (a bare unified diff), this is directly consumable by `git am`.
+// what github serves for the .patch media type — directly consumable by `git am`,
+// unlike the bare unified diff of the .diff type.
 func commitFormatPatch(commit *object.Commit) (string, error) {
 	diff, err := commitUnifiedDiff(commit)
 	if err != nil {
@@ -143,9 +141,8 @@ func commitFormatPatch(commit *object.Commit) (string, error) {
 	return b.String(), nil
 }
 
-// commitDiffEntries computes the diff-entry list (with per-file patch text
-// and addition/deletion counts) for a commit against its first parent, or
-// against the empty tree for a root commit.
+// commitDiffEntries computes the diff-entry list for a commit against its
+// first parent, or against the empty tree for a root commit.
 func commitDiffEntries(commit *object.Commit, repo *store.Repo, baseURL string) ([]map[string]interface{}, int, int, error) {
 	parentTree := &object.Tree{}
 	if commit.NumParents() > 0 {
@@ -255,9 +252,8 @@ func (s *Server) handleListPullsForCommit(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-// pullRequestContainsCommit reports whether the commit is among the commits
-// the pull request introduces (reachable from its head branch but not from
-// its base branch, resolved live from the git storage).
+// pullRequestContainsCommit reports whether the commit is one the pull request
+// introduces — reachable from its head branch but not its base.
 func pullRequestContainsCommit(stor gitStorage.Storer, pr *store.PullRequest, hash plumbing.Hash) bool {
 	headHash, err := store.ResolveGitRef(stor, pr.HeadRefName)
 	if err != nil {
@@ -337,9 +333,8 @@ type contributorBucket struct {
 	firstSeen     int // insertion order for stable output
 }
 
-// aggregateContributors walks the default branch history and groups commits
-// by author identity, resolving identities to real accounts by email or
-// login.
+// aggregateContributors groups default-branch commits by author identity,
+// resolving each to a real account by email or login.
 func (s *Server) aggregateContributors(repo *store.Repo) ([]*contributorBucket, bool) {
 	commits, ok := s.defaultBranchCommits(repo)
 	if !ok {
@@ -421,8 +416,8 @@ func (s *Server) handleListRepoContributors(w http.ResponseWriter, r *http.Reque
 
 // --- Statistics over the real commit history ---
 
-// defaultBranchCommits returns every commit reachable from the repository's
-// default branch. ok is false when the repo has no git data or no commits.
+// defaultBranchCommits returns every commit reachable from the default branch;
+// ok is false when the repo has no git data or no commits.
 func (s *Server) defaultBranchCommits(repo *store.Repo) ([]*object.Commit, bool) {
 	stor := s.gitStorageForRepo(repo)
 	if stor == nil {
@@ -446,7 +441,7 @@ func (s *Server) defaultBranchCommits(repo *store.Repo) ([]*object.Commit, bool)
 	return commits, len(commits) > 0
 }
 
-// weekStart returns midnight UTC of the Sunday beginning t's week — GitHub's
+// weekStart returns midnight UTC of the Sunday beginning t's week; GitHub's
 // statistics APIs bucket by Sunday-based weeks.
 func weekStart(t time.Time) time.Time {
 	t = t.UTC()
@@ -454,9 +449,9 @@ func weekStart(t time.Time) time.Time {
 	return t.AddDate(0, 0, -int(t.Weekday()))
 }
 
-// commitLineStats returns additions/deletions of a commit against its first
-// parent (or the empty tree). Merge/binary anomalies count as zero rather
-// than failing the whole aggregation.
+// commitLineStats returns a commit's additions/deletions against its first
+// parent (or the empty tree). Merge/binary anomalies count as zero rather than
+// failing the aggregation.
 func commitLineStats(c *object.Commit) (int, int) {
 	stats, err := c.Stats()
 	if err != nil {

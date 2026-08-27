@@ -1,12 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
-/**
- * GitHub's `?` keyboard-shortcuts reference. Lists only shortcuts bleephub
- * actually implements (see AppHeader's global key handler and GoToFile), so the
- * sheet never advertises a binding that does nothing. Accessible dialog:
- * role=dialog + aria-modal, Esc / backdrop / close-button dismiss, focus moves
- * to the close button on open and is restored to the opener on close.
- */
+// Lists only shortcuts bleephub actually implements, so the sheet never
+// advertises a dead binding.
 
 interface Shortcut {
   keys: string[];

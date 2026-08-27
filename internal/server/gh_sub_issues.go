@@ -7,29 +7,12 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Sub-issues and issue dependencies.
-// Endpoints:
-//
-//	GET    /repos/{o}/{r}/issues/{n}/sub_issues            (two-seg GET dispatch)
-//	POST   /repos/{o}/{r}/issues/{n}/sub_issues
-//	PATCH  /repos/{o}/{r}/issues/{n}/sub_issues/priority
-//	DELETE /repos/{o}/{r}/issues/{n}/sub_issue             (two-seg DELETE dispatch)
-//	GET    /repos/{o}/{r}/issues/{n}/dependencies/blocked_by (three-seg GET dispatch)
-//	POST   /repos/{o}/{r}/issues/{n}/dependencies/blocked_by
-//	DELETE /repos/{o}/{r}/issues/{n}/dependencies/blocked_by/{issue_id}
-//
-// Both features are real bidirectional links in the issues store: a
-// sub-issue knows its parent, and an issue blocked by another shows up as
-// blocking on the other side.
+// Sub-issues and issue dependencies. Both are bidirectional links in the issues
+// store: a sub-issue knows its parent, and a blocked issue shows as blocking on
+// the other side.
 
-// --- Store: sub-issue links ---
-
-// --- Store: issue dependencies ---
-
-// --- Handlers ---
-
-// issueFromNumberPath resolves {owner}/{repo} + the "number" path value to
-// the repo and issue, writing a 404 when either is missing.
+// issueFromNumberPath resolves {owner}/{repo} + "number" to the repo and issue,
+// writing a 404 when either is missing.
 func (s *Server) issueFromNumberPath(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Issue) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {

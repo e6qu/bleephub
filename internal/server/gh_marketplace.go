@@ -551,8 +551,7 @@ func (s *Server) handlePurchaseMarketplaceBrowser(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	// The enterprise governing the buying account decides whether its people may
-	// spend on the Marketplace at all.
+	// The enterprise governing the buying account may forbid Marketplace spend.
 	if s.refuseMarketplacePurchaseByPolicy(w, r, account) {
 		return
 	}
@@ -680,8 +679,8 @@ func (s *Server) handleChangeMarketplaceSubscriptionBrowser(w http.ResponseWrite
 	if !ok {
 		return
 	}
-	// A plan change is a purchase decision — an upgrade bills immediately — so
-	// it answers to the same enterprise policy as the initial purchase.
+	// A plan change bills immediately, so gate it on the same enterprise policy
+	// as the initial purchase.
 	if s.refuseMarketplacePurchaseByPolicy(w, r, account) {
 		return
 	}
@@ -731,8 +730,8 @@ func (s *Server) handleChangeMarketplaceSubscriptionBrowser(w http.ResponseWrite
 	if immediate {
 		s.emitMarketplacePurchase(listing, "changed", purchase, previous, user)
 	} else {
-		// A downgrade takes effect at the next billing date, so GitHub
-		// announces it as `pending_change` now and `changed` later.
+		// A downgrade takes effect at the next billing date: `pending_change`
+		// now, `changed` later.
 		s.emitMarketplacePendingChange(listing, purchase, user)
 	}
 	writeJSON(w, http.StatusOK, s.marketplaceBrowserSubscriptionJSON(purchase, s.store.GetMarketplacePlanForListing(listing.Slug, purchase.PlanID), listing, account.Login, s.baseURL(r)))
@@ -785,9 +784,8 @@ func (s *Server) handleCancelMarketplaceSubscriptionBrowser(w http.ResponseWrite
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// A paid subscription runs to the end of the period the account has
-	// already paid for, so the cancellation is announced as pending now and
-	// as `cancelled` when it lands.
+	// A paid subscription runs to the end of the paid period: announce the
+	// cancellation as pending now, `cancelled` when it lands.
 	s.emitMarketplacePendingChange(listing, purchase, user)
 	writeJSON(w, http.StatusAccepted, s.marketplaceBrowserSubscriptionJSON(purchase, plan, listing, account.Login, s.baseURL(r)))
 }

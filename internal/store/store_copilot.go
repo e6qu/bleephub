@@ -1,8 +1,7 @@
 package store
 
-// Store types and methods for the GitHub Copilot organization surface:
-// seat billing (selected users / selected teams), content exclusion
-// settings, and Copilot coding agent permissions.
+// The GitHub Copilot organization surface: seat billing, content exclusion
+// settings, and coding-agent permissions.
 
 import (
 	"fmt"
@@ -11,11 +10,10 @@ import (
 	"time"
 )
 
-// CopilotSeat is one GitHub Copilot Business seat assignment in an
-// organization. A seat is assigned either directly (AssigningTeamSlug
-// empty) or through a team. Cancellation is deferred to the end of the
-// billing cycle: PendingCancellationDate holds the YYYY-MM-DD on which
-// the seat expires, and expired seats are dropped lazily on access.
+// CopilotSeat is one Copilot Business seat, assigned directly (AssigningTeamSlug
+// empty) or through a team. Cancellation defers to the end of the billing cycle:
+// PendingCancellationDate is the YYYY-MM-DD expiry, and expired seats are
+// dropped lazily on access.
 type CopilotSeat struct {
 	OrgLogin                string    `json:"org_login"`
 	UserID                  int       `json:"user_id"`
@@ -29,26 +27,24 @@ func copilotSeatKey(orgLogin string, userID int) string {
 	return fmt.Sprintf("%s/%d", orgLogin, userID)
 }
 
-// CopilotNextCycleDate returns the first day of the next calendar month.
-// GitHub bills Copilot monthly, so a cancelled seat stays active until
-// the start of the organization's next billing cycle.
+// CopilotNextCycleDate returns the first day of the next calendar month, when a
+// cancelled seat lapses (GitHub bills Copilot monthly).
 func CopilotNextCycleDate(now time.Time) string {
 	first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
 	return first.Format("2006-01-02")
 }
 
 // copilotSeatExpired reports whether a seat's pending cancellation date has
-// been reached. Reads filter these out in memory; the write paths physically
-// prune them via expireCopilotSeatsBatchLocked.
+// passed. Reads filter these out; write paths prune them via
+// expireCopilotSeatsBatchLocked.
 func copilotSeatExpired(seat *CopilotSeat, now time.Time) bool {
 	return seat.PendingCancellationDate != "" && seat.PendingCancellationDate <= now.UTC().Format("2006-01-02")
 }
 
-// expireCopilotSeatsBatchLocked drops seats whose pending cancellation date
-// has been reached, staging the deletes into batch so they commit with the
-// rest of the seat mutation in one transaction (STORE-001/002). Callers hold
-// the write lock. It is invoked from the seat write paths (add/cancel), never
-// from a read: a GET must not perform a durable delete (STORE-034).
+// expireCopilotSeatsBatchLocked drops expired seats, staging the deletes into
+// batch so they commit with the seat mutation in one transaction
+// (STORE-001/002). Callers hold the write lock. Invoked only from write paths,
+// never a read: a GET must not perform a durable delete (STORE-034).
 func (st *Store) expireCopilotSeatsBatchLocked(batch *PersistBatch, orgLogin string, now time.Time) {
 	for userID, seat := range st.CopilotSeats[orgLogin] {
 		if copilotSeatExpired(seat, now) {
@@ -58,15 +54,14 @@ func (st *Store) expireCopilotSeatsBatchLocked(batch *PersistBatch, orgLogin str
 	}
 }
 
-// persistCopilotSeatBatchLocked stages a seat row into batch instead of
-// committing its own transaction (STORE-001/002). Callers hold st.Mu.
+// persistCopilotSeatBatchLocked stages a seat row into batch (STORE-001/002).
+// Callers hold st.Mu.
 func (st *Store) persistCopilotSeatBatchLocked(batch *PersistBatch, seat *CopilotSeat) {
 	batch.Put("copilot_seats", copilotSeatKey(seat.OrgLogin, seat.UserID), seat)
 }
 
-// GetCopilotSeat returns the organization's seat for the user, or nil. An
-// expired (pending-cancellation-reached) seat reads as absent; the durable
-// removal happens on the next seat write, not on this read.
+// GetCopilotSeat returns the org's seat for the user, or nil. An expired seat
+// reads as absent; its durable removal happens on the next seat write.
 func (st *Store) GetCopilotSeat(orgLogin string, userID int) *CopilotSeat {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -77,8 +72,8 @@ func (st *Store) GetCopilotSeat(orgLogin string, userID int) *CopilotSeat {
 	return seat
 }
 
-// ListCopilotSeats returns the organization's seats sorted by creation
-// time (user ID as tie-break) so pagination is stable.
+// ListCopilotSeats returns the org's seats by creation time (user ID tie-break)
+// so pagination is stable.
 func (st *Store) ListCopilotSeats(orgLogin string) []*CopilotSeat {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -99,12 +94,10 @@ func (st *Store) ListCopilotSeats(orgLogin string) []*CopilotSeat {
 	return snapshotSlice(out)
 }
 
-// AddCopilotSeats grants seats to the given users, assigned through
-// teamSlug when non-empty. Users who already hold an active seat are
-// skipped; seats pending cancellation are reinstated. Returns the
-// number of seats created or reinstated — the count GitHub bills for.
-// The expiry prune and every seat write commit in one transaction
-// (STORE-001/002).
+// AddCopilotSeats grants seats to the users, assigned through teamSlug when
+// non-empty. Active seats are skipped; pending-cancellation seats are
+// reinstated. Returns the count created or reinstated (what GitHub bills). The
+// expiry prune and every seat write commit in one transaction (STORE-001/002).
 func (st *Store) AddCopilotSeats(orgLogin string, userIDs []int, teamSlug string) int {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -143,18 +136,15 @@ func (st *Store) AddCopilotSeats(orgLogin string, userIDs []int, teamSlug string
 	return created
 }
 
-// CancelCopilotSeatsForUsers marks the users' directly-assigned seats as
-// pending cancellation at the end of the billing cycle. When any of the
-// users holds a seat assigned through a team, no seat is cancelled and
-// the blocked user IDs are returned — GitHub rejects the whole request
-// with a 422 in that case.
+// CancelCopilotSeatsForUsers marks the users' directly-assigned seats pending
+// cancellation. If any user holds a team-assigned seat, nothing is cancelled
+// and those user IDs are returned — GitHub rejects the whole request with 422.
 func (st *Store) CancelCopilotSeatsForUsers(orgLogin string, userIDs []int) (cancelled int, teamAssigned []int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	now := st.CurrentTime()
-	// One transaction: the expiry prune and every cancellation mark commit
-	// together (STORE-001/002). The prune still commits on the team-assigned
-	// early return — its deletes are correct regardless of the 422.
+	// The prune still commits on the team-assigned early return — its deletes are
+	// correct regardless of the 422 (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	st.expireCopilotSeatsBatchLocked(batch, orgLogin, now)
 	for _, id := range userIDs {
@@ -185,9 +175,8 @@ func (st *Store) CancelCopilotSeatsForUsers(orgLogin string, userIDs []int) (can
 	return cancelled, nil
 }
 
-// CancelCopilotSeatsForTeam marks every seat assigned through the team
-// as pending cancellation and returns the number of seats affected. The
-// expiry prune and every cancellation mark commit in one transaction
+// CancelCopilotSeatsForTeam marks every team-assigned seat pending cancellation
+// and returns the count affected. Prune and marks commit in one transaction
 // (STORE-001/002).
 func (st *Store) CancelCopilotSeatsForTeam(orgLogin, teamSlug string) int {
 	st.Mu.Lock()
@@ -212,17 +201,16 @@ func (st *Store) CancelCopilotSeatsForTeam(orgLogin, teamSlug string) int {
 	return cancelled
 }
 
-// CopilotContentExclusion holds an organization's Copilot content
-// exclusion rules: scope (repository "owner/name" or "*") → list of
-// rules, each a path string or an ifAnyMatch / ifNoneMatch object,
-// stored exactly as configured.
+// CopilotContentExclusion holds an org's content exclusion rules: scope
+// (repository "owner/name" or "*") → rules, each a path string or an
+// ifAnyMatch/ifNoneMatch object, stored as configured.
 type CopilotContentExclusion struct {
 	OrgLogin string                   `json:"org_login"`
 	Rules    map[string][]interface{} `json:"rules"`
 }
 
-// GetCopilotContentExclusion returns the organization's content
-// exclusion rules; an unconfigured organization has none.
+// GetCopilotContentExclusion returns the org's content exclusion rules, empty
+// when unconfigured.
 func (st *Store) GetCopilotContentExclusion(orgLogin string) map[string][]interface{} {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -237,13 +225,11 @@ func (st *Store) GetCopilotContentExclusion(orgLogin string) map[string][]interf
 	return out
 }
 
-// SetCopilotContentExclusion replaces the organization's content
-// exclusion rules.
+// SetCopilotContentExclusion replaces the org's content exclusion rules.
 func (st *Store) SetCopilotContentExclusion(orgLogin string, rules map[string][]interface{}) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	// Clone rather than adopt the caller's map (and its slices) by reference:
-	// the request handler owns rules and may mutate it after this returns.
+	// Clone: the caller owns rules and may mutate it after this returns.
 	cloned := make(map[string][]interface{}, len(rules))
 	for k, v := range rules {
 		cloned[k] = slices.Clone(v)
@@ -255,8 +241,8 @@ func (st *Store) SetCopilotContentExclusion(orgLogin string, rules map[string][]
 	}
 }
 
-// CopilotCodingAgentPermissions models the organization policy for which
-// repositories may use Copilot cloud agent.
+// CopilotCodingAgentPermissions is the org policy for which repositories may
+// use Copilot cloud agent.
 type CopilotCodingAgentPermissions struct {
 	OrgLogin              string `json:"org_login"`
 	EnabledRepositories   string `json:"enabled_repositories"` // all | selected | none
@@ -267,8 +253,7 @@ func (st *Store) getCopilotCodingAgentPermsLocked(orgLogin string) *CopilotCodin
 	if p, ok := st.CopilotCodingAgentPerms[orgLogin]; ok && p != nil {
 		return p
 	}
-	// GitHub's default posture enables Copilot coding agent for all
-	// repositories until an owner restricts it.
+	// Default posture: enabled for all repositories until an owner restricts it.
 	p := &CopilotCodingAgentPermissions{
 		OrgLogin:              orgLogin,
 		EnabledRepositories:   "all",
@@ -284,19 +269,17 @@ func (st *Store) persistCopilotCodingAgentPermsLocked(p *CopilotCodingAgentPermi
 	}
 }
 
-// GetCopilotCodingAgentPermissions returns the organization's Copilot
-// coding agent policy, materializing the default on first read.
+// GetCopilotCodingAgentPermissions returns the org's coding-agent policy.
 func (st *Store) GetCopilotCodingAgentPermissions(orgLogin string) *CopilotCodingAgentPermissions {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return st.copilotCodingAgentPermsReadLocked(orgLogin)
 }
 
-// copilotCodingAgentPermsReadLocked returns the org's stored policy, or the
-// default posture computed on the fly. Unlike getCopilotCodingAgentPermsLocked
-// it never materializes the default into the map, so a pure read neither takes
-// the write lock nor writes a never-persisted phantom entry. Caller holds st.Mu
-// (read or write).
+// copilotCodingAgentPermsReadLocked returns the org's stored policy or the
+// default computed on the fly. Unlike getCopilotCodingAgentPermsLocked it never
+// materializes the default into the map, so a pure read writes no phantom entry.
+// Caller holds st.Mu.
 func (st *Store) copilotCodingAgentPermsReadLocked(orgLogin string) *CopilotCodingAgentPermissions {
 	if p, ok := st.CopilotCodingAgentPerms[orgLogin]; ok && p != nil {
 		return p
@@ -322,13 +305,13 @@ func (st *Store) SetCopilotCodingAgentSelectedRepos(orgLogin string, repoIDs []i
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	p := st.getCopilotCodingAgentPermsLocked(orgLogin)
-	// Clone rather than adopt the caller's slice by reference.
+	// Clone: the caller owns repoIDs.
 	p.SelectedRepositoryIDs = append([]int(nil), repoIDs...)
 	st.persistCopilotCodingAgentPermsLocked(p)
 }
 
-// AddCopilotCodingAgentSelectedRepo adds a repository to the selected
-// list (no-op when already present).
+// AddCopilotCodingAgentSelectedRepo adds a repository to the selected list
+// (no-op when already present).
 func (st *Store) AddCopilotCodingAgentSelectedRepo(orgLogin string, repoID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -340,8 +323,7 @@ func (st *Store) AddCopilotCodingAgentSelectedRepo(orgLogin string, repoID int) 
 	st.persistCopilotCodingAgentPermsLocked(p)
 }
 
-// RemoveCopilotCodingAgentSelectedRepo drops a repository from the
-// selected list.
+// RemoveCopilotCodingAgentSelectedRepo drops a repository from the selected list.
 func (st *Store) RemoveCopilotCodingAgentSelectedRepo(orgLogin string, repoID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

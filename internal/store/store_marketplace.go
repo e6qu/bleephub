@@ -129,9 +129,8 @@ func (st *Store) AddMarketplaceDelivery(listingSlug string, delivery *WebhookDel
 	st.Misc.marketplaceDeliveries[listingSlug] = list
 }
 
-// ListMarketplaceDeliveries returns live rows deliberately: webhook deliveries
-// are write-once and carry full payloads (STORE-021 documented exception, as
-// for ListAppDeliveries).
+// ListMarketplaceDeliveries returns live rows: webhook deliveries are
+// write-once (STORE-021 documented exception, as for ListAppDeliveries).
 func (st *Store) ListMarketplaceDeliveries(listingSlug string) []*WebhookDelivery {
 	st.Misc.Mu.RLock()
 	defer st.Misc.Mu.RUnlock()
@@ -291,10 +290,9 @@ func (st *Store) SaveMarketplacePurchase(purchase *MarketplacePurchase) error {
 	return nil
 }
 
-// CreateMarketplacePurchase atomically creates a Marketplace subscription and,
-// for a GitHub App listing, its account installation. It reports whether the
-// installation was newly created so webhook delivery can begin only after both
-// records are durable.
+// CreateMarketplacePurchase atomically creates a subscription and, for a GitHub
+// App listing, its account installation. Reports whether the installation was
+// newly created, so webhook delivery begins only after both records are durable.
 func (st *Store) CreateMarketplacePurchase(listing *MarketplaceListing, account MarketplaceBuyerAccount, purchase *MarketplacePurchase) (*Installation, bool, error) {
 	if listing == nil || purchase == nil {
 		return nil, false, fmt.Errorf("marketplace purchase state is required")

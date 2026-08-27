@@ -13,9 +13,8 @@ import (
 	"time"
 )
 
-// GitHub Projects v2 REST API. Backed by the same ProjectV2Store the
-// GraphQL mutations use, so both surfaces see one set of projects,
-// items, fields, and views.
+// GitHub Projects v2 REST API, backed by the same ProjectV2Store as the GraphQL
+// mutations so both surfaces share one set of projects, items, fields, and views.
 
 func (s *Server) registerGHProjectsV2Routes() {
 	// Organization-owned projects.
@@ -33,9 +32,8 @@ func (s *Server) registerGHProjectsV2Routes() {
 	s.route("POST /api/v3/orgs/{org}/projectsV2/{project_number}/views", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleOrgProjectV2CreateView))
 	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/views/{view_number}/items", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleOrgProjectV2ListViewItems))
 
-	// User-owned projects. The create-view and create-draft routes are
-	// keyed by user ID, not login — that is the real GitHub path shape
-	// (/users/{user_id}/…/views and /user/{user_id}/…/drafts).
+	// User-owned projects. The create-view and create-draft routes key by user ID,
+	// not login — the real GitHub path shape.
 	s.route("GET /api/v3/users/{username}/projectsV2", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectsV2List))
 	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectV2Get))
 	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/fields", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectV2ListFields))
@@ -53,9 +51,6 @@ func (s *Server) registerGHProjectsV2Routes() {
 
 // ---------------------------------------------------------------------------
 // Owner resolution + access control
-
-// projectV2Owner (= store.ProjectV2Owner — ARCH-003) is the resolved owner
-// (org or user) of a Projects v2 project addressed by a REST path.
 
 func (s *Server) projectV2OrgOwner(w http.ResponseWriter, r *http.Request) (*store.ProjectV2Owner, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
@@ -89,10 +84,9 @@ func (s *Server) projectV2UserOwnerByID(w http.ResponseWriter, r *http.Request) 
 	return &store.ProjectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}, true
 }
 
-// canReadProjectV2: public projects are visible to any caller; private
-// projects only to the owning user, active members of the owning org,
-// or a site admin — and, for an app credential, only where the app was granted
-// projects over that account.
+// canReadProjectV2 allows any caller to a public project; a private one only to
+// the owning user, active members of the owning org, or a site admin — and, for
+// an app credential, only where the app holds projects over that account.
 func (s *Server) canReadProjectV2(ctx context.Context, user *store.User, owner *store.ProjectV2Owner, p *store.ProjectV2) bool {
 	if p.Public {
 		return true
@@ -100,19 +94,17 @@ func (s *Server) canReadProjectV2(ctx context.Context, user *store.User, owner *
 	return s.projectV2OwnerReachable(ctx, user, owner, store.PermRead)
 }
 
-// canWriteProjectV2: the owning user, active members of the owning org,
-// or a site admin, intersected with the app's grant as above.
+// canWriteProjectV2 allows the owning user, active members of the owning org, or
+// a site admin, intersected with the app's grant.
 func (s *Server) canWriteProjectV2(ctx context.Context, user *store.User, owner *store.ProjectV2Owner) bool {
 	return s.projectV2OwnerReachable(ctx, user, owner, store.PermWrite)
 }
 
-// projectV2OwnerReachable is the shared body: the credential's grant over the
-// owning account, then the caller's own standing on it.
-//
-// The owning-user arm used to be `user.ID == owner.ID` alone, which is a fact
-// about the bearer and says nothing about the app speaking for them — a
-// user-to-server token of an app installed nowhere created projects under its
-// bearer's account where the same app's installation token was refused.
+// projectV2OwnerReachable intersects the credential's grant over the owning
+// account with the caller's own standing. The owning-user arm must not be
+// `user.ID == owner.ID` alone: that says nothing about the app speaking for the
+// bearer, letting a user-to-server token of an app installed nowhere create
+// projects the same app's installation token is refused.
 func (s *Server) projectV2OwnerReachable(ctx context.Context, user *store.User, owner *store.ProjectV2Owner, level store.PermLevel) bool {
 	if user == nil || owner == nil {
 		return false
@@ -129,9 +121,8 @@ func (s *Server) projectV2OwnerReachable(ctx context.Context, user *store.User, 
 	return s.viewerIsOrgMember(ctx, owner.Login)
 }
 
-// projectV2FromRequest resolves {project_number} for the owner and
-// enforces read visibility. Writes 404 (never 403) when the project is
-// missing or hidden, matching how GitHub conceals private resources.
+// projectV2FromRequest resolves {project_number} and enforces read visibility.
+// Writes 404 (never 403) when missing or hidden, concealing private resources.
 func (s *Server) projectV2FromRequest(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) (*store.ProjectV2, bool) {
 	number, err := strconv.Atoi(r.PathValue("project_number"))
 	if err != nil {
@@ -157,8 +148,7 @@ func (s *Server) requireProjectV2Write(w http.ResponseWriter, r *http.Request, o
 }
 
 // ---------------------------------------------------------------------------
-// Cursor pagination (per_page + after/before), shared with the
-// attestations surface.
+// Cursor pagination (per_page + after/before)
 
 type cursorPageInfo struct {
 	HasNext bool
@@ -167,9 +157,8 @@ type cursorPageInfo struct {
 	Prev    string
 }
 
-// cursorPaginate applies GitHub's cursor pagination query parameters
-// (per_page, after, before) to items sorted ascending by the stable
-// integer identity idOf. Cursors are opaque encodings of that identity.
+// cursorPaginate applies per_page/after/before to items sorted ascending by the
+// stable integer identity idOf. Cursors are opaque encodings of that identity.
 func cursorPaginate[T any](r *http.Request, items []T, idOf func(T) int) ([]T, cursorPageInfo) {
 	perPage := 30
 	if v := r.URL.Query().Get("per_page"); v != "" {
@@ -227,9 +216,8 @@ func cursorPaginate[T any](r *http.Request, items []T, idOf func(T) int) ([]T, c
 	return page, pi
 }
 
-// setCursorLinkHeader emits the RFC 5988 Link header for a
-// cursor-paginated response (rel="next" via after, rel="prev" via
-// before), preserving the other query parameters.
+// setCursorLinkHeader emits the RFC 5988 Link header (rel="next" via after,
+// rel="prev" via before), preserving other query parameters.
 func setCursorLinkHeader(w http.ResponseWriter, r *http.Request, pi cursorPageInfo) {
 	base := r.URL.Path
 	mk := func(k, cursor string) string {
@@ -255,8 +243,7 @@ func setCursorLinkHeader(w http.ResponseWriter, r *http.Request, pi cursorPageIn
 // ---------------------------------------------------------------------------
 // JSON rendering
 
-// projectV2APIURL is the project's REST URL, which anchors project_url
-// and item_url members.
+// projectV2APIURL is the project's REST URL, anchoring project_url and item_url.
 func (s *Server) projectV2APIURL(r *http.Request, owner *store.ProjectV2Owner, number int) string {
 	base := s.baseURL(r)
 	if owner.OwnerType == "Organization" {
@@ -265,8 +252,8 @@ func (s *Server) projectV2APIURL(r *http.Request, owner *store.ProjectV2Owner, n
 	return base + "/api/v3/users/" + owner.Login + "/projectsV2/" + strconv.Itoa(number)
 }
 
-// projectV2CreatorJSON renders the creating user; a creator that no
-// longer resolves renders as GitHub's "ghost" placeholder account.
+// projectV2CreatorJSON renders the creating user, falling back to GitHub's
+// "ghost" placeholder when the creator no longer resolves.
 func (s *Server) projectV2CreatorJSON(creatorID int, baseURL string) map[string]interface{} {
 	return store.UserToJSON(s.store.GetUserByID(creatorID), baseURL)
 }
@@ -430,10 +417,9 @@ func (s *Server) projectV2ItemContentJSON(r *http.Request, it *store.ProjectV2It
 	return nil
 }
 
-// projectV2ItemFieldsJSON renders the item's field values. With an
-// explicit fieldIDs selection (the `fields` query parameter) every
-// requested field is rendered, unset values as null; otherwise every
-// field holding a value is rendered.
+// projectV2ItemFieldsJSON renders the item's field values. With an explicit
+// fieldIDs selection (the `fields` query param) every requested field renders,
+// unset ones as null; otherwise only fields holding a value render.
 func (s *Server) projectV2ItemFieldsJSON(it *store.ProjectV2Item, fieldIDs []int) []map[string]interface{} {
 	ids := fieldIDs
 	if len(ids) == 0 {
@@ -523,9 +509,8 @@ func (s *Server) projectV2ViewJSON(r *http.Request, v *store.ProjectV2View, owne
 }
 
 // ---------------------------------------------------------------------------
-// Filter queries. The project filter grammar is a token stream of
-// `is:` state qualifiers, `field:value` qualifiers matching a field's
-// value, and free text matching the title.
+// Filter queries. The grammar is a token stream of `is:` state qualifiers,
+// `field:value` qualifiers, and free text matching the title.
 
 func (s *Server) projectV2ItemMatchesFilter(it *store.ProjectV2Item, filter string) bool {
 	for _, tok := range strings.Fields(filter) {
@@ -641,7 +626,7 @@ func projectV2MatchesQuery(p *store.ProjectV2, q string) bool {
 			}
 		default:
 			if strings.Contains(tok, ":") {
-				return false // unknown qualifier matches no project
+				return false // an unknown qualifier matches no project
 			}
 			if !strings.Contains(strings.ToLower(p.Title), strings.ToLower(tok)) {
 				return false
@@ -651,9 +636,9 @@ func projectV2MatchesQuery(p *store.ProjectV2, q string) bool {
 	return true
 }
 
-// parseProjectV2FieldsParam parses the `fields` query parameter (a list
-// of field IDs, comma-separated or repeated). Returns ok=false after
-// writing a 422 for a non-numeric ID.
+// parseProjectV2FieldsParam parses the `fields` query param (field IDs,
+// comma-separated or repeated). Writes a 422 and returns ok=false on a
+// non-numeric ID.
 func parseProjectV2FieldsParam(w http.ResponseWriter, r *http.Request) ([]int, bool) {
 	var out []int
 	for _, raw := range r.URL.Query()["fields"] {
@@ -784,8 +769,7 @@ func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if req.IssueFieldID != nil {
-		// bleephub has no organization issue fields, so no issue_field_id
-		// can resolve to one.
+		// No organization issue fields are modeled, so none can resolve.
 		store.WriteGHValidationError(w, "ProjectV2Field", "issue_field_id", "invalid")
 		return
 	}
@@ -828,7 +812,7 @@ func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Reques
 		cfg := req.IterationConfiguration
 		duration := cfg.Duration
 		if duration <= 0 {
-			duration = 14 // real GitHub's default iteration length
+			duration = 14 // GitHub's default iteration length
 		}
 		startDate := cfg.StartDate
 		if startDate == "" {
@@ -974,7 +958,6 @@ func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, o
 		return
 	}
 
-	// The database ID path must also resolve to real content.
 	if req.Type == "Issue" {
 		if s.store.GetIssue(contentID) == nil {
 			store.WriteGHValidationError(w, "ProjectV2Item", "id", "invalid")
@@ -984,9 +967,9 @@ func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, o
 		store.WriteGHValidationError(w, "ProjectV2Item", "id", "invalid")
 		return
 	}
-	// Write on the project is not read on what goes into it. Adding content
+	// Write on the project is not read on what goes into it: adding content
 	// republishes its title and state to everyone who can see the project, so
-	// the same gate the GraphQL twin applies runs here.
+	// gate it as the GraphQL twin does.
 	if !s.graphql.ViewerCanReadProjectContent(r.Context(), req.Type, contentID) {
 		store.WriteGHValidationError(w, "ProjectV2Item", "id", "invalid")
 		return
@@ -1001,10 +984,8 @@ func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, o
 	writeJSON(w, http.StatusCreated, s.projectV2ItemSimpleJSON(item, s.projectV2APIURL(r, owner, p.Number)))
 }
 
-// emitProjectV2ItemEvent delivers one projects_v2_item event. The REST write
-// paths and the GraphQL mutations produce the same events through the same
-// renderer, so a client watching hooks cannot tell which surface made the
-// change — which is the point.
+// emitProjectV2ItemEvent delivers one projects_v2_item event. REST writes and
+// GraphQL mutations share this renderer, so hooks cannot tell the surfaces apart.
 func (s *Server) emitProjectV2ItemEvent(action string, project *store.ProjectV2, item *store.ProjectV2Item, sender *store.User) {
 	s.emitProjectV2Event(store.ProjectV2Event{
 		Event:   store.ProjectV2EventItem,
@@ -1015,9 +996,8 @@ func (s *Server) emitProjectV2ItemEvent(action string, project *store.ProjectV2,
 	})
 }
 
-// emitProjectV2ProjectEdited reports a change to a project's shape — a field
-// or a view — as an `edited` project event, which is how GitHub surfaces one:
-// there is no per-field or per-view webhook.
+// emitProjectV2ProjectEdited reports a field or view change as an `edited`
+// project event; GitHub has no per-field or per-view webhook.
 func (s *Server) emitProjectV2ProjectEdited(projectID int, sender *store.User) {
 	s.store.ProjectsV2.TouchProject(projectID)
 	project := s.store.ProjectsV2.GetProject(projectID)
@@ -1032,8 +1012,8 @@ func (s *Server) emitProjectV2ProjectEdited(projectID int, sender *store.User) {
 	})
 }
 
-// projectV2ItemFromRequest resolves {item_id} within the project,
-// writing 404 when it is absent or belongs elsewhere.
+// projectV2ItemFromRequest resolves {item_id} within the project, writing 404
+// when it is absent or belongs elsewhere.
 func (s *Server) projectV2ItemFromRequest(w http.ResponseWriter, r *http.Request, p *store.ProjectV2) (*store.ProjectV2Item, bool) {
 	itemID, err := strconv.Atoi(r.PathValue("item_id"))
 	if err != nil {
@@ -1099,8 +1079,7 @@ func (s *Server) serveProjectV2UpdateItem(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	// `it` is the snapshot taken before the writes above; re-read so the
-	// response carries the values this request just set.
+	// `it` is the pre-write snapshot; re-read so the response carries the new values.
 	updated := s.store.ProjectsV2.GetItem(it.ID)
 	if updated == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -1162,7 +1141,7 @@ func (s *Server) serveProjectV2CreateView(w http.ResponseWriter, r *http.Request
 
 	fields := s.store.ProjectsV2.FieldsForProject(p.ID)
 	visible := []int{}
-	if *req.Layout != "roadmap" { // visible_fields does not apply to roadmap views
+	if *req.Layout != "roadmap" { // visible_fields does not apply to roadmap
 		if req.VisibleFields != nil {
 			for _, fid := range req.VisibleFields {
 				f := s.store.ProjectsV2.GetField(fid)
@@ -1381,9 +1360,8 @@ func (s *Server) handleUserProjectV2ListViewItems(w http.ResponseWriter, r *http
 	}
 }
 
-// handleAuthenticatedUserProjectV2CreateDraft serves the
-// authenticated-user draft route (POST /user/{user_id}/…/drafts); the
-// addressed user must be the caller.
+// handleAuthenticatedUserProjectV2CreateDraft serves POST /user/{user_id}/…/drafts;
+// the addressed user must be the caller.
 func (s *Server) handleAuthenticatedUserProjectV2CreateDraft(w http.ResponseWriter, r *http.Request) {
 	owner, ok := s.projectV2UserOwnerByID(w, r)
 	if !ok {

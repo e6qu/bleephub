@@ -2,20 +2,18 @@ package bleephub
 
 import "bytes"
 
-// wildmatch is the glob git matches every pattern with, and a sparse-checkout
-// pattern file is a list of them. It is not fnmatch and it is not Go's
-// path.Match: it understands "**", it decides on its own whether "*" may cross
-// a directory separator, and it reports an abort distinct from a plain failure
-// so that a "**" higher up the pattern knows a "*" below it can never succeed.
-// Getting any of that wrong silently ships the wrong subset of a tree, so this
-// is a transcription of dowild in wildmatch.c rather than an approximation.
+// git's wildmatch glob (used for sparse-checkout patterns). Not fnmatch and not
+// path.Match: it handles "**", decides whether "*" may cross a separator, and
+// distinguishes an abort from a plain failure so a "**" above knows a "*" below
+// can never succeed. A wrong answer silently ships the wrong subset of a tree,
+// so this is a direct transcription of dowild in git's wildmatch.c.
 
 // gitWildmatchPathname is git's WM_PATHNAME: "*" and "?" stop at a directory
 // separator, and only "**" crosses one.
 const gitWildmatchPathname = 1
 
-// The three answers dowild distinguishes, plus the abort a nested "*" reports
-// upward when it ran into a separator it may not cross.
+// The three dowild answers, plus the abort a nested "*" reports upward when it
+// hits a separator it may not cross.
 const (
 	gitWildMatch           = 0
 	gitWildNoMatch         = 1
@@ -28,10 +26,8 @@ func gitWildmatch(pattern, text []byte, flags int) bool {
 	return gitDoWild(pattern, 0, text, 0, flags) == gitWildMatch
 }
 
-// byteAtOrNUL reads one byte, reporting NUL past the end. git walks
-// NUL-terminated strings and its control flow reads that terminator as an
-// ordinary value; a path or a pattern never contains a NUL, so the same
-// sentinel is exact here.
+// byteAtOrNUL reads one byte, reporting NUL past the end — matching git's
+// NUL-terminated walk, exact because a path or pattern never contains a NUL.
 func byteAtOrNUL(s []byte, i int) byte {
 	if i < 0 || i >= len(s) {
 		return 0
@@ -53,9 +49,8 @@ func gitDoWild(pattern []byte, pi int, text []byte, ti int, flags int) int {
 
 		switch patternByte {
 		case '\\':
-			// The byte after a backslash is matched literally. A pattern
-			// ending in a backslash compares against the NUL past the text
-			// and therefore fails, which is what git does with it.
+			// Match the next byte literally; a trailing backslash compares against
+			// the NUL past the text and fails, as git does.
 			pi++
 			if textByte != byteAtOrNUL(pattern, pi) {
 				return gitWildNoMatch
@@ -74,9 +69,8 @@ func gitDoWild(pattern []byte, pi int, text []byte, ti int, flags int) int {
 			pi++
 			matchSlash := flags&gitWildmatchPathname == 0
 			if byteAtOrNUL(pattern, pi) == '*' {
-				// The byte before the run of stars decides whether this is a
-				// "**" that may cross separators: git only grants that to a
-				// run that stands alone as a whole path component.
+				// git treats a "**" as separator-crossing only when the run stands
+				// alone as a whole path component; the byte before it decides.
 				beforeStars := pi - 2
 				for {
 					pi++
@@ -90,8 +84,8 @@ func gitDoWild(pattern []byte, pi int, text []byte, ti int, flags int) int {
 					componentEnd := after == 0 || after == '/' ||
 						(after == '\\' && byteAtOrNUL(pattern, pi+1) == '/')
 					if standalone && componentEnd {
-						// "a/**/b" also matches "a/b": try the remainder with
-						// the separator consumed by the stars.
+						// "a/**/b" also matches "a/b": try the remainder with the
+						// separator consumed by the stars.
 						if after == '/' && gitDoWild(pattern, pi+1, text, ti, flags) == gitWildMatch {
 							return gitWildMatch
 						}
@@ -104,16 +98,16 @@ func gitDoWild(pattern []byte, pi int, text []byte, ti int, flags int) int {
 				}
 			}
 			if byteAtOrNUL(pattern, pi) == 0 {
-				// Trailing "**" takes the rest of the text; trailing "*" takes
-				// it only while it holds no separator.
+				// Trailing "**" takes the rest; trailing "*" takes it only while it
+				// holds no separator.
 				if !matchSlash && ti < len(text) && bytes.IndexByte(text[ti:], '/') >= 0 {
 					return gitWildNoMatch
 				}
 				return gitWildMatch
 			}
 			if !matchSlash && byteAtOrNUL(pattern, pi) == '/' {
-				// One star followed by a separator: the star takes the rest of
-				// this component and the separator is matched by the pattern.
+				// "*/": the star takes the rest of this component, the pattern
+				// matches the separator.
 				if ti >= len(text) {
 					return gitWildNoMatch
 				}
@@ -126,8 +120,8 @@ func gitDoWild(pattern []byte, pi int, text []byte, ti int, flags int) int {
 			}
 			for textByte != 0 {
 				if !isGitGlobSpecial(byteAtOrNUL(pattern, pi)) {
-					// The star is followed by a literal, so everything before
-					// the next occurrence of that literal belongs to the star.
+					// Star followed by a literal: everything before the next
+					// occurrence of that literal belongs to the star.
 					literal := byteAtOrNUL(pattern, pi)
 					for {
 						textByte = byteAtOrNUL(text, ti)
@@ -167,12 +161,9 @@ func gitDoWild(pattern []byte, pi int, text []byte, ti int, flags int) int {
 }
 
 // gitWildBracket matches one bracket expression against a single byte and
-// reports where the pattern continues.
-//
-// It accepts the two negation spellings git accepts ("!" and "^"), ranges,
-// backslash escapes and POSIX character classes, and it refuses to match a
-// directory separator whenever the pathname flag is set, so "[a-z]" cannot
-// swallow a "/" the way a literal range otherwise would.
+// reports where the pattern continues. It accepts both negation spellings ("!"
+// and "^"), ranges, backslash escapes and POSIX classes, and never matches a
+// separator when the pathname flag is set.
 func gitWildBracket(pattern []byte, pi int, textByte byte, flags int) (result, next int) {
 	pi++
 	patternByte := byteAtOrNUL(pattern, pi)
@@ -213,8 +204,7 @@ func gitWildBracket(pattern []byte, pi int, textByte byte, flags int) (result, n
 			if textByte <= patternByte && textByte >= previous {
 				matched = true
 			}
-			// A consumed range leaves no endpoint behind, so the byte after it
-			// cannot open a second range.
+			// A consumed range leaves no endpoint to open a second range.
 			patternByte = 0
 		case patternByte == '[' && byteAtOrNUL(pattern, pi+1) == ':':
 			classStart := pi + 2
@@ -226,7 +216,7 @@ func gitWildBracket(pattern []byte, pi int, textByte byte, flags int) (result, n
 				return gitWildAbortAll, end
 			}
 			if end-1 < classStart || pattern[end-1] != ':' {
-				// No ":]" closed it, so the "[" was an ordinary member.
+				// No ":]" closed it, so "[" was an ordinary member.
 				if textByte == '[' {
 					matched = true
 				}
@@ -259,9 +249,8 @@ func gitWildBracket(pattern []byte, pi int, textByte byte, flags int) (result, n
 	return gitWildMatch, pi
 }
 
-// gitCharacterClassMatches answers a POSIX character class, and reports whether
-// the class is one git defines at all — an unknown one is a malformed pattern
-// rather than a class that matches nothing.
+// gitCharacterClassMatches answers a POSIX character class and reports whether
+// git defines it at all; an unknown class is a malformed pattern, not an empty one.
 func gitCharacterClassMatches(class string, b byte) (matches, known bool) {
 	digit := b >= '0' && b <= '9'
 	lower := b >= 'a' && b <= 'z'

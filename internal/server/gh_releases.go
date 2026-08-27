@@ -17,23 +17,9 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// Releases API.
-// Real GH endpoints:
-//   POST   /repos/{o}/{r}/releases                     create
-//   GET    /repos/{o}/{r}/releases                     list (paginated)
-//   GET    /repos/{o}/{r}/releases/latest              latest non-draft non-prerelease
-//   GET    /repos/{o}/{r}/releases/tags/{tag}          by tag
-//   GET    /repos/{o}/{r}/releases/{release_id}        by id
-//   PATCH  /repos/{o}/{r}/releases/{release_id}        update
-//   DELETE /repos/{o}/{r}/releases/{release_id}        delete
-//   POST   /repos/{o}/{r}/releases/generate-notes      autogen body from commits
-//
-// `gh release create` uses POST and PATCH; `gh release list/view` uses GET.
-
 // releaseExcludedFromLatest interprets the make_latest body field, which GitHub
-// accepts as the strings "true"|"false"|"legacy" (and, from some clients, a
-// bool). Only an explicit false excludes the release from "latest"; the default
-// and every other value leave it eligible.
+// accepts as "true"|"false"|"legacy" (and, from some clients, a bool). Only an
+// explicit false excludes the release from "latest".
 func releaseExcludedFromLatest(v interface{}) bool {
 	switch t := v.(type) {
 	case string:
@@ -45,8 +31,6 @@ func releaseExcludedFromLatest(v interface{}) bool {
 	}
 }
 
-// --- Asset methods ---
-
 func (s *Server) registerGHReleasesRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/releases",
 		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleCreateRelease))
@@ -57,8 +41,6 @@ func (s *Server) registerGHReleasesRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/releases/generate-notes",
 		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleGenerateReleaseNotes))
 
-	// Single-segment after /releases/ is GET-release-by-id. Use {release_id}
-	// directly here — these patterns don't conflict with the two-segment ones.
 	s.route("GET /api/v3/repos/{owner}/{repo}/releases/{release_id}",
 		s.handleGetRelease)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/releases/{release_id}",
@@ -66,16 +48,10 @@ func (s *Server) registerGHReleasesRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/releases/{release_id}",
 		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleDeleteRelease))
 
-	// `/releases/{p1}/{p2}` dispatches by segment value:
-	//   p1=="tags"      → GET release-by-tag (real GH path: releases/tags/{tag})
-	//   p1=="assets"    → GET/PATCH/DELETE asset by id
-	//   p2=="assets"    → POST upload / GET list assets for release {p1}
-	//   p2=="reactions" → GET/POST reactions on release {p1}
-	// Go 1.22's mux refuses to register the two distinct patterns directly
-	// (`/releases/tags/{tag}` and `/releases/{release_id}/assets` overlap
-	// without either being more specific), so a single dispatcher handles
-	// all real-GH paths under this prefix. routeDispatch records the real
-	// endpoints in the route table so RegisteredRoutes() enumerates them.
+	// Go 1.22's mux refuses to register /releases/tags/{tag} and
+	// /releases/{release_id}/assets directly (they overlap without either being
+	// more specific), so one dispatcher handles the prefix and routeDispatch
+	// records the real endpoints so RegisteredRoutes() enumerates them.
 	s.routeDispatch("GET /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
 		s.handleReleaseTwoSegDispatch("GET"),
 		"GET /api/v3/repos/{owner}/{repo}/releases/tags/{tag}",
@@ -95,8 +71,7 @@ func (s *Server) registerGHReleasesRoutes() {
 		s.handleReleaseTwoSegDispatch("DELETE"),
 		"DELETE /api/v3/repos/{owner}/{repo}/releases/assets/{asset_id}")
 
-	// `/releases/{p1}/{p2}/{p3}` is only used for release-reaction deletion
-	// (reactions have a three-segment path while assets stop at two).
+	// Three segments are only release-reaction deletion.
 	s.routeDispatch("DELETE /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}/{p3}",
 		s.handleReleaseThreeSegDispatch("DELETE"),
 		"DELETE /api/v3/repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}")
@@ -114,7 +89,6 @@ func (s *Server) handleReleaseTwoSegDispatch(method string) http.HandlerFunc {
 		p2 := r.PathValue("p2")
 		switch {
 		case p1 == "tags" && method == "GET":
-			// Stash the tag back into the {tag} slot via r.SetPathValue.
 			r.SetPathValue("tag", p2)
 			s.handleGetReleaseByTag(w, r)
 		case p1 == "assets":
@@ -177,12 +151,10 @@ func (s *Server) lookupRepoFromPath(r *http.Request) *store.Repo {
 	return s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 }
 
-// lookupReadableRepoFromPath resolves the {owner}/{repo} path the same as
-// lookupRepoFromPath, but additionally enforces private-repo visibility: a
-// private repo the caller cannot read returns nil and a 404, matching real
-// GitHub (which hides the existence of private repos behind 404, never 403, on
-// read paths). Use this on every GET handler that returns repo-scoped content;
-// lookupRepoFromPath stays for write handlers already gated by requirePerm.
+// lookupReadableRepoFromPath resolves {owner}/{repo} and enforces private-repo
+// visibility: a private repo the caller cannot read returns nil and a 404 (never
+// 403, so existence stays hidden). Use on GET handlers returning repo-scoped
+// content; lookupRepoFromPath stays for write handlers gated by requirePerm.
 func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
@@ -196,24 +168,20 @@ func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Reque
 	return repo
 }
 
-// enforceRepoReadable applies the private-repo visibility gate without
-// requiring that a Repo record exist. It returns false (after writing a 404)
-// only when the path resolves to a KNOWN private repo the caller cannot read.
-// Paths whose repo has no Store record (e.g. workflow-run state tracked by
-// RepoFullName alone) are allowed through unchanged — those handlers carry
-// their own not-found semantics. Use this on repo-scoped read handlers that
-// must not leak private-repo content but operate on non-Repo-keyed state.
+// enforceRepoReadable applies the private-repo visibility gate without requiring
+// a Repo record to exist: it returns false (404) only for a KNOWN private repo
+// the caller cannot read. Paths whose repo has no Store record (workflow-run
+// state keyed by RepoFullName alone) pass through to handlers with their own
+// not-found semantics. Use on repo-scoped read handlers over non-Repo-keyed
+// state.
 func (s *Server) enforceRepoReadable(w http.ResponseWriter, r *http.Request) bool {
-	// A route that names no repository — the same handler is registered under
-	// /orgs/{org} for a few families — has nothing to resolve here.
 	if !repoNamedInRequest(r) {
 		return true
 	}
 	repo := s.repoFromPATRequest(r)
 	if repo == nil {
-		// Named but absent. Answering 200 for a repository that does not exist
-		// while answering 404 for one the caller may not see is an existence
-		// oracle run backwards.
+		// Named but absent. Answering 200 for a missing repo while answering 404
+		// for one the caller may not see is an existence oracle run backwards.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return false
 	}
@@ -265,8 +233,7 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	// discussion_category_name must name a category that already exists, or
-	// GitHub rejects the request; validate before the release is created.
+	// discussion_category_name must name an existing category; validate first.
 	var discussionCategory *store.DiscussionCategory
 	if req.DiscussionCategoryName != "" {
 		if discussionCategory = s.store.GetDiscussionCategoryByName(repo.ID, req.DiscussionCategoryName); discussionCategory == nil {
@@ -274,9 +241,8 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// generate_release_notes autogenerates the name (when absent) and appends
-	// notes to any supplied body, matching GitHub. The previous release's tag
-	// bounds the changelog range.
+	// generate_release_notes autogenerates the name when absent and appends notes
+	// to any supplied body; the previous release's tag bounds the changelog range.
 	if bool(req.GenerateReleaseNotes) {
 		if req.Name == "" {
 			req.Name = req.TagName
@@ -333,11 +299,10 @@ func (s *Server) handleGetLatestRelease(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, releaseToJSON(rel, s.store, s.baseURL(r), repo))
 }
 
-// releaseVisibleTo reports whether a release may be shown to the caller. A
-// draft is unpublished: real GitHub serves it only to users with push access
-// and 404s everyone else. The list endpoint has always filtered drafts, so
-// applying the same rule on every by-id/by-tag read is what makes the two
-// surfaces agree instead of leaving a direct fetch as a way around the filter.
+// releaseVisibleTo reports whether a release may be shown to the caller. A draft
+// is served only to users with push access (404 otherwise); applying the list
+// endpoint's draft filter to every by-id/by-tag read keeps a direct fetch from
+// bypassing it.
 func (s *Server) releaseVisibleTo(r *http.Request, repo *store.Repo, rel *store.Release) bool {
 	if rel == nil || repo == nil || rel.RepoID != repo.ID {
 		return false
@@ -405,8 +370,8 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	// A discussion_category_name that names a missing category is rejected;
-	// validate before mutating.
+	// A discussion_category_name naming a missing category is rejected before
+	// mutating.
 	var discussionCategory *store.DiscussionCategory
 	if req.DiscussionCategoryName != nil && *req.DiscussionCategoryName != "" && release.DiscussionNumber == 0 {
 		if discussionCategory = s.store.GetDiscussionCategoryByName(repo.ID, *req.DiscussionCategoryName); discussionCategory == nil {
@@ -543,10 +508,8 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 // releaseCreateActions returns the actions a create delivers. GitHub fans a
-// single publish out into several: a draft is only `created`, while a release
-// saved straight to published is `created` (published without ever having been
-// a draft), then `published`, then the flavour of publish it was —
-// `prereleased` for a pre-release, `released` for a full one.
+// publish into several: a draft is only `created`; a release saved straight to
+// published is `created`, `published`, then `prereleased` or `released`.
 func releaseCreateActions(draft, prerelease bool) []string {
 	if draft {
 		return []string{"created"}
@@ -554,9 +517,9 @@ func releaseCreateActions(draft, prerelease bool) []string {
 	return append([]string{"created"}, releasePublishActions(prerelease)...)
 }
 
-// releaseUpdateActions returns the actions an edit delivers, given the release's
+// releaseUpdateActions returns the actions an edit delivers from the
 // draft/prerelease flags before and after. Publishing a draft does not repeat
-// `created` — the release was already saved once.
+// `created`.
 func releaseUpdateActions(wasDraft, wasPrerelease, draft, prerelease bool) []string {
 	switch {
 	case !wasDraft && draft:
@@ -572,8 +535,8 @@ func releaseUpdateActions(wasDraft, wasPrerelease, draft, prerelease bool) []str
 	}
 }
 
-// releasePublishActions is the pair delivered whenever a release becomes
-// published: `published` for any release, then the qualifier for its kind.
+// releasePublishActions is the pair delivered when a release becomes published:
+// `published`, then the qualifier for its kind.
 func releasePublishActions(prerelease bool) []string {
 	if prerelease {
 		return []string{"published", "prereleased"}
@@ -587,7 +550,7 @@ func (s *Server) emitReleaseEvent(repo *store.Repo, release *store.Release, send
 }
 
 // emitReleaseEvents delivers a release fan-out in order; each action gets its
-// own payload so every delivery carries its own `action` value.
+// own payload.
 func (s *Server) emitReleaseEvents(repo *store.Repo, release *store.Release, sender *store.User, actions []string, baseURL string) {
 	for _, action := range actions {
 		s.emitReleaseEvent(repo, release, sender, action, baseURL)
@@ -700,9 +663,9 @@ func (s *Server) handleGetReleaseAsset(w http.ResponseWriter, r *http.Request) {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
-		// Conditional download (REST-031): an asset's bytes are immutable for a
-		// given id, so (id, size) is a stable validator. A matching If-None-Match
-		// returns a bodyless 304 and, like GitHub, is not counted as a download.
+		// Conditional download (REST-031): asset bytes are immutable for a given
+		// id, so (id, size) is a stable validator; a matching If-None-Match
+		// returns a bodyless 304 and is not counted as a download.
 		etag := fmt.Sprintf(`"asset-%d-%d"`, asset.ID, asset.Size)
 		w.Header().Set("ETag", etag)
 		if etagMatches(r.Header.Get("If-None-Match"), etag) {
@@ -843,8 +806,8 @@ func (s *Server) handleGenerateReleaseNotes(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, out)
 }
 
-// previousReleaseTag returns the tag of the newest existing published release
-// (excluding excludeTag), used to bound generated release notes.
+// previousReleaseTag returns the tag of the newest published release excluding
+// excludeTag, bounding generated release notes.
 func (s *Server) previousReleaseTag(repo *store.Repo, excludeTag string) string {
 	if prev := s.store.Releases.Latest(repo.ID); prev != nil && prev.TagName != excludeTag {
 		return prev.TagName
@@ -852,8 +815,8 @@ func (s *Server) previousReleaseTag(repo *store.Repo, excludeTag string) string 
 	return ""
 }
 
-// linkReleaseDiscussion creates a repository discussion in the given category
-// and links it to the release (discussion_category_name).
+// linkReleaseDiscussion creates a discussion in the category and links it to the
+// release.
 func (s *Server) linkReleaseDiscussion(repo *store.Repo, release *store.Release, user *store.User, category *store.DiscussionCategory) {
 	if category == nil {
 		return
@@ -1009,15 +972,14 @@ func releaseToJSON(rel *store.Release, st *store.Store, baseURL string, repo *st
 		"assets":           assets,
 		"reactions":        reactions,
 	}
-	// discussion_url is optional and non-nullable: present only when the release
-	// is linked to a discussion; GitHub omits it otherwise.
+	// discussion_url is present only when the release is linked to a discussion;
+	// GitHub omits it otherwise.
 	if discussionURL != nil {
 		m["discussion_url"] = discussionURL
 	}
 	return m
 }
 
-// buildReleaseEventPayload — `release` webhook event payload.
 func (s *Server) buildReleaseEventPayload(repo *store.Repo, rel *store.Release, sender *store.User, action, baseURL string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action":     action,

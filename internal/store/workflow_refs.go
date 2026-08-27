@@ -5,8 +5,8 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// ResolveBranchSha resolves a branch name to its commit sha in git
-// storage; empty when unknown.
+// ResolveBranchSha resolves a branch name to its commit sha, empty when
+// unknown.
 func ResolveBranchSha(stor gitStorage.Storer, branch string) string {
 	if stor == nil || branch == "" {
 		return ""

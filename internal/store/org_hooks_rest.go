@@ -2,7 +2,6 @@ package store
 
 import "time"
 
-// CreateOrgHook creates a webhook on an organization.
 func (st *Store) CreateOrgHook(orgLogin, url, secret, contentType, insecureSSL string, events []string, active bool) *Webhook {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -48,7 +47,6 @@ func (st *Store) GetOrgHook(orgLogin string, hookID int) *Webhook {
 	return nil
 }
 
-// ListOrgHooks returns all webhooks on an organization.
 func (st *Store) ListOrgHooks(orgLogin string) []*Webhook {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

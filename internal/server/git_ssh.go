@@ -21,15 +21,13 @@ import (
 const (
 	maxConcurrentGitSSHConnections = 64
 	gitSSHHandshakeTimeout         = 10 * time.Second
-	// maxGitSSHAuthTries bounds how many key offers one connection may make
-	// before the handshake is refused, matching OpenSSH's default of 6.
+	// maxGitSSHAuthTries caps key offers per connection, matching OpenSSH's default.
 	maxGitSSHAuthTries = 6
 )
 
-// startGitSSH serves the standard SSH Git transport when BLEEPHUB_SSH_ADDR
-// and BLEEPHUB_SSH_HOST_KEY are configured. The host key is required so a
-// restarted durable server retains its SSH host identity instead of silently
-// generating a different key for every process.
+// startGitSSH serves the SSH Git transport when BLEEPHUB_SSH_ADDR and
+// BLEEPHUB_SSH_HOST_KEY are configured. The host key is required so a restarted
+// server keeps its SSH host identity across processes.
 func (s *Server) startGitSSH(ctx context.Context) error {
 	addr := strings.TrimSpace(os.Getenv("BLEEPHUB_SSH_ADDR"))
 	if addr == "" {
@@ -47,12 +45,9 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen for SSH Git transport on %s: %w", addr, err)
 	}
-	// The server config is built per connection in serveGitSSHConn so the
-	// failed-attempt counter the callback closes over is per connection too.
 	connectionSlots := make(chan struct{}, maxConcurrentGitSSHConnections)
 	s.logger.Info().Str("addr", addr).Msg("bleephub SSH Git transport listening")
-	// Closing the listener is what unblocks Accept, so shutdown closes it and
-	// the accept loop reports a clean stop rather than an error.
+	// Shutdown closes the listener to unblock Accept.
 	s.goBackground(func() {
 		<-ctx.Done()
 		_ = listener.Close()
@@ -87,10 +82,9 @@ func (s *Server) startGitSSH(ctx context.Context) error {
 
 func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 	defer func() { _ = conn.Close() }()
-	// The SSH path runs outside recoverMiddleware and drives third-party
-	// decoders (packp/packfile) over attacker-controlled bytes. A panic there
-	// would unwind through the accept goroutine and kill the whole process,
-	// taking every tenant's traffic down — so contain it to this connection.
+	// The SSH path runs outside recoverMiddleware and drives third-party decoders
+	// over attacker-controlled bytes; contain any panic to this connection so it
+	// cannot kill the accept goroutine and the whole process.
 	defer func() {
 		if rec := recover(); rec != nil {
 			s.logger.Error().Interface("panic", rec).Str("remote_addr", conn.RemoteAddr().String()).Msg("recovered panic in SSH Git connection")
@@ -101,9 +95,8 @@ func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 		return
 	}
 	config := &ssh.ServerConfig{
-		// MaxAuthTries makes the ssh library disconnect after too many
-		// attempts; the callback itself stays stateless so the granted
-		// permissions derive only from the key in the current invocation.
+		// The callback stays stateless: granted permissions derive only from the
+		// key in the current invocation.
 		MaxAuthTries: maxGitSSHAuthTries,
 		PublicKeyCallback: func(metadata ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			user := s.store.LookupUserBySSHKey(key)
@@ -128,9 +121,8 @@ func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 	}
 	defer func() { _ = serverConn.Close() }()
 	go ssh.DiscardRequests(requests)
-	// The user ID extension was stamped by the public-key callback below, so
-	// an unparseable value means the connection state is corrupt; fail closed
-	// rather than resolve whatever user happens to hold ID 0.
+	// An unparseable user-ID extension means corrupt connection state; fail
+	// closed rather than resolve whatever user holds ID 0.
 	userID, err := parseGitSSHUserID(serverConn.Permissions.Extensions["bleephub-user-id"])
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("SSH Git connection dropped")
@@ -149,17 +141,14 @@ func (s *Server) serveGitSSHConn(conn net.Conn, signer ssh.Signer) {
 		if openErr != nil {
 			continue
 		}
-		// A Git SSH connection uses one session channel. Serving it inline
-		// keeps the listener's connection bound meaningful: a client cannot
-		// open an unbounded number of channel goroutines behind one admitted
-		// TCP connection.
+		// Serve inline so a client cannot open unbounded channel goroutines
+		// behind one admitted TCP connection.
 		s.serveGitSSHSession(channel, requests, user)
 	}
 }
 
 func parseGitSSHUserID(value string) (int, error) {
-	// strconv.Atoi is the fail-closed primitive: unlike fmt.Sscanf("%d"), it
-	// rejects trailing garbage such as "12abc" rather than accepting 12.
+	// Atoi rejects trailing garbage ("12abc"), unlike fmt.Sscanf("%d").
 	result, err := strconv.Atoi(value)
 	if err != nil {
 		return 0, fmt.Errorf("parse SSH user ID %q: %w", value, err)
@@ -169,10 +158,9 @@ func parseGitSSHUserID(value string) (int, error) {
 
 func (s *Server) serveGitSSHSession(channel ssh.Channel, requests <-chan *ssh.Request, user *store.User) {
 	defer func() { _ = channel.Close() }()
-	// A client that wants protocol v2 states so in GIT_PROTOCOL, which OpenSSH
-	// forwards as an env request before the exec request that names the
-	// service. Collecting it here is what lets SSH negotiate the same protocol
-	// version smart HTTP negotiates through a header.
+	// A protocol-v2 client states so in GIT_PROTOCOL, which OpenSSH forwards as
+	// an env request before the exec request; collect it here to negotiate the
+	// same version smart HTTP does through a header.
 	protocol := ""
 	for request := range requests {
 		if request.Type == "env" {
@@ -230,25 +218,18 @@ func parseGitSSHCommand(command string) (service, owner, repo string, ok bool) {
 }
 
 func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName string, user *store.User, protocolV2 bool) error {
-	// The same resolution the smart-HTTP lane uses, so `<repo>.wiki.git` names
-	// the same storage over SSH as it does over HTTP.
+	// Shared with the smart-HTTP lane, so `<repo>.wiki.git` names the same
+	// storage over SSH as over HTTP.
 	target := s.resolveGitTarget(owner, repoName)
 	if !target.exists() {
 		return transport.ErrRepositoryNotFound
 	}
 	repo := target.repo
-	// SSH authenticates by public key, so the only credential the session can
-	// carry is the user itself — there is no installation or user-to-server
-	// token to intersect. The read decision still goes through the one choke
-	// point, so a new arm added there cannot be missed here.
 	ctx := contextWithUser(context.Background(), user)
-	// A caller who cannot read the repository is answered exactly as for a
-	// nonexistent one, so SSH does not become a private-repository existence
-	// oracle (matching the git-HTTP behavior). A write refusal is only
-	// distinguishable once read access is established.
-	// Cloning reads repository CONTENTS, so gate on contents:read (matching the
-	// git-HTTP path) rather than metadata:read — a caller with only metadata
-	// visibility must not be able to pull the code.
+	// Answer an unreadable repo exactly as a nonexistent one, so SSH is no
+	// private-repo existence oracle; a write refusal is distinguishable only
+	// after read access is established. Cloning reads CONTENTS, so gate on
+	// contents:read (not metadata:read) as the git-HTTP path does.
 	if !s.viewerHasRepoPermission(ctx, repo, store.ScopeContents, store.PermRead) {
 		return transport.ErrRepositoryNotFound
 	}
@@ -262,9 +243,8 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if service == "git-upload-pack" {
 		stor = gitStorerWithPackReuse(ctx, target.storageName, stor)
 		if protocolV2 {
-			// The channel stays open across commands, so the v2 loop keeps
-			// serving them until the client stops: one connection carries both
-			// the ls-refs that replaces the advertisement and the fetch.
+			// The channel stays open, so the v2 loop serves commands until the
+			// client stops — one connection carries both ls-refs and the fetch.
 			if err := writeGitV2CapabilityAdvertisement(channel); err != nil {
 				return err
 			}
@@ -278,9 +258,8 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 			}
 			return err
 		}
-		// The advertisement and the negotiation are the shared ones in
-		// git_uploadpack.go, so SSH and smart HTTP cannot drift apart on which
-		// capabilities they promise or how they answer a deepening request.
+		// Shared with git_uploadpack.go so SSH and smart HTTP cannot drift on
+		// advertised capabilities or deepening.
 		info, err := gitUploadPackAdvertisement(stor)
 		if err != nil {
 			return err
@@ -300,9 +279,8 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 		_, err = serveGitUploadPack(context.Background(), stor, requestReader, channel)
 		return err
 	}
-	// The advertisement, the request decoder and the reply are the shared ones
-	// in git_receivepack.go, so SSH and smart HTTP cannot drift apart on which
-	// capabilities they promise or how they answer a push.
+	// Shared with git_receivepack.go so SSH and smart HTTP cannot drift on
+	// advertised capabilities or how they answer a push.
 	info, err := gitReceivePackAdvertisement(stor)
 	if err != nil {
 		return err
@@ -311,10 +289,8 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if err := info.Encode(channel); err != nil {
 		return err
 	}
-	// The request is read straight off the channel rather than through a
-	// wrapper: the decoder hands the packfile position on as a plain io.Reader
-	// and never closes it, so the channel's output side stays open for the
-	// report the client is waiting on.
+	// Read straight off the channel: the decoder never closes it, so the output
+	// side stays open for the report the client awaits.
 	request, err := decodeGitReceiveRequest(bufio.NewReader(channel))
 	if err != nil {
 		return err
@@ -331,11 +307,9 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	return writeGitReceivePackResponse(channel, request, outcome)
 }
 
-// flushOnlyGitRequest recognizes the valid upload-pack request a Git client
-// sends after advertising an empty repository. There are no objects to want,
-// so the request consists solely of the pkt-line flush marker. go-git's
-// request decoder intentionally expects at least one want line and cannot
-// represent this protocol-valid case.
+// flushOnlyGitRequest recognizes the flush-only upload-pack request a client
+// sends against an empty repo (no wants). go-git's decoder requires at least
+// one want line and cannot represent this protocol-valid case.
 func flushOnlyGitRequest(reader *bufio.Reader) (bool, error) {
 	header, err := reader.Peek(4)
 	if err != nil {
@@ -344,11 +318,10 @@ func flushOnlyGitRequest(reader *bufio.Reader) (bool, error) {
 	return string(header) == "0000", nil
 }
 
-// metaSSHHostKeys returns the instance's SSH host-key material for GET /meta:
-// the SHA256 fingerprints map (keyed SHA256_<ALG>, value without the "SHA256:"
-// prefix, matching github) and the authorized-key lines. Both are empty when no
-// host key is configured (BLEEPHUB_SSH_HOST_KEY unset), which is spec-valid —
-// the /meta ssh_key_fingerprints/ssh_keys members are optional.
+// metaSSHHostKeys returns the SSH host-key material for GET /meta: the SHA256
+// fingerprints map (keyed SHA256_<ALG>, value without the "SHA256:" prefix, as
+// github does) and the authorized-key lines. Both are empty when no host key is
+// configured — the /meta members are optional.
 func metaSSHHostKeys() (fingerprints map[string]string, authorized []string) {
 	fingerprints, authorized = map[string]string{}, []string{}
 	raw := os.Getenv("BLEEPHUB_SSH_HOST_KEY")

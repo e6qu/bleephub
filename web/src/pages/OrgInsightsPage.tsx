@@ -6,10 +6,8 @@ import { PageTitle, Box, SectionLabel } from "../components/ui.js";
 import { fetchOrgApiInsightsSummary, fetchOrgApiInsightsSubjectStats } from "../api.js";
 
 /**
- * Organization Insights — the GHES "API Insights" surface. github.com/Enterprise
- * puts an Insights tab on the org showing API-request activity; bleephub had the
- * backend (/orgs/{org}/insights/api/*) but no UI. Shows a trailing-30-day
- * summary plus the top request subjects (apps/actors).
+ * Org "API Insights" (GHES): trailing-30-day API-request summary plus the top
+ * request subjects, over /orgs/{org}/insights/api/*.
  */
 export function OrgInsightsPage() {
   const { org = "" } = useParams<{ org: string }>();

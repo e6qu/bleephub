@@ -54,8 +54,8 @@ func (s *Server) orgGated(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// orgIDGated resolves an official numeric {org_id} path parameter and makes
-// the organization login available to the existing policy handlers.
+// orgIDGated resolves a numeric {org_id} and exposes the org login to the
+// policy handlers.
 func (s *Server) orgIDGated(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.Atoi(r.PathValue("org_id"))
@@ -69,11 +69,9 @@ func (s *Server) orgIDGated(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		r.SetPathValue("org", org.Login)
-		// requirePerm resolved its org target from an empty {org} (this handler
-		// sets it only now), so its organization half was skipped. Re-check the
-		// credential against the resolved org here — these are org-administration
-		// settings — or any authenticated caller could rewrite another org's
-		// Actions cache policy.
+		// requirePerm ran against an empty {org} and skipped its org check, so
+		// re-check org-admin against the resolved org here — else any caller
+		// could rewrite another org's Actions cache policy.
 		if !s.viewerCanAdminOrg(r.Context(), org.Login) {
 			writeGHError(w, http.StatusForbidden, "Must have admin access to the organization.")
 			return
@@ -82,8 +80,8 @@ func (s *Server) orgIDGated(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// ensureDefaultRunnerGroupLocked materializes the implicit Default group that
-// every organization and enterprise has. Callers hold the store lock.
+// ensureDefaultRunnerGroupLocked materializes the implicit Default group
+// every org and enterprise has. Callers hold the store lock.
 func (s *Server) ensureDefaultRunnerGroupLocked(target store.RunnerScope) *store.RunnerGroup {
 	for _, group := range s.store.RunnerGroups {
 		if group.Default && runnerGroupMatchesTarget(group, target) {
@@ -315,8 +313,8 @@ func (s *Server) persistRunnerGroupLocked(g *store.RunnerGroup) {
 	}
 }
 
-// lookupRunnerGroup resolves the path's runner_group_id; nil + handled
-// response when missing.
+// lookupRunnerGroup resolves {runner_group_id}, writing the response and
+// returning nil when missing.
 func (s *Server) lookupRunnerGroup(w http.ResponseWriter, r *http.Request) *store.RunnerGroup {
 	target, ok := s.runnerGroupTarget(w, r)
 	if !ok {
@@ -413,13 +411,13 @@ func (s *Server) handleDeleteRunnerGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if g.Default {
-		// Real GitHub refuses to delete the default group.
+		// GitHub refuses to delete the default group.
 		writeGHError(w, http.StatusBadRequest, "Cannot delete the default runner group")
 		return
 	}
 	s.store.Mu.Lock()
 	delete(s.store.RunnerGroups, g.ID)
-	// Members fall back to the default group, like real GitHub.
+	// Members fall back to the default group, as GitHub does.
 	fallback := s.ensureDefaultRunnerGroupLocked(g.Scope)
 	for _, a := range s.store.Agents {
 		if a.RunnerGroupID == g.ID {
@@ -460,9 +458,8 @@ func (s *Server) handleListGroupRunners(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// agentGroupID resolves an agent's group for legacy response shapes. New
-// membership logic resolves the owning scope's actual default group because
-// every organization and enterprise has a distinct one.
+// agentGroupID resolves an agent's group for legacy response shapes; newer
+// logic resolves the owning scope's distinct default group instead.
 func agentGroupID(a *store.Agent) int {
 	if a.RunnerGroupID == 0 {
 		return defaultRunnerGroupID

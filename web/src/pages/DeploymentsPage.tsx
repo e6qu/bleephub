@@ -111,8 +111,7 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
     }
   };
 
-  // GitHub's deployments view groups history under environment headers
-  // (newest deployment first inside each group, groups in first-seen order).
+  // Group history under environment headers, groups in first-seen order.
   const groups: { environment: string; items: GithubDeployment[] }[] = [];
   for (const d of deployments) {
     const group = groups.find((g) => g.environment === d.environment);
@@ -150,7 +149,6 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-/** Collapsed-by-default disclosure for write-side operator forms. */
 function OperatorTools({ label, children }: { label: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
@@ -163,7 +161,6 @@ function OperatorTools({ label, children }: { label: string; children: React.Rea
   );
 }
 
-/** One environment's deployment history with its latest-status badge. */
 function EnvironmentGroup({
   owner,
   repo,
@@ -198,7 +195,6 @@ function EnvironmentGroup({
   );
 }
 
-/** Latest status of the environment's newest deployment, as a badge. */
 function EnvironmentLatestStatus({
   owner,
   repo,

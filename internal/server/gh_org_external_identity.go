@@ -215,9 +215,8 @@ func (s *Server) handleListTeamExternalGroups(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) persistTeamExternalGroupsLocked(orgLogin string, teamID int) {
-	// One transaction: the org's external-group set and the team's group binding
-	// commit together, so a crash cannot leave a team bound to a group the org no
-	// longer records, or vice versa (STORE-001/002).
+	// One transaction: the org's external-group set and the team's binding commit
+	// together, so a crash cannot leave one without the other (STORE-001/002).
 	batch := store.NewPersistBatch(s.store.Persist)
 	batch.Put("org_external_groups", orgLogin, s.store.OrgExternalGroups[orgLogin])
 	batch.Put("team_external_group_ids", strconv.Itoa(teamID), s.store.TeamExternalGroupIDs[teamID])

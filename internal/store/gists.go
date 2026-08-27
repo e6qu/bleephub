@@ -8,11 +8,9 @@ func SortHistory(history []*GistHistory) {
 	})
 }
 
-// GistStargazerIDs returns the ids of the users who have starred the gist,
-// oldest-account first. The star bookkeeping is keyed by user (userID → gistID
-// → starred) with no reverse index, so the reverse lookup is a scan; it is the
-// only way to count or list a gist's stargazers, which Gist.stargazerCount and
-// Gist.stargazers both need. The result is a fresh slice callers may keep.
+// GistStargazerIDs returns the ids of the users who starred the gist, oldest
+// account first. Star bookkeeping has no reverse index, so this scans. The
+// result is a fresh slice.
 func (st *Store) GistStargazerIDs(gistID string) []int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

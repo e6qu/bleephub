@@ -12,11 +12,8 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// POST /repos/{template_owner}/{template_repo}/generate — create a new
-// repository from a template repository. The generated repository's default
-// branch contains the template's files as a single fresh initial commit
-// (not the template's history); include_all_branches adds one root commit
-// per template branch.
+// Create a repository from a template. The generated repo carries the template's
+// files as one fresh initial commit per branch, not the template's history.
 
 func (s *Server) registerGHRepoGenerateRoutes() {
 	s.route("POST /api/v3/repos/{template_owner}/{template_repo}/generate", s.handleGenerateRepoFromTemplate)
@@ -59,8 +56,7 @@ func (s *Server) handleGenerateRepoFromTemplate(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Resolve the owning account: the caller by default, an organization the
-	// caller is an active member of, or the caller by explicit login.
+	// Owner is the caller by default, or an org the caller is a member of.
 	var repo *store.Repo
 	switch {
 	case req.Owner == "" || strings.EqualFold(req.Owner, user.Login):
@@ -113,11 +109,9 @@ func (s *Server) handleGenerateRepoFromTemplate(w http.ResponseWriter, r *http.R
 	writeJSONCreated(w, jsonStringField(repoJSON, "url"), repoJSON)
 }
 
-// generateFromTemplateStorage copies the template's tree and blob objects
-// into dst and roots one fresh initial commit per selected branch at the
-// template branch's tree. The generated history is exactly one commit per
-// branch, authored by the generating user — the template's commit history
-// is not carried over. HEAD ends up on defaultBranch.
+// generateFromTemplateStorage copies the template's tree and blob objects into
+// dst and roots one fresh initial commit per selected branch, authored by sig.
+// The template's commit history is not carried over; HEAD ends on defaultBranch.
 func generateFromTemplateStorage(src, dst gitStorage.Storer, defaultBranch string, includeAllBranches bool, sig *object.Signature) error {
 	if src == nil {
 		return nil
@@ -143,14 +137,13 @@ func generateFromTemplateStorage(src, dst gitStorage.Storer, defaultBranch strin
 	}
 	refIter.Close()
 
-	// An empty template (no commits yet) generates an empty repository.
+	// An empty template generates an empty repository.
 	if len(branches) == 0 {
 		return nil
 	}
 
-	// Copy tree + blob objects; commits are minted fresh below. Objects are
-	// re-encoded through dst.NewEncodedObject because a storer only accepts
-	// its own object implementation.
+	// Copy tree + blob objects (commits are minted fresh below), re-encoding
+	// through dst because a storer only accepts its own object implementation.
 	for _, t := range []plumbing.ObjectType{plumbing.TreeObject, plumbing.BlobObject} {
 		iter, err := src.IterEncodedObjects(t)
 		if err != nil {

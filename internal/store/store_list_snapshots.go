@@ -1,13 +1,11 @@
 package store
 
-// STORE-021: clone + snapshot helpers for the remaining List* element types
-// that carry mutable reference fields (slices, maps, pointers) but had no
-// existing clone helper. Each List* method returning one of these types wraps
-// its result in the matching snapshot* helper, under the store read lock, so a
-// caller iterating and rendering the list cannot race an in-place element
-// mutation nor leak a write back into the stored row. Container-bearing
-// reference fields get fresh backing arrays/maps; write-once nested pointees
-// (e.g. a CheckRun's Output, a manifest) are shared by pointer.
+// STORE-021 clone + snapshot helpers for List* element types with mutable
+// reference fields. Each List* wraps its result in the matching snapshot*
+// helper under the read lock, so a caller can't race an in-place mutation nor
+// leak a write back into the stored row. Reference fields get fresh backing
+// arrays/maps; write-once nested pointees (a CheckRun's Output, a manifest)
+// are shared by pointer.
 
 import "time"
 
@@ -316,8 +314,7 @@ func snapshotRepoTrafficBuckets(in []*RepoTrafficBucket) []*RepoTrafficBucket {
 	return out
 }
 
-// The following reuse clone helpers that already existed elsewhere for the
-// single-object getters; the list methods just needed the slice wrapper.
+// The following reuse existing single-object clone helpers.
 
 func snapshotInstallations(in []*Installation) []*Installation {
 	if in == nil {
@@ -430,9 +427,8 @@ func snapshotPullRequestStacks(in []*PullRequestStack) []*PullRequestStack {
 }
 
 // cloneUser detaches a user from the stored row (STORE-021). User is the most
-// shared entity — StarRepo/UnstarRepo mutate a user's StarredRepos map in place
-// — so member-list callers must hold snapshots. UserEmail and ExternalIdentity
-// are value structs, so copying their slices detaches them fully.
+// shared entity — StarRepo/UnstarRepo mutate StarredRepos in place — so
+// member-list callers must hold snapshots.
 func cloneUser(u *User) *User {
 	if u == nil {
 		return nil
@@ -466,10 +462,8 @@ func snapshotUsers(in []*User) []*User {
 	return out
 }
 
-// snapshotSlice detaches a list whose element type is all-value (no slices,
-// maps or pointers, verified per type): a shallow struct copy of each element
-// is a full snapshot. Used for the remaining value-only List* element types so
-// a reader can't race an in-place scalar update on the stored row.
+// snapshotSlice detaches a list whose element type is all-value (verified per
+// type): a shallow struct copy of each element is a full snapshot.
 func snapshotSlice[T any](in []*T) []*T {
 	if in == nil {
 		return nil

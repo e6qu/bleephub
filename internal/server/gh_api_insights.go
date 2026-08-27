@@ -13,14 +13,10 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// API insights (GET /orgs/{org}/insights/api/*) aggregate real recorded REST
-// API traffic. Every matched /api/v3 route is instrumented at registration
-// time (see instrumentAPIRoute, wired in Server.route): after the handler
-// runs, the request is attributed to its authenticated actor and to every
-// organization that actor belongs to at request time, then appended to
-// Store.APIRequestRecords and persisted. The insights endpoints purely
-// aggregate those records — when no attributable traffic exists the stats
-// are honestly zero/empty.
+// API insights (GET /orgs/{org}/insights/api/*) aggregate recorded REST traffic.
+// Each /api/v3 route is instrumented at registration (instrumentAPIRoute): after
+// the handler runs the request is attributed to its actor and orgs, then stored.
+// The endpoints only aggregate those records.
 
 const (
 	ActorTypeInstallation          store.APIInsightsActorType = "installation"
@@ -57,9 +53,8 @@ func (s *Server) registerGHAPIInsightsRoutes() {
 
 // ─── request instrumentation ─────────────────────────────────────────────
 
-// instrumentAPIRoute wraps a registered /api/v3 handler so the served
-// request is recorded for API insights. Non-/api/v3 patterns pass through
-// untouched.
+// instrumentAPIRoute wraps a registered /api/v3 handler to record the served
+// request for API insights; non-/api/v3 patterns pass through.
 func (s *Server) instrumentAPIRoute(pattern string, next http.HandlerFunc) http.HandlerFunc {
 	method, path, ok := strings.Cut(pattern, " ")
 	if !ok || !strings.HasPrefix(path, "/api/v3/") {
@@ -73,8 +68,7 @@ func (s *Server) instrumentAPIRoute(pattern string, next http.HandlerFunc) http.
 	}
 }
 
-// apiInsightsStatusRecorder captures the response status while passing
-// writes, flushes, and hijacks through to the wrapped writer.
+// apiInsightsStatusRecorder captures the response status.
 type apiInsightsStatusRecorder struct {
 	http.ResponseWriter
 	status      int
@@ -110,10 +104,9 @@ func (w *apiInsightsStatusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error
 	return h.Hijack()
 }
 
-// recordAPIInsightsRequest attributes a served /api/v3 request to its actor
-// and organizations and appends it to the store. Requests without an
-// authenticated, org-attributable actor are not recorded — they can never
-// appear in any organization's insights.
+// recordAPIInsightsRequest attributes a served /api/v3 request to its actor and
+// orgs and appends it to the store. Requests without an authenticated,
+// org-attributable actor are dropped.
 func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string, status int) {
 	ctx := r.Context()
 	rec := &store.APIRequestRecord{
@@ -209,9 +202,8 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 
 // ─── query plumbing ──────────────────────────────────────────────────────
 
-// apiInsightsWindow parses the min_timestamp (required) and max_timestamp
-// (optional, default now) query parameters. On failure it writes a 422
-// validation error and returns ok=false.
+// apiInsightsWindow parses min_timestamp (required) and max_timestamp (optional,
+// default now), writing a 422 and returning ok=false on failure.
 func (s *Server) apiInsightsWindow(w http.ResponseWriter, r *http.Request) (minT, maxT time.Time, ok bool) {
 	minRaw := r.URL.Query().Get("min_timestamp")
 	if minRaw == "" {
@@ -287,9 +279,8 @@ func (agg *apiInsightsAggregate) fillJSON(out map[string]interface{}) {
 	}
 }
 
-// apiInsightsSortValue extracts a comparable value for a sort key from a
-// rendered stats row; string keys compare lexically, everything else by the
-// numeric/timestamp members.
+// apiInsightsLess orders two rendered rows by key: string keys compare lexically,
+// the rest numerically.
 func apiInsightsLess(a, b map[string]interface{}, key string) bool {
 	sv := func(m map[string]interface{}) string {
 		v, _ := m[key].(string)
@@ -308,8 +299,8 @@ func apiInsightsLess(a, b map[string]interface{}, key string) bool {
 	}
 }
 
-// sortAndPaginateStats orders rendered rows by the request's sort/direction
-// parameters (default: total_request_count desc) and slices to the page.
+// sortAndPaginateStats orders rows by the request's sort/direction (default
+// total_request_count desc) and slices to the page.
 func sortAndPaginateStats(w http.ResponseWriter, r *http.Request, rows []map[string]interface{}, allowedSorts map[string]bool) []map[string]interface{} {
 	sortKey := "total_request_count"
 	if v := r.URL.Query().Get("sort"); v != "" && allowedSorts[v] {
@@ -473,8 +464,7 @@ func (s *Server) handleAPIInsightsSummaryStatsByActor(w http.ResponseWriter, r *
 	writeAPIInsightsSummary(w, filterRecordsByActor(s.store.ApiInsightsRecords(r.PathValue("org"), minT, maxT), actorType, actorID))
 }
 
-// parseTimestampIncrement parses API insights increments like "5m", "1h",
-// or "1d" (time.ParseDuration plus a day suffix).
+// parseTimestampIncrement parses increments like "5m", "1h", "1d".
 func parseTimestampIncrement(raw string) (time.Duration, bool) {
 	if strings.HasSuffix(raw, "d") {
 		days, err := strconv.Atoi(strings.TrimSuffix(raw, "d"))
@@ -490,8 +480,8 @@ func parseTimestampIncrement(raw string) (time.Duration, bool) {
 	return d, true
 }
 
-// maxTimeStatsBuckets bounds the generated time series so an arbitrarily
-// wide window with a tiny increment cannot allocate unbounded output.
+// maxTimeStatsBuckets bounds the time series so a wide window with a tiny
+// increment cannot allocate unbounded output.
 const maxTimeStatsBuckets = 10000
 
 func writeAPIInsightsTimeStats(w http.ResponseWriter, r *http.Request, records []*store.APIRequestRecord, minT, maxT time.Time) {

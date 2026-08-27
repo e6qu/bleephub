@@ -1,12 +1,8 @@
 package graphqlapi
 
 // The authorization policy for the mutation surface assembled in
-// gh_mutations_*_graphql.go.
-//
-// It is one table, merged into graphqlMutationAuthz at package init, so the
-// coverage gate that asserts schema fields and policy rows are the same set
-// sees these rows exactly as it sees the rest. A mutation registered here
-// without a row still fails at schema build.
+// gh_mutations_*_graphql.go, merged into graphqlMutationAuthz at init. A
+// mutation registered without a row fails at schema build.
 
 import (
 	"fmt"
@@ -16,14 +12,10 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// githubMutationAuthzRows is the policy for every mutation the extended
-// surface registers.
-//
-// The reasoning follows GitHub's own gates. Repository administration —
-// settings, topics, archival — is Administration at write and admin standing.
-// Label CRUD is repository triage, which GitHub gates on Issues at write and
-// push standing; unlike editing your own issue there is no author exemption,
-// because a label is the repository's vocabulary rather than anyone's content.
+// githubMutationAuthzRows is the policy for every mutation the extended surface
+// registers, following GitHub's own gates. Repository administration (settings,
+// topics, archival) is Administration at admin standing. Label CRUD is
+// repository triage: Issues at push standing, no author exemption.
 func githubMutationAuthzRows() map[string]mutationRule {
 	return map[string]mutationRule{
 		"createLabel": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")},
@@ -39,12 +31,8 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"updateRepository":                        repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 		"updateRepositoryWebCommitSignoffSetting": repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 
-		// Account activity. Following, the profile status and the stars-page
-		// lists all change the viewer's own account, so the entitlement is the
-		// credential's grant over that account rather than standing on any
-		// other record. GitHub groups all three under the account's Metadata
-		// permission at write, which is the grant a fine-grained token
-		// belonging to somebody else does not hold.
+		// Account activity changes the viewer's own account, so the entitlement
+		// is the credential's Metadata grant over it, at write.
 		"followUser":             viewerAccountRule{scope: store.ScopeMetadata},
 		"unfollowUser":           viewerAccountRule{scope: store.ScopeMetadata},
 		"followOrganization":     viewerAccountRule{scope: store.ScopeMetadata},
@@ -52,27 +40,21 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"changeUserStatus":       viewerAccountRule{scope: store.ScopeMetadata},
 		"createUserList":         viewerAccountRule{scope: store.ScopeMetadata},
 		"updateUserListsForItem": viewerAccountRule{scope: store.ScopeMetadata},
-		// The two that name an existing list additionally require it to be the
-		// viewer's own, which is the cross-tenant half.
+		// These additionally require the list to be the viewer's own.
 		"updateUserList": userListRule{idKey: "listId"},
 		"deleteUserList": userListRule{idKey: "listId"},
 
 		"updateNotificationRestrictionSetting": notificationRestrictionRule{},
 
-		// Issue comments. GitHub gates the issue-comment endpoints on Issues
-		// however the subject was opened, and admits the comment's own author
-		// whatever their repository access — editing and deleting your own
-		// comment never required push. Pinning is curation of the thread
-		// rather than of your own content, so it carries no author exemption.
+		// Issue comments: Issues scope however the subject was opened. Editing
+		// or deleting admits the author; pinning does not (thread curation).
 		"updateIssueComment": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("id")},
 		"deleteIssueComment": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("id")},
 		"pinIssueComment":    repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssueComment("issueCommentId")},
 		"unpinIssueComment":  repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssueComment("issueCommentId")},
 
-		// Assignment is triage: push on the repository, with no author
-		// exemption, exactly as updateIssue treats its assigneeIds argument.
-		// The subject may be an issue or a pull request, and GitHub serves both
-		// through the one /issues/{n}/assignees surface it gates on Issues.
+		// Assignment is triage: Issues at push, no author exemption. The subject
+		// may be an issue or a pull request (one /issues/{n}/assignees surface).
 		"addAssigneesToAssignable":      repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: assignableMutationTarget("assignableId")},
 		"removeAssigneesFromAssignable": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: assignableMutationTarget("assignableId")},
 		"replaceActorsForAssignable":    repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: assignableMutationTarget("assignableId")},
@@ -86,9 +68,8 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"removeBlockedBy":        repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 		"unmarkIssueAsDuplicate": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("duplicateId")},
 
-		// The issue type an issue carries is the repository's triage state;
-		// the type definitions themselves belong to the organization, so their
-		// CRUD authorizes over that account rather than over any repository.
+		// An issue's type is repository triage; the type definitions belong to
+		// the organization, so their CRUD authorizes over that org.
 		"updateIssueIssueType": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 		"createIssueType":      orgOwnerRule{idKey: "ownerId", scope: store.ScopeOrgAdministration},
 		"updateIssueType":      issueTypeRule{idKey: "issueTypeId"},
@@ -108,10 +89,8 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"applyPendingIssueSuggestions":  repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 		"rejectPendingIssueSuggestions": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 
-		// Pull requests. Leaving a review comment is how an outside
-		// contributor participates, so it needs only read — the same standing
-		// addPullRequestReview already carries. Editing or deleting one is the
-		// author's own content or a moderator's push.
+		// Pull requests. A review comment is participation: read only. Editing
+		// or deleting is the author's content or a moderator's push.
 		"addPullRequestReviewComment":     repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: reviewSubjectMutationTarget()},
 		"addPullRequestReviewThread":      repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: reviewSubjectMutationTarget()},
 		"addPullRequestReviewThreadReply": repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetReviewThread("pullRequestReviewThreadId")},
@@ -120,54 +99,43 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"updatePullRequestReview":         repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReview("pullRequestReviewId")},
 		"deletePullRequestReview":         repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReview("pullRequestReviewId")},
 
-		// Asking somebody to review, moving the head branch, archiving and
-		// queueing are all maintenance of the pull request: push.
+		// Requesting review, moving the head branch, archiving, queueing: all
+		// PR maintenance, push.
 		"requestReviews":          repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
 		"requestReviewsByLogin":   repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
 		"updatePullRequestBranch": repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
 		"archivePullRequest":      repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
 		"unarchivePullRequest":    repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
-		// Queueing a pull request is queueing a merge of the base branch, so
-		// it demands what mergePullRequest demands.
+		// Queueing is queueing a merge, so it demands what mergePullRequest does.
 		"enqueuePullRequest": repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
 		"dequeuePullRequest": repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("id")},
 
-		// Marking a file viewed is a note about the viewer's own review pass,
-		// so anybody who can read the pull request may make one.
+		// Marking a file viewed is a note on the viewer's own review pass: read.
 		"markFileAsViewed":   repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
 		"unmarkFileAsViewed": repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
 
-		// The creation cap and its bypass list are repository administration,
-		// which is the entitlement the REST bypass-list routes demand.
+		// The creation cap and its bypass list are repository administration.
 		"addPullRequestCreationCapBypassUsers":    repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 		"removePullRequestCreationCapBypassUsers": repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 
 		// A team's review-assignment settings belong to its organization.
 		"updateTeamReviewAssignment": teamOwnerRule{idKey: "id"},
 
-		// Activity. Starring and watching record the viewer's own relationship
-		// to a repository rather than changing it, so reading the repository is
-		// the whole standing — which is how an outside contributor stars a
-		// public project. The credential half still applies: a fine-grained
-		// token without the account's Metadata grant may not star on its
-		// bearer's behalf, and a private repository the bearer cannot read is
-		// answered as absent rather than as forbidden.
+		// Starring and watching record the viewer's relationship to a repo, so
+		// read is the whole standing. The Metadata credential grant still
+		// applies; an unreadable private repo answers as absent, not forbidden.
 		"addStar":            repoRule{scope: store.ScopeMetadata, level: mutationReadRepo, target: mutationTargetRepo("starrableId")},
 		"removeStar":         repoRule{scope: store.ScopeMetadata, level: mutationReadRepo, target: mutationTargetRepo("starrableId")},
 		"updateSubscription": repoRule{scope: store.ScopeMetadata, level: mutationReadRepo, target: mutationTargetRepo("subscribableId")},
 
-		// Interaction limits are the moderation setting GitHub gates on
-		// repository administration, organization administration and the
-		// account's own credential respectively — exactly the three
-		// interaction-limits REST routes.
+		// Interaction limits gate on repository admin, org admin, and the
+		// account's own credential respectively.
 		"setRepositoryInteractionLimit":   repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 		"setOrganizationInteractionLimit": orgOwnerRule{idKey: "organizationId", scope: store.ScopeOrgAdministration},
 		"setUserInteractionLimit":         viewerUserRule{idKey: "userId"},
 
-		// Removing an outside collaborator strips their access to every
-		// repository in the organization, which is the Members grant an owner
-		// holds; the two organization settings are organization
-		// administration.
+		// Removing an outside collaborator needs the owner's Members grant; the
+		// two org settings are org administration.
 		"removeOutsideCollaborator":                              orgOwnerRule{idKey: "organizationId", scope: store.ScopeMembers},
 		"updateOrganizationAllowPrivateRepositoryForkingSetting": orgOwnerRule{idKey: "organizationId", scope: store.ScopeOrgAdministration},
 		"updateOrganizationWebCommitSignoffSetting":              orgOwnerRule{idKey: "organizationId", scope: store.ScopeOrgAdministration},
@@ -175,8 +143,7 @@ func githubMutationAuthzRows() map[string]mutationRule {
 }
 
 // viewerUserRule is the policy for a mutation whose subject must be the
-// viewer's own account: PUT /user/interaction-limits has no form that names
-// somebody else, so naming another account is refused rather than served.
+// viewer's own account; naming another account is refused.
 type viewerUserRule struct {
 	idKey string
 }
@@ -201,8 +168,7 @@ func (r viewerUserRule) authorize(s *Resolver, p graphql.ResolveParams, input ma
 }
 
 // reviewSubjectMutationTarget resolves the repository behind a review-comment
-// input, which names the pull request either directly or through the pending
-// review the comment joins.
+// input, which names the pull request directly or through the pending review.
 func reviewSubjectMutationTarget() func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		if nodeID, _ := input["pullRequestId"].(string); nodeID != "" {
@@ -277,10 +243,8 @@ func assignableMutationTarget(key string) func(*Resolver, map[string]interface{}
 }
 
 // orgOwnerRule is the policy for a mutation whose subject is an organization
-// definition rather than a repository record: the viewer must be able to
-// administer that organization, and the credential must carry the grant over
-// it. Owning one organization therefore never authorizes the write against
-// another.
+// definition: the viewer must administer the org and the credential must carry
+// the grant over it. Owning one org never authorizes a write against another.
 type orgOwnerRule struct {
 	idKey string
 	scope store.PermScope

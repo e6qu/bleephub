@@ -528,7 +528,6 @@ function AssignmentDialog({
   const [invitationsEnabled, setInvitationsEnabled] = useState(
     assignment?.invitations_enabled ?? true,
   );
-  // WEB-082: the five teacher options old classroom.github.com exposes.
   const [visibility, setVisibility] = useState<"private" | "public">(
     assignment?.public_repo ? "public" : "private",
   );
@@ -805,9 +804,7 @@ function AssignmentReportingDialog({
   );
 }
 
-// GitHub Classroom's grade CSV, matching classroom.github.com's column order so
-// the export drops into the same grading pipelines. The rows come straight from
-// GET /assignments/{id}/grades.
+// Column order matches classroom.github.com's grade CSV.
 const GRADE_CSV_COLUMNS: (keyof ClassroomGrade)[] = [
   "assignment_name",
   "assignment_url",
@@ -822,7 +819,7 @@ const GRADE_CSV_COLUMNS: (keyof ClassroomGrade)[] = [
   "group_name",
 ];
 
-/** Build the GitHub Classroom grade CSV text from the grades rows. */
+/** Build the grade CSV text from the grades rows. */
 export function gradesToCsv(grades: ClassroomGrade[]): string {
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const header = GRADE_CSV_COLUMNS.join(",");

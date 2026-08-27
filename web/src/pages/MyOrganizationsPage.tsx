@@ -8,11 +8,6 @@ import { Box, Blankslate, Button, ButtonLink, PageTitle, SectionLabel } from "..
 import { MutationError } from "../components/MutationError.js";
 import { OrganizationIcon, PlusIcon } from "../components/octicons.js";
 
-/**
- * Your organizations — the authenticated user's org memberships, mirroring
- * GitHub's github.com/settings/organizations. Reached from the avatar menu's
- * "Your organizations" entry. Backed by GET /api/v3/user/orgs.
- */
 export function MyOrganizationsPage() {
   const orgs = useQuery({
     queryKey: ["my-organizations"],

@@ -12,11 +12,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
-// registerGHClassroomWebRoutes exposes the authenticated write and transition
-// surface that GitHub Classroom historically served from classroom.github.com.
-// These are deliberately outside /api/v3: GitHub's public Classroom REST API
-// is read-only, while the browser product owns classroom management and
-// assignment acceptance.
+// registerGHClassroomWebRoutes serves classroom management and assignment
+// acceptance. These live outside /api/v3 because GitHub's public Classroom REST
+// API is read-only; the write surface belongs to the browser product.
 func (s *Server) registerGHClassroomWebRoutes() {
 	s.route("GET /a/{invite_code}", s.classroomLocked(s.handleClassroomInviteRedirect))
 	s.route("GET /classroom-data", s.classroomWebAuthenticated(s.handleClassroomDashboard))

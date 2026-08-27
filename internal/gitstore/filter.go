@@ -8,31 +8,19 @@ import (
 	"math/bits"
 )
 
-// This file holds the two approximate membership structures the object index
-// uses, and the invariant that governs both of them.
+// Two approximate membership structures for the object index.
 //
-// FILTER INVARIANT: a filter here may only ever be believed when it says NO.
+// FILTER INVARIANT: a filter here may only be believed when it says NO. Both
+// are one-sided — "absent" is a proof, "present" a hint — so a "present" answer
+// only ever triggers the exact lookup the caller would have done anyway, and no
+// filter result decides the outcome of a git operation. A false "absent" is the
+// only way a filter can do harm, so the absent answer must be a proof.
 //
-// Both structures are one-sided. A key that was inserted always probes as
-// present; a key that was not may still probe as present with a small
-// probability. So "absent" is a proof and "present" is a hint, and every caller
-// is written so that a "present" answer only ever causes it to do the exact
-// lookup it would have done without a filter at all. No filter result may
-// decide the outcome of a git operation. An object that a filter said was
-// present but is not resolves as not found by the real index; an object that a
-// filter said was absent is not looked for at all, and that is the only place a
-// filter can do harm — which is why the absent answer must be a proof, and why
-// TestSaturatedFilterCannotHideAnObject drives a filter that answers "present"
-// to everything through the whole read path and requires identical results.
-//
-// Object ids are already uniform cryptographic hashes. Both structures derive
-// their probe positions straight from the id's own bytes rather than hashing it
-// a second time: a SHA-1 or SHA-256 digest is exactly the uniformly distributed
-// bit string a filter wants, and re-hashing it would only spend cycles.
+// Object ids are already uniform cryptographic hashes, so both structures draw
+// probe positions straight from the id's bytes rather than re-hashing.
 
-// oidKey is the fixed-width view the filters take of an object id. go-git's
-// plumbing.Hash is 20 bytes today and 32 under SHA-256; both are read through
-// this type so neither filter has to know which.
+// oidKey is the fixed-width view the filters take of an object id, so neither
+// filter has to know whether the hash is 20 bytes (SHA-1) or 32 (SHA-256).
 type oidKey [32]byte
 
 func oidKeyFrom(raw []byte) oidKey {
@@ -44,38 +32,21 @@ func oidKeyFrom(raw []byte) oidKey {
 // positionWord is the 64 bits that place a key in the table.
 func (k oidKey) positionWord() uint64 { return binary.LittleEndian.Uint64(k[0:8]) }
 
-// fingerprintWord is drawn from bytes the position word does not use, so a
-// key's slot and its fingerprint are independent.
+// fingerprintWord uses bytes the position word does not, keeping slot and
+// fingerprint independent.
 func (k oidKey) fingerprintWord() uint64 { return binary.LittleEndian.Uint64(k[8:16]) }
 
 // ---------------------------------------------------------------------------
 // Binary fuse filter, used for the immutable per-pack object sets.
 // ---------------------------------------------------------------------------
 
-// binaryFuseFilter is a binary fuse filter with 8-bit fingerprints.
-//
-// It is used for packs, and only for packs, because it is a static structure:
-// the key set has to be known in full at construction and no key can be added
-// or removed afterwards. That is exactly a packfile. A pack is written once,
-// named for the hash of its own contents, and never modified; when compaction
-// supersedes it the whole pack and the whole filter are discarded together, so
-// the deletion a mutable filter would offer has nothing to do.
-//
-// It is preferred to a Bloom filter on space. For a target false positive rate
-// of 2^-8 the information-theoretic bound is 8 bits per key; a binary fuse
-// filter needs about 1.13 times that, roughly 9 bits, while a Bloom filter
-// needs 1.44 times it, roughly 11.5 bits — a quarter more memory for the same
-// answer, on a structure that is meant to stay resident for every pack of every
-// repository a replica serves. It also probes better: a Bloom filter of k=6
-// touches six independent words spread across the whole table, one cache miss
-// each, whereas a binary fuse filter touches three slots confined to a window
-// of three consecutive segments, so a probe is one or two cache lines instead
-// of six.
-//
-// A ribbon filter is slightly smaller still, but its query decodes a banded
-// linear system, and the space it saves over a binary fuse filter is under 5%.
-// That is not worth a more delicate query path in code whose failure mode is a
-// corrupted repository.
+// binaryFuseFilter is a binary fuse filter with 8-bit fingerprints, used only
+// for packs: it is static (the full key set must be known at construction, with
+// no add or remove afterward), which is exactly a packfile — written once and
+// discarded whole when compaction supersedes it. Chosen over a Bloom filter on
+// space (~9 bits/key vs ~11.5 for 2^-8) and cache behavior (three slots in a
+// window of three segments vs six scattered words). A ribbon filter saves under
+// 5% more, not worth a banded-linear-system query in corruption-critical code.
 type binaryFuseFilter struct {
 	seed               uint64
 	segmentLength      uint32
@@ -85,37 +56,29 @@ type binaryFuseFilter struct {
 	fingerprints       []uint8
 }
 
-// binaryFuseMaxAttempts bounds construction. Peeling succeeds on the first
-// attempt with overwhelming probability; the retries exist for the pathological
-// key sets that do not peel, and a bound turns "does not terminate" into an
-// error the caller can report.
+// binaryFuseMaxAttempts bounds construction retries so a key set that never
+// peels becomes a reportable error instead of a non-terminating loop.
 const binaryFuseMaxAttempts = 100
 
 var errBinaryFuseConstruction = errors.New("binary fuse filter: construction did not converge")
 
-// binaryFuseMaxKeys bounds the key set a filter may be built for. Every slot is
-// addressed by a uint32 and the table is sized above the key count, so a set
-// this large has no table that can hold it. A pack that big is refused outright
-// rather than sized from a wrapped count, because a table sized from a wrapped
-// count would place keys at positions its own probe never visits, and a key that
-// probes as absent is the one answer the filter invariant forbids.
+// binaryFuseMaxKeys bounds the key set: slots are uint32-addressed and the table
+// is sized above the key count. Refuse a larger set rather than size from a
+// wrapped count, which would place keys where the probe never visits — a false
+// "absent" the invariant forbids.
 const binaryFuseMaxKeys = math.MaxUint32 / 2
 
 var errBinaryFuseTooManyKeys = errors.New("binary fuse filter: more keys than the table can address")
 
-// mulhiBounded maps a hash uniformly onto [0, bound) by taking the high half of
-// the 128-bit product, which is the multiply-shift alternative to a modulo. The
-// product's high half is strictly below bound, and bound is a uint32, so the low
-// thirty-two bits named here are the whole of the result.
+// mulhiBounded maps a hash uniformly onto [0, bound) via the high half of the
+// 128-bit product (multiply-shift, not modulo).
 func mulhiBounded(hash uint64, bound uint32) uint32 {
 	high, _ := bits.Mul64(hash, uint64(bound))
 	return uint32(high & math.MaxUint32)
 }
 
-// mixSeed remixes a key for a construction retry. The first attempt uses seed
-// zero and returns the object id's own bytes untouched, which is the point:
-// the id is already a uniform hash. A retry needs a different placement of the
-// same keys, and only then is a mixing step spent.
+// mixSeed remixes a key for a construction retry. Seed zero returns the id's own
+// bytes untouched (already a uniform hash); a nonzero seed reshuffles placement.
 func mixSeed(key, seed uint64) uint64 {
 	if seed == 0 {
 		return key
@@ -133,23 +96,21 @@ func (f *binaryFuseFilter) positions(hash uint64) (uint32, uint32, uint32) {
 	h0 := mulhiBounded(hash, f.segmentCountLength)
 	h1 := h0 + f.segmentLength
 	h2 := h1 + f.segmentLength
-	// Each of the two offsets is drawn from a different thirty-two bit window of
-	// the same hash; the segment mask then narrows it to a position inside one
-	// segment.
+	// Each offset draws from a different 32-bit window of the hash; the segment
+	// mask narrows it to a position inside one segment.
 	h1 ^= uint32(hash>>18&math.MaxUint32) & f.segmentLengthMask
 	h2 ^= uint32(hash&math.MaxUint32) & f.segmentLengthMask
 	return h0, h1, h2
 }
 
-// fuseFingerprint folds the hash down to the eight bits a slot holds. The fold
-// is the point: the filter stores a truncated hash, and its false positive rate
-// is exactly the 2^-8 that discarding the rest buys.
+// fuseFingerprint folds the hash to the eight bits a slot holds; discarding the
+// rest is what sets the 2^-8 false positive rate.
 func fuseFingerprint(hash uint64) uint8 {
 	return uint8((hash ^ (hash >> 32)) & math.MaxUint8)
 }
 
-// contains reports whether the key may be in the set. A false answer is a
-// proof of absence; a true answer is a hint. See the filter invariant above.
+// contains reports whether the key may be in the set: false proves absence,
+// true is a hint. See the filter invariant above.
 func (f *binaryFuseFilter) contains(key oidKey) bool {
 	if f == nil || len(f.fingerprints) == 0 {
 		return false
@@ -160,8 +121,7 @@ func (f *binaryFuseFilter) contains(key oidKey) bool {
 	return got == 0
 }
 
-// bits reports the resident size of the filter in bits, for the space
-// measurement the report quotes.
+// bits reports the resident size of the filter in bits.
 func (f *binaryFuseFilter) bits() int {
 	if f == nil {
 		return 0
@@ -217,10 +177,9 @@ func newBinaryFuseFilter(keys []oidKey) (*binaryFuseFilter, error) {
 		return filter, nil
 	}
 
-	// Peeling scratch space. reverseOrder records the order keys were peeled
-	// off in and reverseH which of the three slots each was peeled at; walking
-	// that record backwards and writing each key's fingerprint into its own
-	// slot is what makes every key's three slots XOR to its fingerprint.
+	// Peeling scratch: reverseOrder records the peel order and reverseH the slot
+	// each key peeled at; replaying it backwards makes every key's three slots
+	// XOR to its fingerprint.
 	alone := make([]uint32, arrayLength)
 	t2count := make([]uint8, arrayLength)
 	t2hash := make([]uint64, arrayLength)
@@ -241,9 +200,9 @@ func newBinaryFuseFilter(keys []oidKey) (*binaryFuseFilter, error) {
 				t2count[h] += 4
 				t2hash[h] ^= hash
 			}
-			// The low two bits of t2count carry which of the three slots a
-			// surviving key occupies, accumulated by XOR, so that when a slot
-			// is down to one key its index is recoverable without a list.
+			// The low two bits of t2count XOR-accumulate which slot a surviving
+			// key occupies, so a slot down to one key recovers its index without
+			// a list.
 			t2count[h1] ^= 1
 			t2count[h2] ^= 2
 		}
@@ -315,16 +274,14 @@ func newBinaryFuseFilter(keys []oidKey) (*binaryFuseFilter, error) {
 	return nil, fmt.Errorf("%w after %d attempts for %d keys", errBinaryFuseConstruction, binaryFuseMaxAttempts, size)
 }
 
-// arrayLength is the number of fingerprint slots the filter's geometry calls
-// for, and so the length of the fingerprint slice: the constructor allocates it
-// at exactly this size and decodeBinaryFuseFilter refuses an encoding whose
-// stated length disagrees with it.
+// arrayLength is the fingerprint-slot count the geometry calls for, and so the
+// slice length; decodeBinaryFuseFilter refuses an encoding that disagrees.
 func (f *binaryFuseFilter) arrayLength() uint32 {
 	return (f.segmentCount + 2) * f.segmentLength
 }
 
 // encode serializes the filter so a replica can fetch it beside the pack
-// instead of rebuilding it from the index.
+// rather than rebuild it from the index.
 func (f *binaryFuseFilter) encode() []byte {
 	out := make([]byte, 0, 32+len(f.fingerprints))
 	out = binary.LittleEndian.AppendUint32(out, binaryFuseMagic)
@@ -372,54 +329,40 @@ func decodeBinaryFuseFilter(raw []byte) (*binaryFuseFilter, error) {
 const (
 	cuckooSlotsPerBucket = 4
 	cuckooMaxKicks       = 500
-	// cuckooFingerprintMask keeps 12 bits, which puts the false positive rate
-	// near 2^-9 at four slots per bucket.
+	// cuckooFingerprintMask keeps 12 bits, ~2^-9 false positives at four slots
+	// per bucket.
 	cuckooFingerprintMask = 0x0fff
 )
 
-// cuckooFilter is the membership structure for a repository's loose objects.
+// cuckooFilter is the membership structure for a repository's loose objects —
+// the mutable tier, where a push adds keys and compaction removes them one at a
+// time. A binary fuse filter is built once from a complete set and cannot
+// express that; a cuckoo filter deletes natively by clearing the fingerprint it
+// stored in one of two candidate buckets.
 //
-// Loose objects are the mutable tier: a push adds them and compaction takes
-// them away one key at a time. A binary fuse filter cannot express that — it is
-// built once from a complete key set — and rebuilding one per removal would
-// cost more than it saves. A cuckoo filter supports deletion natively, because
-// a key's fingerprint is stored explicitly in one of two candidate buckets, so
-// removing it is finding that fingerprint and clearing the slot. That is what
-// lets compaction retire a hundred thousand loose keys without ever re-listing
-// the object store.
-//
-// Deleting a fingerprint that was never inserted could clear a slot belonging
-// to a colliding key, which would turn that key's answer from "present" into
-// "absent" — a false negative, and the one thing the filter invariant forbids.
-// remove is therefore only ever called for a key this process has itself just
-// deleted from the object store, so the fingerprint it clears is one it put
-// there.
+// Deleting a fingerprint that was never inserted could clear a colliding key's
+// slot, a false negative the invariant forbids; remove is therefore only ever
+// called for a key this process just deleted from the object store.
 type cuckooFilter struct {
 	buckets [][cuckooSlotsPerBucket]uint16
 	mask    uint32
 	count   int
-	// saturated records that an insertion had nowhere to go. A cuckoo filter
-	// cannot be resized, because the keys it was built from were never kept and
-	// a fingerprint's bucket in a larger table is not recoverable from the
-	// fingerprint alone. Dropping the key instead would make the filter answer
-	// "absent" for an object that exists, which the filter invariant forbids
-	// outright, so an overflowing filter stops answering negatively at all and
-	// every probe falls through to the real lookup. The next listing rebuilds
-	// it at the size the directory actually needs and clears the flag.
+	// saturated records that an insertion had nowhere to go. The filter cannot
+	// resize (keys were never kept), and dropping the key would answer "absent"
+	// for an object that exists; instead a saturated filter stops answering
+	// negatively at all, so every probe falls through to the real lookup. The
+	// next listing rebuilds it at the needed size and clears the flag.
 	saturated bool
 }
 
-// cuckooLoadHeadroom sizes the table above the key count it is built for. A
-// cuckoo table with four slots per bucket only reaches about 95% occupancy
-// before insertions start failing, and a loose-object directory keeps growing
-// after the listing that sized it, so the table is built for twice the keys
-// that were counted.
+// cuckooLoadHeadroom sizes the table for twice the counted keys: a four-slot
+// bucket only reaches ~95% occupancy before insertions fail, and the directory
+// keeps growing after the listing that sized it.
 const cuckooLoadHeadroom = 2
 
-// cuckooMaxBuckets is the largest table the index can address. A bucket index is
-// a uint32 masked with buckets-1, so the count has to be a power of two that
-// still fits a uint32, and 2^31 is the last one. A capacity asking for more
-// stops here and the filter saturates, which costs lookups and never an answer.
+// cuckooMaxBuckets is the largest addressable table: a bucket index is a uint32
+// masked with buckets-1, so the count must be a power of two fitting a uint32,
+// and 2^31 is the last. A larger capacity saturates the filter instead.
 const cuckooMaxBuckets = 1 << 31
 
 func newCuckooFilter(capacity int) *cuckooFilter {
@@ -431,10 +374,9 @@ func newCuckooFilter(capacity int) *cuckooFilter {
 	return &cuckooFilter{buckets: make([][cuckooSlotsPerBucket]uint16, buckets), mask: buckets - 1}
 }
 
-// fingerprintOf reads twelve bits out of the object id. Zero is reserved to
-// mean "empty slot", so a key whose bits are all zero is nudged to one; that
-// merges it with the keys whose fingerprint is genuinely one, which costs a
-// negligible amount of false positive rate and never a false negative.
+// cuckooFingerprint reads twelve bits of the object id. Zero means "empty slot",
+// so an all-zero fingerprint is nudged to one; the merge costs negligible false
+// positive rate and never a false negative.
 func cuckooFingerprint(key oidKey) uint16 {
 	fingerprint := uint16(key.fingerprintWord() & cuckooFingerprintMask)
 	if fingerprint == 0 {
@@ -443,16 +385,14 @@ func cuckooFingerprint(key oidKey) uint16 {
 	return fingerprint
 }
 
-// index1 is the first of a key's two candidate buckets. Only the low
-// thirty-two bits of the position word reach the table, and the mask narrows
-// them again to the table's own size.
+// index1 is the first of a key's two candidate buckets.
 func (c *cuckooFilter) index1(key oidKey) uint32 {
 	return uint32(key.positionWord()&math.MaxUint32) & c.mask
 }
 
-// altIndex is derived from the fingerprint alone, which is what makes the pair
-// of candidate buckets recoverable from either one of them: the filter never
-// stores the key, so relocating an occupant has to work from its fingerprint.
+// altIndex derives the other candidate bucket from the fingerprint alone, so
+// either bucket recovers the pair — the filter never stores the key, so
+// relocating an occupant must work from its fingerprint.
 func (c *cuckooFilter) altIndex(index uint32, fingerprint uint16) uint32 {
 	mixed := uint32(fingerprint) * 0x5bd1e995
 	mixed ^= mixed >> 15
@@ -482,9 +422,8 @@ func (c *cuckooFilter) insert(key oidKey) {
 			return
 		}
 	}
-	// The eviction chain ran out and one fingerprint — the last victim — is
-	// now held nowhere. Which key it belonged to is unknowable, so the only
-	// answer that keeps the invariant is to stop giving negative answers.
+	// The eviction chain ran out with the last victim held nowhere; its key is
+	// unknowable, so keep the invariant by ceasing negative answers.
 	c.saturated = true
 }
 
@@ -498,8 +437,8 @@ func (c *cuckooFilter) placeIn(index uint32, fingerprint uint16) bool {
 	return false
 }
 
-// contains reports whether the key may be in the set. A false answer is a
-// proof of absence; a true answer is a hint. See the filter invariant above.
+// contains reports whether the key may be in the set: false proves absence,
+// true is a hint. See the filter invariant above.
 func (c *cuckooFilter) contains(key oidKey) bool {
 	if c == nil {
 		return false
@@ -524,8 +463,8 @@ func (c *cuckooFilter) hasIn(index uint32, fingerprint uint16) bool {
 	return false
 }
 
-// remove clears one slot holding the key's fingerprint. It is only valid for a
-// key this process inserted; see the type comment.
+// remove clears one slot holding the key's fingerprint. Valid only for a key
+// this process inserted; see the type comment.
 func (c *cuckooFilter) remove(key oidKey) {
 	if c == nil || c.saturated {
 		return

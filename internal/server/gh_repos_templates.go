@@ -34,8 +34,8 @@ func (s *Server) handleGetGitignoreTemplate(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleListLicenses(w http.ResponseWriter, r *http.Request) {
-	// GitHub's /licenses returns only the featured (commonly-used) licenses by
-	// default; ?featured=false returns the full catalog.
+	// /licenses returns only featured licenses by default; ?featured=false
+	// returns the full catalog.
 	onlyFeatured := r.URL.Query().Get("featured") != "false"
 	keys := listLicenseKeys()
 	out := make([]map[string]interface{}, 0, len(keys))
@@ -80,9 +80,7 @@ func (s *Server) handleGetLicense(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// gitignoreTemplates is a curated list of common .gitignore templates
-// matching the names GitHub serves from https://github.com/github/gitignore.
-// The content is real, recognizable template text.
+// gitignoreTemplates mirrors common templates from github/gitignore by name.
 var gitignoreTemplates = map[string]string{
 	"Go": `# Binaries for programs and plugins
 *.exe

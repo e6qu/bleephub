@@ -43,12 +43,7 @@ import { loginPath, useSignedIn } from "../session.js";
 import { useComposerDraft, clearComposerDraft } from "../hooks/useComposerDraft.js";
 import Markdown from "../components/Markdown.js";
 
-/**
- * The gist permalink page (/ui/gists/{id}) — GitHub's gist.github.com/{id}
- * equivalent: every file rendered (Markdown files as markdown, everything
- * else syntax-highlighted) with per-file raw links, plus star/fork actions
- * and History/Forks/Comments tabs.
- */
+/** The gist permalink page (/ui/gists/{id}): files, star/fork, and tabs. */
 export function GistDetailPage() {
   const { id = "" } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -57,8 +52,7 @@ export function GistDetailPage() {
   const [tab, setTab] = useState<"files" | "commits" | "forks" | "comments">("files");
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // The viewer and star-state reads 401 for an anonymous visitor; the gist
-  // itself is a public read.
+  // Viewer and star-state reads 401 anonymously; the gist itself is public.
   const signedIn = useSignedIn();
   const location = useLocation();
   const viewer = useQuery({
@@ -105,8 +99,7 @@ export function GistDetailPage() {
     onError: (err: Error) => setActionError(err.message),
   });
 
-  // Unknown gist id → github.com's full-page 404 (also cloaks secret gists);
-  // other failures keep the banner.
+  // Unknown gist id → full-page 404 (also cloaks secret gists).
   if (isError && isNotFoundError(error)) return <RepoNotFound />;
   if (isError) return <InlineError title="Failed to load gist" />;
   if (isLoading || !data) return <Spinner label="loading gist" />;
@@ -156,7 +149,7 @@ export function GistDetailPage() {
                 </Button>
               </>
             ) : (
-              // Signed out, Star/Fork link to sign-in (github.com prompts on click).
+              // Signed out: Star/Fork link to sign-in.
               <>
                 <ButtonLink size="sm" variant="secondary" to={loginPath(location)}>
                   <StarIcon size={14} /> Star
@@ -368,7 +361,6 @@ function GistComments({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editBody, setEditBody] = useState("");
-  // Draft durability for the gist comment box (github.com restores it).
   const draftKey = `gist-comment:${id}`;
   useComposerDraft(draftKey, body, setBody);
 

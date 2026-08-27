@@ -17,20 +17,9 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// addRepoGitResidualFields fills in the residual members GitHub declares on the
-// repos-family types (Repository, Commit, Ref, TreeEntry) and the shared
-// RepositoryConnection that the core repository and git-object surfaces did not
-// install. It is wired from addRepositoryPeopleFields, so it runs while the
-// account surface is assembled — every type it hangs a field off (Repository,
-// Commit, Ref, TreeEntry) and every type it reaches read-only (the PR, check,
-// status-rollup, discussion, project, ruleset and advisory families) is already
-// registered by then. Cross-family types are reached through graphql.GetNamed
-// on the already-built types rather than re-minted, matching addAccountActionsFields.
-//
-// Every field is backed by the same real stores the REST surface serves, or
-// resolves to a truthful null/empty/constant where the datum genuinely does not
-// exist on a single unrestricted instance. None is a stub that implies a value
-// where the honest state is "unimplemented".
+// addRepoGitResidualFields fills the residual members on the repos-family types
+// (Repository, Commit, Ref, TreeEntry) and RepositoryConnection. Wired from
+// addRepositoryPeopleFields, after every type it touches is registered.
 func (s *Resolver) addRepoGitResidualFields(types *accountSurfaceTypes) {
 	s.addRepositoryGitResidualFields(types)
 	s.addCommitGitResidualFields(types)
@@ -87,9 +76,8 @@ func (s *Resolver) addRepositoryGitResidualFields(types *accountSurfaceTypes) {
 	s.addRepositoryIssueFieldsField(repoType)
 	s.addRepositoryPolicyFields(repoType)
 	s.addRepositoryMergeQueueField(repoType)
-	// pinnedEnvironments is wired in the LATE pass (addLateGitResidualFields):
-	// the PinnedEnvironment type is not assembled until the deployments family
-	// runs, well after this early residual pass.
+	// pinnedEnvironments is wired in the late pass: PinnedEnvironment is not
+	// assembled until the deployments family runs.
 	s.addRepositoryRecentProjectsField(repoType)
 	s.addRepositoryCustomPropertyFields(repoType)
 	s.addRepositorySuggestedActorsField(repoType)
@@ -97,7 +85,7 @@ func (s *Resolver) addRepositoryGitResidualFields(types *accountSurfaceTypes) {
 }
 
 // addRepositoryDiscussionCategoryField installs discussionCategory(slug), the
-// single-category counterpart to the already-installed discussionCategories.
+// single-category counterpart to discussionCategories.
 func (s *Resolver) addRepositoryDiscussionCategoryField(repoType *graphql.Object) {
 	categoryType := namedObjectFromField(namedObjectFromField(repoType, "discussionCategories"), "nodes")
 	if categoryType == nil {
@@ -219,9 +207,7 @@ func (s *Resolver) addRepositoryIssueFieldsField(repoType *graphql.Object) {
 }
 
 // addRepositoryPolicyFields installs the creation-policy, cap-config and
-// plan-feature members. A single unrestricted bleephub instance imposes no
-// creation restriction and mints no per-plan caps, so these are truthful
-// constants (see the residual-model report) rather than a modelled datum.
+// plan-feature members, which are constants on a single unrestricted instance.
 func (s *Resolver) addRepositoryPolicyFields(repoType *graphql.Object) {
 	issuePolicy := s.sharedEnum("IssueCreationPolicy", "ALL", "COLLABORATORS_ONLY")
 	prPolicy := s.sharedEnum("PullRequestCreationPolicy", "ALL", "COLLABORATORS_ONLY")
@@ -235,8 +221,7 @@ func (s *Resolver) addRepositoryPolicyFields(repoType *graphql.Object) {
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return "ALL", nil },
 	})
 
-	// pullRequestCreationCapConfig is null when no creation cap is configured,
-	// which is always true on a single unrestricted instance. The type is still
+	// pullRequestCreationCapConfig is always null here, but the type is still
 	// registered so the field's shape matches GitHub's.
 	capConfigType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PullRequestCreationCapConfig",
@@ -255,9 +240,8 @@ func (s *Resolver) addRepositoryPolicyFields(repoType *graphql.Object) {
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
 	})
 
-	// planFeatures reflect the one plan a self-hosted instance runs on: the
-	// feature toggles are on and the review/assignee ceilings are GitHub's
-	// documented per-repository maxima.
+	// planFeatures reflect the one plan a self-hosted instance runs: toggles on,
+	// ceilings at GitHub's documented per-repository maxima.
 	planFeaturesType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryPlanFeatures",
 		Fields: graphql.Fields{
@@ -273,8 +257,7 @@ func (s *Resolver) addRepositoryPolicyFields(repoType *graphql.Object) {
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return map[string]interface{}{}, nil },
 	})
 
-	// tempCloneToken is a short-lived clone credential GitHub mints for private
-	// repositories; bleephub mints none, so the honest value is null.
+	// tempCloneToken: bleephub mints none, so null.
 	repoType.AddFieldConfig("tempCloneToken", &graphql.Field{
 		Type:    graphql.String,
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
@@ -286,9 +269,8 @@ func constResolver(v interface{}) graphql.FieldResolveFn {
 	return func(graphql.ResolveParams) (interface{}, error) { return v, nil }
 }
 
-// addRepositoryMergeQueueField installs mergeQueue(branch), the merge queue of a
-// base branch, backed by the same MergeQueue renderer the pull-request merge
-// mutations use.
+// addRepositoryMergeQueueField installs mergeQueue(branch), a base branch's merge
+// queue.
 func (s *Resolver) addRepositoryMergeQueueField(repoType *graphql.Object) {
 	repoType.AddFieldConfig("mergeQueue", &graphql.Field{
 		Type: s.gqlMergeQueueType(),
@@ -313,7 +295,7 @@ func (s *Resolver) addRepositoryMergeQueueField(repoType *graphql.Object) {
 }
 
 // addRepositoryPinnedEnvironmentsField installs pinnedEnvironments, the
-// deployment environments an admin has pinned to the repository's home page.
+// environments an admin pinned to the repository's home page.
 func (s *Resolver) addRepositoryPinnedEnvironmentsField() {
 	repoType := s.graphqlTypes.repository
 	pinnedType := s.graphqlTypes.pinnedEnvironment
@@ -350,9 +332,8 @@ func (s *Resolver) addRepositoryPinnedEnvironmentsField() {
 	})
 }
 
-// addRepositoryRecentProjectsField installs recentProjects, the recently
-// touched Projects v2 the repository's owner owns (a repository has no projects
-// of its own; its Projects tab lists its owner's, as projectsV2 already does).
+// addRepositoryRecentProjectsField installs recentProjects, the owner's recently
+// touched Projects v2 (a repository has none of its own).
 func (s *Resolver) addRepositoryRecentProjectsField(repoType *graphql.Object) {
 	connection := s.gqlConnectionType("ProjectV2", s.graphqlTypes.projectV2Type)
 	repoType.AddFieldConfig("recentProjects", &graphql.Field{
@@ -368,8 +349,8 @@ func (s *Resolver) addRepositoryRecentProjectsField(repoType *graphql.Object) {
 	})
 }
 
-// repoSourceOwner resolves the account whose projects a repository's Projects
-// tab surfaces, from the repository source's database id.
+// repoSourceOwner resolves the account whose projects a repository's Projects tab
+// surfaces, from the source's database id.
 func (s *Resolver) repoSourceOwner(source interface{}) (int, string, error) {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -386,9 +367,8 @@ func (s *Resolver) repoSourceOwner(source interface{}) (int, string, error) {
 	return repo.OwnerID, "User", nil
 }
 
-// addRepositoryCustomPropertyFields installs repositoryCustomPropertyValue and
-// its list counterpart, backed by the effective (org + enterprise) custom
-// property values set on the repository.
+// addRepositoryCustomPropertyFields installs repositoryCustomPropertyValue and its
+// list counterpart, from the effective (org + enterprise) property values.
 func (s *Resolver) addRepositoryCustomPropertyFields(repoType *graphql.Object) {
 	valueScalar := s.graphQLStringScalar("CustomPropertyValue")
 	valueType := graphql.NewObject(graphql.ObjectConfig{
@@ -454,9 +434,8 @@ func (s *Resolver) addRepositoryCustomPropertyFields(repoType *graphql.Object) {
 	})
 }
 
-// addRepositorySuggestedActorsField installs suggestedActors, the accounts a
-// client offers as assignees / authors. bleephub suggests the repository's
-// mentionable accounts, rendered as the Actor interface.
+// addRepositorySuggestedActorsField installs suggestedActors: the repository's
+// mentionable accounts, as the Actor interface.
 func (s *Resolver) addRepositorySuggestedActorsField(repoType *graphql.Object) {
 	actorConnection := s.gqlConnectionType("Actor", s.graphqlTypes.actor)
 	filterEnum := s.sharedEnum("RepositorySuggestedActorFilter", "CAN_BE_ASSIGNED", "CAN_BE_AUTHOR")
@@ -486,7 +465,7 @@ func (s *Resolver) addRepositorySuggestedActorsField(repoType *graphql.Object) {
 }
 
 // addRepositoryVulnerabilityAlertField installs vulnerabilityAlert(number), the
-// single-alert counterpart to the already-installed vulnerabilityAlerts.
+// single-alert counterpart to vulnerabilityAlerts.
 func (s *Resolver) addRepositoryVulnerabilityAlertField(repoType *graphql.Object) {
 	alertType := namedObjectFromField(namedObjectFromField(repoType, "vulnerabilityAlerts"), "nodes")
 	if alertType == nil {
@@ -533,17 +512,14 @@ func (s *Resolver) addCommitGitResidualFields(types *accountSurfaceTypes) {
 	s.addCommitSignatureField(commitType)
 }
 
-// addLateGitResidualFields installs the Commit and Repository members whose
-// types the deployment family assembles after the early git-residual pass, so
-// they are wired here once Deployment/Environment exist (called from
-// initGraphQLSchema after addDeploymentsMutationsToSchema).
+// addLateGitResidualFields installs the Commit and Repository members whose types
+// the deployment family assembles after the early residual pass.
 func (s *Resolver) addLateGitResidualFields() {
 	s.addCommitDeploymentsField()
 	s.addRepositoryPinnedEnvironmentsField()
 }
 
-// addCommitDeploymentsField installs Commit.deployments — the deployments that
-// shipped this exact commit, matched by deployment SHA.
+// addCommitDeploymentsField installs Commit.deployments, matched by deployment SHA.
 func (s *Resolver) addCommitDeploymentsField() {
 	commitType := s.graphqlTypes.commit
 	conn := s.namedObject("DeploymentConnection")
@@ -576,11 +552,9 @@ func (s *Resolver) addCommitDeploymentsField() {
 	})
 }
 
-// addCommitSignatureField installs Commit.signature — the GitSignature a signed
-// commit carries. bleephub records the armored signature go-git parses but runs
-// no verification service, so a present signature reports state
-// GPGVERIFY_UNAVAILABLE with isValid false rather than claiming a verification
-// it cannot perform; an unsigned commit resolves null.
+// addCommitSignatureField installs Commit.signature. bleephub runs no
+// verification service, so a signed commit reports GPGVERIFY_UNAVAILABLE /
+// isValid false rather than claiming a verification; unsigned resolves null.
 func (s *Resolver) addCommitSignatureField(commitType *graphql.Object) {
 	sig := s.gqlGitSignatureInterface()
 	commitType.AddFieldConfig("signature", &graphql.Field{
@@ -621,8 +595,7 @@ func (s *Resolver) addCommitSignatureField(commitType *graphql.Object) {
 }
 
 // gqlGitSignatureInterface builds GitSignature and its concrete members
-// (memoized). The concrete types are registered in the schema Types list
-// (gh_graphql.go) so a `... on GpgSignature` fragment resolves.
+// (memoized), which are also registered in the schema Types list so fragments resolve.
 func (s *Resolver) gqlGitSignatureInterface() *graphql.Interface {
 	if existing := s.mutationInterfaces["GitSignature"]; existing != nil {
 		return existing
@@ -686,8 +659,8 @@ func gitSignatureTypename(armor string) string {
 	}
 }
 
-// commitSignaturePayload reconstructs the signed payload: the commit object
-// text with its signature header removed, which is what a verifier checks.
+// commitSignaturePayload reconstructs the signed payload: the commit object text
+// with its signature header removed.
 func commitSignaturePayload(commit *object.Commit) string {
 	unsigned := *commit
 	unsigned.PGPSignature = ""
@@ -707,9 +680,8 @@ func commitSignaturePayload(commit *object.Commit) string {
 	return buf.String()
 }
 
-// addCommitAssociatedPullRequestsField installs associatedPullRequests: the
-// merged pull request that introduced the commit plus any open pull request
-// whose head is the commit, matched by head/merge SHA.
+// addCommitAssociatedPullRequestsField installs associatedPullRequests, matched by
+// head/merge SHA.
 func (s *Resolver) addCommitAssociatedPullRequestsField(commitType *graphql.Object) {
 	commitType.AddFieldConfig("associatedPullRequests", &graphql.Field{
 		Type: s.graphqlTypes.pullRequestConnection,
@@ -740,8 +712,7 @@ func (s *Resolver) addCommitAssociatedPullRequestsField(commitType *graphql.Obje
 	})
 }
 
-// addCommitBlameField installs blame(path), computed with a real git blame over
-// the commit's tree.
+// addCommitBlameField installs blame(path), a real git blame over the commit's tree.
 func (s *Resolver) addCommitBlameField(commitType *graphql.Object) {
 	blameRangeType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "BlameRange",
@@ -885,9 +856,8 @@ func (s *Resolver) addCommitCommentsField(types *accountSurfaceTypes, commitType
 	})
 }
 
-// addCommitStatusField installs status, the combined commit status (the legacy
-// StatusContext rollup) for the commit's SHA. It is null when no commit status
-// was ever posted, matching GitHub.
+// addCommitStatusField installs status, the legacy combined commit status. Null
+// when no status was ever posted.
 func (s *Resolver) addCommitStatusField(commitType *graphql.Object) {
 	rollupType := s.graphqlTypes.statusCheckRollup
 	if rollupType == nil {
@@ -952,7 +922,6 @@ func (s *Resolver) addCommitStatusField(commitType *graphql.Object) {
 			sha := residualSourceString(p.Source, "oid")
 			state, total, statuses := s.store.CommitStatuses.Combined(repo.FullName, sha)
 			if total == 0 || len(statuses) == 0 {
-				// A commit with no posted status has a null legacy status.
 				return nil, nil
 			}
 			combined := s.statusRollupContexts(repo.FullName, sha)
@@ -992,8 +961,7 @@ func (s *Resolver) statusRollupContexts(repoKey, sha string) map[string]interfac
 	return contexts
 }
 
-// addCommitSubmodulesField installs submodules, the .gitmodules submodules of
-// the commit's tree.
+// addCommitSubmodulesField installs submodules, from the commit tree's .gitmodules.
 func (s *Resolver) addCommitSubmodulesField(types *accountSurfaceTypes, commitType *graphql.Object) {
 	repoType := types.repository
 	submoduleType := namedObjectFromField(namedObjectFromField(repoType, "submodules"), "nodes")
@@ -1017,8 +985,8 @@ func (s *Resolver) addCommitSubmodulesField(types *accountSurfaceTypes, commitTy
 	})
 }
 
-// submoduleItemsFromTree reads .gitmodules from a tree and pairs each declared
-// submodule with the commit the tree records at its path.
+// submoduleItemsFromTree pairs each .gitmodules submodule with the commit the
+// tree records at its path.
 func submoduleItemsFromTree(stor gitStorage.Storer, repoFullName string, tree *object.Tree) []gqlConnItem {
 	content, found := readTreeFile(stor, tree, ".gitmodules")
 	if !found {
@@ -1053,8 +1021,8 @@ func submoduleSource(module gitSubmodule, commitOID interface{}) map[string]inte
 	}
 }
 
-// addCommitSubscriptionFields installs viewerCanSubscribe / viewerSubscription,
-// the viewer's notification standing for the commit's repository.
+// addCommitSubscriptionFields installs viewerCanSubscribe / viewerSubscription
+// for the commit's repository.
 func (s *Resolver) addCommitSubscriptionFields(commitType *graphql.Object) {
 	subscriptionState := s.sharedEnum("SubscriptionState", "IGNORED", "SUBSCRIBED", "UNSUBSCRIBED")
 	commitType.AddFieldConfig("viewerCanSubscribe", &graphql.Field{
@@ -1172,10 +1140,9 @@ func prMatchesStates(pr *store.PullRequest, states []interface{}) bool {
 // this ref and another, computed over the real commit graph.
 func (s *Resolver) addRefCompareField(refType *graphql.Object) {
 	comparisonStatus := s.sharedEnum("ComparisonStatus", "AHEAD", "BEHIND", "DIVERGED", "IDENTICAL")
-	// GitHub's ComparisonCommitConnection carries the standard CommitEdge (not a
-	// bespoke edge) plus authorCount; build it by hand rather than through the
-	// generic connection factory, which would mint a ComparisonCommitEdge GitHub
-	// has no name for. gqlCommitConnectionType populates s.graphqlTypes.commitEdge.
+	// ComparisonCommitConnection carries the standard CommitEdge plus authorCount;
+	// build it by hand so the factory does not mint an unnamed ComparisonCommitEdge.
+	// gqlCommitConnectionType populates s.graphqlTypes.commitEdge.
 	s.gqlCommitConnectionType("CommitConnection")
 	commitConnection := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ComparisonCommitConnection",
@@ -1288,8 +1255,8 @@ func (s *Resolver) buildComparison(ctx context.Context, repoFullName string, sto
 			if src := s.commitSourceForRepoSHA(ctx, repoFullName, h.String()); src != nil {
 				aheadCommits = append(aheadCommits, src.(map[string]interface{}))
 			}
-			// authorCount is the distinct set of authors and co-authors across
-			// the commits ahead, matching GitHub's ComparisonCommitConnection.
+			// authorCount is the distinct authors and co-authors across the
+			// commits ahead.
 			if commit, err := object.GetCommit(stor, h); err == nil {
 				if email := strings.ToLower(strings.TrimSpace(commit.Author.Email)); email != "" {
 					authors[email] = struct{}{}
@@ -1331,8 +1298,8 @@ func (s *Resolver) buildComparison(ctx context.Context, repoFullName string, sto
 	}
 }
 
-// coAuthorEmails extracts the lowercased emails from a commit message's
-// "Co-authored-by: Name <email>" trailers, GitHub's co-author convention.
+// coAuthorEmails extracts lowercased emails from a message's "Co-authored-by:
+// Name <email>" trailers.
 func coAuthorEmails(message string) []string {
 	var out []string
 	for _, line := range strings.Split(message, "\n") {
@@ -1352,9 +1319,8 @@ func coAuthorEmails(message string) []string {
 	return out
 }
 
-// commitAncestors returns the set of commits reachable from start (inclusive),
-// walking first-parent and merge parents up to a bound that keeps a pathological
-// history from running away.
+// commitAncestors returns the commits reachable from start (inclusive), bounded
+// so a pathological history cannot run away.
 func commitAncestors(stor gitStorage.Storer, start plumbing.Hash) map[plumbing.Hash]struct{} {
 	seen := map[plumbing.Hash]struct{}{}
 	if start.IsZero() {
@@ -1383,8 +1349,8 @@ func base64RawURL(s string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(s))
 }
 
-// addRefUpdateRuleField installs refUpdateRule, the branch-protection rule that
-// governs pushes to this ref, or null when the branch is unprotected.
+// addRefUpdateRuleField installs refUpdateRule, the branch-protection rule for
+// this ref, or null when the branch is unprotected.
 func (s *Resolver) addRefUpdateRuleField(refType *graphql.Object) {
 	ruleType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RefUpdateRule",
@@ -1460,8 +1426,7 @@ func (s *Resolver) addTreeEntryResidualFields() {
 	if entryType == nil {
 		return
 	}
-	// isGenerated marks a path GitHub's linguist detected as generated. bleephub
-	// ships no linguist/.gitattributes model, so the honest value is false.
+	// isGenerated: bleephub ships no linguist/.gitattributes model, so false.
 	entryType.AddFieldConfig("isGenerated", &graphql.Field{
 		Type:    graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return false, nil },
@@ -1476,7 +1441,7 @@ func (s *Resolver) addTreeEntryResidualFields() {
 		Type: submoduleType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			src, _ := p.Source.(map[string]interface{})
-			// A submodule is a gitlink: a tree entry whose object type is a commit.
+			// A submodule is a gitlink: a tree entry whose object is a commit.
 			if t, _ := src["type"].(string); t != "commit" {
 				return nil, nil
 			}
@@ -1506,8 +1471,8 @@ func (s *Resolver) addTreeEntryResidualFields() {
 
 // --- RepositoryConnection ---------------------------------------------------
 
-// addRepositoryConnectionResidualFields installs totalDiskUsage on the shared
-// RepositoryConnection: the summed on-disk size of the repositories it carries.
+// addRepositoryConnectionResidualFields installs totalDiskUsage, the summed
+// on-disk size of the connection's repositories.
 func (s *Resolver) addRepositoryConnectionResidualFields() {
 	repoConn := s.graphqlTypes.repositoryConnection
 	if repoConn == nil {

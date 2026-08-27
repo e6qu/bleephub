@@ -22,7 +22,6 @@ import { RelativeTime } from "../components/RelativeTime.js";
 import { isNotFoundError } from "../components/notFound.js";
 import type { GithubWikiPage } from "../types.js";
 
-/** One row of a page's edit history (see internal/server/gh_wiki.go). */
 interface WikiRevision {
   id: number;
   slug: string;
@@ -35,8 +34,7 @@ interface WikiRevision {
   body?: string;
 }
 
-// Inline fetchers (ghFetch convention) — this page is the only caller, so the
-// wrappers ride this lazy chunk instead of api.ts / the entry bundle.
+// Inline fetchers keep these wrappers in the lazy chunk, off the entry bundle.
 const wikiRevisionsPath = (owner: string, repo: string, slug: string) =>
   `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/wiki/pages/${encodeURIComponent(slug)}/revisions`;
 const fetchWikiRevisions = (owner: string, repo: string, slug: string) =>
@@ -44,13 +42,8 @@ const fetchWikiRevisions = (owner: string, repo: string, slug: string) =>
 const fetchWikiRevision = (owner: string, repo: string, slug: string, id: number) =>
   ghFetch<WikiRevision>(`${wikiRevisionsPath(owner, repo, slug)}/${id}`);
 
-/**
- * Repository wiki. github.com puts a Wiki tab on repos with wikis enabled; the
- * simulator backs it with a per-repo page store (see internal/server/gh_wiki.go).
- * A left rail lists pages; the main pane views a page's markdown or edits it.
- * Write actions (New/Edit/Delete/Restore) need push access and are hidden from
- * read-only viewers, matching github.com; the wiki stays readable for everyone.
- */
+// Write actions (New/Edit/Delete/Restore) need push access; the wiki stays
+// readable for everyone, matching github.com.
 export function WikiPage() {
   const { owner = "", repo = "", slug: routeSlug } = useParams<{
     owner: string;
@@ -69,7 +62,7 @@ export function WikiPage() {
     queryFn: () => fetchWikiPages(owner, repo),
   });
 
-  // The active page: the route slug, else the first page (Home sorts first).
+  // Route slug, else the first page (Home sorts first).
   const activeSlug = routeSlug ?? pagesQ.data?.[0]?.slug;
   const pageQ = useQuery({
     queryKey: ["wiki-page", owner, repo, activeSlug],
@@ -79,10 +72,8 @@ export function WikiPage() {
 
   const save = useMutation({
     mutationFn: (input: { slug: string; title: string; body: string; message: string }) => {
-      // The PUT handler records an optional `message` edit summary on the
-      // revision. putWikiPage's declared payload is {title, body}; passing a
-      // wider object through a variable is sound (structural assignability)
-      // and keeps api.ts untouched.
+      // The PUT handler records an optional `message` edit summary; widen
+      // putWikiPage's {title, body} payload via a variable to keep api.ts untouched.
       const payload = { title: input.title, body: input.body, message: input.message };
       return putWikiPage(owner, repo, input.slug, payload);
     },
@@ -267,9 +258,8 @@ function WikiView({
   }
   if (pageQ.isLoading) return <Spinner label="loading page" />;
   if (pageQ.isError || !pageQ.data) {
-    // The wiki itself loaded — a 404 here is a URL naming a page that does
-    // not exist. github.com offers writers a title-prefilled "create this
-    // page" affordance; readers just get the 404 text. The list rail stays.
+    // A 404 here means the URL names a missing page; offer writers a
+    // title-prefilled create affordance, readers just the 404 text.
     if (isNotFoundError(pageQ.error)) {
       const missingTitle = activeSlug.replace(/-+/g, " ").trim() || "this page";
       return (
@@ -401,11 +391,7 @@ function WikiEditor({
   );
 }
 
-/**
- * A page's revision history (newest first): edit summary, editor, age and a
- * body preview, plus GitHub's "restore this version" — a PUT of the old body
- * with a "Restore revision {id}" summary.
- */
+// "Restore this version" PUTs the old body with a "Restore revision {id}" summary.
 function WikiHistory({
   owner,
   repo,
@@ -426,7 +412,7 @@ function WikiHistory({
   });
   const restore = useMutation({
     mutationFn: async (rev: WikiRevision) => {
-      // The list rows carry only a preview; fetch the full snapshot to restore.
+      // List rows carry only a preview; fetch the full snapshot to restore.
       const full = await fetchWikiRevision(owner, repo, slug, rev.id);
       const payload = {
         title: full.title,

@@ -1,12 +1,8 @@
 import { useId, useState } from "react";
 import { Button, FormLabel } from "./ui.js";
 
-/**
- * The webhook event catalog this server actually delivers. Derived from the
- * distinct eventType arguments passed to emitWebhookEvent in
- * internal/server (plus the org-level "organization" event) — not GitHub's
- * full ~70-event list, so every checkbox here is a real, subscribable event.
- */
+// The events this server actually delivers (emitWebhookEvent call sites), not
+// GitHub's full ~70-event list — so every checkbox is a real, subscribable event.
 export const WEBHOOK_EVENT_CATALOG: string[] = [
   "branch_protection_rule",
   "check_run",
@@ -48,7 +44,7 @@ export interface WebhookFormValues {
   contentType: string;
   /** Empty string = not set (create) / keep the current secret (edit). */
   secret: string;
-  /** config.insecure_ssl: "0" verifies SSL certificates (default), "1" skips verification. */
+  /** config.insecure_ssl: "0" verifies certs (default), "1" skips. */
   insecureSsl: "0" | "1";
   events: string[];
   active: boolean;
@@ -62,11 +58,6 @@ function modeFromEvents(events: string[]): EventMode {
   return events.length === 0 ? "push" : "select";
 }
 
-/**
- * Shared add/edit webhook form (repo + org hooks). GitHub-style event
- * selection: a radio trio (just push / everything / individual events) with a
- * checkbox grid of the server's known events.
- */
 export function WebhookForm({
   initial,
   eventCatalog = WEBHOOK_EVENT_CATALOG,

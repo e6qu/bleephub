@@ -1,9 +1,6 @@
 import type { CSSProperties } from "react";
 
-/**
- * Convert a GitHub 6-hex label color to HSL. Returns null for malformed input
- * so the caller can fall back to a theme-token color.
- */
+/** Convert a 6-hex label color to HSL; null for malformed input. */
 function hexToHsl(hex: string): { h: number; s: number; l: number } | null {
   const m = /^([0-9a-fA-F]{6})$/.exec(hex.trim());
   if (!m) return null;
@@ -28,16 +25,9 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } | null {
 }
 
 /**
- * Renders a row of colored label pills for GitHub issues.
- *
- * The pill keeps GitHub's subtle look — a 13% tint of the label color behind
- * text in the label's own hue — but the text color is made contrast-safe (WCAG
- * AA) in BOTH themes: the tinted background composites light over the page in
- * light mode and dark in dark mode, so the text must be dark in one and light in
- * the other. We emit two hue-matched foregrounds as CSS variables and switch
- * between them with the `.dark` selector (see `.label-pill` in index.css).
- * Previously the raw label color was used as text over its own tint, which fell
- * below AA for light label colors (yellow, cyan) — ledger WEB-068.
+ * WEB-068: the tinted background composites light in light mode and dark in
+ * dark mode, so text must clear WCAG AA against both. Emit two hue-matched
+ * foregrounds as CSS variables; `.label-pill` in index.css switches on theme.
  */
 export function LabelPills({ labels }: { labels?: { name: string; color: string }[] }) {
   if (!labels || labels.length === 0) return null;
@@ -53,13 +43,11 @@ export function LabelPills({ labels }: { labels?: { name: string; color: string 
           background: `#${l.color}22`,
           border: `1px solid #${l.color}55`,
           whiteSpace: "nowrap",
-          // Fallback for a malformed color: a legible token, overridden below.
+          // Malformed-color fallback, overridden below.
           color: "var(--color-fg)",
         };
         if (hsl) {
           const sat = Math.max(hsl.s, 20);
-          // Dark, saturated text for the light-mode (light) tint; light text for
-          // the dark-mode (dark) tint. Both clear AA against the composited tint.
           style["--label-fg-light"] = `hsl(${hsl.h} ${sat}% 26%)`;
           style["--label-fg-dark"] = `hsl(${hsl.h} ${Math.max(sat, 55)}% 80%)`;
         }

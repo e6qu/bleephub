@@ -1,23 +1,12 @@
 package graphqlapi
 
-// Schema-fidelity shells for the timeline events GitHub declares but bleephub
-// does not reach through any resolved field. These 35 event objects are the
-// unmodeled entries of the IssueTimelineItems / PullRequestTimelineItems
-// unions (merge-queue, classic- and v2-project moves, force-pushes,
-// deployments, cross-references, sub-issue and block relations, subscription
-// and block events). They exist so bleephub's introspected schema matches
-// GitHub's shape; they are registered standalone (NOT added to the timeline
-// unions) because this instance does not produce the underlying data, matching
-// the existing design choice not to resolve them.
-//
-// Every type is built signature-exact against the vendored SDL. Objects use the
-// memoized mutationObject so graphql-go holds one instance per GitHub name;
-// their fields reference the already-assembled read surface (Issue,
-// PullRequest, Commit, User, Ref, Actor, ProjectV2, classic Project/ProjectCard,
-// Deployment, DeploymentStatus, MergeQueue, IssueComment, IssueOrPullRequest).
-// Three support types GitHub names here but bleephub does not otherwise build —
-// the ReferencedSubject union, the Subscribable interface and the
-// UserBlockDuration enum — are minted here too and registered alongside.
+// Schema-fidelity shells for the 35 timeline-event objects GitHub declares but
+// bleephub produces no data for. They exist only so introspection matches
+// GitHub's shape, and are registered standalone (NOT added to the timeline
+// unions) since nothing resolves them. Objects use the memoized mutationObject
+// for one instance per GitHub name; three support types GitHub names here (the
+// ReferencedSubject union, the Subscribable interface and the UserBlockDuration
+// enum) are reused from where they were already built.
 
 import (
 	"github.com/graphql-go/graphql"
@@ -27,10 +16,9 @@ func init() {
 	schemaShellBuilders = append(schemaShellBuilders, (*Resolver).addEventShells)
 }
 
-// addEventShells builds every unmodeled timeline-event object plus the three
-// support types they name, registering each so it appears in introspection.
+// addEventShells builds every unmodeled timeline-event object and registers it
+// so it appears in introspection.
 func (s *Resolver) addEventShells() {
-	// Existing read-surface types, reached read-only.
 	actor := s.graphqlTypes.actor
 	dateTime := s.graphQLStringScalar("DateTime")
 	user := s.graphqlTypes.user
@@ -47,26 +35,20 @@ func (s *Resolver) addEventShells() {
 	deploymentStatus := s.graphqlTypes.deploymentStatus
 	issueOrPullRequest := s.graphqlTypes.issueOrPullRequest
 
-	// The three support types GitHub names here — the ReferencedSubject union
-	// (Issue | PullRequest), the Subscribable interface and the UserBlockDuration
-	// enum — are each already built and registered elsewhere (the timeline
-	// registry, updateSubscription's payload interface, the ordering shells), so
-	// reach the memoized instances rather than minting duplicates graphql-go
-	// would reject.
+	// Reuse the memoized support types rather than minting duplicates
+	// graphql-go would reject.
 	referencedSubject := s.graphqlTypes.timeline.referencedSubj
 	subscribable := s.subscribableInterface()
 	userBlockDuration := s.sharedEnum("UserBlockDuration",
 		"ONE_DAY", "ONE_MONTH", "ONE_WEEK", "PERMANENT", "THREE_DAYS")
 
-	// Only the event objects are minted here; the support types above are reused
-	// instances already present in the schema.
 	var built []graphql.Type
 	register := func(o *graphql.Object) *graphql.Object {
 		built = append(built, o)
 		return o
 	}
 
-	// The `actor`, `createdAt` and `id` triple every event declares.
+	// The actor/createdAt/id triple every event declares.
 	base := func(extra graphql.Fields) graphql.Fields {
 		f := graphql.Fields{
 			"actor":     gqlField(actor),

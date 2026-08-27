@@ -18,15 +18,8 @@ func newInviteCodeE() (string, error) {
 	return code, nil
 }
 
-// GitHub Classroom REST surface (GET /classrooms, /classrooms/{classroom_id},
-// /classrooms/{classroom_id}/assignments, /assignments/{assignment_id},
-// /assignments/{assignment_id}/accepted_assignments, and
-// /assignments/{assignment_id}/grades).
-//
-// GitHub Classroom has no public create REST API. Its management and
-// acceptance writes belong to the authenticated Classroom browser product;
-// the public REST surface remains read-only and organization-admin scoped.
-
+// GitHub Classroom REST surface: read-only and org-admin scoped, matching the
+// public API (Classroom has no create REST endpoints; writes are browser-only).
 func (s *Server) registerGHClassroomRoutes() {
 	s.route("GET /api/v3/classrooms", s.classroomLocked(s.handleListClassrooms))
 	s.route("GET /api/v3/classrooms/{classroom_id}", s.classroomLocked(s.handleGetClassroom))
@@ -45,15 +38,10 @@ func (s *Server) classroomLocked(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// --- Store operations ---
-
-// --- JSON shapes ---
-
 func classroomURL(baseURL string, c *store.Classroom) string {
 	return baseURL + "/ui/classrooms/" + strconv.Itoa(c.ID)
 }
 
-// simpleClassroomJSON renders the spec `simple-classroom` shape.
 func simpleClassroomJSON(c *store.Classroom, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":       c.ID,
@@ -63,8 +51,8 @@ func simpleClassroomJSON(c *store.Classroom, baseURL string) map[string]interfac
 	}
 }
 
-// classroomJSON renders the spec `classroom` shape (simple-classroom plus
-// the owning organization).
+// classroomJSON renders the `classroom` shape: simple-classroom plus the
+// owning organization.
 func (s *Server) classroomJSON(c *store.Classroom, baseURL string) map[string]interface{} {
 	out := simpleClassroomJSON(c, baseURL)
 	org := s.store.GetOrgByID(c.OrgID)
@@ -82,8 +70,6 @@ func (s *Server) classroomJSON(c *store.Classroom, baseURL string) map[string]in
 	return out
 }
 
-// simpleClassroomRepositoryJSON renders the spec `simple-classroom-repository`
-// shape from a real repository.
 func simpleClassroomRepositoryJSON(repo *store.Repo, baseURL string) map[string]interface{} {
 	if repo == nil {
 		return nil
@@ -98,8 +84,6 @@ func simpleClassroomRepositoryJSON(repo *store.Repo, baseURL string) map[string]
 	}
 }
 
-// classroomAssignmentCounters derives accepted/submitted/passing from the
-// accepted assignments.
 func (s *Server) classroomAssignmentCounters(assignmentID int) (accepted, submitted, passing int) {
 	a := s.store.GetClassroomAssignment(assignmentID)
 	for _, aa := range s.store.ClassroomAcceptedFor(assignmentID) {
@@ -125,9 +109,8 @@ type classroomAcceptedDerivedState struct {
 	submittedAt time.Time
 }
 
-// classroomAcceptedState derives Classroom reporting exclusively from the
-// generated repository and completed GitHub Actions jobs. The management
-// product cannot assert that a student submitted, passed, or earned points.
+// classroomAcceptedState derives Classroom reporting purely from the student
+// repository and completed Actions jobs, never from asserted state.
 func (s *Server) classroomAcceptedState(a *store.ClassroomAssignment, aa *store.ClassroomAcceptedAssignment) classroomAcceptedDerivedState {
 	acceptedAt := classroomAcceptedAt(aa)
 	state := classroomAcceptedDerivedState{submittedAt: acceptedAt}
@@ -188,9 +171,8 @@ func classroomAcceptedAt(accepted *store.ClassroomAcceptedAssignment) time.Time 
 	return accepted.SubmittedAt
 }
 
-// classroomAssignmentJSON renders the assignment shape; full=true renders
-// the spec `classroom-assignment` (full classroom + starter code repo),
-// full=false the `simple-classroom-assignment`.
+// classroomAssignmentJSON renders `classroom-assignment` (full classroom +
+// starter code repo) when full, else `simple-classroom-assignment`.
 func (s *Server) classroomAssignmentJSON(a *store.ClassroomAssignment, baseURL string, full bool) map[string]interface{} {
 	accepted, submitted, passing := s.classroomAssignmentCounters(a.ID)
 	var deadline interface{}
@@ -265,10 +247,8 @@ func (s *Server) handleListClassrooms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// classroomForAdmin resolves a Classroom resource without disclosing it to
-// callers who do not administer its owning organization. GitHub's Classroom
-// REST endpoints are organization-administrator endpoints, not public course
-// catalogues.
+// classroomForAdmin resolves a classroom, returning 404 to callers who do not
+// administer its owning org (these are org-admin endpoints, not public).
 func (s *Server) classroomForAdmin(w http.ResponseWriter, r *http.Request, id int) *store.Classroom {
 	user := ghUserFromContext(r.Context())
 	if user == nil {

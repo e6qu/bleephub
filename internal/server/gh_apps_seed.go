@@ -8,8 +8,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// loadAppSeedSpecs reads seed specs from BLEEPHUB_SEED_APPS_FILE (a JSON file)
-// and BLEEPHUB_SEED_APPS (inline JSON), concatenating both when present.
+// loadAppSeedSpecs concatenates seed specs from BLEEPHUB_SEED_APPS_FILE (a JSON
+// file) and BLEEPHUB_SEED_APPS (inline JSON).
 func loadAppSeedSpecs() ([]store.AppSeedSpec, error) {
 	var specs []store.AppSeedSpec
 	if path := os.Getenv("BLEEPHUB_SEED_APPS_FILE"); path != "" {
@@ -36,9 +36,8 @@ func loadAppSeedSpecs() ([]store.AppSeedSpec, error) {
 }
 
 // seedConfiguredApps registers the apps described by the seed config. It is
-// idempotent across restarts (an app already present — loaded from
-// persistence — is left unchanged) and fails loud on a malformed spec, never
-// silently degrading.
+// idempotent across restarts (an already-present app is left unchanged) and
+// fails loud on a malformed spec.
 func (s *Server) seedConfiguredApps() error {
 	specs, err := loadAppSeedSpecs()
 	if err != nil {
@@ -102,9 +101,8 @@ func (s *Server) seedConfiguredApps() error {
 	return nil
 }
 
-// resolveSeedInstallTarget resolves an installation account login to a real
-// target type + id. Seed configuration must name an existing account; startup
-// fails instead of inventing an organization or silently installing on id 0.
+// resolveSeedInstallTarget resolves an installation account login to a target
+// type + id, failing startup when it names no existing account.
 func (s *Server) resolveSeedInstallTarget(ins store.InstallationSeedSpec) (string, int, error) {
 	if ins.TargetType != "" && ins.TargetType != "Organization" && ins.TargetType != "User" {
 		return "", 0, fmt.Errorf("installation account %q: target_type must be Organization or User", ins.Account)

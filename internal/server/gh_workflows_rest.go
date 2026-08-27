@@ -1,9 +1,8 @@
 package bleephub
 
-// workflow-file REST surface (`/api/v3/repos/{o}/{r}/actions/workflows`).
-// The run-level state lives at `actions/runs`; this file covers the YAML
-// files themselves so `gh workflow list` + `gh workflow run` + the
-// GitHub UI's workflow-dispatch form work against bleephub.
+// Workflow-file REST surface (`/api/v3/repos/{o}/{r}/actions/workflows`) —
+// the YAML files themselves, as opposed to the run-level state at
+// `actions/runs`.
 
 import (
 	"encoding/json"
@@ -28,10 +27,9 @@ func (s *Server) registerGHWorkflowsRoutes() {
 		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetWorkflowState("disabled_manually")))
 }
 
-// handleSetWorkflowState backs PUT .../workflows/{id}/{enable,disable}:
-// flips the workflow FILE's state (persisted) and 204s. Disabled
-// workflows neither trigger (actions.WorkflowFileDisabled) nor
-// dispatch (403 below).
+// handleSetWorkflowState backs PUT .../workflows/{id}/{enable,disable}: it
+// flips the workflow file's persisted state and 204s. Disabled workflows
+// neither trigger nor dispatch.
 func (s *Server) handleSetWorkflowState(state string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		repo := repoFullName(r)
@@ -41,17 +39,14 @@ func (s *Server) handleSetWorkflowState(state string) http.HandlerFunc {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
-		// wf is a detached snapshot from resolveWorkflowFile; mutate the live row
-		// through the keyed writer so the state change is observed in memory, not
-		// just persisted to a discarded clone (STORE-021).
+		// wf is a detached snapshot (STORE-021); mutate the live row through the
+		// keyed writer so the change is observed in memory, not lost to a clone.
 		s.store.SetWorkflowFileState(wf.RepoFullName, wf.Path, state)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
-// workflowFileJSON converts a WorkflowFile to GitHub's `Workflow`
-// shape. `gh workflow list` reads name/path/state/url/html_url; the
-// UI dispatch form additionally surfaces created_at/updated_at.
+// workflowFileJSON renders a WorkflowFile in GitHub's `Workflow` shape.
 func workflowFileJSON(wf *store.WorkflowFile, baseURL, repoName string) map[string]any {
 	repoPath := repoName
 	if wf.RepoFullName != "" {
@@ -83,15 +78,10 @@ func lastPathSegment(p string) string {
 	return p
 }
 
-// handleListGHWorkflows — GET /api/v3/repos/{o}/{r}/actions/workflows.
-// Discovers from git storage on every call (cheap; the discovery
-// re-registers entries idempotently so push-time updates are visible
-// immediately) THEN lists every WorkflowFile registered for the repo
-// (includes both "discovered" and "submitted" sources).
+// handleListGHWorkflows lists every WorkflowFile registered for the repo,
+// re-discovering from git storage first so push-time updates are visible.
 func (s *Server) handleListGHWorkflows(w http.ResponseWriter, r *http.Request) {
-	// The workflow inventory names the repository's CI: file paths, workflow
-	// names and their state. It is repo-scoped content and gets the same
-	// visibility gate as any other read of one.
+	// Repo-scoped content: gate on repo read visibility.
 	if s.lookupReadableRepoFromPath(w, r) == nil {
 		return
 	}
@@ -110,10 +100,8 @@ func (s *Server) handleListGHWorkflows(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGetGHWorkflow — GET .../actions/workflows/{workflow_id}.
-// `workflow_id` may be either the numeric ID or the file path
-// (`ci.yml`) per real GitHub. Resolution order: numeric → exact
-// path → basename match.
+// handleGetGHWorkflow resolves `workflow_id` (numeric ID or file path, per
+// GitHub) and returns the workflow.
 func (s *Server) handleGetGHWorkflow(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	s.store.DiscoverWorkflowFilesFromGit(repo)
@@ -125,10 +113,8 @@ func (s *Server) handleGetGHWorkflow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, workflowFileJSON(wf, s.baseURL(r), repo))
 }
 
-// resolveWorkflowFile accepts the GitHub-shape `workflow_id` path
-// param (numeric ID or filename) and returns the matching WorkflowFile
-// or nil. Numeric ID is the canonical form; filename is the
-// developer-ergonomic shortcut `gh workflow run` uses.
+// resolveWorkflowFile matches a `workflow_id` (numeric ID, exact path, or
+// basename) to a WorkflowFile, or nil.
 func (s *Server) resolveWorkflowFile(repoFullName, idOrPath string) *store.WorkflowFile {
 	if id, err := strconv.ParseInt(idOrPath, 10, 64); err == nil {
 		if wf := s.store.GetWorkflowFile(repoFullName, id); wf != nil {
@@ -146,11 +132,9 @@ func (s *Server) resolveWorkflowFile(repoFullName, idOrPath string) *store.Workf
 	return nil
 }
 
-// handleListWorkflowFileRuns — GET .../actions/workflows/{id}/runs.
-// Filters the existing run-level Workflows by repo + workflow file path
-// (falling back to the workflow name for runs with no recorded file).
-// Reuses workflowRunJSON from gh_actions_rest.go so the response shape
-// matches the run-list endpoint's exactly.
+// handleListWorkflowFileRuns lists the runs for one workflow file, filtered by
+// repo + file path (falling back to workflow name for runs with no recorded
+// file).
 func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	s.store.DiscoverWorkflowFilesFromGit(repo)
@@ -169,11 +153,9 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 		if run.RepoFullName != "" && run.RepoFullName != repo {
 			continue
 		}
-		// Attribute by the workflow FILE path, not the human-authored
-		// name: two files both named `CI` are different workflows, and
-		// merging their runs cross-contaminates per-workflow totals.
-		// The name comparison remains only for runs submitted before a
-		// backing file was registered (no recorded path).
+		// Attribute by file path, not name: two files both named `CI` are
+		// different workflows. The name compare is only for runs recorded
+		// before a backing file existed (no path).
 		if run.WorkflowFilePath != "" {
 			if run.WorkflowFilePath != wf.Path {
 				continue
@@ -208,15 +190,9 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// handleDispatchWorkflow — POST .../actions/workflows/{id}/dispatches.
-// Real GitHub returns 204 No Content on accept. Body shape:
-//
-//	{ "ref": "main", "inputs": { "name": "value" } }
-//
-// Bleephub re-submits the cached YAML through submitWorkflow with the
-// caller's ref + inputs. If the workflow file's YAML wasn't cached
-// (discovered file with empty body, etc.), respond 422 with a clear
-// message instead of submitting an empty workflow.
+// handleDispatchWorkflow re-submits the cached workflow YAML with the caller's
+// ref + inputs and 204s. Body: { "ref": "main", "inputs": {...} }. Uncached
+// YAML (e.g. a discovered file with empty body) is a 422, not an empty submit.
 func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
 	s.store.DiscoverWorkflowFilesFromGit(repo)
@@ -226,8 +202,6 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if strings.HasPrefix(wf.State, "disabled") {
-		// Real GitHub: 403 "Workflow does not have 'workflow_dispatch'
-		// trigger" variant for disabled workflows is "Workflow is disabled".
 		writeGHError(w, http.StatusForbidden, "Workflow is disabled")
 		return
 	}
@@ -264,10 +238,8 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 	req.Ref = resolvedRef
 
-	// Validate against the workflow's declared workflow_dispatch inputs:
-	// unknown inputs reject, required inputs must arrive, declared
-	// defaults apply, choice options and boolean values are enforced —
-	// matching real GitHub's 422s.
+	// Validate inputs against the workflow's workflow_dispatch declarations
+	// (unknown/required/defaults/choice/boolean), matching GitHub's 422s.
 	on, err := actions.ParseWorkflowOn([]byte(wf.YAML))
 	if err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "parse workflow on: "+err.Error())
@@ -298,8 +270,6 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 	def.Env["__serverURL"] = serverURL
 	def.Env["__defaultImage"] = ""
 
-	// The workflow_dispatch event payload carries the string-typed
-	// inputs (github.event.inputs), the ref, and the workflow path.
 	eventInputs := make(map[string]interface{}, len(req.Inputs))
 	for k, v := range req.Inputs {
 		eventInputs[k] = v
@@ -332,11 +302,10 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// resolveDispatchInputs validates caller inputs against the workflow's
-// workflow_dispatch declarations and applies defaults. It returns the
-// string form (github.event.inputs), the typed form (the `inputs`
-// expression context, where boolean/number inputs carry real types),
-// and a GitHub-cased wire error message ("" when valid).
+// resolveDispatchInputs validates caller inputs against the workflow_dispatch
+// declarations and applies defaults. It returns the string form
+// (github.event.inputs), the typed form (the `inputs` expression context), and
+// a GitHub-cased wire error message ("" when valid).
 func resolveDispatchInputs(td *actions.TriggerDef, given map[string]string) (map[string]string, map[string]interface{}, string) {
 	inputs := make(map[string]string, len(given))
 	var declared map[string]*store.WorkflowInputDef

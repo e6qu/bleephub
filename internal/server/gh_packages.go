@@ -131,9 +131,8 @@ func (s *Server) handleInternalCreatePackageVersion(w http.ResponseWriter, r *ht
 	baseURL := s.baseURL(r)
 	scopePath := packageScopePath(ownerTypeFromInternal(ownerType), resolvedOwnerKey)
 	out := s.packageVersionToJSON(v, p, baseURL, scopePath)
-	// `registry_package` fires (published) so `on: registry_package` workflows
-	// run; for a repository-scoped package the source repo's hooks receive it
-	// (ACT-026). User/org-scoped packages have no repo hook target.
+	// registry_package (published) fires so `on: registry_package` workflows run.
+	// Only a repository-scoped package has a repo hook target (ACT-026).
 	if ownerType == "repository" {
 		if repo := s.store.GetRepoByFullName(resolvedOwnerKey); repo != nil {
 			s.emitWebhookEvent(repo.FullName, "registry_package", "published", map[string]interface{}{
@@ -325,8 +324,8 @@ func (s *Server) handleDownloadUserPackageFile(w http.ResponseWriter, r *http.Re
 
 // ─── Authenticated-user scoped handlers ─────────────────────────────────
 
-// packageListFilters parses the package_type (required by GitHub's list
-// endpoints) and visibility query parameters.
+// packageListFilters parses the package_type (required by GitHub's list endpoints)
+// and visibility query parameters.
 func packageListFilters(w http.ResponseWriter, r *http.Request) (pkgType, visibility string, ok bool) {
 	pkgType = r.URL.Query().Get("package_type")
 	if pkgType == "" {
@@ -343,8 +342,8 @@ func packageListFilters(w http.ResponseWriter, r *http.Request) (pkgType, visibi
 // listOwnerPackagesJSON renders the packages of one owner scope filtered
 // by type, visibility, and viewer access.
 func (s *Server) listOwnerPackagesJSON(r *http.Request, user *store.User, ownerKey, pkgType, visibility string) []map[string]interface{} {
-	// GitHub's `state` filter: "active" (default) or "deleted". Deleted rows
-	// leave the by-owner index, so they come from a dedicated scan.
+	// GitHub's `state` filter: "active" (default) or "deleted". Deleted rows leave
+	// the by-owner index, so they come from a dedicated scan.
 	var pkgs []*store.Package
 	if r.URL.Query().Get("state") == "deleted" {
 		pkgs = s.store.ListDeletedPackages(ownerKey)
@@ -354,8 +353,8 @@ func (s *Server) listOwnerPackagesJSON(r *http.Request, user *store.User, ownerK
 	baseURL := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(pkgs))
 	for _, p := range pkgs {
-		// An empty pkgType lists every package type (the web UI's Packages tab,
-		// via /ui-data). The public REST endpoints always pass a validated type.
+		// An empty pkgType lists every type (the web UI's Packages tab via /ui-data);
+		// public REST endpoints always pass a validated type.
 		if pkgType != "" && p.PackageType != pkgType {
 			continue
 		}
@@ -382,8 +381,8 @@ func (s *Server) handleListAuthUserPackages(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.listOwnerPackagesJSON(r, user, user.Login, pkgType, visibility)))
 }
 
-// resolveAuthUserPackage resolves {package_type}/{package_name} within
-// the authenticated user's own package namespace.
+// resolveAuthUserPackage resolves {package_type}/{package_name} within the
+// authenticated user's own package namespace.
 func (s *Server) resolveAuthUserPackage(w http.ResponseWriter, r *http.Request, user *store.User) (*store.Package, bool) {
 	pkgType := r.PathValue("package_type")
 	pkgName := r.PathValue("package_name")
@@ -505,8 +504,8 @@ func (s *Server) handleRestoreAuthUserPackageVersion(w http.ResponseWriter, r *h
 
 // ─── Package restore (owner-scoped) ─────────────────────────────────────
 
-// restorePackageForOwner restores a soft-deleted package in an owner
-// namespace after checking the caller may administer it.
+// restorePackageForOwner restores a soft-deleted package after checking the
+// caller may administer it.
 func (s *Server) restorePackageForOwner(w http.ResponseWriter, r *http.Request, user *store.User, ownerKey string) {
 	pkgType := r.PathValue("package_type")
 	pkgName := r.PathValue("package_name")
@@ -558,10 +557,9 @@ func (s *Server) handleRestoreOrgPackage(w http.ResponseWriter, r *http.Request)
 
 // ─── Docker registry migration conflicts ────────────────────────────────
 
-// listDockerConflicts returns Docker-registry packages whose names
-// collide with a GitHub Container registry package in the same owner
-// namespace — the packages that cannot migrate off the legacy Docker
-// registry. Empty when there are no conflicts.
+// listDockerConflicts returns docker-type packages whose names collide with a
+// container-type package in the same namespace — the ones that cannot migrate off
+// the legacy Docker registry.
 func (s *Server) listDockerConflicts(r *http.Request, ownerKey string) []map[string]interface{} {
 	pkgs := s.store.ListPackages(ownerKey)
 	baseURL := s.baseURL(r)
@@ -649,11 +647,8 @@ func (s *Server) handleDeleteOrgPackage(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListOrgDockerConflicts implements GET /orgs/{org}/docker/conflicts:
-// the org's docker-type packages whose names collide with a container-type
-// package in the same namespace — the packages a Docker registry migration
-// to the GitHub Container registry cannot move. Computed from the real
-// package store; empty when nothing conflicts.
+// handleListOrgDockerConflicts lists the org's docker-type packages whose names
+// collide with a container-type package in the same namespace.
 func (s *Server) handleListOrgDockerConflicts(w http.ResponseWriter, r *http.Request) {
 	user := s.requireUser(w, r)
 	if user == nil {
@@ -681,9 +676,8 @@ func (s *Server) handleListOrgDockerConflicts(w http.ResponseWriter, r *http.Req
 			continue
 		}
 		row := s.packageToJSON(p, baseURL)
-		// The vendored OpenAPI description's package schema does not
-		// declare node_id, and this endpoint emits exactly the documented
-		// members.
+		// The vendored package schema does not declare node_id, and this endpoint
+		// emits exactly the documented members.
 		delete(row, "node_id")
 		out = append(out, row)
 	}
@@ -812,10 +806,9 @@ func (s *Server) handleListRepoPackages(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleUIListUserPackages / handleUIListOrgPackages back the profile/org
-// Packages tab. github.com's REST list endpoints require a single package_type
-// (400 otherwise); the web UI lists every type at once, so these /ui-data
-// aggregations accept an OPTIONAL package_type (empty = all) instead.
+// handleUIListUserPackages / handleUIListOrgPackages back the profile/org Packages
+// tab. The REST list endpoints require a single package_type (400 otherwise); these
+// /ui-data aggregations accept an optional package_type (empty = all) instead.
 func (s *Server) handleUIListUserPackages(w http.ResponseWriter, r *http.Request) {
 	user := s.requireUser(w, r)
 	if user == nil {
@@ -1299,8 +1292,8 @@ func (s *Server) listFilesJSON(v *store.PackageVersion, p *store.Package, r *htt
 	return out
 }
 
-// minimalRepoJSON returns the subset of repository fields that matches
-// GitHub's minimal-repository schema, used for the package.repository block.
+// minimalRepoJSON returns the repository fields of GitHub's minimal-repository
+// schema, used for the package.repository block.
 func minimalRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	full := store.RepoToJSON(repo, st, baseURL)
 	allowed := map[string]bool{
@@ -1328,9 +1321,8 @@ func minimalRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[stri
 // ─── File serving ───────────────────────────────────────────────────────
 
 func (s *Server) servePackageFile(w http.ResponseWriter, r *http.Request, f *store.PackageFile) {
-	// Stream the file straight from the object store to the client — a large
-	// package download must not first materialize in the process heap
-	// (STORE-019). Content-Length comes from the recorded file size.
+	// Stream straight from the object store so a large download never materializes
+	// in the process heap (STORE-019).
 	var (
 		body io.ReadCloser
 		err  error
@@ -1354,12 +1346,10 @@ func (s *Server) servePackageFile(w http.ResponseWriter, r *http.Request, f *sto
 	_, _ = io.Copy(w, body)
 }
 
-// PackageVersionURL returns the public API URL for a package version.
 func (s *Server) packageVersionURL(baseURL, scopePath string, p *store.Package, v *store.PackageVersion) string {
 	return baseURL + "/api/v3" + scopePath + "/" + url.PathEscape(p.PackageType) + "/" + url.PathEscape(p.Name) + "/versions/" + strconv.Itoa(v.ID)
 }
 
-// packageURL returns the public API URL for a package.
 func (s *Server) packageURL(baseURL, scopePath string, p *store.Package) string {
 	return baseURL + "/api/v3" + scopePath + "/" + url.PathEscape(p.PackageType) + "/" + url.PathEscape(p.Name)
 }

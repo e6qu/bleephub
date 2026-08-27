@@ -7,20 +7,10 @@ import { Blankslate, Box, Button, ButtonLink, PageTitle } from "../components/ui
 import { LockIcon } from "../components/octicons.js";
 import { RelativeTime } from "../components/RelativeTime.js";
 
-/**
- * The global security advisory database — the public catalogue of every
- * advisory published on this instance, and the detail view for one of them.
- *
- * This is deliberately NOT a repository page. An advisory is drafted inside a
- * repository and is private while it is; publishing it moves it here, where it
- * is a public fact about a package rather than about the repository that
- * happened to find it. Nothing on these two views is repository-scoped, and
- * neither view can reach an unpublished advisory.
- *
- * The fetch wrappers live in this lazy page rather than in api.ts on purpose:
- * the entry chunk sits against its size budget, and a new wrapper there is
- * paid for by every route.
- */
+// The public global advisory database and its detail view. Deliberately not a
+// repository page: a published advisory is a public fact about a package, and
+// neither view can reach an unpublished draft. Fetch wrappers stay in this lazy
+// page rather than api.ts to spare the entry chunk's size budget.
 
 const enc = encodeURIComponent;
 
@@ -66,11 +56,8 @@ interface GlobalAdvisory {
 /** Severity values the database filter offers, in GitHub's own order. */
 const SEVERITIES = ["critical", "high", "medium", "low"] as const;
 
-/**
- * The ecosystems the advisory database can be filtered by. This is the
- * SecurityAdvisoryEcosystem enum, which is also the set the server's
- * version-comparison knows how to reason about.
- */
+// The SecurityAdvisoryEcosystem enum — the set the server's version comparison
+// understands.
 const ECOSYSTEMS = [
   "npm",
   "pip",
@@ -92,7 +79,6 @@ const fetchGlobalAdvisories = (params: URLSearchParams) =>
 const fetchGlobalAdvisory = (ghsaId: string) =>
   ghFetch<GlobalAdvisory>(`/api/v3/advisories/${enc(ghsaId)}`);
 
-/** severityStyle maps a severity onto the palette's status colors. */
 function severityStyle(severity: string): { background: string; color: string } {
   switch (severity) {
     case "critical":
@@ -106,8 +92,7 @@ function severityStyle(severity: string): { background: string; color: string } 
   }
 }
 
-/** A severity pill. The severity word is the label — colour alone must not
- *  carry the meaning, which is why the text is never dropped. */
+// Keep the severity word — colour alone must not carry the meaning.
 function SeverityBadge({ severity }: { severity: string }) {
   const style = severityStyle(severity);
   return (
@@ -120,7 +105,6 @@ function SeverityBadge({ severity }: { severity: string }) {
   );
 }
 
-/** The advisory database listing at /ui/advisories. */
 export function GlobalAdvisoriesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const severity = searchParams.get("severity") ?? "";
@@ -149,9 +133,8 @@ export function GlobalAdvisoriesPage() {
     queryFn: () => fetchGlobalAdvisories(requestParams),
   });
 
-  // The summary/identifier search is applied here rather than sent to the
-  // server: /advisories has no free-text query parameter, and inventing one
-  // would be a route this instance answers and GitHub does not.
+  // Filter client-side — /advisories has no free-text param, and inventing one
+  // would be a non-GitHub route.
   const needle = search.trim().toLowerCase();
   const shown = needle
     ? advisories.filter(
@@ -283,7 +266,6 @@ export function GlobalAdvisoriesPage() {
   );
 }
 
-/** The advisory detail view at /ui/advisories/:ghsaId. */
 export function GlobalAdvisoryDetailPage() {
   const { ghsaId = "" } = useParams<{ ghsaId: string }>();
   const {

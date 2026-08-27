@@ -52,25 +52,17 @@ func (a *audience) UnmarshalJSON(b []byte) error {
 // oidcClientContext leaves it in place instead of overriding it.
 type oidcClientProvidedKey struct{}
 
-// oidcClientContext returns a context whose OpenID Connect HTTP client carries a
-// timeout, so a slow or hung identity provider cannot pin a goroutine and socket
-// per request — otherwise an anonymous flood of /auth/* requests, each blocking
-// on an unbounded outbound fetch, is a fd/goroutine-exhaustion vector. A client
-// already provided on the context is preserved.
+// oidcClientContext returns a context whose OIDC HTTP client carries a timeout,
+// so a hung IdP cannot pin a goroutine/socket per request and let an /auth/*
+// flood exhaust fds. A client already on the context is preserved.
 func (s *Server) oidcClientContext(ctx context.Context) context.Context {
 	if ctx.Value(oidcClientProvidedKey{}) != nil {
 		return ctx
 	}
-	// OIDC discovery / JWKS / token / end-session fetches use an ordinary client
-	// (timeout only), NOT the webhook SSRF address gate. The identity provider is
-	// operator-configured (BLEEPHUB_SHAUTH_*), not a user-supplied destination,
-	// and a co-located provider legitimately resolves to a private/container
-	// address — routing it through the gate that refuses private addresses made
-	// such a Shauth unreachable and 502'd every sign-in (issue #168). Trusting the
-	// configured IdP fully is standard: a compromised IdP already forges tokens,
-	// so gating its discovery URLs buys little. The webhook/import SSRF guard
-	// stays scoped to the user-supplied destinations it exists for. The timeout
-	// still bounds a hung IdP so an /auth/* flood cannot exhaust fds/goroutines.
+	// IdP fetches deliberately bypass the webhook SSRF address gate: the provider
+	// is operator-configured (BLEEPHUB_SHAUTH_*), not user-supplied, and may
+	// legitimately resolve to a private/container address — gating it 502'd every
+	// sign-in (issue #168). The timeout still bounds a hung IdP.
 	client := &http.Client{Timeout: oidcHTTPTimeout}
 	return oidc.ClientContext(ctx, client)
 }
@@ -90,17 +82,13 @@ func isSecureRequest(r *http.Request) bool {
 	return r != nil && (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
 }
 
-// secureCookies reports whether cookies must carry the Secure attribute:
-// required in production and conditional only for the explicitly supported
-// local HTTP development mode.
+// secureCookies reports whether cookies must carry the Secure attribute.
 func (s *Server) secureCookies(r *http.Request) bool {
 	return strings.HasPrefix(s.externalURL, "https://") || isSecureRequest(r)
 }
 
-// sessionCookieNameFor returns the __Host- prefixed name when the cookie can
-// satisfy the prefix rules (Secure, Path=/, no Domain); plain HTTP local
-// development keeps the unprefixed name because browsers reject insecure
-// __Host- cookies.
+// sessionCookieNameFor returns the __Host- prefixed name when secure; plain-HTTP
+// local development keeps the unprefixed name (browsers reject insecure __Host-).
 func sessionCookieNameFor(secure bool) string {
 	if secure {
 		return secureSessionCookieName
@@ -112,10 +100,9 @@ func (s *Server) sessionCookieFromRequest(r *http.Request) *http.Cookie {
 	if cookie, err := r.Cookie(secureSessionCookieName); err == nil {
 		return cookie
 	}
-	// Over HTTPS a real session is carried by the __Host- cookie; an unprefixed
-	// _gh_sess present here is a shadow a related-domain or network attacker
-	// planted (the unprefixed name has no Secure/Host guarantees), so it is not
-	// honored. Plain-HTTP local development keeps the unprefixed cookie.
+	// Over HTTPS the real session is the __Host- cookie; an unprefixed _gh_sess
+	// here is a shadow an attacker planted and is not honored. Plain-HTTP local
+	// development keeps the unprefixed cookie.
 	if s.secureCookies(r) {
 		return nil
 	}
@@ -123,10 +110,9 @@ func (s *Server) sessionCookieFromRequest(r *http.Request) *http.Cookie {
 	return cookie
 }
 
-// clearSessionCookies revokes the session behind every cookie the browser might
-// hold under EITHER name and unsets both. Clearing only the name just written
-// would leave a shadow _gh_sess (planted before login, or before this logout)
-// live, and the next request would silently adopt it.
+// clearSessionCookies revokes and unsets the session under BOTH names; clearing
+// only the name just written would leave a shadow _gh_sess live for the next
+// request to adopt.
 func (s *Server) clearSessionCookies(w http.ResponseWriter, r *http.Request) error {
 	for _, name := range []string{secureSessionCookieName, sessionCookieName} {
 		if c, err := r.Cookie(name); err == nil && c.Value != "" {
@@ -134,8 +120,7 @@ func (s *Server) clearSessionCookies(w http.ResponseWriter, r *http.Request) err
 				return err
 			}
 		}
-		// Both deletions carry Secure so the browser accepts the overwrite;
-		// Secure cookies are honored over http://localhost / 127.0.0.1 too.
+		// Secure so the browser accepts the overwrite (honored over localhost too).
 		http.SetCookie(w, &http.Cookie{
 			Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 			Secure: true, SameSite: http.SameSiteLaxMode,
@@ -191,12 +176,9 @@ func identityConfigFromEnv() identityConfig {
 	}
 }
 
-// normalizeLogin canonicalizes a username before it is stored or looked up:
-// NFKC compatibility normalization collapses lookalike compatibility forms
-// (fullwidth, ligatures) and case folding makes "Alice" and "alice" the same
-// account. A name that mixes Latin and Cyrillic letters is rejected outright
-// as a basic confusable/homoglyph guard, so Cyrillic "аlice" cannot shadow a
-// Latin login. The empty string normalizes to itself and carries no error.
+// normalizeLogin canonicalizes a username with NFKC + case folding, and rejects
+// a mixed Latin/Cyrillic name as a homoglyph guard so Cyrillic "аlice" cannot
+// shadow a Latin login. The empty string normalizes to itself without error.
 func normalizeLogin(login string) (string, error) {
 	if login == "" {
 		return "", nil
@@ -209,10 +191,8 @@ func normalizeLogin(login string) (string, error) {
 
 var errMixedScriptLogin = errors.New("login mixes Latin and Cyrillic characters")
 
-// mixesLatinAndCyrillic reports whether the string contains at least one Basic
-// Latin letter and at least one Cyrillic letter — the simplest shape of a
-// homoglyph spoof. Ranges are checked on the raw runes because they are stable
-// under NFKC for these scripts.
+// mixesLatinAndCyrillic reports whether the string mixes Latin and Cyrillic
+// letters — the simplest homoglyph spoof.
 func mixesLatinAndCyrillic(login string) bool {
 	var hasLatin, hasCyrillic bool
 	for _, r := range login {
@@ -226,11 +206,9 @@ func mixesLatinAndCyrillic(login string) bool {
 	return hasLatin && hasCyrillic
 }
 
-// parseAllowedLogins splits the comma-separated BLEEPHUB_ALLOWED_LOGINS value
-// into a normalized lookup set. Entries are canonicalized with normalizeLogin
-// so the operator may write them in any case; a blank or mixed-script entry is
-// dropped. A nil map means "no allowlist configured" (admit any normalized
-// login); an empty non-nil map would admit nothing, so it collapses to nil.
+// parseAllowedLogins splits BLEEPHUB_ALLOWED_LOGINS into a normalized lookup
+// set, dropping blank or mixed-script entries. A nil map means "no allowlist"
+// (admit any login); an empty result collapses to nil rather than admit nothing.
 func parseAllowedLogins(value string) map[string]struct{} {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -250,9 +228,8 @@ func parseAllowedLogins(value string) map[string]struct{} {
 	return out
 }
 
-// loginAllowed reports whether a login may authenticate or be created. With
-// no allowlist configured every login is permitted. The argument is normalized
-// defensively so a caller that passes a non-canonical form still matches.
+// loginAllowed reports whether a login may authenticate or be created; with no
+// allowlist every login is permitted. The argument is normalized defensively.
 func (c identityConfig) loginAllowed(login string) bool {
 	if c.allowedLogins == nil {
 		return true
@@ -433,10 +410,9 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token claims were invalid")
 		return
 	}
-	// go-oidc's Verify only checks that aud CONTAINS the client id. OIDC Core
-	// §3.1.3.7 additionally requires rejecting a multi-audience token that omits
-	// azp, and requiring azp == client id when present, so another registered
-	// client cannot replay its token here.
+	// go-oidc's Verify only checks aud CONTAINS the client id. OIDC Core §3.1.3.7
+	// also requires rejecting a multi-audience token without azp, and azp == client
+	// id when present, so another client cannot replay its token here.
 	if len(claims.Audience) > 1 && claims.AuthorizedParty == "" {
 		writeGHError(w, http.StatusUnauthorized, "Shauth ID token has multiple audiences without azp")
 		return
@@ -475,10 +451,8 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}
-	// Only redirect to a same-origin relative path. Anything else — an absolute
-	// URL, a protocol-relative //host, or a backslash trick — collapses to the
-	// app root, so a tampered stored ReturnTo can never become an open redirect
-	// to an attacker-controlled origin.
+	// Redirect only to a same-origin relative path; anything else collapses to
+	// the app root, so a tampered ReturnTo cannot become an open redirect.
 	redirectTarget := "/ui/"
 	if rt := pending.ReturnTo; strings.HasPrefix(rt, "/") && !strings.HasPrefix(rt, "//") && !strings.Contains(rt, "\\") {
 		redirectTarget = rt
@@ -495,8 +469,7 @@ func safeIdentityReturnTo(value string) string {
 }
 
 func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
-	// The response reflects the caller's own identity, so it must never be
-	// served from a shared cache to another user.
+	// The response is caller-specific; never serve it from a shared cache.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Vary", "Cookie")
 	session := s.sessionFromRequest(r)
@@ -522,23 +495,17 @@ func (s *Server) handleIdentityValidation(w http.ResponseWriter, r *http.Request
 		user = s.store.GetUserByID(session.UserID)
 	}
 	if user == nil {
-		// Fail closed to the signed-out page, not back into a fresh
-		// authorization. The Shauth SSO validator reloads validation_url after a
-		// global provider logout and requires the browser to come to rest exactly
-		// at signed_out_url (validator/validate.mjs "verify Shauth provider logout
-		// revoked"): redirecting to /auth/shauth would silently re-enter the
-		// authorization flow, so the browser never reaches signed_out_url and the
-		// app reads as "remained authenticated". /ui/signed-out is this app's
-		// registered signed_out_url and also satisfies the anonymous fail-closed
-		// check, so it is correct in both the logged-out and never-logged-in cases.
+		// Fail closed to signed_out_url, not back into authorization: the Shauth
+		// SSO validator requires the browser to come to rest exactly at
+		// /ui/signed-out after a global provider logout. Redirecting to
+		// /auth/shauth would silently re-enter the flow and read as "remained
+		// authenticated". This path also covers the never-logged-in case.
 		http.Redirect(w, r, "/ui/signed-out", http.StatusFound)
 		return
 	}
-	// Render the signed-in identity with the data-testid markers the Shauth SSO
-	// validator asserts against (validator/validate.mjs assertValidationIdentity):
-	// username (the OIDC preferred_username -> our login), email, role, and the
-	// running release revision. Built with fmt on this small fragment only -- the
-	// page's inline CSS contains % and is composed via a literal marker replace.
+	// Render the identity with the data-testid markers the Shauth SSO validator
+	// asserts against. fmt is used on this small fragment only; the page's inline
+	// CSS contains % and is composed via a literal marker replace.
 	role := "developer"
 	if user.SiteAdmin {
 		role = "admin"
@@ -657,10 +624,8 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}
-	// Only redirect to a same-origin relative path. Anything else — an absolute
-	// URL, a protocol-relative //host, or a backslash trick — collapses to the
-	// app root, so a tampered stored ReturnTo can never become an open redirect
-	// to an attacker-controlled origin.
+	// Redirect only to a same-origin relative path; anything else collapses to
+	// the app root, so a tampered ReturnTo cannot become an open redirect.
 	redirectTarget := "/ui/"
 	if rt := pending.ReturnTo; strings.HasPrefix(rt, "/") && !strings.HasPrefix(rt, "//") && !strings.Contains(rt, "\\") {
 		redirectTarget = rt
@@ -668,12 +633,10 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectTarget, http.StatusFound)
 }
 
-// identityStateCookie names, paths, and secures the per-flow OAuth state cookie.
-// When the deployment is HTTPS it carries the __Host- prefix (Secure, Path=/,
-// no Domain), which prevents a sibling-subdomain or network attacker from
-// transplanting a server-signed state cookie into the victim's jar and logging
-// the victim in as the attacker. Plain-HTTP local development keeps the
-// unprefixed name because browsers reject an insecure __Host- cookie.
+// identityStateCookie builds the per-flow OAuth state cookie. Over HTTPS it
+// carries the __Host- prefix, preventing a sibling-subdomain or network attacker
+// from transplanting a signed state cookie into the victim's jar. Plain-HTTP
+// local development keeps the unprefixed name.
 func identityStateCookie(secure bool, state, value string, maxAge int, expires time.Time) *http.Cookie {
 	name := identityStateCookiePrefix + state
 	path := "/auth/"
@@ -681,11 +644,8 @@ func identityStateCookie(secure bool, state, value string, maxAge int, expires t
 		name = "__Host-" + name
 		path = "/" // __Host- requires Path=/
 	}
-	// Cookies are always Secure: browsers accept Secure cookies over
-	// http://localhost and http://127.0.0.1 (both are secure contexts), so local
-	// HTTP development still works, while any non-loopback deployment must use
-	// HTTPS to receive them. The __Host- prefix and Path=/ stay conditional
-	// because __Host- additionally requires an https:// origin.
+	// Always Secure (honored over localhost too); __Host- and Path=/ stay
+	// conditional because __Host- additionally requires an https:// origin.
 	return &http.Cookie{Name: name, Value: value, Path: path, MaxAge: maxAge, Expires: expires, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode}
 }
 
@@ -756,9 +716,8 @@ func (s *Server) consumeIdentityState(w http.ResponseWriter, r *http.Request, pr
 	return pending, nil
 }
 
-// githubExternalIssuer is the stable issuer for accounts brought in by the
-// GitHub OAuth flow. The subject is the GitHub user's numeric id, which is
-// immutable; the login is not.
+// githubExternalIssuer is the stable issuer for GitHub-OAuth accounts; the
+// subject is the immutable numeric id, not the mutable login.
 const githubExternalIssuer = "https://github.com"
 
 type githubIdentity struct {
@@ -766,9 +725,7 @@ type githubIdentity struct {
 	Login, Name, Email, AvatarURL string
 }
 
-// ExternalSubject returns the stable subject for this GitHub identity — the
-// numeric account id — or "" when the profile did not carry one, in which case
-// upsertExternalUser falls back to the username index.
+// ExternalSubject returns the numeric account id, or "" when absent.
 func (g githubIdentity) ExternalSubject() string {
 	if g.ID == 0 {
 		return ""
@@ -887,8 +844,8 @@ func githubTeamRoles(token, login string) (admin, developer bool, err error) {
 }
 
 func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
-	// Login CSRF: a cross-site form (e.g. enctype=text/plain smuggling a JSON
-	// body) could sign the victim's browser into an attacker's account.
+	// Login CSRF: a cross-site form could sign the victim's browser into an
+	// attacker's account.
 	if s.crossSiteBrowserPost(r) {
 		writeGHError(w, http.StatusForbidden, "cross-origin login denied")
 		return
@@ -896,9 +853,7 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Login    string `json:"login"`
 		Password string `json:"password"`
-		// OTP carries the second factor when the account has one enrolled. The
-		// page asks for it only after the server says it is required.
-		OTP string `json:"otp"`
+		OTP      string `json:"otp"`
 	}
 	if !decodeJSONBody(w, r, &request) {
 		return
@@ -908,9 +863,8 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "login mixes confusable scripts")
 		return
 	}
-	// A disallowed login and a wrong credential return the identical 401 so an
-	// anonymous caller cannot enumerate BLEEPHUB_ALLOWED_LOGINS membership from
-	// the status code.
+	// A disallowed login and a wrong credential return the identical 401, so the
+	// allowlist cannot be enumerated from the status code.
 	var user *store.User
 	if s.identity.loginAllowed(login) {
 		user = s.browserLoginUser(login, request.Password)
@@ -931,11 +885,10 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTokenLogin exchanges a user access token for an HttpOnly browser
-// session. The SPA must not retain a bearer credential in web storage: any
-// script executing in the origin could read it and use it outside the browser.
+// session, so the SPA need not retain a script-readable bearer credential.
 func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
-	// Same login-CSRF surface as the local form: exchanging a token mints a
-	// browser session cookie, so a foreign origin must not be able to drive it.
+	// Login-CSRF: exchanging a token mints a session cookie, so a foreign origin
+	// must not drive it.
 	if s.crossSiteBrowserPost(r) {
 		writeGHError(w, http.StatusForbidden, "cross-origin login denied")
 		return
@@ -956,17 +909,14 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "A user access token is required")
 		return
 	}
-	// A fine-grained PAT is deliberately narrow (specific repositories and
-	// permissions); a browser session carries the account's full authority.
-	// Exchanging one for the other would silently widen a scoped credential, so
-	// refuse it — the classic-PAT SPA flow is unaffected.
+	// A fine-grained PAT is narrow; a browser session carries full account
+	// authority. Refuse the exchange rather than silently widen the credential.
 	if pat != nil && pat.FineGrained {
 		writeGHError(w, http.StatusForbidden, "A fine-grained token cannot be exchanged for a browser session")
 		return
 	}
-	// A token exchange mints a full browser session, so it clears the same bar
-	// as a password sign-in: otherwise anyone holding a PAT walks past the
-	// second factor the account owner just enrolled.
+	// A token exchange mints a full session, so it clears the same second-factor
+	// bar as a password sign-in.
 	if s.requireSecondFactor(w, user, secondFactorFromRequest(r, "")) {
 		return
 	}
@@ -978,20 +928,16 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.fullUserJSON(user, s.baseURL(r)))
 }
 
-// errFederatedLogin marks a federated sign-in that must not provision or resolve
-// a local account. Callers surface it as a 403 without disclosing which of the
-// closed conditions applied, so it is not a login-enumeration oracle.
+// errFederatedLogin marks a refused federated sign-in. Callers surface it as a
+// 403 without disclosing which closed condition applied, so it is not an oracle.
 var errFederatedLogin = errors.New("federated login is not permitted on this instance")
 
-// upsertExternalUser resolves (or creates) the local account for a verified
-// federated identity. It resolves on the stable (issuer, subject) key first,
-// never the mutable provider username. Only the primary IdP (roleAuthoritative)
-// may then adopt a same-named LOCAL account — SSO taking ownership of the seeded
-// bootstrap account — and privileges always come from the role claim, so a
-// principal cannot escalate by claiming "admin": a developer-role login lands on
-// a non-SiteAdmin account regardless of what it adopted. A secondary provider,
-// and any account already bound to a different federated identity, are refused,
-// so no one can seize another's account (preserves AUTH-021).
+// upsertExternalUser resolves or creates the local account for a verified
+// federated identity, keyed on the stable (issuer, subject), never the mutable
+// username. Only the primary IdP (roleAuthoritative) may adopt a same-named
+// LOCAL account, and privileges always come from the role claim, so claiming a
+// privileged username cannot escalate. A secondary provider, or an account
+// already bound to a different federated identity, is refused (AUTH-021).
 func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarURL string, siteAdmin, roleAuthoritative bool) (*store.User, error) {
 	login, err := normalizeLogin(login)
 	if err != nil || login == "" {
@@ -1002,8 +948,8 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 	}
 	externalKey := store.ExternalIdentityKey(issuer, subject)
 	if externalKey == "" {
-		// Without a stable subject there is no safe federated key; adopting by
-		// username is exactly what must not happen, so fail closed.
+		// No stable subject means no safe federated key; fail closed rather than
+		// adopt by username.
 		return nil, errFederatedLogin
 	}
 	s.store.Mu.Lock()
@@ -1019,13 +965,10 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 		}
 		return user, nil
 	}
-	// No federated binding yet. Resolve a same-username account carefully. The
-	// primary IdP may adopt a purely LOCAL account (e.g. the seeded bootstrap
-	// admin) — that is SSO legitimately taking ownership of it — but privileges
-	// then come from the role claim below, not from the account being adopted,
-	// so a principal cannot escalate by claiming a privileged username. A
-	// non-primary provider, or an account that already belongs to a DIFFERENT
-	// federated identity, is refused: neither may seize an existing account.
+	// No federated binding yet. The primary IdP may adopt a purely LOCAL account
+	// (e.g. the seeded bootstrap admin), but privileges come from the role claim
+	// below, not the adopted account. A non-primary provider, or an account
+	// already bound to a different federated identity, is refused.
 	if existing := s.store.UserByLoginLocked(login); existing != nil {
 		if !roleAuthoritative || len(existing.ExternalIdentities) > 0 {
 			return nil, errFederatedLogin
@@ -1049,9 +992,8 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 	return user, nil
 }
 
-// bindExternalIdentityLocked records the (issuer, subject) binding on user and
-// indexes it. Callers hold st.mu. A binding already present is a no-op, so the
-// same provider re-authenticating does not accumulate duplicate entries.
+// bindExternalIdentityLocked records and indexes the (issuer, subject) binding;
+// callers hold st.mu. An already-present binding is a no-op.
 func (s *Server) bindExternalIdentityLocked(user *store.User, externalKey string) {
 	if externalKey == "" || user == nil {
 		return
@@ -1071,19 +1013,15 @@ func (s *Server) createBrowserSession(w http.ResponseWriter, r *http.Request, us
 	return s.createOIDCBrowserSession(w, r, user, store.LoginSession{ExpiresAt: time.Now().Add(12 * time.Hour)})
 }
 
-// createOIDCBrowserSession issues the browser session cookie.
-//
-// The CSRF token is drawn separately from the cookie value. Reusing the cookie
-// value made every page that prints an authenticity_token a disclosure of the
-// session identifier, which is the one thing HttpOnly exists to withhold.
+// createOIDCBrowserSession issues the browser session cookie. The CSRF token is
+// drawn separately from the cookie value, so a printed authenticity_token never
+// discloses the session identifier HttpOnly exists to withhold.
 func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request, user *store.User, session store.LoginSession) error {
 	if user == nil {
 		return errors.New("cannot issue a browser session for a nil user")
 	}
-	// Rotate the session on every successful authentication. A cookie value an
-	// attacker planted before credentials were verified (session fixation) is
-	// revoked the moment a real identity is established, and a privilege change
-	// is reflected immediately instead of lingering for the old session's TTL.
+	// Rotate on every successful authentication: a fixation cookie planted before
+	// credentials were verified is revoked once a real identity is established.
 	if cookie := s.sessionCookieFromRequest(r); cookie != nil {
 		if err := s.store.DeleteLoginSession(cookie.Value); err != nil {
 			return err
@@ -1103,18 +1041,15 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request
 	}
 	session.UserID = user.ID
 	session.CSRFToken = csrf
-	// The handle names the session in the account's "active sessions" list. It
-	// is drawn independently of the cookie value and of the storage key derived
-	// from it, so listing sessions never discloses a credential.
+	// The handle names the session in the "active sessions" list, drawn
+	// independently of the cookie value so listing never discloses a credential.
 	session.Handle = handle
 	session.CreatedAt = s.currentTime()
 	session.UserAgent = truncateSessionUserAgent(r.UserAgent())
 	session.SignedInIP = sessionClientIP(r)
-	// Signing in *is* a fresh re-authentication, so the new session starts
-	// inside the proof-of-presence window rather than being challenged again a
-	// moment after the credential was checked. The MFA half of the proof is
-	// claimed only when the account actually has a second factor, because that
-	// is the only case in which the sign-in verified one.
+	// Signing in is a fresh re-authentication, so the session starts inside the
+	// proof-of-presence window. The MFA half is claimed only when the account has
+	// a second factor, the only case the sign-in verified one.
 	session.SudoAt = session.CreatedAt
 	session.SudoMFA = s.store.TwoFactorEnabled(user.ID)
 	if session.ExpiresAt.IsZero() {
@@ -1124,20 +1059,17 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request
 		return err
 	}
 	secure := s.secureCookies(r)
-	// Secure is always set (honored over http://localhost too); the __Host-
-	// prefixed name is used only for https origins.
+	// Always Secure (honored over localhost too); __Host- name only for https.
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: id, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt})
 	return nil
 }
 
-// sessionUserAgentLimit bounds what the sessions list stores: a User-Agent is
-// attacker-controlled, and the list is not a place to accumulate unbounded
-// caller-supplied text.
+// sessionUserAgentLimit bounds the attacker-controlled User-Agent the sessions
+// list stores.
 const sessionUserAgentLimit = 200
 
 // truncateSessionUserAgent keeps the User-Agent short and free of control
-// characters, so it renders as a device description rather than smuggling
-// markup or newlines into the sessions list.
+// characters, so it cannot smuggle markup or newlines into the sessions list.
 func truncateSessionUserAgent(agent string) string {
 	cleaned := strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
@@ -1152,10 +1084,9 @@ func truncateSessionUserAgent(agent string) string {
 	return string(runes)
 }
 
-// sessionClientIP records where a session was established. It trusts a
-// forwarded client address only when the direct peer is loopback or private —
-// i.e. the request can only have come through our own reverse proxy — matching
-// the rate limiter's rule for the same header.
+// sessionClientIP records where a session was established, trusting a forwarded
+// address only when the direct peer is loopback or private (i.e. through our own
+// proxy), matching the rate limiter's rule.
 func sessionClientIP(r *http.Request) string {
 	host := r.RemoteAddr
 	if parsed, _, err := net.SplitHostPort(host); err == nil {
@@ -1171,9 +1102,9 @@ func sessionClientIP(r *http.Request) string {
 	return host
 }
 
-// secondFactorFromRequest reads the one-time code a sign-in presented. GitHub's
-// own API carried it in X-GitHub-OTP, which is the only channel a token
-// exchange has; the JSON and form logins may also supply it in the body.
+// secondFactorFromRequest reads the one-time code from the request body or, as
+// GitHub's API does, the X-GitHub-OTP header (the only channel a token exchange
+// has).
 func secondFactorFromRequest(r *http.Request, bodyCode string) string {
 	if bodyCode != "" {
 		return bodyCode
@@ -1181,14 +1112,9 @@ func secondFactorFromRequest(r *http.Request, bodyCode string) string {
 	return strings.TrimSpace(r.Header.Get("X-GitHub-OTP"))
 }
 
-// requireSecondFactor enforces the account's second factor at sign-in. It
-// reports true when it has already written the response, meaning the caller
-// must not issue a session.
-//
-// Without this, enrolling would protect nothing: a second factor that never
-// gates authentication is decoration. The 401 carries GitHub's own
-// `X-GitHub-OTP: required; app` header so a client can tell "wrong password"
-// from "needs a code".
+// requireSecondFactor enforces the account's second factor at sign-in, reporting
+// true when it has already written the response (caller must not issue a
+// session). The 401 carries GitHub's X-GitHub-OTP: required; app header.
 func (s *Server) requireSecondFactor(w http.ResponseWriter, user *store.User, code string) bool {
 	if user == nil || !s.store.TwoFactorEnabled(user.ID) {
 		return false
@@ -1198,8 +1124,7 @@ func (s *Server) requireSecondFactor(w http.ResponseWriter, user *store.User, co
 		writeGHError(w, http.StatusUnauthorized, "Must specify two-factor authentication OTP code.")
 		return true
 	}
-	// A method the enterprise disallows must not authenticate a sign-in either:
-	// banning it only in the settings pages would leave the front door open.
+	// An enterprise-disallowed method must not authenticate a sign-in either.
 	result, _ := s.store.VerifySecondFactorExcluding(user.ID, code, s.currentTime(),
 		s.enterpriseDisallowedTwoFactorMethods(user))
 	if result == store.SecurityMethodDisallowed {
@@ -1220,9 +1145,8 @@ func (s *Server) externalAuthCallback(provider string) string {
 	return strings.TrimRight(s.externalURL, "/") + "/auth/" + provider + "/callback"
 }
 
-// requestOrigin reconstructs the origin a browser computes for this request,
-// so same-origin POSTs pass the logout Origin check even when
-// BLEEPHUB_EXTERNAL_URL is unset and URLs derive from the request Host.
+// requestOrigin reconstructs the origin a browser computes for this request, so
+// same-origin POSTs pass the Origin check when BLEEPHUB_EXTERNAL_URL is unset.
 func requestOrigin(r *http.Request) string {
 	scheme := "http"
 	if isSecureRequest(r) {
@@ -1231,16 +1155,11 @@ func requestOrigin(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-// crossSiteBrowserPost reports whether a POST to a browser-session
-// state-changing endpoint arrived from a foreign origin. Browsers attach
-// Origin to every POST — same-origin and cross-origin alike — so a
-// present-but-foreign Origin (including the "null" a sandboxed iframe
-// produces) is a cross-site request forgery; an absent Origin is a
-// non-browser client, which carries no ambient cookie jar to forge.
-// SameSite=Lax on the session cookies covers requests that need the
-// victim's session; this check also kills the vectors that don't — login
-// CSRF (posting attacker credentials sets a fresh cookie) and forced
-// logout (clearing cookies needs no cookie).
+// crossSiteBrowserPost reports whether a state-changing POST arrived from a
+// foreign origin. A present-but-foreign Origin (including a sandboxed iframe's
+// "null") is CSRF; an absent Origin is a non-browser client with no cookie jar
+// to forge. This covers the vectors SameSite=Lax does not: login CSRF and forced
+// logout.
 func (s *Server) crossSiteBrowserPost(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	return origin != "" && origin != s.externalURL && origin != requestOrigin(r)
@@ -1259,10 +1178,9 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logoutTarget := ""
-	// Only start a global RP-initiated logout when THIS session was itself
-	// established through Shauth. A user who signed in locally (or via a token)
-	// must not have their shared Shauth SSO session — used by every other
-	// relying party — torn down by signing out of this app.
+	// Start a global RP-initiated logout only when THIS session came through
+	// Shauth; a local or token sign-in must not tear down the shared SSO session
+	// every other relying party uses.
 	if s.identity.shauthConfigured() && session != nil && session.OIDCProvider == "shauth" && session.OIDCIDToken != "" {
 		provider, err := oidc.NewProvider(s.oidcClientContext(r.Context()), s.identity.shauthIssuer)
 		if err != nil {
@@ -1294,8 +1212,8 @@ func (s *Server) handleIdentityLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIdentitySignedOut(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		// Forced-logout CSRF: clearing the victim's cookies needs no cookie of
-		// its own, so SameSite alone does not cover this POST.
+		// Forced-logout CSRF: clearing cookies needs none of its own, so SameSite
+		// does not cover this POST.
 		if s.crossSiteBrowserPost(r) {
 			writeGHError(w, http.StatusForbidden, "cross-origin sign-out denied")
 			return
@@ -1369,8 +1287,8 @@ main{width:min(31rem,100%);overflow:hidden;border:1px solid color-mix(in srgb,va
 
 func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	// The OP renders this endpoint in an iframe during front-channel logout,
-	// so the issuer origin must be allowed to frame it alongside 'self'.
+	// The OP renders this in an iframe during front-channel logout, so the issuer
+	// origin must be allowed to frame it alongside 'self'.
 	frameAncestors := "'self'"
 	if s.identity.shauthConfigured() {
 		if issuer, err := url.Parse(s.identity.shauthIssuer); err == nil && issuer.Scheme != "" && issuer.Host != "" {
@@ -1379,11 +1297,10 @@ func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.R
 	}
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors "+frameAncestors)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The OIDC front-channel logout spec delivers this as a GET in an
-	// OP-rendered iframe, so revocation cannot be gated on POST. The iss must
-	// match the configured issuer exactly and the sid names the OP session —
-	// unguessable to a cross-site attacker — so a forged request cannot revoke
-	// anything (issue #112).
+	// The spec delivers this as a GET in an OP-rendered iframe, so revocation
+	// cannot be gated on POST. Requiring iss == the configured issuer and a
+	// present (unguessable) sid keeps a forged request from revoking anything
+	// (issue #112).
 	if s.identity.shauthConfigured() && r.URL.Query().Get("iss") == s.identity.shauthIssuer && r.URL.Query().Get("sid") != "" {
 		if err := s.store.DeleteLoginSessionsForOIDC("shauth", s.identity.shauthIssuer, r.URL.Query().Get("sid"), ""); err != nil {
 			s.logger.Error().Err(err).Msg("revoke browser sessions from Shauth front-channel logout")
@@ -1395,9 +1312,8 @@ func (s *Server) handleShauthFrontChannelLogout(w http.ResponseWriter, r *http.R
 	_, _ = w.Write([]byte(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signed out</title></head><body></body></html>`))
 }
 
-// maxBackChannelLogoutBytes caps the OIDC back-channel logout POST. The body is
-// a single form field holding a logout JWT; kilobytes at most (registered in
-// requestBodyLimits, CORE-009).
+// maxBackChannelLogoutBytes caps the back-channel logout POST — a single logout
+// JWT, kilobytes at most (registered in requestBodyLimits, CORE-009).
 const maxBackChannelLogoutBytes = 64 << 10 // 64 KiB
 
 func (s *Server) handleShauthBackChannelLogout(w http.ResponseWriter, r *http.Request) {

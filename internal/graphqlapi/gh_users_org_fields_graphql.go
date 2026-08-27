@@ -1,20 +1,10 @@
 package graphqlapi
 
-// Completion of the User and Organization account surfaces: the members
-// GitHub declares that bleephub already holds data for but had not yet exposed
-// over GraphQL — a user's status, lists, packages, starred repositories and
-// recent projects; an organization's packages, member statuses, issue types,
-// verified domains, enterprise owners and recent projects.
-//
-// The program-membership flags (isBountyHunter, isCampusExpert, …) and the
-// Copilot-agent channel ids answer a truthful constant: this instance is not
-// enrolled in those GitHub programs, so a real GitHub server not enrolled in
-// them answers exactly the same false / null. They are wired as real
-// resolvers, not stubs.
-//
-// Fields whose backing model does not exist on this instance are omitted
-// entirely rather than emitted as a fabricated empty connection; the package
-// report enumerates them.
+// Completion of the User and Organization account surfaces: members bleephub
+// holds data for but had not exposed over GraphQL. Program-membership flags and
+// Copilot-agent channels answer a truthful false/null (this instance is not
+// enrolled), as real GitHub would. Fields with no backing model are omitted
+// rather than faked as an empty connection.
 
 import (
 	"context"
@@ -27,10 +17,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// addUserCompletionFields installs the previously-missing members of User. It
-// is called at the end of addUserProfileFields, by which point every type it
-// names (UserStatus, UserList, Repository, ProjectV2, Hovercard) is built or
-// lazily buildable.
+// addUserCompletionFields installs the previously-missing members of User.
+// Called at the end of addUserProfileFields.
 func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 	userType := types.user
 
@@ -52,10 +40,8 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return false, nil },
 	})
 
-	// The Copilot coding-agent notification channels are the ids of the pub/sub
-	// channels a Copilot agent session publishes to. This instance runs no
-	// Copilot agent, so an account has no such channel — the same null a GitHub
-	// account without an active agent session answers.
+	// This instance runs no Copilot agent, so these channel ids are null — the
+	// same null a GitHub account without an active agent session answers.
 	nullChannel := func() *graphql.Field {
 		return &graphql.Field{
 			Type:    graphql.String,
@@ -69,17 +55,14 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		userType.AddFieldConfig(name, nullChannel())
 	}
 
-	// pronouns is a free-text profile member; bleephub's account profile does
-	// not model it, so every account truthfully has none.
+	// bleephub's account profile does not model pronouns.
 	userType.AddFieldConfig("pronouns", &graphql.Field{
 		Type:    graphql.String,
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
 	})
 
-	// organizationVerifiedDomainEmails is the caller's addresses at a domain the
-	// named organization has verified. Domain verification on this instance is
-	// enterprise-scoped, so no organization verifies a domain of its own and
-	// the answer is truthfully empty.
+	// Domain verification is enterprise-scoped here, so no organization verifies
+	// a domain of its own and the answer is empty.
 	userType.AddFieldConfig("organizationVerifiedDomainEmails", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(graphql.String))),
 		Args: graphql.FieldConfigArgument{
@@ -107,9 +90,8 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 			"primarySubjectId": &graphql.ArgumentConfig{Type: graphql.ID},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// bleephub computes no relationship contexts between accounts, so a
-			// hovercard carries the empty context list the Hovercard type's own
-			// resolver returns.
+			// bleephub computes no inter-account relationship contexts, so
+			// the hovercard carries an empty context list.
 			if _, err := s.userFromSource(p.Source); err != nil {
 				return nil, err
 			}
@@ -139,9 +121,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// suggestedListNames is the set of list names GitHub proposes an account
-	// create. bleephub proposes none of its own, so the list is truthfully
-	// empty rather than a fabricated set.
+	// bleephub proposes no list names, so the list is empty.
 	userType.AddFieldConfig("suggestedListNames", &graphql.Field{
 		Type:    graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(s.gqlUserListSuggestionType()))),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return []interface{}{}, nil },
@@ -157,10 +137,8 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 	}))
 
 	// --- starredRepositories ---------------------------------------------
-	// StarredRepositoryEdge carries an extra starredAt: DateTime! — the instant
-	// the user starred each repo, recorded per (repo, user) by StarRepo. The
-	// edge source is {node, cursor}; the resolver below stashes the real time on
-	// the node as `_starredAt`, falling back to the repo's createdAt.
+	// StarredRepositoryEdge carries an extra starredAt. The resolver stashes the
+	// real time on the node as `_starredAt`, falling back to the repo's createdAt.
 	starredConnection := s.accountConnectionType(types, "StarredRepository", types.repository, true, graphql.Fields{
 		"starredAt": &graphql.Field{
 			Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime")),
@@ -230,10 +208,9 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 	})
 
 	// --- savedReplies -----------------------------------------------------
-	// A saved reply is a per-account snippet the compose box offers. bleephub
-	// persists none — no route or mutation creates one — so the connection is
-	// truthfully empty. Reported as needing a SavedReply model + its
-	// createSavedReply/updateSavedReply/deleteSavedReply mutations.
+	// bleephub persists no saved replies (no route or mutation creates one), so
+	// the connection is empty. Reported as needing a SavedReply model and its
+	// create/update/delete mutations.
 	userType.AddFieldConfig("savedReplies", &graphql.Field{
 		Type: s.accountConnectionType(types, "SavedReply", s.gqlSavedReplyType(), false, nil),
 		Args: connectionArgs(nil),
@@ -246,9 +223,6 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 	})
 
 	// --- contributionsCollection -----------------------------------------
-	// A real aggregate of the account's issues, pull requests, reviews, repos
-	// and commits over a time window (default the trailing year), with the
-	// contribution calendar computed from the same data.
 	contributionsDateTime := s.graphQLStringScalar("DateTime")
 	userType.AddFieldConfig("contributionsCollection", &graphql.Field{
 		Type: graphql.NewNonNull(s.gqlContributionsCollectionType()),
@@ -275,8 +249,6 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 	})
 
 	// --- repositoryDiscussions / repositoryDiscussionComments ------------
-	// The discussions and discussion comments this account authored, across
-	// every repository the viewer may read.
 	if discussionConn := s.namedObject("DiscussionConnection"); discussionConn != nil {
 		userType.AddFieldConfig("repositoryDiscussions", &graphql.Field{
 			Type: graphql.NewNonNull(discussionConn),
@@ -311,8 +283,8 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 	}
 }
 
-// ownerRepositoryDiscussionItems aggregates the discussions across an owner's
-// own readable repositories, for Organization.repositoryDiscussions.
+// ownerRepositoryDiscussionItems aggregates discussions across an owner's
+// readable repositories, for Organization.repositoryDiscussions.
 func (s *Resolver) ownerRepositoryDiscussionItems(ctx context.Context, login string) []gqlConnItem {
 	repos := s.visibleRepos(ctx, s.store.ListReposByOwner(login))
 	var items []gqlConnItem
@@ -328,8 +300,8 @@ func (s *Resolver) ownerRepositoryDiscussionItems(ctx context.Context, login str
 	return items
 }
 
-// ownerRepositoryDiscussionCommentItems aggregates the comments across an
-// owner's own readable repositories, for Organization.repositoryDiscussionComments.
+// ownerRepositoryDiscussionCommentItems aggregates comments across an owner's
+// readable repositories, for Organization.repositoryDiscussionComments.
 func (s *Resolver) ownerRepositoryDiscussionCommentItems(ctx context.Context, login string) []gqlConnItem {
 	repos := s.visibleRepos(ctx, s.store.ListReposByOwner(login))
 	var items []gqlConnItem
@@ -347,8 +319,8 @@ func (s *Resolver) ownerRepositoryDiscussionCommentItems(ctx context.Context, lo
 	return items
 }
 
-// userAuthoredDiscussionItems aggregates the discussions authored by a user
-// across every readable repository, for User.repositoryDiscussions.
+// userAuthoredDiscussionItems aggregates the discussions a user authored across
+// every readable repository, for User.repositoryDiscussions.
 func (s *Resolver) userAuthoredDiscussionItems(ctx context.Context, userID int) []gqlConnItem {
 	repos := s.visibleRepos(ctx, s.store.ListEveryRepo())
 	var items []gqlConnItem
@@ -367,8 +339,8 @@ func (s *Resolver) userAuthoredDiscussionItems(ctx context.Context, userID int) 
 	return items
 }
 
-// userAuthoredDiscussionCommentItems aggregates the discussion comments
-// authored by a user, for User.repositoryDiscussionComments.
+// userAuthoredDiscussionCommentItems aggregates the discussion comments a user
+// authored, for User.repositoryDiscussionComments.
 func (s *Resolver) userAuthoredDiscussionCommentItems(ctx context.Context, userID int) []gqlConnItem {
 	repos := s.visibleRepos(ctx, s.store.ListEveryRepo())
 	var items []gqlConnItem
@@ -390,8 +362,7 @@ func (s *Resolver) userAuthoredDiscussionCommentItems(ctx context.Context, userI
 }
 
 // parseContributionTime reads an optional RFC3339 DateTime argument, returning
-// the zero time when absent so contributionsCollectionSource applies its
-// trailing-year default.
+// the zero time when absent (contributionsCollectionSource then defaults it).
 func parseContributionTime(arg interface{}) time.Time {
 	raw, ok := arg.(string)
 	if !ok || raw == "" {
@@ -404,7 +375,7 @@ func parseContributionTime(arg interface{}) time.Time {
 }
 
 // addOrganizationCompletionFields installs the previously-missing members of
-// Organization. Called at the end of addOrganizationProfileFields.
+// Organization, at the end of addOrganizationProfileFields.
 func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 	orgType := types.organization
 	dateTime := s.graphQLStringScalar("DateTime")
@@ -476,11 +447,9 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 	})
 
 	// --- pinnedIssueFields ------------------------------------------------
-	// The issue fields the organization pins to the top of its issue-field
-	// picker, over the same IssueFieldsConnection Repository.issueFields uses.
 	// bleephub models no per-org pinned-field ordering, so the connection is
-	// truthfully empty. (Organization.issueFields is skipped: GitHub types it as
-	// [IssueFieldCreateOrUpdateInput!] — an input type in output position that
+	// empty. (Organization.issueFields is skipped: GitHub types it as
+	// [IssueFieldCreateOrUpdateInput!], an input type in output position that
 	// graphql-go rejects.)
 	if fieldUnion := s.graphqlTypes.issueFieldsUnion; fieldUnion != nil {
 		orgType.AddFieldConfig("pinnedIssueFields", &graphql.Field{
@@ -504,8 +473,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// A verified domain is the organization's network identity; only an
-			// owner may read the list, matching the REST domains surface.
+			// Only an owner reads the domain list, matching the REST surface.
 			if !s.viewerCanAdminAccount(p.Context, org.Login) {
 				return nil, nil
 			}
@@ -577,12 +545,9 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 	})
 
 	// --- announcementBanner ----------------------------------------------
-	// bleephub records an organization announcement's text, expiry and
-	// dismissibility, but not the creation instant AnnouncementBanner.createdAt
-	// requires as a non-null member, so the banner cannot be rendered without
-	// fabricating that timestamp. The type is declared and the field answers
-	// null (no renderable banner) rather than inventing a createdAt. Reported
-	// as needing a createdAt on store.EnterpriseAnnouncement.
+	// bleephub records no createdAt, which AnnouncementBanner requires non-null,
+	// so the field answers null rather than fabricating a timestamp. Reported as
+	// needing a createdAt on store.EnterpriseAnnouncement.
 	orgType.AddFieldConfig("announcementBanner", &graphql.Field{
 		Type: s.gqlAnnouncementBannerType(dateTime),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -594,8 +559,8 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 	})
 
 	// --- auditLog ---------------------------------------------------------
-	// The organization's audit trail, served from the real admin_audit_log
-	// store and gated to owners inside organizationAuditLogConnection.
+	// Served from admin_audit_log, gated to owners inside
+	// organizationAuditLogConnection.
 	auditOrder := s.mutationInput("AuditLogOrder", graphql.InputObjectConfigFieldMap{
 		"field":     &graphql.InputObjectFieldConfig{Type: s.graphQLEnum("AuditLogOrderField", "CREATED_AT")},
 		"direction": &graphql.InputObjectFieldConfig{Type: s.sharedEnum("OrderDirection", "ASC", "DESC")},
@@ -629,8 +594,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// A mannequin is an import artifact of the organization; only an
-			// owner sees the placeholders awaiting attribution.
+			// Only an owner sees the import placeholders awaiting attribution.
 			if !s.viewerCanAdminAccount(p.Context, org.Login) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
@@ -649,9 +613,6 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 	})
 
 	// --- repositoryDiscussions / repositoryDiscussionComments ------------
-	// The discussions and discussion comments across the organization's own
-	// repositories, over the shared Discussion/DiscussionComment connections
-	// the discussion family assembled earlier.
 	if discussionConn := s.namedObject("DiscussionConnection"); discussionConn != nil {
 		orgType.AddFieldConfig("repositoryDiscussions", &graphql.Field{
 			Type: graphql.NewNonNull(discussionConn),
@@ -686,10 +647,8 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 	}
 
 	// --- innersourceVulnerabilities --------------------------------------
-	// The vulnerabilities disclosed across the organization's internal-source
-	// repositories. bleephub runs no cross-repository innersource scan, so the
-	// connection is truthfully empty over the shared SecurityVulnerability
-	// connection rather than a fabricated list.
+	// bleephub runs no cross-repository innersource scan, so the connection is
+	// empty.
 	if vulnConn := s.namedObject("SecurityVulnerabilityConnection"); vulnConn != nil {
 		orgType.AddFieldConfig("innersourceVulnerabilities", &graphql.Field{
 			Type: graphql.NewNonNull(vulnConn),
@@ -706,10 +665,8 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 	}
 
 	// --- samlIdentityProvider --------------------------------------------
-	// SAML on this instance is bound at the enterprise, never at the
-	// organization, so no organization carries an identity provider of its own.
-	// The type is declared and the field answers null. Reported as needing an
-	// organization-scoped identity-provider binding.
+	// SAML is bound at the enterprise, never the organization, so the field
+	// answers null. Reported as needing an org-scoped identity-provider binding.
 	orgType.AddFieldConfig("samlIdentityProvider", &graphql.Field{
 		Type: s.gqlOrganizationIdentityProviderType(types),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -721,9 +678,9 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 	})
 }
 
-// organizationRoleForOwner reports an enterprise owner's relationship to one
-// organization: OWNER when they administer it, DIRECT_MEMBER when they belong
-// to it, UNAFFILIATED otherwise — GitHub's RoleInOrganization.
+// organizationRoleForOwner is GitHub's RoleInOrganization for an enterprise
+// owner: OWNER if they administer it, DIRECT_MEMBER if they belong, else
+// UNAFFILIATED.
 func organizationRoleForOwner(st *store.Store, org *store.Org, owner *store.User) string {
 	membership := st.GetMembership(org.Login, owner.ID)
 	if membership == nil || membership.State != store.MembershipStateActive {
@@ -735,10 +692,9 @@ func organizationRoleForOwner(st *store.Store, org *store.Org, owner *store.User
 	return "DIRECT_MEMBER"
 }
 
-// addRecentProjectsField wires recentProjects on an account. GitHub's
-// recentProjects are the ProjectV2s an account has recently touched; bleephub
-// answers the account's own projects, the set it can truthfully attribute,
-// through the same visibility-filtered connection projectsV2 uses.
+// addRecentProjectsField wires recentProjects. GitHub returns recently-touched
+// projects; bleephub answers the account's own projects, through the same
+// visibility-filtered connection projectsV2 uses.
 func (s *Resolver) addRecentProjectsField(owner *graphql.Object, ownerType string, ownerID func(graphql.ResolveParams) (int, error)) {
 	connection := s.gqlConnectionType("ProjectV2", s.projectV2GraphQLTypes())
 	owner.AddFieldConfig("recentProjects", &graphql.Field{
@@ -755,13 +711,10 @@ func (s *Resolver) addRecentProjectsField(owner *graphql.Object, ownerType strin
 }
 
 // packagesField builds the shared packages connection resolver for User and
-// Organization. A package's owner key is the account login (store.Package sets
-// OwnerKey to the login for User- and Organization-owned packages).
+// Organization. A package's owner key is the account login.
 func (s *Resolver) packagesField(types *accountSurfaceTypes, ownerLogin func(graphql.ResolveParams) (string, error)) *graphql.Field {
 	connection := s.accountConnectionType(types, "Package", s.gqlPackageType(), false, nil)
-	// Repository.packages (gh_final_residue_graphql.go) reuses this one
-	// PackageConnection instance rather than minting a duplicate; stash it so
-	// the residue installer can reach it by GitHub name.
+	// Stash so Repository.packages can reuse this one PackageConnection instance.
 	s.stashNamedObject(connection)
 	return &graphql.Field{
 		Type: graphql.NewNonNull(connection),
@@ -781,9 +734,8 @@ func (s *Resolver) packagesField(types *accountSurfaceTypes, ownerLogin func(gra
 				}
 				kind, ok := graphqlPackageTypeName(pkg.PackageType)
 				if !ok {
-					// A container package has no GitHub GraphQL PackageType enum
-					// member, so it is not representable on this surface (the
-					// REST packages API serves it instead).
+					// Container packages have no PackageType enum member; the REST
+					// packages API serves them instead.
 					continue
 				}
 				items = append(items, gqlConnItem{
@@ -796,9 +748,8 @@ func (s *Resolver) packagesField(types *accountSurfaceTypes, ownerLogin func(gra
 	}
 }
 
-// gqlPackageType is GitHub's Package object, the subset bleephub's package
-// store records. Memoized through the mutation-object registry so User.packages
-// and Organization.packages name one type.
+// gqlPackageType is the subset of GitHub's Package object bleephub records,
+// memoized so User.packages and Organization.packages name one type.
 func (s *Resolver) gqlPackageType() *graphql.Object {
 	return s.mutationObject("Package", graphql.Fields{
 		"id":          &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
@@ -813,7 +764,7 @@ func (s *Resolver) gqlPackageTypeEnum() *graphql.Enum {
 }
 
 // graphqlPackageTypeName maps a stored package type onto GitHub's PackageType
-// enum, reporting false for one with no enum member.
+// enum, false for one with no enum member.
 func graphqlPackageTypeName(stored string) (string, bool) {
 	switch strings.ToLower(stored) {
 	case "npm":

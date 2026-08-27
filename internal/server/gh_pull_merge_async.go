@@ -16,9 +16,8 @@ const (
 	MergeAsyncFailed   store.MergeAsyncStatus = "failed"
 )
 
-// renderMergeAsyncResult shapes a record into the pull-request-merge-async-result
-// payload: a status plus a details object whose fields depend on the outcome
-// (the OpenAPI schema models details as a oneOf of three shapes).
+// renderMergeAsyncResult shapes a record into the merge-async-result payload.
+// details is a oneOf of three shapes keyed on the outcome.
 func renderMergeAsyncResult(rec *store.PullRequestMergeAsync) map[string]interface{} {
 	var details map[string]interface{}
 	switch rec.Status {
@@ -46,10 +45,8 @@ func renderMergeAsyncResult(rec *store.PullRequestMergeAsync) map[string]interfa
 	}
 }
 
-// handleMergePullRequestAsync implements
-// PUT /repos/{owner}/{repo}/pulls/{number}/merge-async — it validates and
-// performs the merge, stores the terminal result under a fresh UUID, and
-// returns an "enqueued" acknowledgement the caller can poll.
+// handleMergePullRequestAsync performs the merge, stores the terminal result
+// under a fresh UUID, and returns an "enqueued" acknowledgement to poll.
 func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -95,7 +92,6 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 		mergeMethod = "default"
 	}
 
-	// Already merged: report the merged terminal state (200).
 	if pr.State == "MERGED" {
 		writeJSON(w, http.StatusOK, renderMergeAsyncResult(&store.PullRequestMergeAsync{
 			Status:  MergeAsyncMerged,
@@ -109,7 +105,7 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Expected-head guard: merging against a stale head SHA is a 409.
+	// Merging against a stale head SHA is a 409.
 	if req.SHA != "" {
 		if head := s.prHeadSha(repo, pr); head != "" && head != req.SHA {
 			writeGHError(w, http.StatusConflict, "Head branch was modified. Review and try the merge again.")
@@ -168,8 +164,8 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 	}
 	s.store.RecordPullRequestMergeAsync(rec)
 
-	// Acknowledge as enqueued with the poll UUID (202); the merge itself is
-	// already durable and a poll will report "merged".
+	// Acknowledge 202 "enqueued" with the poll UUID; the merge is already
+	// durable, so a poll reports "merged".
 	writeJSON(w, http.StatusAccepted, renderMergeAsyncResult(&store.PullRequestMergeAsync{
 		UUID:            rec.UUID,
 		Status:          MergeAsyncEnqueued,
@@ -180,9 +176,8 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 	}))
 }
 
-// handleGetMergePullRequestAsyncResult implements
-// GET /repos/{owner}/{repo}/pulls/{number}/merge-async/{uuid} — it returns the
-// stored terminal result for a previously enqueued async merge.
+// handleGetMergePullRequestAsyncResult returns the stored terminal result for a
+// previously enqueued async merge.
 func (s *Server) handleGetMergePullRequestAsyncResult(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")

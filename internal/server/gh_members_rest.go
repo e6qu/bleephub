@@ -19,8 +19,7 @@ func (s *Server) registerGHMemberRoutes() {
 	s.route("PUT /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleSetOrgMembership))
 	s.route("DELETE /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleRemoveOrgMembership))
 
-	// The authenticated user's own memberships (the invitee side of the
-	// PUT-membership invitation flow: list, inspect, accept).
+	// The authenticated user's own memberships (invitee side: list, inspect, accept).
 	s.route("GET /api/v3/user/memberships/orgs", s.handleListAuthUserMemberships)
 	s.route("GET /api/v3/user/memberships/orgs/{org}", s.handleGetAuthUserMembership)
 	s.route("PATCH /api/v3/user/memberships/orgs/{org}", s.handleUpdateAuthUserMembership)
@@ -34,11 +33,8 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Real GitHub only exposes the full member list to authenticated members of
-	// the org; a non-member (or anonymous caller) sees just the publicized
-	// members. This mirrors the behaviour of GET /orgs/{org}/members vs
-	// /orgs/{org}/public_members.
-	// GitHub documents ?role (all|admin|member) and ?filter (all|2fa_disabled).
+	// Non-members and anonymous callers see only publicized members.
+	// ?role (all|admin|member) and ?filter (all|2fa_disabled) per GitHub.
 	role := r.URL.Query().Get("role")
 	if role == "" {
 		role = "all"
@@ -71,10 +67,8 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
-// viewerCanReadOrgMembers preserves the public fallback for anonymous and
-// unrelated human callers while allowing an installation holding Members:read
-// to see the full organization-member collection. The App's synthetic bot is
-// intentionally not inserted into the organization's membership table.
+// viewerCanReadOrgMembers reports whether the caller may see the full member
+// list: an org member, or an installation holding Members:read.
 func (s *Server) viewerCanReadOrgMembers(ctx context.Context, orgLogin string) bool {
 	if ghInstallationTokenFromContext(ctx) != nil {
 		return s.credentialGrantsAccount(ctx, store.OrganizationAccount, orgLogin, store.ScopeMembers, store.PermRead)
@@ -138,13 +132,10 @@ func (s *Server) handleSetOrgMembership(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// An enterprise that requires two-factor authentication does not admit a
-	// person who has not enrolled a second factor into one of its
-	// organizations.
+	// An enterprise that requires 2FA rejects a member who has not enrolled a second factor.
 	if s.enterpriseRequiresTwoFactor(org) && !s.store.TwoFactorEnabled(target.ID) {
 		writeGHError(w, http.StatusUnprocessableEntity,
-			// target.Login is the store's own spelling of the account, not the
-			// request's, so no request string reaches the response body.
+			// target.Login is the store's spelling, not the request's, so no request string reaches the body.
 			"Validation Failed: "+target.Login+" is not enrolled in two-factor authentication, which an enterprise policy requires.")
 		return
 	}
@@ -164,10 +155,9 @@ func (s *Server) handleSetOrgMembership(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Real GitHub semantics: adding a NEW member creates a pending
-	// invitation the invitee accepts via PATCH /user/memberships/orgs/{org};
-	// updating an existing membership only changes the role. Self-PUT by an
-	// existing member keeps the active state.
+	// Adding a new member creates a pending invitation (accepted via PATCH
+	// /user/memberships/orgs/{org}); updating an existing one only changes the
+	// role. Self-PUT by an existing member stays active.
 	existing := s.store.GetMembership(orgLogin, target.ID)
 	state := store.MembershipStatePending
 	if existing != nil {
@@ -227,10 +217,9 @@ func (s *Server) handleRemoveOrgMembership(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleCheckOrgMember — GET /api/v3/orgs/{org}/members/{username}.
-// 204 when the user is an active member, 404 otherwise. (Real GitHub also
-// has a 302 variant when the REQUESTER is not a member; bleephub's
-// requesters are unscoped so the direct answer is always available.)
+// handleCheckOrgMember — GET /api/v3/orgs/{org}/members/{username}. 204 for an
+// active member, 404 otherwise. (GitHub's 302 non-member-requester variant does
+// not apply: bleephub requesters are unscoped.)
 func (s *Server) handleCheckOrgMember(w http.ResponseWriter, r *http.Request) {
 	if ghUserFromContext(r.Context()) == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -255,8 +244,7 @@ func (s *Server) handleCheckOrgMember(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRemoveOrgMember — DELETE /api/v3/orgs/{org}/members/{username}.
-// Removes the member (and their team memberships) like the memberships
-// DELETE, but 404s when the user isn't a member at all.
+// Removes the member and their team memberships; 404s for a non-member.
 func (s *Server) handleRemoveOrgMember(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -287,8 +275,7 @@ func (s *Server) handleRemoveOrgMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListPublicOrgMembers — GET /api/v3/orgs/{org}/public_members.
-// Anonymous-readable, like the real endpoint.
+// handleListPublicOrgMembers — GET /api/v3/orgs/{org}/public_members. Anonymous-readable.
 func (s *Server) handleListPublicOrgMembers(w http.ResponseWriter, r *http.Request) {
 	orgLogin := r.PathValue("org")
 	if s.store.GetOrg(orgLogin) == nil {
@@ -324,7 +311,7 @@ func (s *Server) handleCheckPublicOrgMember(w http.ResponseWriter, r *http.Reque
 }
 
 // handlePublicizeOrgMembership — PUT /api/v3/orgs/{org}/public_members/{username}.
-// Real GitHub only lets users publicize THEIR OWN membership (403 otherwise).
+// Only the user's own membership may be publicized (403 otherwise).
 func (s *Server) handlePublicizeOrgMembership(w http.ResponseWriter, r *http.Request) {
 	s.setMembershipVisibility(w, r, true)
 }
@@ -361,8 +348,7 @@ func (s *Server) setMembershipVisibility(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListAuthUserMemberships — GET /api/v3/user/memberships/orgs.
-// Supports the documented `state` filter (active | pending).
+// handleListAuthUserMemberships — GET /api/v3/user/memberships/orgs. Filters on ?state (active | pending).
 func (s *Server) handleListAuthUserMemberships(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -411,8 +397,7 @@ func (s *Server) handleGetAuthUserMembership(w http.ResponseWriter, r *http.Requ
 }
 
 // handleUpdateAuthUserMembership — PATCH /api/v3/user/memberships/orgs/{org}.
-// The accept half of the invitation flow: the only documented body is
-// {"state":"active"}, turning a pending membership active.
+// The accept half of the invitation flow: {"state":"active"} turns a pending membership active.
 func (s *Server) handleUpdateAuthUserMembership(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -447,9 +432,7 @@ func (s *Server) handleUpdateAuthUserMembership(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, membershipToJSON(m, user, org, s.baseURL(r)))
 }
 
-// membershipToJSON converts a Membership to the GitHub
-// `org-membership` shape: organization is the organization-simple
-// object and user the simple-user object.
+// membershipToJSON renders a Membership as the GitHub `org-membership` shape.
 func membershipToJSON(m *store.Membership, user *store.User, org *store.Org, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"url":              baseURL + "/api/v3/orgs/" + org.Login + "/memberships/" + user.Login,

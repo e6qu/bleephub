@@ -20,11 +20,9 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// AdminToken returns the seeded admin token, which MUST be supplied via
-// BLEEPHUB_ADMIN_TOKEN. There is no default: the token is a credential, so the
-// sim fails loudly rather than seeding a guessable value (and a hardcoded value
-// would be GitHub-PAT-shaped, tripping secret scanners). Consumers and test
-// harnesses set the env var explicitly.
+// AdminToken returns the seeded admin token from BLEEPHUB_ADMIN_TOKEN. The token
+// is a credential with no default: the sim fails loudly rather than seed a
+// guessable value.
 func AdminToken() string {
 	v := os.Getenv("BLEEPHUB_ADMIN_TOKEN")
 	if v == "" {
@@ -33,13 +31,11 @@ func AdminToken() string {
 	return v
 }
 
-// LoadJSON is a thin wrapper to keep error wrapping uniform across persistence loaders.
 func LoadJSON(raw []byte, v interface{}) error { return json.Unmarshal(raw, v) }
 
-// ReserveRunID hands out the next workflow run ID and persists the
-// counter. Artifacts persist on disk keyed by their run ID, so the
-// sequence must never restart from 1 after a reload — a new run #1
-// would inherit the previous epoch's run-1 artifacts.
+// ReserveRunID hands out the next workflow run ID and persists the counter.
+// Artifacts are keyed by run ID, so the sequence must never restart from 1 after
+// a reload, or run #1 would inherit the prior epoch's artifacts.
 func (st *Store) ReserveRunID() int {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -55,14 +51,11 @@ func (st *Store) ReserveRunID() int {
 	return id
 }
 
-// reserveGlobalID hands out the next value of a durable global-entity ID
-// counter, mirroring ReserveRunID. Core entities (orgs, users, repos, teams,
-// issues) previously minted their global ID from the in-memory NextX field
-// alone, so two dqlite replicas could mint the same ID and the second write
-// would silently overwrite the first. Routing allocation through
-// AllocateCounterValue makes the sequence agree across replicas. The in-memory
-// NextX (rebuilt as max+1 on load) supplies the minimum, so single-node and
-// in-memory stores keep their sequential NextX++ semantics. Caller holds st.Mu.
+// ReserveGlobalID hands out the next durable global-entity ID. Routing through
+// AllocateCounterValue makes the sequence agree across dqlite replicas, which
+// minting from the in-memory NextX alone did not (two replicas could mint the
+// same ID and silently overwrite). NextX (max+1 on load) supplies the minimum.
+// Caller holds st.Mu.
 func (st *Store) ReserveGlobalID(name string, next *int) int {
 	id := *next
 	if st.Persist != nil {
@@ -76,9 +69,8 @@ func (st *Store) ReserveGlobalID(name string, next *int) int {
 	return id
 }
 
-// ReserveLogID returns an object-store-safe log identifier. The counter is
-// durable so a service replacement cannot reuse an existing logs/{id} key and
-// overwrite a completed job's bytes.
+// ReserveLogID returns a durable object-store-safe log identifier, so a service
+// replacement cannot reuse a logs/{id} key and overwrite a completed job's bytes.
 func (st *Store) ReserveLogID() int {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -94,9 +86,8 @@ func (st *Store) ReserveLogID() int {
 	return id
 }
 
-// ReserveWorkflowRunNumber returns the next number for one workflow file.
-// GitHub numbers each workflow independently; the run ID remains the global
-// identifier. The durable counter also makes concurrent replicas agree.
+// ReserveWorkflowRunNumber returns the next number for one workflow file. GitHub
+// numbers each workflow independently; the durable counter also makes replicas agree.
 func (st *Store) ReserveWorkflowRunNumber(wf *Workflow) int {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -156,59 +147,46 @@ type User struct {
 	SiteAdmin    bool                 `json:"site_admin"`
 	Suspended    bool                 `json:"suspended,omitempty"`
 	StarredRepos map[string]time.Time `json:"starred_repos,omitempty"`
-	// PinnedRepos is the user's ordered list of pinned repository full names
-	// (max 6), shown on the profile Overview. GitHub exposes pins only over
-	// GraphQL, so the simulator serves them from a /ui-data endpoint.
+	// PinnedRepos is the user's ordered pinned-repo full names (max 6); a web-only
+	// feature served from /ui-data.
 	PinnedRepos []string `json:"pinned_repos,omitempty"`
-	// Status is the profile status message, emoji and availability flag the
-	// changeUserStatus mutation sets. GitHub keeps one per account, so it
-	// travels with the account rather than in a table of its own.
+	// Status is the profile status the changeUserStatus mutation sets; one per account.
 	Status    *UserStatus `json:"status,omitempty"`
 	CreatedAt time.Time   `json:"created_at"`
 	UpdatedAt time.Time   `json:"updated_at"`
-	// Account security + notification preferences. GitHub's 2FA and notification
-	// settings are web-only (no REST), so the simulator serves them from a
-	// browser-only /ui-data endpoint rather than an invented /api/v3 path.
-	//
-	// TwoFactor holds the TOTP secret and recovery-code digests. It is store
-	// state only: no read endpoint returns it, and the account-security helpers
-	// in account_security.go are the only way to reach it.
+	// Account security + notification preferences are web-only (no REST), served
+	// from /ui-data. TwoFactor holds the TOTP secret and recovery-code digests;
+	// it is store-only state reachable only through account_security.go.
 	TwoFactor               *TwoFactorConfig         `json:"two_factor,omitempty"`
 	NotificationPreferences *NotificationPreferences `json:"notification_preferences,omitempty"`
-	// user-surface profile fields (PATCH /user), email addresses, and
-	// account-level interaction limits.
-	Blog                   string      `json:"blog,omitempty"`
-	Company                string      `json:"company,omitempty"`
-	Location               string      `json:"location,omitempty"`
-	TwitterUsername        string      `json:"twitter_username,omitempty"`
-	Hireable               *bool       `json:"hireable,omitempty"`
-	Emails                 []UserEmail `json:"emails,omitempty"`
-	InteractionLimit       string      `json:"interaction_limit,omitempty"`
-	InteractionLimitExpiry *time.Time  `json:"interaction_limit_expiry,omitempty"`
-	PasswordHash           string      `json:"password_hash,omitempty"`
-	// ExternalIdentities binds the account to the stable (issuer, subject)
-	// pairs its federated providers guarantee, so a mutable provider username
-	// cannot re-key the account and one provider cannot overwrite another's
-	// grant by logging in last.
+	Blog                    string                   `json:"blog,omitempty"`
+	Company                 string                   `json:"company,omitempty"`
+	Location                string                   `json:"location,omitempty"`
+	TwitterUsername         string                   `json:"twitter_username,omitempty"`
+	Hireable                *bool                    `json:"hireable,omitempty"`
+	Emails                  []UserEmail              `json:"emails,omitempty"`
+	InteractionLimit        string                   `json:"interaction_limit,omitempty"`
+	InteractionLimitExpiry  *time.Time               `json:"interaction_limit_expiry,omitempty"`
+	PasswordHash            string                   `json:"password_hash,omitempty"`
+	// ExternalIdentities binds the account to the stable (issuer, subject) pairs
+	// its providers guarantee, so a mutable username cannot re-key the account and
+	// one provider cannot overwrite another's grant.
 	ExternalIdentities []ExternalIdentity `json:"external_identities,omitempty"`
-	// SCIMManagedByOrg names the organization whose SCIM provisioning owns this
-	// account, when set. Only that org's SCIM may mutate the account's global
-	// login/name/email; an account provisioned outside SCIM (empty) is never
-	// adopted or rewritten by an org's SCIM, which would otherwise let any org
-	// owner rename or re-home an arbitrary global account.
+	// SCIMManagedByOrg names the org whose SCIM owns this account, if any. Only
+	// that org's SCIM may mutate the account's global login/name/email; an account
+	// provisioned outside SCIM (empty) is never adopted, or any org owner could
+	// rename or re-home an arbitrary global account.
 	SCIMManagedByOrg string `json:"scim_managed_by_org,omitempty"`
 }
 
-// ExternalIdentity is one federated provider's stable handle on an account:
-// the issuer and subject pair the provider guarantees immutable, unlike the
-// mutable username it also presents.
+// ExternalIdentity is one federated provider's stable (issuer, subject) handle
+// on an account, unlike the mutable username it also presents.
 type ExternalIdentity struct {
 	Issuer  string `json:"issuer"`
 	Subject string `json:"subject"`
 }
 
-// UserEmail is one email address on a user account, matching GitHub's
-// `email` schema (primary/verified/visibility).
+// UserEmail is one email address on a user account (GitHub's `email` schema).
 type UserEmail struct {
 	Email      string `json:"email"`
 	Primary    bool   `json:"primary"`
@@ -218,9 +196,8 @@ type UserEmail struct {
 
 // Token represents a personal access token.
 type Token struct {
-	// Value is returned exactly once when a token is minted and is retained
-	// only by the live process that minted it. Persistence keys tokens by a
-	// keyed digest and never serializes the bearer credential itself.
+	// Value is returned once at mint and held only by the minting process;
+	// persistence keys tokens by a digest and never serializes the credential.
 	Value               string `json:"-"`
 	UserID              int
 	Scopes              string
@@ -233,9 +210,8 @@ type Token struct {
 	RepositoryIDs       []int             `json:"repository_ids,omitempty"`
 	Permissions         OrgPATPermissions `json:"permissions,omitempty"`
 	ExpiresAt           *time.Time        `json:"expires_at,omitempty"`
-	// Impersonation marks a GHES site-admin impersonation OAuth token. GHES
-	// permits at most one active impersonation authorization per user and
-	// exposes it through /admin/users/{username}/authorizations.
+	// Impersonation marks a GHES site-admin impersonation OAuth token; GHES
+	// permits at most one active impersonation authorization per user.
 	Impersonation bool   `json:"impersonation,omitempty"`
 	Note          string `json:"note,omitempty"`
 	NoteURL       string `json:"note_url,omitempty"`
@@ -249,13 +225,10 @@ func (st *Store) tokenMapKey(value string) string {
 	return st.Persist.opaqueLookupKey("tokens", value)
 }
 
-// tokenByValueLocked resolves a presented bearer without retaining or
-// persisting a reversible copy. Callers must hold at least st.Mu.RLock.
-//
-// It looks up only under the derived digest key. The presented value is never
-// probed raw: mint and restore both index the token by tokenMapKey(value), so
-// a raw probe would only ever match a stored digest — i.e. it would let the
-// persisted row key be presented as the credential.
+// tokenByValueLocked resolves a presented bearer under the derived digest key
+// only, never a raw probe: mint and restore both index by tokenMapKey(value), so
+// a raw probe would let a persisted row key be presented as the credential.
+// Callers hold at least st.Mu.RLock.
 func (st *Store) tokenByValueLocked(value string) (*Token, string) {
 	key := st.tokenMapKey(value)
 	return st.Tokens[key], key
@@ -275,9 +248,8 @@ func (st *Store) DeleteTokenMapKeyLocked(mapKey string) {
 	}
 }
 
-// deleteTokenMapKeyBatchLocked stages a PAT token removal into batch so a
-// multi-credential revoke commits every deleted token in one transaction
-// (STORE-001/002). Callers hold st.Mu.
+// deleteTokenMapKeyBatchLocked stages a token removal into batch so a
+// multi-credential revoke commits in one transaction (STORE-001/002). Callers hold st.Mu.
 func (st *Store) deleteTokenMapKeyBatchLocked(batch *PersistBatch, mapKey string) {
 	delete(st.Tokens, mapKey)
 	batch.Delete("tokens", mapKey)
@@ -308,10 +280,8 @@ type RepoAutolink struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-// WikiPage is a single markup page in a repository's wiki. It is not stored:
-// every field is derived from the `<repo>.wiki.git` repository, which is the
-// wiki — a page is a file in it, and this struct is the projection of that file
-// the browser UI reads. See store_wiki_git.go.
+// WikiPage projects a page from the `<repo>.wiki.git` repository, which is the
+// wiki. It is not stored; every field is derived. See store_wiki_git.go.
 type WikiPage struct {
 	Slug      string    `json:"slug"`
 	Title     string    `json:"title"`
@@ -336,9 +306,8 @@ type RepoInvitation struct {
 	Status       string    `json:"status"`
 }
 
-// LoginSession is a browser session created by POST /login.
-// It binds a session cookie to a user and carries the CSRF token
-// embedded in the OAuth authorize consent form.
+// LoginSession is a browser session created by POST /login, binding a session
+// cookie to a user and carrying the OAuth-consent CSRF token.
 type LoginSession struct {
 	UserID       int
 	CSRFToken    string
@@ -348,23 +317,18 @@ type LoginSession struct {
 	OIDCSubject  string
 	OIDCSID      string
 	OIDCIDToken  string
-	// Handle is a public, non-secret name for the session, so the account's
-	// "active sessions" list can identify and revoke one without ever exposing
-	// the cookie value or the storage key derived from it.
+	// Handle is a public, non-secret session name, so the "active sessions" list
+	// can identify and revoke a session without exposing the cookie or its key.
 	Handle string
-	// CreatedAt, UserAgent and SignedInIP are what the sessions list shows: when
-	// and from where each session was established.
+	// CreatedAt, UserAgent and SignedInIP are what the sessions list shows.
 	CreatedAt  time.Time
 	UserAgent  string
 	SignedInIP string
-	// SudoAt is when this session last satisfied a proof-of-presence challenge
-	// (GitHub's "sudo mode"). It is per session, not per account, so proving
-	// presence in one browser does not unlock a sensitive operation in another.
-	// Zero means the session has never been elevated.
+	// SudoAt is when this session last passed a proof-of-presence challenge
+	// (sudo mode); per session, not per account. Zero means never elevated.
 	SudoAt time.Time
-	// SudoMFA records whether that proof carried a second factor. GitHub's MFA
-	// proof-of-presence requirement is satisfied only by a proof that did, so a
-	// password re-entry cannot be mistaken for an MFA challenge later.
+	// SudoMFA records whether that proof carried a second factor, so a password
+	// re-entry is not later mistaken for an MFA challenge.
 	SudoMFA bool
 }
 
@@ -384,9 +348,8 @@ type GistHistory struct {
 	CommittedAt  time.Time      `json:"committed_at"`
 	ChangeStatus map[string]int `json:"change_status"`
 	URL          string         `json:"url"`
-	// Files is the file snapshot at this revision, used to reconstruct the gist
-	// as it existed at a given sha (GET /gists/{id}/{sha}). It is internal state,
-	// not part of the wire history shape (which gistToJSON builds explicitly).
+	// Files is the snapshot at this revision, reconstructing the gist at a given
+	// sha (GET /gists/{id}/{sha}); internal state, not part of the wire shape.
 	Files map[string]*GistFile `json:"files,omitempty"`
 }
 
@@ -655,41 +618,35 @@ type Store struct {
 	CodespaceRuntimeDelete       func(*Codespace) error                                                 `json:"-"`
 	CodespaceWorkspacePrepare    func(string, *Repo, gitStorage.Storer, string) (string, func(), error) `json:"-"`
 	RepoStorageOpen              func(context.Context, string) (gitStorage.Storer, error)               `json:"-"`
-	// repoPrefixCopy/repoPrefixDelete are the slow object-store prefix moves the
-	// S3 rename path runs outside the store lock (STORE-013). Nil in production
-	// (the real S3 helpers run); a test injects a blocking copy to prove the
-	// lock is released and to force the slow path without a live S3 backend.
+	// repoPrefixCopy/repoPrefixDelete run the S3 rename's slow prefix moves
+	// outside the store lock (STORE-013). Nil in production; a test injects a
+	// blocking copy to prove the lock is released.
 	RepoPrefixCopy       func(oldFull, newFull string) error `json:"-"`
 	RepoPrefixDelete     func(fullName string) error         `json:"-"`
 	PendingRepoCreations map[string]bool                     `json:"-"`
-	// Folded secondary indexes for GitHub-parity case-insensitive resolution
-	// (see name_fold.go): FoldName(key) → canonical key of the primary map.
-	// Maintained by the Index*/Unindex*Locked helpers at every create, rename,
-	// transfer, delete and load of the corresponding primary map.
+	// Folded case-insensitive secondary indexes (name_fold.go): FoldName(key) →
+	// canonical primary-map key. Maintained by Index*/Unindex*Locked on every
+	// create, rename, transfer, delete and load.
 	foldedUserLogins map[string]string // FoldName(login) → UsersByLogin key
 	foldedOrgLogins  map[string]string // FoldName(login) → OrgsByLogin key
 	foldedRepoNames  map[string]string // FoldName("owner/name") → ReposByName key
 	replicaRefreshMu sync.Mutex
-	// mu guards the Store's maps and counters. sync.RWMutex read locks are
-	// NOT reentrant: once a writer queues on Lock, new RLock calls block, so
-	// a goroutine that re-acquires mu while already holding it deadlocks.
-	// The invariants that keep that impossible:
-	//   - Public Store methods and JSON serializers (RepoToJSON, issueToJSON,
-	//     CanReadRepoAsUser, …) acquire mu themselves and must never be called with
-	//     mu held.
-	//   - Helpers named xxxLocked (and helpers documented "callers hold
-	//     st.Mu") never acquire mu; they run under the caller's lock.
-	//   - Handlers and store methods that need both a coherent scan AND
-	//     rendered JSON gather rows under one RLock, release, then render
-	//     with the self-locking serializers (see deriveActivityEvents).
-	//   - Lock order between mutexes: Store.Mu is acquired before any
-	//     sub-store mutex (Misc.Mu, Reactions.Mu, Releases.Mu, persistence),
-	//     never the reverse.
+	// mu guards the Store's maps and counters. RWMutex read locks are NOT
+	// reentrant: once a writer queues on Lock, new RLock calls block, so
+	// re-acquiring mu while holding it deadlocks. The invariants that prevent it:
+	//   - Public Store methods and JSON serializers acquire mu themselves and
+	//     must never be called with mu held.
+	//   - xxxLocked helpers (and those documented "callers hold st.Mu") never
+	//     acquire mu; they run under the caller's lock.
+	//   - Code needing both a coherent scan AND rendered JSON gathers rows under
+	//     one RLock, releases, then renders with the self-locking serializers.
+	//   - Lock order: Store.Mu before any sub-store mutex (Misc.Mu, Reactions.Mu,
+	//     Releases.Mu, persistence), never the reverse.
 	Mu       sync.RWMutex     `json:"-"`
 	ClockMu  sync.RWMutex     `json:"-"`
 	ClockNow func() time.Time `json:"-"`
-	// apiInsightsMu guards APIRequestRecords/NextAPIRequestID so recording
-	// every API request never contends on the main store lock.
+	// apiInsightsMu guards APIRequestRecords/NextAPIRequestID so request recording
+	// never contends on the main store lock.
 	apiInsightsMu sync.RWMutex
 	// enterprises
 	EnterpriseTeams                    map[int]*EnterpriseTeam
@@ -700,9 +657,8 @@ type Store struct {
 	NextEnterpriseTeamID               int
 	NextEnterpriseCodeSecurityConfigID int
 
-	// enterprise accounts (store_enterprise_accounts.go). Everything here is
-	// keyed by enterprise id so no read can cross from one enterprise to
-	// another.
+	// enterprise accounts (store_enterprise_accounts.go), keyed by enterprise id
+	// so no read crosses between enterprises.
 	Enterprises           map[int]*Enterprise
 	EnterprisesBySlug     map[string]*Enterprise           // lower-cased slug → enterprise
 	EnterpriseMemberships map[string]*EnterpriseMembership // "<enterpriseID>/<userID>" → membership
@@ -881,12 +837,10 @@ type Store struct {
 
 	// --- Actions hot-path indexes (actions_indexes.go) ---
 	//
-	// All of these are unexported on purpose: the replica-refresh field copy
-	// skips unexported fields, so a snapshot swap can never smuggle stale
-	// pointers in through them. jobsByPlanID/jobsByRequestID/planScopes/
-	// planIDByScope mirror the replica-local Jobs map; workflowsByRunID and the
-	// two concurrency-group indexes mirror the durable Workflows map and are
-	// rebuilt wherever Workflows is reloaded (load, replica refresh).
+	// Unexported on purpose: the replica-refresh field copy skips unexported
+	// fields, so a snapshot swap can never smuggle stale pointers through them.
+	// They mirror the Jobs and Workflows maps and are rebuilt wherever those
+	// reload (load, replica refresh).
 	JobsByPlanID                map[string]*Job                       `json:"-"` // Job.PlanID → job
 	jobsByRequestID             map[int64]*Job                        // Job.RequestID → job
 	PlanScopes                  map[string]planScope                  `json:"-"` // Job.PlanID → plan scope identity (survives Message GC)
@@ -985,9 +939,8 @@ type TaskAgentMessage struct {
 	MessageType string `json:"messageType"`
 	IV          string `json:"iv,omitempty"`
 	Body        string `json:"body"`
-	// Labels carries the job's runs-on requirements for broker routing;
-	// JobID links the envelope to its engine job so delivery can record
-	// which agent took it. Neither is serialized to the runner.
+	// Labels carries the job's runs-on requirements for broker routing; JobID
+	// links the envelope to its engine job. Neither is serialized to the runner.
 	Labels []string `json:"-"`
 	JobID  string   `json:"-"`
 }
@@ -1003,10 +956,9 @@ type Job struct {
 	Message     string    `json:"-"`      // JSON-encoded job request message (secret-bearing; cleared at run finalization)
 	LockedUntil time.Time `json:"lockedUntil"`
 	AgentID     int       `json:"agentId"`
-	// CompletedAt is the retirement stamp for the janitor: set when the runner
-	// reports completion or when the owning run finalizes, whichever comes
-	// first. runnerTokenTTL after it, no valid credential can address this job
-	// any more and its replica-local state is swept (actions_indexes.go).
+	// CompletedAt is the janitor's retirement stamp: set when the runner reports
+	// completion or the run finalizes, whichever first. runnerTokenTTL later, no
+	// credential can address the job and its replica-local state is swept.
 	CompletedAt time.Time `json:"-"`
 }
 
@@ -1379,35 +1331,29 @@ func NewStore() *Store {
 	store.Sponsors = NewSponsorsStore(store.CurrentTime)
 	store.MarketplaceProfiles = NewMarketplaceProfileStore(store.CurrentTime)
 	store.CopilotPolicies = NewCopilotPolicyStore()
-	// GitHub's Marketplace taxonomy exists on every instance, persisted or
-	// not: MarketplaceListing.primaryCategory is non-null, so a listing
-	// always needs a category to point at.
+	// A listing's primaryCategory is non-null, so the taxonomy must exist on
+	// every instance for a listing to point at.
 	if err := store.MarketplaceProfiles.SeedDefaultCategories(); err != nil {
 		panic(fmt.Sprintf("seed marketplace categories: %v", err))
 	}
 	return store
 }
 
-// SetPersistence wires a Persistence layer onto the Store. Call once at
-// startup before any concurrent access; subsequent Create/Update/Delete
-// mutations will write through to the underlying SQLite db.
+// SetPersistence wires a Persistence layer onto the Store. Call once at startup
+// before concurrent access; mutations then write through to SQLite. When p is
+// non-nil it also loads existing rows. Idempotent.
 //
-// If persist is non-nil, this also loads existing rows from disk into the
-// in-memory maps. Idempotent — safe to call against an empty database.
-//
-// invariant: open-failure must be caught at the persistence-open
-// site (MustNewPersistence) so the operator gets a fail-loud signal
-// before we even get here.
+// invariant: open-failure is caught at MustNewPersistence, so the operator gets
+// a fail-loud signal before reaching here.
 func (st *Store) SetPersistence(p *Persistence) error {
 	if p == nil {
 		return nil
 	}
 	if !p.OwnedExclusively() {
 		st.wirePersistence(p)
-		// A dqlite peer may be writing while this replica starts. Use the same
-		// before/after revision-stable reconciler as request-time refreshes;
-		// otherwise startup could bless a cross-bucket partial snapshot as the
-		// newest revision and never reload it.
+		// A dqlite peer may be writing as this replica starts; use the
+		// revision-stable reconciler so startup never blesses a cross-bucket
+		// partial snapshot as newest and then never reloads it.
 		if err := st.refreshFromPersistence(true); err != nil {
 			return err
 		}
@@ -1448,34 +1394,25 @@ func (st *Store) wirePersistence(p *Persistence) {
 	st.MarketplaceProfiles.Persist = p
 	st.CopilotPolicies.Persist = p
 	st.Mu.Unlock()
-	// Object-store git bytes have no advisory locking of their own; the durable
-	// store is what every replica already shares, so it is what arbitrates
-	// concurrent ref updates.
+	// Object-store git bytes have no advisory locking of their own; the shared
+	// durable store arbitrates concurrent ref updates.
 	if gitstore.IsS3GitStorage() {
 		gitstore.SetGitObjectLocker(p)
 	}
 }
 
-// loadFromPersistence repopulates the in-memory maps from disk.
-//
-// The loadBucket registrations below are the authoritative durable-state
-// inventory.
-//
-// Agent connections and ephemeral service codes deliberately stay in memory.
-// Browser sessions are durable because browser authentication must survive
-// service replacement and requests may reach any replica.
+// loadFromPersistence repopulates the in-memory maps from disk. The loadBucket
+// registrations below are the authoritative durable-state inventory. Agent
+// connections and ephemeral codes stay in memory; browser sessions are durable
+// because auth must survive service replacement and reach any replica.
 
-// maxParallelStorageOpen bounds the restart-time git-storage open fan-out. The
-// open is I/O-bound (filesystem or S3), so a modest concurrency collapses
-// restart latency without swamping the backend.
+// maxParallelStorageOpen bounds the restart-time git-storage open fan-out; the
+// open is I/O-bound, so modest concurrency collapses restart latency.
 const maxParallelStorageOpen = 16
 
 // openRepoStoragesConcurrently reopens every repo's git storage in parallel and
-// assigns the handles once they are all ready. The repo records are already in
-// the store maps; only the storage handles remain (STORE-054). Each worker
-// writes a distinct result index and the handles are consumed on the calling
-// goroutine after the workers join, so st.GitStorages is mutated only here,
-// single-threaded and lock-free.
+// assigns the handles after the workers join (STORE-054); st.GitStorages is
+// mutated only here, single-threaded and lock-free.
 func (st *Store) openRepoStoragesConcurrently(fullNames []string) error {
 	if len(fullNames) == 0 {
 		return nil
@@ -1511,18 +1448,16 @@ func (st *Store) loadFromPersistence() error {
 	if st.Persist == nil {
 		return nil
 	}
-	// Deletion intents are read first: they explain rows that would otherwise
-	// look like corruption, and they are what lets an interrupted cascade be
-	// finished rather than left as a permanent boot failure.
+	// Read deletion intents first: they explain rows that would otherwise look
+	// like corruption and let an interrupted cascade finish rather than fail boot.
 	pendingDeletions, err := st.listPendingDeletions()
 	if err != nil {
 		return err
 	}
 	orphanedRepoRows := NewPersistBatch(st.Persist)
 	var orphanedRepoNames []string
-	// Git-storage handles are opened after the record load, concurrently: the
-	// per-repo open is filesystem/S3 I/O, so a serial loop makes restart
-	// latency scale with the repository count (STORE-054).
+	// Git-storage handles open concurrently after the record load; per-repo I/O
+	// makes a serial loop scale restart latency with repo count (STORE-054).
 	var reposToOpen []string
 	if err := st.loadBucket("users", func(raw []byte) error {
 		var u User
@@ -1749,10 +1684,9 @@ func (st *Store) loadFromPersistence() error {
 		case "Organization":
 			org := st.Orgs[r.OwnerID]
 			if org == nil {
-				// An organization delete that was interrupted after the
-				// organization row went away leaves its repositories behind.
-				// Without the recorded intent this is indistinguishable from
-				// corruption and every later boot fails on the same row.
+				// An org delete interrupted after the org row went away leaves its
+				// repos behind; without the recorded intent this looks like
+				// corruption and fails every later boot.
 				if _, deleting := pendingDeletions[PendingOrgDeletionKey(ownerLogin)]; deleting {
 					orphanedRepoRows.Delete("repos", strconv.Itoa(r.ID))
 					orphanedRepoNames = append(orphanedRepoNames, r.FullName)
@@ -1777,9 +1711,7 @@ func (st *Store) loadFromPersistence() error {
 		if r.ID >= st.NextRepo {
 			st.NextRepo = r.ID + 1
 		}
-		// Defer opening (or creating) this repo's git storage to the concurrent
-		// pass below so git operations work immediately after restart without a
-		// serial per-repo I/O wait here.
+		// Defer opening this repo's git storage to the concurrent pass below.
 		reposToOpen = append(reposToOpen, r.FullName)
 		return nil
 	}); err != nil {
@@ -1803,7 +1735,6 @@ func (st *Store) loadFromPersistence() error {
 			return err
 		}
 		st.Teams[t.ID] = &t
-		// Rebuild TeamsBySlug by looking up the org.
 		if org := st.Orgs[t.OrgID]; org != nil {
 			st.TeamsBySlug[TeamSlugKey(org.Login, t.Slug)] = &t
 		}
@@ -1933,10 +1864,9 @@ func (st *Store) loadFromPersistence() error {
 		return err
 	}
 
-	// Runs that were mid-flight at shutdown are only this replica's to cancel
-	// when this replica owns the database outright. Against a shared quorum the
-	// run may still be executing on a live peer, and cancelling it here would
-	// kill another replica's work every time this one starts.
+	// Only cancel mid-flight runs when this replica owns the database outright;
+	// against a shared quorum the run may still execute on a live peer, and
+	// cancelling here would kill its work on every start.
 	adoptRuns := st.Persist.OwnedExclusively()
 	cancelledRuns := NewPersistBatch(st.Persist)
 
@@ -4203,12 +4133,9 @@ func (st *Store) loadFromPersistence() error {
 			return err
 		}
 		// A codespace persisted as "Provisioning" is an orphan of an interrupted
-		// creation: reserveCodespace commits the durable record before the
-		// container is started, so a crash in that window leaves the record in
-		// "Provisioning" with no container — and no container survives a restart.
-		// Reconcile it to "Shutdown", the resumable stopped state whose start
-		// path re-provisions, so a crashed creation self-heals on boot instead of
-		// stranding the codespace in a state it can never leave (STORE-041).
+		// creation (the record commits before the container starts, and no
+		// container survives a restart). Reconcile it to "Shutdown" so a crashed
+		// creation self-heals on boot via the resumable start path (STORE-041).
 		if cs.State == "Provisioning" {
 			cs.State = "Shutdown"
 			cs.UpdatedAt = st.CurrentTime()
@@ -4224,8 +4151,7 @@ func (st *Store) loadFromPersistence() error {
 		return err
 	}
 	if len(interruptedCodespaces) > 0 {
-		// One transaction: the reconciled states are durable before boot
-		// completes, so the heal is not re-done (and not lost) on the next start.
+		// One transaction: the reconciled states are durable before boot completes.
 		batch := NewPersistBatch(st.Persist)
 		for _, cs := range interruptedCodespaces {
 			batch.Put("codespaces", strconv.Itoa(cs.ID), cs)
@@ -4270,18 +4196,15 @@ func (st *Store) loadFromPersistence() error {
 	}
 	st.persistenceRevision = revision
 
-	// The Workflows map was just repopulated from disk; the derived run-id and
-	// concurrency-group indexes must be recomputed from it.
+	// Recompute the run-id and concurrency-group indexes from the reloaded Workflows.
 	st.rebuildWorkflowIndexesLocked()
 
 	return nil
 }
 
-// PendingDeletionsBucket records that a cascading delete has started. The
-// intent is committed before any bytes are destroyed and removed in the same
-// transaction as the last metadata row, so a delete interrupted anywhere in
-// between is finished on the next start instead of leaving a repository or
-// organization half-removed.
+// PendingDeletionsBucket records that a cascading delete has started. The intent
+// commits before any bytes are destroyed and clears with the last metadata row,
+// so a delete interrupted between is finished on the next start.
 const PendingDeletionsBucket = "pending_deletions"
 
 type PendingDeletion struct {
@@ -4310,11 +4233,9 @@ func PendingOrgDeletionKey(login string) string { return "org:" + login }
 
 func PendingUserDeletionKey(login string) string { return "user:" + login }
 
-// PendingRenamesBucket records a repository rename whose slow object-store
-// prefix copy runs outside the store lock (STORE-013). The intent survives from
-// just before the copy until the old prefix has been purged, so a crash at any
-// point is recoverable: if the metadata already moved to `To`, the leftover
-// `From` prefix is purged; if it did not, the partial `To` copy is purged.
+// PendingRenamesBucket records a repository rename whose slow object-store prefix
+// copy runs outside the store lock (STORE-013). On crash recovery: if metadata
+// moved to `To`, purge the leftover `From`; if not, purge the partial `To` copy.
 const PendingRenamesBucket = "pending_renames"
 
 type PendingRename struct {
@@ -4341,9 +4262,9 @@ func (st *Store) listPendingDeletions() (map[string]PendingDeletion, error) {
 	return out, nil
 }
 
-// finishInterruptedDeletions completes every cascade that a previous process
-// started but did not finish. It runs after loading, without the store lock,
-// so it can reuse the same delete paths a request would take.
+// finishInterruptedDeletions completes every cascade a previous process left
+// unfinished, running after load without the store lock so it reuses the request
+// delete paths.
 func (st *Store) finishInterruptedDeletions() error {
 	pending, err := st.listPendingDeletions()
 	if err != nil {
@@ -4390,11 +4311,9 @@ func (st *Store) finishInterruptedDeletions() error {
 	return nil
 }
 
-// finishInterruptedRenames purges the object-store prefix a rename left behind
-// after a crash (STORE-013). It runs at startup after loading, without the
-// store lock. If the metadata already moved to the new name, the stale old
-// prefix is purged; otherwise the partial new-prefix copy — which nothing
-// references — is purged. Either way the intent is cleared.
+// finishInterruptedRenames purges the object-store prefix a crashed rename left
+// behind (STORE-013): the stale old prefix if the metadata already moved,
+// otherwise the partial new-prefix copy. Either way the intent is cleared.
 func (st *Store) finishInterruptedRenames() error {
 	rows, err := st.Persist.List(PendingRenamesBucket)
 	if err != nil {
@@ -4427,11 +4346,10 @@ func (st *Store) finishInterruptedRenames() error {
 	return nil
 }
 
-// idCounterBuckets maps each record bucket whose keys are allocated
-// identifiers to the counter that hands out the next one. Rebuilding a counter
-// from the surviving rows alone re-issues a deleted entity's identifier, and
-// for attestations, package files and artifact records that identifier is also
-// the object-store key — the new entity would inherit the deleted one's bytes.
+// idCounterBuckets maps each id-keyed record bucket to its next-id counter.
+// Rebuilding from surviving rows alone re-issues a deleted entity's id — and for
+// attestations, package files and artifact records that id is also the
+// object-store key, so the new entity would inherit the deleted one's bytes.
 func (st *Store) idCounterBuckets() map[string]*int {
 	return map[string]*int{
 		"apps":                             &st.NextAppID,
@@ -4540,10 +4458,9 @@ func (st *Store) loadBucket(name string, fn func(raw []byte) error) error {
 	return nil
 }
 
-// forgetExternalIdentitiesLocked removes every (issuer, subject) binding for
-// user from the federated-identity index. Callers hold st.Mu. It mirrors the
-// UsersByLogin cleanup at each site that drops a User, so the index cannot
-// resurrect a deleted account when its provider logs in again.
+// ForgetExternalIdentitiesLocked removes every (issuer, subject) binding for user
+// from the federated-identity index, so it can't resurrect a deleted account when
+// its provider logs in again. Callers hold st.Mu.
 func (st *Store) ForgetExternalIdentitiesLocked(user *User) {
 	if user == nil {
 		return
@@ -4587,8 +4504,8 @@ func (st *Store) SeedDefaultUser() {
 		CreatedAt: now,
 	}
 	st.Tokens[st.tokenMapKey(t.Value)] = t
-	// One transaction: the admin user and its token commit together, so a
-	// crash cannot seed an admin nobody can authenticate as (STORE-001/002).
+	// One transaction: the admin user and its token commit together, so a crash
+	// cannot seed an admin nobody can authenticate as (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("users", strconv.Itoa(u.ID), u)
 	batch.Put("tokens", t.Value, t)
@@ -4612,9 +4529,8 @@ func (st *Store) LookupToken(tokenStr string) (*Token, *User) {
 	return t, st.Users[t.UserID]
 }
 
-// LookupUserByLogin returns the user with the given login, or nil. The login
-// resolves case-insensitively (GitHub parity); the returned user carries its
-// canonical casing.
+// LookupUserByLogin returns the user for a login, or nil. The login resolves
+// case-insensitively (GitHub parity); the result carries its canonical casing.
 func (st *Store) LookupUserByLogin(login string) *User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -4628,17 +4544,14 @@ func (st *Store) GetUserByID(id int) *User {
 	return st.Users[id]
 }
 
-// LookupUserBySSHKey resolves a registered account SSH authentication key.
-// It compares parsed SSH wire encodings so comments and spacing differences in
-// authorized-key text cannot create a different credential identity. The
-// parsed form is cached when the key is registered or loaded; keys whose text
-// never parsed (logged then) carry no cached form and cannot match.
+// LookupUserBySSHKey resolves a registered account SSH auth key, comparing parsed
+// SSH wire encodings so comment/spacing differences in the key text cannot forge
+// a different identity. Keys whose text never parsed carry no cached form and
+// cannot match.
 func (st *Store) LookupUserBySSHKey(key ssh.PublicKey) *User {
 	wire := key.Marshal()
-	// Resolve the matching user id under Misc.Mu, then release it before
-	// taking st.Mu via GetUserByID. Calling GetUserByID while holding
-	// Misc.Mu would invert the Store→Misc lock order the reentrancy gate
-	// depends on.
+	// Resolve the user id under Misc.Mu, then release before taking st.Mu via
+	// GetUserByID: calling it while holding Misc.Mu inverts the Store→Misc lock order.
 	userID := 0
 	found := false
 	st.Misc.Mu.RLock()
@@ -4696,9 +4609,8 @@ func (st *Store) CountPublicRepos(login string) int {
 	return n
 }
 
-// CountOpenIssues returns the number of open issues plus open pull
-// requests in a repository — GitHub's open_issues_count counts both
-// because PRs are issues internally.
+// CountOpenIssues returns open issues plus open PRs in a repo; GitHub's
+// open_issues_count counts both, since PRs are issues internally.
 func (st *Store) CountOpenIssues(repoID int) int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -4723,9 +4635,8 @@ func (st *Store) CreateToken(userID int, scopes string) *Token {
 	return st.CreateTokenLocked(userID, scopes)
 }
 
-// generateTokenValue creates a ghp_-prefixed random token string (classic PAT).
-// Real GitHub uses ghp_ for classic PATs; bleephub matches the prefix so SDK
-// clients that branch on prefix recognise the token shape.
+// generateTokenValue creates a ghp_-prefixed random token (GitHub's classic-PAT
+// prefix, so SDK clients that branch on prefix recognise the shape).
 func generateTokenValue() (string, error) {
 	h, err := RandomHex(20)
 	if err != nil {
@@ -4791,8 +4702,7 @@ func (st *Store) commitGistBatchLocked(batch *PersistBatch) {
 	}
 }
 
-// CreateGist creates a new gist owned by the given user.
-
+// CreateGistE creates a new gist owned by the given user.
 func (st *Store) CreateGistE(owner *User, description string, public bool, files map[string]*GistFile) (*Gist, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -4846,8 +4756,7 @@ func (st *Store) GetGist(id string) *Gist {
 	return cloneGist(st.Gists[id])
 }
 
-// UpdateGist replaces the gist fields and records a history entry.
-
+// UpdateGistE replaces the gist fields and records a history entry.
 func (st *Store) UpdateGistE(id string, description *string, files map[string]*GistFile, deleteFiles []string) (*Gist, bool, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -4992,9 +4901,8 @@ func (st *Store) GetGistAtRevision(gistID, sha string) *Gist {
 		if h.Version == sha {
 			cp := *g
 			cp.UpdatedAt = h.CommittedAt
-			// Reconstruct the gist as it existed at this revision, not today's
-			// files (older revisions recorded before snapshots existed fall back
-			// to the current files).
+			// Reconstruct the gist at this revision; revisions recorded before
+			// snapshots existed fall back to the current files.
 			if h.Files != nil {
 				cp.Files = snapshotGistFiles(h.Files)
 			}
@@ -5086,8 +4994,7 @@ func (st *Store) IsGistStarred(userID int, gistID string) bool {
 	return st.StarredGists[userID][gistID]
 }
 
-// ForkGist forks a gist for the given user.
-
+// ForkGistE forks a gist for the given user.
 func (st *Store) ForkGistE(user *User, gistID string) (*Gist, bool, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -5325,9 +5232,8 @@ func (st *Store) UnblockUser(userID, targetID int) bool {
 // ListUserBlocks returns users blocked by userID.
 func (st *Store) ListUserBlocks(userID int) []*User {
 	// Snapshot the blocked ids under Misc.Mu, then resolve users via the
-	// st.Mu-guarded accessor after releasing it. st.Users is guarded by
-	// st.Mu everywhere else, so reading it under Misc.Mu alone races
-	// CreateUser/upsertExternalUser.
+	// st.Mu-guarded accessor after releasing it; reading st.Users under Misc.Mu
+	// alone races CreateUser/upsertExternalUser.
 	st.Misc.Mu.RLock()
 	targetIDs := make([]int, 0, len(st.Misc.blockedUsers[userID]))
 	for targetID := range st.Misc.blockedUsers[userID] {
@@ -5346,8 +5252,8 @@ func (st *Store) ListUserBlocks(userID int) []*User {
 // IsUserFollowing reports whether userID follows targetID.
 func (st *Store) IsUserFollowing(userID, targetID int) bool {
 	// Resolve users via the st.Mu-guarded accessor first (Store→Misc order),
-	// then read the follow graph under Misc.Mu. Dereferencing st.Users under
-	// Misc.Mu alone races concurrent user writes.
+	// then read the follow graph under Misc.Mu; reading st.Users under Misc.Mu
+	// alone races concurrent user writes.
 	user := st.GetUserByID(userID)
 	target := st.GetUserByID(targetID)
 	if user == nil || target == nil {
@@ -5416,9 +5322,8 @@ func (st *Store) AddUserSSHSigningKey(userID int, key string) map[string]interfa
 	return entry
 }
 
-// SshSigningKeyEntryID extracts the numeric key ID from an SSH signing key
-// entry. Freshly created entries store an int; entries reloaded from
-// persistence decode JSON numbers as float64, so both shapes must resolve.
+// SshSigningKeyEntryID extracts the numeric key ID from an SSH signing key entry.
+// Fresh entries store an int; reloaded ones decode as float64, so handle both.
 func SshSigningKeyEntryID(entry map[string]interface{}) int {
 	switch v := entry["id"].(type) {
 	case int:

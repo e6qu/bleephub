@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// DependencySnapshot is a submitted dependency snapshot. The field names
-// mirror the dependency submission API's snapshot object.
+// DependencySnapshot is a submitted dependency snapshot, mirroring the
+// dependency submission API's snapshot object.
 type DependencySnapshot struct {
 	ID        int                          `json:"id"`
 	RepoID    int                          `json:"repo_id"`
@@ -19,8 +19,7 @@ type DependencySnapshot struct {
 	Detector  SnapshotDetector             `json:"detector"`
 	Scanned   string                       `json:"scanned"`
 	Manifests map[string]*SnapshotManifest `json:"manifests,omitempty"`
-	// Result records the submission outcome (SUCCESS, ACCEPTED, or INVALID).
-	// A malformed (INVALID) snapshot is stored for the submission response
+	// Result is SUCCESS, ACCEPTED, or INVALID. An INVALID snapshot is stored
 	// but never contributes to the repository's dependency set.
 	Result    string    `json:"result"`
 	CreatedAt time.Time `json:"created_at"`

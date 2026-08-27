@@ -29,10 +29,9 @@ const (
 	importHTTPSScheme = "bleephub-import-https"
 )
 
-// importHTTPTransport gives go-git a private protocol name while handing its
-// HTTP implementation an ordinary http/https endpoint. Adding new protocol
-// names is process-global, but unlike replacing go-git's "http" client it
-// cannot change clones, pushes, Actions checkouts, or any other consumer.
+// importHTTPTransport gives go-git a private protocol name over an ordinary
+// http/https endpoint, so import fetches use an isolated client without
+// touching clones, pushes, or Actions checkouts.
 type importHTTPTransport struct {
 	scheme string
 	base   transport.Transport
@@ -55,9 +54,8 @@ func (t importHTTPTransport) NewReceivePackSession(ep *transport.Endpoint, auth 
 var installImportProtocolsOnce sync.Once
 
 func init() {
-	// Register only new, import-specific schemes before the server can accept
-	// concurrent work. Calling InstallProtocol lazily would write go-git's
-	// process-global protocol map while ordinary clones might be reading it.
+	// Register the import schemes before any concurrent work: InstallProtocol
+	// writes go-git's process-global protocol map, which clones read.
 	installImportProtocols()
 }
 
@@ -85,9 +83,8 @@ func installImportProtocols() {
 	})
 }
 
-// importFetchURL selects an import-only go-git protocol. The URL still carries
-// the original authority and path; the adapter above changes only the protocol
-// seen by go-git's HTTP session after go-git has selected the isolated client.
+// importFetchURL rewrites the scheme to an import-only go-git protocol,
+// keeping the original authority and path.
 func importFetchURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -104,8 +101,7 @@ func importFetchURL(raw string) (string, error) {
 	return u.String(), nil
 }
 
-// PorterLargeFile is a blob over the 100 MB large-file threshold found in
-// the imported repository.
+// PorterLargeFile is an imported blob over the 100 MB large-file threshold.
 type PorterLargeFile struct {
 	RefName string
 	Path    string
@@ -116,13 +112,12 @@ type PorterLargeFile struct {
 const porterLargeFileThreshold = 100 * 1024 * 1024
 
 const (
-	// importFetchTimeout caps a single import fetch. Without it a remote that
-	// accepts the connection and then stalls holds the worker forever.
+	// importFetchTimeout caps a single import fetch so a stalled remote cannot
+	// hold the worker forever.
 	importFetchTimeout = 5 * time.Minute
-	// importSyncWait is how long the request waits for the fetch before
-	// answering "importing" and leaving it running. A local source finishes
-	// well inside this; an unresponsive one no longer pins the request
-	// goroutine to the remote's timeline.
+	// importSyncWait is how long the request waits before answering "importing"
+	// and leaving the fetch running, so an unresponsive source cannot pin the
+	// request goroutine.
 	importSyncWait = 20 * time.Second
 )
 
@@ -141,10 +136,6 @@ func (s *Server) registerGHImportRoutes() {
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdateImportAuthor))
 	s.route("GET /api/v3/repos/{owner}/{repo}/import/large_files", s.handleListImportLargeFiles)
 }
-
-// --- Store ---
-
-// --- Handlers ---
 
 func (s *Server) importToJSON(imp *store.RepoImport, repo *store.Repo, baseURL string) map[string]interface{} {
 	apiBase := baseURL + "/api/v3/repos/" + repo.FullName
@@ -251,15 +242,10 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, s.importToJSON(s.startRepoImport(imp, repo, ghUserFromContext(r.Context())), repo, s.baseURL(r)))
 }
 
-// acceptImportSource refuses a source URL the server must not fetch.
-//
-// The import dials whatever the caller names, so it gets the same address gate
-// as webhook delivery rather than a second one of its own: two SSRF filters
-// drift, and the one that drifts is the one nobody is looking at.
-//
-// The import-only go-git protocols repeat the policy at dial time, after DNS
-// resolution. This early check remains useful because it rejects an obviously
-// private target before a durable import record and worker are created.
+// acceptImportSource applies the webhook-delivery SSRF address gate to a source
+// URL, so import and webhook delivery share one filter that cannot drift apart.
+// The go-git protocols re-check at dial time (post-DNS); this early check
+// rejects an obviously private target before a durable record and worker exist.
 func (s *Server) acceptImportSource(w http.ResponseWriter, rawURL string) bool {
 	if err := validateWebhookTargetURL(rawURL); err != nil {
 		store.WriteGHValidationError(w, "Import", "vcs_url", "invalid")
@@ -303,7 +289,7 @@ func (s *Server) handleUpdateImport(w http.ResponseWriter, r *http.Request) {
 	if !s.acceptImportSource(w, imp.VCSURL) {
 		return
 	}
-	// PATCH restarts a stalled import with the updated parameters.
+	// PATCH restarts the import with the updated parameters.
 	writeJSON(w, http.StatusOK, s.importToJSON(s.startRepoImport(imp, repo, ghUserFromContext(r.Context())), repo, s.baseURL(r)))
 }
 
@@ -435,21 +421,13 @@ func (s *Server) handleListImportLargeFiles(w http.ResponseWriter, r *http.Reque
 
 // --- Import execution ---
 
-// errUnsupportedImportProtocol is what fetchGitSourceInto answers for a source
-// URL whose scheme go-git's import-only transports do not speak. It is a
-// distinct error because it is a fault in the request rather than in the
-// remote: the caller failed detection, not the fetch.
+// errUnsupportedImportProtocol marks a source URL whose scheme the import
+// transports do not speak — a request fault, distinct from a fetch failure.
 var errUnsupportedImportProtocol = errors.New("unsupported import protocol")
 
-// fetchGitSourceInto fetches every branch and tag of a remote repository into
-// stor over the import-only go-git transports.
-//
-// It is the one place a source repository is really pulled in. The source
-// import API calls it, and so does the GitHub Enterprise Importer repository
-// migration — a migration and an import differ in what they record about the
-// work, not in the work, and two copies of this would drift in exactly the
-// dimension that matters: which transports and which address policy a source
-// is dialled under.
+// fetchGitSourceInto fetches every branch and tag of a remote into stor over
+// the import-only transports. Shared by source import and Enterprise Importer
+// migration so both dial under the same transports and address policy.
 func fetchGitSourceInto(ctx context.Context, stor gitStorage.Storer, rawURL string, auth transport.AuthMethod) error {
 	installImportProtocols()
 	fetchURL, err := importFetchURL(rawURL)
@@ -476,12 +454,9 @@ func fetchGitSourceInto(ctx context.Context, stor gitStorage.Storer, rawURL stri
 }
 
 // startRepoImport runs the fetch on its own goroutine and returns the record to
-// serve. The request waits importSyncWait for the outcome — long enough that a
-// reachable source still answers "complete" on the same call — and otherwise
-// answers "importing", leaving the fetch to finish and publish on its own.
-//
-// The goroutine works on a copy: the record the handler renders and the record
-// the fetch mutates must not be the same struct.
+// serve, waiting importSyncWait for the outcome before answering "importing".
+// The goroutine works on a copy so the rendered record and the mutated record
+// are never the same struct.
 func (s *Server) startRepoImport(imp *store.RepoImport, repo *store.Repo, sender *store.User) *store.RepoImport {
 	pending := *imp
 	pending.Status = "importing"
@@ -505,14 +480,10 @@ func (s *Server) startRepoImport(imp *store.RepoImport, repo *store.Repo, sender
 	}
 }
 
-// emitRepositoryImportEvent delivers GitHub's `repository_import` webhook.
-//
-// The event has no activity types; its discriminator is the `status` field,
-// which carries the outcome the import actually reached rather than a
-// hard-coded success. A cancelled import never reaches here — DELETE removes
-// the record, and ReplaceRepoImportIfCurrent then refuses to publish the
-// fetch, which is the same decision that stops a cancelled import from
-// resurrecting itself.
+// emitRepositoryImportEvent delivers the `repository_import` webhook, whose
+// discriminator is the `status` field carrying the real outcome. A cancelled
+// import never reaches here: DELETE removes the record and
+// ReplaceRepoImportIfCurrent then refuses to publish the fetch.
 func (s *Server) emitRepositoryImportEvent(repo *store.Repo, imp *store.RepoImport, sender *store.User) {
 	status := "failure"
 	if imp.Status == "complete" {
@@ -528,9 +499,8 @@ func (s *Server) emitRepositoryImportEvent(repo *store.Repo, imp *store.RepoImpo
 	s.emitWebhookEvent(repo.FullName, "repository_import", "", payload)
 }
 
-// runRepoImport performs the import and records the honest outcome on imp.
-// Only git sources can really be imported; other VCS types end in status
-// "error" saying so.
+// runRepoImport performs the import and records the outcome on imp. Only git
+// sources import; other VCS types end in status "error".
 func (s *Server) runRepoImport(imp *store.RepoImport, repo *store.Repo) {
 	imp.StatusText = ""
 	imp.FailedStep = ""
@@ -615,9 +585,8 @@ func (s *Server) runRepoImport(imp *store.RepoImport, repo *store.Repo) {
 	})
 }
 
-// pointHEADAtImportedBranch makes HEAD resolve to a fetched branch,
-// preferring the repo's configured default branch, then main, then master,
-// then the alphabetically first branch.
+// pointHEADAtImportedBranch resolves HEAD to a fetched branch, preferring the
+// default branch, then main, then master, then the alphabetically first.
 func pointHEADAtImportedBranch(stor gitStorage.Storer, defaultBranch string) {
 	var names []string
 	iter, err := stor.IterReferences()
@@ -653,8 +622,7 @@ func pointHEADAtImportedBranch(stor gitStorage.Storer, defaultBranch string) {
 	_ = store.SetGitHeadBranch(stor, pick)
 }
 
-// importedCommitStats counts commits and collects the distinct authors in
-// the imported storage.
+// importedCommitStats counts commits and collects the distinct authors.
 func importedCommitStats(stor gitStorage.Storer, imp *store.RepoImport) (int, []*store.PorterAuthor) {
 	count := 0
 	seen := map[string]*store.PorterAuthor{}
@@ -698,7 +666,7 @@ func importedCommitStats(stor gitStorage.Storer, imp *store.RepoImport) (int, []
 }
 
 // importLargeFiles finds blobs over the 100 MB threshold reachable from the
-// default branch's tree, reported against their paths.
+// default branch's tree.
 func importLargeFiles(stor gitStorage.Storer, defaultBranch string) []*PorterLargeFile {
 	if stor == nil {
 		return nil

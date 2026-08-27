@@ -10,10 +10,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub Actions configuration variables (plaintext counterpart of
-// secrets) at all three scopes: repository, environment, organization.
-// gh CLI's `gh variable set` POSTs first and falls back to PATCH on a
-// 409, so the duplicate-create conflict status is load-bearing.
+// GitHub Actions configuration variables at repository, environment, and
+// organization scope. `gh variable set` POSTs then falls back to PATCH on 409,
+// so the duplicate-create conflict status is load-bearing.
 
 func (s *Server) registerVariablesRoutes() {
 	// Repository scope.
@@ -54,8 +53,7 @@ func variableJSON(v *store.ActionsVariable) map[string]interface{} {
 	}
 }
 
-// orgVariableJSON renders the organization-actions-variable shape;
-// selected_repositories_url appears only for visibility "selected".
+// orgVariableJSON adds selected_repositories_url only for visibility "selected".
 func orgVariableJSON(v *store.ActionsVariable, orgLogin, baseURL string) map[string]interface{} {
 	out := variableJSON(v)
 	out["visibility"] = v.Visibility
@@ -65,9 +63,8 @@ func orgVariableJSON(v *store.ActionsVariable, orgLogin, baseURL string) map[str
 	return out
 }
 
-// variableTable binds one variables scope (repository, organization, or
-// environment) to its in-store map and persistence bucket so the verb
-// handlers share a single locked CRUD core.
+// variableTable binds one variables scope to its in-store map and persistence
+// bucket so the verb handlers share a single locked CRUD core.
 type variableTable struct {
 	s      *Server
 	bucket string // "repo_variables" | "org_variables" | "env_variables"
@@ -94,8 +91,8 @@ func (t variableTable) rows() map[string]map[string]*store.ActionsVariable {
 	}
 }
 
-// persistLocked writes the scope's collection through (or removes the row
-// when the collection emptied). Caller holds the store write lock.
+// persistLocked writes the scope's collection through, removing the row when it
+// emptied. Caller holds the store write lock.
 func (t variableTable) persistLocked(m map[string]*store.ActionsVariable) {
 	if t.s.store.Persist == nil {
 		return
@@ -113,8 +110,8 @@ func cloneVariable(v *store.ActionsVariable) *store.ActionsVariable {
 	return &cp
 }
 
-// list returns the scope's variables sorted by name (copies, so callers
-// can render without the lock).
+// list returns the scope's variables sorted by name, as copies callers can
+// render without the lock.
 func (t variableTable) list() []*store.ActionsVariable {
 	t.s.store.Mu.RLock()
 	defer t.s.store.Mu.RUnlock()
@@ -141,7 +138,7 @@ func (t variableTable) get(name string) *store.ActionsVariable {
 	return cloneVariable(v)
 }
 
-// create inserts a new variable; false when the name already exists.
+// create inserts a variable; false when the name already exists.
 func (t variableTable) create(v *store.ActionsVariable) bool {
 	t.s.store.Mu.Lock()
 	defer t.s.store.Mu.Unlock()
@@ -159,8 +156,8 @@ func (t variableTable) create(v *store.ActionsVariable) bool {
 	return true
 }
 
-// patch mutates the named variable, optionally renaming it. Returns the
-// HTTP status to write: 204 applied, 404 unknown, 409 rename collision.
+// patch mutates the named variable, optionally renaming it, returning the HTTP
+// status: 204 applied, 404 unknown, 409 rename collision.
 func (t variableTable) patch(name, newName string, apply func(*store.ActionsVariable)) int {
 	t.s.store.Mu.Lock()
 	defer t.s.store.Mu.Unlock()
@@ -259,8 +256,8 @@ func (s *Server) handleGetRepoVariable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, variableJSON(v))
 }
 
-// decodeVariablePatch decodes a variable PATCH body and validates the
-// optional rename target, writing the 4xx itself on failure.
+// decodeVariablePatch decodes a variable PATCH body, validating the optional
+// rename target and writing the 4xx itself on failure.
 func decodeVariablePatch(w http.ResponseWriter, r *http.Request) (newName string, value *string, ok bool) {
 	var body struct {
 		Name  *string `json:"name"`
@@ -279,8 +276,8 @@ func decodeVariablePatch(w http.ResponseWriter, r *http.Request) (newName string
 	return newName, body.Value, true
 }
 
-// writeVariablePatchStatus maps a variableTable.patch status to the
-// response, returning true when the patch was applied.
+// writeVariablePatchStatus writes the response for a variableTable.patch status,
+// returning true when the patch was applied.
 func writeVariablePatchStatus(w http.ResponseWriter, status int) bool {
 	switch status {
 	case http.StatusNotFound:
@@ -333,10 +330,9 @@ func (s *Server) handleDeleteRepoVariable(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListRepoOrgVariables lists the organization variables visible to
-// a repository (GET /repos/{owner}/{repo}/actions/organization-variables).
-// The documented item shape is the plain actions-variable — visibility
-// metadata stays on the org endpoints.
+// handleListRepoOrgVariables lists the org variables visible to a repository.
+// The item shape is the plain actions-variable — visibility metadata stays on
+// the org endpoints.
 func (s *Server) handleListRepoOrgVariables(w http.ResponseWriter, r *http.Request) {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
@@ -558,11 +554,10 @@ func (s *Server) handlePatchOrgVariable(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// patchOrgScopedVariable implements the organization-variable PATCH body
-// (value, visibility, selected repository ids, optional rename) shared by
-// the Actions and Copilot coding agent surfaces. patch is the scope
-// table's locked mutate-or-rename core; the upper-cased variable name and
-// whether the patch applied are returned so the caller can audit.
+// patchOrgScopedVariable implements the org-variable PATCH body (value,
+// visibility, selected repository ids, optional rename) shared by the Actions
+// and Copilot coding-agent surfaces. Returns the upper-cased name and whether
+// the patch applied, for auditing.
 func (s *Server) patchOrgScopedVariable(w http.ResponseWriter, r *http.Request,
 	patch func(name, newName string, apply func(*store.ActionsVariable)) int) (string, bool) {
 	var body struct {
@@ -623,8 +618,8 @@ func (s *Server) handleDeleteOrgVariable(w http.ResponseWriter, r *http.Request)
 
 // --- organization variable selected-repositories endpoints ---
 //
-// Unlike org secrets, the variables spec documents 409 Conflict on the
-// list/set endpoints too when visibility is not "selected".
+// Unlike org secrets, the variables spec documents 409 Conflict on the list/set
+// endpoints too when visibility is not "selected".
 
 func (s *Server) handleListOrgVariableRepos(w http.ResponseWriter, r *http.Request) {
 	org, ok := s.resolveOrgForActions(w, r)
@@ -674,8 +669,8 @@ func (s *Server) handleSetOrgVariableRepos(w http.ResponseWriter, r *http.Reques
 		})
 }
 
-// orgVariableSelectionChange adapts the shared per-repo add/remove core
-// (handleOrgSelectionChange) to the org-variables table.
+// orgVariableSelectionChange adapts the shared per-repo add/remove core to the
+// org-variables table.
 func (s *Server) orgVariableSelectionChange(w http.ResponseWriter, r *http.Request, add bool) {
 	org, ok := s.resolveOrgForActions(w, r)
 	if !ok {

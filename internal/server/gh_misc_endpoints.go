@@ -21,15 +21,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// long-tail GitHub API surfaces gh CLI / octokit / probot hit.// Users API extras (keys, gpg_keys, emails, followers, following)
-// Actions OIDC (signed token + JWKS + discovery)
-// GitHub Pages (site CRUD + builds + deployments)
-// Org members + audit log
-// Marketplace (listing plans/accounts)
-//
-// Real-GH-shaped responses so callers don't 404; per-surface depth deepens
-// when a real consumer needs it.
-
+// Long-tail GitHub API surfaces gh CLI / octokit / probot hit: user keys /
+// emails / follows, Actions OIDC, Pages, org audit log, and Marketplace.
 func (s *Server) registerGHMiscEndpoints() {
 	// Users keys + emails + follow
 	s.route("GET /api/v3/user/keys", s.handleListUserKeys)
@@ -83,12 +76,11 @@ func (s *Server) registerGHMiscEndpoints() {
 	s.route("GET /api/v3/user/starred/{owner}/{repo}", s.handleCheckMyStarredRepo)
 	s.route("GET /api/v3/user/subscriptions", s.handleListMySubscriptions)
 
-	// Actions OIDC — minted for the requesting job, so gated on that job's
-	// runtime token (the credential the runner holds while executing the job).
+	// Actions OIDC — the token is minted for the requesting job, so gate it on
+	// that job's runtime token.
 	s.route("GET /token", s.requireJobToken(s.handleActionsOIDCToken))
 	s.route("GET /.well-known/openid-configuration", s.handleOIDCDiscovery)
 	s.route("GET /.well-known/jwks", s.handleJWKS)
-	// OIDC subject customization is scoped to a repo or an org on real GitHub.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub", s.handleOIDCCustomSubGet)
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleOIDCCustomSubPut))
@@ -110,12 +102,10 @@ func (s *Server) registerGHMiscEndpoints() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages/builds/latest", s.requirePagesRead(s.handlePagesLatestBuild))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages/builds/{build_id}", s.requirePagesRead(s.handlePagesGetBuild))
 
-	// Orgs depth (members listing + memberships CRUD already covered in
-	// gh_members_rest.go — implementation).
 	s.route("GET /api/v3/orgs/{org}/audit-log", s.handleOrgAuditLog)
 
-	// Marketplace. The stubbed variants serve the same real plan/purchase
-	// state as the production routes, per the documented stubbed semantics.
+	// Marketplace; the stubbed variants serve the same plan/purchase state as
+	// the production routes.
 	s.route("GET /api/v3/marketplace_listing/plans", s.handleMarketplacePlans)
 	s.route("GET /api/v3/marketplace_listing/accounts/{account_id}", s.handleMarketplaceAccount)
 	s.route("GET /api/v3/marketplace_listing/plans/{plan_id}/accounts", s.handleMarketplacePlanAccounts)
@@ -123,26 +113,19 @@ func (s *Server) registerGHMiscEndpoints() {
 	s.route("GET /api/v3/marketplace_listing/stubbed/plans/{plan_id}/accounts", s.handleMarketplacePlanAccounts)
 	s.route("GET /api/v3/marketplace_listing/stubbed/accounts/{account_id}", s.handleMarketplaceAccount)
 
-	// Meta — gh CLI's GHES feature detection resolves the host version from
-	// GET /meta installed_version before search-backed listing commands
-	// (gh issue list --label, gh pr status) and gh workflow run.
+	// Meta — gh resolves the host version from installed_version to gate its
+	// GHES feature detection.
 	s.route("GET /api/v3/meta", s.handleMeta)
 }
 
-// handleMeta serves GET /api/v3/meta in GHES shape. bleephub presents as
-// GHES 3.21.0: gh gates the advanced-issue-search syntax at >= 3.18 (sent
-// with the plain ISSUE search type when the SearchType enum has no
-// ISSUE_ADVANCED member, which is bleephub's case), drops classic-projects
-// fields at >= 3.17, and sends `return_run_details` on workflow dispatches
-// at >= 3.21 (the dispatch handler ignores the extra member and answers 204,
-// which gh handles). installed_version is a GHES-only member — it is
-// documented in the GHES OpenAPI description, not the dotcom one this repo
-// vendors for shape validation (see openapi-violation-allowlist.txt).
-// verifiable_password_authentication is genuinely false: bleephub's API is
-// token-only.
+// handleMeta serves GET /api/v3/meta in GHES shape. bleephub presents as GHES
+// 3.21.0 to steer gh's version-gated feature detection. installed_version is a
+// GHES-only member absent from the vendored dotcom description (see
+// openapi-violation-allowlist.txt); verifiable_password_authentication is
+// genuinely false — the API is token-only.
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
-	// ssh_key_fingerprints/ssh_keys let clients seed known_hosts; they reflect
-	// this instance's configured SSH host key (empty when none is configured).
+	// ssh_key_fingerprints/ssh_keys reflect this instance's configured SSH host
+	// key (empty when none is configured), letting clients seed known_hosts.
 	fingerprints, sshKeys := metaSSHHostKeys()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"verifiable_password_authentication": false,
@@ -151,8 +134,6 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"ssh_keys":                           sshKeys,
 	})
 }
-
-// --- Store ---
 
 // --- User keys ---
 
@@ -177,8 +158,7 @@ func (s *Server) handleCreateUserKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	// Adding or removing an authentication key is a sensitive action: an
-	// enterprise demanding proof of presence gets it before the key set moves.
+	// Changing an authentication key is sensitive: honor proof-of-presence first.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -211,9 +191,7 @@ func (s *Server) handleCreateUserKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetUserKey(w http.ResponseWriter, r *http.Request) {
-	// This is the authenticated user's OWN key by id, so it demands a caller and
-	// returns 404 for a key that is not theirs — never disclosing another
-	// account's key material or even its existence.
+	// A key that is not the caller's is 404 — never disclose another account's key.
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
@@ -240,8 +218,7 @@ func (s *Server) handleDeleteUserKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	// Adding or removing an authentication key is a sensitive action: an
-	// enterprise demanding proof of presence gets it before the key set moves.
+	// Changing an authentication key is sensitive: honor proof-of-presence first.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -252,9 +229,8 @@ func (s *Server) handleDeleteUserKey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Misc.Mu.Lock()
 	k := s.store.Misc.UserKeys[id]
-	// A key that is not the caller's is 404 — the same answer as a nonexistent
-	// one — so this endpoint cannot revoke another account's SSH access or probe
-	// which key ids exist.
+	// A key that is not the caller's is 404, so this cannot revoke another
+	// account's key or probe which ids exist.
 	if k == nil || k.UserID != user.ID {
 		s.store.Misc.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -297,8 +273,7 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	// Adding or removing an authentication key is a sensitive action: an
-	// enterprise demanding proof of presence gets it before the key set moves.
+	// Changing an authentication key is sensitive: honor proof-of-presence first.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -333,8 +308,7 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetGPGKey(w http.ResponseWriter, r *http.Request) {
-	// "Get a GPG key for the authenticated user": it demands a caller and returns
-	// 404 for a key that is not theirs, never disclosing another account's key.
+	// A key that is not the caller's is 404 — never disclose another account's key.
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
@@ -361,8 +335,7 @@ func (s *Server) handleDeleteGPGKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	// Adding or removing an authentication key is a sensitive action: an
-	// enterprise demanding proof of presence gets it before the key set moves.
+	// Changing an authentication key is sensitive: honor proof-of-presence first.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -410,15 +383,14 @@ func (s *Server) handleListGPGKeysByLogin(w http.ResponseWriter, r *http.Request
 }
 
 func gpgKeyToJSON(k *store.GPGKey) map[string]interface{} {
-	// github's gpg-key emails items carry only {email, verified}; the stored
-	// struct's `primary` flag is not part of that wire shape.
+	// GitHub's gpg-key emails carry only {email, verified}; drop the stored primary flag.
 	emails := make([]map[string]interface{}, 0, len(k.Emails))
 	for _, e := range k.Emails {
 		emails = append(emails, map[string]interface{}{"email": e.Email, "verified": e.Verified})
 	}
 	m := map[string]interface{}{
 		"id":                  k.ID,
-		"primary_key_id":      nil, // a top-level key has no parent
+		"primary_key_id":      nil,
 		"key_id":              k.KeyID,
 		"raw_key":             nullOrString(k.RawKey),
 		"public_key":          k.PublicKey,
@@ -471,10 +443,9 @@ func (s *Server) handleListUserKeysByLogin(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-// resolveLoginsJSON converts a list of logins to user JSON, skipping logins
-// with no store user. Must not be called with Misc.mu held: LookupUserByLogin
-// takes Store.mu, and Store.mu is never acquired under Misc.mu (the lock
-// order is Store.mu before Misc.mu).
+// resolveLoginsJSON converts logins to user JSON, skipping unknown logins.
+// Must not be called with Misc.mu held: LookupUserByLogin takes Store.mu, and
+// the lock order is Store.mu before Misc.mu.
 func (s *Server) resolveLoginsJSON(logins []string, baseURL string) []map[string]interface{} {
 	out := []map[string]interface{}{}
 	for _, login := range logins {
@@ -485,8 +456,8 @@ func (s *Server) resolveLoginsJSON(logins []string, baseURL string) []map[string
 	return out
 }
 
-// followerLogins returns the logins that follow target. Gathered under
-// Misc.mu; the caller resolves logins to users after release.
+// followerLogins returns the logins that follow target. The caller resolves
+// them to users after Misc.mu is released.
 func (s *Server) followerLogins(target string) []string {
 	s.store.Misc.Mu.RLock()
 	defer s.store.Misc.Mu.RUnlock()
@@ -500,8 +471,8 @@ func (s *Server) followerLogins(target string) []string {
 	return logins
 }
 
-// followingLogins returns the logins that login follows. Gathered under
-// Misc.mu; the caller resolves logins to users after release.
+// followingLogins returns the logins that login follows. The caller resolves
+// them to users after Misc.mu is released.
 func (s *Server) followingLogins(login string) []string {
 	s.store.Misc.Mu.RLock()
 	defer s.store.Misc.Mu.RUnlock()
@@ -565,7 +536,6 @@ func (s *Server) handleActionsOIDCToken(w http.ResponseWriter, r *http.Request) 
 	}
 	token, err := s.mintOIDCToken(r, audience)
 	if err != nil {
-		// Missing/unresolvable run context is a client-side error, not a panic.
 		writeGHError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -577,12 +547,8 @@ func (s *Server) handleOIDCDiscovery(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"issuer":   s.actionsOIDCIssuer(r),
 		"jwks_uri": base + "/.well-known/jwks",
-		// bleephub is both a GitHub Actions OIDC token issuer (id_token) and a
-		// standard OAuth2/OIDC provider with a web authorization-code flow.
-		// Advertise the authorize/token/userinfo endpoints (all implemented —
-		// see gh_oauth.go / gh_rest.go) so relying parties that auto-configure
-		// from this document (Pomerium, Teleport, openid-client, …) can use
-		// bleephub as an IdP instead of choking on the missing required fields.
+		// Advertise the OAuth2 authorize/token/userinfo endpoints so relying
+		// parties that auto-configure from this document can use bleephub as an IdP.
 		"authorization_endpoint":   base + "/login/oauth/authorize",
 		"token_endpoint":           base + "/login/oauth/access_token",
 		"userinfo_endpoint":        base + "/api/v3/user",
@@ -615,9 +581,8 @@ func (s *Server) handleJWKS(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// oidcCustomSubScopeKey derives the tenant scope the OIDC subject-customization
-// request targets, from the org or owner/repo path values. An empty result
-// means the path named neither, which the callers reject.
+// oidcCustomSubScopeKey derives the OIDC subject-customization scope from the
+// org or owner/repo path values, or "" when neither is present.
 func oidcCustomSubScopeKey(r *http.Request) string {
 	if org := r.PathValue("org"); org != "" {
 		return "org:" + strings.ToLower(org)
@@ -631,8 +596,8 @@ func oidcCustomSubScopeKey(r *http.Request) string {
 
 func (s *Server) handleOIDCCustomSubGet(w http.ResponseWriter, r *http.Request) {
 	if org := r.PathValue("org"); org != "" {
-		// The org route carries no repo, so enforceRepoReadable would wave it
-		// through to anonymous callers. Require org membership instead.
+		// The org route has no repo for enforceRepoReadable to gate on; require
+		// org membership instead.
 		if !s.viewerIsOrgMember(r.Context(), org) {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
@@ -645,11 +610,8 @@ func (s *Server) handleOIDCCustomSubGet(w http.ResponseWriter, r *http.Request) 
 	keys := append([]string(nil), s.store.Misc.OidcClaimKeys[scope]...)
 	s.store.Misc.Mu.RUnlock()
 	body := map[string]interface{}{"include_claim_keys": keys}
-	// The repo route returns oidc-custom-sub-repo, whose required use_default
-	// reports whether the repo falls back to the org/enterprise default
-	// template (true when it carries no custom claim keys). The org route
-	// returns oidc-custom-sub, which has no such member — so add it only for
-	// the repo variant.
+	// Only the repo variant (oidc-custom-sub-repo) carries use_default: whether
+	// the repo falls back to the org/enterprise default template.
 	if r.PathValue("org") == "" {
 		body["use_default"] = len(keys) == 0
 	}
@@ -698,18 +660,11 @@ func (s *Server) oidcKeyE() (*rsa.PrivateKey, error) {
 func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error) {
 	now := s.currentTime()
 	q := r.URL.Query()
-	// An OIDC token is minted FOR a specific workflow run; GitHub derives every
-	// claim from that run and never invents one. bleephub conveys the run
-	// context on the token request — a missing field means there is no real run
-	// to mint for, so we fail loudly rather than fabricate a placeholder claim
-	// (a fabricated repository/ref/run_id would silently defeat OIDC trust
-	// policies, which is worse than an error).
-	// The OIDC token is minted for the job that requests it, so the caller must
-	// present that job's runtime token — not any authenticated user. Without
-	// this binding any authenticated principal (even a zero-scope PAT) could
-	// forge a signed subject like repo:victim/prod:environment:production and
-	// defeat a cloud trust policy. The requested repo must be the one the job
-	// token is scoped to.
+	// Every claim derives from a specific run: a missing field means no real run
+	// to mint for, so fail rather than fabricate a claim that would defeat OIDC
+	// trust policies. The caller must present that job's runtime token (not any
+	// authenticated user) and the requested repo must be the one it is scoped
+	// to, else any principal could forge a signed subject for another repo.
 	principal := runnerFromContext(r.Context())
 	if principal == nil || !principal.IsJobToken() {
 		return "", fmt.Errorf("oidc: a job runtime token is required")
@@ -754,9 +709,8 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	if eventName == "" {
 		return "", fmt.Errorf("oidc: 'event_name' is required")
 	}
-	// The actor is the user who triggered the run; the runner reports it for its
-	// own run. It is an informational claim (the security-critical binding is
-	// the repository, enforced above), so resolve the id best-effort.
+	// actor is informational (the security binding is the repository, above),
+	// so resolve its id best-effort.
 	actor := q.Get("actor")
 	actorID := 0
 	if actor != "" {
@@ -776,8 +730,7 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 		}
 	}
 
-	// run_attempt: "1" is the real value for a first (non-rerun) attempt, not a
-	// placeholder — GitHub omits it from no run.
+	// "1" is the real value for a first attempt, not a placeholder.
 	runAttempt := q.Get("run_attempt")
 	if runAttempt == "" {
 		runAttempt = "1"
@@ -785,7 +738,6 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	headRef := q.Get("head_ref")
 	baseRef := q.Get("base_ref")
 
-	// ref_type derives from the ref form (refs/heads → branch, refs/tags → tag).
 	refType := "branch"
 	switch {
 	case strings.HasPrefix(ref, "refs/tags/"):
@@ -796,8 +748,7 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 
 	env := q.Get("environment")
 
-	// sub reflects the environment when one is supplied, else the ref form —
-	// matching real GitHub's OIDC subject construction.
+	// sub reflects the environment when supplied, else the ref form.
 	var sub string
 	if env != "" {
 		sub = "repo:" + repoFull + ":environment:" + env
@@ -865,8 +816,7 @@ func (s *Server) actionsOIDCIssuer(r *http.Request) string {
 	return issuer
 }
 
-// splitRepoFull splits an "owner/repo" full name into its owner and repo
-// segments. A bare value (no slash) is treated as the repo with no owner.
+// splitRepoFull splits "owner/repo"; a bare value becomes the repo with no owner.
 func splitRepoFull(full string) (owner, repo string) {
 	if i := strings.IndexByte(full, '/'); i >= 0 {
 		return full[:i], full[i+1:]
@@ -932,8 +882,6 @@ func (s *Server) handlePagesCreate(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	// repo.Owner is an invariant (set at create, relinked on load); use it
-	// directly rather than guessing an owner.
 	ownerLogin := repo.Owner.Login
 	pages := &store.PagesSite{
 		CNAME:   req.CNAME,
@@ -941,8 +889,7 @@ func (s *Server) handlePagesCreate(w http.ResponseWriter, r *http.Request) {
 		HTMLURL: s.baseURL(r) + "/pages/" + ownerLogin + "/" + repo.Name + "/",
 		Status:  "building",
 		Source: map[string]interface{}{
-			// branch is required+validated for legacy/branch builds above; for
-			// a workflow build it is legitimately empty (not a fabricated "main").
+			// Empty branch is legitimate for a workflow build (not a fabricated default).
 			"branch": req.Source.Branch,
 			"path":   sourcePath,
 		},
@@ -959,8 +906,8 @@ func (s *Server) handlePagesCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, pages)
 }
 
-// handlePagesUpdate persists the documented update params and returns 204 No
-// Content (GitHub's PUT /pages response), unlike create which returns 201+body.
+// handlePagesUpdate returns 204 (GitHub's PUT /pages response), unlike create
+// which returns 201+body.
 func (s *Server) handlePagesUpdate(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
@@ -1116,7 +1063,6 @@ func (s *Server) handlePagesTriggerBuild(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// GitHub's request-a-build response is exactly {status, url}.
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"status": "queued", "url": s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/pages/builds/latest"})
 }
 
@@ -1168,11 +1114,9 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *store.Repo, pusher *st
 		pages.Status = "built"
 		pages.Custom404 = custom404
 	}
-	// The completed build's record and the site's new status reflect the same
-	// build finishing; commit them in one transaction so a crash can't leave the
-	// build marked built while the site row still says building, or vice versa
-	// (STORE-001/002). Unlock before any panic so a persist failure can't
-	// deadlock on the held lock.
+	// Commit the build record and the site status in one transaction so a crash
+	// can't leave them disagreeing (STORE-001/002); unlock before any panic so a
+	// persist failure can't deadlock on the held lock.
 	batch := store.NewPersistBatch(s.store.Misc.Persist)
 	batch.Put("pages_builds", repo.FullName, s.store.Misc.PagesBuilds[repo.FullName])
 	batch.Put("pages_sites", strconv.Itoa(repo.ID), pages)
@@ -1183,8 +1127,8 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *store.Repo, pusher *st
 		panic(&store.PersistenceFailure{Op: "batch", Bucket: "pages_sites", Key: strconv.Itoa(repo.ID), Err: persistErr})
 	}
 	s.recordAuditEvent("pages.build", actor, "", map[string]interface{}{"repo": repo.FullName, "build_id": buildID})
-	// `page_build` fires when a Pages build finishes, so `on: page_build`
-	// workflows run (ACT-026). Fields are snapshotted under the lock above.
+	// `page_build` fires when a Pages build finishes (ACT-026); fields were
+	// snapshotted under the lock above.
 	s.emitWebhookEvent(repo.FullName, "page_build", "", map[string]interface{}{
 		"build": map[string]interface{}{
 			"status":   buildStatus,
@@ -1237,16 +1181,9 @@ func (s *Server) handlePagesGetBuild(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 	orgName := r.PathValue("org")
 
-	// The audit log exposes secret-name changes, hook-config edits and actor
-	// identities; real GitHub restricts it to org owners (read:audit_log /
-	// admin:org). Anyone else gets 404 (GitHub hides existence from non-admins).
-	//
-	// On GHES a site administrator is the instance operator and can audit any
-	// organization from the stafftools/console surface even without a personal
-	// membership — which is exactly how the /ui audit-log page reaches it (it
-	// lists every org on the instance for the operator). Honour SiteAdmin here
-	// so that operator surface works end-to-end; without it a site admin who
-	// does not own the selected org gets a 404 and the page reads as broken.
+	// Restricted to org owners (404 hides existence from anyone else). Honor
+	// SiteAdmin too: on GHES the operator can audit any org without membership,
+	// which is how the /ui audit-log page (listing every org) reaches it.
 	user := ghUserFromContext(r.Context())
 	org := s.store.GetOrg(orgName)
 	if user == nil || org == nil || !(user.SiteAdmin || s.viewerCanAdminOrg(r.Context(), org.Login)) {
@@ -1307,18 +1244,14 @@ func auditEntryMatchesPhrase(e *store.AuditEntry, phrase string) bool {
 }
 
 func (s *Server) recordAuditEvent(action, actor, org string, data map[string]interface{}) {
-	// The append lives in the store so the GraphQL resolvers, which cannot
-	// reach the HTTP layer, write the same entries through the same path.
+	// The append lives in the store so GraphQL resolvers write through the same path.
 	s.store.RecordAuditEntry(action, actor, org, data)
 }
 
-// maxAuditLogEntries bounds the in-memory audit log. Real GitHub retains audit
-// events for a finite window (Enterprise default ≈6 months); an uncapped
-// prepend-only slice both grows without limit and makes each write O(n). The
-// cap keeps the newest entries and bounds both.
+// maxAuditLogEntries bounds the in-memory audit log, keeping the newest
+// entries so the prepend-only slice cannot grow without limit.
 const maxAuditLogEntries = 5000
 
-// marketplacePlanToJSON renders the spec `marketplace-listing-plan` shape.
 func marketplacePlanToJSON(p *store.MarketplacePlan, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/marketplace_listing/plans/" + strconv.Itoa(p.ID)
 	return map[string]interface{}{
@@ -1338,8 +1271,7 @@ func marketplacePlanToJSON(p *store.MarketplacePlan, baseURL string) map[string]
 	}
 }
 
-// marketplaceAccountJSON renders the spec `marketplace-purchase` shape.
-// The account is a real user or organization from the store.
+// marketplaceAccountJSON renders the `marketplace-purchase` shape.
 func (s *Server) marketplaceAccountJSON(purchase *store.MarketplacePurchase, plan *store.MarketplacePlan, baseURL string) map[string]interface{} {
 	accountType := purchase.AccountType
 	login := ""
@@ -1445,9 +1377,8 @@ func (s *Server) handleMarketplaceAccount(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, s.marketplaceAccountJSON(purchase, plan, s.baseURL(r)))
 }
 
-// handleMarketplacePlanAccounts implements GET
-// /marketplace_listing/plans/{plan_id}/accounts (and its stubbed variant):
-// the accounts holding an active purchase of the plan.
+// handleMarketplacePlanAccounts lists the accounts holding an active purchase
+// of the plan.
 func (s *Server) handleMarketplacePlanAccounts(w http.ResponseWriter, r *http.Request) {
 	listing := s.marketplaceListingForPublisher(w, r)
 	if listing == nil {

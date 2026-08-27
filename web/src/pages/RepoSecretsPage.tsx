@@ -26,9 +26,8 @@ export function RepoSecretsPage() {
   });
   const envs = envsQ.data ?? [];
   const effectiveEnv = envName || envs[0]?.name || "";
-  // Secrets and variables are admin-only: github.com 404s this URL for
-  // non-admin viewers. Wait for the permissions payload before deciding so
-  // admins never see a 404 flash.
+  // Admin-only; github.com 404s this URL for non-admins. Wait for permissions
+  // so admins never see a 404 flash.
   const { isAdmin, loaded } = useRepoPermissions(owner, repo);
   if (!loaded) return <Spinner label={`loading ${owner}/${repo}`} />;
   if (!isAdmin) return <RepoNotFound />;

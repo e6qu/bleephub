@@ -11,23 +11,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Deployments + Deployment Statuses + Environments.
-// Endpoints:
-//   POST   /repos/{o}/{r}/deployments
-//   GET    /repos/{o}/{r}/deployments
-//   GET    /repos/{o}/{r}/deployments/{id}
-//   DELETE /repos/{o}/{r}/deployments/{id}
-//   POST   /repos/{o}/{r}/deployments/{id}/statuses
-//   GET    /repos/{o}/{r}/deployments/{id}/statuses
-//   GET    /repos/{o}/{r}/deployments/{id}/statuses/{status_id}
-//   GET    /repos/{o}/{r}/environments
-//   GET    /repos/{o}/{r}/environments/{env_name}
-//   PUT    /repos/{o}/{r}/environments/{env_name}
-//   DELETE /repos/{o}/{r}/environments/{env_name}
-//
-// gh CLI has no top-level deploy command; this surface is used heavily by
-// octokit / probot / GitOps controllers reacting to `deployment` and
-// `deployment_status` webhook events.
+// Deployments, deployment statuses, and environments.
 
 func (s *Server) registerGHDeploymentsRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/deployments",
@@ -107,16 +91,9 @@ func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// filterDeployments applies the four documented query filters on the
-// deployments listing: sha (the SHA recorded at creation time), ref (the branch,
-// tag or SHA name), task, and environment. Each is an exact match on the value
-// recorded when the deployment was created, and each is independent — a listing
-// narrowed by several of them keeps only the deployments matching all of them.
-//
-// A filter that was not sent narrows nothing. The published contract writes the
-// default of each as the string "none", which reads as a sentinel for "no
-// filter" rather than a value to match, so an absent — or empty — parameter
-// leaves the listing whole.
+// filterDeployments applies the sha, ref, task, and environment query filters,
+// each an exact match ANDed together. An absent or empty parameter narrows nothing
+// (the contract's "none" default is a no-filter sentinel, not a value to match).
 func filterDeployments(deployments []*store.Deployment, query url.Values) []*store.Deployment {
 	filters := []struct {
 		want  string
@@ -335,8 +312,8 @@ func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request)
 		PreventSelfReview      *bool                         `json:"prevent_self_review"`
 		DeploymentBranchPolicy *store.DeploymentBranchPolicy `json:"deployment_branch_policy"`
 	}
-	// An absent body is valid (environment with no protection config), but
-	// malformed JSON is still a 400 like real GitHub.
+	// An absent body is valid (environment with no protection config); malformed
+	// JSON is still a 400.
 	if !decodeJSONBodyOptional(w, r, &body) {
 		return
 	}
@@ -484,11 +461,9 @@ func environmentToJSON(e *store.Environment, st *store.Store, baseURL string, re
 	return out
 }
 
-// environmentReviewersJSON renders the configured reviewers with their
-// resolved reviewer objects — the vendored `environment` schema's reviewer is
-// a simple-user | team union keyed by the deployment-reviewer-type — the
-// shape protection rules and pending deployments share. Must not be called
-// with st.Mu held (team resolution takes RLock).
+// environmentReviewersJSON renders each reviewer as the simple-user | team union
+// the vendored `environment` schema keys by deployment-reviewer-type. Must not be
+// called with st.Mu held (team resolution takes RLock).
 func environmentReviewersJSON(e *store.Environment, st *store.Store, baseURL string) []map[string]interface{} {
 	out := []map[string]interface{}{}
 	for _, rev := range e.Reviewers {

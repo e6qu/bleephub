@@ -21,8 +21,7 @@ func (st *Store) AddSubIssue(parentID, childID int, replaceParent bool) error {
 			return errSubIssueHasParent
 		}
 	}
-	// Reject cycles: the parent (or any ancestor) may not be a descendant
-	// of the child.
+	// Reject cycles: no ancestor of the parent may be the child.
 	for ancestor := parentID; ; {
 		next, ok := st.SubIssueParent[ancestor]
 		if !ok {
@@ -69,8 +68,8 @@ func (st *Store) removeSubIssueLocked(parentID, childID int) {
 	delete(st.SubIssueParent, childID)
 }
 
-// ReprioritizeSubIssue moves child within parent's ordered sub-issue list,
-// placing it immediately after afterID or immediately before beforeID.
+// ReprioritizeSubIssue moves child within parent's list, placing it after
+// afterID or before beforeID.
 func (st *Store) ReprioritizeSubIssue(parentID, childID int, afterID, beforeID *int) error {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -183,8 +182,8 @@ func (st *Store) ListIssueBlockedBy(issueID int) []int {
 	return out
 }
 
-// ListIssueBlocking returns the IDs of the issues that issueID blocks —
-// the reverse view of the blocked-by links.
+// ListIssueBlocking returns the IDs of the issues issueID blocks (the reverse
+// of the blocked-by links).
 func (st *Store) ListIssueBlocking(issueID int) []int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

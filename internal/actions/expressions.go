@@ -15,18 +15,17 @@ import (
 // ExprContext holds the evaluation context for GitHub Actions expressions.
 type ExprContext struct {
 	// DepResults maps needed-job key → result string ("success", "failure",
-	// "cancelled", "skipped"); status functions evaluate against it.
+	// "cancelled", "skipped").
 	DepResults map[string]string
-	// WorkflowCancelled indicates the workflow was cancelled (cancelled()).
+	// WorkflowCancelled backs cancelled().
 	WorkflowCancelled bool
-	// Contexts maps root context names ("github", "needs", "vars",
-	// "inputs", ...) to their values: nested
-	// map[string]interface{} / []interface{} / string / float64 / bool / nil.
+	// Contexts maps root context names ("github", "needs", "vars", "inputs", ...)
+	// to nested map/slice/string/float64/bool/nil values.
 	Contexts map[string]interface{}
 }
 
-// EvalExprErr evaluates a GitHub Actions expression to a boolean.
-// The empty expression is true (an absent `if:` always runs).
+// EvalExprErr evaluates a GitHub Actions expression to a boolean. The empty
+// expression is true (an absent `if:` always runs).
 func EvalExprErr(expr string, ctx *ExprContext) (bool, error) {
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
@@ -39,9 +38,9 @@ func EvalExprErr(expr string, ctx *ExprContext) (bool, error) {
 	return exprTruthy(v), nil
 }
 
-// EvalExprValue evaluates a GitHub Actions expression to its value.
-// A surrounding ${{ ... }} wrapper is stripped first (job-level `if:`
-// accepts both bare and wrapped forms).
+// EvalExprValue evaluates a GitHub Actions expression to its value. A
+// surrounding ${{ ... }} wrapper is stripped first; job-level `if:` accepts
+// both bare and wrapped forms.
 func EvalExprValue(expr string, ctx *ExprContext) (interface{}, error) {
 	expr = strings.TrimSpace(expr)
 	if strings.HasPrefix(expr, "${{") && strings.HasSuffix(expr, "}}") {
@@ -65,10 +64,8 @@ func EvalExprValue(expr string, ctx *ExprContext) (interface{}, error) {
 	return v, nil
 }
 
-// EvalTemplate replaces every ${{ ... }} occurrence in s with the
-// stringified value of the inner expression — the server-side subset of
-// workflow-file template expansion (concurrency groups, run names,
-// workflow_call inputs).
+// EvalTemplate replaces every ${{ ... }} in s with the stringified value of the
+// inner expression (concurrency groups, run names, workflow_call inputs).
 func EvalTemplate(s string, ctx *ExprContext) (string, error) {
 	var out strings.Builder
 	for {
@@ -97,10 +94,10 @@ func ExprContainsAnyStatusFunction(expr string) bool {
 	return functions["always"] || functions["failure"] || functions["success"] || functions["cancelled"]
 }
 
-// ExprGatesOnCancellation reports whether an `if:` still wants its job to run
-// after the run was cancelled — i.e. whether it calls always() or cancelled().
-// Token inspection is what keeps a string literal or a longer identifier
-// (`contains(msg, 'cancelled()')`) from reading as a gate.
+// ExprGatesOnCancellation reports whether an `if:` calls always() or
+// cancelled(), so its job still runs after cancellation. Token inspection keeps
+// a string literal or longer identifier (`contains(msg, 'cancelled()')`) from
+// reading as a gate.
 func ExprGatesOnCancellation(expr string) bool {
 	functions := expressionFunctionCalls(expr)
 	return functions["always"] || functions["cancelled"]
@@ -297,9 +294,9 @@ func lexExpr(input string) ([]exprToken, error) {
 	return toks, nil
 }
 
-// startsNumberContext reports whether a '.' at the current position could
-// begin a number rather than a property dereference: only when the
-// previous token cannot end a dereferencable value.
+// startsNumberContext reports whether a '.' begins a number rather than a
+// property dereference: only when the previous token cannot end a
+// dereferenceable value.
 func startsNumberContext(toks []exprToken) bool {
 	last := toks[len(toks)-1]
 	switch last.kind {
@@ -318,8 +315,8 @@ func isIdentChar(c byte) bool { return isIdentStart(c) || isDigit(c) || c == '-'
 
 // ── Parser / evaluator ──────────────────────────────────────────────
 //
-// Precedence (loosest to tightest), per the GitHub Actions expression
-// spec: || , && , (== !=) , (< <= > >=) , ! , dereference, primary.
+// Precedence, loosest to tightest, per the GitHub Actions expression spec:
+// || , && , (== !=) , (< <= > >=) , ! , dereference, primary.
 
 type exprParser struct {
 	toks []exprToken
@@ -341,8 +338,7 @@ func (p *exprParser) parseOr() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Value-preserving short-circuit semantics (like JavaScript):
-		// the first truthy operand wins.
+		// Value-preserving short-circuit: the first truthy operand wins.
 		if !exprTruthy(left) {
 			left = right
 		}
@@ -437,8 +433,8 @@ func (p *exprParser) parseUnary() (interface{}, error) {
 	return p.parsePostfix()
 }
 
-// parsePostfix parses a primary value followed by any chain of
-// dereferences: .name, ['key'], [index].
+// parsePostfix parses a primary value followed by a chain of dereferences:
+// .name, ['key'], [index].
 func (p *exprParser) parsePostfix() (interface{}, error) {
 	v, err := p.parsePrimary()
 	if err != nil {
@@ -501,7 +497,6 @@ func (p *exprParser) parsePrimary() (interface{}, error) {
 	case tokNumber:
 		return t.num, nil
 	case tokIdent:
-		// Function call?
 		if p.peek().kind == tokLParen {
 			p.next()
 			var args []interface{}
@@ -536,7 +531,7 @@ func (p *exprParser) parsePrimary() (interface{}, error) {
 		case "nan":
 			return math.NaN(), nil
 		}
-		// Root context lookup (case-insensitive, like all context keys).
+		// Root context lookup, case-insensitive like all context keys.
 		if p.ctx != nil && p.ctx.Contexts != nil {
 			for k, v := range p.ctx.Contexts {
 				if strings.EqualFold(k, t.text) {
@@ -643,8 +638,7 @@ func (p *exprParser) callFunction(name string, args []interface{}) (interface{},
 		}
 		return v, nil
 	case "hashfiles":
-		// hashFiles inspects the runner workspace, which doesn't exist
-		// server-side; real GitHub only evaluates it on the runner.
+		// hashFiles inspects the runner workspace, which does not exist server-side.
 		return nil, fmt.Errorf("hashFiles() is not available in server-evaluated expressions")
 	default:
 		return nil, fmt.Errorf("unrecognized function %q", name)
@@ -658,8 +652,8 @@ func wantArgs(name string, args []interface{}, n int) error {
 	return nil
 }
 
-// exprFormat implements format('{0} {1}', ...): {N} placeholders,
-// '{{' and '}}' escape literal braces.
+// exprFormat implements format('{0} {1}', ...): {N} placeholders, '{{'/'}}'
+// escape literal braces.
 func exprFormat(f string, args []interface{}) (string, error) {
 	var out strings.Builder
 	for i := 0; i < len(f); i++ {
@@ -692,8 +686,8 @@ func exprFormat(f string, args []interface{}) (string, error) {
 
 // ── Value semantics ─────────────────────────────────────────────────
 
-// exprDeref resolves a property access (case-insensitively, like GitHub
-// context keys). Missing properties yield null, not an error.
+// exprDeref resolves a property access case-insensitively. Missing properties
+// yield null, not an error.
 func exprDeref(v interface{}, key string) interface{} {
 	if values, ok := v.([]interface{}); ok {
 		projected := make([]interface{}, 0, len(values))
@@ -709,8 +703,7 @@ func exprDeref(v interface{}, key string) interface{} {
 	if direct, ok := m[key]; ok {
 		return direct
 	}
-	// Deterministic case-insensitive fallback: pick the smallest matching
-	// key so map iteration order can't flip the result.
+	// Pick the smallest matching key so map iteration order can't flip the result.
 	var keys []string
 	for k := range m {
 		if strings.EqualFold(k, key) {
@@ -724,9 +717,9 @@ func exprDeref(v interface{}, key string) interface{} {
 	return m[keys[0]]
 }
 
-// exprFilterValues implements GitHub's object-filter syntax (`.*` and
-// `[*]`). Arrays retain declaration order; object values use sorted keys so a
-// server-evaluated expression cannot vary with Go map iteration order.
+// exprFilterValues implements GitHub's object-filter syntax (`.*` and `[*]`).
+// Object values use sorted keys so the result cannot vary with Go map
+// iteration order.
 func exprFilterValues(v interface{}) interface{} {
 	switch value := v.(type) {
 	case []interface{}:
@@ -751,10 +744,8 @@ func exprFilterValues(v interface{}) interface{} {
 func exprIndex(v, idx interface{}) interface{} {
 	if arr, ok := v.([]interface{}); ok {
 		n := exprToNumber(idx)
-		// Bound n as a float before narrowing to int: a float larger than the
-		// int range would overflow the conversion, so comparing int(n) after
-		// the cast is unsafe. Once 0 <= n < len(arr) holds in float space, the
-		// int conversion is in range by construction.
+		// Bound n in float space before narrowing to int: a float past the int
+		// range would overflow the conversion.
 		if math.IsNaN(n) || n < 0 || n >= float64(len(arr)) {
 			return nil
 		}
@@ -766,9 +757,8 @@ func exprIndex(v, idx interface{}) interface{} {
 	return nil
 }
 
-// exprTruthy implements GitHub's truthiness: false, 0, -0, "", and null
-// are falsy; everything else (including NaN per the JS-like rules GitHub
-// documents, where NaN is falsy) follows.
+// exprTruthy implements GitHub's truthiness: false, 0, -0, "", null, and NaN
+// are falsy; everything else is truthy.
 func exprTruthy(v interface{}) bool {
 	switch t := v.(type) {
 	case nil:
@@ -784,10 +774,9 @@ func exprTruthy(v interface{}) bool {
 	}
 }
 
-// exprLooseEqual implements GitHub's loose equality: same-type strings
-// compare case-insensitively; mixed scalar types coerce to number;
-// arrays/objects equal only the same instance (compared as never-equal
-// here — GitHub compares by reference).
+// exprLooseEqual implements GitHub's loose equality: strings compare
+// case-insensitively; mixed scalars coerce to number; arrays/objects are
+// never equal here (GitHub compares them by reference).
 func exprLooseEqual(a, b interface{}) bool {
 	as, aIsStr := a.(string)
 	bs, bIsStr := b.(string)
@@ -809,8 +798,8 @@ func exprLooseEqual(a, b interface{}) bool {
 	return an == bn
 }
 
-// exprToNumber implements GitHub's number coercion: null→0, bool→0/1,
-// strings parse as numbers (” → 0, unparseable → NaN), arrays/objects → NaN.
+// exprToNumber implements GitHub's number coercion: null→0, bool→0/1, string
+// parses ("" → 0, unparseable → NaN), arrays/objects → NaN.
 func exprToNumber(v interface{}) float64 {
 	switch t := v.(type) {
 	case nil:

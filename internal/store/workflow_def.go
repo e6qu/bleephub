@@ -49,8 +49,8 @@ func (p *PermissionDef) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// RunDefaults is the defaults.run block inherited by every script step unless
-// the job or step supplies a more specific value.
+// RunDefaults is the defaults.run block inherited by script steps that supply
+// no more specific value.
 type RunDefaults struct {
 	Shell            string `yaml:"shell" json:"shell,omitempty"`
 	WorkingDirectory string `yaml:"working-directory" json:"working_directory,omitempty"`
@@ -89,29 +89,26 @@ type JobDef struct {
 	MatrixGroup       string                 `yaml:"-"`
 	MatrixMaxParallel int                    `yaml:"-"`
 
-	// Uses marks the job as a reusable-workflow call
-	// ("./.github/workflows/x.yml" or "owner/repo/.github/workflows/x.yml@ref");
-	// With carries its inputs (values kept as raw template strings) and
-	// SecretsInherit / SecretsMap its `secrets:` configuration.
+	// Uses marks the job as a reusable-workflow call; With carries its inputs
+	// (raw template strings) and SecretsInherit/SecretsMap its `secrets:`.
 	Uses           string
 	With           map[string]string
 	SecretsInherit bool
 	SecretsMap     map[string]string
 
-	// Call links jobs produced by reusable-workflow expansion to their
-	// call binding; ServerCompleted marks synthetic gate/collector nodes
-	// the engine completes itself instead of dispatching to a runner.
+	// Call links expanded reusable-workflow jobs to their call binding;
+	// ServerCompleted marks synthetic gate/collector nodes the engine completes
+	// itself rather than dispatching to a runner.
 	Call            *WorkflowCallBinding
 	ServerCompleted bool
-	// CallRole distinguishes the synthetic nodes: "gate" (resolves
-	// inputs once dependencies finish) or "collector" (maps called-
-	// workflow outputs onto the public caller job key).
+	// CallRole distinguishes the synthetic nodes: "gate" (resolves inputs once
+	// dependencies finish) or "collector" (maps called-workflow outputs onto
+	// the caller job key).
 	CallRole string
 }
 
-// EnvironmentName resolves the job's target environment name from either
-// the string or the {name, url} object form; empty when the job declares
-// no environment.
+// EnvironmentName resolves the job's target environment name from the string
+// or {name, url} object form; empty when none is declared.
 func (jd *JobDef) EnvironmentName() string {
 	switch env := jd.Environment.(type) {
 	case string:
@@ -133,10 +130,8 @@ type StrategyDef struct {
 	MaxParallel int       `yaml:"max-parallel"`
 }
 
-// FailFast returns the matrix strategy's fail-fast value. Defaults to true
-// per the GitHub Actions spec when the strategy or the field is absent.
-// Lets callers consult the resolved value with a single deref instead of
-// stacking nil guards at every level of the chain.
+// FailFast returns the matrix strategy's fail-fast value, defaulting to true
+// per the GitHub Actions spec when the strategy or field is absent.
 func (j *JobDef) FailFast() bool {
 	if j == nil || j.Strategy == nil || j.Strategy.FailFast == nil {
 		return true
@@ -363,7 +358,6 @@ func normalizeJob(rj *rawJobDef) (*JobDef, error) {
 				jd.Services[name] = &ServiceDef{Image: v}
 			case map[string]interface{}:
 				svc := &ServiceDef{}
-				// Re-marshal via YAML to decode into struct cleanly
 				yamlBytes, err := yaml.Marshal(v)
 				if err != nil {
 					return nil, fmt.Errorf("service %q: %w", name, err)
@@ -378,7 +372,6 @@ func normalizeJob(rj *rawJobDef) (*JobDef, error) {
 		}
 	}
 
-	// Parse strategy/matrix
 	if rj.Strategy != nil {
 		sd, err := normalizeStrategy(rj.Strategy)
 		if err != nil {
@@ -447,7 +440,6 @@ func parseMatrixNode(node *yaml.Node) (MatrixDef, error) {
 		return md, nil
 	}
 
-	// Decode into a generic map first
 	var raw map[string]interface{}
 	if err := node.Decode(&raw); err != nil {
 		return md, fmt.Errorf("parse matrix: %w", err)
@@ -539,9 +531,8 @@ func (jd *JobDef) ContainerImage() string {
 	return ""
 }
 
-// ContainerObject returns the parsed ContainerDef when `container:`
-// was declared in object form (image + env/ports/volumes/options),
-// nil for the bare-string and absent forms.
+// ContainerObject returns the parsed ContainerDef when `container:` was
+// declared in object form, nil for the bare-string and absent forms.
 func (jd *JobDef) ContainerObject() *ContainerDef {
 	m, ok := jd.Container.(map[string]interface{})
 	if !ok {
@@ -584,7 +575,6 @@ func ParseActionRef(uses string) (nameWithOwner, path, ref string, isLocal bool)
 		return "", uses, "", true
 	}
 
-	// Split at @
 	atIdx := strings.LastIndex(uses, "@")
 	if atIdx < 0 {
 		return uses, "", "", false
@@ -592,7 +582,6 @@ func ParseActionRef(uses string) (nameWithOwner, path, ref string, isLocal bool)
 	ref = uses[atIdx+1:]
 	nameAndPath := uses[:atIdx]
 
-	// Split owner/repo from path
 	parts := strings.SplitN(nameAndPath, "/", 3)
 	if len(parts) >= 2 {
 		nameWithOwner = parts[0] + "/" + parts[1]

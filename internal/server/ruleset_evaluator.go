@@ -12,9 +12,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// evaluateRulesetsForRefWrite evaluates and records every applicable active or
-// evaluate-mode rule. It returns the first active-rule refusal; evaluate-mode
-// failures are observable in the suite but never block the ref update.
+// evaluateRulesetsForRefWrite evaluates and records every applicable rule,
+// returning the first active-rule refusal. Evaluate-mode failures are recorded
+// in the suite but never block the ref update.
 func (s *Server) evaluateRulesetsForRefWrite(ctx context.Context, repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
 	rulesets := s.store.ApplicableRulesets(repo, ref.String())
 	if len(rulesets) == 0 {

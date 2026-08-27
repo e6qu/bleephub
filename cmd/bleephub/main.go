@@ -24,15 +24,12 @@ var (
 	publishedAt = "not-yet-published"
 )
 
-// obsFlushGrace bounds the telemetry flush at shutdown. The exporter's endpoint
-// may be the thing that has gone away, and a flush that blocks on it forever is
-// indistinguishable from a hang.
+// obsFlushGrace bounds the telemetry flush at shutdown, in case the exporter's
+// endpoint has gone away and a flush would block forever.
 const obsFlushGrace = 5 * time.Second
 
-// main does nothing but choose the exit status. Every deferred cleanup lives in
-// run, because a deferred call and os.Exit in the same function means the
-// cleanup never runs — which is how telemetry came to be dropped on every exit
-// path, the ordinary one included.
+// main only chooses the exit status; cleanup lives in run, since os.Exit skips
+// deferred calls in the same function.
 func main() {
 	if err := run(); err != nil {
 		bootLogger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr})
@@ -61,9 +58,7 @@ func run() error {
 		_ = obs.Shutdown(flush)
 	}()
 
-	// Default to structured JSON, which log pipelines can parse. ANSI console
-	// output is human-friendly for local development but noise in production, so
-	// it is opt-in via BLEEPHUB_LOG_FORMAT=console.
+	// Default to structured JSON; opt into ANSI console via BLEEPHUB_LOG_FORMAT=console.
 	var base io.Writer = os.Stderr
 	if strings.EqualFold(os.Getenv("BLEEPHUB_LOG_FORMAT"), "console") {
 		base = zerolog.ConsoleWriter{Out: os.Stderr}
@@ -77,15 +72,13 @@ func run() error {
 	logger := zerolog.New(output).
 		With().Timestamp().Str("service", "bleephub").Logger().
 		Level(level)
-	// Route the few package-level boot/fatal loggers (persistence quorum wait,
-	// AdminToken requirement) through the same configured logger.
+	// Route the package-level boot/fatal loggers through the same configured logger.
 	zlog.Logger = logger
 
 	logger.Info().Str("version", version).Str("commit", commit).Msg("starting")
 
-	// SIGTERM is what a container runtime sends first. Without a handler the
-	// process runs as PID 1, ignores it, and is SIGKILLed after the runtime's
-	// grace period with every in-flight request cut mid-response.
+	// Handle SIGTERM so a container runtime can drain in-flight requests before
+	// its grace period elapses and it SIGKILLs PID 1.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

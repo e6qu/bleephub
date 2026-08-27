@@ -20,8 +20,7 @@ import { clearComposerDraft } from "../hooks/useComposerDraft.js";
 import Markdown from "./Markdown.js";
 import { ReactionBar } from "./ReactionBar.js";
 
-// Inline review-thread rendering shared by the PR Conversation stream
-// (PullsPage) and the Files-changed diff view (PRFilesView).
+// Review-thread rendering shared by the PR conversation and Files-changed views.
 
 export interface ReviewThreadGroup {
   root: GithubPRReviewComment;
@@ -96,12 +95,8 @@ const suggestionRowStyle = {
   wordBreak: "break-all",
 } as const;
 
-/**
- * A ```suggestion fence rendered as a small diff: the original line struck
- * out in red, the suggested replacement in green. The "Commit suggestion"
- * action renders separately (CommitSuggestionButton) when the caller
- * provides PR coordinates.
- */
+// A ```suggestion fence as a mini-diff. The "Commit suggestion" action renders
+// separately in CommitSuggestionButton.
 function SuggestionBlock({ suggestion, original }: { suggestion: string; original: string | null }) {
   return (
     <div
@@ -156,12 +151,9 @@ function SuggestionBlock({ suggestion, original }: { suggestion: string; origina
   );
 }
 
-/**
- * "Commit suggestion" — applies the comment's FIRST ```suggestion fence to
- * the PR head branch via the /ui-data apply-suggestion endpoint. The server
- * is the authority on push access and PR state, so those refusals (403/422)
- * surface inline; a 409 marks the suggestion outdated.
- */
+// Applies the comment's first ```suggestion fence to the PR head branch via the
+// /ui-data apply-suggestion endpoint. Server refusals (403/422) surface inline;
+// 409 marks the suggestion outdated.
 function CommitSuggestionButton({
   owner,
   repo,
@@ -174,8 +166,7 @@ function CommitSuggestionButton({
   comment: GithubPRReviewComment;
 }) {
   const qc = useQueryClient();
-  // Committing a suggestion pushes to the PR head branch — github.com only
-  // offers it to viewers with write access (hidden, not disabled, below).
+  // github.com offers this only to write-access viewers (hidden, not disabled).
   const { canPush } = useRepoPermissions(owner, repo);
   const apply = useMutation({
     mutationFn: () =>
@@ -190,8 +181,7 @@ function CommitSuggestionButton({
   });
   const errorMessage = apply.error instanceof Error ? apply.error.message : String(apply.error ?? "");
   const outdated = apply.error instanceof ApiError && apply.error.status === 409;
-  // LEFT-side and file-level suggestions can never apply — the server would
-  // 422; disable up front with the reason.
+  // LEFT-side and file-level suggestions can't apply (server 422s); disable up front.
   const disabledReason =
     comment.side === "LEFT"
       ? "Suggestions on the deleted side can't be applied"
@@ -237,13 +227,9 @@ function CommitSuggestionButton({
   );
 }
 
-/**
- * A review comment's body with ```suggestion fences rendered as mini-diffs.
- * When PR coordinates are provided (all of owner/repo/number), the first
- * suggestion fence gets a "Commit suggestion" action — the server applies
- * only the first fence. Coordinates are optional so render-only callers
- * (pending drafts, older call sites) stay unchanged.
- */
+// Review-comment body with ```suggestion fences as mini-diffs. With PR
+// coordinates, only the first fence gets a "Commit suggestion" action (the
+// server applies only the first). Coordinates are optional for render-only callers.
 export function ReviewCommentBody({
   comment,
   owner,
@@ -294,21 +280,19 @@ export function ReviewThreadCard({
   group: ReviewThreadGroup;
   threadInfo: { id: string; isResolved: boolean } | null;
   viewerLogin: string | null;
-  /** In the Files-changed view the thread sits under its own diff row, so the
-   * stored hunk context is redundant. */
+  /** Files-changed view already shows the diff row; hide the redundant hunk. */
   hideDiffHunk?: boolean;
 }) {
   const qc = useQueryClient();
-  // Resolving/unresolving a thread needs write access or authorship of one of
-  // the thread's comments (github.com's rule); replying stays for everyone.
+  // Resolve/unresolve needs write access or authorship of a thread comment
+  // (github.com's rule); replying stays open to everyone.
   const { canPush } = useRepoPermissions(owner, repo);
   const isThreadParticipant =
     viewerLogin !== null &&
     group.comments.some((c) => c.user?.login != null && c.user.login === viewerLogin);
   const canResolve = canPush || isThreadParticipant;
   const [replyBody, setReplyBody] = useState("");
-  // Draft durability per thread (github.com keeps a distinct draft per
-  // review-thread reply box); the root comment id is the thread's identity.
+  // Distinct draft per thread (github.com), keyed by the root comment id.
   const replyDraftKey = `pr-review-reply:${owner}/${repo}/${number}:${group.root.id}`;
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["pr-review-comments", owner, repo, number] });

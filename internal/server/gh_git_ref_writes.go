@@ -1,15 +1,9 @@
 package bleephub
 
-// The three git reference writes, factored out of their REST handlers so the
-// GraphQL createRef/updateRef/deleteRef/updateRefs mutations perform exactly
-// the same act.
-//
-// Everything a ref write carries with it lives here: the branch-protection
-// refusal, the secret-scanning push-protection block, the fast-forward test,
-// the compare-and-set against the reference the caller saw, the push
-// machinery, and the create/delete webhooks. A second implementation of any of
-// them would be a way around branch protection, which is why the mutations ask
-// here rather than reaching for the storer themselves.
+// The three git reference writes, shared by the REST handlers and the GraphQL
+// createRef/updateRef/deleteRef/updateRefs mutations. Every write goes through
+// here so branch protection, push-protection, and the fast-forward/CAS checks
+// cannot be bypassed by touching the storer directly.
 
 import (
 	"context"
@@ -24,22 +18,19 @@ import (
 )
 
 // gitRefWriteFailure is a refused or failed reference write, carrying the HTTP
-// status and message the REST route reports so the two surfaces answer the
-// same refusal with the same words.
+// status and message both surfaces report.
 type gitRefWriteFailure struct {
 	status  int
 	message string
-	// resource and field, when set, make this a 422 validation error rather
-	// than a plain message.
+	// resource and field, when set, make this a 422 validation error.
 	resource string
 	field    string
 	code     string
-	// blocked, when set, is the secret-scanning push-protection placeholder
-	// the push tripped; the REST route renders it in GitHub's block shape.
+	// blocked, when set, is the secret-scanning push-protection placeholder the
+	// push tripped, rendered in GitHub's block shape.
 	blocked *store.SecretScanningPushProtectionPlaceholder
 }
 
-// write renders the failure onto a REST response.
 func (e *gitRefWriteFailure) write(w http.ResponseWriter) {
 	switch {
 	case e.blocked != nil:
@@ -55,8 +46,7 @@ func refWriteInvalid(resource, field, code string) *gitRefWriteFailure {
 	return &gitRefWriteFailure{status: http.StatusUnprocessableEntity, message: field + " is " + code, resource: resource, field: field, code: code}
 }
 
-// createGitRef creates fullRef at target. It is the whole body of POST
-// /repos/{owner}/{repo}/git/refs after the request has been decoded.
+// createGitRef creates fullRef at target (POST /repos/{owner}/{repo}/git/refs).
 func (s *Server) createGitRef(ctx context.Context, repo *store.Repo, stor gitStorage.Storer, sender *store.User,
 	fullRef plumbing.ReferenceName, target plumbing.Hash, baseURL string) *gitRefWriteFailure {
 	if !validFullyQualifiedGitRef(fullRef.String()) {
@@ -85,8 +75,8 @@ func (s *Server) createGitRef(ctx context.Context, repo *store.Repo, stor gitSto
 	if fullRef.IsBranch() {
 		s.afterCommittedRefUpdate(repo, sender, fullRef.String(), plumbing.ZeroHash.String(), target.String(), baseURL)
 	}
-	// The `create` event fires for a newly-created branch or tag (distinct
-	// from the `push` afterCommittedRefUpdate emits for branches).
+	// `create` fires for a new branch or tag, distinct from the `push`
+	// afterCommittedRefUpdate emits for branches.
 	payload := buildRefLifecyclePayload(repo, fullRef, sender, baseURL)
 	payload["master_branch"] = repo.DefaultBranch
 	payload["description"] = repo.Description
@@ -94,8 +84,7 @@ func (s *Server) createGitRef(ctx context.Context, repo *store.Repo, stor gitSto
 	return nil
 }
 
-// updateGitRef moves fullRef to target. It is the whole body of PATCH
-// /repos/{owner}/{repo}/git/refs/{ref} after the request has been decoded.
+// updateGitRef moves fullRef to target (PATCH /repos/{owner}/{repo}/git/refs/{ref}).
 func (s *Server) updateGitRef(ctx context.Context, repo *store.Repo, stor gitStorage.Storer, sender *store.User,
 	fullRef plumbing.ReferenceName, target plumbing.Hash, force bool, baseURL string) *gitRefWriteFailure {
 	if !validFullyQualifiedGitRef(fullRef.String()) {
@@ -144,9 +133,7 @@ func (s *Server) updateGitRef(ctx context.Context, repo *store.Repo, stor gitSto
 	return nil
 }
 
-// deleteGitRef removes fullRef. It is the whole body of DELETE
-// /repos/{owner}/{repo}/git/refs/{ref}, including the branch-protection
-// refusal the route decorator asks before the handler runs.
+// deleteGitRef removes fullRef (DELETE /repos/{owner}/{repo}/git/refs/{ref}).
 func (s *Server) deleteGitRef(ctx context.Context, repo *store.Repo, stor gitStorage.Storer, sender *store.User,
 	fullRef plumbing.ReferenceName, baseURL string) *gitRefWriteFailure {
 	if !validFullyQualifiedGitRef(fullRef.String()) {
@@ -168,7 +155,6 @@ func (s *Server) deleteGitRef(ctx context.Context, repo *store.Repo, stor gitSto
 	if fullRef.IsBranch() {
 		s.afterCommittedRefUpdate(repo, sender, fullRef.String(), oldRef.Hash().String(), plumbing.ZeroHash.String(), baseURL)
 	}
-	// The `delete` event fires for a removed branch or tag.
 	s.emitWebhookEvent(repo.FullName, "delete", "", buildRefLifecyclePayload(repo, fullRef, sender, baseURL))
 	return nil
 }

@@ -1,9 +1,7 @@
 package actions
 
-// Git-plumbing helpers shared by the trigger, schedule and reusable-workflow
-// paths (and by the server's webhook layer, which reaches them as actions.X):
-// resolving refs to commit shas and reading workflow definitions from git
-// storage. Pure functions over a go-git Storer.
+// Git-plumbing helpers over a go-git Storer: resolve refs to commit shas and
+// read workflow definitions from git storage.
 
 import (
 	"io"
@@ -14,13 +12,11 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// ZeroCommitSha is the all-zero sha ResolveRefSha returns when a ref names no
-// commit.
+// ZeroCommitSha is returned when a ref names no commit.
 const ZeroCommitSha = "0000000000000000000000000000000000000000"
 
-// ResolveRefSha resolves the commit sha the triggering ref points at in git
-// storage. Empty ref means HEAD. Non-empty refs must resolve exactly; event
-// triggers must not silently substitute a different commit.
+// ResolveRefSha resolves the commit sha ref points at; empty ref means HEAD.
+// A non-empty ref must resolve exactly — never substitute a different commit.
 func ResolveRefSha(stor gitStorage.Storer, ref string) string {
 	resolve := func(name plumbing.ReferenceName) (plumbing.Hash, bool) {
 		r, err := stor.Reference(name)
@@ -58,8 +54,7 @@ func SplitRepoKeyParts(repoKey string) [2]string {
 	return [2]string{repoKey, ""}
 }
 
-// ListWorkflowFilesAtRef reads .github/workflows as of ref. An empty ref means
-// HEAD.
+// ListWorkflowFilesAtRef reads .github/workflows as of ref; empty ref means HEAD.
 func ListWorkflowFilesAtRef(stor gitStorage.Storer, ref string) map[string][]byte {
 	sha := ResolveRefSha(stor, ref)
 	if sha == ZeroCommitSha {

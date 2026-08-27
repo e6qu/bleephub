@@ -10,14 +10,9 @@ export interface RepoPermissions {
   loaded: boolean;
 }
 
-/**
- * Viewer-scoped repository permissions from the repo payload's `permissions`
- * block ({admin, push, pull} — the store's capability lattice has no separate
- * triage/maintain tiers). github.com hides what the viewer cannot do, so
- * pages gate their privileged controls on this instead of rendering buttons
- * that would only 403. The repo query is cache-seeded by the bootstrap
- * aggregates, so this is a cache hit on every repo page.
- */
+// Viewer-scoped permissions from the repo payload's `permissions` block. Pages
+// gate privileged controls on this so they don't render buttons that only 403.
+// The repo query is cache-seeded by the bootstrap aggregates.
 export function useRepoPermissions(owner: string, repo: string): RepoPermissions {
   const q = useQuery({
     queryKey: ["repo", owner, repo],

@@ -12,22 +12,18 @@ import (
 	"sync"
 )
 
-// emoji_assets.tar.gz holds every image the GET /emojis catalog advertises
-// under <base>/images/icons/emoji/: Twemoji CC-BY 4.0 rasters for the
-// unicode/<codepoints>.png paths and bleephub's own generated artwork for
-// the GitHub-custom <name>.png paths (GitHub's originals are not
-// redistributable). Regenerate with the emojigen tool after a catalog or
-// Twemoji update; attribution rides inside the archive (LICENSE-TWEMOJI,
-// ATTRIBUTION).
+// emoji_assets.tar.gz holds every image GET /emojis advertises: Twemoji
+// CC-BY 4.0 rasters for the unicode/<codepoints>.png paths and bleephub's own
+// generated artwork for the GitHub-custom <name>.png paths (GitHub's originals
+// are not redistributable). Attribution rides inside the archive.
 //
 //go:generate go run ./internal/emojigen -catalog gemoji_catalog.txt -out emoji_assets.tar.gz
 
 //go:embed emoji_assets.tar.gz
 var emojiAssetsArchive []byte
 
-// loadEmojiAssets unpacks the embedded archive once into a path → PNG map
-// (only .png entries are served; the license/attribution files stay
-// archive-internal).
+// loadEmojiAssets unpacks the embedded archive once into a path → PNG map;
+// only .png entries are served.
 var loadEmojiAssets = sync.OnceValues(func() (map[string][]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(emojiAssetsArchive))
 	if err != nil {
@@ -59,10 +55,9 @@ var loadEmojiAssets = sync.OnceValues(func() (map[string][]byte, error) {
 	return assets, nil
 })
 
-// handleGHEmojiImage serves the emoji images advertised by GET /emojis,
-// matching GitHub Enterprise Server hosting the assets on the instance
-// itself. The images are immutable (the catalog cache-busts with ?v8), so
-// they carry a far-future immutable cache policy.
+// handleGHEmojiImage serves the emoji images advertised by GET /emojis. The
+// images are immutable (the catalog cache-busts with ?v8), so they carry a
+// far-future immutable cache policy.
 func (s *Server) handleGHEmojiImage(w http.ResponseWriter, r *http.Request) {
 	assets, err := loadEmojiAssets()
 	if err != nil {

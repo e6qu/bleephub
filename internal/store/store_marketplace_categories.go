@@ -1,16 +1,12 @@
 package store
 
-// GitHub Marketplace: the category taxonomy and the listing profile —
-// the marketing metadata GitHub's GraphQL MarketplaceListing exposes
-// (categories, logo, screenshots, policy and support links, and the
-// verification state machine) that the REST plan/purchase surface in
-// store_marketplace.go does not carry.
-//
-// It lives beside the existing Marketplace store rather than inside it:
-// a purchase is billing state, a profile is publication state, and the
-// two have different writers.
-//
-// STORE-021: every getter and List* here returns a detached snapshot.
+// GitHub Marketplace category taxonomy and listing profiles: the GraphQL
+// MarketplaceListing marketing metadata (categories, logo, screenshots,
+// policy/support links, verification state machine) that the REST
+// plan/purchase surface in store_marketplace.go does not carry. Kept separate
+// because a purchase is billing state and a profile is publication state, with
+// different writers. Every getter and List* here returns a detached snapshot
+// (STORE-021).
 
 import (
 	"encoding/base64"
@@ -21,15 +17,14 @@ import (
 	"time"
 )
 
-// MarketplaceCategoryNodeIDPrefix / MarketplaceListingNodeIDPrefix are the
-// global-id prefixes for the two Marketplace node types.
+// Global-id prefixes for the two Marketplace node types.
 const (
 	MarketplaceCategoryNodeIDPrefix = "MC_kgDO"
 	MarketplaceListingNodeIDPrefix  = "ML_kgDO"
 )
 
-// Marketplace listing verification states, matching the is* flags on
-// GitHub's MarketplaceListing type. Exactly one is true at a time.
+// Marketplace listing verification states, matching the is* flags on GitHub's
+// MarketplaceListing type. Exactly one holds at a time.
 const (
 	MarketplaceListingDraft                             = "draft"
 	MarketplaceListingUnverified                        = "unverified"
@@ -41,10 +36,8 @@ const (
 	MarketplaceListingArchived                          = "archived"
 )
 
-// MarketplaceListingNodeID derives a listing's global id from its slug.
-// The slug is the listing's identity in the REST surface and never
-// changes, so the id is stable without a second counter — and a listing
-// that has never been given a profile still has one.
+// MarketplaceListingNodeID derives a listing's global id from its slug, so the
+// id is stable without a counter and a profile-less listing still has one.
 func MarketplaceListingNodeID(slug string) string {
 	return MarketplaceListingNodeIDPrefix + base64.RawURLEncoding.EncodeToString([]byte(strings.ToLower(slug)))
 }
@@ -62,9 +55,9 @@ func ParseMarketplaceListingNodeID(nodeID string) (string, bool) {
 }
 
 // DefaultMarketplaceListingProfile is the profile a listing has before its
-// publisher fills one in: filed under the catch-all category, in the draft
-// state, with no marketing links. It is synthesized rather than written,
-// so a GraphQL read never performs a durable write (STORE-034).
+// publisher fills one in: catch-all category, draft state, no marketing links.
+// Synthesized rather than written, so a GraphQL read performs no durable write
+// (STORE-034).
 func DefaultMarketplaceListingProfile(slug string) *MarketplaceListingProfile {
 	slug = strings.ToLower(slug)
 	return &MarketplaceListingProfile{
@@ -85,15 +78,15 @@ type MarketplaceCategory struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	HowItWorks  string `json:"how_it_works,omitempty"`
-	// Topic aliases are the alternative slugs GitHub resolves a category
-	// by when a client passes useTopicAliases.
+	// TopicAliases are the alternative slugs GitHub resolves by under
+	// useTopicAliases.
 	TopicAliases []string `json:"topic_aliases,omitempty"`
-	// A subcategory names its parent; the taxonomy is one level deep.
+	// ParentSlug names a subcategory's parent; the taxonomy is one level deep.
 	ParentSlug string `json:"parent_slug,omitempty"`
 }
 
-// MarketplaceListingProfile is the publication half of a Marketplace
-// listing, keyed by the listing slug the REST surface already uses.
+// MarketplaceListingProfile is the publication half of a Marketplace listing,
+// keyed by the listing slug the REST surface uses.
 type MarketplaceListingProfile struct {
 	Slug                  string    `json:"slug"`
 	NodeID                string    `json:"node_id"`
@@ -126,7 +119,7 @@ type MarketplaceProfileStore struct {
 	clock   func() time.Time
 
 	categories map[string]*MarketplaceCategory       // slug → category
-	profiles   map[string]*MarketplaceListingProfile // listing slug → profile
+	profiles   map[string]*MarketplaceListingProfile // slug → profile
 
 	nextCategoryID int
 }
@@ -153,10 +146,9 @@ const (
 	marketplaceProfilesBucket   = "marketplace_listing_profiles"
 )
 
-// defaultMarketplaceCategories is GitHub's own Marketplace taxonomy. It is
-// seeded once so `Query.marketplaceCategories` answers with the categories
-// a client expects rather than an empty list, and so a listing always has
-// a primary category to point at (the field is non-null on GitHub).
+// defaultMarketplaceCategories is GitHub's own Marketplace taxonomy, seeded
+// once so a listing always has a primary category to point at (the field is
+// non-null on GitHub).
 var defaultMarketplaceCategories = []MarketplaceCategory{
 	{Slug: "api-management", Name: "API management", Description: "Manage, secure and monitor your APIs.", TopicAliases: []string{"api"}},
 	{Slug: "chat", Name: "Chat", Description: "Bring your work into the conversation.", TopicAliases: []string{"chatops"}},
@@ -180,7 +172,7 @@ var defaultMarketplaceCategories = []MarketplaceCategory{
 }
 
 // loadMarketplaceProfiles repopulates the taxonomy and profiles, seeding
-// GitHub's category set the first time an instance starts.
+// GitHub's category set on first start.
 func (st *Store) loadMarketplaceProfiles() error {
 	ms := st.MarketplaceProfiles
 	ms.Persist = st.Persist
@@ -210,8 +202,8 @@ func (st *Store) loadMarketplaceProfiles() error {
 	return ms.SeedDefaultCategories()
 }
 
-// SeedDefaultCategories installs GitHub's taxonomy, leaving any category
-// that already exists alone.
+// SeedDefaultCategories installs GitHub's taxonomy, leaving existing
+// categories alone.
 func (ms *MarketplaceProfileStore) SeedDefaultCategories() error {
 	ms.Mu.Lock()
 	defer ms.Mu.Unlock()
@@ -251,8 +243,8 @@ func cloneMarketplaceProfile(p *MarketplaceListingProfile) *MarketplaceListingPr
 	return &clone
 }
 
-// GetMarketplaceCategory resolves a category by slug, optionally through
-// its topic aliases (GitHub's useTopicAliases argument).
+// GetMarketplaceCategory resolves a category by slug, optionally through its
+// topic aliases (useTopicAliases).
 func (ms *MarketplaceProfileStore) GetMarketplaceCategory(slug string, useTopicAliases bool) *MarketplaceCategory {
 	ms.Mu.RLock()
 	defer ms.Mu.RUnlock()
@@ -288,11 +280,11 @@ func (ms *MarketplaceProfileStore) FindMarketplaceCategoryByNodeID(nodeID string
 	return nil
 }
 
-// ListMarketplaceCategories returns the taxonomy ordered by name. The
-// filters mirror Query.marketplaceCategories: includeCategories restricts
-// to named slugs, excludeSubcategories drops anything with a parent, and
-// excludeEmpty drops categories no listing points at (the caller supplies
-// the per-slug listing counts, since listings live in the other store).
+// ListMarketplaceCategories returns the taxonomy ordered by name. Filters
+// mirror Query.marketplaceCategories: includeCategories restricts to named
+// slugs, excludeSubcategories drops anything with a parent, excludeEmpty drops
+// categories no listing points at. The caller supplies per-slug counts, since
+// listings live in the other store.
 func (ms *MarketplaceProfileStore) ListMarketplaceCategories(includeCategories []string, excludeSubcategories, excludeEmpty bool, counts map[string]int) []*MarketplaceCategory {
 	ms.Mu.RLock()
 	defer ms.Mu.RUnlock()
@@ -369,9 +361,9 @@ type MarketplaceProfileUpdate struct {
 	HasVerifiedOwner      *bool
 }
 
-// SaveMarketplaceListingProfile creates or patches a listing's profile.
-// A listing with no profile yet gets one in the draft state, filed under
-// the "utilities" catch-all so its primary category is never absent.
+// SaveMarketplaceListingProfile creates or patches a listing's profile. A
+// profile-less listing gets a draft one under the "utilities" catch-all so its
+// primary category is never absent.
 func (ms *MarketplaceProfileStore) SaveMarketplaceListingProfile(slug string, patch MarketplaceProfileUpdate) (*MarketplaceListingProfile, error) {
 	ms.Mu.Lock()
 	defer ms.Mu.Unlock()
@@ -460,8 +452,7 @@ func validMarketplaceListingState(state string) bool {
 	return false
 }
 
-// DeleteMarketplaceListingProfile drops a listing's profile when the
-// listing itself is deleted.
+// DeleteMarketplaceListingProfile drops a listing's profile.
 func (ms *MarketplaceProfileStore) DeleteMarketplaceListingProfile(slug string) bool {
 	ms.Mu.Lock()
 	defer ms.Mu.Unlock()

@@ -15,17 +15,11 @@ import (
 )
 
 // Raw file contents. Every content-bearing REST response advertises a
-// download_url/raw_url of the shape {base}/{owner}/{repo}/raw/{ref}/{path} --
-// the contents API, commit and pull-request file lists, and compare all build
-// one. github.com answers those from raw.githubusercontent.com; without a
-// route for that shape here every URL bleephub handed out was a dead 404, so a
-// README image, a `curl $(gh api ... --jq .download_url)`, or any CI script
-// fetching a file by its advertised link failed even though the API response
-// itself looked correct.
+// download_url/raw_url of shape {base}/{owner}/{repo}/raw/{ref}/{path}; without
+// this route every such URL bleephub handed out would be a dead 404.
 
 // tryHandleRawRequest serves /{owner}/{repo}/raw/{ref}/{path} from the
-// catch-all, beside the git smart HTTP protocol and the legacy archives.
-// Returns true when the request was a raw file download.
+// catch-all, returning true when the request was a raw file download.
 func (s *Server) tryHandleRawRequest(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
@@ -65,15 +59,14 @@ func (s *Server) serveRawFile(w http.ResponseWriter, r *http.Request, owner, nam
 		http.NotFound(w, r)
 		return
 	}
-	// A directory has no raw representation, and a gitlink names a commit that
-	// lives in another repository's object store entirely.
+	// A directory has no raw form; a gitlink names a commit in another repo's
+	// object store.
 	if entry.Mode == filemode.Dir || entry.Mode == filemode.Submodule {
 		http.NotFound(w, r)
 		return
 	}
-	// The blob is streamed rather than read into memory: a raw request names
-	// one file, and that file may be far larger than the memory a server can
-	// afford to spend on one response.
+	// Stream the blob rather than buffer it: one file may exceed the memory
+	// affordable for a single response.
 	blob, size, err := store.OpenGitBlob(stor, entry.Hash)
 	if err != nil {
 		http.NotFound(w, r)
@@ -81,9 +74,8 @@ func (s *Server) serveRawFile(w http.ResponseWriter, r *http.Request, owner, nam
 	}
 	defer blob.Close()
 
-	// git decides text-versus-binary from the start of the content, so the
-	// content type only needs the leading bytes and the rest can go straight
-	// out without ever being held.
+	// git decides text-versus-binary from the leading bytes, so only those are
+	// buffered; the rest streams straight out.
 	sniff := make([]byte, gitRawSniffBytes)
 	read, err := io.ReadFull(blob, sniff)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
@@ -92,10 +84,9 @@ func (s *Server) serveRawFile(w http.ResponseWriter, r *http.Request, owner, nam
 	}
 	sniff = sniff[:read]
 
-	// raw.githubusercontent.com serves everything as an opaque download rather
-	// than letting the browser interpret it: a raw .html or .svg rendered
-	// in-origin would be stored XSS against any viewer of an untrusted
-	// repository. text/plain plus nosniff is what github.com sends.
+	// Serve as an opaque download (text/plain + nosniff, as github.com does): a
+	// browser-rendered raw .html or .svg would be stored XSS against viewers of
+	// an untrusted repo.
 	w.Header().Set("Content-Type", rawContentType(sniff))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
@@ -112,17 +103,14 @@ func (s *Server) serveRawFile(w http.ResponseWriter, r *http.Request, owner, nam
 	}
 }
 
-// gitRawSniffBytes is how much of a blob decides its content type. git's own
-// binary heuristic reads the start of the content and no further.
+// gitRawSniffBytes is how much of a blob decides its content type, matching
+// git's own binary heuristic.
 const gitRawSniffBytes = 8000
 
-// resolveRawTreeAndPath splits "{ref}/{path}" at every boundary a ref could
-// end at and returns the tree for the first ref that resolves. Both halves can
-// contain slashes -- "feature/x/README.md" is a file in branch "feature/x" or
-// a file "x/README.md" in branch "feature" -- so the split is ambiguous and
-// has to be probed. Longest ref first: it resolves both readings correctly
-// whenever only one of them names a real ref, and prefers the more specific
-// branch when somehow both do.
+// resolveRawTreeAndPath splits "{ref}/{path}" at every possible boundary and
+// returns the tree for the first ref that resolves. Both halves may contain
+// slashes, so the split is ambiguous and is probed longest-ref-first, which
+// prefers the more specific branch when two readings both name real refs.
 func resolveRawTreeAndPath(stor gitStorage.Storer, refAndPath string) (*object.Tree, string) {
 	segments := strings.Split(strings.Trim(refAndPath, "/"), "/")
 	for cut := len(segments) - 1; cut >= 1; cut-- {
@@ -144,9 +132,8 @@ func resolveRawTreeAndPath(stor gitStorage.Storer, refAndPath string) (*object.T
 	return nil, ""
 }
 
-// rawContentType mirrors raw.githubusercontent.com: text/plain for text,
-// application/octet-stream once the bytes stop being valid text. A NUL byte is
-// git's own heuristic for "binary" and is the one used here.
+// rawContentType returns text/plain for text and octet-stream otherwise, using
+// git's NUL-byte heuristic for "binary".
 func rawContentType(content []byte) string {
 	if bytes.IndexByte(content, 0) >= 0 {
 		return "application/octet-stream"

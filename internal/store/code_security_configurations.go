@@ -41,9 +41,8 @@ type CodeSecurityConfiguration struct {
 	UpdatedAt                           time.Time `json:"updated_at"`
 }
 
-// cloneCodeSecurityConfiguration detaches a configuration from the stored row so
-// a reader can't race the in-place UpdatedAt/field mutations UpdateCodeSecurityConfiguration
-// applies to the live row. Its reference fields are four optional scalars.
+// cloneCodeSecurityConfiguration returns a detached snapshot (STORE-021); the
+// four optional scalars are its reference fields.
 func cloneCodeSecurityConfiguration(c *CodeSecurityConfiguration) *CodeSecurityConfiguration {
 	if c == nil {
 		return nil
@@ -100,8 +99,8 @@ func (st *Store) GetCodeSecurityConfigurationByName(orgLogin, name string) *Code
 	return nil
 }
 
-// CreateCodeSecurityConfiguration materializes a configuration with the
-// documented per-field creation defaults, then applies the request.
+// CreateCodeSecurityConfiguration materializes a configuration with the per-field
+// creation defaults, then applies the request.
 func (st *Store) CreateCodeSecurityConfiguration(orgLogin string, req *CodeSecurityConfigurationRequest) *CodeSecurityConfiguration {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -143,8 +142,8 @@ func (st *Store) CreateCodeSecurityConfiguration(orgLogin string, req *CodeSecur
 	return c
 }
 
-// UpdateCodeSecurityConfiguration applies the request; the bool reports
-// whether anything actually changed.
+// UpdateCodeSecurityConfiguration applies the request; the bool reports whether
+// anything changed.
 func (st *Store) UpdateCodeSecurityConfiguration(orgLogin string, id int, req *CodeSecurityConfigurationRequest) (*CodeSecurityConfiguration, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -162,8 +161,8 @@ func (st *Store) UpdateCodeSecurityConfiguration(orgLogin string, id int, req *C
 	return c, true
 }
 
-// DeleteCodeSecurityConfiguration removes a configuration; repositories it
-// was attached to retain their settings but lose the association.
+// DeleteCodeSecurityConfiguration removes a configuration; attached repositories
+// retain their settings but lose the association.
 func (st *Store) DeleteCodeSecurityConfiguration(orgLogin string, id int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -174,8 +173,7 @@ func (st *Store) DeleteCodeSecurityConfiguration(orgLogin string, id int) {
 			delete(attachments, repoID)
 		}
 	}
-	// One transaction: dropping the configuration and detaching it from every
-	// repo commit together, so a crash cannot leave a repo attached to a deleted
+	// One transaction so a crash cannot leave a repo attached to a deleted
 	// configuration (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("code_security_configurations", orgLogin, st.CodeSecurityConfigs[orgLogin])
@@ -256,8 +254,8 @@ func (st *Store) DetachCodeSecurityConfigurations(orgLogin string, repoIDs []int
 }
 
 // SetCodeSecurityConfigurationAsDefault records the configuration's
-// default-for-new-repositories policy, clearing overlapping defaults from
-// other configurations.
+// default-for-new-repositories policy, clearing overlapping defaults from other
+// configurations.
 func (st *Store) SetCodeSecurityConfigurationAsDefault(orgLogin string, id int, defaultFor string) *CodeSecurityConfiguration {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -313,8 +311,8 @@ func (st *Store) GetRepoCodeSecurityConfiguration(orgLogin string, repoID int) *
 }
 
 // CodeSecurityConfigurationRequest is the create/update wire shape. The
-// code_security / secret_protection members are write-only granular toggles
-// real GitHub folds into advanced_security.
+// code_security / secret_protection members are write-only toggles GitHub folds
+// into advanced_security.
 type CodeSecurityConfigurationRequest struct {
 	Name                             *string `json:"name"`
 	Description                      *string `json:"description"`
@@ -350,8 +348,8 @@ type CodeSecurityConfigurationRequest struct {
 	Enforcement                   *string `json:"enforcement"`
 }
 
-// validateEnums checks every provided enum member; returns false after
-// writing the validation error.
+// ValidateEnums checks every provided enum member, writing a validation error
+// and returning false on the first invalid one.
 func (req *CodeSecurityConfigurationRequest) ValidateEnums(w http.ResponseWriter) bool {
 	enums := map[string]*string{
 		"code_security":                             req.CodeSecurity,
@@ -394,8 +392,8 @@ func (req *CodeSecurityConfigurationRequest) ValidateEnums(w http.ResponseWriter
 	return true
 }
 
-// apply copies every provided member onto the configuration and reports
-// whether anything changed.
+// apply copies every provided member onto the configuration and reports whether
+// anything changed.
 func (req *CodeSecurityConfigurationRequest) apply(c *CodeSecurityConfiguration) bool {
 	changed := false
 	setStr := func(dst *string, v *string) {
@@ -407,8 +405,8 @@ func (req *CodeSecurityConfigurationRequest) apply(c *CodeSecurityConfiguration)
 	setStr(&c.Name, req.Name)
 	setStr(&c.Description, req.Description)
 	setStr(&c.AdvancedSecurity, req.AdvancedSecurity)
-	// The granular code_security / secret_protection toggles fold into
-	// advanced_security when it is not itself provided.
+	// The code_security / secret_protection toggles fold into advanced_security
+	// when it is not itself provided.
 	if req.AdvancedSecurity == nil && (req.CodeSecurity != nil || req.SecretProtection != nil) {
 		cs := req.CodeSecurity != nil && *req.CodeSecurity == "enabled"
 		sp := req.SecretProtection != nil && *req.SecretProtection == "enabled"

@@ -14,16 +14,12 @@ import (
 	"time"
 )
 
-// ErrReleaseAssetNameExists is returned by CreateReleaseAsset when the release
-// already carries an asset with the requested name; GitHub answers this with a
-// 422 rather than a silent duplicate.
+// ErrReleaseAssetNameExists reports a duplicate asset name; GitHub 422s it.
 var ErrReleaseAssetNameExists = errors.New("release asset name already exists")
 
-// Release is a tagged release on a repo.
-//
-// AuthorID/RepoID carry real json names so persistence round-trips the
-// linkage (the reload path re-indexes byRepo from RepoID). Client responses
-// never marshal this struct — releaseToJSON emits an explicit map.
+// Release is a tagged release on a repo. AuthorID/RepoID carry json names so
+// persistence round-trips the linkage; client responses never marshal this
+// struct (releaseToJSON emits an explicit map).
 type Release struct {
 	ID              int             `json:"id"`
 	NodeID          string          `json:"node_id"`
@@ -38,17 +34,14 @@ type Release struct {
 	Assets          []*ReleaseAsset `json:"-"`
 	CreatedAt       time.Time       `json:"created_at"`
 	PublishedAt     *time.Time      `json:"published_at"`
-	// ExcludeFromLatest reflects make_latest:"false" — the release is never
-	// returned by Latest(). Persisted, but absent from the API response (which
-	// GitHub does not echo make_latest on either).
+	// ExcludeFromLatest (make_latest:"false") drops the release from Latest().
+	// Persisted, but absent from the API response, as on GitHub.
 	ExcludeFromLatest bool `json:"exclude_from_latest,omitempty"`
-	// DiscussionNumber links the release to a repository discussion created via
-	// discussion_category_name; zero when the release has none. Surfaced as
-	// discussion_url in the response, matching GitHub.
+	// DiscussionNumber links to a discussion (via discussion_category_name),
+	// zero when none; surfaced as discussion_url.
 	DiscussionNumber int `json:"discussion_number,omitempty"`
 }
 
-// ReleaseAsset attaches to a release.
 type ReleaseAsset struct {
 	ID            int       `json:"id"`
 	NodeID        string    `json:"node_id"`
@@ -65,7 +58,6 @@ type ReleaseAsset struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// ReleaseStore wraps release CRUD with a mutex.
 type ReleaseStore struct {
 	Mu           sync.RWMutex       `json:"-"`
 	ByID         map[int]*Release   `json:"-"`
@@ -126,9 +118,8 @@ func (rs *ReleaseStore) Create(repoID, authorID int, tagName, target, name, body
 	return r
 }
 
-// cloneRelease detaches a release from the store (STORE-021): Assets and
-// PublishedAt are the only reference fields, and a reader that walked either
-// one could rewrite stored state through a getter.
+// cloneRelease detaches a release from the store (STORE-021); Assets and
+// PublishedAt are its only reference fields.
 func cloneRelease(r *Release) *Release {
 	if r == nil {
 		return nil
@@ -147,8 +138,7 @@ func cloneRelease(r *Release) *Release {
 	return &clone
 }
 
-// cloneReleaseAsset detaches one asset; ReleaseAsset is all-value, so a
-// shallow copy is the whole job.
+// cloneReleaseAsset detaches one asset; ReleaseAsset is all-value.
 func cloneReleaseAsset(a *ReleaseAsset) *ReleaseAsset {
 	if a == nil {
 		return nil
@@ -174,7 +164,7 @@ func (rs *ReleaseStore) GetByTag(repoID int, tag string) *Release {
 	return nil
 }
 
-// Latest returns the most-recently-created non-draft non-prerelease release.
+// Latest returns the newest non-draft non-prerelease release.
 func (rs *ReleaseStore) Latest(repoID int) *Release {
 	rs.Mu.RLock()
 	defer rs.Mu.RUnlock()
@@ -197,9 +187,8 @@ func (rs *ReleaseStore) List(repoID int) []*Release {
 	for i, r := range rs.ByRepo[repoID] {
 		out[i] = cloneRelease(r)
 	}
-	// Real GitHub lists releases newest-first; IDs are monotonic at
-	// creation, so id-desc is stable across restarts even though the
-	// persistence loader rebuilds byRepo in map-iteration order.
+	// GitHub lists newest-first; id-desc is stable across restarts (the
+	// persistence loader rebuilds byRepo in map-iteration order).
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
 	return out
 }
@@ -223,9 +212,8 @@ func (rs *ReleaseStore) Update(id int, fn func(*Release)) bool {
 	return true
 }
 
-// DeleteAllForRepo purges every release for a repository, in memory and on
-// disk. Used by the delete-repo cascade so a recreated same-name repo can't
-// inherit the old repo's releases after a restart.
+// DeleteAllForRepo purges every release for a repo, in memory and on disk, so a
+// recreated same-name repo can't inherit them after a restart.
 func (rs *ReleaseStore) DeleteAllForRepo(repoID int) error {
 	rs.Mu.Lock()
 	defer rs.Mu.Unlock()
@@ -242,9 +230,8 @@ func (rs *ReleaseStore) DeleteAllForRepo(repoID int) error {
 	return nil
 }
 
-// appendRepoCleanup snapshots release asset locations into a durable
-// repository-deletion intent. The repository cascade can then commit metadata
-// without performing filesystem or object-store I/O while holding its lock.
+// appendRepoCleanup snapshots asset locations into a durable deletion intent so
+// the repo cascade can commit metadata without I/O while holding its lock.
 func (rs *ReleaseStore) appendRepoCleanup(repoID int, record *PendingDeletion) {
 	rs.Mu.RLock()
 	defer rs.Mu.RUnlock()
@@ -261,8 +248,7 @@ func (rs *ReleaseStore) appendRepoCleanup(repoID int, record *PendingDeletion) {
 }
 
 // deleteAllForRepoBatch removes release metadata in memory and stages every
-// durable row in the repository cascade's transaction. Asset bytes are
-// removed later from the durable deletion intent.
+// durable row into the cascade's transaction; asset bytes go later.
 func (rs *ReleaseStore) deleteAllForRepoBatch(repoID int, batch *PersistBatch) map[int]bool {
 	rs.Mu.Lock()
 	defer rs.Mu.Unlock()
@@ -291,9 +277,9 @@ func (rs *ReleaseStore) IDsForRepo(repoID int) map[int]bool {
 	return ids
 }
 
-// Delete removes a release. The release row, its asset rows, and its
-// reactions delete in one transaction, so a crash cannot durably drop the
-// reactions while the release survives (STORE-001/002).
+// Delete removes a release, its asset rows, and its reactions in one
+// transaction, so a crash can't drop the reactions while the release survives
+// (STORE-001/002).
 func (rs *ReleaseStore) Delete(id int, reactions *ReactionStore) (bool, error) {
 	rs.Mu.Lock()
 	defer rs.Mu.Unlock()
@@ -398,8 +384,8 @@ func (rs *ReleaseStore) deleteAssetLocked(a *ReleaseAsset) error {
 }
 
 // deleteAssetBatchLocked removes an asset's bytes and in-memory state, staging
-// its persisted row deletion into batch instead of committing it immediately,
-// so a caller can drop a release and every one of its assets in one transaction.
+// its row deletion into batch so a release and all its assets drop in one
+// transaction.
 func (rs *ReleaseStore) deleteAssetBatchLocked(a *ReleaseAsset, batch *PersistBatch) error {
 	if err := rs.removeAssetDataLocked(a.ID); err != nil {
 		return err
@@ -418,9 +404,8 @@ func (rs *ReleaseStore) deleteAssetBatchLocked(a *ReleaseAsset, batch *PersistBa
 	return nil
 }
 
-// deleteReleaseBatchLocked stages a release row and every one of its asset rows
-// into batch so a crash can no longer leave the release split from its assets.
-// The caller commits the batch.
+// deleteReleaseBatchLocked stages a release row and its asset rows into batch
+// so a crash can't leave the release split from its assets; caller commits.
 func (rs *ReleaseStore) deleteReleaseBatchLocked(r *Release, batch *PersistBatch) error {
 	// Iterate a copy: deleteAssetBatchLocked mutates r.Assets in place.
 	for _, a := range append([]*ReleaseAsset(nil), r.Assets...) {
@@ -442,8 +427,7 @@ func (rs *ReleaseStore) CreateReleaseAsset(releaseID, uploaderID int, name, labe
 	if rs.ByID[releaseID] == nil {
 		return nil, fmt.Errorf("release not found")
 	}
-	// A release cannot carry two assets with the same name; GitHub 422s the
-	// second upload rather than creating a duplicate.
+	// A release can't carry two assets with the same name; GitHub 422s.
 	for _, existing := range rs.ByID[releaseID].Assets {
 		if existing.Name == name {
 			return nil, ErrReleaseAssetNameExists
@@ -470,7 +454,6 @@ func (rs *ReleaseStore) CreateReleaseAsset(releaseID, uploaderID int, name, labe
 	rs.assetByID[id] = asset
 	rs.ByID[releaseID].Assets = append(rs.ByID[releaseID].Assets, asset)
 	if err := rs.saveAssetDataLocked(id, data); err != nil {
-		// Rollback maps and disk on write failure.
 		_ = rs.deleteAssetLocked(asset)
 		return nil, err
 	}

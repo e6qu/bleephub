@@ -40,15 +40,9 @@ import { DownloadIcon, MigrationIcon } from "../components/octicons.js";
 
 type Scope = { kind: "user" } | { kind: "org"; org: string };
 
-/**
- * The page's three surfaces. "user" and "org" are GitHub's export migrations —
- * data leaving this instance. "importer" is the GitHub Enterprise Importer,
- * which brings repositories in, and is a separate history because a migration
- * out of here and a migration into here answer different questions.
- */
+// "user"/"org" are export migrations; "importer" is the GitHub Enterprise Importer (repos in).
 type MigrationsTab = "user" | "org" | "importer";
 
-/** One GEI repository migration, as the browser surface serves it. */
 interface GeiRepositoryMigration {
   id: number;
   node_id: string;
@@ -69,7 +63,6 @@ interface GeiRepositoryMigration {
   log_url: string | null;
 }
 
-/** A place repositories are migrated from. Its credentials are never served. */
 interface GeiMigrationSource {
   id: number;
   node_id: string;
@@ -79,7 +72,6 @@ interface GeiMigrationSource {
   created_at: string;
 }
 
-/** One grant of the organization migrator role. */
 interface GeiMigratorGrant {
   actor_type: string;
   actor: string;
@@ -90,7 +82,6 @@ const enc = encodeURIComponent;
 
 const col = createColumnHelper<GithubMigration>();
 
-/** A source-repository import record as returned by the /import endpoints. */
 interface GithubImport {
   vcs: string | null;
   use_lfs: boolean;
@@ -107,7 +98,6 @@ interface GithubImport {
   authors_count: number | null;
 }
 
-/** A commit author discovered in an imported repository, remappable by email/name. */
 interface GithubImportAuthor {
   id: number;
   remote_id: string;
@@ -116,10 +106,6 @@ interface GithubImportAuthor {
   name: string;
 }
 
-/**
- * The viewer's organizations as a select — migrations can only target orgs
- * the viewer belongs to, so a free-text login field only invited typos.
- */
 function OrgSelect({
   id,
   value,
@@ -262,7 +248,7 @@ function ImportRepositorySection() {
     queryFn: () => ghFetch<GithubImport>(importPath),
     enabled: target != null,
     retry: false,
-    // Manual Refresh only — no polling keeps the flow deterministic and testable.
+    // Manual Refresh only — no polling.
     refetchInterval: false,
   });
 
@@ -662,15 +648,7 @@ function ImportAuthorRow({
   );
 }
 
-/**
- * The GitHub Enterprise Importer's status and history for one organization:
- * every repository migration it has run, the sources they came from, and who
- * holds the migrator role.
- *
- * It polls while anything is still moving and stops once everything is
- * terminal — a migration's state is a report of work, so there is nothing to
- * re-read once the work is over.
- */
+// Polls while any migration is non-terminal, then stops.
 function ImporterPanel({ org }: { org: string }) {
   const [detail, setDetail] = useState<GeiRepositoryMigration | null>(null);
   const base = `/ui-data/orgs/${enc(org)}/migrations`;
@@ -806,7 +784,6 @@ function ImporterPanel({ org }: { org: string }) {
 
 const geiCol = createColumnHelper<GeiRepositoryMigration>();
 
-/** The states a repository migration admits no further transitions from. */
 const geiTerminalStates = new Set(["SUCCEEDED", "FAILED", "FAILED_VALIDATION"]);
 
 function geiStateLabel(state: string): { state: "open" | "closed" | "draft"; label: string } {
@@ -824,12 +801,6 @@ function geiStateLabel(state: string): { state: "open" | "closed" | "draft"; lab
   }
 }
 
-/**
- * One repository migration in full: why it failed if it did, what it warned
- * about, and its log. The log is fetched rather than linked because the link is
- * not a credential — it is served behind the same migrator standing this page
- * is, so it only resolves for a caller who already has it.
- */
 function GeiMigrationDetailDialog({
   migration,
   onClose,
@@ -837,9 +808,7 @@ function GeiMigrationDetailDialog({
   migration: GeiRepositoryMigration;
   onClose: () => void;
 }) {
-  // The log is text rather than JSON, so it is read with fetch + authHeaders()
-  // here rather than through ghFetch. It is defined in this lazy page rather
-  // than added to api.ts, which every route pays for.
+  // Log is plain text, so read with fetch + authHeaders() rather than ghFetch.
   const logQ = useQuery({
     queryKey: ["gei", "log", migration.id],
     queryFn: async () => {

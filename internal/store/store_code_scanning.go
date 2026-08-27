@@ -15,10 +15,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// CodeScanningState is the lifecycle state of a code-scanning alert. The three
-// constants are the only values GitHub emits; typing the field keeps invalid
-// states out of the struct and lets the transition validator be total over the
-// domain. A typed string marshals to JSON identically to a plain string.
+// CodeScanningState is a code-scanning alert's lifecycle state; the three
+// constants are the only values GitHub emits.
 type CodeScanningState string
 
 const (
@@ -28,13 +26,13 @@ const (
 )
 
 // CodeScanningDismissedReason is the reason recorded when an alert is dismissed;
-// only these four values are accepted (validated at the REST boundary).
+// only these four values are accepted.
 type CodeScanningDismissedReason string
 
 const (
 	// GitHub's code-scanning dismissed_reason enum uses spaces, not underscores
-	// (unlike the secret-scanning resolution enum). "ignored" is not a GitHub
-	// value at all (PAR-010).
+	// (unlike the secret-scanning resolution enum), and has no "ignored" value
+	// (PAR-010).
 	CodeScanningDismissedFalsePositive CodeScanningDismissedReason = "false positive"
 	CodeScanningDismissedWontFix       CodeScanningDismissedReason = "won't fix"
 	CodeScanningDismissedUsedInTests   CodeScanningDismissedReason = "used in tests"
@@ -56,8 +54,8 @@ type CodeScanningAlertInstance struct {
 	Message     string            `json:"message"`
 }
 
-// CodeScanningAlert is a repo-scoped code-scanning alert produced by SARIF
-// uploads or the operator seeding endpoint.
+// CodeScanningAlert is a repo-scoped alert from a SARIF upload or the operator
+// seeding endpoint.
 type CodeScanningAlert struct {
 	ID           int    `json:"id"`
 	NodeID       string `json:"node_id"`
@@ -65,9 +63,8 @@ type CodeScanningAlert struct {
 	RepoKey      string `json:"repo_key"`
 	RuleID       string `json:"rule_id"`
 	RuleSeverity string `json:"rule_severity"`
-	// SecuritySeverityLevel is the low/medium/high/critical bucket GitHub derives
-	// from a security rule's numeric SARIF `security-severity` score; empty for a
-	// non-security (quality) rule, which serializes it as null.
+	// SecuritySeverityLevel is the low/medium/high/critical bucket derived from a
+	// rule's numeric SARIF security-severity score; empty (null) for a quality rule.
 	SecuritySeverityLevel string                      `json:"security_severity_level"`
 	RuleDescription       string                      `json:"rule_description"`
 	ToolName              string                      `json:"tool_name"`
@@ -104,7 +101,7 @@ type CodeScanningAnalysis struct {
 	URL           string    `json:"url"`
 }
 
-// SARIFUpload tracks a SARIF upload request. Real GitHub is asynchronous;
+// SARIFUpload tracks a SARIF upload request. GitHub processes asynchronously;
 // bleephub processes synchronously and stores the upload as complete.
 type SARIFUpload struct {
 	ID        string    `json:"id"`
@@ -114,8 +111,7 @@ type SARIFUpload struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// CreateCodeScanningAlert seeds a code-scanning alert directly through the
-// operator surface.
+// CreateCodeScanningAlert seeds an alert through the operator surface.
 func (st *Store) CreateCodeScanningAlert(repoKey, ruleID, severity, description, toolName, toolGUID, state string, instances []CodeScanningAlertInstance) *CodeScanningAlert {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -157,9 +153,8 @@ func (st *Store) CreateCodeScanningAlert(repoKey, ruleID, severity, description,
 	return alert
 }
 
-// cloneCodeScanningAlert returns a deep copy safe to hand outside the store
-// lock (STORE-021): Instances, DismissedAt and FixedAt are the only reference
-// fields. Mutations go through UpdateCodeScanningAlert against the live row.
+// cloneCodeScanningAlert returns a deep copy safe to hand outside the store lock
+// (STORE-021). Instances, DismissedAt and FixedAt are the only reference fields.
 func cloneCodeScanningAlert(a *CodeScanningAlert) *CodeScanningAlert {
 	if a == nil {
 		return nil
@@ -186,8 +181,8 @@ func (st *Store) GetCodeScanningAlert(repoKey string, number int) *CodeScanningA
 	return cloneCodeScanningAlert(st.CodeScanningAlertsByRepo[repoKey][number])
 }
 
-// ListCodeScanningAlerts returns repo alerts filtered/sorted per GitHub's list
-// endpoint.
+// ListCodeScanningAlerts returns repo alerts filtered and sorted per GitHub's
+// list endpoint.
 func (st *Store) ListCodeScanningAlerts(repoKey, state, severity, toolName, rule, sortField, direction string) []*CodeScanningAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -233,13 +228,9 @@ func (st *Store) ListCodeScanningAlerts(repoKey, state, severity, toolName, rule
 	return snapshotCodeScanningAlerts(out)
 }
 
-// UpdateCodeScanningAlert applies a state/dismissed_reason transition to a
-// single alert. Valid transitions mirror real GitHub: open → dismissed,
-// open → fixed, dismissed → open.
-// UpdateCodeScanningAlert applies a state transition. `a` now comes from
-// GetCodeScanningAlert, which returns a detached clone, so the mutation is
-// applied to the LIVE row (re-fetched by key) and a fresh snapshot is written
-// back into `a` for the caller to render — never the live pointer.
+// UpdateCodeScanningAlert applies a state/dismissed_reason transition. Since `a`
+// is a detached clone from GetCodeScanningAlert, the mutation hits the LIVE row
+// re-fetched by key, and a fresh snapshot is written back into `a`.
 func (st *Store) UpdateCodeScanningAlert(a *CodeScanningAlert, state, dismissedReason, dismissedComment string) error {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -280,8 +271,8 @@ func (st *Store) UpdateCodeScanningAlert(a *CodeScanningAlert, state, dismissedR
 }
 
 func validateCodeScanningTransition(currentState, newState, dismissedReason string) error {
-	// github's code-scanning-alert-set-state enum is open|dismissed; `fixed` is
-	// a system-derived response-only state a client PATCH cannot set (422).
+	// GitHub's set-state enum is open|dismissed; `fixed` is a system-derived
+	// response-only state a client PATCH cannot set (422).
 	if newState != "" && newState != "open" && newState != "dismissed" {
 		return fmt.Errorf("invalid state %q", newState)
 	}
@@ -312,7 +303,7 @@ func isValidDismissedReason(r string) bool {
 	return false
 }
 
-// CreateCodeScanningAnalysis records a new analysis run for a repo.
+// CreateCodeScanningAnalysis records a new analysis run.
 func (st *Store) CreateCodeScanningAnalysis(repoKey, ref, commitSHA, analysisKey, category, toolName, toolGUID string) *CodeScanningAnalysis {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -342,7 +333,7 @@ func (st *Store) CreateCodeScanningAnalysis(repoKey, ref, commitSHA, analysisKey
 	return analysis
 }
 
-// GetCodeScanningAnalysis returns an analysis by ID scoped to a repo.
+// GetCodeScanningAnalysis returns an analysis by ID scoped to the repo.
 func (st *Store) GetCodeScanningAnalysis(repoKey string, id int) *CodeScanningAnalysis {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -353,8 +344,8 @@ func (st *Store) GetCodeScanningAnalysis(repoKey string, id int) *CodeScanningAn
 	return a
 }
 
-// ListCodeScanningAnalyses returns analyses for a repo, optionally filtered by
-// ref and tool_name.
+// ListCodeScanningAnalyses returns a repo's analyses, optionally filtered by ref
+// and tool_name.
 func (st *Store) ListCodeScanningAnalyses(repoKey, ref, toolName string) []*CodeScanningAnalysis {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -391,11 +382,9 @@ func (st *Store) DeleteCodeScanningAnalysis(repoKey string, id int) bool {
 	return true
 }
 
-// CreateSARIFUpload parses a base64-encoded SARIF payload, creates analyses
-// and alerts, and returns the upload record. Processing is synchronous so the
-// returned upload is always "complete". Every analysis, alert, and the upload
-// row commit in one transaction so a crash cannot leave a partial upload
-// (STORE-001/002).
+// CreateSARIFUpload parses a base64-encoded SARIF payload, creates analyses and
+// alerts, and returns the (always "complete") upload record. Every analysis,
+// alert, and the upload row commit in one transaction (STORE-001/002).
 func (st *Store) CreateSARIFUpload(repoKey string, payload map[string]interface{}) (*SARIFUpload, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -477,9 +466,9 @@ func extractSARIFToolGUID(run map[string]interface{}) string {
 	return guid
 }
 
-// createAnalysisAndAlertsLocked builds one analysis plus its alerts and stages
-// every row into batch instead of committing per-record transactions, so the
-// whole SARIF upload persists atomically (STORE-001/002). Callers hold st.Mu.
+// createAnalysisAndAlertsLocked builds one analysis plus its alerts, staging
+// every row into batch so the whole SARIF upload persists atomically
+// (STORE-001/002). Callers hold st.Mu.
 func (st *Store) createAnalysisAndAlertsLocked(batch *PersistBatch, repoKey, ref, commitSHA, analysisKey, category, toolName, toolGUID string, run map[string]interface{}, results []interface{}) *CodeScanningAnalysis {
 	if st.CodeScanningAlertsByRepo[repoKey] == nil {
 		st.CodeScanningAlertsByRepo[repoKey] = make(map[int]*CodeScanningAlert)
@@ -579,8 +568,7 @@ func (st *Store) createAnalysisAndAlertsLocked(batch *PersistBatch, repoKey, ref
 		}
 		st.NextCodeScanningAlertID++
 
-		// Severity defaults to "warning" when the SARIF payload does not
-		// include rule metadata.
+		// Default severity when the SARIF payload carries no rule metadata.
 		if alert.RuleSeverity == "" {
 			alert.RuleSeverity = "warning"
 		}
@@ -616,8 +604,6 @@ func sarifRuleMetadata(run map[string]interface{}, ruleID string) (severity, des
 			if severity == "" {
 				severity, _ = props["severity"].(string)
 			}
-			// A security rule carries a numeric "security-severity" score
-			// (0.0–10.0); GitHub buckets it into the alert's security level.
 			if score, ok := props["security-severity"].(string); ok {
 				securityLevel = securitySeverityLevel(score)
 			}
@@ -632,9 +618,9 @@ func sarifRuleMetadata(run map[string]interface{}, ruleID string) (severity, des
 	return "", "", ""
 }
 
-// securitySeverityLevel maps a SARIF numeric "security-severity" score to the
-// low/medium/high/critical bucket GitHub reports, using GitHub's CVSS-aligned
-// thresholds. An unparseable or empty score yields no level.
+// securitySeverityLevel maps a SARIF security-severity score to GitHub's
+// low/medium/high/critical bucket via its CVSS-aligned thresholds. An
+// unparseable or empty score yields no level.
 func securitySeverityLevel(score string) string {
 	value, err := strconv.ParseFloat(strings.TrimSpace(score), 64)
 	if err != nil {
@@ -722,9 +708,8 @@ func intNumber(v interface{}) int {
 	return 0
 }
 
-// CodeScanningDefaultSetup is one repository's code scanning default
-// setup configuration. Repositories without a row have never had default
-// setup touched and report "not-configured".
+// CodeScanningDefaultSetup is one repository's default-setup configuration. A
+// repo without a row reports "not-configured".
 type CodeScanningDefaultSetup struct {
 	RepoKey     string    `json:"repo_key"`
 	State       string    `json:"state"` // "configured" or "not-configured"
@@ -736,14 +721,13 @@ type CodeScanningDefaultSetup struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// GetCodeScanningDefaultSetup returns the default setup configuration
-// recorded for a repo, or nil when default setup was never configured.
+// GetCodeScanningDefaultSetup returns a repo's default-setup configuration, or
+// nil when never configured.
 func (st *Store) GetCodeScanningDefaultSetup(repoKey string) *CodeScanningDefaultSetup {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// Detach from the stored row: SetCodeScanningDefaultSetup stamps UpdatedAt on
-	// the configuration in place, so a reader must hold an independent snapshot
-	// (with its own Languages slice).
+	// Detach: SetCodeScanningDefaultSetup stamps UpdatedAt in place, so the reader
+	// needs an independent snapshot with its own Languages slice (STORE-021).
 	s := st.CodeScanningDefaultSetups[repoKey]
 	if s == nil {
 		return nil
@@ -753,8 +737,8 @@ func (st *Store) GetCodeScanningDefaultSetup(repoKey string) *CodeScanningDefaul
 	return &clone
 }
 
-// SetCodeScanningDefaultSetup records (and persists) a repo's default
-// setup configuration, stamping UpdatedAt.
+// SetCodeScanningDefaultSetup records a repo's default-setup configuration,
+// stamping UpdatedAt.
 func (st *Store) SetCodeScanningDefaultSetup(setup *CodeScanningDefaultSetup) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -765,9 +749,8 @@ func (st *Store) SetCodeScanningDefaultSetup(setup *CodeScanningDefaultSetup) {
 	}
 }
 
-// linguistToCodeQLLanguage maps a Linguist language (as detected by
-// LanguageForFilename) to the CodeQL default-setup language it is
-// analyzed as. Languages CodeQL default setup does not support are absent.
+// linguistToCodeQLLanguage maps a Linguist language to the CodeQL default-setup
+// language it is analyzed as. Unsupported languages are absent.
 var linguistToCodeQLLanguage = map[string]string{
 	"Go":         "go",
 	"JavaScript": "javascript-typescript",
@@ -784,10 +767,9 @@ var linguistToCodeQLLanguage = map[string]string{
 	"Swift":      "swift",
 }
 
-// detectCodeQLLanguages derives the CodeQL default-setup languages for a
-// repo from its real git content on the default branch: the CodeQL
-// mapping of every Linguist-detected language, plus "actions" when the
-// repository carries GitHub Actions workflow files. The result is sorted.
+// DetectCodeQLLanguages derives a repo's sorted CodeQL default-setup languages
+// from its default-branch content: the CodeQL mapping of every Linguist-detected
+// language, plus "actions" when the repo carries Actions workflow files.
 func (st *Store) DetectCodeQLLanguages(repo *Repo) []string {
 	set := map[string]bool{}
 	for lang := range st.ComputeRepoLanguages(repo) {
@@ -806,8 +788,8 @@ func (st *Store) DetectCodeQLLanguages(repo *Repo) []string {
 	return out
 }
 
-// repoHasWorkflowFiles reports whether the repo's default branch carries
-// any GitHub Actions workflow file under .github/workflows.
+// repoHasWorkflowFiles reports whether the repo's default branch carries any
+// workflow file under .github/workflows.
 func (st *Store) repoHasWorkflowFiles(repo *Repo) bool {
 	st.Mu.RLock()
 	stor := st.GitStorages[repo.FullName]
@@ -862,21 +844,20 @@ func (st *Store) persistCodeScanningAnalysis(a *CodeScanningAnalysis) {
 	}
 }
 
-// persistCodeScanningAlertBatchLocked stages an alert row into batch instead
-// of committing its own transaction (STORE-001/002). Callers hold st.Mu.
+// persistCodeScanningAlertBatchLocked stages an alert row into batch (STORE-001/002).
+// Callers hold st.Mu.
 func (st *Store) persistCodeScanningAlertBatchLocked(batch *PersistBatch, a *CodeScanningAlert) {
 	batch.Put("code_scanning_alerts", strconv.Itoa(a.ID), a)
 }
 
 // persistCodeScanningAnalysisBatchLocked stages an analysis row into batch
-// instead of committing its own transaction (STORE-001/002). Callers hold st.Mu.
+// (STORE-001/002). Callers hold st.Mu.
 func (st *Store) persistCodeScanningAnalysisBatchLocked(batch *PersistBatch, a *CodeScanningAnalysis) {
 	batch.Put("code_scanning_analyses", strconv.Itoa(a.ID), a)
 }
 
-// ListCodeScanningAlertsByOrg returns all code scanning alerts for
-// repositories owned by the given organization, sorted per GitHub's
-// organization list endpoint.
+// ListCodeScanningAlertsByOrg returns all alerts for repos owned by the org,
+// sorted per GitHub's organization list endpoint.
 func (st *Store) ListCodeScanningAlertsByOrg(orgID int, state, severity, toolName, sortField, direction string) []*CodeScanningAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -913,10 +894,9 @@ func (st *Store) ListCodeScanningAlertsByOrg(orgID int, state, severity, toolNam
 	return snapshotCodeScanningAlerts(out)
 }
 
-// CodeScanningAutofix is a Copilot Autofix suggestion for one code
-// scanning alert. Real GitHub generates the fix asynchronously; bleephub
-// generates it synchronously from the alert's stored rule and location,
-// so a created autofix is immediately in "success" status.
+// CodeScanningAutofix is a Copilot Autofix suggestion for one alert. GitHub
+// generates it asynchronously; bleephub does so synchronously, so a created
+// autofix is immediately in "success" status.
 type CodeScanningAutofix struct {
 	RepoKey     string    `json:"repo_key"`
 	AlertNumber int       `json:"alert_number"`
@@ -935,9 +915,8 @@ func autofixKey(repoKey string, number int) string {
 func (st *Store) GetCodeScanningAutofix(repoKey string, number int) *CodeScanningAutofix {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// The autofix is write-once today, but hand back a detached value copy (it
-	// has no reference fields) so a future in-place status update can't race a
-	// reader.
+	// Detached value copy so a future in-place status update can't race a reader
+	// (STORE-021).
 	a := st.CodeScanningAutofixes[autofixKey(repoKey, number)]
 	if a == nil {
 		return nil
@@ -946,9 +925,8 @@ func (st *Store) GetCodeScanningAutofix(repoKey string, number int) *CodeScannin
 	return &clone
 }
 
-// CreateCodeScanningAutofix generates and stores the autofix for an
-// alert. Returns (autofix, created); created is false when an autofix
-// already existed, in which case the existing one is returned unchanged.
+// CreateCodeScanningAutofix generates and stores the autofix for an alert.
+// created is false when one already existed, returned unchanged.
 func (st *Store) CreateCodeScanningAutofix(a *CodeScanningAlert) (*CodeScanningAutofix, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -958,8 +936,8 @@ func (st *Store) CreateCodeScanningAutofix(a *CodeScanningAlert) (*CodeScanningA
 		return existing, false
 	}
 
-	// An alert always carries at least one instance, but a malformed or
-	// partially-loaded one must not panic the store under the write lock.
+	// A malformed or partially-loaded alert (no instances) must not panic under
+	// the write lock.
 	var inst CodeScanningAlertInstance
 	if len(a.Instances) > 0 {
 		inst = a.Instances[len(a.Instances)-1]
@@ -980,9 +958,9 @@ func (st *Store) CreateCodeScanningAutofix(a *CodeScanningAlert) (*CodeScanningA
 
 // --- CodeQL databases ---
 
-// CodeQLDatabase is a CodeQL database uploaded for one repository +
-// language pair. StoragePath points at the durable archive bytes; Content is
-// only used by non-persistent in-memory stores.
+// CodeQLDatabase is a CodeQL database for one repo + language pair. StoragePath
+// points at the durable archive bytes; Content is used only by non-persistent
+// in-memory stores.
 type CodeQLDatabase struct {
 	ID          int       `json:"id"`
 	RepoKey     string    `json:"repo_key"`
@@ -998,9 +976,8 @@ type CodeQLDatabase struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// UpsertCodeQLDatabase creates or replaces the CodeQL database for a
-// repo + language, mirroring how a new analysis upload supersedes the
-// previous database on real GitHub.
+// UpsertCodeQLDatabase creates or replaces the CodeQL database for a repo +
+// language, as a new upload supersedes the previous one on GitHub.
 func (st *Store) UpsertCodeQLDatabase(repoKey, language, name, contentType, commitOID string, content []byte, uploaderID int) (*CodeQLDatabase, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1077,26 +1054,19 @@ func (st *Store) UpsertCodeQLDatabase(repoKey, language, name, contentType, comm
 	return db, nil
 }
 
-// GetCodeQLDatabase returns the CodeQL database for a repo + language.
-//
-// Unlike the other store getters this intentionally returns the live row rather
-// than a snapshot: a stored database is write-once (UpsertCodeQLDatabase builds
-// a fresh row and swaps the map pointer under the write lock rather than
-// mutating an existing one, and nothing else mutates it in place), so a reader
-// holding the pointer never races a writer. Its Content field can hold the full
-// database blob, which cloning on every metadata read would needlessly copy.
+// GetCodeQLDatabase returns the live row, not a snapshot: a stored database is
+// write-once (Upsert swaps a fresh row under the write lock), so a reader never
+// races a writer, and its Content blob would be needlessly copied on every read
+// (STORE-021 documented exception).
 func (st *Store) GetCodeQLDatabase(repoKey, language string) *CodeQLDatabase {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return st.CodeQLDatabasesByRepo[repoKey][language]
 }
 
-// ListCodeQLDatabases returns a repo's CodeQL databases sorted by language.
-// ListCodeQLDatabases returns live rows deliberately, matching GetCodeQLDatabase:
-// a stored database is write-once (UpsertCodeQLDatabase swaps a fresh row rather
-// than mutating in place) and its Content field can hold the full database blob
-// that cloning on every list would needlessly copy (STORE-021 documented
-// exception).
+// ListCodeQLDatabases returns a repo's CodeQL databases sorted by language,
+// as live rows for the same write-once reason as GetCodeQLDatabase (STORE-021
+// documented exception).
 func (st *Store) ListCodeQLDatabases(repoKey string) []*CodeQLDatabase {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1168,8 +1138,7 @@ func (st *Store) deleteCodeQLDatabaseDataLocked(db *CodeQLDatabase) error {
 // --- CodeQL variant analyses ---
 
 // CodeScanningAnalysisStatus is a CodeQL variant-analysis repo task's status;
-// GitHub emits only these six values. A typed string marshals to JSON
-// identically to a plain string.
+// GitHub emits only these six values.
 type CodeScanningAnalysisStatus string
 
 const (
@@ -1191,13 +1160,11 @@ type CodeQLVariantAnalysisRepoTask struct {
 	DatabaseCommitSHA string                     `json:"database_commit_sha"`
 }
 
-// CodeQLVariantAnalysis is a multi-repository variant analysis run for a
-// CodeQL query pack, controlled by one repository. StoragePath points at the
-// durable query-pack tarball; QueryPack is only used by non-persistent
-// in-memory stores. Real GitHub executes the query via a GitHub Actions
-// workflow run; bleephub resolves the target repositories against its store
-// synchronously (a repository is queryable only when it has a CodeQL database
-// for the requested language) and completes the analysis immediately.
+// CodeQLVariantAnalysis is a multi-repository variant analysis for a CodeQL
+// query pack. StoragePath points at the durable query-pack tarball; QueryPack is
+// used only by non-persistent in-memory stores. GitHub runs the query via an
+// Actions workflow; bleephub resolves targets synchronously (a repo is queryable
+// only with a CodeQL database for the language) and completes immediately.
 type CodeQLVariantAnalysis struct {
 	ID                  int                             `json:"id"`
 	ControllerRepoKey   string                          `json:"controller_repo_key"`
@@ -1216,11 +1183,10 @@ type CodeQLVariantAnalysis struct {
 	CompletedAt         *time.Time                      `json:"completed_at"`
 }
 
-// CreateCodeQLVariantAnalysis resolves the requested repositories and
-// stores a completed variant analysis. Repositories that do not exist go
-// to NotFoundRepos; repositories without a CodeQL database for the
-// requested language go to NoCodeQLDBRepos; the rest are scanned. When
-// no repository is scannable the analysis fails with no_repos_queried.
+// CreateCodeQLVariantAnalysis resolves the requested repos and stores a
+// completed variant analysis. Nonexistent repos go to NotFoundRepos, those
+// without a CodeQL database for the language to NoCodeQLDBRepos, the rest are
+// scanned; when none is scannable the analysis fails with no_repos_queried.
 func (st *Store) CreateCodeQLVariantAnalysis(controllerRepoKey string, actorID int, language string, queryPack []byte, repoFullNames []string) (*CodeQLVariantAnalysis, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1287,9 +1253,8 @@ func (st *Store) CreateCodeQLVariantAnalysis(controllerRepoKey string, actorID i
 	return va, nil
 }
 
-// ListRepoFullNamesByOwner returns the sorted full names of every
-// repository owned by the given user or organization login. The CodeQL
-// variant-analysis repository_owners selector resolves through this.
+// ListRepoFullNamesByOwner returns the sorted full names of every repo owned by
+// the login. Backs the CodeQL variant-analysis repository_owners selector.
 func (st *Store) ListRepoFullNamesByOwner(owner string) []string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1304,8 +1269,7 @@ func (st *Store) ListRepoFullNamesByOwner(owner string) []string {
 	return out
 }
 
-// GetCodeQLVariantAnalysis returns a variant analysis scoped to its
-// controller repository.
+// GetCodeQLVariantAnalysis returns a variant analysis scoped to its controller repo.
 func (st *Store) GetCodeQLVariantAnalysis(controllerRepoKey string, id int) *CodeQLVariantAnalysis {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

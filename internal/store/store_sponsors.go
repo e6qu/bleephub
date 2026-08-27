@@ -1,24 +1,16 @@
 package store
 
-// GitHub Sponsors: the durable model behind the Sponsorable GraphQL
-// surface and the `sponsorship` webhook family.
+// GitHub Sponsors: the durable model behind the Sponsorable GraphQL surface
+// and the `sponsorship` webhook family. A [SponsorsListing] carries tiers, a
+// goal, featured items and newsletters; a [Sponsorship] bills monthly into a
+// [SponsorsInvoice], rolled up into a [SponsorsPayout].
 //
-// A sponsorable account (a user or an organization) opens a
-// [SponsorsListing]. The listing carries tiers ([SponsorsTier]), an
-// optional goal ([SponsorsGoal]), featured items, newsletters, and payout
-// settings. Sponsors open [Sponsorship] records against a tier; a
-// recurring sponsorship runs a monthly billing cycle that mints a
-// [SponsorsInvoice] per period and rolls those invoices into a
-// [SponsorsPayout] for the maintainer.
+// Money is integer US cents everywhere, and no arithmetic divides before it
+// multiplies. Nothing here contacts a payment processor; the whole lifecycle
+// is simulated.
 //
-// Money is integer United States cents everywhere — the store has no
-// floating-point money field, and no arithmetic here divides before it
-// multiplies. Nothing in this file contacts a payment processor: the
-// lifecycle, the invoices and the payout schedule are simulated exactly as
-// Actions runs execute against a simulated runner.
-//
-// STORE-021: every getter and List* here returns a detached snapshot;
-// only Find*ByNodeID returns the live row.
+// STORE-021: every getter and List* returns a detached snapshot; only
+// Find*ByNodeID returns the live row.
 
 import (
 	"fmt"
@@ -29,8 +21,7 @@ import (
 	"time"
 )
 
-// Node-id prefixes for the Sponsors object graph. They follow the store's
-// existing "<PREFIX>_kgDO%08d" convention so a global id names its type.
+// Node-id prefixes for the Sponsors object graph ("<PREFIX>_kgDO%08d").
 const (
 	SponsorsListingNodeIDPrefix             = "SL_kgDO"
 	SponsorsTierNodeIDPrefix                = "ST_kgDO"
@@ -96,9 +87,7 @@ type SponsorsListing struct {
 	ShortDescription string `json:"short_description"`
 	FullDescription  string `json:"full_description"`
 	ContactEmail     string `json:"contact_email,omitempty"`
-	// Payout settings. No money leaves the instance, but where a payout
-	// would be directed, when the next one falls due and what the fiscal
-	// host is are the maintainer's real configuration.
+	// Payout settings (no money moves, but the maintainer's real config).
 	BillingCountryOrRegion          string        `json:"billing_country_or_region,omitempty"`
 	ResidenceCountryOrRegion        string        `json:"residence_country_or_region,omitempty"`
 	FiscalHostLogin                 string        `json:"fiscal_host_login,omitempty"`
@@ -175,9 +164,8 @@ type Sponsorship struct {
 	IsSponsorOptedIntoEmail bool   `json:"is_sponsor_opted_into_email"`
 	ViaBulkSponsorship      bool   `json:"via_bulk_sponsorship"`
 
-	// AmountInCents is what this sponsorship bills each period (or once,
-	// for a one-time payment). It is copied off the tier at selection time
-	// so a later tier edit cannot silently reprice an existing sponsor.
+	// AmountInCents is copied off the tier at selection time so a later tier
+	// edit cannot reprice an existing sponsor.
 	AmountInCents int `json:"amount_in_cents"`
 
 	PendingTierID        int        `json:"pending_tier_id,omitempty"`
@@ -227,10 +215,8 @@ type SponsorshipNewsletter struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// SponsorsInvoice records one billed period of a sponsorship. It is the
-// ledger every money figure the API reports is derived from, so
-// lifetimeReceivedSponsorshipValues and the payout totals cannot drift
-// from what was actually billed.
+// SponsorsInvoice records one billed period. It is the ledger every reported
+// money figure derives from, so totals cannot drift from what was billed.
 type SponsorsInvoice struct {
 	ID               int       `json:"id"`
 	SponsorshipID    int       `json:"sponsorship_id"`
@@ -261,9 +247,8 @@ type SponsorsPayout struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-// SponsorsStore holds the whole Sponsors object graph behind one mutex so
-// a lifecycle transition (charge an invoice, retire a tier, cancel a
-// sponsorship) is atomic across the records it touches.
+// SponsorsStore holds the whole Sponsors object graph behind one mutex so a
+// lifecycle transition is atomic across the records it touches.
 type SponsorsStore struct {
 	Mu      sync.RWMutex `json:"-"`
 	Persist *Persistence `json:"-"`
@@ -288,8 +273,8 @@ type SponsorsStore struct {
 	nextPayoutID       int
 }
 
-// NewSponsorsStore builds an empty Sponsors store. The clock is the
-// store's, so a test that freezes time freezes billing with it.
+// NewSponsorsStore builds an empty Sponsors store sharing the given clock, so
+// freezing time freezes billing.
 func NewSponsorsStore(now func() time.Time) *SponsorsStore {
 	return &SponsorsStore{
 		clock:              now,
@@ -324,8 +309,7 @@ func (ss *SponsorsStore) SetClock(now func() time.Time) { ss.clock = now }
 
 func sponsorsNodeID(prefix string, id int) string { return fmt.Sprintf("%s%08d", prefix, id) }
 
-// parseSponsorsNodeID returns the numeric id encoded in a Sponsors global
-// id with the given prefix.
+// parseSponsorsNodeID returns the numeric id encoded in a Sponsors global id.
 func parseSponsorsNodeID(prefix, nodeID string) (int, bool) {
 	if !strings.HasPrefix(nodeID, prefix) {
 		return 0, false
@@ -395,7 +379,7 @@ func (ss *SponsorsStore) commit(b *PersistBatch, bucket string) {
 	}
 }
 
-// loadSponsors repopulates the Sponsors store from durable storage.
+// loadSponsors repopulates the Sponsors store from disk.
 func (st *Store) loadSponsors() error {
 	ss := st.Sponsors
 	ss.Persist = st.Persist
@@ -564,9 +548,7 @@ func (ss *SponsorsStore) CreateSponsorsListing(in SponsorsListingInput) (*Sponso
 	return cloneSponsorsListing(listing), nil
 }
 
-// SponsorsNextPayoutDate is the first day of the next calendar month:
-// GitHub pays maintainers monthly, so a listing's next payout falls at the
-// start of the next billing month.
+// SponsorsNextPayoutDate is the first day of the next calendar month.
 func SponsorsNextPayoutDate(now time.Time) string {
 	first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
 	return first.Format("2006-01-02")
@@ -595,8 +577,8 @@ func (ss *SponsorsStore) listingForAccountLocked(login string) *SponsorsListing 
 	return nil
 }
 
-// FindSponsorsListingByNodeID returns the live listing row for a global id
-// (STORE-021's documented exception for node lookups).
+// FindSponsorsListingByNodeID returns the live listing row (STORE-021 node
+// lookup exception).
 func (ss *SponsorsStore) FindSponsorsListingByNodeID(nodeID string) *SponsorsListing {
 	id, ok := parseSponsorsNodeID(SponsorsListingNodeIDPrefix, nodeID)
 	if !ok {
@@ -1062,11 +1044,9 @@ type SponsorshipInput struct {
 	PaymentSource      string
 }
 
-// SponsorsTransition is what a lifecycle call reports back: the
-// sponsorship after the change, the activity it recorded, any invoice it
-// billed, and the tiers on either side of a tier move. The server renders
-// the `sponsorship` webhook from it, so a transition and its event cannot
-// drift apart.
+// SponsorsTransition is what a lifecycle call reports back: the sponsorship
+// after the change, its activity, any invoice, and the tiers on either side.
+// The server renders the `sponsorship` webhook from it.
 type SponsorsTransition struct {
 	Sponsorship  *Sponsorship
 	Previous     *Sponsorship
@@ -1076,8 +1056,8 @@ type SponsorsTransition struct {
 	PreviousTier *SponsorsTier
 }
 
-// sponsorshipKeyLocked finds the sponsor→sponsorable sponsorship, active
-// or not. Callers hold the lock.
+// sponsorshipKeyLocked finds the sponsor→sponsorable sponsorship. Callers hold
+// the lock.
 func (ss *SponsorsStore) sponsorshipKeyLocked(sponsorLogin, sponsorableLogin string, activeOnly bool) *Sponsorship {
 	var found *Sponsorship
 	for _, s := range ss.sponsorships {
@@ -1094,15 +1074,13 @@ func (ss *SponsorsStore) sponsorshipKeyLocked(sponsorLogin, sponsorableLogin str
 	return found
 }
 
-// nextBillingDate advances one calendar month, which is GitHub's recurring
-// sponsorship cycle.
+// nextSponsorsBillingDate advances one calendar month (the recurring cycle).
 func nextSponsorsBillingDate(from time.Time) time.Time {
 	return from.AddDate(0, 1, 0).UTC()
 }
 
-// CreateSponsorship opens a sponsorship and bills its first period. A
-// recurring sponsorship gets a next billing date one month out; a one-time
-// payment gets a single invoice and none.
+// CreateSponsorship opens a sponsorship and bills its first period. Recurring
+// gets a next billing date one month out; a one-time payment gets one invoice.
 func (ss *SponsorsStore) CreateSponsorship(in SponsorshipInput) (*SponsorsTransition, error) {
 	ss.Mu.Lock()
 	defer ss.Mu.Unlock()
@@ -1198,8 +1176,8 @@ func (ss *SponsorsStore) CreateSponsorship(in SponsorshipInput) (*SponsorsTransi
 	}, nil
 }
 
-// newInvoiceLocked mints an invoice without persisting or indexing it; the
-// caller stages both in its own batch. Callers hold the lock.
+// newInvoiceLocked mints an invoice; the caller persists and indexes it.
+// Callers hold the lock.
 func (ss *SponsorsStore) newInvoiceLocked(s *Sponsorship, listing *SponsorsListing, amount int, start, end time.Time, oneTime, prorated bool) *SponsorsInvoice {
 	return &SponsorsInvoice{
 		ID:               ss.nextInvoiceID,
@@ -1245,13 +1223,10 @@ func (ss *SponsorsStore) newActivityLocked(action string, s *Sponsorship, tier, 
 	return a
 }
 
-// ChangeSponsorshipTier moves a recurring sponsorship to another tier.
-//
-// An upgrade takes effect immediately and bills the difference, prorated
-// over the days left in the current period (integer cents: the difference
-// is multiplied by the remaining days before it is divided by the period
-// length, so no rounding error can accumulate into the total). A downgrade
-// is scheduled for the next billing date, exactly as GitHub defers it.
+// ChangeSponsorshipTier moves a recurring sponsorship to another tier. An
+// upgrade takes effect now and bills the prorated difference (multiply by
+// remaining days before dividing, so no rounding accumulates); a downgrade is
+// deferred to the next billing date, as GitHub does.
 func (ss *SponsorsStore) ChangeSponsorshipTier(sponsorshipID, tierID int) (*SponsorsTransition, error) {
 	ss.Mu.Lock()
 	defer ss.Mu.Unlock()
@@ -1393,10 +1368,8 @@ func (ss *SponsorsStore) UpdateSponsorshipPreferences(sponsorshipID int, privacy
 	return &SponsorsTransition{Sponsorship: cloneSponsorship(&updated), Previous: previous, Tier: tier}, nil
 }
 
-// CancelSponsorship ends a sponsorship. A recurring sponsorship stops at
-// the end of the period the sponsor has already paid for, so the sponsor
-// keeps what they bought; a one-time payment is already complete and
-// cancels immediately.
+// CancelSponsorship ends a sponsorship. A recurring one stops at the end of the
+// paid-for period; a one-time payment cancels immediately.
 func (ss *SponsorsStore) CancelSponsorship(sponsorshipID int) (*SponsorsTransition, error) {
 	ss.Mu.Lock()
 	defer ss.Mu.Unlock()
@@ -1451,10 +1424,9 @@ func (ss *SponsorsStore) CancelSponsorship(sponsorshipID int) (*SponsorsTransiti
 	}, nil
 }
 
-// AdvanceSponsorshipBillingCycles rolls every recurring sponsorship whose
-// next billing date has arrived: a pending cancellation ends it, a pending
-// tier change applies, and anything still running bills another period.
-// The transitions are returned so the caller can emit one webhook each.
+// AdvanceSponsorshipBillingCycles rolls every recurring sponsorship whose next
+// billing date has arrived (pending cancellation ends it, pending tier change
+// applies, otherwise bills another period) and returns one transition each.
 func (ss *SponsorsStore) AdvanceSponsorshipBillingCycles(now time.Time) []*SponsorsTransition {
 	ss.Mu.Lock()
 	defer ss.Mu.Unlock()
@@ -1716,9 +1688,8 @@ type SponsorLifetimeValue struct {
 	AmountInCents    int
 }
 
-// LifetimeReceivedSponsorshipValues totals, per sponsor, everything that
-// sponsor has ever been billed for this sponsorable. Refunded invoices are
-// excluded: they were returned, so they were never received.
+// LifetimeReceivedSponsorshipValues totals, per sponsor, everything ever billed
+// for this sponsorable. Refunded invoices are excluded.
 func (ss *SponsorsStore) LifetimeReceivedSponsorshipValues(sponsorableLogin string) []*SponsorLifetimeValue {
 	ss.Mu.RLock()
 	defer ss.Mu.RUnlock()
@@ -1748,10 +1719,9 @@ func (ss *SponsorsStore) LifetimeReceivedSponsorshipValues(sponsorableLogin stri
 	return out
 }
 
-// MonthlyEstimatedSponsorsIncomeInCents is what the sponsorable would
-// receive next month if nothing changed: the sum of the amounts every
-// active recurring sponsorship is locked in at, with pending downgrades
-// already applied because they take effect before the next payout.
+// MonthlyEstimatedSponsorsIncomeInCents sums every active recurring
+// sponsorship's locked-in amount, with pending downgrades applied (they take
+// effect before the next payout).
 func (ss *SponsorsStore) MonthlyEstimatedSponsorsIncomeInCents(sponsorableLogin string) int {
 	ss.Mu.RLock()
 	defer ss.Mu.RUnlock()
@@ -1817,9 +1787,8 @@ func (ss *SponsorsStore) TotalSponsorshipAmountAsSponsorInCents(sponsorLogin str
 	return total
 }
 
-// RunSponsorsPayout closes out every unpaid invoice for a listing into one
-// payout record and moves the listing's next payout date forward. It
-// reports nil when there is nothing owed.
+// RunSponsorsPayout rolls every unpaid invoice for a listing into one payout
+// and advances its next payout date, or nil when nothing is owed.
 func (ss *SponsorsStore) RunSponsorsPayout(listingID int, now time.Time) *SponsorsPayout {
 	ss.Mu.Lock()
 	defer ss.Mu.Unlock()
@@ -1829,9 +1798,8 @@ func (ss *SponsorsStore) RunSponsorsPayout(listingID int, now time.Time) *Sponso
 	}
 	now = now.UTC()
 	amount := 0
-	// periodEnd starts at now and widens to the latest claimed invoice;
-	// periodStart is set from the first claimed invoice below (there is always
-	// one past the len==0 guard), so it needs no initializer here.
+	// periodEnd widens to the latest claimed invoice; periodStart is set from
+	// the first claimed invoice below.
 	periodEnd := now
 	claimed := make([]*SponsorsInvoice, 0)
 	for _, i := range ss.invoices {
@@ -1905,8 +1873,8 @@ func (ss *SponsorsStore) ListSponsorsPayouts(listingID int) []*SponsorsPayout {
 	return out
 }
 
-// SponsorsGoalProgress reports how far a listing's active goal has come,
-// as a percentage clamped to 0..100 and computed in integer arithmetic.
+// SponsorsGoalProgress reports a listing's goal progress as an integer percent
+// clamped to 0..100.
 func (ss *SponsorsStore) SponsorsGoalProgress(listingID int) (kind string, target, percent int, ok bool) {
 	ss.Mu.RLock()
 	listing := ss.listings[listingID]
@@ -1943,9 +1911,8 @@ func (ss *SponsorsStore) SponsorsGoalProgress(listingID int) (kind string, targe
 	return goal.Kind, goal.TargetValue, percent, true
 }
 
-// ListInstallationsForTarget returns every GitHub App installation on the
-// account, so an account-scoped event (a sponsorship) can be fanned out to
-// the apps that asked for it.
+// ListInstallationsForTarget returns every App installation on the account, to
+// fan an account-scoped event out to the apps that subscribed.
 func (st *Store) ListInstallationsForTarget(login string) []*Installation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

@@ -1,9 +1,7 @@
 package bleephub
 
-// GitHub Actions OIDC custom property inclusions for an organization
-// (/orgs/{org}/actions/oidc/customization/properties/repo): the set of
-// repository custom property names included as claims in the OIDC
-// tokens Actions issues. Backed by the store and persisted.
+// Actions OIDC custom-property inclusions: the repository custom-property names
+// added as claims to the OIDC tokens Actions issues for an org.
 
 import (
 	"net/http"
