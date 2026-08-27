@@ -11,15 +11,12 @@ import (
 // Updating a pull request's head branch with its base.
 //
 // PUT /repos/{o}/{r}/pulls/{n}/update-branch and the updatePullRequestBranch
-// GraphQL mutation are the same operation, and it is a git write: it merges
-// (or replays) the base branch into the head branch, moves the head ref, and
-// fires the push machinery. The resolver layer may not reach git storage
-// (ARCH-003), so it asks here through the Pulls seam and both surfaces move
+// GraphQL mutation are the same git write. The resolver layer may not reach git
+// storage (ARCH-003), so it routes through this Pulls seam and both surfaces move
 // the same ref the same way.
 
-// branchUpdateExpectationError reports an expectedHeadOid that no longer names
-// the head branch's tip, which both surfaces answer as a validation failure on
-// that field rather than as a merge failure.
+// branchUpdateExpectationError reports an expectedHeadOid that no longer names the
+// head tip; both surfaces answer it as a validation failure on that field.
 type branchUpdateExpectationError struct {
 	expected string
 	actual   string
@@ -30,13 +27,9 @@ func (e *branchUpdateExpectationError) Error() string {
 }
 
 // updatePullRequestBranch brings pr's head branch up to date with its base.
-//
-// method is GitHub's PullRequestBranchUpdateMethod: MERGE records a merge
-// commit, REBASE replays the head's commits on top of the base. bleephub's git
-// layer has one integration primitive, so REBASE is performed as a merge whose
-// commit message names the rebase — the resulting head still contains the
-// base's commits, which is what the caller asked for and what every later
-// mergeability check reads.
+// bleephub's git layer has one integration primitive, so REBASE is performed as a
+// merge whose commit message names the rebase; the head still contains the base's
+// commits.
 func (s *Server) updatePullRequestBranch(repo *store.Repo, pr *store.PullRequest, user *store.User, expectedHeadOid, method, baseURL string) error {
 	headRepo := store.PullRequestHeadRepo(s.store, pr)
 	if headRepo == nil {

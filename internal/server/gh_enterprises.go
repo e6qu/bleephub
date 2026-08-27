@@ -6,16 +6,12 @@ import (
 	"strings"
 )
 
-// bleephub plays the role of a single GitHub Enterprise Server instance, so
-// exactly one enterprise exists. Its slug is configuration — the GHES
-// installation names its enterprise account at setup — via
-// BLEEPHUB_ENTERPRISE_SLUG, defaulting to "bleephub". Every authenticated
-// user of the instance is an enterprise member; site administrators are the
-// enterprise owners (on GHES the two roles coincide).
+// bleephub is a single GHES instance: exactly one enterprise, its slug set by
+// BLEEPHUB_ENTERPRISE_SLUG (default "bleephub"). Every authenticated user is a
+// member; site admins are the enterprise owners.
 
 const defaultEnterpriseSlug = "bleephub"
 
-// enterpriseSlug returns the configured enterprise slug.
 func (s *Server) enterpriseSlug() string {
 	if v := os.Getenv("BLEEPHUB_ENTERPRISE_SLUG"); v != "" {
 		return v
@@ -23,8 +19,8 @@ func (s *Server) enterpriseSlug() string {
 	return defaultEnterpriseSlug
 }
 
-// resolveEnterprise 404s (like real GitHub for an unknown enterprise) unless
-// the {enterprise} path parameter names the configured enterprise.
+// resolveEnterprise 404s unless the {enterprise} path parameter names the
+// configured enterprise.
 func (s *Server) resolveEnterprise(w http.ResponseWriter, r *http.Request) bool {
 	if r.PathValue("enterprise") != s.enterpriseSlug() {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -33,10 +29,8 @@ func (s *Server) resolveEnterprise(w http.ResponseWriter, r *http.Request) bool 
 	return true
 }
 
-// enterpriseFromRequest keys an enterprise-settings handler on the
-// {enterprise} path parameter and returns it as the tenant key. bleephub is
-// single-tenant: a slug other than the configured one is a 404, like real
-// GitHub for an unknown enterprise.
+// enterpriseFromRequest returns the {enterprise} path parameter as the tenant
+// key; a slug other than the configured one is a 404.
 func (s *Server) enterpriseFromRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
 	enterprise := r.PathValue("enterprise")
 	if enterprise != s.enterpriseSlug() {
@@ -46,9 +40,8 @@ func (s *Server) enterpriseFromRequest(w http.ResponseWriter, r *http.Request) (
 	return enterprise, true
 }
 
-// requireEnterpriseMember gates an enterprise endpoint on an authenticated
-// user of the instance (every user belongs to the single enterprise) and on
-// the {enterprise} path parameter naming the configured enterprise.
+// requireEnterpriseMember gates an endpoint on an authenticated user (every
+// user is a member) and the {enterprise} path parameter matching.
 func (s *Server) requireEnterpriseMember(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if ghUserFromContext(r.Context()) == nil {
@@ -62,9 +55,8 @@ func (s *Server) requireEnterpriseMember(next http.HandlerFunc) http.HandlerFunc
 	}
 }
 
-// requireEnterpriseOwner additionally requires the caller to be an
-// enterprise owner — on GitHub Enterprise Server that is a site
-// administrator.
+// requireEnterpriseOwner additionally requires a site admin (the enterprise
+// owner on GHES).
 func (s *Server) requireEnterpriseOwner(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := ghUserFromContext(r.Context())
@@ -83,13 +75,7 @@ func (s *Server) requireEnterpriseOwner(next http.HandlerFunc) http.HandlerFunc 
 	}
 }
 
-// registerGHEnterpriseRoutes mounts the enterprise-scoped REST surface:
-// enterprise teams (+ memberships and organization assignments), code
-// security configurations, Dependabot alerts / repository access, GitHub
-// Actions cache limits, Actions OIDC custom property inclusions, and the
-// Copilot coding agent policy + usage metrics reports.
-// splitCommaList splits a comma-separated query filter into its trimmed,
-// non-empty entries.
+// splitCommaList splits a comma-separated filter into trimmed, non-empty parts.
 func splitCommaList(v string) []string {
 	var out []string
 	for _, part := range strings.Split(v, ",") {

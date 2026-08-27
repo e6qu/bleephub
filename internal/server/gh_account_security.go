@@ -12,27 +12,15 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// github.com's Settings → "Password and authentication" page, for real: TOTP
-// enrolment with a scannable provisioning URI, single-use recovery codes, a
-// password change, and the list of active browser sessions.
-//
-// Two rules shape every handler here.
-//
-// First, enrolment is not a switch. A secret is provisioned as *pending* and
-// the account is only protected once the user proves their authenticator holds
-// it, so the page can never claim a second factor the user cannot produce.
-// Symmetrically, turning it off costs a valid code — removing protection is
-// precisely what someone riding a stolen session wants.
-//
-// Second, an account whose credentials belong to an identity provider gets an
-// honest answer rather than controls that cannot work: there is no local
-// password to change and no local second factor to enrol, because the IdP owns
-// both. Which case an account is in comes from the store (whether it carries
-// federated identity bindings), never from a guess about deployment shape.
+// Account security ("Password and authentication") routes: TOTP enrolment,
+// recovery codes, password change, and active browser sessions. Enrolment is
+// two-phase — a secret provisions as pending and only protects the account once
+// the user proves a valid code; disabling likewise costs a code. Accounts backed
+// by an identity provider have no local password or second factor to manage.
 func (s *Server) registerGHAccountSecurityRoutes() {
 	s.route("GET /ui-data/user/authentication", s.handleGetAuthenticationSettings)
-	// The code-verifying endpoints share the auth-flow limiter: a six-digit
-	// code has a million values, which is guessable at HTTP speed if unbounded.
+	// Code-verifying endpoints share the auth-flow limiter: a six-digit code is
+	// guessable at HTTP speed if unbounded.
 	s.route("POST /ui-data/user/two-factor/enrollment", s.handleBeginTwoFactorEnrollment)
 	s.route("DELETE /ui-data/user/two-factor/enrollment", s.handleCancelTwoFactorEnrollment)
 	s.route("POST /ui-data/user/two-factor/enrollment/confirm", s.rateLimitAuthFlow(s.handleConfirmTwoFactorEnrollment))
@@ -43,16 +31,14 @@ func (s *Server) registerGHAccountSecurityRoutes() {
 	s.route("DELETE /ui-data/user/sessions/{handle}", s.handleRevokeLoginSession)
 }
 
-// otpRequest is the body every second-factor-consuming endpoint takes: a TOTP
-// code or one recovery code, in the same field. The user should not have to
-// tell us which kind they typed.
+// otpRequest carries a TOTP code or one recovery code in the same field; the
+// verifier accepts either.
 type otpRequest struct {
 	Code string `json:"code"`
 }
 
-// authenticationSettingsJSON is the read view of the page: where the account's
-// credentials live, and the state of the second factor. No secret, and no
-// recovery code, appears in it.
+// authenticationSettingsJSON is the page read view; it carries no secret or
+// recovery code.
 func (s *Server) authenticationSettingsJSON(userID int) (map[string]interface{}, bool) {
 	authentication, ok := s.store.AccountAuthenticationFor(userID)
 	if !ok {
@@ -69,11 +55,8 @@ func (s *Server) authenticationSettingsJSON(userID int) (map[string]interface{},
 	}, true
 }
 
-// twoFactorMethodsJSON reports the second factors this instance implements and
-// which of them the enterprise currently refuses. It is the honest answer to
-// "what can I enrol in": the catalogue is the store's closed set, so the page
-// can never offer a factor the server cannot verify, and `disallowed` is the
-// live policy rather than a description of one.
+// twoFactorMethodsJSON reports the supported second factors and which the
+// enterprise policy currently disallows.
 func (s *Server) twoFactorMethodsJSON(user *store.User) []map[string]interface{} {
 	disallowed := s.enterpriseDisallowedTwoFactorMethods(user)
 	described := store.SupportedTwoFactorMethods()
@@ -109,8 +92,8 @@ func (s *Server) handleGetAuthenticationSettings(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, payload)
 }
 
-// writeAccountSecurityError maps a store outcome to the response GitHub would
-// give. Every failure is a message the page can show verbatim.
+// writeAccountSecurityError maps a store outcome to the matching GitHub error
+// response, with a message the page shows verbatim.
 func writeAccountSecurityError(w http.ResponseWriter, result store.AccountSecurityResult) {
 	switch result {
 	case store.SecurityUnknownUser:
@@ -127,9 +110,8 @@ func writeAccountSecurityError(w http.ResponseWriter, result store.AccountSecuri
 		writeGHError(w, http.StatusConflict,
 			"There is no two-factor enrollment in progress. Start again to scan a new code.")
 	case store.SecurityInvalidCode:
-		// A plain message, not a field-validation envelope: the page shows this
-		// to someone who just mistyped six digits, and "Validation Failed" tells
-		// them nothing.
+		// Plain message, not a field-validation envelope: shown to someone who
+		// mistyped six digits.
 		writeGHError(w, http.StatusUnprocessableEntity,
 			"That code is not valid. Check your authenticator app — or use a recovery code — and try again.")
 	case store.SecurityMethodDisallowed:
@@ -142,10 +124,9 @@ func writeAccountSecurityError(w http.ResponseWriter, result store.AccountSecuri
 	}
 }
 
-// handleBeginTwoFactorEnrollment provisions a secret and returns everything the
-// user needs to pair an authenticator: the otpauth:// URI, the QR modules to
-// render it, and the secret itself for manual entry. This is the only response
-// that ever carries the secret, and the account is not yet protected.
+// handleBeginTwoFactorEnrollment provisions a pending secret and returns the
+// otpauth:// URI, QR modules, and the secret for manual entry. This is the only
+// response that carries the secret, and the account is not yet protected.
 func (s *Server) handleBeginTwoFactorEnrollment(w http.ResponseWriter, r *http.Request) {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
@@ -156,8 +137,7 @@ func (s *Server) handleBeginTwoFactorEnrollment(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
-	// Changing the account's authentication is the archetypal sensitive action
-	// GitHub's sudo mode guards.
+	// Sudo-mode guard: changing authentication is a sensitive action.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -169,8 +149,7 @@ func (s *Server) handleBeginTwoFactorEnrollment(w http.ResponseWriter, r *http.R
 	uri := store.OTPAuthURI(s.twoFactorIssuer(), viewer.Login, secret)
 	modules, err := qrEncode(uri)
 	if err != nil {
-		// Without a scannable code the only path left is manual entry, which is
-		// worse but not broken — say so rather than failing the enrolment.
+		// Fall back to manual entry rather than failing the enrolment.
 		s.logger.Error().Err(err).Msg("render two-factor provisioning QR code")
 		modules = nil
 	}
@@ -189,9 +168,8 @@ func (s *Server) handleBeginTwoFactorEnrollment(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusCreated, payload)
 }
 
-// twoFactorIssuer is the label an authenticator app shows next to the code. It
-// names this deployment, so a user enrolled on several instances can tell them
-// apart.
+// twoFactorIssuer names this deployment in the authenticator label so a user
+// enrolled on several instances can tell them apart.
 func (s *Server) twoFactorIssuer() string {
 	external := strings.TrimSpace(s.externalURL)
 	if external == "" {
@@ -219,8 +197,7 @@ func (s *Server) handleCancelTwoFactorEnrollment(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
-	// Changing the account's authentication is the archetypal sensitive action
-	// GitHub's sudo mode guards.
+	// Sudo-mode guard: changing authentication is a sensitive action.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -232,9 +209,8 @@ func (s *Server) handleCancelTwoFactorEnrollment(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, payload)
 }
 
-// handleConfirmTwoFactorEnrollment turns the pending secret into a real second
-// factor — but only against a code computed from it. The recovery codes are
-// returned here and nowhere else.
+// handleConfirmTwoFactorEnrollment activates the pending secret against a valid
+// code. Recovery codes are returned here and nowhere else.
 func (s *Server) handleConfirmTwoFactorEnrollment(w http.ResponseWriter, r *http.Request) {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
@@ -245,8 +221,7 @@ func (s *Server) handleConfirmTwoFactorEnrollment(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
-	// Changing the account's authentication is the archetypal sensitive action
-	// GitHub's sudo mode guards.
+	// Sudo-mode guard: changing authentication is a sensitive action.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -277,8 +252,7 @@ func (s *Server) handleDisableTwoFactor(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
-	// Changing the account's authentication is the archetypal sensitive action
-	// GitHub's sudo mode guards.
+	// Sudo-mode guard: changing authentication is a sensitive action.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -286,8 +260,7 @@ func (s *Server) handleDisableTwoFactor(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	// An enterprise that requires two-factor authentication of its members
-	// does not let one of them turn it off.
+	// An enterprise that requires 2FA does not let a non-owner member disable it.
 	if e := s.primaryEnterprise(); e != nil && e.Policy.TwoFactorRequired == store.EnterprisePolicyEnabled &&
 		!enterpriseOwnerRole(s.enterpriseRoleOfUser(e, viewer)) {
 		writeGHError(w, http.StatusForbidden,
@@ -303,8 +276,7 @@ func (s *Server) handleDisableTwoFactor(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, payload)
 }
 
-// handleRegenerateRecoveryCodes replaces the whole set — including codes never
-// used — and shows the new ones once.
+// handleRegenerateRecoveryCodes replaces the whole set and shows the new codes once.
 func (s *Server) handleRegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
@@ -315,8 +287,7 @@ func (s *Server) handleRegenerateRecoveryCodes(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
-	// Changing the account's authentication is the archetypal sensitive action
-	// GitHub's sudo mode guards.
+	// Sudo-mode guard: changing authentication is a sensitive action.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -338,8 +309,8 @@ func (s *Server) handleRegenerateRecoveryCodes(w http.ResponseWriter, r *http.Re
 
 // ─── Password ───────────────────────────────────────────────────────────────
 
-// passwordAcceptable applies github.com's own rule: at least 15 characters, or
-// at least 8 including a number and a lowercase letter.
+// passwordAcceptable applies github.com's rule: at least 15 characters, or at
+// least 8 including a number and a lowercase letter.
 func passwordAcceptable(password string) (string, bool) {
 	runes := []rune(password)
 	if len(runes) >= 15 {
@@ -363,12 +334,10 @@ func passwordAcceptable(password string) (string, bool) {
 	return "Password needs at least one number and one lowercase letter, or 15 characters.", false
 }
 
-// handleChangePassword rotates the account password. The current password is
-// required even though the session already authenticates the caller: a session
-// someone else is riding must not be enough to lock the owner out.
-//
-// Rotating it also revokes every other browser session, so a change made
-// *because* of a suspected compromise actually evicts the intruder.
+// handleChangePassword rotates the account password. It requires the current
+// password even though the session already authenticates the caller, and revokes
+// every other browser session so a rotation after a suspected compromise evicts
+// the intruder.
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
@@ -379,8 +348,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
-	// Changing the account's authentication is the archetypal sensitive action
-	// GitHub's sudo mode guards.
+	// Sudo-mode guard: changing authentication is a sensitive action.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -407,9 +375,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if req.CurrentPassword != "" {
-		// The account has no password yet; insisting the caller invent a
-		// "current" one would be nonsense, but silently ignoring a supplied one
-		// would be misleading.
+		// The account has no password yet, so a supplied "current" one is rejected
+		// rather than silently ignored.
 		writeGHError(w, http.StatusUnprocessableEntity, "This account has no password yet, so there is no current password to confirm.")
 		return
 	}
@@ -431,9 +398,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
-// revokeOtherLoginSessions ends every session except the caller's own. A
-// failure is logged, not surfaced: the password has already been changed, and
-// reporting an error would suggest otherwise.
+// revokeOtherLoginSessions ends every session except the caller's own. Failures
+// are logged, not surfaced: the password change already succeeded.
 func (s *Server) revokeOtherLoginSessions(r *http.Request, userID int) {
 	now := s.currentTime()
 	current := s.sessionFromRequest(r)
@@ -454,8 +420,7 @@ func (s *Server) revokeOtherLoginSessions(r *http.Request, userID int) {
 
 // ─── Active sessions ────────────────────────────────────────────────────────
 
-// nullableSessionTime renders a zero timestamp as JSON null rather than year
-// one, which the UI would otherwise print as a date.
+// nullableSessionTime renders a zero timestamp as JSON null.
 func nullableSessionTime(at time.Time) interface{} {
 	if at.IsZero() {
 		return nil
@@ -502,8 +467,7 @@ func (s *Server) handleRevokeLoginSession(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
-	// Changing the account's authentication is the archetypal sensitive action
-	// GitHub's sudo mode guards.
+	// Sudo-mode guard: changing authentication is a sensitive action.
 	if s.requireProofOfPresence(w, r) {
 		return
 	}
@@ -518,8 +482,7 @@ func (s *Server) handleRevokeLoginSession(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Revoking the session you are using signs you out; clear the cookie so the
-	// browser stops presenting a credential that no longer resolves.
+	// Revoking your own session signs you out; clear the cookie too.
 	if current := s.sessionFromRequest(r); current != nil && current.Handle == handle {
 		if err := s.clearSessionCookies(w, r); err != nil {
 			s.logger.Error().Err(err).Msg("clear cookies after revoking the current session")

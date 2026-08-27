@@ -13,8 +13,8 @@ import (
 // Issue + PR moderation: comment edit/delete, issue/PR locking.
 // Real GitHub keeps these on the /issues path (PRs are issues internally).
 
-// validLockReasons matches real GitHub's accepted lock reasons (lowercased
-// kebab-case in REST; the GraphQL enum is uppercase elsewhere).
+// validLockReasons matches GitHub's REST lock reasons (lowercase; the GraphQL
+// enum is uppercase).
 var validLockReasons = map[string]bool{
 	"off-topic":  true,
 	"too heated": true,
@@ -78,7 +78,6 @@ func (s *Server) handleUpdateIssueComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Resolve the parent number for the URL portion of the JSON.
 	parentNumber := commentParentNumber(s.store, updated)
 	s.emitWebhookEvent(repo.FullName, "issue_comment", "edited",
 		buildIssueCommentPayload(s.store, repo, updated, user, "edited", s.baseURL(r), parentNumber))
@@ -119,9 +118,8 @@ func (s *Server) handleDeleteIssueComment(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// github leaves a `comment_deleted` event behind so the conversation shows
-	// that something was removed and by whom; the comment row itself is gone,
-	// so the event carries the deleted comment's id and its author.
+	// github records a comment_deleted event so the timeline shows a comment was
+	// removed and by whom; it carries the deleted comment's id and author.
 	s.store.RecordIssueOrPREvent(repo.ID, parentNumber, user.ID, "comment_deleted", map[string]interface{}{
 		"comment_id":  c.ID,
 		"assignee_id": c.AuthorID,
@@ -130,9 +128,8 @@ func (s *Server) handleDeleteIssueComment(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleIssuesDeleteDispatch resolves `DELETE /repos/{}/issues/{p1}/{p2}`
-// to either the by-id comment delete (`/issues/comments/{id}`) or the
-// unlock endpoint (`/issues/{n}/lock`).
+// handleIssuesDeleteDispatch routes DELETE /repos/{}/issues/{p1}/{p2} to the
+// by-id comment delete, unlock, or sub-issue removal.
 func (s *Server) handleIssuesDeleteDispatch(w http.ResponseWriter, r *http.Request) {
 	p1 := r.PathValue("p1")
 	p2 := r.PathValue("p2")
@@ -152,9 +149,8 @@ func (s *Server) handleIssuesDeleteDispatch(w http.ResponseWriter, r *http.Reque
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
-// commentParentNumber returns the issue or PR number that owns the comment,
-// or 0 when neither parent can be found (caller renders an URL without the
-// number segment).
+// commentParentNumber returns the issue or PR number owning the comment, or 0
+// when neither parent is found.
 func commentParentNumber(st *store.Store, c *store.Comment) int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -194,9 +190,8 @@ func (s *Server) handleLockIssue(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		LockReason string `json:"lock_reason"`
 	}
-	// Body is optional (empty = lock with no reason); a present-but-malformed
-	// body must still be rejected so silent decode errors don't drop a real
-	// lock_reason on the floor.
+	// Body is optional; still reject a present-but-malformed one so a real
+	// lock_reason is never silently dropped.
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
@@ -210,9 +205,8 @@ func (s *Server) handleLockIssue(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Record a discrete lock event against the correct parent (issue vs PR) so
-	// the timeline reflects who performed the lock — RecordIssueOrPREvent stamps
-	// ParentType by number so a PR event lands in the PR timeline.
+	// RecordIssueOrPREvent stamps ParentType by number, so a PR lock lands in
+	// the PR timeline.
 	s.store.RecordIssueOrPREvent(repoObj.ID, num, user.ID, "locked", map[string]interface{}{"lock_reason": req.LockReason})
 	s.emitLockAction(repoObj, num, user, true)
 	w.WriteHeader(http.StatusNoContent)

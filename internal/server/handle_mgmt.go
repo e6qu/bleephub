@@ -44,26 +44,18 @@ func (s *Server) registerMgmtRoutes() {
 		{"POST /internal/packages/{owner_type}/{owner}/{package_type}/{package_name}/versions", s.handleInternalCreatePackageVersion},
 		{"POST /internal/packages/{owner_type}/{owner}/{repo}/{package_type}/{package_name}/versions", s.handleInternalCreatePackageVersion},
 	}
-	// Site-admin is applied here, to the whole table, rather than remembered
-	// inside each handler.
-	//
-	// It was previously a per-handler habit and seven of these routes had
-	// forgotten it, so any account on the instance could read every private
-	// repository's metadata, every repository's job logs, live runner session
-	// ids, and — through /internal/oauth/state — other users' unredeemed OAuth
-	// authorization codes, which is an account takeover. Declaring the
-	// privilege at registration means a route added later cannot arrive without
-	// one. The handlers that already check keep their check; a second identical
-	// assertion costs nothing and keeps them correct if called directly.
+	// Require site-admin for the whole table at registration, so a route added
+	// later cannot arrive ungated. Handlers that also self-check stay correct if
+	// called directly. (A prior per-handler habit had missed seven routes,
+	// exposing private repo metadata, job logs, runner session ids and, via
+	// /internal/oauth/state, other users' unredeemed OAuth codes.)
 	for _, r := range routes {
 		s.route(r.pattern, s.requireSiteAdminHandler(r.handler))
 	}
 }
 
-// requireSiteAdminHandler refuses anyone who is not a site administrator.
-//
-// The /internal/ prefix is a naming convention, not an access control: the
-// middleware in front of it only establishes that somebody is signed in.
+// requireSiteAdminHandler refuses anyone who is not a site administrator. The
+// /internal/ prefix is a naming convention, not access control.
 func (s *Server) requireSiteAdminHandler(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.requireSiteAdmin(w, r) == nil {
@@ -126,11 +118,9 @@ func (s *Server) handleOAuthStateInternal(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, oauthStateView{DeviceCodes: dcs, AuthCodes: acs})
 }
 
-// workflowFileView is the operator-facing aggregate shape of every
-// registered WorkflowFile across every repo. The bleephub UI's
-// Workflows tab reads this; the per-repo GitHub-shape endpoints
-// (`/api/v3/repos/{o}/{r}/actions/workflows`) are for the gh CLI +
-// runner-dispatcher.
+// workflowFileView is the operator-facing aggregate of every WorkflowFile
+// across all repos, read by the UI's Workflows tab. The per-repo GitHub-shape
+// endpoints serve the gh CLI and runner-dispatcher.
 type workflowFileView struct {
 	ID           int64  `json:"id"`
 	Name         string `json:"name"`
@@ -143,8 +133,7 @@ type workflowFileView struct {
 }
 
 func (s *Server) handleListWorkflowFilesInternal(w http.ResponseWriter, r *http.Request) {
-	// Discover from every repo's git storage so files newly pushed
-	// since last poll show up. Cheap — the discovery is idempotent.
+	// Re-discover from git storage so files pushed since the last poll appear.
 	s.store.Mu.RLock()
 	repoNames := make([]string, 0, len(s.store.Repos))
 	for _, repo := range s.store.Repos {
@@ -181,7 +170,6 @@ func (s *Server) handleListWorkflowFilesInternal(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, files)
 }
 
-// workflowView is the JSON representation of a workflow for the management API.
 type workflowView struct {
 	ID           string                        `json:"id"`
 	Name         string                        `json:"name"`
@@ -216,7 +204,6 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Mu.RUnlock()
 
-	// Sort by CreatedAt descending
 	sort.Slice(workflows, func(i, j int) bool {
 		return workflows[i].CreatedAt > workflows[j].CreatedAt
 	})
@@ -251,7 +238,6 @@ func (s *Server) handleGetWorkflowLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Collect log lines for all planIDs associated with this workflow's jobs
 	logs := make(map[string][]string)
 	for _, wf := range s.store.Workflows {
 		if wf.ID != id {
@@ -268,7 +254,6 @@ func (s *Server) handleGetWorkflowLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logs)
 }
 
-// sessionView is the JSON representation of a session for the management API.
 type sessionView struct {
 	SessionID       string       `json:"sessionId"`
 	OwnerName       string       `json:"ownerName"`
@@ -296,7 +281,6 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sessions)
 }
 
-// repoView is the JSON representation of a repo for the management API.
 type repoView struct {
 	ID            int    `json:"id"`
 	Name          string `json:"name"`
@@ -330,12 +314,9 @@ func (s *Server) handleListRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, repos)
 }
 
-// handleAgentRefreshMessage — POST /internal/agents/{agent_id}/refresh-message
-//
-// Sim-control endpoint that tells bleephub to deliver an AgentRefreshMessage
-// to the named agent's open session(s). Real GitHub pushes this message when
-// a newer runner package is available; bleephub has no update feed, so the
-// operator/test harness triggers it explicitly. Requires site-admin token.
+// handleAgentRefreshMessage delivers an AgentRefreshMessage to the agent's open
+// sessions. GitHub pushes this when a newer runner package exists; bleephub has
+// no update feed, so the operator/test harness triggers it explicitly.
 func (s *Server) handleAgentRefreshMessage(w http.ResponseWriter, r *http.Request) {
 	caller := ghUserFromContext(r.Context())
 	if caller == nil || !caller.SiteAdmin {

@@ -2,12 +2,9 @@ package bleephub
 
 import "github.com/e6qu/bleephub/internal/store"
 
-// Trigger parsing/matching moved to internal/actions (ARCH-002); what stays
-// is the PR/webhook-domain fan-out below.
-
-// firePullRequestSynchronize emits pull_request "synchronize" (webhook +
-// workflow triggers) for every open PR whose head branch just received a
-// push — real GitHub's behavior for pushes to a PR's source branch.
+// firePullRequestSynchronize emits pull_request "synchronize" for every open PR
+// whose head branch just received a push, matching GitHub's behavior for pushes
+// to a PR's source branch.
 func (s *Server) firePullRequestSynchronize(repo *store.Repo, repoKey, branch string) {
 	s.store.Mu.RLock()
 	var prs []*store.PullRequest
@@ -23,14 +20,13 @@ func (s *Server) firePullRequestSynchronize(repo *store.Repo, repoKey, branch st
 		if baseRepo == nil {
 			continue
 		}
-		// The head branch moved, so recompute the test-merge before the payload
-		// is built (ACT-027), and refresh the stored diff totals GraphQL serves.
+		// The head moved: recompute the test-merge and refresh diff totals before
+		// building the payload.
 		s.refreshPullRequestPotentialMerge(baseRepo, pr)
 		s.refreshPullRequestDiffStats(baseRepo, pr)
 		payload := buildPullRequestPayload(s.store, baseRepo, pr, nil, "synchronize", s.publicOrigin())
 		s.emitWebhookEvent(baseRepo.FullName, "pull_request", "synchronize", payload)
-		// The push may have brought files with code owners of their own into
-		// the diff; GitHub requests those owners as it does on open.
+		// The push may add files whose code owners GitHub requests as on open.
 		s.autoRequestCodeOwners(baseRepo, pr, nil)
 	}
 }

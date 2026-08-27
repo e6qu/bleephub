@@ -19,24 +19,14 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// Protocol v2 replaces the ref advertisement every connection used to begin
-// with by a list of commands the client may call. Three of them are implemented
-// here: ls-refs, which answers the questions the v0 advertisement used to answer
-// whether or not the client cared; fetch, which is the same exchange
-// serveGitUploadPack runs re-spelled as one request with named sections; and
-// object-info, which answers questions about objects without sending them. All
-// three hand the real work to the shared boundary, filter and packing code, so a
-// client cannot get a different answer by choosing a protocol version. The
-// fourth, bundle-uri, is served from git_bundleuri.go.
+// Protocol v2 command layer: ls-refs, fetch, and object-info, all delegating to
+// the shared boundary/filter/packing code so the protocol version cannot change
+// the answer. bundle-uri lives in git_bundleuri.go.
 
-// gitProtocolHeader is the HTTP header, and the SSH environment variable, a
-// client states its protocol version in.
 const gitProtocolHeader = "Git-Protocol"
 
-// gitProtocolV2Requested reports whether a "version=2" statement — the value of
-// the Git-Protocol header or of the GIT_PROTOCOL environment variable — asks
-// for protocol v2. The value is a colon-separated list of key=value pairs, of
-// which only the version matters here.
+// gitProtocolV2Requested reports whether a colon-separated "version=2" statement
+// (the Git-Protocol header or GIT_PROTOCOL env var) asks for protocol v2.
 func gitProtocolV2Requested(statement string) bool {
 	for _, field := range strings.Split(statement, ":") {
 		if strings.TrimSpace(field) == "version=2" {
@@ -46,30 +36,16 @@ func gitProtocolV2Requested(statement string) bool {
 	return false
 }
 
-// gitFetchCapabilityValue is the value of the fetch capability: the arguments
-// the fetch command understands beyond the ones every v2 server understands.
-//
-//   - shallow: the "shallow", "deepen", "deepen-since", "deepen-not" and
-//     "deepen-relative" arguments, answered in the shallow-info section.
-//   - wait-for-done: the client will send "done" itself, so the negotiation
-//     never announces it is ready and a round can carry acknowledgments alone.
-//     That is what makes `git fetch --negotiate-only` work.
-//   - filter: partial clone, with the omitted objects genuinely absent.
-//   - ref-in-want: the "want-ref <ref>" argument and the wanted-refs section, so
-//     a client can fetch by reference name without an advertisement of every
-//     reference in the repository.
-//   - sideband-all: the whole reply is multiplexed rather than only the
-//     packfile section, so a failure in any section is a message the client
-//     prints instead of a stream that stops.
+// gitFetchCapabilityValue lists the fetch arguments this server understands
+// beyond the v2 baseline: shallow/deepen (shallow-info), wait-for-done (drives
+// `git fetch --negotiate-only`), filter (partial clone), ref-in-want (fetch by
+// ref name without a full advertisement), sideband-all (whole reply multiplexed
+// so any section's failure reaches the client).
 const gitFetchCapabilityValue = "shallow wait-for-done filter ref-in-want sideband-all"
 
-// gitFetchCapabilityLine renders the fetch capability for one deployment.
-//
-// One argument beyond the fixed set is only named where it works:
-// packfile-uris, by which the client fetches a packfile itself from a URI this
-// server hands it. That URI is a presigned GET against the object store, so a
-// deployment whose repositories are not in object storage has none to hand out
-// and does not claim otherwise — see git_packuris.go.
+// gitFetchCapabilityLine adds packfile-uris only when the deployment can offer
+// it — a presigned object-store GET, absent when repos are not in object
+// storage (git_packuris.go).
 func gitFetchCapabilityLine(offload bool) string {
 	if !offload {
 		return gitFetchCapabilityValue
@@ -77,15 +53,8 @@ func gitFetchCapabilityLine(offload bool) string {
 	return gitFetchCapabilityValue + " " + gitPackURIFetchArgument
 }
 
-// writeGitV2CapabilityAdvertisement is what a v2 connection opens with, in
-// place of the v0 ref advertisement.
-//
-// Each line is a capability the client may then use, in the order git's own
-// serve.c advertises them: ls-refs reports unborn branches, fetch understands
-// the arguments named above, server-option carries the client's `-o` options,
-// every object id in this conversation is a SHA-1, session-id lets the two
-// sides correlate their logs, object-info answers object sizes without sending
-// the objects, and bundle-uri offers a bundle to bootstrap from.
+// writeGitV2CapabilityAdvertisement opens a v2 connection in place of the v0
+// ref advertisement, listing each capability in git serve.c's order.
 func writeGitV2CapabilityAdvertisement(out io.Writer) error {
 	offload := gitPackOffloadSupported()
 	lines := []string{
@@ -110,13 +79,9 @@ func writeGitV2CapabilityAdvertisement(out io.Writer) error {
 	return encoder.Flush()
 }
 
-// gitServerSessionID is the identifier this server offers for its side of every
-// protocol v2 conversation.
-//
-// The protocol asks for an id that identifies the process across requests, so
-// that a client's trace and a server's log can be lined up against each other;
-// it is therefore computed once per process rather than per request, and it is
-// printable and free of whitespace as the protocol requires.
+// gitServerSessionID identifies this server's side of every v2 conversation.
+// The protocol wants a process-stable, whitespace-free id, so it is computed
+// once per process.
 var gitServerSessionID = sync.OnceValue(func() string {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -125,17 +90,15 @@ var gitServerSessionID = sync.OnceValue(func() string {
 	return "bleephub-" + hex.EncodeToString(raw[:])
 })
 
-// gitV2Command is one decoded command request: the command name, the
-// capabilities the client restated and the arguments that follow the delim-pkt.
+// gitV2Command is one decoded command request.
 type gitV2Command struct {
 	name         string
 	capabilities []string
 	arguments    []string
 }
 
-// readGitV2Command reads one command request. A request that is nothing but a
-// flush-pkt, or a stream that has ended, closes the conversation and is
-// reported as a nil command.
+// readGitV2Command reads one command request. A bare flush-pkt or an ended
+// stream closes the conversation, reported as a nil command.
 func readGitV2Command(pkt *gitPktReader) (*gitV2Command, error) {
 	command := &gitV2Command{}
 	inArguments := false
@@ -176,22 +139,14 @@ func readGitV2Command(pkt *gitPktReader) (*gitV2Command, error) {
 
 // gitV2Session is what the capability half of a command request established.
 type gitV2Session struct {
-	// serverOptions are the client's `-o` options. The protocol requires that
-	// an option a server does not act on is accepted rather than refused, so
-	// they are collected and carried without being interpreted.
+	// serverOptions are the client's `-o` options, carried uninterpreted: the
+	// protocol requires accepting an option the server does not act on.
 	serverOptions []string
-	// sessionID is the identifier the client offered for its side of the
-	// conversation.
-	sessionID string
+	sessionID     string
 }
 
-// checkGitV2Capabilities reads the capabilities a command request restates and
-// refuses one this server never advertised.
-//
-// A client only sends what it saw in the advertisement, so anything else means
-// the two sides disagree about the protocol; git refuses such a request outright
-// and so does this. The one capability carrying a value that changes the wire
-// format is the hash algorithm, and it is checked rather than merely accepted.
+// checkGitV2Capabilities refuses any restated capability this server never
+// advertised, and rejects a hash algorithm that would change the wire format.
 func checkGitV2Capabilities(command *gitV2Command) (gitV2Session, error) {
 	var session gitV2Session
 	for _, stated := range command.capabilities {
@@ -215,12 +170,10 @@ func checkGitV2Capabilities(command *gitV2Command) (gitV2Session, error) {
 	return session, nil
 }
 
-// serveGitProtocolV2 runs the command half of a protocol v2 connection.
-//
-// A stateless caller — smart HTTP, where each POST is a whole request — serves
-// one command and returns. A stateful one — SSH, where the channel stays open —
-// keeps serving commands until the client stops sending them, which is how a
-// clone gets to run ls-refs and fetch over a single connection.
+// serveGitProtocolV2 runs the command half of a protocol v2 connection. A
+// stateless caller (smart HTTP) serves one command and returns; a stateful one
+// (SSH) keeps serving until the client stops, letting one connection run both
+// ls-refs and fetch.
 func serveGitProtocolV2(ctx context.Context, stor storer.Storer, defaultBranch string, in *bufio.Reader, sink io.Writer, stateless bool) (result gitUploadPackResult, err error) {
 	out := &gitResponseWriter{out: sink}
 	defer func() { result.responded = out.wrote }()
@@ -267,14 +220,10 @@ func serveGitProtocolV2(ctx context.Context, stor storer.Storer, defaultBranch s
 	}
 }
 
-// serveGitLsRefsV2 answers the ls-refs command.
-//
-// Beyond the ref list it can name the branch HEAD points at (symrefs), resolve
-// the object an annotated tag names (peel) and restrict the answer to the parts
-// of the namespace the client cares about (ref-prefix). The unborn argument is
-// what finally lets an empty repository state its default branch: there is no
-// object id to advertise, so the answer names the branch HEAD will point at
-// once the first commit lands, and the client checks that branch out.
+// serveGitLsRefsV2 answers the ls-refs command, supporting symrefs (name HEAD's
+// branch), peel (resolve an annotated tag's target), ref-prefix (restrict the
+// answer), and unborn — which lets an empty repository state the default branch
+// its first commit will land on, when there is no object id to advertise.
 func serveGitLsRefsV2(stor storer.Storer, defaultBranch string, arguments []string, out io.Writer) error {
 	var prefixes []string
 	peel, symrefs, unborn := false, false, false
@@ -347,11 +296,9 @@ func serveGitLsRefsV2(stor storer.Storer, defaultBranch string, arguments []stri
 	return encoder.Flush()
 }
 
-// gitHeadSymrefTarget reports the branch HEAD points at. Storage is asked
-// first, so a repository whose HEAD was moved is described accurately; a
-// repository that has no HEAD object yet — one that was just created — is
-// described by the default branch it was created with, which is the name its
-// first commit will land on.
+// gitHeadSymrefTarget reports the branch HEAD points at, preferring storage so
+// a moved HEAD is accurate, and falling back to defaultBranch for a
+// just-created repository with no HEAD object yet.
 func gitHeadSymrefTarget(stor storer.Storer, defaultBranch string) string {
 	if ref, err := stor.Reference(plumbing.HEAD); err == nil && ref.Type() == plumbing.SymbolicReference {
 		return ref.Target().String()
@@ -363,7 +310,7 @@ func gitHeadSymrefTarget(stor storer.Storer, defaultBranch string) string {
 }
 
 // gitReferenceMatchesPrefixes reports whether a reference belongs in an ls-refs
-// answer. A request that named no prefix wants everything.
+// answer; no prefix matches everything.
 func gitReferenceMatchesPrefixes(name string, prefixes []string) bool {
 	if len(prefixes) == 0 {
 		return true
@@ -376,8 +323,8 @@ func gitReferenceMatchesPrefixes(name string, prefixes []string) bool {
 	return false
 }
 
-// peelGitTagTarget resolves the non-tag object an annotated tag names, and
-// reports false for anything that is not an annotated tag.
+// peelGitTagTarget resolves the non-tag object an annotated tag names, or false
+// for anything that is not an annotated tag.
 func peelGitTagTarget(stor storer.Storer, hash plumbing.Hash) (plumbing.Hash, bool) {
 	encoded, err := stor.EncodedObject(plumbing.AnyObject, hash)
 	if err != nil || encoded.Type() != plumbing.TagObject {
@@ -390,14 +337,10 @@ func peelGitTagTarget(stor storer.Storer, hash plumbing.Hash) (plumbing.Hash, bo
 	return target, true
 }
 
-// gitV2Writer writes the pkt-lines of a protocol v2 response.
-//
-// With sideband-all every data line travels inside a band 1 packet, so an error
-// raised part way through the reply can be sent on band 3 and printed by the
-// client rather than corrupting the section it interrupted. The delim-pkts that
-// separate sections and the flush-pkt that ends the reply are written plain in
-// both modes, because the client's pkt-line reader recognises those before it
-// demultiplexes anything.
+// gitV2Writer writes the pkt-lines of a protocol v2 response. Under sideband-all
+// data lines travel on band 1, so a mid-reply error can go on band 3 instead of
+// corrupting the section. delim- and flush-pkts are written plain in both modes,
+// since the client's reader recognises them before demultiplexing.
 type gitV2Writer struct {
 	out io.Writer
 	mux *sideband.Muxer
@@ -411,7 +354,6 @@ func newGitV2Writer(out io.Writer, sidebandAll bool) *gitV2Writer {
 	return writer
 }
 
-// line writes one data pkt-line.
 func (w *gitV2Writer) line(format string, args ...any) error {
 	if w.mux == nil {
 		return pktline.NewEncoder(w.out).Encodef(format, args...)
@@ -420,20 +362,16 @@ func (w *gitV2Writer) line(format string, args ...any) error {
 	return err
 }
 
-// delim ends one section of the response.
 func (w *gitV2Writer) delim() error {
 	return writeGitPktDelim(w.out)
 }
 
-// flush ends the response.
 func (w *gitV2Writer) flush() error {
 	return pktline.NewEncoder(w.out).Flush()
 }
 
-// fail reports a reason the client can print. On a multiplexed reply it travels
-// on band 3, and otherwise as the "ERR <message>" pkt-line both git and go-git
-// recognise; either way it is returned as an error so the transport logs the
-// refusal too.
+// fail reports a client-printable reason on band 3 (multiplexed) or as an
+// "ERR <message>" pkt-line, and returns it as an error so the transport logs it.
 func (w *gitV2Writer) fail(message string) error {
 	if w.mux == nil {
 		return writeGitProtocolError(w.out, message)
@@ -444,16 +382,10 @@ func (w *gitV2Writer) fail(message string) error {
 	return errors.New(message)
 }
 
-// serveGitFetchV2 answers the fetch command.
-//
-// The response is a run of named sections, in the order the protocol fixes:
-// acknowledgments reports which of the client's have lines this repository
-// shares and whether the negotiation can stop, and a round that cannot stop yet
-// ends there so the client asks again with more haves; shallow-info carries the
-// boundary a deepening request establishes; wanted-refs names the object each
-// want-ref resolved to, which is the only way a client that never asked for an
-// advertisement learns them; and packfile carries the objects, always
-// multiplexed, so progress and a fatal error have somewhere to go.
+// serveGitFetchV2 answers the fetch command with named sections in the
+// protocol's fixed order: acknowledgments (shared haves and whether negotiation
+// can stop), shallow-info (deepening boundary), wanted-refs (the object each
+// want-ref resolved to), and packfile (the objects, always multiplexed).
 func serveGitFetchV2(ctx context.Context, stor storer.Storer, session gitV2Session, arguments []string, out io.Writer) (gitUploadPackResult, error) {
 	var result gitUploadPackResult
 	request := &gitUploadRequest{capabilities: capability.NewList()}
@@ -472,9 +404,8 @@ func serveGitFetchV2(ctx context.Context, stor storer.Storer, session gitV2Sessi
 			writer = newGitV2Writer(out, true)
 		}
 	}
-	// A request that wants nothing and did not promise a "done" of its own has
-	// asked for nothing at all, and git answers it with silence rather than
-	// with an empty pack.
+	// A request with no wants and no promised "done" is answered with silence,
+	// not an empty pack, as git does.
 	if len(request.wants) == 0 && !request.waitForDone {
 		return result, nil
 	}
@@ -541,15 +472,11 @@ func serveGitFetchV2(ctx context.Context, stor storer.Storer, session gitV2Sessi
 		return result, ctxErr
 	}
 
-	// A client that offered to fetch packfiles itself makes the object list part
-	// of the reply's structure rather than only of its payload: the
-	// packfile-uris section is derived from the plan and is written before the
-	// packfile section begins. So the walk happens here for such a client, and
-	// its plan is handed to the packfile writer rather than walked again.
-	//
-	// A walk that fails is still reported the way every other failure of a reply
-	// already under way is — on band 3 inside the packfile section — because
-	// that is the only channel left once the sections above have been written.
+	// For a client that offered to fetch packfiles itself, the packfile-uris
+	// section is derived from the object walk, so the walk happens here (before
+	// the packfile section) and its plan is handed to the writer rather than
+	// walked again. A walk failure is reported on band 3 inside the packfile
+	// section, the only channel left once the sections above are written.
 	var plan *gitPackPlan
 	var offer *gitPackURIOffer
 	var planErr error
@@ -581,12 +508,9 @@ func serveGitFetchV2(ctx context.Context, stor storer.Storer, session gitV2Sessi
 	return result, sendGitPlannedPackfile(stor, out, request, boundary, plan, gitSideband64k)
 }
 
-// applyGitFetchV2Argument records one argument of a protocol v2 fetch command.
-//
-// The arguments protocol v0 spells as capabilities on its first want line are
-// read by the shared decoder, so the two versions cannot disagree about what a
-// want, a have, a deepen or a filter means. The ones only v2 defines are read
-// here.
+// applyGitFetchV2Argument records one fetch-command argument. The v2-only
+// arguments are handled here; the rest go to the shared decoder so v2 and v0
+// cannot disagree about what a want, have, deepen, or filter means.
 func applyGitFetchV2Argument(stor storer.Storer, request *gitUploadRequest, argument string) error {
 	switch {
 	case argument == "wait-for-done":
@@ -604,14 +528,9 @@ func applyGitFetchV2Argument(stor storer.Storer, request *gitUploadRequest, argu
 	return applyGitUploadRequestLine(stor, request, argument)
 }
 
-// applyGitWantRef resolves one want-ref line.
-//
-// The reference is resolved here and answered in the wanted-refs section, so a
-// client that skipped the ref advertisement altogether — the only affordable
-// way to fetch from a repository carrying very many references — still learns
-// the object id it is being sent. A reference this repository does not hold, or
-// one named twice, is refused with git's own wording so the client prints the
-// reason rather than reporting a truncated stream.
+// applyGitWantRef resolves one want-ref line, letting a client that skipped the
+// advertisement still learn the object id it is sent. An unknown or duplicate
+// ref is refused with git's own wording so the client prints the reason.
 func applyGitWantRef(stor storer.Storer, request *gitUploadRequest, name string) error {
 	for _, existing := range request.wantRefs {
 		if existing.name == name {
@@ -628,11 +547,8 @@ func applyGitWantRef(stor storer.Storer, request *gitUploadRequest, name string)
 }
 
 // writeGitAcknowledgmentsV2 writes the acknowledgments section and reports
-// whether the negotiation may proceed to a packfile in this same response.
-//
-// A client that asked for wait-for-done is never told the server is ready: it
-// has undertaken to end the negotiation itself, which is what lets it run a
-// negotiation that never takes a pack at all.
+// whether negotiation may proceed to a packfile in this response. A wait-for-done
+// client is never told the server is ready, since it ends negotiation itself.
 func writeGitAcknowledgmentsV2(stor storer.Storer, writer *gitV2Writer, request *gitUploadRequest, boundary *gitFetchBoundary) (bool, error) {
 	if err := writer.line("acknowledgments\n"); err != nil {
 		return false, err
@@ -665,14 +581,9 @@ func writeGitAcknowledgmentsV2(stor storer.Storer, writer *gitV2Writer, request 
 	return true, writer.line("ready\n")
 }
 
-// serveGitObjectInfoV2 answers the object-info command.
-//
-// A partial clone uses it to learn how large an object is without fetching its
-// content, which is what makes a blob:limit clone predictable and a lazy fetch
-// affordable: the client can decide whether it wants the bytes before it pays
-// for them. An object id this repository does not hold is answered with the id
-// and nothing after it, which is how the protocol says "unknown" without
-// failing the whole request.
+// serveGitObjectInfoV2 answers the object-info command, letting a partial clone
+// learn an object's size before fetching its content. An unknown id is answered
+// with the id alone — the protocol's "unknown" without failing the request.
 func serveGitObjectInfoV2(stor storer.Storer, arguments []string, out io.Writer) error {
 	encoder := pktline.NewEncoder(out)
 	wantSize := false

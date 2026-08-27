@@ -10,16 +10,12 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Fine-grained personal access token administration for organizations
-// (/orgs/{org}/personal-access-token-requests and
-// /orgs/{org}/personal-access-tokens).
+// Fine-grained personal access token administration for organizations.
 //
-// A fine-grained PAT targeting an organization starts life as a pending
-// grant request; an org admin approves it (the request becomes an active
-// grant) or denies it (the request is removed). Approved grants can later
-// be revoked, individually or in bulk. The authenticated browser settings
-// flow mints the live `github_pat_` credential and displays it once; the
-// public organization REST surface remains GitHub App-only.
+// A fine-grained PAT targeting an org starts as a pending grant request an org
+// admin approves or denies; approved grants can be revoked. The public org REST
+// surface is GitHub App-only; the browser settings flow mints the live
+// credential.
 
 func (s *Server) registerGHOrgPATAdminRoutes() {
 	s.route("GET /api/v3/orgs/{org}/personal-access-token-requests", s.requireOrgPATApp(store.ScopePATRequests, store.PermRead, s.handleListOrgPATGrantRequests))
@@ -37,10 +33,8 @@ func (s *Server) registerGHOrgPATAdminRoutes() {
 	s.route("POST /settings/organizations/{org}/personal-access-token-requests/{pat_request_id}", s.handleReviewPersonalAccessTokenWeb)
 }
 
-// requireOrgPATApp matches GitHub's organization token-administration
-// contract: only GitHub App installation and user access tokens may call the
-// REST endpoints. An organization owner's personal access token is not an
-// alternate authentication shape for this API.
+// requireOrgPATApp enforces GitHub's contract: only GitHub App installation and
+// user access tokens may call these endpoints — an org owner's PAT may not.
 func (s *Server) requireOrgPATApp(scope store.PermScope, level store.PermLevel, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org := s.store.GetOrg(r.PathValue("org"))
@@ -58,12 +52,9 @@ func (s *Server) requireOrgPATApp(scope store.PermScope, level store.PermLevel, 
 			return
 		}
 		if token := ghUserToServerTokenFromContext(r.Context()); token != nil && token.AppID > 0 && s.userAccessTokenCanAdminPATs(token, org.Login, scope, level) {
-			// A ghu_ token is the intersection of the app's grant AND the token
-			// owner's own standing. userAccessTokenCanAdminPATs proves only the
-			// app half; require the owner to actually be an org owner too (via the
-			// credential-aware chokepoint), or any account that authorized a
-			// suitably-scoped app could approve or revoke the org's PAT grants
-			// without being a member.
+			// A ghu_ token is the app's grant AND the owner's standing;
+			// userAccessTokenCanAdminPATs proves only the app half, so require the
+			// owner to be an org admin too.
 			if s.viewerCanAdminOrg(r.Context(), org.Login) {
 				next(w, r)
 				return
@@ -93,10 +84,6 @@ func (s *Server) userAccessTokenCanAdminPATs(token *store.UserToServerToken, org
 	}
 	return false
 }
-
-// ─── store methods ───────────────────────────────────────────────────────
-
-// ─── rendering ───────────────────────────────────────────────────────────
 
 func patPermissionsJSON(p store.OrgPATPermissions) map[string]interface{} {
 	out := map[string]interface{}{}
@@ -166,9 +153,8 @@ func (s *Server) patGrantJSON(g *store.OrgPATGrant, baseURL string) map[string]i
 	}
 }
 
-// patListFilters applies the shared owner/token_id filters and
-// sort/direction ordering of the two PAT listing endpoints. rows must carry
-// ownerLogin/tokenID/createdAt extraction closures.
+// patListRow carries one PAT list entry through the shared owner/token_id
+// filters and sort ordering of the two listing endpoints.
 type patListRow struct {
 	ownerLogin string
 	tokenID    int
@@ -221,8 +207,6 @@ func filterAndSortPATRows(r *http.Request, rows []patListRow) []map[string]inter
 	}
 	return out
 }
-
-// ─── handlers ────────────────────────────────────────────────────────────
 
 func (s *Server) handleListOrgPATGrantRequests(w http.ResponseWriter, r *http.Request) {
 	orgLogin := r.PathValue("org")
@@ -389,8 +373,7 @@ func (s *Server) handleUpdateOrgPATAccess(w http.ResponseWriter, r *http.Request
 }
 
 // writePATRepositoriesResponse renders the repositories a grant/request can
-// access: every org repository for "all", the selected subset for "subset",
-// none otherwise.
+// access: all org repos for "all", the selected subset for "subset", none else.
 func (s *Server) writePATRepositoriesResponse(w http.ResponseWriter, r *http.Request, org *store.Org, selection string, repositoryIDs []int) {
 	var repos []*store.Repo
 	switch selection {

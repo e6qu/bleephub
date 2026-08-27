@@ -425,9 +425,7 @@ func (s *Server) resolveIssueSuggestion(w http.ResponseWriter, r *http.Request, 
 	var eventID *int
 	if approve {
 		state = "approved"
-		// The change itself is the store's, so the GraphQL
-		// applyPendingIssueSuggestions mutation performs exactly what this
-		// route performs.
+		// Shared with the GraphQL applyPendingIssueSuggestions mutation.
 		event, err := s.store.PerformIssueSuggestion(repo, issue, target, user.ID)
 		if err != nil {
 			var targetErr *store.ErrIssueSuggestionTarget

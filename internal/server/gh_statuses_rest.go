@@ -9,14 +9,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Commit Statuses API.
-// Real GH endpoints:
-//   GET  /repos/{o}/{r}/commits/{ref}/status        combined status
-//   GET  /repos/{o}/{r}/commits/{ref}/statuses      list statuses
-//   POST /repos/{o}/{r}/statuses/{sha}              create status
-//
-// Statuses are repo+ref scoped; the combined status endpoint derives the
-// worst state across the latest status per context.
+// Commit Statuses API. The combined-status endpoint derives the worst state
+// across the latest status per context.
 
 func (s *Server) registerGHStatusesRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/commits/{ref}/status", s.handleGetCombinedStatus)
@@ -43,8 +37,7 @@ func (s *Server) handleGetCombinedStatus(w http.ResponseWriter, r *http.Request)
 		"total_count": total,
 		"statuses":    out,
 		"repository":  store.RepoToJSON(repo, s.store, base),
-		// url and commit_url are required members of combined-commit-status;
-		// GitHub points them at the combined-status resource and the commit.
+		// Required members of combined-commit-status.
 		"url":        fmt.Sprintf("%s/api/v3/repos/%s/commits/%s/status", base, repo.FullName, ref),
 		"commit_url": fmt.Sprintf("%s/api/v3/repos/%s/commits/%s", base, repo.FullName, ref),
 	})
@@ -107,8 +100,7 @@ func (s *Server) handleCreateCommitStatus(w http.ResponseWriter, r *http.Request
 		"repository":  store.RepoToJSON(repo, s.store, s.baseURL(r)),
 		"sender":      store.UserToJSON(user, s.baseURL(r)),
 	})
-	// A successful commit status for a PR head can clear the condition an
-	// armed auto-merge was waiting for.
+	// A success status on a PR head can satisfy an armed auto-merge.
 	if strings.EqualFold(string(st.State), "success") {
 		s.maybeAutoMergeHeadSHA(repo, sha)
 	}

@@ -11,27 +11,13 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// PR review comments (inline / file-line / range).
-// Endpoints:
-//   POST   /repos/{o}/{r}/pulls/{number}/comments
-//   GET    /repos/{o}/{r}/pulls/{number}/comments
-//   GET    /repos/{o}/{r}/pulls/comments/{id}
-//   PATCH  /repos/{o}/{r}/pulls/comments/{id}
-//   DELETE /repos/{o}/{r}/pulls/comments/{id}
-//   POST   /repos/{o}/{r}/pulls/{number}/comments/{id}/replies
-//
-// gh CLI's `gh pr review --thread` / `gh pr comment` uses GraphQL mutations
-// (resolveReviewThread / unresolveReviewThread); the REST surface here is
-// what octokit + probot use.
-//
-// PR review comments distinct from issue comments (`/issues/{n}/comments`):
-// review comments attach to a specific file path + line + commit SHA and
-// participate in review threads.
+// PR review comments — distinct from issue comments in that they attach to a
+// file path + line + commit SHA and participate in review threads. This REST
+// surface is what octokit and probot use; gh CLI drives threads over GraphQL.
 
 func (s *Server) registerGHPRCommentsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/comments",
 		s.handleListRepoPRComments)
-	// `/pulls/{number}/comments` (3 segments, literal "comments" at pos 3)
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/comments",
 		s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleCreatePRComment))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/comments",
@@ -39,18 +25,13 @@ func (s *Server) registerGHPRCommentsRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies",
 		s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleReplyPRComment))
 
-	// `/pulls/{number}/reviews/{review_id}/comments` (4 segments; no clash
-	// with the 3-segment dispatch in gh_reactions.go)
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/comments",
 		s.handleListPRReviewCommentsForReview)
 
-	// `/pulls/comments/{comment_id}` — single-review-comment surface.
 	// Go 1.22's mux can't register both `/pulls/comments/{cid}` and
-	// `/pulls/{number}/comments` because /pulls/comments/comments would match
-	// both. Resolve via a 2-segment dispatcher (literal-anchored at p1=="comments"
-	// when comment subpath is intended). The existing /pulls/{number}/<literal>
-	// routes are strictly more specific (literal at pos 3) and continue to win
-	// for their URLs.
+	// `/pulls/{number}/comments`, so a 2-segment dispatcher handles the
+	// single-comment surface when p1=="comments". The literal
+	// /pulls/{number}/<literal> routes are more specific and still win.
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}",
 		s.handlePRCommentTwoSegDispatch("GET"))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}",
@@ -90,10 +71,9 @@ func (s *Server) handleListRepoPRComments(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handlePRCommentTwoSegDispatch routes `/pulls/{p1}/{p2}` when p1=="comments"
-// (single-review-comment surface) or p2=="files" (the changed-file diff list).
-// For any other shape it 404s — the existing literal routes (e.g.
-// /pulls/{number}/merge) win on their own paths.
+// handlePRCommentTwoSegDispatch routes `/pulls/{p1}/{p2}` to the single-comment
+// surface when p1=="comments", or the changed-file list when p2=="files"; any
+// other shape 404s.
 func (s *Server) handlePRCommentTwoSegDispatch(method string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p1 := r.PathValue("p1")
@@ -164,8 +144,7 @@ func (s *Server) handleCreatePRComment(w http.ResponseWriter, r *http.Request) {
 			store.WriteGHValidationError(w, "PullRequestReviewComment", "path", "missing_field")
 			return
 		}
-		// A multi-line comment's start_line must precede its line; GitHub rejects
-		// start_line >= line with a 422 rather than storing an inverted range.
+		// GitHub 422s start_line >= line rather than storing an inverted range.
 		if int(req.StartLine) > 0 && int(req.StartLine) >= int(req.Line) {
 			store.WriteGHValidationError(w, "PullRequestReviewComment", "start_line", "invalid")
 			return
@@ -208,10 +187,9 @@ func (s *Server) handleListPRComments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// prReviewCommentInRepo resolves the review comment named by {comment_id} and
-// the pull request that owns it, answering 404 unless that pull request lives
-// in repo. Review comment ids are global, so every by-id handler has to walk
-// back to the repository before it acts.
+// prReviewCommentInRepo resolves {comment_id} and its owning PR, 404ing unless
+// that PR lives in repo. Comment ids are global, so every by-id handler must
+// walk back to the repository first.
 func (s *Server) prReviewCommentInRepo(w http.ResponseWriter, r *http.Request, repo *store.Repo) (*store.PRReviewComment, *store.PullRequest) {
 	id, err := strconv.Atoi(r.PathValue("comment_id"))
 	if err != nil {
@@ -302,7 +280,7 @@ func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to delete another user's comment")
 		return
 	}
-	// The payload has to render before the row disappears.
+	// Render the payload before the row disappears.
 	payload := buildPRReviewCommentEventPayload(repo, pr, c, user, "deleted", s.baseURL(r))
 	if !s.store.PRReviewComments.Delete(c.ID, s.store.Reactions) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -354,9 +332,8 @@ func (s *Server) handleReplyPRComment(w http.ResponseWriter, r *http.Request) {
 	writeJSONCreated(w, jsonStringField(replyJSON, "url"), replyJSON)
 }
 
-// handleListPRReviewCommentsForReview serves
-// GET /repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/comments —
-// the review comments that belong to one submitted pull request review.
+// handleListPRReviewCommentsForReview lists the review comments belonging to
+// one submitted pull request review.
 func (s *Server) handleListPRReviewCommentsForReview(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
@@ -392,9 +369,8 @@ func (s *Server) handleListPRReviewCommentsForReview(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-// prCommentSubjectType reports GitHub's subject_type for a review comment: a
-// comment anchored to a diff line/position is "line"; one anchored to a whole
-// file (no line and no position) is "file".
+// prCommentSubjectType reports GitHub's subject_type: "line" for a comment
+// anchored to a diff line/position, "file" for a whole-file comment.
 func prCommentSubjectType(c *store.PRReviewComment) string {
 	if c.Line == nil && c.StartLine == nil && c.Position == nil {
 		return "file"

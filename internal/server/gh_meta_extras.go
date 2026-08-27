@@ -11,20 +11,17 @@ import (
 	"strings"
 )
 
-// Top-level GitHub REST API meta surfaces: the emoji catalog, the zen quote
-// endpoint, the octocat ASCII-art endpoint, the REST API versions list, and
-// credential revocation.
+// Top-level GitHub REST API meta surfaces: emojis, zen, octocat, API versions,
+// and credential revocation.
 
-// gemojiCatalog is the github/gemoji dataset rendered as the GET /emojis
-// name → image-path catalog: one "name path" pair per line, where path is
-// relative to <base>/images/icons/emoji/ (unicode/<codepoints>.png?v8 for
-// Unicode emoji, <name>.png?v8 for GitHub's custom emoji).
+// gemojiCatalog is the github/gemoji dataset as a "name path" per line; path is
+// relative to <base>/images/icons/emoji/.
 //
 //go:embed gemoji_catalog.txt
 var gemojiCatalog string
 
-// zenQuotes is GitHub's zen quote set, served verbatim by GET /zen and used
-// for the octocat speech bubble when no valid `s` parameter is supplied.
+// zenQuotes is GitHub's zen quote set, served by GET /zen and used as the
+// octocat speech bubble fallback.
 var zenQuotes = []string{
 	"Accessible for all.",
 	"Anything added dilutes everything else.",
@@ -44,8 +41,7 @@ var zenQuotes = []string{
 }
 
 // octocatSpeechRe is the character set GitHub accepts for the octocat `s`
-// parameter (word characters, digits, spaces, commas, hyphens, slashes).
-// Anything outside it makes GitHub fall back to a random zen quote.
+// parameter; anything outside it falls back to a random zen quote.
 var octocatSpeechRe = regexp.MustCompile(`^[A-Za-z0-9_ ,\-/]+$`)
 
 func (s *Server) registerGHMetaExtrasRoutes() {
@@ -54,14 +50,13 @@ func (s *Server) registerGHMetaExtrasRoutes() {
 	s.route("GET /api/v3/octocat", s.handleGHOctocat)
 	s.route("GET /api/v3/versions", s.handleGHAPIVersions)
 	s.route("POST /api/v3/credentials/revoke", s.handleGHCredentialsRevoke)
-	// Instance-hosted emoji images the /emojis catalog URLs point at — a
-	// top-level asset path on the GHES host, not part of /api/v3.
+	// Instance-hosted emoji images the /emojis catalog points at; a top-level
+	// GHES asset path, not part of /api/v3.
 	s.route("GET /images/icons/emoji/{path...}", s.handleGHEmojiImage)
 }
 
-// handleGHEmojis serves the full GitHub emoji catalog with image URLs
-// pointing at this server, matching GitHub Enterprise Server behavior of
-// serving emoji assets from the instance host.
+// handleGHEmojis serves the emoji catalog with image URLs pointing at this
+// server, as GHES serves emoji assets from the instance host.
 func (s *Server) handleGHEmojis(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r) + "/images/icons/emoji/"
 	out := make(map[string]string, 2048)
@@ -86,9 +81,8 @@ func (s *Server) handleGHOctocat(w http.ResponseWriter, r *http.Request) {
 	if !octocatSpeechRe.MatchString(text) {
 		text = randomZenQuote()
 	} else {
-		// The allowlist above admits no HTML metacharacters, so this is a
-		// runtime no-op — it exists to make the non-injectability provable
-		// to taint analysis rather than dependent on the regexp's contents.
+		// A no-op given the allowlist admits no HTML metacharacters; kept so taint
+		// analysis can prove non-injectability without reading the regexp.
 		text = html.EscapeString(text)
 	}
 	w.Header().Set("Content-Type", "application/octocat-stream")
@@ -104,8 +98,8 @@ func randomZenQuote() string {
 	return zenQuotes[index.Int64()]
 }
 
-// octocatArt renders GitHub's octocat ASCII art with the given text in the
-// speech bubble, byte-identical to GET https://api.github.com/octocat.
+// octocatArt renders the octocat ASCII art with text in the speech bubble,
+// byte-identical to GET https://api.github.com/octocat.
 func octocatArt(text string) string {
 	inner := len(text) + 2
 	bottomTail := inner - 4
@@ -138,18 +132,13 @@ func octocatArt(text string) string {
 	return b.String()
 }
 
-// handleGHAPIVersions serves GET /versions — the list of supported GitHub
-// REST API calendar versions.
 func (s *Server) handleGHAPIVersions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, supportedGitHubAPIVersions)
 }
 
-// handleGHCredentialsRevoke implements POST /credentials/revoke: it revokes
-// every supplied credential that matches a live token in the store (personal
-// access tokens, OAuth user-to-server tokens, refresh tokens, and GitHub App
-// installation tokens). Real GitHub processes the batch asynchronously and
-// answers 202 without a body; unknown credentials are silently accepted, the
-// same as GitHub, so a caller cannot probe which tokens exist.
+// handleGHCredentialsRevoke revokes every supplied credential matching a live
+// token. Unknown credentials are silently accepted (answered 202, no body), as
+// GitHub does, so a caller cannot probe which tokens exist.
 func (s *Server) handleGHCredentialsRevoke(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Credentials []string `json:"credentials"`

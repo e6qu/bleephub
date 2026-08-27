@@ -33,12 +33,8 @@ func (s *Server) registerGHGistRoutes() {
 }
 
 // visibleGist resolves {gist_id} for the request's viewer, or answers 404.
-//
-// Every route addressing a gist by id goes through here. The sub-resources —
-// revisions, forks, commits, comments, stars — were each deciding visibility
-// for themselves, which meant each new one started out deciding nothing, and
-// `GET /gists/{id}/{sha}` handed a non-public gist's file contents to an
-// anonymous caller.
+// Every gist-by-id route must go through here so a non-public gist's contents
+// never reach an anonymous caller.
 func (s *Server) visibleGist(w http.ResponseWriter, r *http.Request) *store.Gist {
 	g := s.store.GetGist(r.PathValue("gist_id"))
 	if g == nil || !s.viewerCanSeeGist(r.Context(), g) {
@@ -48,8 +44,7 @@ func (s *Server) visibleGist(w http.ResponseWriter, r *http.Request) *store.Gist
 	return g
 }
 
-// viewerCanSeeGist is the visibility rule itself: a public gist is everyone's,
-// a non-public one is its owner's.
+// viewerCanSeeGist: a public gist is everyone's, a non-public one only its owner's.
 func (s *Server) viewerCanSeeGist(ctx context.Context, g *store.Gist) bool {
 	if g == nil {
 		return false
@@ -208,8 +203,8 @@ func (s *Server) handleUpdateGist(w http.ResponseWriter, r *http.Request) {
 	var newFiles map[string]*store.GistFile
 	var deleteFiles []string
 	if req.Files != nil {
-		// The current gist supplies the content to carry forward when a file entry
-		// omits `content` (e.g. a pure rename must not blank the file body).
+		// Carry forward existing content when a file entry omits `content`
+		// (e.g. a pure rename must not blank the body).
 		current := s.store.GetGist(id)
 		newFiles = make(map[string]*store.GistFile)
 		for name, f := range req.Files {
@@ -229,8 +224,7 @@ func (s *Server) handleUpdateGist(w http.ResponseWriter, r *http.Request) {
 			if f.Filename != nil && *f.Filename != "" {
 				filename = *f.Filename
 			}
-			// A rename must remove the file under its old name, not leave a
-			// duplicate alongside the new one.
+			// A rename removes the file under its old name.
 			if filename != name {
 				deleteFiles = append(deleteFiles, name)
 			}
@@ -347,8 +341,6 @@ func (s *Server) handleListGistForks(w http.ResponseWriter, r *http.Request) {
 	if s.visibleGist(w, r) == nil {
 		return
 	}
-	// A gist with no forks has an empty fork list, not a missing one; the
-	// resolver above is what decides whether the gist is there.
 	forks := s.store.ListGistForks(r.PathValue("gist_id"))
 	items := make([]map[string]interface{}, len(forks))
 	for i, f := range forks {
@@ -489,13 +481,9 @@ func writeGistList(w http.ResponseWriter, r *http.Request, s *Server, gists []*s
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, items))
 }
 
-// gistView is the copy a response is rendered from: the stored gist snapshotted
-// under the store lock, with this request's URLs derived onto the copy.
-//
-// The URLs are request-derived — they carry the Host the caller asked through —
-// so writing them into the stored gist would publish one caller's host to every
-// other reader, and rendering the stored gist directly would let a concurrent
-// edit be serialized half-applied.
+// gistView returns a locked snapshot of the gist with this request's URLs
+// derived onto the copy — never onto the stored gist, whose host must not
+// carry one caller's Host to every other reader.
 func (s *Server) gistView(g *store.Gist, r *http.Request) *store.Gist {
 	view := s.snapshotGist(g)
 	if view == nil {
@@ -506,12 +494,9 @@ func (s *Server) gistView(g *store.Gist, r *http.Request) *store.Gist {
 	view.ForksURL = view.URL + "/forks"
 	view.CommitsURL = view.URL + "/commits"
 	view.CommentsURL = view.URL + "/comments"
-	// A gist's web and clone URLs are keyed by the gist id alone — never by its
-	// owner. On github.com they are https://gist.github.com/{id}[.git] (the
-	// vendored contract's own examples), and a single-host GitHub Enterprise
-	// Server serves the same shape under /gist/{id}. An owner-scoped path
-	// sends `gh gist view --web` and `git clone <git_pull_url>` to a URL that
-	// resolves to the owner's profile or to nothing at all.
+	// A gist's web and clone URLs are keyed by the gist id alone, never the owner
+	// — GHES serves /gist/{id}[.git]; an owner-scoped path breaks `gh gist view
+	// --web` and `git clone <git_pull_url>`.
 	view.HTMLURL = base + "/gist/" + view.ID
 	view.GitPullURL = view.HTMLURL + ".git"
 	view.GitPushURL = view.GitPullURL
@@ -532,8 +517,8 @@ func (s *Server) gistView(g *store.Gist, r *http.Request) *store.Gist {
 	return view
 }
 
-// snapshotGist copies a stored gist, its files and its history under the store
-// lock, so nothing a writer holds is shared with the copy.
+// snapshotGist deep-copies a stored gist under the store lock, sharing nothing
+// mutable with a concurrent writer.
 func (s *Server) snapshotGist(g *store.Gist) *store.Gist {
 	if g == nil {
 		return nil
@@ -572,16 +557,13 @@ func (s *Server) gistToJSON(g *store.Gist, r *http.Request, includeContent bool)
 			"size":     f.Size,
 		}
 		if includeContent {
-			// content + truncated are gist-simple-only file members; the base-gist
-			// list responses omit both.
+			// content + truncated are gist-simple-only; the base-gist list omits both.
 			fileJSON["content"] = f.Content
 			fileJSON["truncated"] = false
 		}
 		files[name] = fileJSON
 	}
 
-	// forks lists the gists forked from this one (github populates it on the
-	// single-gist and fork responses); the entries are the fork gist stubs.
 	forks := []interface{}{}
 	for _, f := range s.store.ListGistForks(g.ID) {
 		var forkOwnerJSON interface{}
@@ -637,8 +619,7 @@ func (s *Server) gistToJSON(g *store.Gist, r *http.Request, includeContent bool)
 		"created_at":   g.CreatedAt.Format(time.RFC3339),
 		"updated_at":   g.UpdatedAt.Format(time.RFC3339),
 	}
-	// fork_of (the parent gist) is a gist-simple-only member — emit it only on
-	// the single-gist responses (includeContent), never on the base-gist list.
+	// fork_of is gist-simple-only — emit it only on single-gist responses.
 	if includeContent && g.ForkOfID != "" {
 		if parent := s.store.GetGist(g.ForkOfID); parent != nil {
 			out["fork_of"] = s.gistToJSON(parent, r, false)

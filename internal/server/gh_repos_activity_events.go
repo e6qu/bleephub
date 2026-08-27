@@ -14,9 +14,8 @@ import (
 
 // --- Repository activity (recorded ref updates) ---
 
-// classifyRefUpdate maps a receive-pack ref command onto GitHub's activity
-// types by inspecting the real object graph: a non-fast-forward update is a
-// force push.
+// classifyRefUpdate maps a ref command onto GitHub's activity types from the
+// object graph: a non-fast-forward update is a force push.
 func classifyRefUpdate(stor gitStorage.Storer, oldHash, newHash plumbing.Hash) string {
 	switch {
 	case oldHash.IsZero():
@@ -116,13 +115,12 @@ func (s *Server) handleListRepoActivity(w http.ResponseWriter, r *http.Request) 
 
 // --- Repository events ---
 
-// repoEventEntry pairs a rendered event with its timestamp for sorting.
 type repoEventEntry struct {
 	when  time.Time
 	event map[string]interface{}
 }
 
-// eventActorAbsJSON renders the GitHub `actor` shape with absolute URLs.
+// eventActorAbsJSON renders the `actor` shape with absolute URLs.
 func eventActorAbsJSON(u *store.User, base string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          u.ID,
@@ -133,10 +131,8 @@ func eventActorAbsJSON(u *store.User, base string) map[string]interface{} {
 	}
 }
 
-// repoEvents derives the repository's event feed from real store state:
-// recorded ref updates (PushEvent / CreateEvent / DeleteEvent), issues
-// (IssuesEvent), pull requests (PullRequestEvent), and issue comments
-// (IssueCommentEvent).
+// repoEvents derives the repository's event feed from store state: ref updates
+// (Push/Create/DeleteEvent), issues, pull requests, and issue comments.
 func (s *Server) repoEvents(repo *store.Repo, base string) []repoEventEntry {
 	repoJSON := map[string]interface{}{
 		"id":   repo.ID,
@@ -225,8 +221,8 @@ func (s *Server) repoEvents(repo *store.Repo, base string) []repoEventEntry {
 	return out
 }
 
-// pullRequestMinimalJSON renders the GitHub pull-request-minimal shape, with
-// head/base SHAs resolved live from git storage.
+// pullRequestMinimalJSON renders the pull-request-minimal shape, resolving
+// head/base SHAs from git storage.
 func pullRequestMinimalJSON(pr *store.PullRequest, repo *store.Repo, stor gitStorage.Storer, base string) map[string]interface{} {
 	api := base + "/api/v3/repos/" + repo.FullName
 	repoRef := map[string]interface{}{
@@ -284,8 +280,8 @@ func (s *Server) handleListRepoEvents(w http.ResponseWriter, r *http.Request) {
 	writeEventEntries(w, r, s.repoEvents(repo, s.baseURL(r)))
 }
 
-// handleListNetworkEvents serves the fork-network event feed: the requested
-// repository plus every fork whose network root it is.
+// handleListNetworkEvents serves the fork-network event feed: the repository
+// plus every fork rooted on it.
 func (s *Server) handleListNetworkEvents(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
@@ -305,7 +301,7 @@ func (s *Server) handleListNetworkEvents(w http.ResponseWriter, r *http.Request)
 
 // --- Traffic ---
 
-// trafficWeekStart returns midnight UTC of the Monday beginning t's week —
+// trafficWeekStart returns midnight UTC of the Monday beginning t's week;
 // GitHub's traffic API buckets weeks from Monday.
 func trafficWeekStart(t time.Time) time.Time {
 	t = t.UTC()
@@ -314,8 +310,8 @@ func trafficWeekStart(t time.Time) time.Time {
 	return t.AddDate(0, 0, -offset)
 }
 
-// trafficRepo resolves the repo and enforces GitHub's traffic access rule:
-// the caller needs push access.
+// trafficRepo resolves the repo and enforces GitHub's rule that traffic needs
+// push access.
 func (s *Server) trafficRepo(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
@@ -391,8 +387,7 @@ func (s *Server) handleTrafficClones(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTrafficViews serves view traffic. bleephub serves no repository HTML
-// pages, so no views ever occur; the counters are real zeros, never
-// fabricated numbers.
+// pages, so the counters are real zeros.
 func (s *Server) handleTrafficViews(w http.ResponseWriter, r *http.Request) {
 	repo := s.trafficRepo(w, r)
 	if repo == nil {

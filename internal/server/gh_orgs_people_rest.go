@@ -9,13 +9,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// REST surface for organization people management: organization
-// invitations (+ failed invitations and per-team invitation lists),
-// outside collaborators, organization user blocks, organization
-// interaction limits, organization roles (predefined catalog +
-// team/user assignment), security managers, organization-member
-// codespace administration lives in gh_codespaces.go, Copilot seat
-// lookup, and org-wide security-product enablement.
+// REST surface for organization people management: invitations, outside
+// collaborators, user blocks, interaction limits, organization roles, security
+// managers, and org-wide security-product enablement.
 
 func (s *Server) registerGHOrgsPeopleRoutes() {
 	s.registerGHOrganizationSCIMRoutes()
@@ -76,9 +72,8 @@ func (s *Server) registerGHOrgRolesRoutes() {
 	s.route("POST /api/v3/orgs/{org}/{security_product}/{enablement}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleOrgSecurityProductEnablement))
 }
 
-// resolveOrgOwner resolves the {org} path parameter and requires the
-// authenticated caller to be an active organization owner, writing the
-// appropriate error otherwise.
+// resolveOrgOwner resolves {org} and requires the caller to be an active org
+// owner, writing the error otherwise.
 func (s *Server) resolveOrgOwner(w http.ResponseWriter, r *http.Request) (*store.Org, *store.User) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -97,9 +92,8 @@ func (s *Server) resolveOrgOwner(w http.ResponseWriter, r *http.Request) (*store
 	return org, user
 }
 
-// resolveOrgMember resolves the {org} path parameter and requires the
-// authenticated caller to be an active organization member — the org's
-// internal structure reads as 404 to everyone else, like real GitHub.
+// resolveOrgMember resolves {org} and requires the caller to be an active org
+// member; the org's internal structure is 404 to everyone else.
 func (s *Server) resolveOrgMember(w http.ResponseWriter, r *http.Request) (*store.Org, *store.User) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -120,7 +114,7 @@ func (s *Server) resolveOrgMember(w http.ResponseWriter, r *http.Request) (*stor
 
 // --- organization invitations ---
 
-// orgInvitationJSON renders the GitHub `organization-invitation` shape.
+// orgInvitationJSON renders the `organization-invitation` shape.
 func (s *Server) orgInvitationJSON(inv *store.OrgInvitation, org *store.Org, baseURL string) map[string]interface{} {
 	var login, email interface{}
 	if inv.Login != "" {
@@ -212,8 +206,7 @@ func (s *Server) handleCreateOrgInvitation(w http.ResponseWriter, r *http.Reques
 	switch role {
 	case "direct_member", "admin", "billing_manager":
 	case "reinstate":
-		// bleephub keeps no record of removed members' previous roles, so
-		// a reinstate invitation has no role to restore.
+		// No record of removed members' previous roles, so nothing to restore.
 		writeGHError(w, http.StatusUnprocessableEntity, "Invitee was not previously a member of this organization, so there is no role to reinstate.")
 		return
 	default:
@@ -239,8 +232,7 @@ func (s *Server) handleCreateOrgInvitation(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	} else if u := s.store.LookupUserByEmail(email); u != nil {
-		// An email invitation addressed to an existing account resolves to
-		// that account, exactly as real GitHub links the invite.
+		// An email invitation to an existing account resolves to that account.
 		invitee = u
 	}
 
@@ -330,8 +322,8 @@ func (s *Server) handleListFailedOrgInvitations(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
-// handleListTeamInvitations — GET /api/v3/orgs/{org}/teams/{team_slug}/invitations:
-// the org's pending invitations that carry this team.
+// handleListTeamInvitations lists the org's pending invitations that carry this
+// team.
 func (s *Server) handleListTeamInvitations(w http.ResponseWriter, r *http.Request) {
 	org, _ := s.resolveOrgMember(w, r)
 	if org == nil {
@@ -366,9 +358,7 @@ func (s *Server) handleListOutsideCollaborators(w http.ResponseWriter, r *http.R
 		return
 	}
 	collaborators := s.store.ListOutsideCollaborators(org.Login)
-	// bleephub has no two-factor-authentication model, so every account
-	// genuinely lacks 2FA: 2fa_disabled matches everyone and 2fa_insecure
-	// (insecure 2FA methods) matches no one.
+	// No 2FA model: 2fa_disabled matches everyone, 2fa_insecure matches no one.
 	if filter == "2fa_insecure" {
 		collaborators = nil
 	}
@@ -398,9 +388,8 @@ func (s *Server) handleConvertMemberToOutsideCollaborator(w http.ResponseWriter,
 		writeGHError(w, http.StatusForbidden, "Cannot convert an organization owner to an outside collaborator.")
 		return
 	}
-	// The converted member keeps the repository access their team
-	// memberships confer, materialized as direct collaborator grants,
-	// then loses the membership itself.
+	// Materialize the access their team memberships conferred as direct
+	// collaborator grants before removing the membership itself.
 	s.store.GrantTeamRepoAccessAsCollaborator(org.Login, target)
 	s.store.RemoveMembership(org.Login, target.ID)
 	s.emitOrgMembershipEvent(org, "member_removed", m, target, user)
@@ -495,8 +484,7 @@ func (s *Server) handleUnblockOrgUser(w http.ResponseWriter, r *http.Request) {
 
 // --- organization interaction limits ---
 
-// orgInteractionExpiryDurations maps GitHub's interaction-expiry enum to
-// the concrete durations the restrictions run for.
+// orgInteractionExpiryDurations maps the interaction-expiry enum to durations.
 var orgInteractionExpiryDurations = map[string]time.Duration{
 	"one_day":    24 * time.Hour,
 	"three_days": 3 * 24 * time.Hour,
@@ -520,8 +508,7 @@ func (s *Server) handleGetOrgInteractionLimits(w http.ResponseWriter, r *http.Re
 	}
 	lim := s.store.GetOrgInteractionLimit(org.Login)
 	if lim == nil {
-		// No active restriction reads as an empty object, per the
-		// documented anyOf response.
+		// No active restriction is an empty object (documented anyOf response).
 		writeJSON(w, http.StatusOK, map[string]interface{}{})
 		return
 	}
@@ -570,8 +557,7 @@ func (s *Server) handleDeleteOrgInteractionLimits(w http.ResponseWriter, r *http
 
 // --- organization roles ---
 
-// predefinedOrgRole is one entry of GitHub's predefined organization
-// role catalog served by GET /orgs/{org}/organization-roles.
+// predefinedOrgRole is one entry of the predefined organization role catalog.
 type predefinedOrgRole struct {
 	ID          int
 	Name        string
@@ -592,15 +578,13 @@ type organizationRoleView struct {
 	UpdatedAt   time.Time
 }
 
-// securityManagerOrgRoleID is the predefined security_manager role —
-// the role the deprecated security-managers endpoints alias.
+// securityManagerOrgRoleID is the security_manager role the deprecated
+// security-managers endpoints alias.
 const securityManagerOrgRoleID = 143
 
-// predefinedOrgRoles is GitHub's predefined organization role catalog:
-// the five all-repository access roles (which grant only their base
-// repository role, hence empty permission lists) plus security_manager.
-// The IDs are bleephub's stable predefined-role identifiers, mirroring
-// github.com's numbering for the all-repository family.
+// predefinedOrgRoles is the predefined organization role catalog: five
+// all-repository access roles (empty permission lists — they grant only their
+// base repository role) plus security_manager.
 var predefinedOrgRoles = []predefinedOrgRole{
 	{ID: 138, Name: "all_repo_read", Description: "Grants read access to all repositories in the organization.", BaseRole: "read"},
 	{ID: 139, Name: "all_repo_triage", Description: "Grants triage access to all repositories in the organization.", BaseRole: "triage"},
@@ -619,9 +603,8 @@ func predefinedOrgRoleByID(id int) *predefinedOrgRole {
 	return nil
 }
 
-// orgRoleJSON renders the GitHub `organization-role` shape. Predefined
-// roles carry a null organization and exist from the organization's
-// creation.
+// predefinedOrgRoleView builds a role view whose organization is null and whose
+// timestamps are the org's creation time.
 func predefinedOrgRoleView(role *predefinedOrgRole, org *store.Org) *organizationRoleView {
 	description, baseRole := role.Description, role.BaseRole
 	return &organizationRoleView{
@@ -664,9 +647,8 @@ func orgRoleJSON(role *organizationRoleView, org *store.Org, baseURL string) map
 	}
 }
 
-// resolveOrgRoleID parses the {role_id} path parameter into a
-// predefined or organization-defined role, writing a 404 when it doesn't
-// resolve.
+// resolveOrgRoleID parses {role_id} into a predefined or org-defined role,
+// writing 404 when it doesn't resolve.
 func (s *Server) resolveOrgRoleID(w http.ResponseWriter, r *http.Request, orgLogin string) *organizationRoleView {
 	id, err := strconv.Atoi(r.PathValue("role_id"))
 	if err != nil {
@@ -926,21 +908,16 @@ func (s *Server) handleRemoveSecurityManagerTeam(w http.ResponseWriter, r *http.
 
 // --- org-wide security-product enablement ---
 
-// orgSecurityProductRepoFlags maps the security products bleephub
-// models per-repository onto their Repo flag fields: Dependabot alerts
-// are the vulnerability-alerts setting and Dependabot security updates
-// are the automated-security-fixes setting — the same state the
-// /repos/{owner}/{repo}/vulnerability-alerts and
-// /repos/{owner}/{repo}/automated-security-fixes endpoints flip.
+// orgSecurityProductRepoFlags maps the per-repo-modeled security products onto
+// their Repo flag fields — the same state the per-repo vulnerability-alerts and
+// automated-security-fixes endpoints flip.
 var orgSecurityProductRepoFlags = map[string]string{
 	"dependabot_alerts":           "vulnerability_alerts_enabled",
 	"dependabot_security_updates": "automated_security_fixes_enabled",
 }
 
-// orgSecurityProductsUnavailable lists the documented security products
-// bleephub has no per-repository setting for; enabling them fails the
-// same way a GitHub Enterprise Server instance without the feature's
-// licensing does.
+// orgSecurityProductsUnavailable lists documented security products with no
+// per-repo setting; enabling one fails as an unlicensed GHES instance does.
 var orgSecurityProductsUnavailable = map[string]string{
 	"dependency_graph":                "Dependency graph is not available for this organization.",
 	"advanced_security":               "GitHub Advanced Security is not available for this organization.",
@@ -949,7 +926,6 @@ var orgSecurityProductsUnavailable = map[string]string{
 	"secret_scanning_push_protection": "Secret scanning push protection is not available for this organization.",
 }
 
-// handleOrgSecurityProductEnablement — POST /api/v3/orgs/{org}/{security_product}/{enablement}.
 func (s *Server) handleOrgSecurityProductEnablement(w http.ResponseWriter, r *http.Request) {
 	product := r.PathValue("security_product")
 	enablement := r.PathValue("enablement")

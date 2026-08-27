@@ -1,14 +1,9 @@
 package bleephub
 
-// GitHub Sponsors — the HTTP half: the browser surface the /ui Sponsors
-// pages read and write, the `sponsorship` webhook family, and the
-// billing-cycle reconciliation that turns a scheduled tier change or
-// cancellation into a real transition once its effective date arrives.
-//
-// GitHub publishes no REST API for Sponsors — the whole product is
-// GraphQL plus webhooks — so every route here lives under /ui-data, which
-// is the simulator's own browser surface. The API contract clients see is
-// the GraphQL one in internal/graphqlapi/gh_sponsors_graphql.go.
+// GitHub Sponsors, HTTP half: the /ui-data browser surface, the `sponsorship`
+// webhook family, and billing-cycle reconciliation. GitHub publishes no REST
+// API for Sponsors (GraphQL plus webhooks only), so routes here live under
+// /ui-data; the client-facing contract is internal/graphqlapi/gh_sponsors_graphql.go.
 
 import (
 	"context"
@@ -44,18 +39,16 @@ func (s *Server) registerGHSponsorsRoutes() {
 // ---------------------------------------------------------------------------
 // account resolution and authorization
 
-// SponsorableAccount is a user or an organization viewed as a party to a
-// sponsorship. Sponsors and sponsorables are the same shape, so one type
-// serves both sides.
+// SponsorableAccount is a user or organization as a party to a sponsorship;
+// one type serves both the sponsor and sponsorable sides.
 type SponsorableAccount struct {
 	ID    int
 	Type  string // User | Organization
 	Login string
 }
 
-// SponsorableAccountByLogin resolves a login to the account behind it,
-// preferring the user table so a user and an organization can never be
-// confused by case.
+// SponsorableAccountByLogin resolves a login, preferring the user table so a
+// user and organization are never confused by case.
 func (s *Server) SponsorableAccountByLogin(login string) (SponsorableAccount, bool) {
 	if login == "" {
 		return SponsorableAccount{}, false
@@ -70,8 +63,7 @@ func (s *Server) SponsorableAccountByLogin(login string) (SponsorableAccount, bo
 }
 
 // ViewerCanAdminSponsorable reports whether the request may manage the
-// account's Sponsors listing: the user themselves, an owner of the
-// organization, or a site administrator.
+// account's listing: the user themselves, an org owner, or a site admin.
 func (s *Server) ViewerCanAdminSponsorable(r *http.Request, viewer *store.User, account SponsorableAccount) bool {
 	if viewer == nil {
 		return false
@@ -85,9 +77,8 @@ func (s *Server) ViewerCanAdminSponsorable(r *http.Request, viewer *store.User, 
 	return s.viewerCanAdminOrg(r.Context(), account.Login)
 }
 
-// ViewerCanSpendAsSponsor reports whether the request may fund a
-// sponsorship out of the named account: their own account, or an
-// organization they administer.
+// ViewerCanSpendAsSponsor reports whether the request may fund a sponsorship
+// from the account: their own, or an org they administer.
 func (s *Server) ViewerCanSpendAsSponsor(r *http.Request, viewer *store.User, account SponsorableAccount) bool {
 	return s.ViewerCanAdminSponsorable(r, viewer, account)
 }
@@ -97,8 +88,7 @@ func (s *Server) sponsorsBrowserUser(w http.ResponseWriter, r *http.Request) (*s
 	return s.personalAccessTokenWebUser(w, r)
 }
 
-// sponsorsAccountFromPath resolves the {login} path segment, answering 404
-// for an account that does not exist.
+// sponsorsAccountFromPath resolves the {login} path segment, 404 if absent.
 func (s *Server) sponsorsAccountFromPath(w http.ResponseWriter, r *http.Request) (SponsorableAccount, bool) {
 	account, ok := s.SponsorableAccountByLogin(r.PathValue("login"))
 	if !ok {
@@ -111,10 +101,9 @@ func (s *Server) sponsorsAccountFromPath(w http.ResponseWriter, r *http.Request)
 // ---------------------------------------------------------------------------
 // billing-cycle reconciliation
 
-// ReconcileSponsorships applies every sponsorship whose next billing date
-// has arrived and emits the webhook each transition produces. It runs
-// before any Sponsors read or write so a scheduled downgrade or
-// cancellation takes effect on time without a background ticker.
+// ReconcileSponsorships applies every sponsorship whose next billing date has
+// arrived and emits each transition's webhook. It runs before any Sponsors read
+// or write, replacing a background ticker.
 func (s *Server) ReconcileSponsorships() {
 	for _, transition := range s.store.Sponsors.AdvanceSponsorshipBillingCycles(s.currentTime()) {
 		action := "tier_changed"
@@ -122,8 +111,7 @@ func (s *Server) ReconcileSponsorships() {
 		case transition.Sponsorship != nil && !transition.Sponsorship.IsActive:
 			action = "cancelled"
 		case transition.PreviousTier != nil && transition.Tier != nil && transition.PreviousTier.ID == transition.Tier.ID:
-			// A plain renewal bills another period without changing
-			// anything a subscriber could act on, so it is not an event.
+			// A plain renewal is not an event.
 			continue
 		}
 		s.emitSponsorshipEvent(action, transition, nil)
@@ -133,10 +121,9 @@ func (s *Server) ReconcileSponsorships() {
 // ---------------------------------------------------------------------------
 // webhooks
 
-// sponsorsTierWebhookJSON renders a tier the way GitHub's `sponsorship`
-// payload does. GitHub's payload really does spell the custom-amount flag
-// `is_custom_ammount`; reproducing the misspelling is what lets an
-// unmodified consumer read the field.
+// sponsorsTierWebhookJSON renders a tier as GitHub's `sponsorship` payload does.
+// GitHub really spells the custom-amount flag `is_custom_ammount`; the
+// misspelling is reproduced so an unmodified consumer reads the field.
 func sponsorsTierWebhookJSON(tier *store.SponsorsTier) map[string]interface{} {
 	if tier == nil {
 		return nil
@@ -153,8 +140,7 @@ func sponsorsTierWebhookJSON(tier *store.SponsorsTier) map[string]interface{} {
 	}
 }
 
-// sponsorsAccountWebhookJSON renders the sponsor or sponsorable side of a
-// sponsorship as the account object GitHub attaches.
+// sponsorsAccountWebhookJSON renders one side of a sponsorship as the account object.
 func (s *Server) sponsorsAccountWebhookJSON(login, accountType string) map[string]interface{} {
 	if accountType == "Organization" {
 		if org := s.store.GetOrg(login); org != nil {
@@ -168,7 +154,6 @@ func (s *Server) sponsorsAccountWebhookJSON(login, accountType string) map[strin
 	return nil
 }
 
-// sponsorshipWebhookJSON renders the `sponsorship` member of the payload.
 func (s *Server) sponsorshipWebhookJSON(sponsorship *store.Sponsorship, tier *store.SponsorsTier) map[string]interface{} {
 	if sponsorship == nil {
 		return nil
@@ -183,10 +168,8 @@ func (s *Server) sponsorshipWebhookJSON(sponsorship *store.Sponsorship, tier *st
 	}
 }
 
-// emitSponsorshipEvent delivers a `sponsorship` webhook for a lifecycle
-// transition. It fans out to the sponsorable organization's hooks and to
-// every GitHub App installed on the sponsorable that subscribed to the
-// event — the two places GitHub delivers a sponsorship from.
+// emitSponsorshipEvent delivers a `sponsorship` webhook, fanning out to the
+// sponsorable org's hooks and to every subscribed App installed on the sponsorable.
 func (s *Server) emitSponsorshipEvent(action string, transition *store.SponsorsTransition, sender *store.User) {
 	if transition == nil || transition.Sponsorship == nil {
 		return
@@ -243,7 +226,6 @@ func (s *Server) emitSponsorshipEvent(action string, transition *store.SponsorsT
 	}
 }
 
-// appSubscribesToEvent reports whether a GitHub App asked for the event.
 func appSubscribesToEvent(app *store.App, event string) bool {
 	for _, subscribed := range app.WebhookEvents {
 		if subscribed == "*" || subscribed == event {
@@ -321,10 +303,8 @@ func (s *Server) sponsorsFeaturedItemJSON(item *store.SponsorsListingFeaturedIte
 	return out
 }
 
-// sponsorsListingJSON renders a listing for the browser. Maintainer-only
-// members (contact email, billing country, payout schedule) are attached
-// only when the viewer can administer the listing — the same boundary the
-// GraphQL surface draws.
+// sponsorsListingJSON renders a listing. Maintainer-only members (contact
+// email, billing country, payout schedule) are attached only when isMaintainer.
 func (s *Server) sponsorsListingJSON(listing *store.SponsorsListing, isMaintainer bool) map[string]interface{} {
 	if listing == nil {
 		return nil
@@ -367,9 +347,8 @@ func (s *Server) sponsorsListingJSON(listing *store.SponsorsListing, isMaintaine
 	return out
 }
 
-// sponsorshipVisibleTo applies sponsorship privacy: a private sponsorship
-// is visible only to its sponsor, to the maintainer receiving it, and to a
-// site administrator. Everyone else must not be able to tell it exists.
+// sponsorshipVisibleTo enforces sponsorship privacy: a private sponsorship is
+// visible only to its sponsor, the receiving maintainer, and a site admin.
 func (s *Server) sponsorshipVisibleTo(r *http.Request, viewer *store.User, sponsorship *store.Sponsorship) bool {
 	if sponsorship == nil {
 		return false
@@ -459,8 +438,7 @@ func (s *Server) handleGetSponsorsListing(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	// The sponsor list is what the profile page shows; a private
-	// sponsorship is dropped from it for anybody but its two parties.
+	// Drop private sponsorships from the profile's sponsor list.
 	sponsors := []map[string]interface{}{}
 	for _, sponsorship := range s.store.Sponsors.ListSponsorshipsAsMaintainer(account.Login, true) {
 		if !s.sponsorshipVisibleTo(r, user, sponsorship) {
@@ -529,8 +507,7 @@ func (s *Server) handlePutSponsorsListing(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, s.sponsorsListingJSON(updated, true))
 }
 
-// sponsorsMaintainerListing resolves the {login} listing and refuses a
-// viewer who cannot administer it.
+// sponsorsMaintainerListing resolves the {login} listing, refusing a viewer who cannot administer it.
 func (s *Server) sponsorsMaintainerListing(w http.ResponseWriter, r *http.Request) (*store.SponsorsListing, *store.User, *http.Request, bool) {
 	user, r := s.sponsorsBrowserUser(w, r)
 	if user == nil {
@@ -741,8 +718,7 @@ func (s *Server) handleListSponsorshipNewsletters(w http.ResponseWriter, r *http
 		return
 	}
 	maintainer := s.ViewerCanAdminSponsorable(r, user, account)
-	// A published newsletter is for sponsors; a draft is for the
-	// maintainer alone.
+	// Published newsletters are for sponsors; drafts for the maintainer alone.
 	if !maintainer && s.store.Sponsors.GetSponsorshipBetween(user.Login, account.Login, true) == nil {
 		writeGHError(w, http.StatusForbidden, "Must be sponsoring this account to read its updates.")
 		return
@@ -924,8 +900,7 @@ type sponsorshipRequest struct {
 	IsRecurring   bool   `json:"is_recurring"`
 }
 
-// sponsorAccountFor resolves the account funding a sponsorship and refuses
-// a viewer who may not spend from it.
+// sponsorAccountFor resolves the funding account, refusing a viewer who may not spend from it.
 func (s *Server) sponsorAccountFor(w http.ResponseWriter, r *http.Request, user *store.User, login string) (SponsorableAccount, bool) {
 	if login == "" || strings.EqualFold(login, user.Login) {
 		return SponsorableAccount{ID: user.ID, Type: "User", Login: user.Login}, true
@@ -1048,9 +1023,8 @@ func (s *Server) handleCancelSponsorshipBrowser(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, s.sponsorshipJSON(transition.Sponsorship))
 }
 
-// viewerCanAdminAccount is the Sponsors authorization predicate the
-// GraphQL resolver layer consumes through the Authz seam: the account's
-// own user, an owner of the organization, or a site administrator.
+// viewerCanAdminAccount is the Sponsors authz predicate the GraphQL resolver
+// layer consumes: the account's own user, an org owner, or a site admin.
 func (s *Server) viewerCanAdminAccount(ctx context.Context, login string) bool {
 	viewer := ghUserFromContext(ctx)
 	if viewer == nil {

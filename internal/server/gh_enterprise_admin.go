@@ -12,10 +12,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// registerGHEnterpriseAdminRoutes mounts the enterprise administration APIs
-// that are shared by GHES and GHEC. They intentionally use the enterprise
-// owner gate rather than an organization-owner check: an enterprise policy
-// spans every organization on this single-enterprise instance.
+// registerGHEnterpriseAdminRoutes mounts the enterprise administration APIs.
+// They gate on enterprise owner, not org owner: a policy spans every org on
+// this single-enterprise instance.
 func (s *Server) registerGHEnterpriseAdminRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/announcement", s.requireEnterpriseOwner(s.handleGetEnterpriseAnnouncement))
 	s.route("PATCH /api/v3/enterprises/{enterprise}/announcement", s.requireEnterpriseOwner(s.handleSetEnterpriseAnnouncement))
@@ -217,7 +216,7 @@ func decodeEnterpriseCredentialRevocation(w http.ResponseWriter, r *http.Request
 		store.WriteGHValidationError(w, "CredentialAuthorization", "credential_type", "invalid")
 		return req, false
 	}
-	// bleephub models a regular GHES enterprise rather than an EMU enterprise.
+	// bleephub models a regular GHES enterprise, not an EMU enterprise.
 	if req.RevokeCredentials {
 		store.WriteGHValidationError(w, "CredentialAuthorization", "revoke_credentials", "invalid")
 		return req, false

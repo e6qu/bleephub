@@ -45,38 +45,31 @@ func computeHMACSignatureSHA1(secret string, payload []byte) string {
 }
 
 const (
-	// webhookDeliveryWorkers bounds how many deliveries may be in flight at
-	// once. A hook target that hangs costs one worker for the request timeout
-	// instead of one goroutine per event for as long as events keep arriving.
+	// webhookDeliveryWorkers bounds in-flight deliveries so a hanging target
+	// costs one worker, not a goroutine per event.
 	webhookDeliveryWorkers = 16
 	webhookDialTimeout     = 5 * time.Second
 	webhookRequestTimeout  = 10 * time.Second
 	webhookResolveTimeout  = 2 * time.Second
 )
 
-// webhookAddrBlocked reports whether an IP address is one a server-initiated
-// fetch must never reach. Loopback is the one non-public range permitted:
-// delivering to a service on the same host is a legitimate on-prem/dev feature,
-// and it is what this instance's own test and development receivers use. Every
-// other non-public address is refused unconditionally — there is no operator
-// switch to relax it: the cloud instance-metadata endpoint (169.254.169.254)
-// and the rest of link-local space, RFC1918 and IPv6 unique-local space,
-// carrier-grade NAT, multicast, and the unspecified and broadcast addresses.
+// webhookAddrBlocked reports whether a server-initiated fetch must never reach
+// this IP. Loopback is the one permitted non-public range (on-prem/dev
+// receivers); every other non-public address — metadata endpoint, link-local,
+// RFC1918, IPv6 ULA, CGNAT, multicast, unspecified, broadcast — is refused
+// unconditionally, with no operator switch to relax it.
 func webhookAddrBlocked(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	// Loopback (incl. its IPv4-mapped/IPv4-compatible spellings, which
-	// net.IP.IsLoopback resolves) is always permitted.
 	if ip.IsLoopback() {
 		return false
 	}
 	if nonPublicIP(ip) {
 		return true
 	}
-	// An IPv6 form that tunnels an IPv4 address reaches whatever that address
-	// reaches, so the embedded address is checked on its own terms — a tunnelled
-	// loopback stays permitted, a tunnelled private/metadata address refused.
+	// An IPv6 form tunnelling IPv4 reaches whatever that address reaches, so
+	// check the embedded address on its own terms.
 	if v4 := tunnelledIPv4(ip); v4 != nil {
 		if v4.IsLoopback() {
 			return false
@@ -90,13 +83,9 @@ func webhookAddrBlocked(ip net.IP) bool {
 
 // nonPublicIP is webhookAddrBlocked's per-address-family core.
 func nonPublicIP(ip net.IP) bool {
-	// IsGlobalUnicast is false for the unspecified address, loopback,
-	// multicast, link-local unicast and the IPv4 broadcast address.
 	if !ip.IsGlobalUnicast() {
 		return true
 	}
-	// IsPrivate covers 10/8, 172.16/12, 192.168/16 and fc00::/7 (which
-	// contains the fd00::/8 unique-local range).
 	if ip.IsPrivate() {
 		return true
 	}
@@ -135,19 +124,16 @@ func isZeroBytes(b []byte) bool {
 	return true
 }
 
-// parseWebhookTargetURL checks the parts of a target URL that need no name
-// resolution — the scheme, the presence of a host, and a literal IP — and
-// returns the parsed URL. This is the check the delivery path can afford to
-// repeat on every attempt.
+// parseWebhookTargetURL checks the resolution-free parts of a target URL —
+// scheme, host presence, literal IP — and returns the parsed URL. Cheap enough
+// to repeat on every delivery attempt.
 func parseWebhookTargetURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return nil, fmt.Errorf("webhook URL %q is not a valid URL: %w", raw, err)
 	}
-	// This parser is shared with repository import fetches, which legitimately
-	// use http as well as https; the https-only rule for webhook delivery is
-	// enforced separately by webhookTargetRequiresHTTPS at the webhook config
-	// and delivery paths.
+	// Shared with repository import fetches, which allow http; the https-only
+	// rule for delivery is enforced separately by webhookTargetRequiresHTTPS.
 	switch strings.ToLower(u.Scheme) {
 	case "http", "https":
 	default:
@@ -163,13 +149,10 @@ func parseWebhookTargetURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-// validateWebhookTargetURL is the configuration-time gate: the shape check
-// plus one name resolution, so a hostname pointing at private space is
-// refused when the hook is stored rather than when it first fires.
-//
-// A name that does not resolve is stored. It admits nothing — the address
-// actually dialed is checked again at delivery time, which is also the only
-// point where a rebinding answer can be caught.
+// validateWebhookTargetURL is the config-time gate: shape check plus one name
+// resolution, so a hostname pointing at private space is refused at store time.
+// An unresolvable name is stored anyway — the dialed address is re-checked at
+// delivery time, the only point that catches DNS rebinding.
 func validateWebhookTargetURL(raw string) error {
 	u, err := parseWebhookTargetURL(raw)
 	if err != nil {
@@ -193,10 +176,9 @@ func validateWebhookTargetURL(raw string) error {
 	return nil
 }
 
-// webhookDialControl is the delivery-time address gate. It runs after the
-// resolver has answered and before the socket connects, with the address that
-// is about to be dialed — the only point where the address checked and the
-// address reached cannot differ.
+// webhookDialControl is the delivery-time address gate, running between resolve
+// and connect with the exact address about to be dialed — the only point where
+// checked and reached cannot differ.
 func webhookDialControl() func(network, address string, c syscall.RawConn) error {
 	return func(_, address string, _ syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
@@ -214,7 +196,6 @@ func webhookDialControl() func(network, address string, c syscall.RawConn) error
 	}
 }
 
-// newWebhookClient builds the HTTP client webhook deliveries use.
 func newWebhookClient(insecureTLS bool) *http.Client {
 	return newWebhookClientWithTimeout(insecureTLS, webhookRequestTimeout)
 }
@@ -224,18 +205,15 @@ func newWebhookClientWithTimeout(insecureTLS bool, timeout time.Duration) *http.
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: otelhttp.NewTransport(transport),
-		// GitHub does not follow redirects on webhook delivery. Returning the
-		// 3xx as the outcome keeps a redirect from reaching a second
-		// destination the address gate never saw.
+		// Do not follow redirects: a redirect could reach a second destination
+		// the address gate never saw. Return the 3xx as the outcome.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }
 
-// newAddressCheckedHTTPTransport is the shared server-side request boundary
-// for URL fetchers. Configuration-time DNS checks are useful feedback, but
-// only Dialer.Control sees the address the kernel is actually about to reach;
-// keeping the transport construction shared prevents webhook and source-import
-// SSRF policy from drifting apart again.
+// newAddressCheckedHTTPTransport is the shared server-side request boundary for
+// URL fetchers; keeping it shared keeps webhook and source-import SSRF policy
+// from drifting apart. Only Dialer.Control sees the address actually reached.
 func newAddressCheckedHTTPTransport(insecureTLS bool) *http.Transport {
 	dialer := &net.Dialer{
 		Timeout:   webhookDialTimeout,
@@ -243,8 +221,8 @@ func newAddressCheckedHTTPTransport(insecureTLS bool) *http.Transport {
 		Control:   webhookDialControl(),
 	}
 	transport := &http.Transport{
-		// No proxy: a proxied request dials the proxy, so the address gate
-		// would inspect the proxy instead of the target it is there to check.
+		// No proxy: a proxied request dials the proxy, so the address gate would
+		// inspect the proxy instead of the target.
 		Proxy:                 nil,
 		DialContext:           dialer.DialContext,
 		MaxIdleConns:          100,
@@ -253,15 +231,9 @@ func newAddressCheckedHTTPTransport(insecureTLS bool) *http.Transport {
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	if insecureTLS {
-		// A hook configured with insecure_ssl=1 opts out of CA-chain and
-		// hostname verification (GitHub exposes the same switch) so it can
-		// deliver to an endpoint presenting a self-signed or mismatched
-		// certificate. Rather than accept literally any TLS peer, VerifyConnection
-		// still requires the server to present a parseable certificate that is
-		// inside its validity window — an absent or expired certificate is
-		// rejected — so the relaxed client is not a maximally permissive trust
-		// manager, and TLS is floored at 1.2. Redirects and private-address
-		// dials remain blocked by the transport and dial-time gate.
+		// insecure_ssl=1 relaxes CA-chain and hostname verification;
+		// VerifyConnection still rejects an absent or expired certificate, and
+		// the dial-time gate and redirect block remain.
 		// #nosec G402 -- chain/hostname verification is intentionally relaxed per opt-in hook config; residual validity check below.
 		transport.TLSClientConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
@@ -270,26 +242,20 @@ func newAddressCheckedHTTPTransport(insecureTLS bool) *http.Transport {
 			VerifyConnection:   verifyWebhookPeerCertificateValidity,
 		}
 	} else if webhookDeliveryTestRoots != nil {
-		// Test-only seam: trust the in-process httptest TLS receiver so the
-		// verifying delivery path can be exercised against a self-signed cert
-		// without insecure_ssl. This is nil in production, where the transport
-		// uses the system root store.
+		// Test-only seam: trust the in-process httptest TLS receiver; nil in
+		// production.
 		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: webhookDeliveryTestRoots}
 	}
 	return transport
 }
 
-// webhookDeliveryTestRoots, when non-nil, is merged into the verifying webhook
-// delivery transport's trusted roots. It is set only by the test harness (to
-// trust the shared httptest TLS certificate) and is always nil in production.
+// webhookDeliveryTestRoots is the test harness's trusted roots; nil in
+// production.
 var webhookDeliveryTestRoots *x509.CertPool
 
-// verifyWebhookPeerCertificateValidity is the VerifyConnection callback used
-// when a webhook opts out of standard verification via insecure_ssl. It
-// deliberately does not check the CA chain or hostname (the purpose of the
-// opt-in), but it rejects a peer that presents no certificate or whose leaf
-// certificate is outside its validity window, so an insecure webhook client is
-// never a completely permissive trust manager.
+// verifyWebhookPeerCertificateValidity is the insecure_ssl VerifyConnection
+// callback: it skips CA-chain and hostname checks but rejects a peer with no
+// certificate or a leaf outside its validity window.
 func verifyWebhookPeerCertificateValidity(cs tls.ConnectionState) error {
 	if len(cs.PeerCertificates) == 0 {
 		return fmt.Errorf("webhook TLS peer presented no certificate")
@@ -303,7 +269,6 @@ func verifyWebhookPeerCertificateValidity(cs tls.ConnectionState) error {
 	return nil
 }
 
-// webhookDeliveryClient returns the shared client for a hook's TLS setting.
 func (s *Server) webhookDeliveryClient(insecureTLS bool) *http.Client {
 	s.webhookClientsOnce.Do(func() {
 		s.webhookClients = [2]*http.Client{
@@ -317,9 +282,9 @@ func (s *Server) webhookDeliveryClient(insecureTLS bool) *http.Client {
 	return s.webhookClients[0]
 }
 
-// webhookDispatcher runs webhook deliveries on a fixed pool of workers while
-// keeping the deliveries of any one hook in the order they were queued: each
-// hook has its own FIFO queue, and a queue is drained by one worker at a time.
+// webhookDispatcher runs deliveries on a fixed worker pool while preserving
+// per-hook order: each hook has its own FIFO queue, drained by one worker at a
+// time.
 type webhookDispatcher struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
@@ -330,8 +295,8 @@ type webhookDispatcher struct {
 type webhookQueue struct {
 	key     string
 	pending []func()
-	// queued marks the queue as either waiting on the ready list or being
-	// drained; it is what stops two workers from reordering one hook's events.
+	// queued marks the queue as on the ready list or being drained; it stops two
+	// workers from reordering one hook's events.
 	queued bool
 }
 
@@ -396,9 +361,8 @@ func (s *Server) webhookDispatch() *webhookDispatcher {
 	return s.webhookPool
 }
 
-// webhookQueueKey identifies the delivery order domain a hook belongs to.
-// Hook ids are unique across repository, organization and app hooks, but the
-// owner is included so a reloaded hook cannot collide with a live one.
+// webhookQueueKey identifies a hook's delivery-order domain. The owner is
+// included so a reloaded hook cannot collide with a live one.
 func webhookQueueKey(h *store.Webhook) string {
 	global := ""
 	if h.Global {
@@ -407,9 +371,8 @@ func webhookQueueKey(h *store.Webhook) string {
 	return h.RepoKey + "\x00" + h.OrgLogin + "\x00" + h.MarketplaceSlug + "\x00" + global + "\x00" + strconv.Itoa(h.ID)
 }
 
-// appWebhookPseudoHook is the Webhook view of a GitHub App's single webhook
-// configuration. The negative id is what marks an app-level delivery
-// throughout the delivery path.
+// appWebhookPseudoHook is the Webhook view of a GitHub App's webhook config; the
+// negative id marks an app-level delivery throughout the delivery path.
 func appWebhookPseudoHook(app *store.App) *store.Webhook {
 	return &store.Webhook{
 		ID:     -app.ID,
@@ -424,15 +387,15 @@ func appWebhookQueueKey(app *store.App) string {
 	return "app\x00" + strconv.Itoa(app.ID)
 }
 
-// enqueueWebhookJob schedules work on the delivery pool, ordered behind
-// anything already queued for the same key.
+// enqueueWebhookJob schedules work on the delivery pool, ordered behind anything
+// already queued for the same key.
 func (s *Server) enqueueWebhookJob(key string, job func()) {
 	s.webhookDispatch().enqueue(key, job)
 }
 
-// enqueueWebhookDelivery is the asynchronous form of deliverWebhook. Every
-// event fan-out goes through here rather than a bare `go`, so an event storm
-// cannot spawn a goroutine per hook per event.
+// enqueueWebhookDelivery is the asynchronous form of deliverWebhook; every fan-
+// out goes through the pool rather than a bare `go` so an event storm cannot
+// spawn a goroutine per hook per event.
 func (s *Server) enqueueWebhookDelivery(hook *store.Webhook, event, action string, payloadBytes []byte) {
 	queued := s.store.SnapshotHook(hook)
 	s.enqueueWebhookJob(webhookQueueKey(queued), func() {
@@ -448,9 +411,8 @@ func (s *Server) redeliverWebhook(hook *store.Webhook, event, action, guid strin
 	s.recordHookLastResponse(hook, delivery)
 }
 
-// recordHookLastResponse writes the attempt outcome to whichever hook table
-// owns the hook. Repository and organization hooks both have a last_response,
-// and each redelivery path used to update only its own half.
+// recordHookLastResponse writes the attempt outcome to whichever hook table owns
+// the hook (repository, organization, or global).
 func (s *Server) recordHookLastResponse(hook *store.Webhook, delivery *store.WebhookDelivery) {
 	switch {
 	case hook.RepoKey != "":
@@ -471,10 +433,8 @@ func (s *Server) recordHookLastResponse(hook *store.Webhook, delivery *store.Web
 	}
 }
 
-// emitWebhookEvent dispatches an event to matching webhooks (non-blocking).
-// Org-owned repos additionally fan the event out to the owner org's hooks —
-// real GitHub delivers every repo event on an org repository to matching
-// organization webhooks too.
+// emitWebhookEvent dispatches an event to matching webhooks (non-blocking). For
+// org-owned repos it also fans out to the owner org's hooks, as GitHub does.
 func (s *Server) emitWebhookEvent(repoKey, eventType, action string, payload interface{}) {
 	hooks := s.store.ListHooks(repoKey)
 	if ownerLogin, _, found := strings.Cut(repoKey, "/"); found {
@@ -483,10 +443,9 @@ func (s *Server) emitWebhookEvent(repoKey, eventType, action string, payload int
 		}
 	}
 
-	// Org-owned repos carry a top-level `organization` object on event
-	// payloads (real GitHub adds it for every event on an org repo).
-	// Attached centrally: every repo event funnels through here, and the
-	// store lookup needs server access the payload builders don't have.
+	// Org-owned repos carry a top-level `organization` object on every event.
+	// Attached centrally here since the store lookup needs server access the
+	// payload builders lack.
 	if m, ok := payload.(map[string]interface{}); ok {
 		if _, has := m["organization"]; !has {
 			ownerLogin, _, found := strings.Cut(repoKey, "/")
@@ -516,9 +475,8 @@ func (s *Server) emitWebhookEvent(repoKey, eventType, action string, payload int
 	}
 }
 
-// triggerWorkflowsForWebhookEvent makes webhook and Actions event production
-// one application concept. A mutator cannot implement an event for hooks while
-// silently forgetting that the same event triggers workflows.
+// triggerWorkflowsForWebhookEvent couples webhook and Actions event production
+// so a mutator cannot emit an event for hooks yet forget it triggers workflows.
 func (s *Server) triggerWorkflowsForWebhookEvent(repoKey, eventType, action string, payload map[string]interface{}) {
 	repo := s.store.GetRepoByFullName(repoKey)
 	if repo == nil {
@@ -582,8 +540,7 @@ func (s *Server) deliverWebhook(hook *store.Webhook, event, action string, paylo
 	hook = s.store.SnapshotHook(hook)
 	backoffs := []time.Duration{0, 1 * time.Second, 5 * time.Second}
 	if _, err := parseWebhookTargetURL(hook.URL); err != nil {
-		// A refused target does not become deliverable by waiting: record the
-		// refusal once instead of retrying it.
+		// A refused target won't become deliverable by waiting: record once.
 		backoffs = backoffs[:1]
 	}
 
@@ -592,9 +549,8 @@ func (s *Server) deliverWebhook(hook *store.Webhook, event, action string, paylo
 			time.Sleep(backoff)
 		}
 
-		// Each attempt is its own delivery record with a unique
-		// X-GitHub-Delivery GUID; GitHub never lists two deliveries under one
-		// GUID (a retry is a fresh delivery, flagged as a redelivery).
+		// Each attempt is its own delivery record with a unique GUID; a retry is
+		// a fresh delivery flagged as a redelivery.
 		guid := uuid.New().String()
 		delivery := s.doDeliverAttempt(hook, event, action, guid, payloadBytes, attempt > 0)
 		s.store.AddDelivery(delivery)
@@ -626,10 +582,9 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 	hook = s.store.SnapshotHook(hook)
 	start := time.Now()
 
-	// content_type=form (GitHub's default) sends the JSON payload as the
-	// value of a `payload` form field with an x-www-form-urlencoded body,
-	// and signs THAT body — not the raw JSON. content_type=json sends the
-	// JSON verbatim. The stored hook.ContentType picks which.
+	// content_type=form wraps the JSON in a `payload` form field and signs
+	// THAT urlencoded body, not the raw JSON; content_type=json sends it
+	// verbatim. hook.ContentType picks which.
 	contentType := "application/json"
 	bodyBytes := payloadBytes
 	if hook.ContentType == "form" {
@@ -648,13 +603,11 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 		reqHeaders["X-Hub-Signature-256"] = computeHMACSignature(hook.Secret, bodyBytes)
 		reqHeaders["X-Hub-Signature"] = computeHMACSignatureSHA1(hook.Secret, bodyBytes)
 	}
-	// Installation-target headers identify the resource that owns the hook.
-	// App-bound hooks (HookID < 0) target the GitHub App ("integration");
-	// org hooks target the organization's id; repository hooks the repo's.
+	// Installation-target headers name the resource owning the hook: app-bound
+	// (HookID < 0) → integration, org → org id, repository → repo id.
 	switch {
 	case hook.MarketplaceSlug != "":
-		// GitHub Marketplace webhooks are listing-scoped and do not advertise a
-		// repository, organization, or GitHub App installation target.
+		// Marketplace webhooks are listing-scoped and advertise no target.
 	case hook.ID < 0:
 		reqHeaders["X-GitHub-Hook-Installation-Target-Type"] = "integration"
 		reqHeaders["X-GitHub-Hook-Installation-Target-ID"] = strconv.Itoa(-hook.ID)
@@ -690,10 +643,8 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 		}
 	}
 
-	// Every delivery path funnels through here, so this is where the stored
-	// target is re-checked — a hook configured before a rule tightened, or
-	// written straight into the store, is refused just the same (scheme must be
-	// http or https; the address gate applies).
+	// Every delivery path funnels through here, so re-check the stored target:
+	// a hook configured before a rule tightened is refused just the same.
 	if _, err := parseWebhookTargetURL(hook.URL); err != nil {
 		s.logger.Warn().Err(err).Int("hook_id", hook.ID).Msg("webhook delivery refused")
 		return undelivered(err)
@@ -749,12 +700,9 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 	return delivery
 }
 
-// triggerWorkflowsForEvent triggers matching workflows from git storage
-// for a concrete event occurrence. action carries the activity type
-// ("opened", "synchronize", repository_dispatch's event_type, ...);
-// payload is the webhook payload the event emitted — it becomes the
-// run's github.event context and feeds the trigger filters (push
-// before/after shas, PR base branch).
+// triggerWorkflowsForEvent triggers matching workflows for a concrete event.
+// action is the activity type; payload becomes the run's github.event context
+// and feeds the trigger filters.
 func (s *Server) triggerWorkflowsForEvent(repoKey, eventType, action, ref string, payload map[string]interface{}) {
 	parts := actions.SplitRepoKeyParts(repoKey)
 	if parts[0] == "" {
@@ -818,9 +766,8 @@ func (s *Server) triggerWorkflowsForEvent(repoKey, eventType, action, ref string
 		}
 		workflow, err := s.actions.SubmitTriggeredWorkflow(name, content, meta)
 		if err != nil {
-			// Real GitHub creates a run with conclusion startup_failure
-			// (no jobs) when a matched workflow can't start — the
-			// failure must be visible on the runs API, not just a log.
+			// A matched workflow that can't start becomes a job-less
+			// startup_failure run, visible on the runs API, not just a log.
 			s.logger.Error().Err(err).Str("file", name).Msg("workflow failed at startup")
 			s.createStartupFailureRun(name, content, meta)
 			continue
@@ -836,8 +783,8 @@ func (s *Server) triggerWorkflowsForEvent(repoKey, eventType, action, ref string
 }
 
 // actionsEnabledForRepo applies the enterprise → organization → repository
-// enablement chain. Each narrower scope may further restrict its parent; none
-// can re-enable Actions when a broader scope disabled it.
+// enablement chain: a narrower scope may restrict its parent, never re-enable
+// what a broader scope disabled.
 func (s *Server) actionsEnabledForRepo(repoKey string) bool {
 	owner, name := splitRepoFull(repoKey)
 	repo := s.store.GetRepo(owner, name)
@@ -874,10 +821,9 @@ func (s *Server) actionsEnabledForRepo(repoKey string) bool {
 	return true
 }
 
-// workflowRunRefs separates the two refs an event carries, which used to be
-// one: the ref a workflow DEFINITION is read from, and the ref/sha the run
-// reports. They differ for a pull request opened from a fork, where the fork's
-// branch does not exist in the base repository at all.
+// workflowRunRefs separates the ref a workflow DEFINITION is read from and the
+// ref/sha the run reports. They differ for a fork PR, whose branch does not
+// exist in the base repository.
 type workflowRunRefs struct {
 	definitionRef string
 	runRef        string
@@ -885,16 +831,12 @@ type workflowRunRefs struct {
 }
 
 // workflowRefsForEvent decides, per trigger type, which ref supplies the
-// workflow definition and which ref/sha the run reports.
+// workflow definition and which ref/sha the run reports:
 //
-//   - push and release:
-//     the triggering ref, in the repository the event happened in. Reading
-//     HEAD instead ran whatever the default branch happened to say, which is
-//     not the definition the event was raised against.
-//   - pull_request: the definition comes from the base branch and the run
-//     reports refs/pull/<number>/merge with the event's synthetic merge SHA
-//     (falling back to the head SHA while no merge candidate can be created).
-//   - pull_request_target: both definition and run identity use the base ref.
+//   - push, release: the triggering ref, in the repo the event happened in.
+//   - pull_request: definition from the base branch; run reports
+//     refs/pull/<number>/merge with the synthetic merge SHA (head SHA fallback).
+//   - pull_request_target: both use the base ref.
 func workflowRefsForEvent(stor gitStorage.Storer, repoKey, eventType, ref string, payload map[string]interface{}) (workflowRunRefs, error) {
 	if eventType == "pull_request" {
 		if pr, _ := payload["pull_request"].(map[string]interface{}); pr != nil {
@@ -1006,10 +948,9 @@ func defaultWorkflowDefinitionRef(stor gitStorage.Storer, payload map[string]int
 	return plumbing.NewBranchReferenceName("main").String()
 }
 
-// buildTriggerEvent assembles the filterable description of an event
-// occurrence. For pushes the changed files come from the payload's
-// before/after shas; for pull_request events the filterable ref is the
-// BASE branch and the diff spans base...head.
+// buildTriggerEvent assembles the filterable description of an event. Push
+// changed files come from the before/after shas; for pull_request the filterable
+// ref is the BASE branch and the diff spans base...head.
 func (s *Server) buildTriggerEvent(stor gitStorage.Storer, eventType, action, ref string, payload map[string]interface{}) actions.TriggerEvent {
 	ev := actions.TriggerEvent{Type: eventType, Action: action, Ref: ref}
 	switch eventType {
@@ -1048,10 +989,9 @@ func (s *Server) buildTriggerEvent(stor gitStorage.Storer, eventType, action, re
 	return ev
 }
 
-// resolveGitHubRefInput resolves a GitHub API `ref` input. Public endpoints
-// accept the same forms real GitHub accepts: full refs, branch names, tag
-// names, and raw commit SHAs. The returned ref is normalized when a branch or
-// tag name resolves; unresolved inputs stay fail-loud through the zero SHA.
+// resolveGitHubRefInput resolves a `ref` input in any form GitHub accepts (full
+// ref, branch, tag, raw SHA). The ref is normalized on a branch/tag hit;
+// unresolved inputs return the zero SHA.
 func resolveGitHubRefInput(stor gitStorage.Storer, ref string) (string, string) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -1080,8 +1020,8 @@ func resolveGitHubRefInput(stor gitStorage.Storer, ref string) (string, string) 
 	return ref, actions.ZeroCommitSha
 }
 
-// createStartupFailureRun records a terminal, job-less run for a
-// workflow that matched its trigger but could not start.
+// createStartupFailureRun records a terminal, job-less run for a workflow that
+// matched its trigger but could not start.
 func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *actions.WorkflowEventMeta) {
 	name := workflowNameFromYAML(content)
 	if name == "" {
@@ -1103,12 +1043,9 @@ func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *
 	}
 	wf.WorkflowFileID, wf.WorkflowFilePath = s.actions.ResolveWorkflowFileForRun(wf)
 	wf.RunNumber = s.store.ReserveWorkflowRunNumber(wf)
-	// Once wf is published into s.store.Workflows another goroutine can resolve
-	// and mutate it under store.mu, so the QueueEvent snapshots (which
-	// copy *wf while holding only snapshotMu) must run inside the same critical
-	// section, matching every other QueueEvent call site. Doing this
-	// after Unlock left the terminal run's fields readable lock-free — a data
-	// race, even though the run is already completed so a writer is unlikely.
+	// Once wf is published into s.store.Workflows another goroutine can mutate it
+	// under store.mu, so the QueueEvent snapshots must run inside the same
+	// critical section; doing it after Unlock is a data race.
 	s.store.Mu.Lock()
 	s.store.Workflows[wf.ID] = wf
 	s.store.PersistWorkflowRecord(wf)
@@ -1117,8 +1054,8 @@ func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *
 	s.store.Mu.Unlock()
 }
 
-// workflowNameFromYAML extracts just the workflow's name, tolerating
-// definitions too broken for ParseWorkflow.
+// workflowNameFromYAML extracts the workflow name, tolerating definitions too
+// broken for ParseWorkflow.
 func workflowNameFromYAML(content []byte) string {
 	var raw struct {
 		Name string `yaml:"name"`

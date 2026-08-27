@@ -9,8 +9,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Organization artifact metadata REST API: storage and deployment
-// records for artifacts identified by subject digest.
+// Organization artifact metadata REST API: storage and deployment records
+// keyed by subject digest.
 
 func (s *Server) registerGHOrgArtifactMetadataRoutes() {
 	s.route("POST /api/v3/orgs/{org}/artifacts/metadata/storage-record", s.handleOrgCreateArtifactStorageRecord)
@@ -123,9 +123,8 @@ func (s *Server) handleOrgGetClusterDeploymentJob(w http.ResponseWriter, r *http
 	})
 }
 
-// requireOrgArtifactMetadataWrite resolves {org} and enforces org-admin
-// rights for metadata writes; 404 for an unknown org, 401/403 on auth
-// failures (the documented denial for these endpoints).
+// requireOrgArtifactMetadataWrite resolves {org} and requires org-admin
+// rights: 404 for an unknown org, 401/403 on auth failure.
 func (s *Server) requireOrgArtifactMetadataWrite(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
@@ -145,8 +144,7 @@ func (s *Server) requireOrgArtifactMetadataWrite(w http.ResponseWriter, r *http.
 }
 
 // requireOrgArtifactMetadataRead resolves {org} and hides it (404) from
-// callers without an active membership, matching how org-internal
-// resources are concealed.
+// callers without an active membership.
 func (s *Server) requireOrgArtifactMetadataRead(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
@@ -182,9 +180,8 @@ func artifactStorageRecordJSON(rec *store.ArtifactStorageRecord) map[string]inte
 	}
 }
 
-// artifactDeploymentRecordJSON renders the artifact-deployment-record
-// shape. attestation_id links the deployment to the org's provenance
-// attestation for the same digest when one exists.
+// artifactDeploymentRecordJSON renders a deployment record. attestation_id
+// links to the org's provenance attestation for the same digest, when one exists.
 func (s *Server) artifactDeploymentRecordJSON(rec *store.ArtifactDeploymentRecord, orgLogin string) map[string]interface{} {
 	tags := rec.Tags
 	if tags == nil {

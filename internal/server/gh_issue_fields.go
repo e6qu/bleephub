@@ -10,9 +10,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub organization issue fields: custom attributes (text, number, date,
-// single select, multi select) defined at the organization level and assigned
-// per-issue via the issue-field-values endpoints.
+// Organization issue fields: custom attributes defined at the org level and
+// assigned per-issue via the issue-field-values endpoints.
 
 func (s *Server) registerGHIssueFieldRoutes() {
 	s.route("GET /api/v3/orgs/{org}/issue-fields",
@@ -24,8 +23,8 @@ func (s *Server) registerGHIssueFieldRoutes() {
 	s.route("DELETE /api/v3/orgs/{org}/issue-fields/{issue_field_id}",
 		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteOrgIssueField)))
 
-	// Per-issue field values. The GET route dispatches through the shared
-	// two-segment issue GET handler (gh_labels_rest.go).
+	// The per-issue GET route dispatches through the shared two-segment issue
+	// GET handler (gh_labels_rest.go).
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/issue-field-values",
 		s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleAddIssueFieldValues))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/issues/{number}/issue-field-values",
@@ -202,10 +201,8 @@ func issueFieldJSON(f *store.IssueField) map[string]interface{} {
 	return out
 }
 
-// --- per-issue field values ---
-
-// resolveIssueForFieldValues resolves the repo + issue for the
-// issue-field-values endpoints, writing the error response on failure.
+// resolveIssueForFieldValues resolves the repo + issue, writing the error
+// response on failure.
 func (s *Server) resolveIssueForFieldValues(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Issue, bool) {
 	owner := r.PathValue("owner")
 	name := r.PathValue("repo")
@@ -231,8 +228,8 @@ func (s *Server) resolveIssueForFieldValues(w http.ResponseWriter, r *http.Reque
 	return repo, issue, true
 }
 
-// issueFieldsOrg returns the org login owning the repo, or "" for a
-// user-owned repo (which has no organization issue fields).
+// issueFieldsOrg returns the owning org login, or "" for a user-owned repo
+// (which has no org issue fields).
 func issueFieldsOrg(st *store.Store, repo *store.Repo) string {
 	orgLogin, _, _ := strings.Cut(repo.FullName, "/")
 	if st.GetOrg(orgLogin) == nil {
@@ -314,16 +311,14 @@ func (s *Server) applyIssueFieldValues(w http.ResponseWriter, r *http.Request, r
 		}
 		normalized, err := normalizeIssueFieldValue(field, v.Value)
 		if err != nil {
-			// This op documents the full validation-error shape (objects),
-			// unlike the issue-field CRUD ops above which document
-			// validation-error-simple.
+			// GitHub returns the full validation-error shape here, unlike the
+			// validation-error-simple the CRUD ops above use.
 			writeGHValidationErrorMessage(w, "IssueFieldValue", "value", "invalid", err.Error())
 			return
 		}
 		updates[field.ID] = normalized
 	}
-	// A POST with an empty array clears all existing field values, exactly
-	// like a PUT replacing them with nothing.
+	// A POST with an empty array clears all values, like a PUT with nothing.
 	if replace || len(req.IssueFieldValues) == 0 {
 		s.store.SetIssueFieldValues(issue.ID, updates)
 	} else {
@@ -333,7 +328,7 @@ func (s *Server) applyIssueFieldValues(w http.ResponseWriter, r *http.Request, r
 }
 
 // normalizeIssueFieldValue validates a raw JSON value against the field's
-// data type and returns the canonical stored representation.
+// data type and returns the canonical stored form.
 func normalizeIssueFieldValue(field *store.IssueField, value interface{}) (interface{}, error) {
 	switch field.DataType {
 	case "text":

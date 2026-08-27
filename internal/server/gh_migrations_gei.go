@@ -1,26 +1,14 @@
 package bleephub
 
-// The GitHub Enterprise Importer workers: what drives a repository migration
-// from QUEUED through IN_PROGRESS to SUCCEEDED, FAILED or FAILED_VALIDATION,
-// and an organization migration through its three phases.
+// GitHub Enterprise Importer workers. Migration state reflects work that
+// actually happened, not a timer: a repository migration leaves IN_PROGRESS
+// only once the git graph and content have landed.
 //
-// Nothing here is a timer. A repository migration leaves QUEUED when a worker
-// claims it, and it leaves IN_PROGRESS when the source repository's git object
-// graph has actually been fetched into the target's storage and the source's
-// content has been materialised there. A migration that cannot read its source
-// fails with the transport's own reason; one whose target already exists fails
-// validation; one whose source has vanished fails validation. The state is a
-// report of work that happened.
-//
-// The workers follow the export worker's pattern exactly (gh_migrations_export
-// .go): supervised by Server.goBackground, every step governed by a context
-// derived from s.lifetime so a migration cannot outlive shutdown, and
-// claim-before-work so two replicas racing for one migration cannot both run
-// it. Work interrupted by a shutdown is left recorded as IN_PROGRESS, and
-// resumeGEIMigrations at the next boot requeues it and runs it again — which is
-// safe because every step is idempotent: the target repository is created only
-// when absent, the git fetch is a forced fetch of the same refs, and the
-// content ingest skips records already present.
+// Workers mirror the export worker (gh_migrations_export.go): supervised by
+// goBackground, every step under a context from s.lifetime, and claim-before
+// -work so racing replicas cannot double-run. Shutdown leaves work recorded
+// IN_PROGRESS; resumeGEIMigrations requeues and re-runs it, safe because every
+// step is idempotent.
 
 import (
 	"archive/tar"
@@ -47,60 +35,40 @@ import (
 )
 
 const (
-	// geiRepositoryMigrationTimeout caps one repository migration. A source
-	// that accepts the connection and then stalls must not hold a worker open
-	// for the process's lifetime; the migration fails with the timeout.
-	geiRepositoryMigrationTimeout = 30 * time.Minute
-	// geiOrganizationMigrationTimeout caps a whole organization migration,
-	// which is a fan-out over however many repositories the source has.
+	geiRepositoryMigrationTimeout   = 30 * time.Minute
 	geiOrganizationMigrationTimeout = 4 * time.Hour
-	// geiSourceAPITimeout caps one call to the source instance's REST API —
-	// the enumeration of an organization's repositories.
-	geiSourceAPITimeout = 60 * time.Second
-	// geiArchiveMaxBytes caps how much of a declared metadata archive is
-	// read. The archive is named by the caller, so an unbounded read is an
-	// invitation to exhaust the process on a source that never stops sending.
+	geiSourceAPITimeout             = 60 * time.Second
+	// geiArchiveMaxBytes caps a caller-named archive read so a source that
+	// never stops sending cannot exhaust the process.
 	geiArchiveMaxBytes = 2 << 30
 	// geiArchiveEntryMaxBytes caps one document inside that archive.
 	geiArchiveEntryMaxBytes = 64 << 20
-	// geiSourceReposPerPage is the page size the organization enumeration
-	// walks the source's repository list with.
-	geiSourceReposPerPage = 100
-	// geiSourceReposMaxPages bounds that walk, so a source that keeps
-	// answering full pages cannot make the enumeration unbounded.
+	geiSourceReposPerPage   = 100
+	// geiSourceReposMaxPages bounds the enumeration walk.
 	geiSourceReposMaxPages = 100
 )
 
-// errGEIValidation marks a failure that is a fault in what the migration was
-// given — a source that no longer exists, credentials the source rejects, a
-// target name already taken — rather than a failure of the work. GitHub
-// reports those as FAILED_VALIDATION, so the distinction has to survive from
-// where it is discovered to where the state is recorded.
+// errGEIValidation marks a fault in what the migration was given (missing
+// source, rejected credentials, target name taken) rather than a failure of
+// the work. GitHub reports these as FAILED_VALIDATION, so the distinction must
+// survive to where the state is recorded.
 var errGEIValidation = errors.New("migration validation failed")
 
 // --- supervision -----------------------------------------------------------
 
-// startGEIRepositoryMigration runs one repository migration on an owned
-// goroutine.
 func (s *Server) startGEIRepositoryMigration(id int) {
 	s.goBackground(func() { s.runGEIRepositoryMigration(id) })
 }
 
-// startGEIOrganizationMigration runs one organization migration on an owned
-// goroutine.
 func (s *Server) startGEIOrganizationMigration(id int) {
 	s.goBackground(func() { s.runGEIOrganizationMigration(id) })
 }
 
-// resumeGEIMigrations re-runs the GEI migrations a previous process left
-// unfinished. It is called once at boot, before the listener opens, when no
-// worker of this process is running yet — so a migration recorded as
-// IN_PROGRESS can only be the remains of a process that is gone.
-//
-// A repository migration that belongs to an organization migration is not
-// started here: its organization migration is resumed instead and re-drives
-// its own children, so the fan-out's progress accounting stays with the one
-// worker that owns it.
+// resumeGEIMigrations re-runs migrations a previous process left unfinished.
+// It runs once at boot before the listener opens, so anything still IN_PROGRESS
+// belongs to a process that is gone. A repository migration owned by an org
+// migration is skipped here; its org migration is resumed and re-drives it, so
+// the fan-out's progress accounting stays with one worker.
 func (s *Server) resumeGEIMigrations() {
 	for _, id := range s.store.ListUnfinishedOrganizationMigrations() {
 		s.store.RequeueOrganizationMigration(id)
@@ -118,8 +86,6 @@ func (s *Server) resumeGEIMigrations() {
 
 // --- the repository migration worker ---------------------------------------
 
-// runGEIRepositoryMigration claims a queued repository migration, brings the
-// repository across and records the outcome.
 func (s *Server) runGEIRepositoryMigration(id int) {
 	if !s.store.ClaimRepositoryMigration(id) {
 		return
@@ -138,14 +104,10 @@ func (s *Server) runGEIRepositoryMigration(id int) {
 	s.recordGEIRepositoryMigrationOutcome(ctx, migration, log, err)
 }
 
-// recordGEIRepositoryMigrationOutcome stores the migration log and lands the
-// migration in its terminal state.
-//
-// The log is written first because it is the only account of what the worker
-// did, and a migration that fails is exactly the one whose log is wanted. The
-// state is recorded second and may be refused: SetRepositoryMigrationState
-// will not move a migration out of a terminal state, so a worker finishing
-// after an abort cannot overwrite the abort with its own verdict.
+// recordGEIRepositoryMigrationOutcome stores the log, then lands the terminal
+// state. Log first, since it is the only account of a failed run. State second
+// and may be refused: SetRepositoryMigrationState will not move a migration out
+// of a terminal state, so a worker finishing after an abort cannot overwrite it.
 func (s *Server) recordGEIRepositoryMigrationOutcome(ctx context.Context, migration *store.RepositoryMigration, log *migrationLog, err error) {
 	if err != nil {
 		log.printf("migration failed: %v", err)
@@ -177,9 +139,8 @@ func (s *Server) recordGEIRepositoryMigrationOutcome(ctx context.Context, migrat
 	})
 }
 
-// performGEIRepositoryMigration does the work: freeze the source when asked,
-// create the target, fetch the git object graph into it, and materialise the
-// source's content.
+// performGEIRepositoryMigration freezes the source when asked, creates the
+// target, fetches its git graph, and materialises its content.
 func (s *Server) performGEIRepositoryMigration(ctx context.Context, migration *store.RepositoryMigration, log *migrationLog) error {
 	source := s.store.GetMigrationSource(migration.SourceID)
 	if source == nil || source.OwnerOrgID != migration.OwnerOrgID {
@@ -191,10 +152,8 @@ func (s *Server) performGEIRepositoryMigration(ctx context.Context, migration *s
 	}
 	log.printf("source %q (%s) at %s", source.Name, source.Type, source.URL)
 
-	// lockSource freezes the source for the duration of the migration. It can
-	// only be honoured for a source that lives on this instance; a repository
-	// on another server is not ours to freeze, and saying otherwise would be a
-	// lock that blocks nothing.
+	// lockSource can only be honoured for a source hosted on this instance; a
+	// repository on another server is not ours to freeze.
 	sourceRepo := s.repoFromMigrationSourceURL(migration.SourceURL)
 	if migration.LockSource {
 		if sourceRepo == nil {
@@ -218,20 +177,15 @@ func (s *Server) performGEIRepositoryMigration(ctx context.Context, migration *s
 	return s.ingestGEIRepositoryContent(ctx, target, migration, source, sourceRepo, log)
 }
 
-// materialiseGEITargetRepository creates the repository the migration lands
-// in, or adopts the one a previous interrupted run of this same migration
-// already created.
-//
-// A name already taken by something else is a validation failure rather than
-// an overwrite: a migration must never be a way to write into a repository
-// somebody else owns the name of.
+// materialiseGEITargetRepository creates the target repository, or adopts the
+// one an earlier interrupted run of this same migration created. A name taken
+// by anything else is a validation failure, never an overwrite.
 func (s *Server) materialiseGEITargetRepository(org *store.Org, migration *store.RepositoryMigration, log *migrationLog) (*store.Repo, error) {
 	fullName := org.Login + "/" + migration.RepositoryName
 	if existing := s.store.GetRepoByFullName(fullName); existing != nil {
-		// Only the repository this migration itself created may be continued
-		// into. Matching by name would let anyone able to create a repository
-		// in the organization plant one under the name a queued migration is
-		// about to use and be handed the source's contents.
+		// Continue only into the repository this migration itself created;
+		// matching by name would let someone plant a repo under a queued
+		// migration's target name and be handed the source's contents.
 		if migration.TargetRepoID == 0 || existing.ID != migration.TargetRepoID {
 			return nil, fmt.Errorf("%w: a repository named %s already exists", errGEIValidation, fullName)
 		}
@@ -258,12 +212,9 @@ func (s *Server) materialiseGEITargetRepository(org *store.Org, migration *store
 	return target, nil
 }
 
-// fetchGEIRepositoryGit pulls the source repository's whole object graph into
-// the target's git storage.
-//
-// It goes through fetchGitSourceInto — the same function the source-import API
-// uses — so a migration and an import dial a source under one transport policy
-// and one address gate rather than two that drift.
+// fetchGEIRepositoryGit pulls the source's whole object graph into the target's
+// git storage via fetchGitSourceInto, the same path the source-import API uses,
+// so migration and import share one transport policy and address gate.
 func (s *Server) fetchGEIRepositoryGit(ctx context.Context, target *store.Repo, migration *store.RepositoryMigration, source *store.MigrationSource, log *migrationLog) error {
 	owner, name, ok := store.SplitRepoFullName(target.FullName)
 	if !ok {
@@ -273,10 +224,8 @@ func (s *Server) fetchGEIRepositoryGit(ctx context.Context, target *store.Repo, 
 	if stor == nil {
 		return fmt.Errorf("git storage for %s is unavailable", target.FullName)
 	}
-	// A declared git archive is the uploaded export of the source repository,
-	// so it is unpacked; otherwise the source is dialled as a git remote.
-	// These are the two ways GEI is actually given a repository's git data, and
-	// which one applies is the migration's own declaration rather than a guess.
+	// A declared git archive is the uploaded export; otherwise dial the source
+	// as a git remote. The migration's own declaration picks which.
 	if migration.GitArchiveURL != "" {
 		log.printf("unpacking git data from the declared git archive")
 		if err := s.ingestGEIGitArchive(ctx, stor, migration, source, log); err != nil {
@@ -312,15 +261,9 @@ func (s *Server) fetchGEIRepositoryGit(ctx context.Context, target *store.Repo, 
 	return nil
 }
 
-// ingestGEIGitArchive unpacks an uploaded git archive into the target's
-// storage.
-//
-// The archive is the bare repository an export migration produced: a packfile
-// holding the whole object graph and a packed-refs naming what points into it.
-// Both are applied here — the pack first, then the refs, because a reference
-// to an object that is not there yet is a broken repository — so the target is
-// the repository the archive describes rather than a directory that resembles
-// one.
+// ingestGEIGitArchive unpacks an export migration's bare-repo archive (a
+// packfile plus packed-refs) into the target's storage. The pack is applied
+// before the refs: a ref to an absent object is a broken repository.
 func (s *Server) ingestGEIGitArchive(ctx context.Context, stor gitStorage.Storer, migration *store.RepositoryMigration, source *store.MigrationSource, log *migrationLog) error {
 	body, err := s.openGEIArchive(ctx, migration.GitArchiveURL, source, "git archive")
 	if err != nil {
@@ -378,9 +321,9 @@ func (s *Server) ingestGEIGitArchive(ctx context.Context, stor gitStorage.Storer
 	return nil
 }
 
-// applyPackedRefs writes the archive's refs into storage and reports how many
-// landed. A malformed line is skipped rather than failing the migration: git's
-// own packed-refs carries peel lines and comments that name no reference.
+// applyPackedRefs writes the archive's refs and reports how many landed.
+// Malformed lines are skipped: git's packed-refs carries peel lines and
+// comments that name no reference.
 func applyPackedRefs(stor gitStorage.Storer, packedRefs string) int {
 	applied := 0
 	for _, line := range strings.Split(packedRefs, "\n") {
@@ -400,8 +343,8 @@ func applyPackedRefs(stor gitStorage.Storer, packedRefs string) int {
 	return applied
 }
 
-// openGEIArchive dials a caller-named archive URL under the same address
-// policy webhook delivery uses and returns its body.
+// openGEIArchive dials a caller-named archive URL under the same address policy
+// webhook delivery uses and returns its body.
 func (s *Server) openGEIArchive(ctx context.Context, rawURL string, source *store.MigrationSource, what string) (io.ReadCloser, error) {
 	if err := validateWebhookTargetURL(rawURL); err != nil {
 		return nil, fmt.Errorf("%w: the %s URL is not a permitted target: %s", errGEIValidation, what, err)
@@ -428,17 +371,15 @@ func (s *Server) openGEIArchive(ctx context.Context, rawURL string, source *stor
 	return resp.Body, nil
 }
 
-// discardGEIResponse drains and closes a response this code is not going to
-// read, so the connection returns to the pool instead of being torn down.
+// discardGEIResponse drains and closes an unread response so the connection
+// returns to the pool.
 func discardGEIResponse(resp *http.Response) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, geiArchiveEntryMaxBytes))
 	_ = resp.Body.Close()
 }
 
-// migrationSourceAuth renders a migration source's access token as git
-// credentials. GitHub-family remotes accept a token as the HTTP basic
-// password, which is how the exporting instance's own smart-HTTP endpoint
-// authenticates a migration.
+// migrationSourceAuth renders a source's access token as git basic-auth, the
+// form GitHub-family smart-HTTP endpoints accept.
 func migrationSourceAuth(source *store.MigrationSource) transport.AuthMethod {
 	if source == nil || source.AccessToken == "" {
 		return nil
@@ -448,15 +389,10 @@ func migrationSourceAuth(source *store.MigrationSource) transport.AuthMethod {
 
 // --- content ---------------------------------------------------------------
 
-// ingestGEIRepositoryContent materialises everything the migration brings
-// across that is not git objects: issues, pull-request records and releases.
-//
-// There are two real sources for it and the migration says which. A declared
-// metadata archive is GEI's own mechanism — the tar.gz an export migration
-// produced — and is streamed and applied. Otherwise, when the source
-// repository is hosted on this instance, its records are read straight out of
-// the store. A source that is neither leaves the migration a git-only one,
-// which is recorded as a warning rather than pretended away.
+// ingestGEIRepositoryContent materialises the non-git records: issues, pull
+// requests and releases. A declared metadata archive is streamed and applied;
+// otherwise an in-instance source is read from the store; a source that is
+// neither leaves a git-only migration, recorded as a warning.
 func (s *Server) ingestGEIRepositoryContent(ctx context.Context, target *store.Repo, migration *store.RepositoryMigration, source *store.MigrationSource, sourceRepo *store.Repo, log *migrationLog) error {
 	if migration.MetadataArchiveURL != "" {
 		content, err := s.readGEIMetadataArchive(ctx, migration, source, log)
@@ -473,10 +409,8 @@ func (s *Server) ingestGEIRepositoryContent(ctx context.Context, target *store.R
 	return s.noteGEIWarning(migration, "no metadata archive was declared, so issues, pull requests and releases were not migrated")
 }
 
-// geiRepositoryContent is the set of records a migration carries across. It is
-// the export archive's per-repository documents, which is also the shape the
-// store hands back for a repository hosted here — one struct, so both
-// ingestion paths land in the same applier.
+// geiRepositoryContent is the per-repository record set both ingestion paths
+// (archive and in-instance store) produce, so they share one applier.
 type geiRepositoryContent struct {
 	Issues       []geiIssueRecord   `json:"issues"`
 	PullRequests []geiIssueRecord   `json:"pull_requests"`
@@ -487,10 +421,9 @@ type geiIssueRecord struct {
 	Number int    `json:"number"`
 	Title  string `json:"title"`
 	State  string `json:"state"`
-	// User is the record's author in the export archive's own shape. An
-	// author with no matching account here becomes a mannequin: github's
-	// placeholder for "someone wrote this, but nobody on this instance is
-	// them yet", claimable later through an attribution invitation.
+	// User is the record's author. An author with no matching account here
+	// becomes a mannequin: GitHub's placeholder for an unmatched author,
+	// claimable later through an attribution invitation.
 	User struct {
 		Login string `json:"login"`
 		Email string `json:"email"`
@@ -504,9 +437,8 @@ type geiReleaseRecord struct {
 	Prerelease bool   `json:"prerelease"`
 }
 
-// localRepositoryContent reads the records of a repository hosted here through
-// the same export projection the archive is built from, so what a migration
-// copies in-instance and what it copies through an archive are the same set.
+// localRepositoryContent reads an in-instance repository through the same
+// export projection the archive is built from, so both paths copy the same set.
 func (s *Server) localRepositoryContent(sourceRepo *store.Repo) geiRepositoryContent {
 	data := s.store.MigrationRepoExportData(sourceRepo.ID)
 	var content geiRepositoryContent
@@ -518,12 +450,9 @@ func (s *Server) localRepositoryContent(sourceRepo *store.Repo) geiRepositoryCon
 	return content
 }
 
-// applyGEIRepositoryContent writes the migrated records into the target.
-//
-// It is idempotent by title within a kind: a resumed migration re-applying its
-// content does not double the issues. A record that cannot be created is a
-// warning, and a warning fails the migration when it was started with
-// continueOnError false.
+// applyGEIRepositoryContent writes the migrated records into the target. It is
+// idempotent by title within a kind, so a resumed migration does not double
+// records. A record that cannot be created is a warning (see noteGEIWarning).
 func (s *Server) applyGEIRepositoryContent(target *store.Repo, migration *store.RepositoryMigration, content geiRepositoryContent, log *migrationLog) error {
 	actor := s.store.GetUserByID(migration.StartedByUserID)
 	if actor == nil {
@@ -585,9 +514,8 @@ func (s *Server) applyGEIRepositoryContent(target *store.Repo, migration *store.
 	return nil
 }
 
-// noteGEIWarning records one recoverable problem. A migration started with
-// continueOnError false treats the first such problem as its failure, which is
-// what that flag means: continue, or do not.
+// noteGEIWarning records one recoverable problem, returning it as an error when
+// the migration was started with continueOnError false.
 func (s *Server) noteGEIWarning(migration *store.RepositoryMigration, warning string) error {
 	s.store.RecordRepositoryMigrationWarning(migration.ID, warning)
 	if !migration.ContinueOnError {
@@ -597,13 +525,8 @@ func (s *Server) noteGEIWarning(migration *store.RepositoryMigration, warning st
 }
 
 // readGEIMetadataArchive streams the declared metadata archive and returns the
-// records it carries.
-//
-// The archive is the tar.gz an export migration produces, so its
-// per-repository documents are read by name. The stream is bounded twice —
-// once over the whole body and once per entry — because the URL is the
-// caller's and an unbounded read of it is an unbounded read of a stranger's
-// output.
+// records it carries. The caller-named URL is bounded twice (whole body and
+// per entry) so it cannot be read unboundedly.
 func (s *Server) readGEIMetadataArchive(ctx context.Context, migration *store.RepositoryMigration, source *store.MigrationSource, log *migrationLog) (geiRepositoryContent, error) {
 	var content geiRepositoryContent
 	body, err := s.openGEIArchive(ctx, migration.MetadataArchiveURL, source, "metadata archive")
@@ -650,15 +573,12 @@ func (s *Server) readGEIMetadataArchive(ctx context.Context, migration *store.Re
 	return content, nil
 }
 
-// decodeGEIArchiveEntry reads one bounded JSON document out of the archive.
 func decodeGEIArchiveEntry(reader io.Reader, out interface{}) error {
 	return json.NewDecoder(io.LimitReader(reader, geiArchiveEntryMaxBytes)).Decode(out)
 }
 
 // --- the organization migration worker --------------------------------------
 
-// runGEIOrganizationMigration claims a queued organization migration and
-// brings the whole organization across.
 func (s *Server) runGEIOrganizationMigration(id int) {
 	if !s.store.ClaimOrganizationMigration(id) {
 		return
@@ -697,10 +617,8 @@ func (s *Server) runGEIOrganizationMigration(id int) {
 	})
 }
 
-// performGEIOrganizationMigration walks the three phases GitHub's
-// OrganizationMigrationState names: everything that has to exist before any
-// repository can land, the repository fan-out itself, and what is finished
-// afterwards.
+// performGEIOrganizationMigration walks GitHub's three OrganizationMigrationState
+// phases: pre-repo setup, the repository fan-out, and post-repo.
 func (s *Server) performGEIOrganizationMigration(ctx context.Context, migration *store.OrganizationMigration) error {
 	s.setOrganizationMigrationState(migration.ID, store.OrgMigrationStatePreRepoMigration)
 
@@ -749,16 +667,14 @@ func (s *Server) performGEIOrganizationMigration(ctx context.Context, migration 
 	return nil
 }
 
-// setOrganizationMigrationState moves an organization migration to its next
-// phase. It is a no-op once the migration is terminal, which is how an abort
-// stays final.
+// setOrganizationMigrationState advances the phase; a no-op once terminal, so
+// an abort stays final.
 func (s *Server) setOrganizationMigrationState(id int, state string) {
 	s.store.UpdateOrganizationMigration(id, func(m *store.OrganizationMigration) { m.State = state })
 }
 
-// materialiseGEITargetOrganization finds or creates the organization the
-// migration lands in and attaches it to the enterprise that owns the
-// migration.
+// materialiseGEITargetOrganization finds or creates the target organization and
+// attaches it to the migration's enterprise.
 func (s *Server) materialiseGEITargetOrganization(migration *store.OrganizationMigration) (*store.Org, error) {
 	if existing := s.store.GetOrg(migration.TargetOrgName); existing != nil {
 		if enterpriseID := s.store.EnterpriseIDForOrg(existing.ID); enterpriseID != 0 && enterpriseID != migration.EnterpriseID {
@@ -782,10 +698,8 @@ func (s *Server) materialiseGEITargetOrganization(migration *store.OrganizationM
 }
 
 // migrationSourceForOrganization finds or creates the source the fan-out's
-// repository migrations are started from. An organization migration names its
-// source by URL rather than by id, so the source record is derived from it
-// once and reused, which is what keeps a resumed migration from minting a
-// second source every time it runs.
+// repository migrations start from. Matching by derived name keeps a resumed
+// org migration from minting a second source each run.
 func (s *Server) migrationSourceForOrganization(migration *store.OrganizationMigration, targetOrg *store.Org) (*store.MigrationSource, error) {
 	name := "organization-migration-" + migration.SourceOrgName
 	for _, existing := range s.store.ListMigrationSources(targetOrg.ID) {
@@ -801,10 +715,9 @@ func (s *Server) migrationSourceForOrganization(migration *store.OrganizationMig
 	return source, nil
 }
 
-// reconcileGEIOrganizationChildren returns the repository migrations of this
-// organization migration, in the source's order, creating the ones that do not
-// exist yet. A resumed organization migration re-drives the children it
-// already has instead of queueing a second set.
+// reconcileGEIOrganizationChildren returns the org migration's child repository
+// migrations in source order, creating the missing ones. A resumed migration
+// re-drives its existing children instead of queueing a second set.
 func (s *Server) reconcileGEIOrganizationChildren(migration *store.OrganizationMigration, targetOrg *store.Org, source *store.MigrationSource, sourceRepos []geiSourceRepository) []int {
 	byName := map[string]int{}
 	for _, child := range s.store.ListRepositoryMigrationsForOrgMigration(migration.ID) {
@@ -833,21 +746,16 @@ func (s *Server) reconcileGEIOrganizationChildren(migration *store.OrganizationM
 	return ids
 }
 
-// geiSourceRepository is one repository the source organization holds, as its
-// REST API describes it.
+// geiSourceRepository is one source-org repository as its REST API describes it.
 type geiSourceRepository struct {
 	Name       string `json:"name"`
 	CloneURL   string `json:"clone_url"`
 	Visibility string `json:"visibility"`
 }
 
-// enumerateGEISourceRepositories asks the source instance which repositories
-// the organization has.
-//
-// This is a real call to the source's REST API rather than a guess: an
-// organization migration that cannot see the source's repository list does not
-// know what it is migrating, and reporting a total it invented would make
-// totalRepositoriesCount a lie.
+// enumerateGEISourceRepositories asks the source instance's REST API which
+// repositories the organization has, so totalRepositoriesCount reflects a real
+// list rather than an invented total.
 func (s *Server) enumerateGEISourceRepositories(ctx context.Context, migration *store.OrganizationMigration) ([]geiSourceRepository, error) {
 	endpoint, err := migrationSourceOrgReposURL(migration.SourceOrgURL)
 	if err != nil {
@@ -873,8 +781,6 @@ func (s *Server) enumerateGEISourceRepositories(ctx context.Context, migration *
 	return out, nil
 }
 
-// fetchGEISourceRepositoryPage reads one page of the source organization's
-// repository list.
 func (s *Server) fetchGEISourceRepositoryPage(ctx context.Context, client *http.Client, pageURL, token string) ([]geiSourceRepository, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
@@ -905,10 +811,8 @@ func (s *Server) fetchGEISourceRepositoryPage(ctx context.Context, client *http.
 	return batch, nil
 }
 
-// migrationSourceOrgReposURL turns the human-facing URL of a source
-// organization into the REST endpoint that lists its repositories. github.com
-// serves it from api.github.com; every GitHub Enterprise Server — including
-// this one — serves it from /api/v3 on the same origin.
+// migrationSourceOrgReposURL maps a source org's human URL to its repos REST
+// endpoint: api.github.com for github.com, /api/v3 on the same origin for GHES.
 func migrationSourceOrgReposURL(raw string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSuffix(raw, "/"))
 	if err != nil {
@@ -927,10 +831,8 @@ func migrationSourceOrgReposURL(raw string) (string, error) {
 	return parsed.Scheme + "://" + parsed.Host + "/api/v3/orgs/" + name + "/repos", nil
 }
 
-// migrationSourceHTTPClient dials migration sources under the same address
-// policy webhook delivery and the source-import API use. A migration source is
-// named by the caller, so it gets the caller-named-target treatment rather
-// than the trust an internal call would carry.
+// migrationSourceHTTPClient dials caller-named migration sources under the same
+// address policy webhook delivery and the source-import API use.
 func (s *Server) migrationSourceHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout:   geiSourceAPITimeout,
@@ -947,11 +849,9 @@ func (s *Server) migrationSourceHTTPClient() *http.Client {
 
 // --- shared helpers ---------------------------------------------------------
 
-// repoFromMigrationSourceURL resolves a migration's source URL to a repository
-// on this instance, or nil when it names somewhere else. It is what makes
-// lockSource and the in-instance content copy possible: both are operations on
-// a repository this server owns, and neither may be claimed for one it does
-// not.
+// repoFromMigrationSourceURL resolves a source URL to a repository on this
+// instance, or nil when it names somewhere else. lockSource and the in-instance
+// content copy act only on a repository this server owns.
 func (s *Server) repoFromMigrationSourceURL(raw string) *store.Repo {
 	parsed, err := url.Parse(raw)
 	if err != nil {
@@ -965,9 +865,8 @@ func (s *Server) repoFromMigrationSourceURL(raw string) *store.Repo {
 	return s.store.GetRepoByFullName(owner + "/" + name)
 }
 
-// migrationHeadBranch reports the branch HEAD resolves to after the fetch, or
-// "" when HEAD is not a branch. It is what tells the target repository which
-// default branch the source actually had.
+// migrationHeadBranch reports the branch HEAD resolves to after the fetch (the
+// source's default branch), or "" when HEAD is not a branch.
 func migrationHeadBranch(stor gitStorage.Storer) string {
 	head, err := stor.Reference(plumbing.HEAD)
 	if err != nil || head == nil || head.Type() != plumbing.SymbolicReference {
@@ -979,7 +878,6 @@ func migrationHeadBranch(stor gitStorage.Storer) string {
 	return head.Target().Short()
 }
 
-// orgLoginForID renders an organization id as the login the audit log records.
 func (s *Server) orgLoginForID(orgID int) string {
 	if org := s.store.GetOrgByID(orgID); org != nil {
 		return org.Login
@@ -987,9 +885,8 @@ func (s *Server) orgLoginForID(orgID int) string {
 	return ""
 }
 
-// migrationLog accumulates a migration's account of itself. It is small by
-// construction — one line per step — so it is held in memory and streamed into
-// the byte store once, rather than being appended to an object per line.
+// migrationLog accumulates one line per step, held in memory and streamed into
+// the byte store once.
 type migrationLog struct {
 	lines []string
 }
@@ -1007,14 +904,10 @@ func (l *migrationLog) reader() io.Reader {
 
 // --- the browser surface ----------------------------------------------------
 //
-// GitHub has no REST routes for the GEI entities — its whole surface is
-// GraphQL — so the migration status and history the web UI renders is served
-// under /ui-data rather than invented under /api/v3.
-//
-// Every route here resolves the organization first and asks
-// viewerMayMigrateOrg about it, which is the same predicate the REST migration
-// routes and the GraphQL migration surface ask. A migration exposes an entire
-// organization's data, and there is exactly one answer to who may see it.
+// GitHub exposes GEI entities only over GraphQL, so the web UI's migration
+// status is served under /ui-data rather than invented under /api/v3. Every
+// route resolves the org and gates on viewerMayMigrateOrg, the same predicate
+// the REST and GraphQL migration surfaces use.
 
 func (s *Server) registerGEIMigrationUIRoutes() {
 	s.route("GET /ui-data/orgs/{org}/migrations/repositories", s.handleUIListRepositoryMigrations)
@@ -1023,10 +916,9 @@ func (s *Server) registerGEIMigrationUIRoutes() {
 	s.route("GET /ui-data/orgs/{org}/migrations/migrators", s.handleUIListOrgMigrators)
 }
 
-// resolveMigrationOrg is the gate every /ui-data migration route passes
-// through. A caller without migrator standing is answered 404 rather than 403:
-// whether an organization has migrations at all is part of what the standing
-// protects.
+// resolveMigrationOrg gates every /ui-data migration route. A caller without
+// migrator standing gets 404, not 403: the org's very having of migrations is
+// part of what the standing protects.
 func (s *Server) resolveMigrationOrg(w http.ResponseWriter, r *http.Request) *store.Org {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil || !s.viewerMayMigrateOrg(r.Context(), org) {
@@ -1050,8 +942,8 @@ func (s *Server) handleUIListRepositoryMigrations(w http.ResponseWriter, r *http
 }
 
 // repositoryMigrationUIJSON renders one repository migration for the browser.
-// The source is rendered by name and URL only: its access token and PAT are
-// never served anywhere, and this surface is no exception.
+// The source is rendered by name and URL only; its access token and PAT are
+// never served.
 func (s *Server) repositoryMigrationUIJSON(m *store.RepositoryMigration, org *store.Org) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":                m.ID,

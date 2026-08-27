@@ -104,10 +104,9 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 	}
 	s.store.Mu.Lock()
 	if existing := s.store.UserByLoginLocked(login); existing != nil {
-		// Only reuse an account this same org's SCIM already provisioned.
-		// Adopting any other pre-existing account would let an org owner bind a
-		// SCIM record to a victim's global account, force-enroll them, and then
-		// rewrite their login/email — so refuse with a conflict instead.
+		// Reuse only an account this same org's SCIM provisioned. Adopting any
+		// other account would let an org owner bind a SCIM record to a victim's
+		// global account and rewrite their login/email.
 		if existing.SCIMManagedByOrg != org.Login {
 			s.store.Mu.Unlock()
 			writeSCIMError(w, http.StatusConflict, "userName already exists")
@@ -248,8 +247,7 @@ func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Requ
 		return nil
 	}
 	// Never rewrite the global identity of an account this org's SCIM does not
-	// own — an org owner must not be able to rename or re-home an arbitrary
-	// account through its SCIM surface.
+	// own; an org owner must not rename or re-home an arbitrary account here.
 	if backing.SCIMManagedByOrg != org.Login {
 		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusConflict, "userName is not managed by this organization")
@@ -271,8 +269,7 @@ func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Requ
 	user.Active, user.Emails, user.UpdatedAt = active, append([]store.EnterpriseSCIMEmail(nil), req.Emails...), backing.UpdatedAt
 	s.setOrganizationSCIMMembershipLocked(org, backing.ID, active)
 	// One transaction: the renamed backing account and the org's SCIM-user record
-	// commit together, so a crash cannot leave the global identity and the SCIM
-	// view of it disagreeing (STORE-001/002).
+	// commit together, so a crash cannot leave them disagreeing (STORE-001/002).
 	batch := store.NewPersistBatch(s.store.Persist)
 	batch.Put("users", strconv.Itoa(backing.ID), backing)
 	batch.Put("org_scim_users", org.Login, s.store.OrgSCIMUsers[org.Login])

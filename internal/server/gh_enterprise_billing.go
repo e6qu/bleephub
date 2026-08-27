@@ -42,10 +42,8 @@ func (s *Server) registerGHEnterpriseBillingRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/settings/billing/reports", reports(s.handleListEnterpriseBillingReports))
 	s.route("POST /api/v3/enterprises/{enterprise}/settings/billing/reports", reports(s.handleCreateEnterpriseBillingReport))
 	s.route("GET /api/v3/enterprises/{enterprise}/settings/billing/reports/{report_id}", reports(s.handleGetEnterpriseBillingReport))
-	// GitHub returns a short-lived download URL rather than another API
-	// endpoint. The UUID report id is the bearer capability in this local
-	// implementation, so browser and SDK downloads must not require the API
-	// token to be forwarded to a different URL namespace.
+	// The download lives outside /api/v3: the UUID report id is the bearer
+	// capability, so no API token need be forwarded to it.
 	s.route("GET /enterprises/{enterprise}/billing/reports/{report_id}/download", s.handleDownloadEnterpriseBillingReport)
 }
 
@@ -343,8 +341,7 @@ func (s *Server) handleEnterpriseBudgetUserStates(w http.ResponseWriter, r *http
 		if user.Type == "Bot" || filter != "" && strings.ToLower(user.Login) != filter {
 			continue
 		}
-		// AI usage is not currently metered, so every member has consumed
-		// zero and remains at the zero-percent threshold.
+		// AI usage is unmetered: every member sits at the zero-percent threshold.
 		if lower > 0 {
 			continue
 		}
@@ -877,9 +874,7 @@ func (s *Server) handleEnterpriseAdvancedSecurityBilling(w http.ResponseWriter, 
 		writeGHError(w, http.StatusBadRequest, "Invalid advanced_security_product")
 		return
 	}
-	// Committer metering is only enabled for repositories attached to an
-	// Advanced Security configuration. Until such activity is recorded, the
-	// faithful report is a typed empty repository page.
+	// No committer activity is recorded, so the report is a typed empty page.
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_advanced_security_committers":     0,
 		"total_count":                            0,

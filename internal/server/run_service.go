@@ -14,33 +14,27 @@ import (
 )
 
 func (s *Server) registerRunServiceRoutes() {
-	// Acquire / renew / complete job requests. The runner listener holds an
-	// agent session token here, and every one of these names a single job by
-	// its {requestId}, so each is bound to the runner the broker handed that
-	// job to.
+	// Acquire / renew / complete job requests, each bound to the runner the
+	// broker handed that {requestId} to.
 	s.route("GET /_apis/v1/AgentRequest/{poolId}/{requestId}", s.requireAssignedAgent(s.handleGetRequest))
 	s.route("PATCH /_apis/v1/AgentRequest/{poolId}/{requestId}", s.requireAssignedAgent(s.handleRenewRequest))
 	s.route("PUT /_apis/v1/AgentRequest/{poolId}/{requestId}", s.requireAssignedAgent(s.handleRenewRequest))
 	s.route("DELETE /_apis/v1/AgentRequest/{poolId}/{requestId}", s.requireAssignedAgent(s.handleCompleteRequest))
 
-	// FinishJob (the worker reports job completion) and the legacy plan event
-	// route both act on the job named by {planId}, so both are bound to that
-	// job's runtime token.
+	// FinishJob and the legacy plan-event route both act on {planId}, bound
+	// to that job's runtime token.
 	s.route("POST /_apis/v1/FinishJob/{scopeId}/{hubName}/{planId}", s.requirePlanJob(s.handleFinishJob))
 	s.route("PUT /_apis/v1/plans/{planId}/events", s.requirePlanJob(s.handleJobEvents))
 
-	// CustomerIntelligence (telemetry, accept and discard). Nothing in the
-	// path names a job, so the gate is a verified runner credential of either
-	// audience.
+	// Telemetry names no job, so the gate is a verified runner credential of
+	// either audience.
 	s.route("POST /_apis/v1/tasks", s.requireRunnerAuth(s.handleTelemetry))
 }
 
-// requireAssignedAgent gates a route that names a job by its {requestId} on
-// the agent session of the runner that job was dispatched to. The broker
-// records the agent when it hands the job message out, so ownership is server
-// state rather than a claim on the request: one runner cannot read another
-// runner's job message — it carries that job's secrets and runtime token — nor
-// renew or complete its request.
+// requireAssignedAgent gates a {requestId} route on the agent session of the
+// runner that job was dispatched to (recorded by the broker at dispatch), so
+// one runner cannot read, renew, or complete another runner's job — whose
+// message carries its secrets and runtime token.
 func (s *Server) requireAssignedAgent(next http.HandlerFunc) http.HandlerFunc {
 	return s.requireAgentSession(func(w http.ResponseWriter, r *http.Request) {
 		reqID, err := strconv.ParseInt(r.PathValue("requestId"), 10, 64)
@@ -64,12 +58,10 @@ func (s *Server) requireAssignedAgent(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
-// requirePlanJob gates a route that names a job by its {planId} on that job's
-// runtime token. Every such handler reads the {planId}, so that is what the
-// credential is bound to: the plan's own scopeIdentifier is resolved from the
-// dispatched job message and compared against the already-verified sub claim.
-// Checking the {scopeId} path segment instead leaves the parameter the
-// handlers act on unchecked, which is a job writing another job's plan.
+// requirePlanJob gates a {planId} route on that job's runtime token: the
+// plan's scopeIdentifier (from the dispatched job message) must match the
+// verified sub claim. Binding to {planId} — the parameter the handlers act
+// on — not {scopeId} stops a job from writing another job's plan.
 func (s *Server) requirePlanJob(next http.HandlerFunc) http.HandlerFunc {
 	return s.requireJobToken(func(w http.ResponseWriter, r *http.Request) {
 		planID := r.PathValue("planId")
@@ -78,11 +70,9 @@ func (s *Server) requirePlanJob(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "plan not found", http.StatusNotFound)
 			return
 		}
-		// The plan scope was recorded at dispatch time, so this neither
-		// re-parses the secret-bearing job message on every request nor breaks
-		// when that message has been cleared at run finalization (the fallback
-		// inside planScopeForJobLocked parses the message for directly-seeded
-		// jobs only).
+		// Read the scope recorded at dispatch, avoiding a re-parse of the
+		// secret-bearing job message and surviving its clearing at run
+		// finalization.
 		s.store.Mu.RLock()
 		scopeID := s.store.PlanScopeForJobLocked(job).ScopeID
 		s.store.Mu.RUnlock()
@@ -109,7 +99,6 @@ func (s *Server) handleGetRequest(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Debug().Int64("requestId", reqID).Msg("get request")
 
-	// Return the full job message as the request details
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(job.Message))
@@ -128,8 +117,7 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The body would carry status fields but bleephub doesn't consume
-	// them today; drain explicitly so it's obvious there's no decode.
+	// bleephub consumes no body fields here; drain explicitly.
 	_, _ = io.Copy(io.Discard, r.Body)
 
 	s.store.Mu.Lock()
@@ -139,8 +127,8 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 		startedRunning = true
 	}
 	job.LockedUntil = time.Now().Add(1 * time.Hour)
-	// Mirror the runner pickup onto the workflow job: the jobs API and
-	// the checks layer report in_progress from this moment.
+	// Mirror the pickup onto the workflow job so the jobs API and checks
+	// layer report in_progress from now.
 	if startedRunning {
 		for _, wf := range s.store.Workflows {
 			if wfJob, ok := actions.FindWorkflowJobByID(wf, job.ID); ok {
@@ -154,8 +142,8 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// Snapshot the fields read below while the lock is held; other
-	// goroutines (the broker, completion) mutate job.Status/LockedUntil.
+	// Snapshot under the lock; the broker and completion concurrently mutate
+	// these fields.
 	jobStatusSnap := job.Status
 	lockedUntilSnap := job.LockedUntil
 	jobPlanID := job.PlanID
@@ -196,9 +184,7 @@ func (s *Server) handleCompleteRequest(w http.ResponseWriter, r *http.Request) {
 	if result != "" {
 		job.Result = result
 	}
-	// Snapshot under the lock: job fields are concurrently written by the
-	// broker (e.g. recordJobAgentLocked sets AgentID), so reads after the
-	// unlock must use locals, not the shared *Job.
+	// Snapshot under the lock; the broker concurrently writes job fields.
 	jobIDSnap := job.ID
 	jobResultSnap := job.Result
 	s.store.Mu.Unlock()
@@ -209,7 +195,6 @@ func (s *Server) handleCompleteRequest(w http.ResponseWriter, r *http.Request) {
 		Str("result", result).
 		Msg("job request completed (DELETE)")
 
-	// Notify workflow engine of job completion
 	s.actions.OnJobCompleted(r.Context(), jobIDSnap, jobResultSnap)
 
 	w.WriteHeader(http.StatusOK)
@@ -218,9 +203,9 @@ func (s *Server) handleCompleteRequest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("planId")
 
-	// FinishJob is the service-location route used by the official runner's
-	// JobServer RaisePlanEventAsync call. Its body is the JobCompletedEvent
-	// wire contract, including runner-evaluated job outputs.
+	// FinishJob is the official runner's JobServer RaisePlanEventAsync route;
+	// its body is the JobCompletedEvent wire contract, including evaluated
+	// job outputs.
 	var body runnerJobEvent
 	if !decodeJSONBody(w, r, &body) {
 		return
@@ -243,9 +228,8 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 		Str("result", result).
 		Msg("job finished")
 
-	// The plan names the job. A jobId in the body may confirm it but never
-	// select a different one: completing whatever job the body pointed at was
-	// a way to finish another runner's work.
+	// The plan names the job; a body jobId may only confirm it, never select
+	// a different one (that would finish another runner's work).
 	job := s.actions.LookupJobByPlanID(planID)
 	if job == nil {
 		http.Error(w, "plan not found", http.StatusNotFound)
@@ -256,23 +240,19 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store the official runner's evaluated outputs before completing the
-	// workflow job. Completion can synchronously dispatch a downstream
-	// job whose needs context must already contain these values.
+	// Capture outputs before completing: completion can synchronously
+	// dispatch a downstream job whose needs context must already hold them.
 	s.actions.CaptureResolvedJobOutputs(job.ID, body.Outputs)
 
 	s.store.Mu.Lock()
 	s.store.MarkJobCompletedLocked(job)
 	job.Result = result
-	// Snapshot under the lock: the broker concurrently mutates these
-	// fields (recordJobAgentLocked writes AgentID), so every read after
-	// the unlock must come from a local, not the shared *Job.
+	// Snapshot under the lock; the broker concurrently mutates job fields.
 	jobIDSnap := job.ID
 	jobResultSnap := job.Result
 	s.store.Mu.Unlock()
 	s.logger.Info().Str("jobId", jobIDSnap).Str("result", jobResultSnap).Msg("job status updated")
 
-	// Notify workflow engine of job completion
 	s.actions.OnJobCompleted(r.Context(), jobIDSnap, jobResultSnap)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
@@ -289,8 +269,7 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Debug().Str("planId", planID).Str("event", body.Name).Msg("job event")
 	if body.Name == "JobCompleted" {
-		// As on FinishJob: the plan names the job, and a jobId in the body may
-		// only confirm it.
+		// As on FinishJob: the plan names the job; a body jobId only confirms it.
 		job := s.actions.LookupJobByPlanID(planID)
 		if job == nil {
 			http.Error(w, "plan not found", http.StatusNotFound)
@@ -326,8 +305,8 @@ type runnerJobEvent struct {
 	Outputs   map[string]actions.RunnerVariableValue `json:"outputs"`
 }
 
-// runnerJobResult maps the official actions/runner TaskResult JSON value onto
-// the completion strings already consumed by Bleephub's workflow engine.
+// runnerJobResult maps the actions/runner TaskResult JSON value (numeric or
+// string) onto Bleephub's workflow-engine completion strings.
 func runnerJobResult(raw json.RawMessage) (string, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return "", fmt.Errorf("JobCompleted event is missing result")

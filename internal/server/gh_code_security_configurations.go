@@ -9,8 +9,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub code security configurations: named bundles of security feature
-// enablement an organization defines and attaches to repositories.
+// Code security configurations: named bundles of security-feature enablement an
+// organization defines and attaches to repositories.
 
 func (s *Server) registerGHCodeSecurityConfigurationRoutes() {
 	s.route("GET /api/v3/orgs/{org}/code-security/configurations",
@@ -94,8 +94,7 @@ func (s *Server) handleGetDefaultCodeSecurityConfigurations(w http.ResponseWrite
 	writeJSON(w, http.StatusOK, out)
 }
 
-// resolveCodeSecurityConfiguration parses {configuration_id} and loads the
-// configuration, writing a 404 on failure.
+// resolveCodeSecurityConfiguration loads the {configuration_id} configuration, or writes 404.
 func (s *Server) resolveCodeSecurityConfiguration(w http.ResponseWriter, r *http.Request) *store.CodeSecurityConfiguration {
 	id, err := strconv.Atoi(r.PathValue("configuration_id"))
 	if err != nil {
@@ -238,8 +237,7 @@ func (s *Server) handleListCodeSecurityConfigurationRepositories(w http.Response
 		return
 	}
 	statusFilter := r.URL.Query().Get("status")
-	// Attachments apply synchronously, so "attached" is the only status a
-	// repository can hold.
+	// Attachments apply synchronously, so "attached" is the only status a repo can hold.
 	if statusFilter != "" && statusFilter != "all" {
 		matched := false
 		for _, s := range strings.Split(statusFilter, ",") {

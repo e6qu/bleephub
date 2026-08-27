@@ -10,19 +10,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Dependency graph: dependency submission (snapshots), the SPDX SBOM export,
-// and the dependency diff between two commits.
-// Endpoints:
-//
-//	POST /repos/{o}/{r}/dependency-graph/snapshots
-//	GET  /repos/{o}/{r}/dependency-graph/sbom
-//	GET  /repos/{o}/{r}/dependency-graph/sbom/generate-report
-//	GET  /repos/{o}/{r}/dependency-graph/sbom/fetch-report/{sbom_uuid}
-//	GET  /repos/{o}/{r}/dependency-graph/compare/{basehead}
-//
-// Snapshots are the source of truth: the SBOM and the compare diff are both
-// computed from the submitted snapshot data, never invented. A repo with no
-// snapshots gets an SBOM describing just the repository itself.
+// Dependency graph: snapshot submission, the SPDX SBOM export, and the
+// dependency diff. Snapshots are the source of truth — the SBOM and compare
+// diff are computed from them, never invented.
 
 func (s *Server) registerGHDependencyGraphRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/dependency-graph/snapshots",
@@ -32,10 +22,6 @@ func (s *Server) registerGHDependencyGraphRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependency-graph/sbom/fetch-report/{sbom_uuid}", s.handleFetchSBOMReport)
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependency-graph/compare/{basehead}", s.handleDependencyGraphCompare)
 }
-
-// --- Store ---
-
-// --- Handlers ---
 
 func (s *Server) handleCreateDependencySnapshot(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
@@ -59,10 +45,9 @@ func (s *Server) handleCreateDependencySnapshot(w http.ResponseWriter, r *http.R
 		stored := s.store.AddDependencySnapshot(&snap)
 		if result == "SUCCESS" {
 			s.deriveDependabotAlertsForRepository(repo)
-			// The submission replaced the repository's dependency set, so an
-			// alert whose package it no longer declares at a vulnerable
-			// version is now fixed — and one whose vulnerable version came
-			// back is reintroduced. Deriving alone only ever adds.
+			// Deriving only ever adds; reconcile fixes alerts whose vulnerable
+			// version this submission dropped and reintroduces ones it brought
+			// back.
 			s.reconcileDependabotAlerts(repo)
 		}
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
@@ -80,8 +65,7 @@ func (s *Server) handleCreateDependencySnapshot(w http.ResponseWriter, r *http.R
 	created("ACCEPTED", "Snapshot accepted, but the repo's dependencies were not updated because the ref is not the default branch.")
 }
 
-// validateDependencySnapshot checks the snapshot's required members and
-// returns a message describing the first problem, or "" when well-formed.
+// validateDependencySnapshot returns a message for the first problem, or "".
 func validateDependencySnapshot(snap *store.DependencySnapshot) string {
 	switch {
 	case snap.Version == 0 && snap.Detector.Name == "" && snap.Job.ID == "":
@@ -126,7 +110,6 @@ func validateDependencySnapshot(snap *store.DependencySnapshot) string {
 	return ""
 }
 
-// isHexString reports whether s contains only lowercase hexadecimal digits.
 func isHexString(s string) bool {
 	for _, c := range s {
 		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
@@ -136,10 +119,9 @@ func isHexString(s string) bool {
 	return len(s) > 0
 }
 
-// currentDependencies returns the dependency set recorded for a ref+sha:
-// per (job.correlator, detector.name) only the latest matching snapshot
-// counts — the dependency submission API's replacement semantics. Matching
-// is by exact sha when given, else by ref.
+// currentDependencies returns the dependency set for a ref+sha. Per
+// (job.correlator, detector.name) only the latest snapshot counts — the
+// submission API's replacement semantics. Matches by sha when given, else ref.
 func (s *Server) currentDependencies(repoID int, ref, sha string) map[string]*dependencyEntry {
 	latest := map[string]*store.DependencySnapshot{}
 	for _, snap := range s.store.ListDependencySnapshots(repoID) {
@@ -181,7 +163,6 @@ type dependencyEntry struct {
 	Scope      string
 }
 
-// parsePurl splits a package-url into ecosystem, name, and version.
 func parsePurl(purl string) (ecosystem, name, version string) {
 	rest := strings.TrimPrefix(purl, "pkg:")
 	rest = strings.TrimPrefix(rest, "/")
@@ -211,9 +192,8 @@ func (s *Server) handleGetDependencySBOM(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"sbom": s.buildSPDXSBOM(repo, s.baseURL(r))})
 }
 
-// buildSPDXSBOM produces a real SPDX 2.3 document from the repository's
-// recorded default-branch dependencies. With no snapshots the document
-// honestly describes only the repository package itself.
+// buildSPDXSBOM produces an SPDX 2.3 document from the repository's recorded
+// default-branch dependencies; with none it describes only the repo package.
 func (s *Server) buildSPDXSBOM(repo *store.Repo, baseURL string) map[string]interface{} {
 	docName := "com.github." + repo.FullName
 	repoSPDXID := "SPDXRef-com.github." + strings.ReplaceAll(repo.FullName, "/", "-")
@@ -281,8 +261,8 @@ func (s *Server) buildSPDXSBOM(repo *store.Repo, baseURL string) map[string]inte
 	}
 }
 
-// sanitizeSPDXIDPart keeps only the characters SPDX allows in an SPDXID
-// idstring (letters, digits, '.', '-').
+// sanitizeSPDXIDPart keeps only the characters an SPDXID idstring allows
+// (letters, digits, '.', '-').
 func sanitizeSPDXIDPart(s string) string {
 	var b strings.Builder
 	for _, c := range s {
@@ -317,8 +297,7 @@ func (s *Server) handleFetchSBOMReport(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// The export is served by the SBOM endpoint; the fetch step is a
-	// redirect to the download location, as on real GitHub.
+	// As on real GitHub, the fetch step redirects to the SBOM endpoint.
 	http.Redirect(w, r, s.baseURL(r)+"/api/v3/repos/"+repo.FullName+"/dependency-graph/sbom", http.StatusFound)
 }
 
@@ -327,8 +306,7 @@ func (s *Server) handleDependencyGraphCompare(w http.ResponseWriter, r *http.Req
 	if repo == nil {
 		return
 	}
-	// The dependency comparison is the dependency-insights read surface an
-	// enterprise can withhold from its members.
+	// An enterprise can withhold dependency insights from its members.
 	policy, enterprise := s.enterprisePolicyForRepo(repo)
 	if s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanViewDependencyInsights,
 		"Dependency insights are disabled by an enterprise policy.") {
@@ -390,10 +368,9 @@ func (s *Server) handleDependencyGraphCompare(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, diff)
 }
 
-// dependenciesForRevision resolves one side of a basehead expression — a
-// commit SHA, a branch name, or a fully qualified ref — to its recorded
-// dependency set. ok is false when the revision matches neither the git
-// storage nor any snapshot.
+// dependenciesForRevision resolves one side of a basehead (a SHA, branch, or
+// fully qualified ref) to its dependency set. ok is false when the revision
+// matches neither git storage nor any snapshot.
 func (s *Server) dependenciesForRevision(repo *store.Repo, rev string) (map[string]*dependencyEntry, bool) {
 	owner, name, _ := store.SplitRepoFullName(repo.FullName)
 	gitStor := s.store.GetGitStorage(owner, name)
@@ -414,8 +391,8 @@ func (s *Server) dependenciesForRevision(repo *store.Repo, rev string) (map[stri
 	if deps := s.currentDependencies(repo.ID, "refs/heads/"+branch, ""); len(deps) > 0 {
 		return deps, true
 	}
-	// A revision that resolves in git but has no snapshots legitimately has
-	// an empty dependency set; an unresolvable revision is a 404.
+	// A revision that resolves in git but has no snapshots has an empty
+	// dependency set; an unresolvable revision is a 404.
 	if sha != "" {
 		return map[string]*dependencyEntry{}, true
 	}

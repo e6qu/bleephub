@@ -22,10 +22,8 @@ func (s *Server) registerGHEnterpriseCodeSecurityRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/code-security/configurations/{configuration_id}/repositories", s.requireEnterpriseOwner(s.handleListEnterpriseCodeSecurityConfigRepos))
 }
 
-// enterpriseCodeSecurityConfigRequest carries the members GitHub's
-// enterprise code security configuration create/update bodies accept.
-// Pointer members distinguish absent from explicit values so PATCH can apply
-// only what the caller sent.
+// enterpriseCodeSecurityConfigRequest is the create/update body. Pointer members
+// distinguish absent from explicit so PATCH applies only what the caller sent.
 type enterpriseCodeSecurityConfigRequest struct {
 	Name                                   *string `json:"name"`
 	Description                            *string `json:"description"`
@@ -59,8 +57,7 @@ type enterpriseCodeSecurityConfigRequest struct {
 	Enforcement                           *string `json:"enforcement"`
 }
 
-// validateEnterpriseCodeSecurityEnums checks every enum-valued member of the
-// request, returning the first offending field name.
+// validate returns the first enum-valued member with an invalid value.
 func (req *enterpriseCodeSecurityConfigRequest) validate() (string, bool) {
 	feature := func(v *string) bool {
 		return v == nil || *v == "enabled" || *v == "disabled" || *v == "not_set"
@@ -100,11 +97,10 @@ func (req *enterpriseCodeSecurityConfigRequest) validate() (string, bool) {
 	return "", true
 }
 
-// apply copies the members present in the request onto the configuration.
-// The request-only code_security / secret_protection aggregate toggles fold
-// into advanced_security exactly as GitHub reports them back: both enabled →
-// "enabled", one enabled → that product's value; an explicit
-// advanced_security member wins.
+// apply copies present members onto the configuration. The request-only
+// code_security / secret_protection toggles fold into advanced_security as
+// GitHub reports it (both enabled → "enabled", one → that product's value); an
+// explicit advanced_security member wins.
 func (req *enterpriseCodeSecurityConfigRequest) apply(c *store.EnterpriseCodeSecurityConfiguration) {
 	setStr := func(dst *string, v *string) {
 		if v != nil {
@@ -158,8 +154,8 @@ func (req *enterpriseCodeSecurityConfigRequest) apply(c *store.EnterpriseCodeSec
 	}
 }
 
-// enterpriseCodeSecurityConfigJSON renders the GitHub
-// code-security-configuration schema shape with target_type "enterprise".
+// enterpriseCodeSecurityConfigJSON renders the code-security-configuration
+// schema with target_type "enterprise".
 func (s *Server) enterpriseCodeSecurityConfigJSON(c *store.EnterpriseCodeSecurityConfiguration, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/enterprises/" + s.enterpriseSlug() + "/code-security/configurations/" + strconv.Itoa(c.ID)
 	var codeScanningOptions interface{}
@@ -229,8 +225,8 @@ func (s *Server) handleCreateEnterpriseCodeSecurityConfig(w http.ResponseWriter,
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	// name and description are the schema's required members; GitHub
-	// documents 400 (not 422) for a bad enterprise configuration request.
+	// GitHub answers 400 (not 422) for a bad enterprise configuration request;
+	// name and description are required.
 	if req.Name == nil || *req.Name == "" || req.Description == nil {
 		writeGHError(w, http.StatusBadRequest, "Invalid request. name and description are required.")
 		return
@@ -241,8 +237,8 @@ func (s *Server) handleCreateEnterpriseCodeSecurityConfig(w http.ResponseWriter,
 	}
 
 	c := &store.EnterpriseCodeSecurityConfiguration{
-		// Defaults per GitHub's create schema: dependency graph on, every
-		// other feature off, enforcement on.
+		// GitHub's create defaults: dependency graph on, every other feature
+		// off, enforcement on.
 		AdvancedSecurity:                      "disabled",
 		DependencyGraph:                       "enabled",
 		DependencyGraphAutosubmitAction:       "disabled",
@@ -266,8 +262,7 @@ func (s *Server) handleCreateEnterpriseCodeSecurityConfig(w http.ResponseWriter,
 	writeJSONCreated(w, jsonStringField(escsJSON, "url"), escsJSON)
 }
 
-// lookupEnterpriseCodeSecurityConfig resolves {configuration_id}, writing 404
-// when absent.
+// lookupEnterpriseCodeSecurityConfig resolves {configuration_id}, writing 404 when absent.
 func (s *Server) lookupEnterpriseCodeSecurityConfig(w http.ResponseWriter, r *http.Request) *store.EnterpriseCodeSecurityConfiguration {
 	id, err := strconv.Atoi(r.PathValue("configuration_id"))
 	if err != nil {
@@ -387,9 +382,8 @@ func (s *Server) handleListEnterpriseCodeSecurityConfigRepos(w http.ResponseWrit
 	if c == nil {
 		return
 	}
-	// Attachments in bleephub are synchronous, so every association is in
-	// the terminal "attached" state; a status filter naming other states
-	// yields nothing.
+	// Attachments are synchronous, so every association is already "attached";
+	// a status filter naming other states yields nothing.
 	status := r.URL.Query().Get("status")
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0)
@@ -409,8 +403,6 @@ func (s *Server) handleListEnterpriseCodeSecurityConfigRepos(w http.ResponseWrit
 	writeJSON(w, http.StatusOK, out)
 }
 
-// statusFilterContains reports whether the comma-separated status filter
-// names the given state.
 func statusFilterContains(filter, state string) bool {
 	for _, part := range splitCommaList(filter) {
 		if part == state {
@@ -420,10 +412,9 @@ func statusFilterContains(filter, state string) bool {
 	return false
 }
 
-// cursorPageByID implements the cursor pagination the code security list
-// endpoints use (per_page + before/after, where the cursor is the item ID):
-// "after" returns items with IDs strictly greater, "before" strictly smaller
-// (keeping the window closest to the cursor), and per_page caps the page.
+// cursorPageByID paginates by item ID: "after" returns IDs strictly greater,
+// "before" strictly smaller (keeping the window closest to the cursor), per_page
+// caps the page.
 func cursorPageByID[T any](w http.ResponseWriter, r *http.Request, items []T, id func(T) int) ([]T, bool) {
 	q := r.URL.Query()
 	perPage := 30
@@ -463,8 +454,7 @@ func cursorPageByID[T any](w http.ResponseWriter, r *http.Request, items []T, id
 	return items, true
 }
 
-// restCursorID accepts the opaque base64 "cursor:<id>" values emitted by
-// GitHub-style Link headers.
+// restCursorID decodes the opaque base64 "cursor:<id>" values from Link headers.
 func restCursorID(value string) (id int, present, valid bool) {
 	if value == "" {
 		return 0, false, true

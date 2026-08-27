@@ -32,9 +32,8 @@ func (s *Server) registerGHMigrationsRoutes() {
 	s.route("DELETE /api/v3/orgs/{org}/migrations/{migration_id}/archive", s.handleDeleteOrgMigrationArchive)
 	s.route("DELETE /api/v3/orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock", s.handleUnlockOrgMigrationRepo)
 
-	// The GitHub Enterprise Importer's browser surface. GitHub serves the GEI
-	// entities through GraphQL alone, so these live under /ui-data rather than
-	// being invented under /api/v3.
+	// GEI entities have no REST surface on GitHub, so the browser routes live
+	// under /ui-data rather than being invented under /api/v3.
 	s.registerGEIMigrationUIRoutes()
 }
 
@@ -131,9 +130,8 @@ func (s *Server) handleGetUserMigration(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleListUserMigrationRepositories lists the repositories captured by
-// a user migration in GitHub's minimal-repository shape. Repositories
-// deleted since the export are no longer listable.
+// handleListUserMigrationRepositories lists a user migration's repositories in
+// minimal-repository shape; repos deleted since the export are dropped.
 func (s *Server) handleListUserMigrationRepositories(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -281,9 +279,6 @@ func (s *Server) handleGetOrgMigration(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleListOrgMigrationRepositories implements
-// GET /orgs/{org}/migrations/{migration_id}/repositories: the repositories
-// locked into the migration, in the minimal-repository shape.
 func (s *Server) handleListOrgMigrationRepositories(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -353,20 +348,10 @@ func (s *Server) handleUnlockOrgMigrationRepo(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Authorization
-//
-// A migration exposes an entire account's data, so the two operations that can
-// see it — reading a migration and downloading its archive — are gated exactly
-// as starting one is.
-//
-// An organization's migrations are open to an owner of that organization and
-// to a principal granted the migrator role on it (directly, through a team, or
-// through the enterprise that owns it). Nobody else, whatever standing they
-// hold on some other organization: viewerMayMigrateOrg resolves both halves
-// from *this* organization, so a migrator on one tenant is nothing on another.
-//
-// A user's migrations are their own. There is no delegated form of the user
-// scope on GitHub and there is none here, so the test is identity.
+// viewerMayMigrateOrg gates every org-migration operation (read and archive
+// download, not just start): an org owner, or a principal holding the migrator
+// role on *this* org. Both halves resolve from this org, so a migrator on one
+// tenant is nothing on another. (A user's migrations are gated by identity alone.)
 func (s *Server) viewerMayMigrateOrg(ctx context.Context, org *store.Org) bool {
 	if org == nil {
 		return false
@@ -374,9 +359,8 @@ func (s *Server) viewerMayMigrateOrg(ctx context.Context, org *store.Org) bool {
 	if s.viewerCanAdminOrg(ctx, org.Login) {
 		return true
 	}
-	// The migrator role is a standing on the organization, not a grant to an
-	// app: an integration still has to have been given organization
-	// administration before its bearer's migrator role means anything.
+	// The migrator role only counts once the credential also holds org
+	// administration.
 	if !s.credentialGrantsAccount(ctx, store.OrganizationAccount, org.Login, store.ScopeAdministration, store.PermWrite) {
 		return false
 	}
@@ -627,17 +611,9 @@ func migrationRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[st
 
 // Archive download and deletion
 
-// serveMigrationArchive streams the stored archive to the caller.
-//
-// The bytes are read out of the object byte store rather than rebuilt, which
-// is what makes the download the archive the migration actually produced: two
-// downloads of the same migration are the same bytes, and the digest recorded
-// when it was written still describes them.
-//
-// The URL is not a credential. GitHub answers this operation with a redirect
-// to a signed location; bleephub serves it in place, behind the same
-// authorization the migration itself is behind, so there is no URL a caller
-// can keep after their access to the migration ends.
+// serveMigrationArchive streams the stored archive bytes in place. Unlike
+// GitHub, which redirects to a signed URL, bleephub serves it behind the same
+// authorization as the migration, so no reusable capability URL leaks.
 func (s *Server) serveMigrationArchive(w http.ResponseWriter, r *http.Request, m store.MigrationCommon, scope store.MigrationScope) {
 	if m.State != store.MigrationStateExported || m.ArchiveDeleted || m.ArchiveKey == "" {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -665,9 +641,8 @@ func (s *Server) serveMigrationArchive(w http.ResponseWriter, r *http.Request, m
 	}
 }
 
-// deleteMigrationArchive forgets the archive and removes its bytes. The
-// migration itself survives — GitHub keeps the record and answers 404 for the
-// archive afterwards — so this is a deletion of bytes, not of history.
+// deleteMigrationArchive removes the archive bytes; the migration record
+// survives and its archive then answers 404, as on GitHub.
 func (s *Server) deleteMigrationArchive(ctx context.Context, scope store.MigrationScope, id int) bool {
 	key, ok := s.store.ClearMigrationArchive(scope, id)
 	if !ok {

@@ -14,8 +14,8 @@ import (
 )
 
 // Repository read surfaces: watchers/teams/assignees, license and community
-// health, single-commit and contributor/statistics aggregations over the real
-// git history, git ref reads, source archives, activity/events, and traffic.
+// health, commit/contributor/statistics aggregations over git history, git ref
+// reads, source archives, activity/events, and traffic.
 func (s *Server) registerGHRepoReadsRoutes() {
 	// People, watching, access.
 	s.route("GET /api/v3/repos/{owner}/{repo}/subscribers", s.handleListRepoSubscribers)
@@ -48,12 +48,9 @@ func (s *Server) registerGHRepoReadsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/ref/{ref...}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetSingleRef))
 	s.route("GET /api/v3/repos/{owner}/{repo}/git/matching-refs/{ref...}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleListMatchingRefs))
 
-	// Source archives: the API endpoints answer 302 to the codeload-style
-	// legacy URLs (the same URLs the tags API advertises), which stream real
-	// tar.gz/zip archives built from the git tree. The legacy URLs are served
-	// from the catch-all (tryHandleArchiveRequest) beside the git smart HTTP
-	// protocol — a top-level /{owner}/{repo}/… mux pattern would conflict
-	// with the /api/v3/ subtree pattern.
+	// Source archives: these 302 to the legacy codeload-style URLs, which the
+	// catch-all (tryHandleArchiveRequest) serves — a top-level /{owner}/{repo}
+	// pattern would conflict with the /api/v3/ subtree.
 	s.route("GET /api/v3/repos/{owner}/{repo}/tarball/{ref...}", s.handleGetTarball)
 	s.route("GET /api/v3/repos/{owner}/{repo}/zipball/{ref...}", s.handleGetZipball)
 
@@ -174,12 +171,11 @@ func (s *Server) handleGetRepoHashAlgorithm(w http.ResponseWriter, r *http.Reque
 	if repo == nil {
 		return
 	}
-	// go-git object storage is SHA-1; bleephub has no SHA-256 repositories.
+	// go-git object storage is SHA-1; there are no SHA-256 repositories.
 	writeJSON(w, http.StatusOK, map[string]interface{}{"hash_algorithm": "sha1"})
 }
 
-// licenseFileCandidates are the root-level filenames GitHub's license
-// detection inspects.
+// licenseFileCandidates are the root-level filenames license detection inspects.
 var licenseFileCandidates = []string{"LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "COPYING", "COPYING.md"}
 
 func (s *Server) handleGetRepoLicense(w http.ResponseWriter, r *http.Request) {
@@ -209,10 +205,8 @@ func (s *Server) handleGetRepoLicense(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// detectLicenseKey identifies the license of a file's content by normalized
-// token overlap against the license catalog served at /licenses. Content
-// matching no catalog entry is "other", exactly as real GitHub reports
-// licenses licensee cannot identify.
+// detectLicenseKey identifies a license by normalized token overlap against
+// the /licenses catalog, returning "other" when nothing matches.
 func detectLicenseKey(content string) string {
 	contentTokens := licenseTokenSet(content)
 	bestKey := ""
@@ -240,8 +234,7 @@ func detectLicenseKey(content string) string {
 	return "other"
 }
 
-// licenseTokenSet lowercases and tokenizes license text, dropping the
-// placeholder tokens the templates substitute per-repo.
+// licenseTokenSet tokenizes license text, dropping the per-repo placeholder tokens.
 func licenseTokenSet(text string) map[string]bool {
 	out := map[string]bool{}
 	for _, tok := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
@@ -256,8 +249,8 @@ func licenseTokenSet(text string) map[string]bool {
 	return out
 }
 
-// licenseSimpleJSON renders the GitHub license-simple shape for a catalog key
-// or the "other" pseudo-license GitHub reports for unidentified licenses.
+// licenseSimpleJSON renders the license-simple shape for a catalog key, or the
+// "other" pseudo-license for unidentified licenses.
 func (s *Server) licenseSimpleJSON(key, base string) map[string]interface{} {
 	if tmpl, ok := store.LicenseTemplates[key]; ok {
 		return map[string]interface{}{
@@ -277,7 +270,6 @@ func (s *Server) licenseSimpleJSON(key, base string) map[string]interface{} {
 	}
 }
 
-// readmeFileCandidates mirrors the variants handleGetReadme accepts.
 var readmeFileCandidates = []string{"README.md", "README", "README.txt", "readme.md"}
 
 func (s *Server) handleGetReadmeInDirectory(w http.ResponseWriter, r *http.Request) {
@@ -318,8 +310,8 @@ func (s *Server) handleGetReadmeInDirectory(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, out)
 }
 
-// communityFileLocations are the directories GitHub scans for community
-// health files, in precedence order.
+// communityFileLocations are the directories scanned for community health
+// files, in precedence order.
 var communityFileLocations = []string{".github", "", "docs"}
 
 func (s *Server) handleGetCommunityProfile(w http.ResponseWriter, r *http.Request) {
@@ -411,8 +403,8 @@ func orNil(m map[string]interface{}) interface{} {
 	return m
 }
 
-// codeownersLocations are the paths GitHub searches for a CODEOWNERS file, in
-// precedence order; the first found is the operative file.
+// codeownersLocations are the CODEOWNERS paths in precedence order; the first
+// found is the operative file.
 var codeownersLocations = []string{".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"}
 
 func (s *Server) handleListCodeownersErrors(w http.ResponseWriter, r *http.Request) {
@@ -421,17 +413,16 @@ func (s *Server) handleListCodeownersErrors(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	errorsOut := []map[string]interface{}{}
-	// The same file lookup the review-request and merge rules read ownership
-	// from, so what this endpoint validates is what those enforce.
+	// Same lookup the review-request and merge rules use, so this validates what
+	// those enforce.
 	if content, path, ok := s.codeownersFileAtRef(repo, r.URL.Query().Get("ref")); ok {
 		errorsOut = s.validateCodeowners(content, path)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"errors": errorsOut})
 }
 
-// validateCodeowners parses CODEOWNERS content and reports the errors real
-// GitHub reports: malformed owner tokens ("Invalid owner") and owners that
-// reference no existing user, organization, or team ("Unknown owner").
+// validateCodeowners reports malformed owner tokens ("Invalid owner") and
+// owners referencing no existing user, org, or team ("Unknown owner").
 func (s *Server) validateCodeowners(content, path string) []map[string]interface{} {
 	out := []map[string]interface{}{}
 	for lineNo, line := range strings.Split(content, "\n") {
@@ -461,8 +452,8 @@ func (s *Server) validateCodeowners(content, path string) []map[string]interface
 	return out
 }
 
-// classifyCodeowner returns the CODEOWNERS error kind for an owner token, or
-// "" when the token is a valid, resolvable owner.
+// classifyCodeowner returns the error kind for an owner token, or "" when it
+// is a valid, resolvable owner.
 func (s *Server) classifyCodeowner(owner string) string {
 	if strings.HasPrefix(owner, "@") {
 		name := strings.TrimPrefix(owner, "@")

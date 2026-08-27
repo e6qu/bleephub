@@ -10,10 +10,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// GitHub renders `git blame` only over its web UI / GraphQL, never plain REST,
-// so the blame view is served from /ui-data (auto-authenticated as the viewer).
-// go-git computes the per-line attribution; this handler groups consecutive
-// lines sharing a commit into hunks, the shape the blame view renders.
+// GitHub exposes blame only over its web UI / GraphQL, never plain REST, so it
+// lives under /ui-data (auto-authenticated as the viewer).
 func (s *Server) registerGHBlameRoutes() {
 	s.route("GET /ui-data/repos/{owner}/{repo}/blame/{path...}", s.handleUIDataBlame)
 }
@@ -67,8 +65,8 @@ func (s *Server) handleUIDataBlame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up each blamed commit once for its summary/author (a Line only carries
-	// the author email), then coalesce runs of the same commit into hunks.
+	// Cache each blamed commit's summary/author (a Line carries only the author
+	// email), then coalesce runs of the same commit into hunks.
 	commitCache := map[plumbing.Hash]*object.Commit{}
 	lookup := func(h plumbing.Hash) *object.Commit {
 		if c, seen := commitCache[h]; seen {

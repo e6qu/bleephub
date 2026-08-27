@@ -9,34 +9,17 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Browser-only discussion operations. Real GitHub exposes discussions over
-// GraphQL and the web UI only — converting an issue to a discussion and
-// pinning discussions have no REST operations at all — so these live under
-// /ui-data rather than an invented /api/v3 path (`s.route` auto-wraps /ui-data
-// with authenticateUIData).
-//
-//	POST /ui-data/repos/{owner}/{repo}/issues/{number}/convert-to-discussion
-//	  body {"category_id": int} — creates a discussion in that category
-//	  carrying the issue's title/body/author and its conversation comments
-//	  (original authors + timestamps), closes the issue as not_planned with a
-//	  "converted_to_discussion" timeline event, and returns the new
-//	  discussion. Requires issue-write on the repository, mirroring how
-//	  closing an issue is gated (requirePerm(issues, write) on PATCH
-//	  /issues/{number}).
-//
-//	GET /ui-data/repos/{owner}/{repo}/discussions/pinned
-//	  the repo's ordered pinned discussions (any viewer who can read the repo).
-//	PUT /ui-data/repos/{owner}/{repo}/discussions/pinned
-//	  body {"numbers": [int]} — replaces the ordered pin list (≤ 4, GitHub's
-//	  cap). Requires discussion-write on the repository.
+// Browser-only discussion operations. Converting an issue to a discussion and
+// pinning discussions have no REST equivalent on real GitHub, so these live
+// under /ui-data rather than an invented /api/v3 path.
 func (s *Server) registerGHDiscussionsUIDataRoutes() {
 	s.route("POST /ui-data/repos/{owner}/{repo}/issues/{number}/convert-to-discussion", s.handleUIConvertIssueToDiscussion)
 	s.route("GET /ui-data/repos/{owner}/{repo}/discussions/pinned", s.handleUIListPinnedDiscussions)
 	s.route("PUT /ui-data/repos/{owner}/{repo}/discussions/pinned", s.handleUISetPinnedDiscussions)
 }
 
-// uiDiscussionJSON renders a discussion for the /ui-data surface: the fields
-// the web UI's discussion list/detail views consume, in REST-style snake_case.
+// uiDiscussionJSON renders a discussion for the /ui-data surface in REST-style
+// snake_case.
 func (s *Server) uiDiscussionJSON(d *store.Discussion, repo *store.Repo, baseURL string) map[string]interface{} {
 	var author map[string]interface{}
 	s.store.Mu.RLock()
@@ -79,8 +62,6 @@ func (s *Server) uiDiscussionJSON(d *store.Discussion, repo *store.Repo, baseURL
 	}
 }
 
-// handleUIConvertIssueToDiscussion implements the web-only "convert issue to
-// discussion" action.
 func (s *Server) handleUIConvertIssueToDiscussion(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -91,10 +72,8 @@ func (s *Server) handleUIConvertIssueToDiscussion(w http.ResponseWriter, r *http
 	if repo == nil {
 		return
 	}
-	// Closing an issue is gated at issues:write (the standalone PATCH
-	// /issues/{number} route runs behind requirePerm(issues, write)); the
-	// conversion closes the issue, so it demands the same standing. A viewer
-	// without it gets the same 404 the resource gate answers elsewhere.
+	// The conversion closes the issue, so gate it at issues:write like the
+	// standalone close does.
 	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeIssues, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -104,8 +83,8 @@ func (s *Server) handleUIConvertIssueToDiscussion(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// GetIssueByNumber resolves issues only, so a PR number 404s — pull
-	// requests cannot be converted to discussions on real GitHub either.
+	// GetIssueByNumber resolves issues only, so a PR number 404s — GitHub does
+	// not convert pull requests to discussions either.
 	issue := s.store.GetIssueByNumber(repo.ID, num)
 	if issue == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -128,18 +107,14 @@ func (s *Server) handleUIConvertIssueToDiscussion(w http.ResponseWriter, r *http
 		return
 	}
 
-	// The discussion carries the issue's title/body/author; its comments carry
-	// the conversation's original authors and timestamps.
 	d := s.store.CreateDiscussion(repo.ID, cat.ID, issue.AuthorID, issue.Title, issue.Body)
 	for _, c := range s.store.ListCommentsFor("issue", issue.ID) {
 		s.store.CreateDiscussionCommentAt(d.ID, c.AuthorID, c.Body, 0, c.CreatedAt)
 	}
 
-	// Close the issue as not_planned (as github.com does on conversion) and
-	// record the conversion on the timeline. "converted_to_discussion" is
-	// GitHub's own timeline event name for this transition; the timeline
-	// renderer passes unknown-to-it event names through with actor and
-	// timestamp, which is exactly the distinguishable close note needed here.
+	// Close the issue as not_planned, as github.com does on conversion, and
+	// record the "converted_to_discussion" timeline event (GitHub's own name
+	// for this transition).
 	wasOpen := issue.State != "CLOSED"
 	s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 		if i.State != "CLOSED" {
@@ -159,7 +134,6 @@ func (s *Server) handleUIConvertIssueToDiscussion(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusCreated, s.uiDiscussionJSON(d, repo, s.baseURL(r)))
 }
 
-// handleUIListPinnedDiscussions returns the repo's ordered pinned discussions.
 func (s *Server) handleUIListPinnedDiscussions(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
@@ -174,7 +148,6 @@ func (s *Server) handleUIListPinnedDiscussions(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleUISetPinnedDiscussions replaces the repo's ordered pin list.
 func (s *Server) handleUISetPinnedDiscussions(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {

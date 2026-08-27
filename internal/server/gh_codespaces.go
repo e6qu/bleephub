@@ -13,7 +13,6 @@ import (
 )
 
 func (s *Server) registerGHCodespacesRoutes() {
-	// User-scoped codespaces.
 	s.route("GET /api/v3/user/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListUserCodespaces))
 	s.route("POST /api/v3/user/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleCreateUserCodespace))
 	s.route("GET /api/v3/user/codespaces/{codespace_name}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetUserCodespace))
@@ -22,64 +21,51 @@ func (s *Server) registerGHCodespacesRoutes() {
 	s.route("POST /api/v3/user/codespaces/{codespace_name}/start", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleStartUserCodespace))
 	s.route("POST /api/v3/user/codespaces/{codespace_name}/stop", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleStopUserCodespace))
 
-	// Repository-scoped codespaces.
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListRepoCodespaces))
 	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleCreateRepoCodespace))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/devcontainers", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListRepoDevcontainers))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/new", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetCodespaceDefaults))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/permissions_check", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleCodespacePermissionsCheck))
-	// Machine types.
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/machines", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListCodespaceMachines))
 
-	// Organization-member codespace administration: an org owner
-	// operating on a member's codespaces on the org's repositories.
 	s.route("GET /api/v3/orgs/{org}/members/{username}/codespaces", s.requireOrgAdminOrCodespaceScope(s.handleListOrgMemberCodespaces))
 	s.route("DELETE /api/v3/orgs/{org}/members/{username}/codespaces/{codespace_name}", s.requireOrgAdminOrCodespaceScope(s.handleDeleteOrgMemberCodespace))
 	s.route("POST /api/v3/orgs/{org}/members/{username}/codespaces/{codespace_name}/stop", s.requireOrgAdminOrCodespaceScope(s.handleStopOrgMemberCodespace))
 
-	// User-scoped secrets.
 	s.route("GET /api/v3/user/codespaces/secrets", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListUserCodespaceSecrets))
 	s.route("GET /api/v3/user/codespaces/secrets/public-key", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetCodespacePublicKey))
 	s.route("GET /api/v3/user/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetUserCodespaceSecret))
 	s.route("PUT /api/v3/user/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handlePutUserCodespaceSecret))
 	s.route("DELETE /api/v3/user/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleDeleteUserCodespaceSecret))
 
-	// User-secret selected repositories.
 	s.route("GET /api/v3/user/codespaces/secrets/{secret_name}/repositories", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListUserCodespaceSecretRepos))
 	s.route("PUT /api/v3/user/codespaces/secrets/{secret_name}/repositories", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleSetUserCodespaceSecretRepos))
 	s.route("PUT /api/v3/user/codespaces/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleAddUserCodespaceSecretRepo))
 	s.route("DELETE /api/v3/user/codespaces/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleRemoveUserCodespaceSecretRepo))
 
-	// Per-codespace machines + export details. Go 1.22's ServeMux rejects
-	// registering GET /user/codespaces/{codespace_name}/machines alongside
-	// the literal GET /user/codespaces/secrets/{secret_name} (they overlap
-	// at secrets/machines with neither more specific), so both GET shapes
-	// dispatch through wildcards; the more-specific secrets routes above
-	// still win for secrets/* paths.
+	// Go 1.22 ServeMux rejects GET /user/codespaces/{codespace_name}/machines
+	// alongside the literal GET /user/codespaces/secrets/{secret_name} (they
+	// overlap with neither more specific), so both GET shapes dispatch through
+	// wildcards; the more-specific secrets routes above still win.
 	s.route("GET /api/v3/user/codespaces/{codespace_name}/{sub}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleUserCodespaceTwoSegGetDispatch))
 	s.route("GET /api/v3/user/codespaces/{codespace_name}/{sub}/{export_id}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleUserCodespaceThreeSegGetDispatch))
 
-	// Codespace exports + publish.
 	s.route("POST /api/v3/user/codespaces/{codespace_name}/exports", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleExportUserCodespace))
 	s.route("POST /api/v3/user/codespaces/{codespace_name}/publish", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handlePublishUserCodespace))
 
-	// Pull-request codespaces.
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{pull_number}/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleCreatePullRequestCodespace))
 
-	// Repository-scoped secrets.
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/secrets", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListRepoCodespaceSecrets))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/secrets/public-key", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetCodespacePublicKey))
 	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetRepoCodespaceSecret))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handlePutRepoCodespaceSecret))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleDeleteRepoCodespaceSecret))
 
-	// Organization-scoped codespaces + access controls.
 	s.route("GET /api/v3/orgs/{org}/codespaces", s.requireOrgAdminOrCodespaceScope(s.handleListOrgCodespaces))
 	s.route("PUT /api/v3/orgs/{org}/codespaces/access", s.requireOrgAdminOrCodespaceScope(s.handleSetOrgCodespacesAccess))
 	s.route("POST /api/v3/orgs/{org}/codespaces/access/selected_users", s.requireOrgAdminOrCodespaceScope(s.handleAddOrgCodespacesAccessUsers))
 	s.route("DELETE /api/v3/orgs/{org}/codespaces/access/selected_users", s.requireOrgAdminOrCodespaceScope(s.handleRemoveOrgCodespacesAccessUsers))
 
-	// Organization-scoped secrets.
 	s.route("GET /api/v3/orgs/{org}/codespaces/secrets", s.requireOrgAdminOrCodespaceScope(s.handleListOrgCodespaceSecrets))
 	s.route("GET /api/v3/orgs/{org}/codespaces/secrets/public-key", s.requireOrgAdminOrCodespaceScope(s.handleGetCodespacePublicKey))
 	s.route("GET /api/v3/orgs/{org}/codespaces/secrets/{secret_name}", s.requireOrgAdminOrCodespaceScope(s.handleGetOrgCodespaceSecret))
@@ -365,9 +351,8 @@ func (s *Server) handleCreateRepoCodespace(w http.ResponseWriter, r *http.Reques
 
 // --- machines ---
 
-// codespaceMachineJSON renders one catalog machine in GitHub's
-// codespace-machine schema. bleephub has no prebuild pipeline, so
-// prebuild availability is "none".
+// codespaceMachineJSON renders one catalog machine. bleephub has no prebuild
+// pipeline, so prebuild_availability is "none".
 func codespaceMachineJSON(m store.CodespaceMachine) map[string]interface{} {
 	return map[string]interface{}{
 		"name":                  m.Name,
@@ -396,9 +381,8 @@ func (s *Server) handleListCodespaceMachines(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, codespaceMachinesListJSON())
 }
 
-// handleUserCodespaceTwoSegGetDispatch fans out
-// GET /user/codespaces/{codespace_name}/{sub} to the real GitHub
-// sub-resource: machines.
+// handleUserCodespaceTwoSegGetDispatch fans GET /user/codespaces/{name}/{sub}
+// out to its sub-resource: machines.
 func (s *Server) handleUserCodespaceTwoSegGetDispatch(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("sub") != "machines" {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -412,9 +396,8 @@ func (s *Server) handleUserCodespaceTwoSegGetDispatch(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, codespaceMachinesListJSON())
 }
 
-// handleUserCodespaceThreeSegGetDispatch fans out
-// GET /user/codespaces/{codespace_name}/{sub}/{export_id} to the real
-// GitHub sub-resource: exports/{export_id}.
+// handleUserCodespaceThreeSegGetDispatch fans GET
+// /user/codespaces/{name}/{sub}/{export_id} out to exports/{export_id}.
 func (s *Server) handleUserCodespaceThreeSegGetDispatch(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("sub") != "exports" {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -619,10 +602,8 @@ func (s *Server) handleRemoveUserCodespaceSecretRepo(w http.ResponseWriter, r *h
 
 // --- organization-member codespace handlers ---
 
-// resolveOrgMemberForCodespaces resolves the {org}/{username} pair for
-// the org-member codespace endpoints: the user must exist and hold an
-// active membership in the org. The caller was already vetted as an org
-// owner by requireOrgAdminOrCodespaceScope.
+// resolveOrgMemberForCodespaces resolves {org}/{username}: the user must hold an
+// active membership. The caller was already vetted as an org owner.
 func (s *Server) resolveOrgMemberForCodespaces(w http.ResponseWriter, r *http.Request) (*store.Org, *store.User) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
@@ -642,8 +623,7 @@ func (s *Server) resolveOrgMemberForCodespaces(w http.ResponseWriter, r *http.Re
 	return org, member
 }
 
-// handleListOrgMemberCodespaces — GET /api/v3/orgs/{org}/members/{username}/codespaces:
-// the member's codespaces on the organization's repositories.
+// handleListOrgMemberCodespaces lists the member's codespaces on the org's repos.
 func (s *Server) handleListOrgMemberCodespaces(w http.ResponseWriter, r *http.Request) {
 	org, member := s.resolveOrgMemberForCodespaces(w, r)
 	if org == nil {
@@ -662,8 +642,8 @@ func (s *Server) handleListOrgMemberCodespaces(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": paged, "total_count": len(out)})
 }
 
-// resolveOrgMemberCodespace resolves {codespace_name} to a codespace the
-// member owns on one of the organization's repositories.
+// resolveOrgMemberCodespace resolves {codespace_name} to a codespace the member
+// owns on one of the org's repos.
 func (s *Server) resolveOrgMemberCodespace(w http.ResponseWriter, r *http.Request, org *store.Org, member *store.User) *store.Codespace {
 	cs := s.store.GetCodespaceByName(r.PathValue("codespace_name"))
 	if cs == nil || cs.OwnerLogin != member.Login || !strings.HasPrefix(cs.RepoKey, org.Login+"/") {
@@ -673,7 +653,6 @@ func (s *Server) resolveOrgMemberCodespace(w http.ResponseWriter, r *http.Reques
 	return cs
 }
 
-// handleDeleteOrgMemberCodespace — DELETE /api/v3/orgs/{org}/members/{username}/codespaces/{codespace_name}.
 func (s *Server) handleDeleteOrgMemberCodespace(w http.ResponseWriter, r *http.Request) {
 	org, member := s.resolveOrgMemberForCodespaces(w, r)
 	if org == nil {
@@ -695,9 +674,8 @@ func (s *Server) handleDeleteOrgMemberCodespace(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// handleStopOrgMemberCodespace — POST /api/v3/orgs/{org}/members/{username}/codespaces/{codespace_name}/stop.
-// Unlike the user-scoped stop (202), the org-member stop answers 200
-// with the codespace, per the documented operation.
+// handleStopOrgMemberCodespace answers 200 with the codespace, unlike the
+// user-scoped stop (202).
 func (s *Server) handleStopOrgMemberCodespace(w http.ResponseWriter, r *http.Request) {
 	org, member := s.resolveOrgMemberForCodespaces(w, r)
 	if org == nil {
@@ -908,9 +886,8 @@ func (s *Server) handleGetCodespacePublicKey(w http.ResponseWriter, r *http.Requ
 	s.writeActionsPublicKey(w)
 }
 
-// getCodespaceSecret resolves {secret_name} in a scope as a snapshot: the
-// handlers that follow read its selected-repository list and render it, and a
-// concurrent selection change would otherwise be seen half-applied.
+// getCodespaceSecret resolves {secret_name} as a snapshot so a concurrent
+// selection change is not rendered half-applied.
 func (s *Server) getCodespaceSecret(r *http.Request, kind, key string) *store.CodespaceSecret {
 	return s.snapshotCodespaceSecret(s.store.GetCodespaceSecret(store.CodespaceSecretScopeKey(kind, key), r.PathValue("secret_name")))
 }
@@ -975,9 +952,8 @@ type codespaceCreateRequest struct {
 	RetentionPeriodMinutes int                   `json:"retention_period_minutes"`
 }
 
-// validateCodespaceCreate applies shared create-request checks that every
-// create endpoint runs before reserving a codespace. It writes the error
-// response and returns false when the request is rejected.
+// validateCodespaceCreate applies shared create checks, writing the error and
+// returning false when rejected.
 func validateCodespaceCreate(w http.ResponseWriter, req codespaceCreateRequest) bool {
 	if req.Machine != "" && !store.CodespaceMachineExists(req.Machine) {
 		store.WriteGHValidationError(w, "Codespace", "machine", "invalid")
@@ -997,10 +973,9 @@ type codespacePatchRequest struct {
 	RetentionPeriodMinutes int    `json:"retention_period_minutes"`
 }
 
-// snapshotCodespace copies a stored codespace under the store lock. Every
-// response is rendered from a copy: a codespace is written by container
-// lifecycle transitions that run concurrently with requests, and a serializer
-// walking the stored record would publish a half-applied one.
+// snapshotCodespace copies a stored codespace under the store lock; lifecycle
+// transitions mutate it concurrently, and a serializer walking the live record
+// could publish a half-applied one.
 func (s *Server) snapshotCodespace(cs *store.Codespace) *store.Codespace {
 	if cs == nil {
 		return nil
@@ -1010,17 +985,16 @@ func (s *Server) snapshotCodespace(cs *store.Codespace) *store.Codespace {
 	return store.CloneCodespace(cs)
 }
 
-// snapshotCodespaceExport copies a codespace and one of its exports under a
-// single acquisition of the lock, so the pair a response renders is one
-// consistent instant rather than two.
+// snapshotCodespaceExport copies a codespace and one export under a single lock
+// acquisition, so the rendered pair is one consistent instant.
 func (s *Server) snapshotCodespaceExport(cs *store.Codespace, export *store.CodespaceExport) (*store.Codespace, *store.CodespaceExport) {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	return store.CloneCodespace(cs), store.ClonePointer(export)
 }
 
-// snapshotCodespaceSecret copies a stored secret under the store lock,
-// including the selected-repository list a concurrent write replaces.
+// snapshotCodespaceSecret copies a secret under the store lock, including the
+// selected-repository list a concurrent write replaces.
 func (s *Server) snapshotCodespaceSecret(sec *store.CodespaceSecret) *store.CodespaceSecret {
 	if sec == nil {
 		return nil
@@ -1076,8 +1050,7 @@ func (s *Server) codespaceToJSON(live *store.Codespace, baseURL string) map[stri
 		"devcontainer_path":        cs.DevcontainerPath,
 		"retention_period_minutes": cs.RetentionPeriodMinutes,
 		"idle_timeout_minutes":     cs.IdleTimeoutMinutes,
-		// location is a non-empty region enum; a record without one (a pre-fix
-		// row) still reports a valid region (PAR-010).
+		// A record without a location (pre-fix row) still reports a valid region (PAR-010).
 		"location":       store.CoalesceStr(cs.Location, "EastUs"),
 		"machines_url":   url + "/machines",
 		"prebuild":       false,
@@ -1140,8 +1113,8 @@ func (s *Server) handleListOrgCodespaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Gather the org members' codespaces under the read lock; render
-	// outside it (codespaceToJSON takes store locks itself).
+	// Gather under the read lock; render outside it — codespaceToJSON takes
+	// store locks itself.
 	s.store.Mu.RLock()
 	memberLogins := map[string]bool{}
 	for _, m := range s.store.Memberships {
@@ -1239,8 +1212,8 @@ func (s *Server) handleRemoveOrgCodespacesAccessUsers(w http.ResponseWriter, r *
 
 // ─── org codespaces secret selected-repository add/remove ────────────────
 
-// orgCodespaceSecretSelectionChange adapts the shared per-repository
-// selection core to the org codespaces secrets table.
+// orgCodespaceSecretSelectionChange adapts the shared per-repo selection core to
+// org codespace secrets.
 func (s *Server) orgCodespaceSecretSelectionChange(w http.ResponseWriter, r *http.Request, add bool) {
 	scope := store.CodespaceSecretScopeKey("org", r.PathValue("org"))
 	name := r.PathValue("secret_name")

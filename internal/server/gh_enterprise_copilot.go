@@ -20,8 +20,6 @@ func (s *Server) registerGHEnterpriseCopilotRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/copilot/metrics/reports/users-28-day/latest", s.requireEnterpriseOwner(s.handleEnterpriseCopilotLatest28DayReport))
 }
 
-// --- Copilot coding agent policy ---
-
 func (s *Server) handleSetEnterpriseCopilotCodingAgentPolicy(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PolicyState string `json:"policy_state"`
@@ -39,9 +37,8 @@ func (s *Server) handleSetEnterpriseCopilotCodingAgentPolicy(w http.ResponseWrit
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// copilotCodingAgentOrgSelection carries the organization selection body the
-// coding agent policy add/remove endpoints accept: explicit logins and/or
-// custom property filters.
+// copilotCodingAgentOrgSelection is the org selection body: explicit logins
+// and/or custom property filters.
 type copilotCodingAgentOrgSelection struct {
 	Organizations    []string `json:"organizations"`
 	CustomProperties []struct {
@@ -50,11 +47,9 @@ type copilotCodingAgentOrgSelection struct {
 	} `json:"custom_properties"`
 }
 
-// resolveCopilotCodingAgentOrgs resolves the selection to organization logins
-// that exist on the instance — GitHub only affects organizations that belong
-// to the enterprise, silently skipping the rest. bleephub stores no
-// organization custom property values, so property filters honestly match no
-// organizations.
+// resolveCopilotCodingAgentOrgs resolves the selection to existing org logins,
+// silently skipping the rest. bleephub stores no org custom property values,
+// so property filters match nothing.
 func (s *Server) resolveCopilotCodingAgentOrgs(sel copilotCodingAgentOrgSelection) []string {
 	var out []string
 	for _, login := range sel.Organizations {
@@ -65,9 +60,8 @@ func (s *Server) resolveCopilotCodingAgentOrgs(sel copilotCodingAgentOrgSelectio
 	return out
 }
 
-// requireSelectedOrgsPolicy 400s unless the coding agent policy is
-// enabled_for_selected_orgs — the documented precondition for editing the
-// organization selection.
+// requireSelectedOrgsPolicy 400s unless the policy is enabled_for_selected_orgs,
+// the precondition for editing the org selection.
 func (s *Server) requireSelectedOrgsPolicy(w http.ResponseWriter) bool {
 	s.store.Mu.RLock()
 	policy := s.store.EnterpriseSettings.CopilotCodingAgentPolicy
@@ -103,13 +97,9 @@ func (s *Server) handleRemoveEnterpriseCopilotCodingAgentOrgs(w http.ResponseWri
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Copilot usage metrics reports ---
-//
-// The report endpoints return links to downloadable NDJSON report artifacts
-// derived from recorded Copilot usage activity. bleephub records no Copilot
-// usage events (no Copilot client surface exists), so every report is
-// honestly empty — the documented shape with no download artifacts — rather
-// than fabricated usage numbers.
+// Copilot usage metrics reports. bleephub records no Copilot usage events, so
+// every report is empty (the documented shape with no download artifacts)
+// rather than fabricated.
 
 func (s *Server) handleEnterpriseCopilotOneDayReport(w http.ResponseWriter, r *http.Request) {
 	day := r.URL.Query().Get("day")
@@ -122,7 +112,7 @@ func (s *Server) handleEnterpriseCopilotOneDayReport(w http.ResponseWriter, r *h
 		store.WriteGHValidationError(w, "CopilotUsageMetricsReport", "day", "invalid")
 		return
 	}
-	// A report can only exist for days that have already happened.
+	// A report can only exist for a day that has already passed.
 	if parsed.After(s.currentTime().Truncate(24 * time.Hour)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -134,7 +124,7 @@ func (s *Server) handleEnterpriseCopilotOneDayReport(w http.ResponseWriter, r *h
 }
 
 func (s *Server) handleEnterpriseCopilotLatest28DayReport(w http.ResponseWriter, r *http.Request) {
-	// The latest 28-day report covers the 28 full days ending yesterday.
+	// Covers the 28 full days ending yesterday.
 	end := s.currentTime().Truncate(24*time.Hour).AddDate(0, 0, -1)
 	start := end.AddDate(0, 0, -27)
 	writeJSON(w, http.StatusOK, map[string]interface{}{

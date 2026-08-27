@@ -1,13 +1,7 @@
 package bleephub
 
-// GitHub Actions permissions + runner-label REST surface.
-//
-// Org-scoped endpoints mirror the GHES /orgs/{org}/actions/permissions paths.
-// Repo-scoped endpoints mirror /repos/{owner}/{repo}/actions/permissions paths.
-// Runner labels are exposed at both repo and org scope.
-//
-// Store types and helpers live alongside the handlers so the surface is
-// self-contained; persistence is wired through store.go.
+// GitHub Actions permissions + runner-label REST surface, at both org and
+// repo scope.
 
 import (
 	"fmt"
@@ -19,36 +13,30 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// artifactRetentionMaximumDays is the ceiling GitHub reports beside the
-// configured value; the description declares both as required.
 const artifactRetentionMaximumDays = 90
 
-// githubTokenDefaultScopes is the standard set of GITHUB_TOKEN API permission
-// scopes a workflow receives when it declares no `permissions:` block (or uses
-// read-all / write-all): the repo's default workflow-permission level applies
-// across all of them. These are the permScopes the REST gate can check for a
-// repository-scoped token.
+// githubTokenDefaultScopes is the standard GITHUB_TOKEN scope set a workflow
+// receives with no `permissions:` block (or read-all / write-all); the repo's
+// default workflow-permission level applies across all of them.
 var githubTokenDefaultScopes = []store.PermScope{
 	store.ScopeActions, store.ScopeChecks, store.ScopeContents, store.ScopeDeployments, store.ScopeDiscussions,
 	store.ScopeIssues, store.ScopePages, store.ScopePullRequests, store.ScopeSecurityEvents, store.ScopeMetadata,
 }
 
-// resolveJobTokenPermissions computes the least-privilege GITHUB_TOKEN API
-// permission map for one job (ACT-014). GitHub semantics: a job-level
-// `permissions:` block fully replaces a workflow-level one, which fully replaces
-// the repo default; there is no merge. An undeclared block grants the repo's
-// default level (read unless the repo/org setting is write) across the standard
-// scope set; `read-all`/`write-all` grant that level across the set; an explicit
-// block grants exactly the listed scopes (a `none` value drops the scope). A
-// declared-but-empty block (`permissions: {}`) yields metadata:read only, which
-// is always granted regardless.
+// resolveJobTokenPermissions computes the GITHUB_TOKEN permission map for one
+// job (ACT-014). A job-level `permissions:` block fully replaces the
+// workflow-level one, which fully replaces the repo default — no merge. An
+// undeclared block grants the repo default level across the scope set;
+// read-all/write-all grant that level across it; an explicit block grants
+// exactly the listed scopes (`none` drops one); `permissions: {}` yields
+// metadata:read only, always granted regardless.
 func (s *Server) resolveJobTokenPermissions(wf *store.Workflow, jd *store.JobDef) map[string]string {
 	var declared store.PermissionDef
 	switch {
 	case jd != nil && jd.Permissions != nil:
 		declared = jd.Permissions
 	case wf != nil:
-		declared = wf.Permissions // nil when the workflow declared none
+		declared = wf.Permissions
 	}
 
 	perms := map[string]string{}
@@ -64,7 +52,7 @@ func (s *Server) resolveJobTokenPermissions(wf *store.Workflow, jd *store.JobDef
 			perms[string(sc)] = level
 		}
 	default:
-		if lvl, ok := declared["*"]; ok { // read-all / write-all
+		if lvl, ok := declared["*"]; ok {
 			for _, sc := range githubTokenDefaultScopes {
 				perms[string(sc)] = lvl
 			}
@@ -73,8 +61,7 @@ func (s *Server) resolveJobTokenPermissions(wf *store.Workflow, jd *store.JobDef
 				if v == "none" || v == "" {
 					continue
 				}
-				// Permission keys are hyphenated in YAML (pull-requests,
-				// security-events); permScope values are underscored.
+				// YAML permission keys are hyphenated; permScope values are underscored.
 				perms[strings.ReplaceAll(k, "-", "_")] = v
 			}
 		}
@@ -86,8 +73,6 @@ func (s *Server) resolveJobTokenPermissions(wf *store.Workflow, jd *store.JobDef
 	return perms
 }
 
-// orgArtifactAndLogRetentionMaxDays is the maximum artifact/log
-// retention GitHub allows an organization to configure.
 const orgArtifactAndLogRetentionMaxDays = 400
 
 func (s *Server) registerGHActionsPermissionsRoutes() {
@@ -141,8 +126,7 @@ func (s *Server) registerGHActionsPermissionsRoutes() {
 	s.route("GET /api/v3/orgs/{org}/actions/cache/usage-by-repository",
 		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleOrgCacheUsageByRepository)))
 
-	// Org cache policy limits at the /organizations/{org_id} path (the
-	// dotcom REST description's path for these settings).
+	// Org cache policy limits; the dotcom description keys these on org_id.
 	s.route("GET /api/v3/organizations/{org_id}/actions/cache/retention-limit",
 		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgIDGated(s.handleGetOrgMaxCacheRetention)))
 	s.route("PUT /api/v3/organizations/{org_id}/actions/cache/retention-limit",
@@ -378,8 +362,7 @@ func (s *Server) handleSetOrgArtifactAndLogRetention(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// forkPRApprovalPolicies are the actions-fork-pr-contributor-approval
-// approval_policy enum values.
+// forkPRApprovalPolicies are the valid approval_policy enum values.
 var forkPRApprovalPolicies = map[string]bool{
 	"first_time_contributors_new_to_github": true,
 	"first_time_contributors":               true,
@@ -578,9 +561,8 @@ func (s *Server) handleRemoveOrgSelfHostedRunnerRepo(w http.ResponseWriter, r *h
 
 // --- Org cache usage + policy limits ---
 
-// orgCacheUsageByRepo aggregates the finalized Actions cache entries of
-// every repository owned by the org: repo full name → (count, bytes),
-// plus the sorted repo names for stable listing.
+// orgCacheUsageByRepo aggregates the org's finalized Actions cache entries
+// into repo full name → (count, bytes), plus sorted repo names.
 func (s *Server) orgCacheUsageByRepo(org string) (map[string]struct {
 	Count int
 	Bytes int64
@@ -1095,9 +1077,8 @@ func (s *Server) handleRemoveAllRunnerLabels(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, runnerLabelsJSON(a.Labels))
 }
 
-// handleAddRunnerLabels — POST .../actions/runners/{runner_id}/labels
-// (repo + org scope): appends custom labels to the runner, returning
-// the full label set.
+// handleAddRunnerLabels appends custom labels to the runner and returns the
+// full label set.
 func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
 	target, ok := s.runnerTargetFromRequest(w, r)
 	if !ok {
@@ -1133,9 +1114,8 @@ func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, runnerLabelsJSON(a.Labels))
 }
 
-// handleRemoveRunnerLabel — DELETE .../actions/runners/{runner_id}/labels/{name}
-// (repo + org scope): removes one custom label. Read-only (system)
-// labels cannot be removed (422); an absent label is 404.
+// handleRemoveRunnerLabel removes one custom label. Read-only (system) labels
+// cannot be removed (422); an absent label is 404.
 func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request) {
 	target, ok := s.runnerTargetFromRequest(w, r)
 	if !ok {

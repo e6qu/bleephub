@@ -39,12 +39,7 @@ func (s *Server) afterCommittedRefUpdate(repo *store.Repo, sender *store.User, r
 }
 
 // recordCommitIssueReferences records github's `referenced` timeline event for
-// every issue or pull request a pushed commit's message names. The push
-// payload already carries the commits this update introduced, so the reference
-// is read off the same message the push webhook delivers rather than by
-// re-walking history at read time.
-//
-// A commit reaching a second branch is not a second reference: the event is
+// every issue or pull request a pushed commit's message names. The event is
 // keyed on (subject, commit), so re-pushing an already-referenced commit adds
 // nothing.
 func (s *Server) recordCommitIssueReferences(repo *store.Repo, actorID int, payload map[string]interface{}) {
@@ -75,8 +70,6 @@ func (s *Server) recordCommitIssueReferences(repo *store.Repo, actorID int, payl
 	}
 }
 
-// commitAlreadyReferenced reports whether this commit has already been
-// recorded as referencing the given issue or pull-request number.
 func (s *Server) commitAlreadyReferenced(repo *store.Repo, number int, sha string) bool {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
@@ -109,10 +102,7 @@ func (s *Server) commitAlreadyReferenced(repo *store.Repo, number int, sha strin
 
 // recordPullRequestHeadRefLifecycle records github's head_ref_deleted /
 // head_ref_restored timeline events for every pull request whose head branch
-// this ref update removed or brought back. Deleting the branch a pull request
-// was opened from is an ordinary part of merging one, and the pull request's
-// history is where GitHub reports it; nothing recorded it before, so a merged
-// pull request whose branch was tidied away showed no trace of it.
+// this ref update removed or brought back.
 func (s *Server) recordPullRequestHeadRefLifecycle(repo *store.Repo, actorID int, branch, before, after string) {
 	zero := plumbing.ZeroHash.String()
 	deleted := after == zero && before != zero

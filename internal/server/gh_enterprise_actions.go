@@ -84,7 +84,7 @@ func (s *Server) registerGHEnterpriseActionsRoutes() {
 	s.route("DELETE /api/v3/enterprises/{enterprise}/actions/hosted-runners/{hosted_runner_id}", s.requireEnterpriseOwner(s.handleDeleteHostedRunner))
 }
 
-// --- GitHub Actions cache limits ---
+// --- Actions cache limits ---
 
 func (s *Server) handleGetEnterpriseActionsCacheRetentionLimit(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.enterpriseFromRequest(w, r); !ok {
@@ -189,7 +189,7 @@ func (s *Server) handleUpdateEnterpriseActionsCacheUsagePolicy(w http.ResponseWr
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- GitHub Actions OIDC custom property inclusions ---
+// --- Actions OIDC custom property inclusions ---
 
 func enterpriseOIDCCustomPropertyJSON(name string) map[string]interface{} {
 	return map[string]interface{}{

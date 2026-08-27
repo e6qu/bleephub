@@ -9,9 +9,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub organization private registries: Dependabot registry credentials
-// configured at the organization level. The secret value is sealed against
-// the org public key and stored opaque, exactly like organization secrets.
+// Org-level Dependabot private registry credentials. The secret is sealed
+// against the org public key and stored opaque, like organization secrets.
 
 func (s *Server) registerGHPrivateRegistryRoutes() {
 	s.route("GET /api/v3/orgs/{org}/private-registries",
@@ -154,8 +153,7 @@ func (s *Server) handleUpdateOrgPrivateRegistry(w http.ResponseWriter, r *http.R
 		store.WriteGHValidationError(w, "PrivateRegistry", "registry_type", "invalid")
 		return
 	}
-	// The authentication type cannot change after creation; a provided value
-	// must match the existing one.
+	// auth_type is immutable after creation; a provided value must match.
 	if req.AuthType != nil && *req.AuthType != reg.AuthType {
 		store.WriteGHValidationError(w, "PrivateRegistry", "auth_type", "invalid")
 		return
@@ -199,9 +197,8 @@ func (s *Server) handleDeleteOrgPrivateRegistry(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// privateRegistryJSON renders the org-private-registry-configuration shape;
-// withSelected additionally carries selected_repository_ids (the create
-// response shape). The sealed secret value is never emitted.
+// privateRegistryJSON renders the config shape; withSelected adds
+// selected_repository_ids (the create response). The sealed secret is never emitted.
 func privateRegistryJSON(reg *store.PrivateRegistryConfiguration, withSelected bool) map[string]interface{} {
 	out := map[string]interface{}{
 		"name":          reg.Name,
@@ -246,5 +243,3 @@ func privateRegistryJSON(reg *store.PrivateRegistryConfiguration, withSelected b
 	}
 	return out
 }
-
-// --- store ---

@@ -10,18 +10,6 @@ import (
 
 // Deployment branch/tag policies and custom deployment protection rules on
 // repository environments.
-// Endpoints:
-//
-//	GET    /repos/{o}/{r}/environments/{env}/deployment-branch-policies
-//	POST   /repos/{o}/{r}/environments/{env}/deployment-branch-policies
-//	GET    /repos/{o}/{r}/environments/{env}/deployment-branch-policies/{branch_policy_id}
-//	PUT    /repos/{o}/{r}/environments/{env}/deployment-branch-policies/{branch_policy_id}
-//	DELETE /repos/{o}/{r}/environments/{env}/deployment-branch-policies/{branch_policy_id}
-//	GET    /repos/{o}/{r}/environments/{env}/deployment_protection_rules
-//	POST   /repos/{o}/{r}/environments/{env}/deployment_protection_rules
-//	GET    /repos/{o}/{r}/environments/{env}/deployment_protection_rules/apps
-//	GET    /repos/{o}/{r}/environments/{env}/deployment_protection_rules/{protection_rule_id}
-//	DELETE /repos/{o}/{r}/environments/{env}/deployment_protection_rules/{protection_rule_id}
 
 const (
 	BranchPolicyBranch store.DeploymentBranchPolicyType = "branch"
@@ -47,8 +35,8 @@ func (s *Server) registerGHEnvironmentPolicyRoutes() {
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteEnvProtectionRule))
 }
 
-// environmentFromPath resolves {owner}/{repo}/environments/{env_name},
-// writing a 404 and returning nils when either does not exist.
+// environmentFromPath resolves {owner}/{repo}/environments/{env_name}, writing a
+// 404 and returning nils when either does not exist.
 func (s *Server) environmentFromPath(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Environment) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
@@ -62,10 +50,6 @@ func (s *Server) environmentFromPath(w http.ResponseWriter, r *http.Request) (*s
 	}
 	return repo, env
 }
-
-// --- Store: deployment branch policies ---
-
-// --- Store: custom deployment protection rules ---
 
 // --- Handlers: deployment branch policies ---
 
@@ -100,8 +84,8 @@ func (s *Server) handleCreateDeploymentBranchPolicy(w http.ResponseWriter, r *ht
 	if env == nil {
 		return
 	}
-	// Branch policies only apply to environments configured with custom
-	// branch policies; real GitHub hides the collection otherwise.
+	// Branch policies apply only to environments with custom branch policies
+	// enabled; GitHub hides the collection otherwise.
 	if env.DeploymentBranchPolicy == nil || !env.DeploymentBranchPolicy.CustomBranchPolicies {
 		writeGHError(w, http.StatusNotFound, "Deployment branch policies can only be created for environments with custom_branch_policies enabled.")
 		return
@@ -268,9 +252,8 @@ func (s *Server) handleCreateEnvProtectionRule(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusCreated, s.envProtectionRuleJSON(rule, s.baseURL(r)))
 }
 
-// handleListEnvProtectionRuleApps lists the GitHub App integrations that are
-// available to provide custom protection rules for the environment: the apps
-// with an installation on the repository's owner account.
+// handleListEnvProtectionRuleApps lists the apps with an installation on the
+// repository's owner account — those that can provide custom protection rules.
 func (s *Server) handleListEnvProtectionRuleApps(w http.ResponseWriter, r *http.Request) {
 	repo, env := s.environmentFromPath(w, r)
 	if env == nil {

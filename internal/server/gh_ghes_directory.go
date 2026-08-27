@@ -165,8 +165,7 @@ func (s *Server) handleRenameGHESOrganization(w http.ResponseWriter, r *http.Req
 }
 
 // renameGHESOrganization changes the namespace synchronously even though GHES
-// reports the operation as accepted. Repository transfer reuses the same
-// exhaustive repo-key migration used by the normal transfer API.
+// reports the operation as merely accepted.
 func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 	s.store.Mu.Lock()
 	org := s.store.OrgByLoginLocked(oldLogin)
@@ -195,10 +194,8 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 	}
 
 	s.store.Mu.Lock()
-	// Stage the whole final re-key phase — membership key moves, installation
-	// target updates, the org row and enterprise settings — into one
-	// transaction so a crash can no longer commit some of them and leave the
-	// organization split across its old and new login (STORE-001/002).
+	// Stage the whole re-key phase into one transaction so a crash cannot leave
+	// the org split across its old and new login (STORE-001/002).
 	batch := store.NewPersistBatch(s.store.Persist)
 	delete(s.store.OrgsByLogin, oldLogin)
 	s.store.UnindexOrgLoginLocked(oldLogin)

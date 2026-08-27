@@ -13,11 +13,8 @@ import (
 )
 
 func (s *Server) registerJobRoutes() {
-	// Operator-only job/workflow control plane. GitHub has no equivalent: jobs
-	// are children of workflow runs created via workflow_dispatch, push, or
-	// repository_dispatch events. These routes are compatibility debt under
-	// /internal/exec/, never the GitHub-compatible application programming
-	// interface surface.
+	// Operator-only job/workflow control plane under /internal/exec/. GitHub has
+	// no equivalent — this is not part of the GitHub-compatible API surface.
 	s.route("POST /internal/exec/submit", s.handleSubmitJob)
 	s.route("GET /internal/exec/jobs/{jobId}", s.handleGetJobStatus)
 
@@ -28,15 +25,12 @@ func (s *Server) registerJobRoutes() {
 	// Workflow cancellation
 	s.route("POST /internal/exec/workflows/{workflowId}/cancel", s.handleCancelWorkflow)
 
-	// ActionDownloadInfo — the worker resolves an action reference to the
-	// commit it downloads (handler in actions.go). The answer names the sha a
-	// ref resolves to in bleephub git storage, private repositories included,
-	// so it is bound to the runtime token of the job whose plan the path
-	// carries.
+	// ActionDownloadInfo resolves an action reference to a commit sha, private
+	// repos included, so it is bound to the runtime token of the job whose plan
+	// the path names.
 	s.route("POST /_apis/v1/ActionDownloadInfo/{scopeId}/{hubName}/{planId}", s.requirePlanJob(s.handleActionDownloadInfo))
 
-	// Task definitions. Nothing in the path names a job, so the gate is a
-	// verified runner credential of either audience.
+	// Task definitions: the path names no job, so any verified runner credential passes.
 	s.route("GET /_apis/v1/tasks/{taskId}/{versionString}", s.requireRunnerAuth(s.handleGetTask))
 }
 
@@ -58,8 +52,6 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 	timelineID := uuid.New().String()
 	requestID := s.actions.NextRequestID()
 
-	// The runtime token is minted here — signing stays in the auth layer —
-	// and travels into the engine's message builder.
 	scopeID := uuid.New().String()
 	jobToken := makeJWT(scopeID, "actions")
 	msg := actions.BuildJobMessage(serverURL, jobID, planID, timelineID, requestID, &req, scopeID, jobToken)
@@ -81,13 +73,12 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 
 	s.store.Mu.Lock()
 	s.store.Jobs[jobID] = job
-	// Operator-submitted jobs name no repository; the empty repo scope is the
-	// narrowest one there is (see repoForJobScope).
+	// Operator-submitted jobs name no repository; "" is the narrowest scope
+	// (see repoForJobScope).
 	s.store.RegisterDispatchedJobLocked(job, msg, "")
 	s.store.RegisterJobLogMasksLocked(planID, msg)
 	s.store.Mu.Unlock()
 
-	// Build the envelope message
 	envelope := &store.TaskAgentMessage{
 		MessageID:   s.actions.NextMessageID(),
 		MessageType: "PipelineAgentJobRequest",
@@ -152,7 +143,6 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enforce concurrent workflow limit
 	if s.maxConcurrentWorkflows > 0 {
 		s.store.Mu.RLock()
 		active := 0
@@ -175,7 +165,6 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	serverURL := s.baseURL(r)
 
-	// Apply defaults for event metadata
 	eventName := req.EventName
 	if eventName == "" {
 		eventName = "push"
@@ -185,10 +174,8 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 	repo := req.Repo
 	const zeroSha = "0000000000000000000000000000000000000000"
 
-	// Auto-register the WorkflowFile so /api/v3/repos/{o}/{r}/actions/
-	// workflows lists this submission. Path defaults to the conventional
-	// `.github/workflows/<name>.yml` shape; the YAML body is cached so
-	// the dispatch + rerun endpoints can replay it later.
+	// Register the WorkflowFile so the actions/workflows listing shows this
+	// submission and dispatch/rerun can replay the cached YAML.
 	wfName := wfDef.Name
 	if wfName == "" {
 		wfName = "workflow"
@@ -226,10 +213,9 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.store.RegisterWorkflowFile(repo, wfPath, wfName, req.Workflow, "submitted")
 	}
 
-	// Expand matrix strategies
 	expandedDef := actions.ExpandMatrixJobs(wfDef)
 
-	// Store serverURL for re-dispatch after job completion
+	// Carry serverURL + default image in env for re-dispatch after job completion.
 	if expandedDef.Env == nil {
 		expandedDef.Env = make(map[string]string)
 	}
@@ -256,7 +242,6 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 		Int("jobs", len(workflow.Jobs)).
 		Msg("workflow submitted")
 
-	// Build response with job info
 	jobs := make(map[string]interface{}, len(workflow.Jobs))
 	for key, wfJob := range workflow.Jobs {
 		jobs[key] = map[string]interface{}{

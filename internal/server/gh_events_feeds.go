@@ -4,15 +4,8 @@ import (
 	"net/http"
 )
 
-// GET /events (the global public event feed) and GET /feeds (the feeds
-// catalog).
-//
-// The public event feed shares the activity-event derivation with the
-// org and user feeds: every issue, pull request, and issue comment in a
-// public repository yields the corresponding IssuesEvent /
-// PullRequestEvent / IssueCommentEvent with its real actor, repository,
-// payload, and timestamp. Event IDs are deterministic per source entity
-// so pollers see stable IDs across requests.
+// GET /events (public event feed) and GET /feeds (feeds catalog). Event IDs
+// are deterministic per source entity so pollers see stable IDs across requests.
 
 func (s *Server) registerGHEventsFeedsRoutes() {
 	s.route("GET /api/v3/events", s.handleListPublicEvents)
@@ -28,8 +21,7 @@ func (s *Server) handleListPublicEvents(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, activityEventsJSON(events)))
 }
 
-// handleGetFeeds serves the feeds catalog. bleephub advertises the feeds
-// that resolve against this instance; the authenticated-user feed links
+// handleGetFeeds serves the feeds catalog. The authenticated-user feed links
 // appear only for an authenticated caller, as on real GitHub.
 func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)

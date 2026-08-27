@@ -8,11 +8,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// validCustomPropertyName reports whether name is an acceptable custom-property
-// name. GitHub rejects names with surrounding or embedded whitespace and
-// control characters (a name is a URL path segment on the values/schema
-// endpoints); mirror that so an invalid name is a 422, not a silently stored
-// definition.
+// validCustomPropertyName rejects surrounding/embedded whitespace and control
+// characters — a name is a URL path segment on the values/schema endpoints, so
+// an invalid one is a 422, not a silently stored definition.
 func validCustomPropertyName(name string) bool {
 	if name == "" || strings.TrimSpace(name) != name {
 		return false
@@ -25,10 +23,8 @@ func validCustomPropertyName(name string) bool {
 	return true
 }
 
-// GitHub organization custom properties: typed key/value definitions an
-// organization declares once (the schema) and assigns per repository (the
-// values). terraform-provider-github drives this surface, so the shapes
-// follow the OpenAPI description exactly.
+// Organization custom properties: typed definitions declared once (the schema)
+// and assigned per repository (the values).
 
 func (s *Server) registerGHCustomPropertyRoutes() {
 	s.route("GET /api/v3/orgs/{org}/properties/schema",
@@ -54,8 +50,7 @@ var customPropertyValueTypes = map[string]bool{
 	"string": true, "single_select": true, "multi_select": true, "true_false": true, "url": true,
 }
 
-// customPropertyPayload is the wire shape of a definition write (the PUT
-// payload; the batch PATCH items add property_name).
+// customPropertyPayload is the wire shape of a definition write.
 type customPropertyPayload struct {
 	PropertyName          string      `json:"property_name"`
 	ValueType             string      `json:"value_type"`
@@ -68,7 +63,6 @@ type customPropertyPayload struct {
 }
 
 // toCustomProperty validates the payload and materializes the definition.
-// Missing optional values fall back to their documented defaults.
 func (p *customPropertyPayload) toCustomProperty(w http.ResponseWriter, name string) *store.CustomProperty {
 	return p.toCustomPropertyFor(w, name, "org_actors", "org_actors", "org_and_repo_actors")
 }
@@ -308,7 +302,7 @@ func (s *Server) handleSetRepoCustomPropertyValues(w http.ResponseWriter, r *htt
 }
 
 // applyCustomPropertyValues validates every value against the org schema and
-// applies the batch to each repo. A null value unsets the property.
+// applies the batch to each repo; a null value unsets the property.
 func (s *Server) applyCustomPropertyValues(w http.ResponseWriter, org string, repoKeys []string, values []store.CustomPropertyValuePayload) bool {
 	for _, v := range values {
 		def := s.store.GetCustomProperty(org, v.PropertyName)
@@ -330,9 +324,8 @@ func (s *Server) applyCustomPropertyValues(w http.ResponseWriter, org string, re
 	return true
 }
 
-// validateCustomPropertyValue checks a non-null value against the property's
-// value type (and allowed values for the select types). It lives in the
-// store so the GraphQL custom-property mutations enforce the same rules.
+// validateCustomPropertyValue delegates to the store so the GraphQL mutations
+// enforce the same value-type and allowed-values rules.
 func validateCustomPropertyValue(def *store.CustomProperty, value interface{}) error {
 	return store.ValidateCustomPropertyValue(def, value)
 }

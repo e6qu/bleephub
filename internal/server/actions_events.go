@@ -6,8 +6,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// ── Webhook payload emission ────────────────────────────────────────
-
 func (s *Server) actionsRepoPayload(repoKey string) (map[string]interface{}, *store.Repo) {
 	repo := s.store.GetRepoByFullName(repoKey)
 	if repo == nil {
@@ -16,7 +14,6 @@ func (s *Server) actionsRepoPayload(repoKey string) (map[string]interface{}, *st
 	return repoPayload(repo, s.publicOrigin()), repo
 }
 
-// WorkflowRunEvent fires the workflow_run webhook event.
 func (s *Server) WorkflowRunEvent(wf *store.Workflow, action string) {
 	repoJSON, repo := s.actionsRepoPayload(wf.RepoFullName)
 	if repo == nil {
@@ -43,7 +40,6 @@ func (s *Server) WorkflowRunEvent(wf *store.Workflow, action string) {
 	s.emitWebhookEvent(wf.RepoFullName, "workflow_run", action, payload)
 }
 
-// WorkflowJobEvent fires the workflow_job webhook event.
 func (s *Server) WorkflowJobEvent(wf *store.Workflow, job *store.WorkflowJob, action string) {
 	repoJSON, repo := s.actionsRepoPayload(wf.RepoFullName)
 	if repo == nil {
@@ -60,7 +56,6 @@ func (s *Server) WorkflowJobEvent(wf *store.Workflow, job *store.WorkflowJob, ac
 	s.emitWebhookEvent(wf.RepoFullName, "workflow_job", action, payload)
 }
 
-// CheckRunEvent fires the check_run webhook event.
 func (s *Server) CheckRunEvent(repoKey string, checkRunID int64, action string) {
 	repoJSON, repo := s.actionsRepoPayload(repoKey)
 	if repo == nil {
@@ -79,7 +74,6 @@ func (s *Server) CheckRunEvent(repoKey string, checkRunID int64, action string) 
 	s.emitWebhookEvent(repoKey, "check_run", action, payload)
 }
 
-// CheckSuiteEvent fires the check_suite webhook event.
 func (s *Server) CheckSuiteEvent(repoKey string, suiteID int64, action string) {
 	repoJSON, repo := s.actionsRepoPayload(repoKey)
 	if repo == nil {
@@ -98,7 +92,6 @@ func (s *Server) CheckSuiteEvent(repoKey string, suiteID int64, action string) {
 	s.emitWebhookEvent(repoKey, "check_suite", action, payload)
 }
 
-// workflowSender resolves the user behind the run's triggering event.
 func (s *Server) workflowSender(wf *store.Workflow) *store.User {
 	if wf.EventPayload == nil {
 		return nil
@@ -116,10 +109,6 @@ func (s *Server) workflowSender(wf *store.Workflow) *store.User {
 	return s.store.UsersByLogin[login]
 }
 
-// ── Required status checks (branch protection ∩ check runs) ─────────
-
-// evaluateChecksForMerge inspects the head sha's check runs against the
-// base branch's required contexts.
 type checksState struct {
 	MissingRequired []string // required contexts not green (absent/pending/failed)
 	AnyPending      bool
@@ -135,7 +124,7 @@ func (s *Server) evaluateChecksForMerge(repo *store.Repo, baseBranch, headSha st
 	runs := s.store.ListCheckRunsForCommit(repoKey, headSha, "", "", 0)
 	byName := map[string]*store.CheckRun{}
 	for _, cr := range runs {
-		// Latest run per name wins (reruns create new check runs).
+		// Latest run per name wins; reruns create new check runs.
 		if prev, ok := byName[cr.Name]; !ok || cr.ID > prev.ID {
 			byName[cr.Name] = cr
 		}
@@ -146,9 +135,9 @@ func (s *Server) evaluateChecksForMerge(repo *store.Repo, baseBranch, headSha st
 		}
 	}
 	// Classic commit statuses satisfy required contexts and contribute to
-	// pending/failing exactly like check runs on real GitHub — most external
-	// CI reports through the statuses API, and ignoring them left
-	// mergeable_state "blocked" forever after the required context succeeded.
+	// pending/failing like check runs, matching GitHub: most external CI reports
+	// through the statuses API, so ignoring them leaves mergeable_state "blocked"
+	// forever after the required context succeeds.
 	_, _, statuses := s.store.CommitStatuses.Combined(repoKey, headSha)
 	statusByCtx := map[string]string{}
 	for _, cs := range statuses {
@@ -172,7 +161,6 @@ func (s *Server) evaluateChecksForMerge(repo *store.Repo, baseBranch, headSha st
 	return state
 }
 
-// prHeadSha resolves a PR's current head commit.
 func (s *Server) prHeadSha(repo *store.Repo, pr *store.PullRequest) string {
 	stor, _ := store.PullRequestGitStorage(s.store, repo, pr)
 	return store.ResolveBranchSha(stor, pr.HeadRefName)

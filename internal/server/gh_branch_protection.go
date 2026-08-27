@@ -16,9 +16,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// bpRequest is the PUT body for the top-level protection endpoint. GitHub
-// accepts a sparse body: missing sub-objects leave existing rules unchanged,
-// while an explicit null disables the corresponding rule.
+// bpRequest is the sparse PUT body: a missing sub-object leaves its rule
+// unchanged, an explicit null disables it.
 type bpRequest struct {
 	RequiredStatusChecks           *store.BPStatusChecks       `json:"required_status_checks"`
 	RequiredPullRequestReviews     *store.BPPullRequestReviews `json:"required_pull_request_reviews"`
@@ -35,28 +34,24 @@ type bpRequest struct {
 }
 
 func (s *Server) registerGHBranchProtectionRoutes() {
-	// Top-level branch protection
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBranchProtectionGet))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBranchProtectionPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBranchProtectionDelete))
 
-	// Required status checks
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPStatusChecksGet))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPStatusChecksPatch))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPStatusChecksDelete))
 
-	// Required commit signatures
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRequiredSignaturesGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRequiredSignaturesPost))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRequiredSignaturesDelete))
 
-	// Restrictions apps
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRestrictionsAppsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsAppsPost))
@@ -65,7 +60,6 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsAppsDelete))
 
-	// Required status checks contexts
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPContextsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPContextsPost))
@@ -74,19 +68,16 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPContextsDelete))
 
-	// Required pull request reviews
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPReviewsGet))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPReviewsPatch))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPReviewsDelete))
 
-	// Restrictions
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRestrictionsGet))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsDelete))
 
-	// Restrictions users
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRestrictionsUsersGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsUsersPost))
@@ -95,7 +86,6 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsUsersDelete))
 
-	// Restrictions teams
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRestrictionsTeamsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsTeamsPost))
@@ -104,7 +94,6 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsTeamsDelete))
 
-	// Enforce admins
 	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPEnforceAdminsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPEnforceAdminsPost))
@@ -113,7 +102,6 @@ func (s *Server) registerGHBranchProtectionRoutes() {
 
 }
 
-// branchProtectionURL returns the canonical URL for the top-level protection resource.
 func (s *Server) branchProtectionURL(baseURL, fullName, branch string) string {
 	return baseURL + "/api/v3/repos/" + fullName + "/branches/" + branch + "/protection"
 }
@@ -122,11 +110,10 @@ func (s *Server) branchProtectionSubURL(baseURL, fullName, branch, sub string) s
 	return s.branchProtectionURL(baseURL, fullName, branch) + "/" + sub
 }
 
-// branchProtectionShape is the single source of truth for the protected flag
-// and protection members embedded in branch responses. GitHub considers a
-// branch protected when either a classic protection resource or an applicable
-// ruleset protects it; deriving the flag from both prevents the branch and
-// protection APIs from reporting contradictory state.
+// branchProtectionShape derives the protected flag and protection members for
+// branch responses. A branch is protected when a classic protection resource
+// or an applicable ruleset protects it; deriving from both keeps the branch and
+// protection APIs from contradicting each other.
 func (s *Server) branchProtectionShape(repo *store.Repo, branch, baseURL string) (bool, map[string]interface{}, string) {
 	bp := s.branchProtectionFor(repo.ID, branch)
 	protected := bp != nil || s.store.BranchProtectedByRuleset(repo, branch)
@@ -156,24 +143,18 @@ func (s *Server) branchProtectionShape(repo *store.Repo, branch, baseURL string)
 	return protected, protection, protectionURL
 }
 
-// branchProtectionFor is the single read path into the protection table; the
-// map is written under Misc.mu and an unsynchronized read racing a write is a
-// fatal error rather than a recoverable panic.
-//
-// The caller gets a copy. Handlers edit the rule they read and renderers fill
-// request-derived URLs into it, and both would otherwise be writing the object
-// every other request reads, without the lock and with this request's host.
+// branchProtectionFor reads the protection table under Misc.Mu and returns a
+// copy, so callers that edit the rule or fill in request-derived URLs never
+// mutate the shared stored object.
 func (s *Server) branchProtectionFor(repoID int, branch string) *store.BranchProtection {
 	s.store.Misc.Mu.RLock()
 	defer s.store.Misc.Mu.RUnlock()
 	return cloneBranchProtection(s.store.Misc.BranchProtection[store.BpKey(repoID, branch)])
 }
 
-// effectiveBranchProtectionFor is the enforcement chokepoint's protection
-// lookup: the exact-name rule when one exists, otherwise the first matching
-// web-only pattern rule (/ui-data branch-protection-patterns). The REST
-// protection resource handlers keep reading branchProtectionFor directly —
-// GitHub's classic protection API addresses exact names only.
+// effectiveBranchProtectionFor is the enforcement lookup: the exact-name rule,
+// else the first matching web-only pattern rule. REST protection handlers read
+// branchProtectionFor directly — GitHub's classic API addresses exact names only.
 func (s *Server) effectiveBranchProtectionFor(repoID int, branch string) *store.BranchProtection {
 	if bp := s.branchProtectionFor(repoID, branch); bp != nil {
 		return bp
@@ -186,10 +167,9 @@ func (s *Server) effectiveBranchProtectionFor(repoID int, branch string) *store.
 	return nil
 }
 
-// cloneBranchProtection deep-copies a protection rule so that no caller holds a
-// pointer into the stored table. Every field is copied explicitly and
-// TestBranchProtectionCloneCoversEveryField fails when a new one is added
-// without being copied here.
+// cloneBranchProtection deep-copies a rule so no caller holds a pointer into
+// the stored table. TestBranchProtectionCloneCoversEveryField fails when a new
+// field is added without being copied here.
 func cloneBranchProtection(bp *store.BranchProtection) *store.BranchProtection {
 	if bp == nil {
 		return nil
@@ -251,16 +231,12 @@ func (s *Server) getBranchProtection(r *http.Request) (*store.Repo, string, *sto
 	return repo, branch, s.branchProtectionFor(repo.ID, branch)
 }
 
-// setBranchProtection replaces the stored rule with a copy of the supplied one,
-// so that whatever the caller does with its own rule afterwards — render it,
-// hydrate URLs into it, edit it again — cannot reach the stored table.
+// setBranchProtection stores a copy of the supplied rule so later caller edits
+// cannot reach the stored table. Uses the same store method the GraphQL
+// branch-protection mutations drive, so the two surfaces cannot drift.
 func (s *Server) setBranchProtection(repo *store.Repo, branch string, bp *store.BranchProtection) {
-	// The store method is the same one the GraphQL branch-protection
-	// mutations drive, so the two surfaces cannot drift on what a write
-	// stores or when it deletes.
 	s.store.SetBranchProtection(repo.ID, branch, cloneBranchProtection(bp))
-	// A protection state change can clear the condition an armed auto-merge
-	// was waiting for (every protection sub-resource handler funnels here).
+	// A protection change can clear the condition an armed auto-merge waited on.
 	s.maybeAutoMergeBranch(repo, branch)
 }
 
@@ -290,9 +266,7 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Branch protection is what an enterprise's controls rest on, so an
-	// enterprise can reserve changing it to itself even from repository
-	// administrators.
+	// An enterprise policy can reserve protection changes even from repo admins.
 	if s.enterpriseForbidsProtectedBranchUpdate(w, r, repo) {
 		return
 	}
@@ -326,9 +300,7 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		bp = &store.BranchProtection{}
 	}
 	bp = s.applyBranchProtectionRequest(bp, &req)
-	// A successful PUT protects the branch. Every rule it names may later be
-	// turned off one at a time without the branch falling out of protection;
-	// only DELETE .../protection removes it.
+	// A PUT protects the branch; only DELETE .../protection removes it.
 	bp.Enabled = true
 	for name, clear := range map[string]func(){
 		"required_status_checks":        func() { bp.RequiredStatusChecks = nil },
@@ -353,8 +325,6 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 	s.store.Misc.Mu.Unlock()
 
 	bp = s.hydrateBranchProtectionURLs(bp, repo, branch, s.baseURL(r))
-	// `branch_protection_rule` fires when a rule is established or updated, so
-	// `on: branch_protection_rule` workflows run (ACT-026).
 	if bp.IsProtected() {
 		action := "created"
 		if existed {
@@ -362,13 +332,11 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		}
 		s.emitBranchProtectionRuleEvent(repo, branch, action, r)
 	}
-	// A protection state change can clear the condition an armed auto-merge
-	// was waiting for.
+	// A protection change can clear the condition an armed auto-merge waited on.
 	s.maybeAutoMergeBranch(repo, branch)
 	writeJSON(w, http.StatusOK, bp)
 }
 
-// emitBranchProtectionRuleEvent fires GitHub's `branch_protection_rule` webhook.
 func (s *Server) emitBranchProtectionRuleEvent(repo *store.Repo, branch, action string, r *http.Request) {
 	s.emitWebhookEvent(repo.FullName, "branch_protection_rule", action, map[string]interface{}{
 		"action":     action,
@@ -378,9 +346,8 @@ func (s *Server) emitBranchProtectionRuleEvent(repo *store.Repo, branch, action 
 	})
 }
 
-// enterpriseForbidsProtectedBranchUpdate writes the refusal when the
-// enterprise's members-can-update-protected-branches policy forbids the
-// caller from changing this repository's branch protection.
+// enterpriseForbidsProtectedBranchUpdate writes the refusal when the enterprise
+// members-can-update-protected-branches policy forbids this change.
 func (s *Server) enterpriseForbidsProtectedBranchUpdate(w http.ResponseWriter, r *http.Request, repo *store.Repo) bool {
 	policy, enterprise := s.enterprisePolicyForRepo(repo)
 	return s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanUpdateProtectedBranches,
@@ -393,7 +360,6 @@ func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Removing protection is an update to it.
 	if s.enterpriseForbidsProtectedBranchUpdate(w, r, repo) {
 		return
 	}
@@ -409,13 +375,11 @@ func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Req
 }
 
 // applyBranchProtectionRequest merges a sparse PUT body into an existing rule.
-// A present but null field clears the rule; an absent field leaves it unchanged.
 func (s *Server) applyBranchProtectionRequest(bp *store.BranchProtection, req *bpRequest) *store.BranchProtection {
 	if req.RequiredStatusChecks != nil {
 		bp.RequiredStatusChecks = req.RequiredStatusChecks
-		// The body may name the required set through either view; whichever it
-		// used, both have to end up naming it. `checks` wins when a body carries
-		// both, because it is the view that can also name the reporting app.
+		// The required set may arrive as `checks` or `contexts`; `checks` wins
+		// when both are present, since it can also name the reporting app.
 		if req.RequiredStatusChecks.Checks != nil {
 			bp.RequiredStatusChecks.SetChecks(req.RequiredStatusChecks.Checks)
 		} else {
@@ -423,9 +387,7 @@ func (s *Server) applyBranchProtectionRequest(bp *store.BranchProtection, req *b
 		}
 	}
 	if req.RequiredPullRequestReviews != nil {
-		// An explicit review-policy object enables the rule even when its
-		// approving-review count is zero. Zero is a valid GitHub setting, not
-		// a sentinel for deleting the whole rule.
+		// A zero approving-review count is a valid setting, not a delete signal.
 		bp.RequiredPullRequestReviews = req.RequiredPullRequestReviews
 	}
 	if req.EnforceAdmins != nil {
@@ -465,10 +427,8 @@ func (s *Server) hydrateBranchProtectionURLs(bp *store.BranchProtection, repo *s
 	if bp == nil {
 		return nil
 	}
-	// Enabled is stored state, not a rendered member: `protected-branch` (the
-	// PUT response) has no `enabled`, and the callers that do publish one derive
-	// it themselves. hydrate operates on a detached copy, so clearing it here
-	// cannot reach the stored rule.
+	// Enabled is stored state, not a rendered member; callers that publish one
+	// derive it themselves. This runs on a detached copy.
 	bp.Enabled = false
 	bp.URL = s.branchProtectionURL(baseURL, repo.FullName, branch)
 	if bp.RequiredStatusChecks != nil {
@@ -530,9 +490,8 @@ func (s *Server) handleBPStatusChecksGet(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, s.statusCheckPolicyJSON(bp.RequiredStatusChecks, repo, branch, s.baseURL(r)))
 }
 
-// statusCheckPolicyJSON renders required_status_checks in the published
-// status-check-policy shape: url, strict, contexts, checks, and contexts_url
-// are all required members — contexts/checks are present even when empty.
+// statusCheckPolicyJSON renders required_status_checks; contexts and checks are
+// present even when empty.
 func (s *Server) statusCheckPolicyJSON(sc *store.BPStatusChecks, repo *store.Repo, branch, baseURL string) map[string]interface{} {
 	contexts := sc.Contexts
 	if contexts == nil {
@@ -556,8 +515,7 @@ func (s *Server) statusCheckPolicyJSON(sc *store.BPStatusChecks, repo *store.Rep
 }
 
 // handleBPStatusChecksPatch merges a partial update into an existing
-// required_status_checks rule. Absent members are left unchanged; present
-// members replace the stored value.
+// required_status_checks rule.
 func (s *Server) handleBPStatusChecksPatch(w http.ResponseWriter, r *http.Request) {
 	repo, branch, bp := s.getBranchProtection(r)
 	if repo == nil {
@@ -1098,9 +1056,8 @@ func (s *Server) handleBPEnforceAdminsDelete(w http.ResponseWriter, r *http.Requ
 		s.branchProtectionNotFound(w)
 		return
 	}
-	// The endpoint is documented only to disable admin enforcement. Clearing
-	// the member instead would make GET .../enforce_admins answer 404, and —
-	// when it was the last rule — drop every other protection rule with it.
+	// This endpoint disables admin enforcement rather than clearing the member:
+	// clearing it would 404 the GET and, if it was the last rule, drop the rest.
 	bp.EnforceAdmins = &store.BPEnforceAdmins{Enabled: false}
 	s.setBranchProtection(repo, branch, bp)
 	w.WriteHeader(http.StatusNoContent)
@@ -1161,9 +1118,7 @@ func (s *Server) handleBPRequiredSignaturesDelete(w http.ResponseWriter, r *http
 
 // --- Restrictions apps ---
 
-// bpRestrictedAppsJSON renders the restriction's app actors as full GitHub
-// App (integration) objects, the shape the restrictions/apps endpoints
-// return.
+// bpRestrictedAppsJSON renders app actors as full GitHub App objects.
 func (s *Server) bpRestrictedAppsJSON(actors []store.BPActor) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(actors))
 	for _, actor := range actors {
@@ -1177,10 +1132,8 @@ func (s *Server) bpRestrictedAppsJSON(actors []store.BPActor) []map[string]inter
 	return out
 }
 
-// decodeBPAppSlugs decodes the {"apps": ["slug", ...]} body shared by the
-// restrictions/apps mutation endpoints and resolves every slug to a
-// registered GitHub App. Writes a 422 and returns nil when a slug does not
-// resolve.
+// decodeBPAppSlugs decodes {"apps":[...]} and resolves each slug to a
+// registered GitHub App, writing a 422 when one does not resolve.
 func (s *Server) decodeBPAppSlugs(w http.ResponseWriter, r *http.Request) ([]store.BPActor, bool) {
 	var req struct {
 		Apps []string `json:"apps"`
@@ -1298,7 +1251,7 @@ func (s *Server) handleBPRestrictionsAppsDelete(w http.ResponseWriter, r *http.R
 
 // --- Helpers ---
 
-// decodeStringArrayBody decodes either a bare JSON array or {"contexts":[...]}.
+// decodeStringArrayBody decodes a bare JSON array or {"contexts":[...]}.
 func decodeStringArrayBody(w http.ResponseWriter, r *http.Request, out *[]string) bool {
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
 	if err != nil {
@@ -1336,20 +1289,16 @@ const (
 	refForcePush refWriteKind = iota
 	refDeletion
 	refCreation
-	// refFastForward is an update whose target descends from what the branch
-	// already points at, so no commit the branch reaches is discarded.
+	// refFastForward: the target descends from the branch's current tip, so no
+	// reachable commit is discarded.
 	refFastForward
 )
 
 // protectedRefWriteRefusal decides one ref write against the branch's
-// protection rule and returns the refusal, or "" when the rule allows it. Both
-// git transports and the REST ref-write routes decide here, so a rule cannot
-// bind one lane and be decoration on the other.
-//
-// A push writes the ref rather than merging into it, so the destructive
-// allowances — force push, deletion, creation — are decided here as well as the
-// requirements a merge into the branch faces. Those come from the evaluator the
-// merge gate itself uses, applied to the commit being pushed.
+// protection rule, returning the refusal or "" when allowed. Both git
+// transports and the REST ref-write routes decide here, so a rule cannot bind
+// one lane and be decoration on the other. Destructive allowances (force push,
+// deletion, creation) are checked alongside the requirements a merge faces.
 func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
 	if !ref.IsBranch() {
 		return s.evaluateRulesetsForRefWrite(ctx, repo, stor, ref, kind, target)
@@ -1360,17 +1309,12 @@ func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *store.Repo,
 	if bp == nil {
 		return rulesetRefusal
 	}
-	// lock_branch makes the branch read-only for everyone, administrators
-	// included (unlocking is how you write to it): every ref write — push,
-	// force push, deletion, creation — is refused, on both git transports and
-	// the REST ref-write routes, since they all decide here. Decided before
-	// the enforce_admins bypass, matching the merge gate.
+	// lock_branch makes the branch read-only for everyone, admins included, and
+	// is decided before the enforce_admins bypass to match the merge gate.
 	if bp.LockBranch != nil && bp.LockBranch.Enabled {
 		return "Cannot update this locked branch: " + branch + " is read-only."
 	}
-	// enforce_admins is the setting that decides whether the rule binds a
-	// repository administrator; with it off an administrator bypasses the
-	// whole rule, which is the same bypass the merge gate grants.
+	// With enforce_admins off, an admin bypasses the whole rule.
 	if (bp.EnforceAdmins == nil || !bp.EnforceAdmins.Enabled) && s.viewerCanAdminRepo(ctx, repo) {
 		return rulesetRefusal
 	}
@@ -1382,8 +1326,7 @@ func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *store.Repo,
 		if bp.AllowDeletions == nil || !bp.AllowDeletions.Enabled {
 			return "Cannot delete protected branch " + branch + "."
 		}
-		// A deletion moves the branch nowhere, so the requirements on what
-		// it may point at do not apply to it.
+		// A deletion has no target, so target requirements do not apply.
 		return rulesetRefusal
 	case refForcePush:
 		if bp.AllowForcePushes == nil || !bp.AllowForcePushes.Enabled {
@@ -1401,9 +1344,8 @@ func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *store.Repo,
 	return rulesetRefusal
 }
 
-// protectedBranchTargetRefusal answers the requirements that govern what a
-// protected branch may be moved to. A direct write faces them exactly as a
-// merge into the branch does.
+// protectedBranchTargetRefusal enforces the requirements on what a protected
+// branch may be moved to; a direct write faces them as a merge does.
 func (s *Server) protectedBranchTargetRefusal(repo *store.Repo, bp *store.BranchProtection, stor storer.Storer, branch string, target plumbing.Hash) string {
 	if bp.RequiredPullRequestReviews != nil {
 		return "Changes must be made through a pull request."
@@ -1434,8 +1376,8 @@ func (s *Server) protectedBranchTargetRefusal(repo *store.Repo, bp *store.Branch
 	return ""
 }
 
-// commitsAddedToBranch returns the commits a write of target onto branch adds
-// to it: those reachable from target but not from where the branch stands.
+// commitsAddedToBranch returns the commits reachable from target but not from
+// the branch's current tip.
 func commitsAddedToBranch(stor storer.Storer, branch string, target plumbing.Hash) ([]*object.Commit, error) {
 	if stor == nil {
 		return nil, errors.New("no git storage for the repository")
@@ -1466,8 +1408,8 @@ func commitsAddedToBranch(stor storer.Storer, branch string, target plumbing.Has
 	return added, nil
 }
 
-// viewerIsRestrictedPusher reports whether the request's actor is one of the
-// actors a restrictions rule allows to write the branch.
+// viewerIsRestrictedPusher reports whether the actor is allowed to write the
+// branch under a restrictions rule.
 func (s *Server) viewerIsRestrictedPusher(ctx context.Context, repo *store.Repo, restrictions *store.BPRestrictions) bool {
 	user := ghUserFromContext(ctx)
 	if user == nil {
@@ -1502,9 +1444,8 @@ func (s *Server) viewerIsRestrictedPusher(ctx context.Context, repo *store.Repo,
 	return false
 }
 
-// canMergePullRequest checks branch protection rules for a PR merge.
-// It returns (ok, errorMessage). ok==false with empty message means the caller
-// should fall back to the existing required-status-check message.
+// canMergePullRequest checks branch protection for a PR merge. ok==false with
+// an empty message means the caller falls back to its required-status-check message.
 func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string) {
 	bp := s.effectiveBranchProtectionFor(repo.ID, pr.BaseRefName)
 	if bp == nil {
@@ -1513,19 +1454,16 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 
 	isAdmin := s.viewerCanAdminRepo(ctx, repo)
 
-	// A locked branch is read-only for everyone, admins included — GitHub's
-	// lock_branch has no enforce_admins carve-out. A merge writes the base
-	// branch, so it is refused before any bypass applies.
+	// lock_branch is read-only for everyone (no enforce_admins carve-out) and is
+	// refused before any bypass applies.
 	if bp.LockBranch != nil && bp.LockBranch.Enabled {
 		return false, "Cannot merge into locked branch " + pr.BaseRefName + "."
 	}
 
-	// Admin bypass only when enforce_admins is not enabled.
 	if isAdmin && (bp.EnforceAdmins == nil || !bp.EnforceAdmins.Enabled) {
 		return true, ""
 	}
 
-	// Required status checks
 	headSha := s.prHeadSha(repo, pr)
 	if headSha != "" {
 		st := s.evaluateChecksForMerge(repo, pr.BaseRefName, headSha)
@@ -1534,7 +1472,6 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 		}
 	}
 
-	// Required approving review count
 	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequiredApprovingReviewCount > 0 {
 		count := s.countApprovingReviews(pr.ID)
 		if count < bp.RequiredPullRequestReviews.RequiredApprovingReviewCount {
@@ -1542,25 +1479,23 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 		}
 	}
 
-	// require_code_owner_reviews: every code owner of a file this pull request
-	// changes must have approved it. Enforced here, at the one gate the REST
-	// merge, the GraphQL mergePullRequest mutation and auto-merge all pass
-	// through, so no merge path can skip it.
+	// require_code_owner_reviews: every code owner of a changed file must have
+	// approved. Enforced at the one gate REST merge, mergePullRequest and
+	// auto-merge all pass through.
 	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequireCodeOwnerReviews {
 		if !s.codeOwnerApprovalsSatisfied(repo, pr) {
 			return false, "Review by a code owner of the changed files is required by the branch protection rules."
 		}
 	}
 
-	// require_last_push_approval: the most recent reviewable push must be
-	// approved by someone other than the person who pushed it.
+	// require_last_push_approval: the most recent push must be approved by
+	// someone other than its pusher.
 	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequireLastPushApproval {
 		if !s.lastPushApproved(repo, pr) {
 			return false, "The most recent push must be approved by someone other than the person who pushed it."
 		}
 	}
 
-	// Requested changes block merge
 	if s.hasRequestedChanges(pr.ID) {
 		return false, "Changes have been requested on this pull request."
 	}
@@ -1568,12 +1503,9 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 	return true, ""
 }
 
-// lastPushApproved reports whether somebody other than the head branch's
-// last pusher holds a current APPROVED review on the pull request. The
-// pusher of the latest head commit is resolved from the commit's committer
-// identity (email match first, then the login-derived local part, then the
-// committer name); when nothing resolves, the PR's author stands in — the
-// author proposed the head and must not self-satisfy the gate.
+// lastPushApproved reports whether someone other than the head's last pusher
+// holds a current APPROVED review. When the pusher cannot be resolved the PR
+// author stands in, so the author cannot self-satisfy the gate.
 func (s *Server) lastPushApproved(repo *store.Repo, pr *store.PullRequest) bool {
 	pusherID := s.lastHeadPusherID(repo, pr)
 	s.store.Mu.RLock()
@@ -1586,7 +1518,8 @@ func (s *Server) lastPushApproved(repo *store.Repo, pr *store.PullRequest) bool 
 	return false
 }
 
-// lastHeadPusherID resolves the user behind the PR's current head commit.
+// lastHeadPusherID resolves the user behind the PR's current head commit,
+// falling back to the PR author.
 func (s *Server) lastHeadPusherID(repo *store.Repo, pr *store.PullRequest) int {
 	headStor, _ := store.PullRequestGitStorage(s.store, repo, pr)
 	if headStor != nil {
@@ -1604,8 +1537,8 @@ func (s *Server) lastHeadPusherID(repo *store.Repo, pr *store.PullRequest) int {
 	return pr.AuthorID
 }
 
-// userIDForCommitIdentity maps a git signature to a store user: exact email
-// match, then the email's local part as a login, then the name as a login.
+// userIDForCommitIdentity maps a git signature to a user: exact email match,
+// then the email's local part as a login, then the name as a login.
 func (s *Server) userIDForCommitIdentity(name, email string) int {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
@@ -1627,12 +1560,10 @@ func (s *Server) userIDForCommitIdentity(name, email string) int {
 	return 0
 }
 
-// latestGateReviewStatesLocked returns each reviewer's effective merge-gate
-// review state for prID: their most recent (by SubmittedAt) APPROVED or
-// CHANGES_REQUESTED review. COMMENTED / PENDING / DISMISSED reviews set no
-// gate-affecting state, matching github (a later COMMENTED review does not
-// retract a prior APPROVED). Callers hold st.Mu. Iterating the review map
-// without ordering by time previously made "latest per user" nondeterministic.
+// latestGateReviewStatesLocked returns each reviewer's most recent (by
+// SubmittedAt) APPROVED or CHANGES_REQUESTED review; COMMENTED/PENDING/DISMISSED
+// set no gate state, so a later COMMENTED review does not retract an APPROVED.
+// Callers hold st.Mu.
 func (s *Server) latestGateReviewStatesLocked(prID int) map[int]string {
 	type ts struct {
 		at    time.Time
@@ -1684,8 +1615,7 @@ func (s *Server) hasRequestedChanges(prID int) bool {
 	return false
 }
 
-// requiredCheckContexts returns the base branch's protected status-check
-// contexts from the typed model.
+// requiredCheckContexts returns the base branch's required status-check contexts.
 func (s *Server) requiredCheckContexts(repoID int, baseBranch string) []string {
 	bp := s.effectiveBranchProtectionFor(repoID, baseBranch)
 	if bp == nil || bp.RequiredStatusChecks == nil {

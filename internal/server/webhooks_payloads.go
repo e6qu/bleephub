@@ -12,9 +12,8 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// attachInstallationBlock injects `installation: {id, node_id}` at the top
-// level of every event payload, mirroring what real GH does for events
-// delivered through an App installation.
+// attachInstallationBlock injects top-level `installation: {id, node_id}` into
+// an event payload delivered through an App installation.
 func attachInstallationBlock(payload map[string]interface{}, inst *store.Installation) map[string]interface{} {
 	if inst == nil {
 		return payload
@@ -26,17 +25,14 @@ func attachInstallationBlock(payload map[string]interface{}, inst *store.Install
 	return payload
 }
 
-// installationNodeID returns the GraphQL global node id for an installation,
-// matching GitHub's scheme: base64 of the literal "012:Installation{id}".
+// installationNodeID returns the GraphQL node id, GitHub's scheme: base64 of "012:Installation{id}".
 func installationNodeID(id int) string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("012:Installation%d", id)))
 }
 
 // buildInstallationEventPayload builds the `installation` event payload
-// (action: created | deleted | suspend | unsuspend | new_permissions_accepted).
-// The app argument is retained for call-site symmetry with the other event
-// builders; the app's identity is carried inside the installation object
-// (app_id/app_slug), not as a top-level key, matching GitHub's wire shape.
+// (created | deleted | suspend | unsuspend | new_permissions_accepted). The app
+// argument is unused: its identity rides inside the installation object (app_id/app_slug).
 func buildInstallationEventPayload(_ *store.App, action string, inst *store.Installation, sender *store.User, baseURL string) map[string]interface{} {
 	repos := []map[string]interface{}{}
 	return map[string]interface{}{
@@ -47,8 +43,7 @@ func buildInstallationEventPayload(_ *store.App, action string, inst *store.Inst
 	}
 }
 
-// buildInstallationRepositoriesEventPayload builds installation_repositories
-// (action: added | removed).
+// buildInstallationRepositoriesEventPayload builds installation_repositories (added | removed).
 func buildInstallationRepositoriesEventPayload(app *store.App, action string, inst *store.Installation, repoIDsChanged []int, sender *store.User, baseURL string) map[string]interface{} {
 	changes := []map[string]interface{}{}
 	for _, id := range repoIDsChanged {
@@ -159,10 +154,9 @@ func pushCommitPayloads(stor gitStorage.Storer, before, after plumbing.Hash, rep
 	return out
 }
 
-// commitFileChanges diffs a commit against its first parent to fill a push
-// event's per-commit added/removed/modified paths. GitHub populates these and
-// consumers (CI path filters, deploy bots) branch on them, so an empty set is a
-// fidelity break. A root commit (no parent) reports every file as added.
+// commitFileChanges diffs a commit against its first parent for a push event's
+// per-commit added/removed/modified paths, which consumers (CI path filters,
+// deploy bots) branch on. A root commit reports every file as added.
 func commitFileChanges(commit *object.Commit) (added, removed, modified []string) {
 	added, removed, modified = []string{}, []string{}, []string{}
 	commitTree, err := commit.Tree()
@@ -238,10 +232,8 @@ func buildPullRequestPayload(st *store.Store, repo *store.Repo, pr *store.PullRe
 		"user":    senderPayload(st.GetUserByID(pr.AuthorID), baseURL),
 		"draft":   pr.IsDraft,
 		"merged":  pr.State == "MERGED",
-		// A merged PR reports its real merge commit; an open one reports its
-		// test-merge commit (GitHub's "potential merge"), so a pull_request
-		// workflow run runs against the merge ref rather than the head (ACT-027).
-		// Both fall back to the head SHA when no merge commit is available.
+		// Merged PR reports its merge commit; open PR its test-merge commit, so a
+		// pull_request workflow runs against the merge ref (ACT-027). Both fall back to head SHA.
 		"merge_commit_sha": store.CoalesceStr(pr.MergeCommitSHA, store.CoalesceStr(pr.PotentialMergeCommitSHA, pullRequestHeadSHA(pr, st))),
 		"head": map[string]interface{}{
 			"ref":  pr.HeadRefName,
@@ -375,7 +367,6 @@ func buildPingPayload(repo *store.Repo, hook *store.Webhook, sender *store.User,
 				"content_type": store.CoalesceStr(hook.ContentType, "json"),
 			},
 		},
-		// GitHub's ping event carries the acting user like every other event.
 		"sender": senderPayload(sender, baseURL),
 	}
 	if repo != nil {
@@ -388,10 +379,7 @@ func repoPayload(repo *store.Repo, baseURL string) map[string]interface{} {
 	if repo == nil {
 		return nil
 	}
-	// Hypermedia is absolute, matching the sender object (store.UserToJSON) that
-	// already ships on every payload; the whole webhook body uses one convention.
-	// It has to be absolute: a webhook body is read on another host, which has
-	// nothing to resolve a relative reference against.
+	// Hypermedia is absolute: a webhook body is read on another host with nothing to resolve a relative reference against.
 	result := map[string]interface{}{
 		"id":             repo.ID,
 		"node_id":        repo.NodeID,
@@ -413,8 +401,7 @@ func repoPayload(repo *store.Repo, baseURL string) map[string]interface{} {
 	return result
 }
 
-// orgWebhookPayload is the `organization` block on event payloads for
-// org-owned repos.
+// orgWebhookPayload is the `organization` block for org-owned repos.
 func orgWebhookPayload(org *store.Org, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"login":       org.Login,
@@ -428,9 +415,7 @@ func orgWebhookPayload(org *store.Org, baseURL string) map[string]interface{} {
 
 func senderPayload(user *store.User, baseURL string) map[string]interface{} {
 	if user == nil {
-		// GitHub guarantees `sender` is always a populated user object. Events
-		// with no originating user (e.g. system-driven pushes) fall back to the
-		// deterministic "ghost" actor GitHub uses for absent accounts.
+		// `sender` is always populated; an event with no originating user falls back to the "ghost" actor.
 		return ghostSenderPayload(baseURL)
 	}
 	copy := *user
@@ -440,8 +425,7 @@ func senderPayload(user *store.User, baseURL string) map[string]interface{} {
 	return store.UserToJSON(&copy, baseURL)
 }
 
-// ghostSenderPayload returns GitHub's "ghost" deleted-user actor, used as the
-// sender for events that have no originating user account.
+// ghostSenderPayload returns GitHub's "ghost" deleted-user actor.
 func ghostSenderPayload(baseURL string) map[string]interface{} {
 	return store.UserToJSON(nil, baseURL)
 }

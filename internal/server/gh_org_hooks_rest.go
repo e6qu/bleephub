@@ -9,11 +9,9 @@ import (
 )
 
 // Organization-level webhooks (`/orgs/{org}/hooks`). Org hooks receive the
-// org's own events (organization membership changes) plus every repo event
-// on org-owned repositories — emitWebhookEvent fans repo events out to the
-// owner org's hooks. Stored separately from repo hooks (Store.OrgHooks,
-// keyed by org login) but sharing the hook ID sequence and the deliveries
-// table, so delivery introspection works identically.
+// org's own events plus every repo event on org-owned repositories. Stored
+// separately from repo hooks but sharing the hook ID sequence and deliveries
+// table.
 
 func (s *Server) registerGHOrgHookRoutes() {
 	s.route("POST /api/v3/orgs/{org}/hooks", s.requirePerm(store.ScopeOrganizationHooks, store.PermWrite, s.handleCreateOrgHook))
@@ -29,9 +27,8 @@ func (s *Server) registerGHOrgHookRoutes() {
 	s.route("POST /api/v3/orgs/{org}/hooks/{id}/pings", s.requirePerm(store.ScopeOrganizationHooks, store.PermWrite, s.handlePingOrgHook))
 }
 
-// orgHookGate resolves the org and enforces the org-admin requirement
-// (the sim analogue of real GitHub's admin:org_hook scope). Returns nil
-// after writing the error response when the gate fails.
+// orgHookGate resolves the org and requires org-admin (the analogue of
+// GitHub's admin:org_hook scope), writing the error response on failure.
 func (s *Server) orgHookGate(w http.ResponseWriter, r *http.Request) *store.Org {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -69,7 +66,7 @@ func (s *Server) handleCreateOrgHook(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	// Unlike repo hooks, real GitHub REQUIRES name=web for org hooks.
+	// GitHub requires name=web for org hooks (unlike repo hooks).
 	if req.Name != "web" {
 		store.WriteGHValidationError(w, "Hook", "name", "invalid")
 		return
@@ -93,7 +90,7 @@ func (s *Server) handleCreateOrgHook(w http.ResponseWriter, r *http.Request) {
 		req.Config.ContentType, normalizeInsecureSSL(req.Config.InsecureSSL), events, active)
 	s.recordAuditEvent("hook.create", ghUserFromContext(r.Context()).Login, org.Login, map[string]interface{}{"hook_id": hook.ID})
 
-	// Real GitHub fires a `ping` event automatically on active-hook creation.
+	// GitHub fires a ping automatically on active-hook creation.
 	if hook.Active {
 		s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(s.orgPingPayload(org, hook, r)))
 	}
@@ -116,8 +113,8 @@ func (s *Server) handleListOrgHooks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
-// orgHookFromRequest resolves the {id} path value to a stored org hook,
-// writing 404 and returning nil when it doesn't resolve.
+// orgHookFromRequest resolves {id} to a stored org hook, writing 404 and
+// returning nil when it doesn't resolve.
 func (s *Server) orgHookFromRequest(w http.ResponseWriter, r *http.Request, org *store.Org) *store.Webhook {
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
@@ -194,8 +191,8 @@ func (s *Server) handleUpdateOrgHook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, orgHookToJSON(s.store.GetOrgHook(org.Login, hook.ID), org, s.baseURL(r)))
 }
 
-// orgHookFromConfigRequest resolves {org} + {hook_id} for the webhook
-// config sub-resource routes.
+// orgHookFromConfigRequest resolves {org} + {hook_id} for the config
+// sub-resource routes.
 func (s *Server) orgHookFromConfigRequest(w http.ResponseWriter, r *http.Request) (*store.Org, *store.Webhook) {
 	org := s.orgHookGate(w, r)
 	if org == nil {
@@ -214,8 +211,8 @@ func (s *Server) orgHookFromConfigRequest(w http.ResponseWriter, r *http.Request
 	return org, hook
 }
 
-// orgHookConfigJSON renders the webhook-config shape. The secret is masked,
-// as on real GitHub, since the raw value is never surfaced after creation.
+// orgHookConfigJSON renders the webhook-config shape; the secret is masked,
+// as GitHub never surfaces the raw value after creation.
 func orgHookConfigJSON(h *store.Webhook) map[string]interface{} {
 	contentType := h.ContentType
 	if contentType == "" {
@@ -378,7 +375,6 @@ func (s *Server) handlePingOrgHook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// orgPingPayload builds the `ping` event payload for an org hook.
 func (s *Server) orgPingPayload(org *store.Org, hook *store.Webhook, r *http.Request) map[string]interface{} {
 	return map[string]interface{}{
 		"zen":          "Keep it logically awesome.",
@@ -388,7 +384,6 @@ func (s *Server) orgPingPayload(org *store.Org, hook *store.Webhook, r *http.Req
 	}
 }
 
-// orgHookToJSON serialises an org webhook to GitHub's org-hook shape.
 func orgHookToJSON(h *store.Webhook, org *store.Org, baseURL string) map[string]interface{} {
 	hookBase := baseURL + "/api/v3/orgs/" + org.Login + "/hooks/" + strconv.Itoa(h.ID)
 	contentType := h.ContentType
@@ -418,7 +413,6 @@ func orgHookToJSON(h *store.Webhook, org *store.Org, baseURL string) map[string]
 	}
 }
 
-// emitOrgWebhookEvent delivers an org-level event to the org's hooks.
 func (s *Server) emitOrgWebhookEvent(orgLogin, eventType, action string, payload interface{}) {
 	payloadBytes := mustMarshal(payload)
 	for _, hook := range s.store.ListOrgHooks(orgLogin) {
@@ -430,10 +424,9 @@ func (s *Server) emitOrgWebhookEvent(orgLogin, eventType, action string, payload
 }
 
 // emitOrgMembershipEvent fires the `organization` event for membership
-// changes (member_invited | member_added | member_removed). bleephub models
-// invitations as pending memberships, so the member_invited payload's
-// invitation object is derived from the membership (its id is a stable
-// derivation — there is no separate invitation entity to expose).
+// changes. bleephub models invitations as pending memberships, so the
+// member_invited payload's invitation object is derived from the membership
+// (there is no separate invitation entity).
 func (s *Server) emitOrgMembershipEvent(org *store.Org, action string, m *store.Membership, target, sender *store.User) {
 	payload := map[string]interface{}{
 		"action":       action,
@@ -466,5 +459,3 @@ func (s *Server) emitOrgMembershipEvent(org *store.Org, action string, m *store.
 	}
 	s.emitOrgWebhookEvent(org.Login, "organization", action, payload)
 }
-
-// Store operations — the org-hook mirror of the repo-hook CRUD.

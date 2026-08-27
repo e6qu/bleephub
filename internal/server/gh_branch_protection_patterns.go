@@ -7,32 +7,26 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Branch protection pattern rules are a github.com web-settings concept:
-// GitHub's REST branch protection API forbids wildcards, so these routes
-// live under the browser-only /ui-data namespace rather than /api/v3 —
-// inventing a GitHub-namespaced path is a defect the route-definition tests
-// reject. Each rule pairs an fnmatch pattern (`*` stays within a path
-// segment, `**` crosses segments) with a protection config in the same
-// shape the REST PUT /protection body accepts. The enforcement chokepoint
-// consults an exact-name rule first and falls back to the first matching
-// pattern rule (effectiveBranchProtectionFor).
-// (`s.route` auto-wraps /ui-data patterns with authenticateUIData.)
+// Branch protection pattern rules are web-only: GitHub's REST protection API
+// forbids wildcards, so these live under /ui-data rather than /api/v3. Each
+// rule pairs an fnmatch pattern with a protection config in the REST PUT
+// /protection shape; enforcement tries an exact-name rule first, then the first
+// matching pattern rule (effectiveBranchProtectionFor).
 func (s *Server) registerGHBranchProtectionPatternRoutes() {
 	s.route("GET /ui-data/repos/{owner}/{repo}/branch-protection-patterns", s.handleBPPatternsGet)
 	s.route("PUT /ui-data/repos/{owner}/{repo}/branch-protection-patterns", s.handleBPPatternsPut)
 	s.route("DELETE /ui-data/repos/{owner}/{repo}/branch-protection-patterns", s.handleBPPatternsDelete)
 }
 
-// bpPatternsRepoForAdmin resolves the repo and enforces admin access —
-// branch protection is repository administration, reads included (the REST
-// protection surface requires the administration scope for GET too).
+// bpPatternsRepoForAdmin resolves the repo and requires admin access — GitHub's
+// REST protection surface requires administration even for GET.
 func (s *Server) bpPatternsRepoForAdmin(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	// A private repo the viewer cannot read must not leak existence.
+	// Do not leak existence of a private repo the viewer cannot read.
 	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
@@ -63,9 +57,8 @@ func (s *Server) handleBPPatternsGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bpPatternRulesJSON(s.store.ListBranchProtectionPatterns(repo.ID)))
 }
 
-// handleBPPatternsPut replaces the repository's ordered rule list. The body
-// is a JSON array of {pattern, protection} where protection carries the same
-// members as the REST PUT /protection body.
+// handleBPPatternsPut replaces the repository's ordered rule list from a JSON
+// array of {pattern, protection}, protection in the REST PUT /protection shape.
 func (s *Server) handleBPPatternsPut(w http.ResponseWriter, r *http.Request) {
 	repo := s.bpPatternsRepoForAdmin(w, r)
 	if repo == nil {
@@ -98,8 +91,7 @@ func (s *Server) handleBPPatternsPut(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	s.store.SetBranchProtectionPatterns(repo.ID, rules)
-	// A protection state change can be the event an armed auto-merge was
-	// waiting for; re-evaluate the repository's open pull requests.
+	// A protection change can release an armed auto-merge; re-evaluate open PRs.
 	s.maybeAutoMergeRepo(repo)
 	writeJSON(w, http.StatusOK, bpPatternRulesJSON(s.store.ListBranchProtectionPatterns(repo.ID)))
 }

@@ -18,30 +18,23 @@ import (
 )
 
 func (s *Server) registerAgentRoutes() {
-	// Registration token (for config.sh). Real GitHub gates this on
-	// administration:write — 401/403 without it.
+	// Registration token for config.sh.
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runners/registration-token",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRegistrationToken))
-	// Removal token (config.sh remove --token) — also administration:write.
+	// Removal token (config.sh remove --token).
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runners/remove-token",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRemoveToken))
-	// JIT config (ephemeral just-in-time runner registration).
+	// JIT config for an ephemeral runner.
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runners/generate-jitconfig",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleGenerateJITConfig))
 
-	// Agent pools. config.sh reads the pool list with its registration token,
-	// before it has a session.
+	// config.sh reads the pool list with its registration token, before any session exists.
 	s.route("GET /_apis/v1/AgentPools", s.requireRunnerSetupCredential(runnerPurposesRegister, s.handleListPools))
 
-	// Agent CRUD — order matters: more specific patterns first.
-	//
-	// Most of this surface is reached before an agent session exists, because
-	// it is how a runner configures itself. `config.sh` looks its own name up
-	// in the pool, then adds a registration or, with --replace, rewrites the
-	// one it found; `config.sh remove` looks the name up and deletes it. Each
-	// of those carries the token config.sh was given, so each names the
-	// purposes that token must have. Only reading one agent's record is
-	// session-only: nothing in configuration does it.
+	// Order matters: more specific patterns first. Most of this surface is
+	// reached before an agent session exists — it is how a runner configures
+	// itself — so each route authenticates on the config.sh token whose purpose
+	// it names. Only GET of one agent's record is session-only.
 	s.route("POST /_apis/v1/Agent/{poolId}", s.handleRegisterAgent)
 	s.route("GET /_apis/v1/Agent/{poolId}/{agentId}", s.requireAgentSession(s.handleGetAgent))
 	s.route("PUT /_apis/v1/Agent/{poolId}/{agentId}", s.requireRunnerSetupCredential(runnerPurposesRegister, s.handleUpdateAgent))
@@ -50,10 +43,7 @@ func (s *Server) registerAgentRoutes() {
 }
 
 // randomRunnerToken mints the unguessable component of a runner
-// registration/removal token, in the shape real GitHub's opaque token has
-// ("A" + base64-ish blob). newRunnerRegistrationToken binds it to a scope and
-// signs the pair, so two tokens for the same scope are never equal and a
-// leaked one cannot be replayed past its expiry.
+// registration/removal token, in real GitHub's opaque shape ("A" + base64 blob).
 func randomRunnerToken() (string, error) {
 	return randomRunnerTokenFromReader(rand.Reader)
 }
@@ -66,11 +56,10 @@ func randomRunnerTokenFromReader(random io.Reader) (string, error) {
 	return "A" + base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// mintRunnerToken issues the opaque registration/removal token in the shape
-// real GitHub returns ("A" + base64-ish blob), scoped to the repository,
-// organization, or enterprise the request addresses. The token is signed, so
-// the scope it carries survives the round-trip through config.sh without a
-// server-side registry, and a forged one cannot register a runner.
+// mintRunnerToken issues the opaque registration/removal token scoped to the
+// repository, org, or enterprise the request addresses. The token is signed, so
+// its scope survives the round-trip through config.sh without a server-side
+// registry and a forged one cannot register a runner.
 func (s *Server) mintRunnerToken(w http.ResponseWriter, r *http.Request, purpose string) {
 	scope, err := s.runnerScopeFromRequest(r)
 	if err != nil {
@@ -87,7 +76,7 @@ func (s *Server) mintRunnerToken(w http.ResponseWriter, r *http.Request, purpose
 		return
 	}
 	s.logger.Info().Str("scope", scope.String()).Str("purpose", purpose).Msg("runner token issued")
-	// Real GitHub: 201 Created, opaque token, ~1h TTL.
+	// GitHub answers 201 with an opaque token and ~1h TTL.
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"token":      token,
 		"expires_at": time.Now().Add(runnerRegistrationTTL).UTC().Format(time.RFC3339),
@@ -98,21 +87,17 @@ func (s *Server) handleRegistrationToken(w http.ResponseWriter, r *http.Request)
 	s.mintRunnerToken(w, r, runnerPurposeRegistration)
 }
 
-// handleRemoveToken mints a runner removal token (config.sh remove --token).
-// Same opaque-token shape and TTL as the registration token, with a purpose
-// that cannot register a runner.
+// handleRemoveToken mints a runner removal token whose purpose cannot register
+// a runner.
 func (s *Server) handleRemoveToken(w http.ResponseWriter, r *http.Request) {
 	s.mintRunnerToken(w, r, runnerPurposeRemoval)
 }
 
-// handleGenerateJITConfig mints a just-in-time runner config for an
-// ephemeral runner. Real GitHub: 201 with {runner, encoded_jit_config}
-// where encoded_jit_config is a base64-encoded JSON blob the runner
-// consumes via `Runner.Listener --jitconfig <blob>`. 422 when name /
+// handleGenerateJITConfig mints a just-in-time config for an ephemeral runner.
+// GitHub answers 201 with {runner, encoded_jit_config}, or 422 when name /
 // runner_group_id / labels are missing.
 func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request) {
-	// The target has to exist before the body is worth validating: a
-	// fabricated repository answers 404, not 422.
+	// A missing target answers 404 before body validation, not 422.
 	scope, err := s.runnerScopeFromRequest(r)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -141,9 +126,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 		workFolder = "_work"
 	}
 
-	// Build the Agent the same way handleRegisterAgent does, so the
-	// JIT runner appears in the runners list and the broker can route to
-	// it. JIT runners are always ephemeral (auto-removed after one job).
+	// JIT runners are always ephemeral (auto-removed after one job).
 	var agent store.Agent
 	agent.Name = req.Name
 	agent.Ephemeral = true
@@ -179,9 +162,6 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 	s.store.Agents[agent.ID] = &agent
 	s.store.Mu.Unlock()
 
-	// encoded_jit_config: the base64 of the JSON config blob the runner's JIT
-	// listener reads. It carries the agent identity + server URL + auth so the
-	// runner can connect without a separate config.sh step.
 	encoded, err := encodeJITConfig(map[string]interface{}{
 		".runner": map[string]interface{}{
 			"agentId":   agent.ID,
@@ -190,8 +170,8 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 			"poolName":  "Default",
 			"serverUrl": s.baseURL(r),
 			"gitHubUrl": s.baseURL(r) + "/" + jitScope,
-			// bleephub is never the hosted service, and the runner reads this
-			// to decide where the github context's server_url comes from.
+			// The runner reads this to decide where the github context's
+			// server_url comes from; bleephub is never the hosted service.
 			"isHostedServer": false,
 			"workFolder":     workFolder,
 			"ephemeral":      true,
@@ -245,11 +225,9 @@ func (s *Server) repositoryRunnerRegistrationAllowed(scope store.RunnerScope) bo
 	}
 }
 
-// encodeJITConfig renders the runner's just-in-time configuration: the runner
-// deserializes the decoded blob as a map of file name to the base64 of that
-// file's contents and writes each one into its root directory verbatim, so a
-// section nested as an object rather than encoded as a file body fails to
-// deserialize and configuration ends before it starts.
+// encodeJITConfig renders the JIT configuration. The runner deserializes the
+// decoded blob as a map of file name to the base64 of that file's contents, so
+// each section must be a base64 file body, not a nested object.
 func encodeJITConfig(files map[string]interface{}) (string, error) {
 	blob := make(map[string]string, len(files))
 	for name, contents := range files {
@@ -266,12 +244,10 @@ func encodeJITConfig(files map[string]interface{}) (string, error) {
 	return base64.StdEncoding.EncodeToString(encoded), nil
 }
 
-// rsaParametersJSON is .NET's RSAParameters in the shape the runner persists
-// it as `.credentials_rsaparams`, whose members are read back by name from the
-// serialized form. Every component is fixed-width — .NET rejects a parameter
-// set whose private exponent is not exactly the modulus length, or whose CRT
-// factors are not exactly half of it — so leading zero bytes are kept rather
-// than trimmed to the significant bytes Go's big.Int would emit.
+// rsaParametersJSON is .NET's RSAParameters as the runner persists it in
+// `.credentials_rsaparams`. Every component is fixed-width: .NET rejects a set
+// whose private exponent is not exactly the modulus length or whose CRT factors
+// are not half of it, so leading zero bytes are kept, not trimmed as big.Int would.
 type rsaParametersJSON struct {
 	D        []byte `json:"d"`
 	DP       []byte `json:"dp"`
@@ -283,12 +259,10 @@ type rsaParametersJSON struct {
 	Q        []byte `json:"q"`
 }
 
-// newJITRunnerKey mints the RSA key pair a just-in-time runner authenticates
-// with, returning the public half to record on the agent and the private half
-// to hand over inside the JIT config. The runner generates no key on this
-// path — it writes `.credentials_rsaparams` from the config it was given and
-// reads its signing key straight back out of that file — so a JIT agent whose
-// record carries no public key can never have its client_assertion verified.
+// newJITRunnerKey mints the RSA key pair a JIT runner authenticates with:
+// the public half is recorded on the agent, the private half handed over in the
+// JIT config. The runner generates no key on this path, so an agent record
+// without a public key can never have its client_assertion verified.
 func newJITRunnerKey() (*store.AgentPublicKey, *rsaParametersJSON, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -326,10 +300,9 @@ func (s *Server) handleListPools(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleRegisterAgent adds a runner to the pool. This is the one runner
-// protocol route reached before an agent session exists, so it authenticates
-// on the registration token config.sh was given rather than on a bearer
-// session token; the scope that token carries becomes the agent's.
+// handleRegisterAgent adds a runner to the pool. It authenticates on the
+// registration token config.sh was given (no session exists yet); that token's
+// scope becomes the agent's.
 func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 	claims, err := runnerSetupCredential(r, runnerPurposesRegister)
 	if err != nil {
@@ -339,7 +312,7 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	scope := claims.Scope
 
-	// Parse as generic JSON (runner sends extra fields not in our Agent struct)
+	// The runner sends extra fields not in our Agent struct.
 	var raw map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		s.logger.Error().Err(err).Msg("failed to parse agent registration")
@@ -357,10 +330,8 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 	if desc, ok := raw["osDescription"].(string); ok {
 		agent.OSDescription = desc
 	}
-	// Round-trip the ephemeral flag — config.sh --ephemeral checks the
-	// REGISTRATION RESPONSE for it and aborts with "The GitHub server
-	// does not support configuring a self-hosted runner with
-	// 'Ephemeral' flag" when the server drops it.
+	// config.sh --ephemeral checks the registration response for this flag and
+	// aborts if the server drops it.
 	if eph, ok := raw["ephemeral"].(bool); ok {
 		agent.Ephemeral = eph
 	}
@@ -378,7 +349,6 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// Preserve authorization (RSA public key) from the runner
 	if authRaw, ok := raw["authorization"].(map[string]interface{}); ok {
 		agent.Authorization = &store.AgentAuthorization{}
 		if pk, ok := authRaw["publicKey"].(map[string]interface{}); ok {
@@ -443,14 +413,10 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 // callerSeesAgent reports whether a runner credential may address an agent
-// record. A runner manages its own registration, and so does the config-time
-// token that created it — config.sh looks its own name up in the pool before
-// any session exists. A per-job runtime token is neither, and sees nothing.
-// The fleet-wide view lives on the administration:write-gated REST runners
-// API, not here. Agents outside the caller's scope are invisible rather than
-// forbidden so an agent id cannot be probed for existence across tenants.
-// An agent record without an authorization has no clientId, so it has no
-// identity and no scope to compare against; it is addressable by nobody.
+// record: only the runner itself or the config-time token that created it (a
+// per-job runtime token sees nothing). Out-of-scope agents are invisible rather
+// than forbidden, so an agent id cannot be probed across tenants. An agent
+// without an authorization has no identity and is addressable by nobody.
 func callerSeesAgent(caller *runnerPrincipal, agent *store.Agent) bool {
 	if caller == nil || agent == nil || agent.Authorization == nil {
 		return false
@@ -507,12 +473,10 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	update.ID = agent.ID
-	// The clientId is the agent's identity, and its scope is what the runner
-	// was registered against — neither is the caller's to restate, so both are
-	// carried over. The public key is the runner's half and it does change:
-	// `config.sh --replace` generates a fresh key pair and signs its next
-	// client_assertion with it, so keeping the old key would leave the
-	// re-registered runner unable to obtain a session.
+	// clientId and scope are the agent's identity, not the caller's to restate,
+	// so carry them over. The public key does change: `config.sh --replace`
+	// signs its next client_assertion with a fresh key pair, so keeping the old
+	// key would lock the re-registered runner out of a session.
 	update.Scope = agent.Scope
 	authorization := *agent.Authorization
 	if update.Authorization != nil && update.Authorization.PublicKey != nil {
@@ -551,10 +515,8 @@ func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// removeEphemeralAgent deregisters an agent that registered with the
-// ephemeral flag once its single job has finished — mirroring real
-// GitHub, which auto-removes ephemeral runners after one job so the
-// registration doesn't linger as an offline zombie.
+// removeEphemeralAgent deregisters an ephemeral agent once its single job has
+// finished, as GitHub auto-removes ephemeral runners after one job.
 func (s *Server) removeEphemeralAgent(agentID int) {
 	if agentID == 0 {
 		return

@@ -10,8 +10,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GET /issues — issues involving the authenticated user across every
-// repository the user can see, driven by the real issues store.
+// GET /issues — issues involving the authenticated user across every repo
+// the user can see.
 
 func (s *Server) registerGHUserIssuesRoutes() {
 	s.route("GET /api/v3/issues", s.handleListGlobalUserIssues)
@@ -113,16 +113,15 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, rw := range page {
 		item := issueToJSON(rw.issue, s.store, base, rw.repo.FullName)
-		// GET /issues additionally carries the repository each issue lives
-		// in, since results span repositories.
+		// Results span repositories, so each issue carries its repository.
 		item["repository"] = store.RepoToJSON(rw.repo, s.store, base)
 		out = append(out, item)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// issueMatchesUserFilter implements the documented `filter` values. Callers
-// hold the store read lock.
+// issueMatchesUserFilter implements the `filter` values. Caller holds the
+// store read lock.
 func issueMatchesUserFilter(st *store.Store, issue *store.Issue, repo *store.Repo, user *store.User, filter string) bool {
 	assigned := false
 	for _, id := range issue.AssigneeIDs {
@@ -140,8 +139,7 @@ func issueMatchesUserFilter(st *store.Store, issue *store.Issue, repo *store.Rep
 	case "mentioned":
 		return issueMentionsUser(st, issue, user)
 	case "subscribed":
-		// Subscribed = issues in repositories the user watches, plus issues
-		// the user participates in.
+		// Issues in repos the user watches, plus issues the user participates in.
 		if _, watching := st.RepoSubscriptions[store.RepoSubscriptionKey(user.ID, repo.ID)]; watching {
 			return true
 		}
@@ -154,8 +152,8 @@ func issueMatchesUserFilter(st *store.Store, issue *store.Issue, repo *store.Rep
 	return false
 }
 
-// issueMentionsUser reports whether the issue body or any of its comments
-// mentions @user. Callers hold the store read lock.
+// issueMentionsUser reports whether the issue body or a comment mentions @user.
+// Caller holds the store read lock.
 func issueMentionsUser(st *store.Store, issue *store.Issue, user *store.User) bool {
 	mention := "@" + user.Login
 	if strings.Contains(issue.Body, mention) {

@@ -12,9 +12,9 @@ type tokenizedSearchTerm struct {
 	Quoted bool
 }
 
-// tokenizeSearchQuery splits on whitespace outside quotes. Quotes work both
-// around a complete term ("pull request") and around a qualifier value
-// (language:"Objective C"), matching GitHub's documented query grammar.
+// tokenizeSearchQuery splits on whitespace outside quotes. Quotes wrap a whole
+// term ("pull request") or a qualifier value (language:"Objective C"), per
+// GitHub's query grammar.
 func tokenizeSearchQuery(raw string) []tokenizedSearchTerm {
 	var out []tokenizedSearchTerm
 	var current strings.Builder

@@ -20,15 +20,10 @@ var uiAssets embed.FS
 
 // registerUI mounts the embedded single-page app under /ui/.
 //
-// This is a deliberate, documented exception to the "every surface goes
-// through s.route() so routePatterns/RegisteredRoutes() enumerates it"
-// invariant. /ui/ is a static asset tree served by an SPA fallback handler,
-// not an enumerable API operation: it has no method, no authz resource, and
-// no OpenAPI/definition shape, so recording it in routePatterns would break
-// the authz-matrix and api-definition tests that assume every registered
-// pattern is a "METHOD /api/v3/..." operation. It is therefore registered
-// directly on the mux and intentionally excluded from the route registry.
-// The only other such exception is the no-embed build's empty stub below.
+// Deliberate exception to the "every surface goes through s.route()" invariant:
+// /ui/ is a static asset tree with no method, authz resource, or OpenAPI shape,
+// so recording it in routePatterns would break the authz-matrix and api-definition
+// tests. It is registered directly on the mux and excluded from the route registry.
 func (s *Server) registerUI() {
 	sub, err := fs.Sub(uiAssets, "dist")
 	if err != nil {
@@ -36,27 +31,25 @@ func (s *Server) registerUI() {
 		return
 	}
 	s.mux.Handle("/ui/", spaHandler(sub, "/ui/"))
-	// Redirect the bare root to the SPA. Registered here, alongside the /ui/
-	// handler, so it exists only when /ui/ is actually served (CORE-012).
+	// Redirect the bare root to the SPA, registered here so it exists only when
+	// /ui/ is actually served (CORE-012).
 	s.route("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
 	})
 	s.logger.Info().Msg("UI registered at /ui/")
 }
 
-// uiImmutableCacheControl matches the emoji asset route (gh_emoji_assets.go):
-// everything under /ui/assets/ carries a content hash in its filename (Vite's
-// name-HASH.ext), so a given URL's bytes can never change and browsers may
-// cache them forever.
+// uiImmutableCacheControl: everything under /ui/assets/ carries a content hash in
+// its filename (Vite name-HASH.ext), so a URL's bytes never change and browsers
+// may cache them forever.
 const uiImmutableCacheControl = "public, max-age=31536000, immutable"
 
-// uiGzipMinSize is the smallest embedded file worth pre-compressing; below it
-// the gzip framing overhead eats the gain.
+// uiGzipMinSize is the smallest embedded file worth pre-compressing; below it the
+// gzip framing overhead eats the gain.
 const uiGzipMinSize = 512
 
-// uiCompressibleTypes maps the text-shaped asset extensions the SPA build
-// emits to their Content-Type. Only these are pre-compressed; images and other
-// binary formats are already packed and go out identity via the file server.
+// uiCompressibleTypes maps the text-shaped asset extensions to Content-Type; only
+// these are pre-compressed (binary formats are already packed).
 var uiCompressibleTypes = map[string]string{
 	".js":   "text/javascript; charset=utf-8",
 	".css":  "text/css; charset=utf-8",
@@ -68,11 +61,10 @@ var uiCompressibleTypes = map[string]string{
 	".wasm": "application/wasm",
 }
 
-// uiDelivery holds gzipped copies of the embedded assets, all compressed at
-// construction by walking the embedded filesystem (the bytes are immutable for
-// the life of the binary). Serving is a pure map read: no request-derived
-// string ever reaches a file read, so the response bytes provably originate
-// from the embed and never from the request.
+// uiDelivery holds gzipped copies of the embedded assets, compressed at
+// construction (the bytes are immutable). Serving is a pure map read: no
+// request-derived string reaches a file read, so response bytes provably come
+// from the embed, never the request.
 type uiDelivery struct {
 	gz map[string][]byte
 }
@@ -102,8 +94,7 @@ func (d *uiDelivery) gzipFor(reqPath string) []byte {
 	return d.gz[reqPath]
 }
 
-// gzipBytes compresses data at the best ratio; startup-or-once cost, so CPU
-// per byte does not matter the way it does on the per-request path.
+// gzipBytes compresses data at the best ratio; a startup-once cost, not per-request.
 func gzipBytes(data []byte) []byte {
 	var buf bytes.Buffer
 	gw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
@@ -116,10 +107,8 @@ func spaHandler(fsys fs.FS, pathPrefix string) http.Handler {
 	fileServer := http.StripPrefix(pathPrefix, http.FileServer(http.FS(fsys)))
 	delivery := newUIDelivery(fsys)
 
-	// The shell is read once at startup: index.html is served under every SPA
-	// route name, so it can never be cached by URL (Cache-Control: no-cache),
-	// but its strong ETag lets a browser revalidate with a cheap 304 instead
-	// of refetching the document on every navigation.
+	// index.html is served under every SPA route name, so it can never be cached
+	// by URL (no-cache); its strong ETag still lets a browser revalidate with a 304.
 	shell, err := fs.ReadFile(fsys, "index.html")
 	var shellETag string
 	if err != nil {
@@ -165,7 +154,7 @@ func spaHandler(fsys fs.FS, pathPrefix string) http.Handler {
 		} else {
 			reqPath = "."
 		}
-		// The document itself is the shell wherever it is asked for by name.
+		// Serve the shell wherever the document is asked for by name.
 		if reqPath == "." || reqPath == "index.html" {
 			serveShell(w, r)
 			return

@@ -6,19 +6,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Account settings back github.com's Settings → "Password and authentication"
-// and "Notifications" pages. GitHub exposes neither over REST, so — like
-// pinned repos and the wiki — these live under the browser-only /ui-data
-// namespace. `s.route` auto-wraps /ui-data with authenticateUIData, so the
-// handlers act on the authenticated viewer.
-//
-// The second-factor, password and session endpoints are in
-// gh_account_security.go.
+// Account settings back github.com's password/notifications pages, which GitHub
+// exposes over no REST route, so they live under browser-only /ui-data.
 func (s *Server) registerGHAccountSettingsRoutes() {
 	s.route("GET /ui-data/user/notification-settings", s.handleGetNotificationSettings)
 	s.route("PUT /ui-data/user/notification-settings", s.handleSetNotificationSettings)
-	// Changing the primary email address is web-only on github.com (the REST
-	// email endpoints add/remove/list but never re-point primary).
 	s.route("PUT /ui-data/user/emails/primary", s.handleSetPrimaryEmail)
 	s.registerGHAccountSecurityRoutes()
 	s.registerGHSudoModeRoutes()
@@ -26,8 +18,7 @@ func (s *Server) registerGHAccountSettingsRoutes() {
 }
 
 // handleSetPrimaryEmail promotes one of the viewer's verified addresses to
-// primary. The address must already be on the account (POST /user/emails) and
-// verified; anything else is a 422, mirroring the visibility toggle's errors.
+// primary. An address not already on the account, or unverified, is a 422.
 func (s *Server) handleSetPrimaryEmail(w http.ResponseWriter, r *http.Request) {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
@@ -65,17 +56,15 @@ func (s *Server) handleSetPrimaryEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetNotificationSettings returns the viewer's per-type notification
-// preferences, defaults included, so the settings page renders a complete form
-// for an account that has never saved one.
+// preferences, defaults included.
 func (s *Server) handleGetNotificationSettings(w http.ResponseWriter, r *http.Request) {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	// The enterprise's notification-delivery restriction is applied to the
-	// answer, so the page shows what would actually be delivered rather than
-	// what was once saved.
+	// Apply the enterprise delivery restriction so the answer reflects what
+	// would actually be delivered.
 	preferences, ok := s.store.EffectiveNotificationPreferences(viewer.ID)
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -84,9 +73,8 @@ func (s *Server) handleGetNotificationSettings(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, preferences)
 }
 
-// handleSetNotificationSettings replaces the viewer's preferences. The body is
-// the whole document (the page submits every control it renders); the store
-// normalizes it, dropping event keys the model does not define.
+// handleSetNotificationSettings replaces the viewer's preferences with the
+// posted document; the store drops event keys the model does not define.
 func (s *Server) handleSetNotificationSettings(w http.ResponseWriter, r *http.Request) {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
@@ -101,10 +89,9 @@ func (s *Server) handleSetNotificationSettings(w http.ResponseWriter, r *http.Re
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	// An enterprise that restricts notification delivery to its verified
-	// domains will not deliver to an address outside them. Saving a document
-	// that asks for email delivery anyway would record a promise the instance
-	// cannot keep, so the request is refused rather than silently ignored.
+	// Refuse a request for email delivery when the enterprise restricts it to
+	// verified domains this account's address is not in — recording a promise
+	// the instance cannot keep is worse than a 403.
 	if allowed, restricted := s.store.NotificationEmailDeliveryAllowed(viewer.ID); restricted && !allowed && req.SelectsEmailDelivery() {
 		writeGHError(w, http.StatusForbidden,
 			"Email notification delivery is restricted to the enterprise's verified domains, "+

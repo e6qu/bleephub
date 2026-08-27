@@ -12,10 +12,9 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// repositoryMatchesSearch evaluates the documented repository-search
-// qualifier set against real repository state. Every parsed qualifier reaches
-// this function, including exclusions; no accepted qualifier is silently
-// dropped.
+// repositoryMatchesSearch evaluates the repository-search qualifier set against
+// repository state. Every parsed qualifier reaches this function, exclusions
+// included.
 func repositoryMatchesSearch(st *store.Store, repo *store.Repo, query searchQuery) bool {
 	hasForkQualifier := false
 	for _, qualifier := range query.Qualifiers {
@@ -25,8 +24,7 @@ func repositoryMatchesSearch(st *store.Store, repo *store.Repo, query searchQuer
 		}
 	}
 	// GitHub excludes forks unless the query explicitly requests fork:true or
-	// fork:only. A negative fork qualifier is still explicit and is evaluated
-	// below.
+	// fork:only (a negative fork qualifier is still explicit, evaluated below).
 	if repo.Fork && !hasForkQualifier {
 		return false
 	}
@@ -118,8 +116,7 @@ func repositoryMatchesQualifier(st *store.Store, repo *store.Repo, qualifier sea
 		case "internal":
 			return strings.EqualFold(repo.Visibility, "internal")
 		case "sponsorable":
-			// Bleephub has no sponsors profile model, so no repository can
-			// truthfully match this qualifier.
+			// No sponsors profile model, so nothing matches.
 			return false
 		}
 	case "visibility":
@@ -167,9 +164,8 @@ func repositoryMatchesQualifier(st *store.Store, repo *store.Repo, qualifier sea
 		return repositoryHasLinkedArtifactState(st, repo.FullName, true) == (value == "true")
 	}
 	if propertyName, ok := strings.CutPrefix(qualifier.Key, "props."); ok {
-		// GitHub only applies custom property qualifiers when the query is
-		// scoped to one organization. The caller checks that condition before
-		// invoking this matcher.
+		// props.* qualifiers apply only for a single-org query; the caller checks
+		// that before invoking this matcher.
 		return repositoryHasCustomPropertyValue(st, repo, propertyName, qualifier.Value)
 	}
 	return false

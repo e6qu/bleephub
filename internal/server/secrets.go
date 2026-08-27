@@ -13,13 +13,12 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// actionsItemNameRe is real GitHub's name rule for Actions secrets and
-// variables: alphanumeric or underscores only, not starting with a digit.
+// actionsItemNameRe is GitHub's name rule for Actions secrets and variables:
+// alphanumeric or underscores, not starting with a digit.
 var actionsItemNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// actionsItemNameError validates a secret/variable name against real
-// GitHub's rules. kind is "Secret" or "Variable" (for the message).
-// Returns "" when the name is valid.
+// actionsItemNameError validates a secret/variable name against GitHub's rules.
+// kind is "Secret" or "Variable" for the message. Returns "" when valid.
 func actionsItemNameError(kind, name string) string {
 	if !actionsItemNameRe.MatchString(name) {
 		return kind + " names can only contain alphanumeric characters or underscores and must not start with a number."
@@ -30,8 +29,7 @@ func actionsItemNameError(kind, name string) string {
 	return ""
 }
 
-// validOrgItemVisibility reports whether v is a legal organization-level
-// secret/variable visibility.
+// validOrgItemVisibility reports whether v is a legal org-level visibility.
 func validOrgItemVisibility(v string) bool {
 	switch v {
 	case "all", "private", "selected":
@@ -40,8 +38,8 @@ func validOrgItemVisibility(v string) bool {
 	return false
 }
 
-// auditActor names the acting user for audit events; installation tokens
-// have no user, so the actor may be empty.
+// auditActor names the acting user for audit events; installation tokens have no
+// user, so it may be empty.
 func auditActor(r *http.Request) string {
 	if u := ghUserFromContext(r.Context()); u != nil {
 		return u.Login
@@ -50,7 +48,6 @@ func auditActor(r *http.Request) string {
 }
 
 func (s *Server) registerSecretsRoutes() {
-	// Repository scope.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListSecrets))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetRepoSecretsPublicKey))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetSecret))
@@ -58,32 +55,23 @@ func (s *Server) registerSecretsRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteSecret))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/organization-secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListRepoOrgSecrets))
 
-	// Environment scope.
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListEnvSecrets))
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetEnvSecretsPublicKey))
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetEnvSecret))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePutEnvSecret))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteEnvSecret))
 
-	// Environment scope, addressed by repository id.
-	//
-	// go-github's only typed environment-secret methods (GetEnvPublicKey,
-	// ListEnvSecrets, GetEnvSecret, CreateOrUpdateEnvSecret, DeleteEnvSecret)
-	// build this path, so without it an unmodified go-github cannot read or
-	// write an environment secret at all — which the SDK conformance matrix
-	// demonstrates rather than assumes.
-	//
-	// It is served by rewriting to the canonical owner/name path and
-	// re-dispatching, so authorization, permission scope and the handlers
-	// themselves are literally the same code: an id-addressed request cannot
-	// acquire access the named form would refuse.
+	// Environment secrets addressed by repository id. go-github's only typed
+	// environment-secret methods build this path, so without it an unmodified
+	// go-github cannot read or write an environment secret. Served by rewriting to
+	// the canonical owner/name path, so an id-addressed request cannot acquire
+	// access the named form would refuse.
 	for _, suffix := range []string{"", "/public-key", "/{secret_name}"} {
 		s.route("GET /api/v3/repositories/{repository_id}/environments/{env_name}/secrets"+suffix, s.rewriteRepositoryIDPath)
 	}
 	s.route("PUT /api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}", s.rewriteRepositoryIDPath)
 	s.route("DELETE /api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}", s.rewriteRepositoryIDPath)
 
-	// Organization scope.
 	s.route("GET /api/v3/orgs/{org}/actions/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListOrgSecrets))
 	s.route("GET /api/v3/orgs/{org}/actions/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetOrgSecretsPublicKey))
 	s.route("GET /api/v3/orgs/{org}/actions/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetOrgSecret))
@@ -97,11 +85,8 @@ func (s *Server) registerSecretsRoutes() {
 	s.registerVariablesRoutes()
 }
 
-// --- shared pieces ---
-
 // writeActionsPublicKey serves the sealed-box public key. Every scope's
-// public-key endpoint returns the same pair: like a GHES instance,
-// bleephub has one Actions encryption key.
+// public-key endpoint returns the same pair: bleephub has one Actions key.
 func (s *Server) writeActionsPublicKey(w http.ResponseWriter) {
 	kp, err := s.store.ActionsKeyPair()
 	if err != nil {
@@ -115,10 +100,9 @@ func (s *Server) writeActionsPublicKey(w http.ResponseWriter) {
 	})
 }
 
-// decryptSealedSecret enforces the real secrets wire contract: the body's
-// key_id must name the server's current key and encrypted_value must be a
-// libsodium sealed box against it. Writes a GitHub-style 422 and returns
-// false on any violation.
+// decryptSealedSecret enforces the secrets wire contract: key_id must name the
+// current key and encrypted_value must be a libsodium sealed box against it.
+// Writes a 422 and returns false on any violation.
 func (s *Server) decryptSealedSecret(w http.ResponseWriter, encryptedValue, keyID string) (string, bool) {
 	if encryptedValue == "" {
 		writeGHError(w, http.StatusUnprocessableEntity, "encrypted_value is required")
@@ -154,8 +138,8 @@ func secretJSON(sec *store.Secret) map[string]interface{} {
 	}
 }
 
-// sortedSecretsJSON renders a scope's secrets sorted by name. Call with
-// the store lock held (it only reads).
+// sortedSecretsJSON renders a scope's secrets sorted by name. Call with the
+// store lock held.
 func sortedSecretsJSON(m map[string]*store.Secret) []map[string]interface{} {
 	names := make([]string, 0, len(m))
 	for n := range m {
@@ -169,15 +153,14 @@ func sortedSecretsJSON(m map[string]*store.Secret) []map[string]interface{} {
 	return out
 }
 
-// sealedSecretBody is the request body real clients PUT for repository
-// and environment secrets.
+// sealedSecretBody is the PUT body for repository and environment secrets.
 type sealedSecretBody struct {
 	EncryptedValue string `json:"encrypted_value"`
 	KeyID          string `json:"key_id"`
 }
 
-// upsertSecret creates or updates a secret in one scope map, persisting
-// the scope's collection. Returns true when the secret was created.
+// upsertSecret creates or updates a secret in one scope map, persisting the
+// collection. Returns true when the secret was created.
 func (s *Server) upsertSecret(table map[string]map[string]*store.Secret, bucket, key, name, value string) bool {
 	now := time.Now().UTC()
 	s.store.Mu.Lock()
@@ -200,9 +183,8 @@ func (s *Server) upsertSecret(table map[string]map[string]*store.Secret, bucket,
 	return existing == nil
 }
 
-// deleteSecret removes a secret from one scope map, persisting the
-// remaining collection (or deleting the row when empty). Returns whether
-// the secret existed.
+// deleteSecret removes a secret from one scope map, persisting the remainder (or
+// deleting the row when empty). Returns whether the secret existed.
 func (s *Server) deleteSecret(table map[string]map[string]*store.Secret, bucket, key, name string) bool {
 	s.store.Mu.Lock()
 	defer s.store.Mu.Unlock()
@@ -220,8 +202,6 @@ func (s *Server) deleteSecret(table map[string]map[string]*store.Secret, bucket,
 	}
 	return true
 }
-
-// --- repository secrets ---
 
 func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
 	repo, ok := s.requireRepoAdmin(w, r)
@@ -318,10 +298,9 @@ func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListRepoOrgSecrets lists the organization secrets visible to a
-// repository (GET /repos/{owner}/{repo}/actions/organization-secrets).
-// The documented item shape is the plain actions-secret — visibility
-// metadata stays on the org endpoints.
+// handleListRepoOrgSecrets lists the org secrets visible to a repository. The
+// documented item shape is the plain actions-secret; visibility metadata stays
+// on the org endpoints.
 func (s *Server) handleListRepoOrgSecrets(w http.ResponseWriter, r *http.Request) {
 	repo, ok := s.requireRepoAdmin(w, r)
 	if !ok {
@@ -348,16 +327,11 @@ func (s *Server) handleListRepoOrgSecrets(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// --- environment secrets ---
-
-// resolveEnvScope resolves an environment-scoped secrets/variables
-// request to its repo key and scope key, writing a 404 when the repo or
-// the environment does not exist. Real GitHub never auto-creates an
-// environment through this surface — a PUT against a missing environment
-// is a 404, so the sim must hold that line too.
-//
-// The environment surface carries the same secrets as the repository one, so
-// it demands the same repository admin rights.
+// resolveEnvScope resolves an environment-scoped secrets/variables request to
+// its repo key and scope key, writing a 404 when the repo or environment does
+// not exist. GitHub never auto-creates an environment here (a PUT against a
+// missing one is a 404). Demands the same repository admin rights as the repo
+// surface.
 func (s *Server) resolveEnvScope(w http.ResponseWriter, r *http.Request) (repoKey, scopeKey, envName string, ok bool) {
 	repo, ok := s.requireRepoAdmin(w, r)
 	if !ok {
@@ -445,10 +419,9 @@ func (s *Server) handlePutEnvSecret(w http.ResponseWriter, r *http.Request) {
 	writeSecretUpsert(w, created)
 }
 
-// writeSecretUpsert writes the documented response of a secret PUT: 201 with
-// schema empty-object when the secret is new, 204 when it replaced one. Both
-// are declared on every ".../secrets/{secret_name}" PUT, and 201 carries a
-// body — a zero-length one is not an empty object.
+// writeSecretUpsert writes the documented secret-PUT response: 201 with an
+// empty-object body when new, 204 when it replaced one. 201 carries a body — a
+// zero-length one is not an empty object.
 func writeSecretUpsert(w http.ResponseWriter, created bool) {
 	if created {
 		writeJSON(w, http.StatusCreated, map[string]interface{}{})
@@ -474,8 +447,6 @@ func (s *Server) handleDeleteEnvSecret(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- organization secrets ---
-
 // resolveOrgForActions resolves {org} or writes a 404.
 func (s *Server) resolveOrgForActions(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
@@ -487,8 +458,7 @@ func (s *Server) resolveOrgForActions(w http.ResponseWriter, r *http.Request) (*
 }
 
 // orgSecretJSON renders the organization-actions-secret shape;
-// selected_repositories_url appears only for visibility "selected", as
-// on real GitHub.
+// selected_repositories_url appears only for visibility "selected".
 func orgSecretJSON(sec *store.OrgSecret, orgLogin, baseURL string) map[string]interface{} {
 	out := secretJSON(&sec.Secret)
 	out["visibility"] = sec.Visibility
@@ -660,9 +630,8 @@ func (s *Server) handleDeleteOrgSecret(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// writeSelectedReposResponse renders {total_count, repositories} for the
-// org secret/variable selected-repositories endpoints, dropping ids whose
-// repository no longer exists.
+// writeSelectedReposResponse renders {total_count, repositories} for the org
+// selected-repositories endpoints, dropping ids whose repository is gone.
 func (s *Server) writeSelectedReposResponse(w http.ResponseWriter, r *http.Request, ids []int) {
 	s.store.Mu.RLock()
 	repos := make([]*store.Repo, 0, len(ids))
@@ -686,8 +655,7 @@ func (s *Server) writeSelectedReposResponse(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// repoIDPathValue parses {repository_id}; non-numeric ids are 404s (the
-// resource cannot exist).
+// repoIDPathValue parses {repository_id}; a non-numeric id is a 404.
 func repoIDPathValue(w http.ResponseWriter, r *http.Request) (int, bool) {
 	id, err := strconv.Atoi(r.PathValue("repository_id"))
 	if err != nil {
@@ -739,13 +707,11 @@ func (s *Server) handleSetOrgSecretRepos(w http.ResponseWriter, r *http.Request)
 		})
 }
 
-// setOrgItemSelectedRepos implements the set-selected-repositories
-// endpoints (PUT .../{name}/repositories) shared by organization secrets
-// and organization variables across the Actions and Copilot coding agent
-// surfaces: 404 for a missing item or an unknown repository id, and —
-// where the surface documents it (variables) — 409 unless the item's
-// visibility is "selected". lookup and persistLocked run under the store
-// write lock, mirroring handleOrgSelectionChange.
+// setOrgItemSelectedRepos implements the set-selected-repositories endpoints
+// (PUT .../{name}/repositories) shared by org secrets and variables: 404 for a
+// missing item or unknown repository id, and — where the surface documents it
+// (variables) — 409 unless visibility is "selected". lookup and persistLocked
+// run under the store write lock.
 func (s *Server) setOrgItemSelectedRepos(w http.ResponseWriter, r *http.Request, name string, requireSelected bool,
 	lookup func() store.OrgScopedItem, persistLocked func()) {
 	var body struct {
@@ -782,11 +748,11 @@ func (s *Server) setOrgItemSelectedRepos(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleOrgSelectionChange implements the per-repository add/remove
-// endpoints (PUT/DELETE .../{name}/repositories/{repository_id}) for both
-// org secrets and org variables: 404 for a missing item or (on add) an
-// unknown repository, 409 unless the item's visibility is "selected".
-// lookup and persistLocked run under the store write lock.
+// handleOrgSelectionChange implements the per-repository add/remove endpoints
+// (PUT/DELETE .../{name}/repositories/{repository_id}) for org secrets and
+// variables: 404 for a missing item or (on add) unknown repository, 409 unless
+// visibility is "selected". lookup and persistLocked run under the store write
+// lock.
 func (s *Server) handleOrgSelectionChange(w http.ResponseWriter, r *http.Request, name string, add bool,
 	lookup func() store.OrgScopedItem, persistLocked func()) {
 	id, ok := repoIDPathValue(w, r)
@@ -848,7 +814,6 @@ func (s *Server) handleOrgSelectionChange(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// orgSecretSelectionChange adapts the shared core to the org-secrets table.
 func (s *Server) orgSecretSelectionChange(w http.ResponseWriter, r *http.Request, add bool) {
 	org, ok := s.resolveOrgForActions(w, r)
 	if !ok {
@@ -877,15 +842,10 @@ func (s *Server) handleRemoveOrgSecretRepo(w http.ResponseWriter, r *http.Reques
 	s.orgSecretSelectionChange(w, r, false)
 }
 
-// rewriteRepositoryIDPath serves a `/repositories/{repository_id}/…` request by
-// rewriting it to the equivalent `/repos/{owner}/{repo}/…` path and
-// re-dispatching through the same mux.
-//
-// Rewriting rather than duplicating the handlers is the point: authorization,
-// permission scope, rate-limit classification and the handler bodies are the
-// identical code, so an id-addressed request can never acquire access the named
-// form would refuse, and a later change to the named route cannot leave this
-// one behind.
+// rewriteRepositoryIDPath serves a /repositories/{repository_id}/… request by
+// rewriting it to the equivalent /repos/{owner}/{repo}/… path and re-dispatching
+// through the same mux, so an id-addressed request can never acquire access the
+// named form would refuse and cannot drift from the named route.
 func (s *Server) rewriteRepositoryIDPath(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("repository_id"))
 	if err != nil {
@@ -902,9 +862,8 @@ func (s *Server) rewriteRepositoryIDPath(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// Only the addressing segment is replaced; everything after it is carried
-	// across untouched, so the rewritten request differs from a direct one in
-	// no observable way.
+	// Only the addressing segment is replaced; everything after it carries across
+	// untouched.
 	rest := strings.TrimPrefix(r.URL.Path, "/api/v3/repositories/"+r.PathValue("repository_id"))
 	rewritten := r.Clone(r.Context())
 	rewritten.URL.Path = "/api/v3/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + rest

@@ -6,13 +6,10 @@ import (
 	"strings"
 )
 
-// The profile README convention is web-only on GitHub (the README of the
-// <login>/<login> repo for users, <org>/.github for organizations), and the
-// SPA must not probe the underlying readme endpoint directly: a missing
-// profile repo is the common case, the probe 404s, and the browser logs every
-// 4xx as a console error. This endpoint answers 200 with a null readme in
-// that case, running the real readme handler as a sub-request otherwise so
-// the payload stays byte-identical to GET /repos/{owner}/{repo}/readme.
+// Profile README (the <login>/<login> repo for users, <org>/.github for orgs).
+// A missing profile repo is the common case; answer 200 with a null readme
+// rather than a 404 the SPA would log as a console error, delegating to the
+// real readme handler otherwise so the payload stays byte-identical.
 func (s *Server) registerGHProfileReadmeRoutes() {
 	s.route("GET /ui-data/users/{login}/profile-readme", s.handleGetProfileReadme)
 }
@@ -28,10 +25,8 @@ func (s *Server) handleGetProfileReadme(w http.ResponseWriter, r *http.Request) 
 		repoName = ".github"
 	}
 	var readme json.RawMessage
-	// Build the sub-request path from the store-owned FullName rather than
-	// the request-derived login (the same pattern as the bootstrap handlers):
-	// the store lookup is the boundary between request data and the bytes
-	// this handler emits.
+	// Build the sub-request path from the store-owned FullName, not the
+	// request-derived login: the store lookup is the request-data boundary.
 	if repo := s.store.GetRepoByFullName(login + "/" + repoName); repo != nil {
 		ownerPart, namePart, _ := strings.Cut(repo.FullName, "/")
 		sub := uiSubGET(r, s.handleGetReadme, "/api/v3/repos/"+repo.FullName+"/readme", nil, map[string]string{

@@ -8,14 +8,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// app-level webhook config + deliveries.
-// Distinct from the per-repo webhooks (`/repos/{o}/{r}/hooks`) shipped earlier.
-// A GitHub App owns exactly one webhook URL; events targeted at the app
-// (installation, installation_repositories, github_app_authorization, plus
-// repo events when the app is installed there) deliver to this single URL.
-//
-// JWT-authenticated. App deliveries are stored separately from per-repo
-// deliveries (Store.AppHookDeliveries, keyed by app ID).
+// App-level webhook config and deliveries. A GitHub App owns one webhook URL;
+// its deliveries are stored separately from per-repo deliveries, keyed by app
+// ID. JWT-authenticated.
 
 func (s *Server) registerGHAppHookRoutes() {
 	s.route("GET /api/v3/app/hook/config", s.handleGetAppHookConfig)
@@ -128,30 +123,25 @@ func (s *Server) handleRedeliverAppHookDelivery(w http.ResponseWriter, r *http.R
 func appHookConfigJSON(app *store.App) map[string]interface{} {
 	contentType := app.WebhookContentType
 	if contentType == "" {
-		contentType = "form" // GitHub's documented default for app webhooks
+		contentType = "form" // GitHub's default for app webhooks
 	}
 	insecureSSL := app.WebhookInsecureSSL
 	if insecureSSL == "" {
 		insecureSSL = "0"
 	}
-	// webhook-config carries exactly these four members — the hook's
-	// active flag lives on the hook object, not its config.
 	return map[string]interface{}{
 		"url":          app.WebhookURL,
 		"content_type": contentType,
 		"insecure_ssl": insecureSSL,
-		"secret":       "********", // real GH redacts; preserves contract
+		"secret":       "********", // GitHub redacts the secret
 	}
 }
 
 func deliveryFullJSON(d *store.WebhookDelivery) map[string]interface{} {
 	out := deliveryToJSON(d)
-	// The full delivery object (unlike the list summary) carries the target url.
 	out["url"] = d.TargetURL
-	// request and response are required members of hook-delivery; GitHub
-	// emits them with null members when nothing was captured. The HTTP
-	// status lives only in the top-level status_code — the response
-	// object carries exactly headers + payload.
+	// request and response are required members; emit them with null members
+	// when nothing was captured, per the hook-delivery shape.
 	request := map[string]interface{}{"headers": nil, "payload": nil}
 	if d.Request != nil {
 		request["headers"] = d.Request.Headers

@@ -9,13 +9,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub Copilot coding agent tasks — the /agents/tasks and
-// /agents/repos/{owner}/{repo}/tasks surfaces. A task is created against
-// a repository with a prompt; each task carries the session spawned for
-// it. bleephub stores the task/session entities and their state; the
-// Copilot coding agent's execution engine is not part of bleephub, so a
-// created task stays "queued" (nothing dequeues it), exactly what the
-// store knows to be true.
+// GitHub Copilot coding agent tasks. bleephub has no execution engine, so a
+// created task stays "queued" — nothing dequeues it.
 
 func (s *Server) registerGHAgentsTasksRoutes() {
 	s.route("GET /api/v3/agents/tasks", s.handleListAgentTasks)
@@ -24,10 +19,6 @@ func (s *Server) registerGHAgentsTasksRoutes() {
 	s.route("POST /api/v3/agents/repos/{owner}/{repo}/tasks", s.handleCreateAgentTaskInRepo)
 	s.route("GET /api/v3/agents/repos/{owner}/{repo}/tasks/{task_id}", s.handleGetAgentTaskInRepo)
 }
-
-// --- store methods ---
-
-// --- JSON rendering ---
 
 func (s *Server) agentTaskJSON(t *store.AgentTask, baseURL string) map[string]interface{} {
 	repo := s.store.GetRepoByID(t.RepoID)
@@ -94,9 +85,6 @@ func (s *Server) agentTaskDetailJSON(t *store.AgentTask, baseURL string) map[str
 	return out
 }
 
-// --- handlers ---
-
-// parseAgentTaskFilter reads the documented list query parameters.
 func parseAgentTaskFilter(r *http.Request) store.AgentTaskFilter {
 	q := r.URL.Query()
 	f := store.AgentTaskFilter{
@@ -215,8 +203,8 @@ func (s *Server) handleCreateAgentTaskInRepo(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if req.Prompt == "" {
-		// This op's documented 422 items declare only code/message — the
-		// resource/field members of the generic helper are undeclared there.
+		// This op's documented 422 items declare only code/message, not the
+		// generic helper's resource/field members.
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
 			"message":           "Validation Failed",
 			"documentation_url": "https://docs.github.com/rest",

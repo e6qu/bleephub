@@ -17,14 +17,14 @@ func (s *Server) registerGHSecurityAdvisoriesRoutes() {
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}", s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleUpdateSecurityAdvisory))
 	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}/cve", s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleRequestCVE))
 	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}/forks", s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleCreateTemporaryFork))
-	// The literal /reports path conflicts with the {ghsa_id} wildcard in Go 1.22's mux,
-	// so the wildcard dispatches to the real /security-advisories/reports endpoint.
+	// /reports collides with the {ghsa_id} wildcard in Go 1.22's mux, so the
+	// wildcard handler dispatches the /reports endpoint.
 	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}", s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleSecurityAdvisoryReportsDispatch))
 	s.route("GET /api/v3/orgs/{org}/security-advisories", s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.handleListOrgSecurityAdvisories))
 }
 
-// handleListOrgSecurityAdvisories implements GET /orgs/{org}/security-advisories:
-// the union of every advisory filed against the organization's repositories.
+// handleListOrgSecurityAdvisories lists the union of every advisory filed
+// against the organization's repositories.
 func (s *Server) handleListOrgSecurityAdvisories(w http.ResponseWriter, r *http.Request) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
@@ -77,7 +77,6 @@ func (s *Server) handleListOrgSecurityAdvisories(w http.ResponseWriter, r *http.
 	sort.SliceStable(rows, func(i, j int) bool {
 		ti, tj := sortTime(rows[i]), sortTime(rows[j])
 		if ti.Equal(tj) {
-			// Tiebreak equal timestamps by ID for a stable order.
 			if asc {
 				return rows[i].advisory.ID < rows[j].advisory.ID
 			}
@@ -112,11 +111,8 @@ func (s *Server) handleListSecurityAdvisories(w http.ResponseWriter, r *http.Req
 	state := r.URL.Query().Get("state")
 	severity := r.URL.Query().Get("severity")
 
-	// A published advisory is a public fact about a package; an unpublished
-	// one is under embargo and belongs to the repository's security team.
-	// Without this split, every draft advisory on a public repository was
-	// listed to any account holding a token — the embargo existed only in
-	// the state field.
+	// Callers without security access see only published advisories; unpublished
+	// ones are under embargo.
 	publishedOnly := !s.viewerHasRepoSecurityAccess(r, repo)
 
 	advisories := s.store.ListSecurityAdvisories(repo.ID)
@@ -185,16 +181,13 @@ func (s *Server) handleCreateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if req.StartPrivateFork {
-		// The spec's start_private_fork member asks for the temporary private
-		// fork maintainers develop the fix in, which is the same fork POST
-		// .../forks mints — so the advisory carries one either way it was
-		// asked for.
+		// start_private_fork mints the same temporary fork POST .../forks does.
 		if fork := s.store.CreateTemporaryFork(repo.ID, adv.GHSAID); fork != nil {
 			adv = s.store.GetSecurityAdvisoryByGHSA(repo.ID, adv.GHSAID)
 		}
 	}
-	// announceAdvisoryPublication runs the derivation for a create that is
-	// already published; a draft create produces neither alerts nor events.
+	// A draft create produces neither alerts nor events; an already-published
+	// one runs the derivation.
 	s.announceAdvisoryPublication(repo, adv, user, false)
 	advJSON := securityAdvisoryToJSON(adv, repo, s.baseURL(r), s.store)
 	writeJSONCreated(w, jsonStringField(advJSON, "url"), advJSON)
@@ -212,9 +205,7 @@ func (s *Server) handleGetSecurityAdvisory(w http.ResponseWriter, r *http.Reques
 	}
 
 	adv := s.store.GetSecurityAdvisoryByGHSA(repo.ID, r.PathValue("ghsa_id"))
-	// An embargoed advisory answers 404 rather than 403 to a caller without
-	// security access: 403 would confirm the advisory exists, which is the
-	// one thing an embargo is meant to withhold.
+	// Answer an embargoed advisory 404, not 403: a 403 would confirm it exists.
 	if adv == nil || (!advisoryIsPublic(adv) && !s.viewerHasRepoSecurityAccess(r, repo)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -223,8 +214,7 @@ func (s *Server) handleGetSecurityAdvisory(w http.ResponseWriter, r *http.Reques
 }
 
 // advisoryIsPublic reports whether an advisory has left embargo. A withdrawn
-// advisory was public before it was withdrawn, so it stays readable — the
-// withdrawal is the news.
+// advisory stays readable — it was public before withdrawal.
 func advisoryIsPublic(a *store.SecurityAdvisory) bool {
 	if a == nil || a.PublishedAt == nil {
 		return false
@@ -260,18 +250,15 @@ func (s *Server) handleUpdateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		Severity    string  `json:"severity"`
 		CVEID       string  `json:"cve_id"`
 		CVSSScore   float64 `json:"cvss_score"`
-		// cvss_vector_string is the member repository-advisory-update
-		// declares; the old cvss_vector spelling matched no GitHub client.
+		// cvss_vector_string is the member repository-advisory-update declares.
 		CVSSVector string   `json:"cvss_vector_string"`
 		CWEs       []string `json:"cwe_ids"`
 		State      string   `json:"state"`
-		// A pointer distinguishes an absent (or null) credits member — keep
-		// the stored list — from a present one, which replaces it ([] clears).
-		Credits *[]store.SecurityAdvisoryCredit `json:"credits"`
-		// The same absent-versus-present distinction for the two collaborator
-		// lists, which [] clears.
-		CollaboratingUsers *[]string `json:"collaborating_users"`
-		CollaboratingTeams *[]string `json:"collaborating_teams"`
+		// Pointer distinguishes an absent credits member (keep stored) from a
+		// present one (replaces it; [] clears). Same for the collaborator lists.
+		Credits            *[]store.SecurityAdvisoryCredit `json:"credits"`
+		CollaboratingUsers *[]string                       `json:"collaborating_users"`
+		CollaboratingTeams *[]string                       `json:"collaborating_teams"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -333,8 +320,7 @@ func (s *Server) handleUpdateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		return
 	}
 	// GetSecurityAdvisoryByGHSA returns a detached snapshot (STORE-021), so the
-	// pre-update `adv` no longer reflects the mutation applied by the keyed
-	// UpdateSecurityAdvisory above; re-read the fresh state to publish and render.
+	// pre-update `adv` misses the keyed UpdateSecurityAdvisory's change; re-read.
 	adv = s.store.GetSecurityAdvisoryByGHSA(repo.ID, r.PathValue("ghsa_id"))
 	s.announceAdvisoryPublication(repo, adv, ghUserFromContext(r.Context()), publishedBefore)
 	writeJSON(w, http.StatusOK, securityAdvisoryToJSON(adv, repo, s.baseURL(r), s.store))
@@ -437,9 +423,8 @@ func (s *Server) handleSecurityAdvisoryReportsDispatch(w http.ResponseWriter, r 
 	}
 
 	req.State = "triage"
-	// The spec's private-vulnerability-report-create request has no credits
-	// member (only repository-advisory-create/update carry one), so a report
-	// never seeds credits even when the decoded body happened to include them.
+	// private-vulnerability-report-create has no credits member, so never seed
+	// them even if the decoded body carried some.
 	req.Credits = nil
 	adv, err := s.store.CreateSecurityAdvisoryE(repo.ID, user.ID, req)
 	if err != nil {
@@ -464,18 +449,15 @@ func (s *Server) handleSecurityAdvisoryReportsDispatch(w http.ResponseWriter, r 
 	})
 	adv.SubmissionAccepted = true
 	// A private vulnerability report is the one draft-stage transition that
-	// does produce an event: the repository's maintainers have to learn that
-	// somebody filed one, which is exactly what repository_advisory
-	// "reported" tells them.
+	// emits an event, so maintainers learn one was filed.
 	s.emitRepositoryAdvisoryEvent(repo, adv, user, "reported")
 	advJSON := securityAdvisoryToJSON(adv, repo, s.baseURL(r), s.store)
 	writeJSONCreated(w, jsonStringField(advJSON, "url"), advJSON)
 }
 
-// validAdvisoryCredits enforces the spec's credit member constraints — a
-// known credit type from the security-advisory-credit-types enum and a login
-// that resolves to a user (credits_detailed must render a non-null user
-// object). Writes the 422 and reports false when a credit is invalid.
+// validAdvisoryCredits requires each credit to name a known type and a login
+// that resolves to a user (credits_detailed must render a non-null user).
+// Writes the 422 and returns false on the first invalid credit.
 func (s *Server) validAdvisoryCredits(w http.ResponseWriter, credits []store.SecurityAdvisoryCredit) bool {
 	for _, c := range credits {
 		if c.Login == "" || s.store.LookupUserByLogin(c.Login) == nil {
@@ -490,18 +472,17 @@ func (s *Server) validAdvisoryCredits(w http.ResponseWriter, credits []store.Sec
 	return true
 }
 
-// securityAdvisoryCreditsJSON renders the advisory's credits in both published
-// shapes: `credits` echoes the {login, type} request members, and
-// `credits_detailed` resolves each login to its user object with the credit
-// state — bleephub auto-accepts, so the state is always "accepted".
+// securityAdvisoryCreditsJSON renders both credit shapes: `credits` echoes the
+// {login, type} members, `credits_detailed` resolves each login to its user.
+// bleephub auto-accepts, so the state is always "accepted".
 func securityAdvisoryCreditsJSON(a *store.SecurityAdvisory, st *store.Store, baseURL string) (credits, detailed []map[string]interface{}) {
 	credits = []map[string]interface{}{}
 	detailed = []map[string]interface{}{}
 	for _, c := range a.Credits {
 		u := st.LookupUserByLogin(c.Login)
 		if u == nil {
-			// The credited account disappeared after storage; the response
-			// schema requires a user object, so drop the row from both views.
+			// Credited account gone; the schema requires a user object, so drop
+			// the row from both views.
 			continue
 		}
 		credits = append(credits, map[string]interface{}{
@@ -545,8 +526,7 @@ func securityAdvisoryToJSON(a *store.SecurityAdvisory, repo *store.Repo, baseURL
 		publishedAt = a.PublishedAt.UTC().Format(time.RFC3339)
 	}
 
-	// The score is derived from the vector when the author supplied only a
-	// vector, which is all repository-advisory-create accepts.
+	// Derive the score from the vector when only a vector was supplied.
 	cvssScore := interface{}(nil)
 	if score, ok := store.AdvisoryCVSSScore(a); ok {
 		cvssScore = score
@@ -579,15 +559,12 @@ func securityAdvisoryToJSON(a *store.SecurityAdvisory, repo *store.Repo, baseURL
 
 	if len(vulnerabilities) == 0 && a.VulnerableVersionRange != "" {
 		vulnerabilities = append(vulnerabilities, map[string]interface{}{
-			// package itself is nullable; its ecosystem/name are not, so emit a
-			// null package rather than a package object with null members.
+			// package is nullable; its ecosystem/name are not, so emit a null
+			// package rather than an object with null members.
 			"package":                  nil,
 			"vulnerable_version_range": a.VulnerableVersionRange,
 			"patched_versions":         nil,
-			// This branch renders an advisory that named a version range but
-			// no package, so there is no vulnerability entry to read affected
-			// functions from — and the member is a non-null array.
-			"vulnerable_functions": []string{},
+			"vulnerable_functions":     []string{},
 		})
 	}
 
@@ -628,9 +605,8 @@ func cweName(cwe string) string {
 	return "CWE-" + cwe
 }
 
-// advisoryVulnerableFunctions renders a vulnerability's affected functions.
-// The member is a non-null array in the spec, so a vulnerability that names
-// none renders [] rather than null.
+// advisoryVulnerableFunctions renders affected functions as a non-null array —
+// [] when none are named.
 func advisoryVulnerableFunctions(v store.SecurityAdvisoryVulnerability) []string {
 	if v.VulnerableFunctions == nil {
 		return []string{}
@@ -638,10 +614,9 @@ func advisoryVulnerableFunctions(v store.SecurityAdvisoryVulnerability) []string
 	return v.VulnerableFunctions
 }
 
-// advisoryCollaboratingUsers renders the accounts granted access to an
-// advisory's private drafting workspace, dropping any whose account has since
-// been deleted — a collaborator list is a list of accounts, and a null entry
-// in it is not something a typed SDK can decode.
+// advisoryCollaboratingUsers renders the accounts granted access to the
+// advisory's private workspace, dropping any since-deleted account (a null
+// entry would break a typed SDK).
 func advisoryCollaboratingUsers(a *store.SecurityAdvisory, st *store.Store, baseURL string) []map[string]interface{} {
 	users := make([]map[string]interface{}, 0, len(a.CollaboratingUsers))
 	for _, login := range a.CollaboratingUsers {
@@ -652,14 +627,10 @@ func advisoryCollaboratingUsers(a *store.SecurityAdvisory, st *store.Store, base
 	return users
 }
 
-// advisoryCollaboratingTeams renders the teams granted access to an
-// advisory's private drafting workspace. A team is named by slug, and only
-// teams of the repository's owning organization can hold the grant, so a repo
-// owned by a user has no teams to grant it to.
-//
-// The rendering goes through teamToJSON so a team here is byte-identical to
-// the same team served from /orgs/{org}/teams — a client decoding one into
-// its Team type decodes the other.
+// advisoryCollaboratingTeams renders the teams granted access to the advisory's
+// private workspace. Only teams of the repo's owning org can hold the grant, so
+// a user-owned repo has none. Rendering via teamToJSON keeps a team here
+// byte-identical to the same team from /orgs/{org}/teams.
 func advisoryCollaboratingTeams(a *store.SecurityAdvisory, st *store.Store, baseURL string) []map[string]interface{} {
 	repo := st.GetRepoByID(a.RepoID)
 	teams := make([]map[string]interface{}, 0, len(a.CollaboratingTeams))

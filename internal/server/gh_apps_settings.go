@@ -10,9 +10,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// registerGHAppSettingsRoutes exposes the browser-owned settings lifecycle.
-// These are deliberately separate from /api/v3/app, whose authentication and
-// wire contract are the public GitHub App REST API.
+// registerGHAppSettingsRoutes exposes the browser-owned settings lifecycle,
+// kept separate from /api/v3/app whose contract is the public GitHub App API.
 func (s *Server) registerGHAppSettingsRoutes() {
 	s.route("GET /settings/apps/{app_slug}", s.handleGetBrowserGitHubApp)
 	s.route("PATCH /settings/apps/{app_slug}", s.handleUpdateBrowserGitHubApp)

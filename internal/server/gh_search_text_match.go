@@ -7,17 +7,14 @@ import (
 	"unicode/utf8"
 )
 
-// acceptsTextMatch reports whether the request's Accept header opts into
-// GitHub's text-match media type (application/vnd.github.text-match+json,
-// historically also application/vnd.github.v3.text-match+json), which adds a
-// text_matches array to each search result item.
+// acceptsTextMatch reports whether the Accept header opts into the text-match
+// media type, which adds a text_matches array to each search result item.
 func acceptsTextMatch(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), ".text-match+json")
 }
 
-// searchTextMatchProperty is one candidate (property name, property value)
-// pair a search endpoint offers for text-match highlighting, e.g. an issue's
-// "title" and "body".
+// searchTextMatchProperty is one (name, value) pair offered for text-match
+// highlighting, e.g. an issue's "title" and "body".
 type searchTextMatchProperty struct {
 	name  string
 	value string
@@ -26,12 +23,10 @@ type searchTextMatchProperty struct {
 // searchTextMatchMaxOccurrences bounds the matches listed inside one fragment.
 const searchTextMatchMaxOccurrences = 20
 
-// searchTextMatches builds the spec `search-result-text-matches` payload for
-// one result item: for each property that actually contains a search term, a
-// fragment of roughly ±100 characters around the first hit, with every term
-// occurrence inside the fragment as [start, end) indices relative to the
-// fragment. Always returns a non-nil array so items marshal `"text_matches":
-// []` rather than null when nothing matched.
+// searchTextMatches builds the `search-result-text-matches` payload: for each
+// property containing a term, a ±100-char fragment around the first hit with
+// per-occurrence fragment-relative indices. Non-nil so an empty result marshals
+// as `[]`, not null.
 func searchTextMatches(objectURL, objectType string, properties []searchTextMatchProperty, terms []string) []map[string]interface{} {
 	out := []map[string]interface{}{}
 	for _, property := range properties {
@@ -50,12 +45,10 @@ func searchTextMatches(objectURL, objectType string, properties []searchTextMatc
 	return out
 }
 
-// searchTextMatchFragment locates the first term hit in value, cuts a fragment
-// of about 100 characters of context either side (on rune boundaries), and
-// lists each term occurrence inside the fragment with fragment-relative byte
-// indices. Search terms are already lower-cased by the query parser, so the
-// haystack is matched lower-cased; when lower-casing changes the byte length
-// (rare non-ASCII case folds would desynchronize indices) matching falls back
+// searchTextMatchFragment cuts a ~100-char (rune-aligned) fragment around the
+// first term hit and lists each occurrence with fragment-relative byte indices.
+// Terms arrive lower-cased, so matching is lower-cased — but when lower-casing
+// changes byte length (rare non-ASCII folds would desync indices) it falls back
 // to the original bytes.
 func searchTextMatchFragment(value string, terms []string) (string, []map[string]interface{}, bool) {
 	if value == "" || len(terms) == 0 {
@@ -66,7 +59,7 @@ func searchTextMatchFragment(value string, terms []string) (string, []map[string
 		haystack = value
 	}
 
-	// The fragment window anchors on the earliest hit of any term.
+	// Anchor the window on the earliest hit of any term.
 	first, firstEnd := -1, 0
 	for _, term := range terms {
 		if term == "" {

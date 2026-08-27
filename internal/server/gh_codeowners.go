@@ -7,41 +7,25 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// CODEOWNERS ownership: the changed-path matcher, the automatic reviewer
-// requests a pull request collects when it is opened or its head advances, and
-// the `require_code_owner_reviews` half of a protected branch's review rule.
-//
-// The matcher follows GitHub's documented CODEOWNERS syntax, which is
-// gitignore-shaped with deliberate departures:
-//
-//   - the LAST matching pattern wins, so a narrow rule placed below a broad one
-//     takes its files over;
-//   - a pattern with no owners CLEARS ownership for the paths it matches rather
-//     than inheriting the broader rule above it, which is how GitHub's own
-//     "/apps/ @octocat" + "/apps/github" example exempts a subdirectory;
-//   - `!` negation, `[...]` character ranges and `\` escapes are not part of the
-//     syntax at all, so a line trying to use one owns nothing.
-//
-// Anchoring is gitignore's: a pattern whose only slash is a trailing one (or
-// that has no slash) matches at any depth, anything else is anchored at the
-// repository root. A pattern ending in a literal segment or in a slash also
-// owns everything beneath it, while one ending in a wildcard does not —
-// `docs/*` owns `docs/getting-started.md` but not
-// `docs/build-app/troubleshooting.md`, exactly as GitHub's example spells out.
+// CODEOWNERS matcher, following GitHub's gitignore-shaped syntax with its
+// deliberate departures: the LAST matching pattern wins; a pattern with no
+// owners CLEARS ownership for its paths; `!`, `[...]` ranges and `\` escapes
+// are not syntax, so a line using one owns nothing. Anchoring is gitignore's —
+// a pattern with no slash or only a trailing one matches at any depth,
+// otherwise it anchors at the repo root — and a pattern ending in a literal
+// segment or a slash owns everything beneath it while one ending in a wildcard
+// does not (`docs/*` owns `docs/x.md` but not `docs/sub/y.md`).
 
-// codeownersRule is one CODEOWNERS line: the path pattern, the owner tokens it
-// names (empty when the line clears ownership), and the pattern compiled to the
-// expression that decides whether a changed path belongs to it.
+// codeownersRule is one CODEOWNERS line: the path pattern, its owner tokens
+// (empty when the line clears ownership), and the compiled matcher.
 type codeownersRule struct {
 	pattern string
 	owners  []string
 	re      *regexp.Regexp
 }
 
-// parseCodeownersRules turns a CODEOWNERS file into its rules, in file order —
-// the order the last-match-wins rule is resolved against. Comment and blank
-// lines, and lines whose pattern uses syntax GitHub does not support, yield no
-// rule.
+// parseCodeownersRules turns a CODEOWNERS file into its rules in file order.
+// Blank, comment, and unsupported-syntax lines yield no rule.
 func parseCodeownersRules(content string) []codeownersRule {
 	var rules []codeownersRule
 	for _, line := range strings.Split(content, "\n") {
@@ -50,8 +34,7 @@ func parseCodeownersRules(content string) []codeownersRule {
 			continue
 		}
 		fields := strings.Fields(trimmed)
-		// GitHub's CODEOWNERS has no negation: a `!` pattern is not a rule
-		// that un-owns anything, it is a line that matches nothing.
+		// No negation in CODEOWNERS: a `!` pattern matches nothing.
 		if strings.HasPrefix(fields[0], "!") {
 			continue
 		}
@@ -64,10 +47,9 @@ func parseCodeownersRules(content string) []codeownersRule {
 	return rules
 }
 
-// codeownersPatternRegexp compiles one CODEOWNERS pattern into the expression
-// that matches the repository-relative paths it owns. It returns nil for a
-// pattern that owns nothing: the empty pattern, a bare "/", and "***", which
-// GitHub rejects.
+// codeownersPatternRegexp compiles one pattern into the matcher for the
+// repo-relative paths it owns, or nil for a pattern that owns nothing (empty,
+// bare "/", or "***", which GitHub rejects).
 func codeownersPatternRegexp(pattern string) *regexp.Regexp {
 	if pattern == "" || pattern == "/" || strings.Contains(pattern, "***") {
 		return nil
@@ -76,17 +58,16 @@ func codeownersPatternRegexp(pattern string) *regexp.Regexp {
 	segments := strings.Split(pattern, "/")
 	switch {
 	case segments[0] == "":
-		// A leading slash anchors the pattern at the repository root.
+		// Leading slash anchors at the repo root.
 		segments = segments[1:]
 	case len(segments) == 1 || (len(segments) == 2 && segments[1] == ""):
-		// No slash of its own ("*.js") or only a trailing one ("apps/"):
-		// the pattern matches at any depth, as a leading "**/" would.
+		// No own slash or only a trailing one: match at any depth (leading "**/").
 		if segments[0] != "**" {
 			segments = append([]string{"**"}, segments...)
 		}
 	}
 	if len(segments) > 1 && segments[len(segments)-1] == "" {
-		// A trailing slash names a directory and owns its whole subtree.
+		// Trailing slash names a directory and owns its subtree.
 		segments[len(segments)-1] = "**"
 	}
 	if len(segments) == 0 {
@@ -116,10 +97,9 @@ func codeownersPatternRegexp(pattern string) *regexp.Regexp {
 			b.WriteString(`/`)
 		}
 		b.WriteString(codeownersSegmentRegexp(segment))
-		// A final segment that names something literally names a directory as
-		// readily as a file, so it owns everything beneath it ("**/logs" owns
-		// "build/logs/out.txt"). A final segment that is a wildcard does not:
-		// "docs/*" stops at the directory's immediate children.
+		// A literal final segment owns its subtree ("**/logs" owns
+		// "build/logs/out.txt"); a wildcard one does not ("docs/*" stops at
+		// immediate children).
 		if i == last && !strings.ContainsAny(segment, "*?") {
 			b.WriteString(`(?:/.*)?`)
 		}
@@ -134,9 +114,8 @@ func codeownersPatternRegexp(pattern string) *regexp.Regexp {
 	return re
 }
 
-// codeownersSegmentRegexp translates one path segment's globs: `*` spans any
-// run of characters within a segment and `?` exactly one, neither crossing a
-// separator. Everything else is literal.
+// codeownersSegmentRegexp translates one segment's globs: `*` spans any run
+// within the segment, `?` exactly one; neither crosses a separator.
 func codeownersSegmentRegexp(segment string) string {
 	var b strings.Builder
 	for _, r := range segment {
@@ -152,8 +131,8 @@ func codeownersSegmentRegexp(segment string) string {
 	return b.String()
 }
 
-// codeownersRuleForPath returns the index of the last rule matching path, which
-// is the rule that owns it, and whether any rule matched at all.
+// codeownersRuleForPath returns the index of the last matching rule (the owner)
+// and whether any matched.
 func codeownersRuleForPath(rules []codeownersRule, path string) (int, bool) {
 	for i := len(rules) - 1; i >= 0; i-- {
 		if rules[i].re.MatchString(path) {
@@ -163,10 +142,8 @@ func codeownersRuleForPath(rules []codeownersRule, path string) (int, bool) {
 	return 0, false
 }
 
-// codeownersFileAtRef returns the operative CODEOWNERS file at ref: its content
-// and the path it was found at, searching GitHub's three locations in
-// precedence order. A repository without one yields ok == false, which is what
-// leaves it untouched by every rule below.
+// codeownersFileAtRef returns the operative CODEOWNERS content and its path at
+// ref, searching GitHub's three locations in precedence order.
 func (s *Server) codeownersFileAtRef(repo *store.Repo, ref string) (content, path string, ok bool) {
 	tree, _, err := s.repoTreeAtRef(repo, ref)
 	if err != nil {
@@ -190,19 +167,17 @@ func (s *Server) codeownersFileAtRef(repo *store.Repo, ref string) (content, pat
 	return "", "", false
 }
 
-// codeownerOwners is one rule's owners after resolution against the store: the
-// users and organization teams that can actually be asked to review.
+// codeownerOwners is one rule's resolved owners: the users and teams that can
+// actually be asked to review.
 type codeownerOwners struct {
 	userIDs []int
 	teamIDs []int
 }
 
-// resolveCodeowners turns a rule's owner tokens into store principals.
-// A `@login` is a user (an organization login owns files on GitHub but cannot
-// review, so it resolves to nothing), a `@org/team` is a team of the
-// repository's own organization, and a bare token that looks like an address is
-// the user holding that email. Owners that cannot read the repository are
-// dropped: they can never supply the review the request is asking for.
+// resolveCodeowners turns a rule's owner tokens into store principals: `@login`
+// is a user (an org login cannot review, so it resolves to nothing), `@org/team`
+// is a team of the repo's own org, and an address token is the user holding
+// that email. Owners that cannot read the repo are dropped.
 func (s *Server) resolveCodeowners(repo *store.Repo, tokens []string) codeownerOwners {
 	var out codeownerOwners
 	seenUser := map[int]bool{}
@@ -219,8 +194,7 @@ func (s *Server) resolveCodeowners(repo *store.Repo, tokens []string) codeownerO
 
 	for _, token := range tokens {
 		if !strings.HasPrefix(token, "@") {
-			// An email owner is only an owner when it belongs to a user; an
-			// address nobody holds names no reviewer.
+			// An address owner counts only when a user holds it.
 			if at := strings.Index(token, "@"); at > 0 && at < len(token)-1 {
 				addUser(s.store.LookupUserByEmail(token))
 			}
@@ -232,8 +206,8 @@ func (s *Server) resolveCodeowners(repo *store.Repo, tokens []string) codeownerO
 			addUser(s.store.LookupUserByLogin(name))
 			continue
 		}
-		// Only a team of the repository's own organization can be a reviewer,
-		// the same constraint the explicit review-request endpoint applies.
+		// Only a team of the repo's own org can review, as with explicit
+		// review requests.
 		if !strings.EqualFold(orgLogin, repoOwner) {
 			continue
 		}
@@ -247,10 +221,8 @@ func (s *Server) resolveCodeowners(repo *store.Repo, tokens []string) codeownerO
 	return out
 }
 
-// codeownerTeamCanReadRepo is the team half of the read-access filter: a team
-// that holds the repository through a grant of its own, or whose members can
-// reach it some other way (an organization base permission, a public
-// repository), can review it.
+// codeownerTeamCanReadRepo reports whether a team can read repo, through its own
+// grant or through any member's access.
 func (s *Server) codeownerTeamCanReadRepo(team *store.Team, repo *store.Repo) bool {
 	for _, name := range team.RepoNames {
 		if name == repo.FullName {
@@ -265,12 +237,9 @@ func (s *Server) codeownerTeamCanReadRepo(team *store.Team, repo *store.Repo) bo
 	return false
 }
 
-// codeownerRequirements resolves a pull request's changed paths against the
-// CODEOWNERS file on its base branch — the branch whose protection rule governs
-// the merge and the branch GitHub reads the file from — and returns one entry
-// per distinct rule the changes matched. An empty result means no code owner
-// governs this pull request: the repository has no CODEOWNERS file, nothing it
-// owns changed, or every match was a rule that clears ownership.
+// codeownerRequirements resolves a PR's changed paths against the CODEOWNERS
+// file on its base branch (where GitHub reads it) and returns one entry per
+// distinct matched rule. Empty means no code owner governs this PR.
 func (s *Server) codeownerRequirements(repo *store.Repo, pr *store.PullRequest) []codeownerOwners {
 	if repo == nil || pr == nil {
 		return nil
@@ -300,8 +269,7 @@ func (s *Server) codeownerRequirements(repo *store.Repo, pr *store.PullRequest) 
 		}
 		matched[index] = true
 		if len(rules[index].owners) == 0 {
-			// The last matching pattern names nobody, so these paths are
-			// deliberately unowned.
+			// Last matching pattern names nobody: deliberately unowned.
 			continue
 		}
 		owners := s.resolveCodeowners(repo, rules[index].owners)
@@ -313,19 +281,16 @@ func (s *Server) codeownerRequirements(repo *store.Repo, pr *store.PullRequest) 
 	return out
 }
 
-// autoRequestCodeOwners requests the code owners of a pull request's changed
-// paths as reviewers, which GitHub does when a pull request is opened and again
-// when a push moves its head and brings owned files into the diff. The request
-// is additive and never asks the same person twice: the pull request's own
-// author is never a reviewer of it, an owner already requested stays requested
-// once, and an owner who has already reviewed is not asked again.
+// autoRequestCodeOwners requests the code owners of a PR's changed paths as
+// reviewers, as GitHub does on open and on a push that brings owned files into
+// the diff. Additive and idempotent: never the author, an already-requested
+// owner, or one who has already reviewed.
 func (s *Server) autoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User) {
 	if repo == nil || pr == nil {
 		return
 	}
-	// Work from a fresh snapshot: the caller may hold the live row, and the
-	// review-request webhook delta needs the reviewer sets as they were before
-	// this call added to them (STORE-021).
+	// Fresh snapshot: the webhook delta below needs the reviewer sets as they
+	// were before this call (STORE-021; the caller may hold the live row).
 	before := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
 	if before == nil || before.State != "OPEN" {
 		return
@@ -368,9 +333,7 @@ func (s *Server) autoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, 
 		return
 	}
 
-	// The request is attributed to whoever caused it — the opener, or the
-	// pusher whose commits brought the owned files in — as GitHub attributes
-	// its own automatic requests.
+	// Attribute the request to whoever caused it (opener or pusher), as GitHub does.
 	actorID := before.AuthorID
 	if sender != nil {
 		actorID = sender.ID
@@ -390,11 +353,9 @@ func (s *Server) autoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, 
 		before.RequestedTeamIDs, updated.RequestedTeamIDs)
 }
 
-// codeOwnerReviewMissing reports whether the base branch's protection requires
-// code owner review and the pull request does not have it yet. It is the
-// predicate behind both the merge refusal and the `blocked` mergeable_state the
-// read paths report, so a caller can never see a pull request described as
-// mergeable that the merge gate would refuse.
+// codeOwnerReviewMissing reports whether base-branch protection requires code
+// owner review and the PR lacks it. Shared by the merge refusal and the
+// `blocked` mergeable_state so the two never disagree.
 func (s *Server) codeOwnerReviewMissing(repo *store.Repo, pr *store.PullRequest) bool {
 	bp := s.effectiveBranchProtectionFor(repo.ID, pr.BaseRefName)
 	if bp == nil || bp.RequiredPullRequestReviews == nil || !bp.RequiredPullRequestReviews.RequireCodeOwnerReviews {
@@ -403,13 +364,10 @@ func (s *Server) codeOwnerReviewMissing(repo *store.Repo, pr *store.PullRequest)
 	return !s.codeOwnerApprovalsSatisfied(repo, pr)
 }
 
-// codeOwnerApprovalsSatisfied reports whether every code owner rule the pull
-// request's changed paths matched holds an approving review. Each rule is
-// satisfied on its own: an approval from one of the owners of a file is not an
-// approval of a file owned by somebody else. Approvals are read through the
-// same latest-per-reviewer gate the required-approving-count and
-// requested-changes rules use, so a review that was dismissed — by a new push
-// or by hand — stops counting here too.
+// codeOwnerApprovalsSatisfied reports whether every matched code owner rule
+// holds an approving review; each rule is satisfied independently. Reads
+// through the same latest-per-reviewer gate, so a dismissed review stops
+// counting here too.
 func (s *Server) codeOwnerApprovalsSatisfied(repo *store.Repo, pr *store.PullRequest) bool {
 	requirements := s.codeownerRequirements(repo, pr)
 	if len(requirements) == 0 {
@@ -436,8 +394,7 @@ func (s *Server) codeOwnerApprovalsSatisfied(repo *store.Repo, pr *store.PullReq
 }
 
 // codeownerRequirementApproved reports whether one rule's owners have approved:
-// directly for a user owner, or through any member of a team owner, which is
-// how a team review request is satisfied on GitHub.
+// a user owner directly, or a team owner through any member.
 func (s *Server) codeownerRequirementApproved(owners codeownerOwners, approved map[int]bool) bool {
 	for _, id := range owners.userIDs {
 		if approved[id] {

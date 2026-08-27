@@ -43,10 +43,9 @@ func (s *Server) enterpriseTeamJSON(t *store.EnterpriseTeam, baseURL string) map
 	return map[string]interface{}{
 		"id":   t.ID,
 		"name": t.Name,
-		// description is null when unset: GitHub's team schemas model it as
-		// nullable and only enterprise-team marks it non-nullable (a spec
-		// imprecision), so match GitHub's actual behavior (PAR-009). The
-		// null-not-allowed deviation is carried in openapi-violation-allowlist.txt.
+		// description is null when unset. The enterprise-team schema marks it
+		// non-nullable (a spec imprecision) — match GitHub's actual nullable
+		// behavior; deviation carried in openapi-violation-allowlist.txt (PAR-009).
 		"description":                 nullOrString(t.Description),
 		"slug":                        t.Slug,
 		"url":                         api,
@@ -60,8 +59,7 @@ func (s *Server) enterpriseTeamJSON(t *store.EnterpriseTeam, baseURL string) map
 	}
 }
 
-// validEnterpriseTeamEnums checks the enum-valued members a create/update
-// body may carry ("" = absent, allowed).
+// validEnterpriseTeamEnums checks the create/update enum members ("" = absent).
 func validEnterpriseTeamEnums(selectionType, notificationSetting string) (string, bool) {
 	switch selectionType {
 	case "", "disabled", "selected", "all":
@@ -87,10 +85,8 @@ func (s *Server) handleListEnterpriseTeams(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleListEnterpriseMemberTeams serves GET
-// /enterprises/{enterprise}/members/{username}/teams: the enterprise teams the
-// named member belongs to. The response items use the list-context
-// enterprise-team schema (no members_count), so the shared renderer applies.
+// handleListEnterpriseMemberTeams lists the enterprise teams the named member
+// belongs to.
 func (s *Server) handleListEnterpriseMemberTeams(w http.ResponseWriter, r *http.Request) {
 	user := s.store.LookupUserByLogin(r.PathValue("username"))
 	if user == nil {
@@ -159,9 +155,8 @@ func (s *Server) handleGetEnterpriseTeam(w http.ResponseWriter, r *http.Request)
 	if team == nil {
 		return
 	}
-	// members_count is required on the single-team read, but absent from the
-	// list/create/update `enterprise-team` schema, so it is added here rather
-	// than in the shared renderer.
+	// members_count is required on the single-team read but absent from the
+	// shared list/create/update schema, so add it here.
 	teamJSON := s.enterpriseTeamJSON(team, s.baseURL(r))
 	teamJSON["members_count"] = len(team.MemberIDs)
 	writeJSON(w, http.StatusOK, teamJSON)
@@ -189,9 +184,8 @@ func (s *Server) handleUpdateEnterpriseTeam(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}
-	// A raw view of the same (already-validated) bytes distinguishes an
-	// explicit {"group_id": null} — which unlinks the IdP group — from an
-	// absent member, which keeps it.
+	// A raw view distinguishes explicit {"group_id": null} — unlink the IdP
+	// group — from an absent member, which keeps it.
 	var raw map[string]json.RawMessage
 	_ = json.Unmarshal(body, &raw)
 	selType, notif := "", ""
@@ -257,8 +251,8 @@ func (s *Server) handleBulkAddEnterpriseTeamMemberships(w http.ResponseWriter, r
 		store.WriteGHValidationError(w, "EnterpriseTeamMembership", "usernames", "missing_field")
 		return
 	}
-	// Resolve every username before mutating: a later invalid entry must not
-	// leave the earlier ones already added to the team.
+	// Resolve all usernames before mutating: a later invalid entry must not
+	// leave earlier ones already added.
 	users := make([]*store.User, 0, len(req.Usernames))
 	for _, login := range req.Usernames {
 		u := s.store.LookupUserByLogin(login)
@@ -291,8 +285,8 @@ func (s *Server) handleBulkRemoveEnterpriseTeamMemberships(w http.ResponseWriter
 		store.WriteGHValidationError(w, "EnterpriseTeamMembership", "usernames", "missing_field")
 		return
 	}
-	// Resolve every username before mutating: a later invalid entry must not
-	// leave the earlier ones already removed from the team.
+	// Resolve all usernames before mutating: a later invalid entry must not
+	// leave earlier ones already removed.
 	users := make([]*store.User, 0, len(req.Usernames))
 	for _, login := range req.Usernames {
 		u := s.store.LookupUserByLogin(login)
@@ -354,9 +348,8 @@ func (s *Server) handleRemoveEnterpriseTeamMembership(w http.ResponseWriter, r *
 
 // --- organization assignments ---
 
-// requireSelectedEnterpriseTeam 422s unless the team's organization selection
-// type is "selected" — assignments can only be edited in that mode; "all" and
-// "disabled" derive the assignment set from the selection type itself.
+// requireSelectedEnterpriseTeam 422s unless the team is "selected" mode;
+// "all"/"disabled" derive their assignment set from the selection type itself.
 func requireSelectedEnterpriseTeam(w http.ResponseWriter, team *store.EnterpriseTeam) bool {
 	if team.OrganizationSelectionType != "selected" {
 		store.WriteGHValidationError(w, "EnterpriseTeam", "organization_selection_type", "invalid")
@@ -398,8 +391,8 @@ func (s *Server) handleBulkAddEnterpriseTeamOrgs(w http.ResponseWriter, r *http.
 		store.WriteGHValidationError(w, "EnterpriseTeamOrganizations", "organization_slugs", "missing_field")
 		return
 	}
-	// Resolve every slug before mutating: a later invalid entry must not leave
-	// the earlier organizations already assigned to the team.
+	// Resolve all slugs before mutating: a later invalid entry must not leave
+	// earlier orgs already assigned.
 	orgs := make([]*store.Org, 0, len(req.OrganizationSlugs))
 	for _, slug := range req.OrganizationSlugs {
 		org := s.store.GetOrg(slug)

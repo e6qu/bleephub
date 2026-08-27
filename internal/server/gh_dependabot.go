@@ -234,11 +234,7 @@ func dependabotAlertToJSON(a *store.DependabotAlert, baseURL string, repo *store
 			"vulnerable_version_range": a.VulnerableVersionRange,
 			"first_patched_version":    firstPatched,
 		},
-		"dismissed_at": dismissedAt,
-		// The account that dismissed the alert, not just the login the store
-		// records: a client rendering "dismissed by" reads the whole user
-		// object, and this member used to be a hardcoded null that made every
-		// dismissal look anonymous.
+		"dismissed_at":      dismissedAt,
 		"dismissed_by":      dependabotDismisserJSON(a, st, baseURL),
 		"dismissed_reason":  nullOrString(a.DismissedReason),
 		"dismissed_comment": nullOrString(a.DismissedComment),
@@ -267,10 +263,8 @@ func (s *Server) handleListDependabotRepoSecrets(w http.ResponseWriter, r *http.
 	})
 }
 
-// handleGetDependabotRepoSecretsPublicKey resolves the repository before
-// answering. The route's admin gate compares the caller against the repository
-// the path resolves to, so a path naming one that does not exist leaves it
-// with nothing to check.
+// handleGetDependabotRepoSecretsPublicKey resolves the repository first: the
+// admin gate has nothing to check against a path naming one that does not exist.
 func (s *Server) handleGetDependabotRepoSecretsPublicKey(w http.ResponseWriter, r *http.Request) {
 	if s.lookupRepoFromPath(r) == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -627,8 +621,8 @@ func (s *Server) writeDependabotSelectedReposResponse(w http.ResponseWriter, r *
 	})
 }
 
-// dependabotMinimalRepoJSON renders a minimal-repository-compatible shape so
-// the selected-repositories response passes the OpenAPI validator.
+// dependabotMinimalRepoJSON renders the minimal-repository shape the
+// selected-repositories response's OpenAPI schema requires.
 func dependabotMinimalRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	out := store.RepoToJSON(repo, st, baseURL)
 	delete(out, "has_pull_requests")
@@ -674,8 +668,6 @@ func (s *Server) handleGetDependabotRepositoryAccess(w http.ResponseWriter, r *h
 	})
 }
 
-// handleSetDependabotRepositoryAccessDefaultLevel implements
-// PUT /orgs/{org}/dependabot/repository-access/default-level.
 func (s *Server) handleSetDependabotRepositoryAccessDefaultLevel(w http.ResponseWriter, r *http.Request) {
 	org, ok := s.resolveOrgForDependabot(w, r)
 	if !ok {
@@ -695,10 +687,8 @@ func (s *Server) handleSetDependabotRepositoryAccessDefaultLevel(w http.Response
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ─── org Dependabot secret selected-repository add/remove ────────────────
-
-// dependabotOrgSecretSelectionChange adapts the shared per-repository
-// selection core to the org Dependabot secrets table.
+// dependabotOrgSecretSelectionChange adapts the shared per-repository selection
+// core to the org Dependabot secrets table.
 func (s *Server) dependabotOrgSecretSelectionChange(w http.ResponseWriter, r *http.Request, add bool) {
 	org, ok := s.resolveOrgForDependabot(w, r)
 	if !ok {
@@ -766,8 +756,8 @@ func (s *Server) handleUpdateDependabotRepositoryAccess(w http.ResponseWriter, r
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// dependabotAccessibleRepos returns a sorted array of repository JSON objects
-// for the given repository IDs, omitting IDs that do not resolve.
+// dependabotAccessibleRepos renders the given repository IDs, id-sorted,
+// omitting any that do not resolve.
 func (s *Server) dependabotAccessibleRepos(r *http.Request, ids []int) []map[string]interface{} {
 	s.store.Mu.RLock()
 	repos := make([]*store.Repo, 0, len(ids))
@@ -787,8 +777,8 @@ func (s *Server) dependabotAccessibleRepos(r *http.Request, ids []int) []map[str
 	return out
 }
 
-// dependabotDismisserJSON renders the account that dismissed an alert, or a
-// JSON null when the alert stands (or the account has since been deleted).
+// dependabotDismisserJSON renders the dismissing account, or null when the alert
+// stands or that account is gone.
 func dependabotDismisserJSON(a *store.DependabotAlert, st *store.Store, baseURL string) interface{} {
 	if a.DismissedByLogin == "" || st == nil {
 		return nil

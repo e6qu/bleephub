@@ -10,14 +10,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub Copilot coding agent secrets and variables — the /agents/
-// counterpart of the Actions secrets/variables surfaces, at repository
-// and organization scope. Secrets arrive as libsodium sealed boxes
-// against the shared public key; variables are plaintext. Organization
-// items carry all|private|selected visibility with selected repositories.
+// Copilot coding agent secrets and variables — the /agents/ counterpart of
+// the Actions secrets/variables surfaces. Secrets arrive as libsodium sealed
+// boxes; org items carry all|private|selected visibility.
 
 func (s *Server) registerGHAgentsSecretsRoutes() {
-	// Repository-scoped secrets.
 	s.route("GET /api/v3/repos/{owner}/{repo}/agents/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsRepoSecrets))
 	s.route("GET /api/v3/repos/{owner}/{repo}/agents/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsRepoSecretsPublicKey))
 	s.route("GET /api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsRepoSecret))
@@ -25,7 +22,6 @@ func (s *Server) registerGHAgentsSecretsRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteAgentsRepoSecret))
 	s.route("GET /api/v3/repos/{owner}/{repo}/agents/organization-secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsRepoOrgSecrets))
 
-	// Repository-scoped variables.
 	s.route("GET /api/v3/repos/{owner}/{repo}/agents/variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsRepoVariables))
 	s.route("POST /api/v3/repos/{owner}/{repo}/agents/variables", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleCreateAgentsRepoVariable))
 	s.route("GET /api/v3/repos/{owner}/{repo}/agents/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsRepoVariable))
@@ -33,7 +29,6 @@ func (s *Server) registerGHAgentsSecretsRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/agents/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteAgentsRepoVariable))
 	s.route("GET /api/v3/repos/{owner}/{repo}/agents/organization-variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsRepoOrgVariables))
 
-	// Organization-scoped secrets.
 	s.route("GET /api/v3/orgs/{org}/agents/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsOrgSecrets))
 	s.route("GET /api/v3/orgs/{org}/agents/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsOrgSecretsPublicKey))
 	s.route("GET /api/v3/orgs/{org}/agents/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsOrgSecret))
@@ -44,7 +39,6 @@ func (s *Server) registerGHAgentsSecretsRoutes() {
 	s.route("PUT /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleAddAgentsOrgSecretRepo))
 	s.route("DELETE /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleRemoveAgentsOrgSecretRepo))
 
-	// Organization-scoped variables.
 	s.route("GET /api/v3/orgs/{org}/agents/variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsOrgVariables))
 	s.route("POST /api/v3/orgs/{org}/agents/variables", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleCreateAgentsOrgVariable))
 	s.route("GET /api/v3/orgs/{org}/agents/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsOrgVariable))
@@ -65,8 +59,6 @@ func (s *Server) resolveAgentsRepo(w http.ResponseWriter, r *http.Request) (*sto
 	}
 	return repo, true
 }
-
-// --- repository secrets ---
 
 func (s *Server) handleListAgentsRepoSecrets(w http.ResponseWriter, r *http.Request) {
 	repo, ok := s.resolveAgentsRepo(w, r)
@@ -163,9 +155,9 @@ func (s *Server) handleDeleteAgentsRepoSecret(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListAgentsRepoOrgSecrets lists the organization Copilot coding
-// agent secrets visible to a repository. The documented item shape is the
-// plain actions-secret — visibility metadata stays on the org endpoints.
+// handleListAgentsRepoOrgSecrets lists the org agent secrets visible to a
+// repository. Item shape is the plain actions-secret; visibility metadata
+// stays on the org endpoints.
 func (s *Server) handleListAgentsRepoOrgSecrets(w http.ResponseWriter, r *http.Request) {
 	repo, ok := s.resolveAgentsRepo(w, r)
 	if !ok {
@@ -192,10 +184,8 @@ func (s *Server) handleListAgentsRepoOrgSecrets(w http.ResponseWriter, r *http.R
 	})
 }
 
-// --- organization secrets ---
-
-// agentsOrgSecretJSON renders the organization-actions-secret shape with
-// the /agents/ selected-repositories URL.
+// agentsOrgSecretJSON renders the org-actions-secret shape with the /agents/
+// selected-repositories URL.
 func agentsOrgSecretJSON(sec *store.OrgSecret, orgLogin, baseURL string) map[string]interface{} {
 	out := secretJSON(&sec.Secret)
 	out["visibility"] = sec.Visibility
@@ -415,8 +405,6 @@ func (s *Server) handleSetAgentsOrgSecretRepos(w http.ResponseWriter, r *http.Re
 		})
 }
 
-// agentsOrgSecretSelectionChange adapts the shared per-repo add/remove
-// core to the Copilot coding agent org-secrets table.
 func (s *Server) agentsOrgSecretSelectionChange(w http.ResponseWriter, r *http.Request, add bool) {
 	org, ok := s.resolveOrgForActions(w, r)
 	if !ok {
@@ -445,12 +433,9 @@ func (s *Server) handleRemoveAgentsOrgSecretRepo(w http.ResponseWriter, r *http.
 	s.agentsOrgSecretSelectionChange(w, r, false)
 }
 
-// --- variables ---
-
-// agentsVariableTable binds one Copilot coding agent variables scope
-// (repository or organization) to its in-store map and persistence bucket
-// so the verb handlers share a single locked CRUD core (the same pattern
-// as the Actions variableTable).
+// agentsVariableTable binds one agent-variables scope (repo or org) to its
+// in-store map and persistence bucket so the verb handlers share one locked
+// CRUD core.
 type agentsVariableTable struct {
 	s      *Server
 	bucket string // "agents_repo_variables" | "agents_org_variables"
@@ -464,8 +449,8 @@ func (t agentsVariableTable) rows() map[string]map[string]*store.ActionsVariable
 	return t.s.store.AgentsRepoVariables
 }
 
-// persistLocked writes the scope's collection through (or removes the row
-// when the collection emptied). Caller holds the store write lock.
+// persistLocked writes the scope's collection through, or removes the row when
+// it emptied. Caller holds the store write lock.
 func (t agentsVariableTable) persistLocked(m map[string]*store.ActionsVariable) {
 	if t.s.store.Persist == nil {
 		return
@@ -477,8 +462,8 @@ func (t agentsVariableTable) persistLocked(m map[string]*store.ActionsVariable) 
 	}
 }
 
-// list returns the scope's variables sorted by name (copies, so callers
-// can render without the lock).
+// list returns the scope's variables sorted by name, as copies renderable
+// without the lock.
 func (t agentsVariableTable) list() []*store.ActionsVariable {
 	t.s.store.Mu.RLock()
 	defer t.s.store.Mu.RUnlock()
@@ -505,7 +490,7 @@ func (t agentsVariableTable) get(name string) *store.ActionsVariable {
 	return cloneVariable(v)
 }
 
-// create inserts a new variable; false when the name already exists.
+// create inserts a variable; false when the name already exists.
 func (t agentsVariableTable) create(v *store.ActionsVariable) bool {
 	t.s.store.Mu.Lock()
 	defer t.s.store.Mu.Unlock()
@@ -523,8 +508,8 @@ func (t agentsVariableTable) create(v *store.ActionsVariable) bool {
 	return true
 }
 
-// patch mutates the named variable, optionally renaming it. Returns the
-// HTTP status to write: 204 applied, 404 unknown, 409 rename collision.
+// patch mutates the named variable, optionally renaming it. Returns the status
+// to write: 204 applied, 404 unknown, 409 rename collision.
 func (t agentsVariableTable) patch(name, newName string, apply func(*store.ActionsVariable)) int {
 	t.s.store.Mu.Lock()
 	defer t.s.store.Mu.Unlock()
@@ -559,8 +544,6 @@ func (t agentsVariableTable) remove(name string) bool {
 	t.persistLocked(m)
 	return true
 }
-
-// --- repository variables ---
 
 func (s *Server) agentsRepoVariableTableFor(w http.ResponseWriter, r *http.Request) (agentsVariableTable, bool) {
 	repo, ok := s.resolveAgentsRepo(w, r)
@@ -662,10 +645,9 @@ func (s *Server) handleDeleteAgentsRepoVariable(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListAgentsRepoOrgVariables lists the organization Copilot coding
-// agent variables visible to a repository. The documented item shape is
-// the plain actions-variable — visibility metadata stays on the org
-// endpoints.
+// handleListAgentsRepoOrgVariables lists the org agent variables visible to a
+// repository. Item shape is the plain actions-variable; visibility metadata
+// stays on the org endpoints.
 func (s *Server) handleListAgentsRepoOrgVariables(w http.ResponseWriter, r *http.Request) {
 	repo, ok := s.resolveAgentsRepo(w, r)
 	if !ok {
@@ -691,10 +673,8 @@ func (s *Server) handleListAgentsRepoOrgVariables(w http.ResponseWriter, r *http
 	writeVariablesList(w, list)
 }
 
-// --- organization variables ---
-
-// agentsOrgVariableJSON renders the organization-actions-variable shape
-// with the /agents/ selected-repositories URL.
+// agentsOrgVariableJSON renders the org-actions-variable shape with the
+// /agents/ selected-repositories URL.
 func agentsOrgVariableJSON(v *store.ActionsVariable, orgLogin, baseURL string) map[string]interface{} {
 	out := variableJSON(v)
 	out["visibility"] = v.Visibility
@@ -866,8 +846,6 @@ func (s *Server) handleSetAgentsOrgVariableRepos(w http.ResponseWriter, r *http.
 		})
 }
 
-// agentsOrgVariableSelectionChange adapts the shared per-repo add/remove
-// core to the Copilot coding agent org-variables table.
 func (s *Server) agentsOrgVariableSelectionChange(w http.ResponseWriter, r *http.Request, add bool) {
 	org, ok := s.resolveOrgForActions(w, r)
 	if !ok {

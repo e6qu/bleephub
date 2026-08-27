@@ -44,7 +44,6 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve label names to IDs
 	var labelIDs []int
 	for _, name := range req.Labels {
 		l := s.store.GetLabelByName(repo.ID, name)
@@ -53,7 +52,6 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Resolve assignee logins to IDs
 	var assigneeIDs []int
 	for _, login := range req.Assignees {
 		u := s.store.LookupUserByLogin(login)
@@ -62,7 +60,6 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Resolve milestone number to ID
 	var milestoneID int
 	if req.Milestone > 0 {
 		ms := s.store.GetMilestoneByNumber(repo.ID, req.Milestone)
@@ -118,7 +115,6 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		state = "open"
 	}
 
-	// Map REST state to internal state
 	var stateFilter string
 	switch state {
 	case "open":
@@ -143,8 +139,8 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		if u := s.store.LookupUserByLogin(assignee); u != nil {
 			assigneeID = u.ID
 		} else {
-			// An unknown assignee is a valid filter with no matches. Treating
-			// zero as "no filter" widened the result to every issue.
+			// An unknown assignee is a valid filter with no matches (not "no
+			// filter", which would widen to every issue).
 			assigneeID = -1
 		}
 	}
@@ -186,8 +182,8 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		milestone := s.store.GetMilestoneByNumber(repo.ID, number)
 		if milestone == nil {
-			// Like an unknown assignee, a valid but absent milestone number
-			// selects an empty set rather than dropping the filter.
+			// A valid but absent milestone number selects an empty set, not
+			// "no filter".
 			milestoneID = -1
 		} else {
 			milestoneID = milestone.ID
@@ -257,10 +253,8 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 			matchesMention(body, parentType, parentID)
 	}
 
-	// Every pull request is also an issue on GitHub, so this listing returns
-	// both and the `pull_request` member is what tells them apart. Omitting
-	// them made pull requests invisible to any client that reaches for
-	// issues — `gh issue list` among them.
+	// Every PR is also an issue on GitHub; this listing returns both, with the
+	// `pull_request` member telling them apart.
 	base := s.baseURL(r)
 	descending := direction == "desc"
 	type issueRow struct {
@@ -271,9 +265,8 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		issue        *store.Issue       // set for issue rows
 		pr           *store.PullRequest // set for pull-request rows
 	}
-	// rowLess is the listing's total order: the requested sort key with the
-	// per-repo number (unique across issues and PRs, which share the number
-	// sequence) as tie-break, inverted wholesale for direction=desc.
+	// rowLess is the total order: the requested sort key, tie-broken by the
+	// per-repo number (unique across issues and PRs), inverted for desc.
 	rowLess := func(a, b issueRow) bool {
 		var less bool
 		switch sortField {
@@ -298,11 +291,9 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		return less
 	}
-	// Issues come from the store's per-repo creation-order index, already in
-	// the created-sort order (both directions); the PR store still iterates a
-	// map, so PR rows are ordered here. Rows carry only sort keys plus the
-	// detached entity — JSON is rendered after pagination, for the one page a
-	// caller actually receives, instead of for every issue in the repo.
+	// Issues arrive from the per-repo creation-order index already sorted (both
+	// directions); PR rows come from a map and are ordered below. JSON is
+	// rendered after pagination, for the one page returned, not every issue.
 	var issueRows []issueRow
 	for _, issue := range s.store.ListIssuesOrderedByCreation(repo.ID, stateFilter, descending) {
 		if !selected(issue.LabelIDs, issue.AssigneeIDs) ||
@@ -330,8 +321,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 
 	var rows []issueRow
 	if sortField == "created" {
-		// issueRows are pre-sorted by the index; order the (typically far
-		// fewer) PR rows and merge the two sorted lists.
+		// issueRows are pre-sorted; order the (usually fewer) PR rows and merge.
 		sort.Slice(prRows, func(i, j int) bool { return rowLess(prRows[i], prRows[j]) })
 		rows = make([]issueRow, 0, len(issueRows)+len(prRows))
 		for len(issueRows) > 0 && len(prRows) > 0 {
@@ -384,9 +374,8 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 
 	issue := s.store.GetIssueByNumber(repo.ID, num)
 	if issue == nil {
-		// Issues and pull requests share one number sequence, and a pull
-		// request is reachable through the issues endpoint on GitHub. 404 here
-		// hid every pull request from clients that address it as an issue.
+		// PRs share the issue number space and are reachable through the issues
+		// endpoint.
 		if pr := s.store.GetPullRequestByNumber(repo.ID, num); pr != nil {
 			writeJSON(w, http.StatusOK, issueToJSONForPR(pr, s.store, s.baseURL(r), repo.FullName))
 			return
@@ -426,8 +415,8 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optimistic concurrency: an If-Match must match the issue's current ETag,
-	// or a stale client would clobber a concurrent edit (STORE-016).
+	// If-Match must match the current ETag or a stale client clobbers a
+	// concurrent edit (STORE-016).
 	if !checkIfMatch(w, r, issueToJSON(issue, s.store, s.baseURL(r), repo.FullName)) {
 		return
 	}
@@ -437,10 +426,9 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve milestone, labels, and assignees before taking the write
-	// lock so an invalid milestone number 422s without mutating anything.
-	// An explicit `"milestone": null` clears the milestone; an absent
-	// member keeps it — the map lookup distinguishes the two.
+	// Resolve milestone, labels, and assignees before the write lock so an
+	// invalid milestone number 422s without mutating. Explicit
+	// `"milestone": null` clears it; an absent member keeps it.
 	var milestoneID *int
 	if v, present := req["milestone"]; present {
 		switch mv := v.(type) {
@@ -468,9 +456,8 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 		ids := make([]int, 0, len(entries))
 		for _, entry := range entries {
-			// The documented body allows bare strings or {"name": ...}
-			// objects; unknown label names are dropped, matching the
-			// add-labels endpoint's semantics.
+			// The body allows bare strings or {"name": ...} objects; unknown
+			// label names are dropped, as the add-labels endpoint does.
 			name, ok := entry.(string)
 			if !ok {
 				obj, isObj := entry.(map[string]interface{})
@@ -578,9 +565,8 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	updated := s.store.GetIssue(issue.ID)
 
-	// One PATCH is several GitHub events: the edit, then each triage change,
-	// then the state transition. `issue` is the pre-update snapshot, so it
-	// carries the before-values the fan-out diffs against.
+	// One PATCH fans out to several events (edit, triage changes, state
+	// transition). `issue` is the pre-update snapshot the diffs run against.
 	change := store.SubjectChange{
 		LabelsFrom:    issue.LabelIDs,
 		LabelsTo:      labelIDs,
@@ -598,9 +584,8 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		change.BodyFrom = &issue.Body
 	}
 
-	// Editing labels/assignees/milestone through the update-issue endpoint
-	// records the same timeline events github's dedicated sub-resource
-	// endpoints do. Diff against the requested new sets and record per change.
+	// Record the same timeline events the dedicated sub-resource endpoints do,
+	// diffing against the requested new sets.
 	if labelIDs != nil {
 		added, removed := intSetDelta(issue.LabelIDs, *labelIDs)
 		for _, id := range added {
@@ -627,10 +612,7 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// A title edit is github's `renamed` issue event, carrying the old and new
-	// titles. The event's rename members were already modelled and rendered by
-	// both the timeline and the events endpoints, but nothing recorded one, so
-	// a retitled issue's history silently skipped the rename.
+	// A title edit is the `renamed` issue event, carrying old and new titles.
 	if v, ok := req["title"].(string); ok && v != issue.Title {
 		s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "renamed", map[string]interface{}{
 			"rename_from": issue.Title,
@@ -675,8 +657,7 @@ func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// /issues/{n}/comments routes resolve to either an Issue or a PR by
-	// number — real GitHub treats PRs as issues for this endpoint. The
+	// Resolves to either an Issue or a PR by number (PRs are issues here). The
 	// resolver reads the mutable Locked flag under the store lock.
 	parentType, parentID, parentNumber, locked, found := s.store.ResolveCommentParent(repo.ID, num)
 	if !found {
@@ -760,8 +741,8 @@ func (s *Server) handleListIssueComments(w http.ResponseWriter, r *http.Request)
 
 // --- Issue label management handlers ---
 
-// labelIDsToJSON resolves a slice of label IDs into GitHub label JSON, in the
-// stored order, skipping any that no longer resolve.
+// labelIDsToJSON renders label IDs as label JSON in stored order, skipping any
+// that no longer resolve.
 func (s *Server) labelIDsToJSON(labelIDs []int, base, repoFullName string) []map[string]interface{} {
 	labels := make([]map[string]interface{}, 0, len(labelIDs))
 	for _, lid := range labelIDs {
@@ -808,7 +789,6 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve label names to IDs before taking write lock
 	var newLabelIDs []int
 	for _, name := range labelNames {
 		l := s.store.GetLabelByName(repo.ID, name)
@@ -819,8 +799,6 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 
 	base := s.baseURL(r)
 	if pr != nil {
-		// Pull requests carry labels through the same surface real GitHub
-		// exposes; PRs share the issue number space.
 		s.store.AddPullRequestLabels(repo.ID, pr.Number, newLabelIDs, user.ID)
 		updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
 		s.pullRequestEmitter(repo, updated, user).emitLabelDelta(pr.LabelIDs, updated.LabelIDs)
@@ -828,12 +806,8 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Through SetIssueLabels rather than a raw UpdateIssue mutator: it records
-	// the `labeled` issue event for each addition, which is what the issue's
-	// timeline and events surfaces read. A direct mutation left the label
-	// attached with no history of who attached it, and the pull-request branch
-	// above (AddPullRequestLabels) already recorded one, so the two halves of
-	// the same endpoint disagreed.
+	// SetIssueLabels (not a raw mutator) records the `labeled` event per
+	// addition that the timeline and events surfaces read.
 	next := append([]int(nil), issue.LabelIDs...)
 	for _, lid := range newLabelIDs {
 		found := false
@@ -849,7 +823,6 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.SetIssueLabels(repo.ID, issue.Number, next, user.ID)
 
-	// Return current labels
 	updated := s.store.GetIssue(issue.ID)
 	s.issueEmitter(repo, updated, user).emitLabelDelta(issue.LabelIDs, updated.LabelIDs)
 	writeJSON(w, http.StatusOK, s.labelIDsToJSON(updated.LabelIDs, base, repo.FullName))
@@ -901,8 +874,7 @@ func (s *Server) handleRemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// SetIssueLabels for the same reason the add path uses it: the removal has
-	// to leave an `unlabeled` event behind, and a raw mutator leaves none.
+	// SetIssueLabels so the removal leaves an `unlabeled` event behind.
 	next := make([]int, 0, len(issue.LabelIDs))
 	for _, lid := range issue.LabelIDs {
 		if lid != label.ID {
@@ -1102,7 +1074,7 @@ func (s *Server) handleAddIssueAssignees(w http.ResponseWriter, r *http.Request)
 	s.store.AddIssueAssignees(repo.ID, issue.Number, assigneeIDs, user.ID)
 	updated := s.store.GetIssue(issue.ID)
 	s.issueEmitter(repo, updated, user).emitAssigneeDelta(issue.AssigneeIDs, updated.AssigneeIDs)
-	// Real GitHub responds 201 Created when adding assignees.
+	// Adding assignees is a 201.
 	issueJSON := issueToJSON(updated, s.store, s.baseURL(r), repo.FullName)
 	writeJSONCreated(w, jsonStringField(issueJSON, "url"), issueJSON)
 }
@@ -1152,8 +1124,8 @@ func (s *Server) handleUnpinIssueComment(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, store.CommentToJSON(s.store.GetIssueComment(comment.ID), s.store, s.baseURL(r), repo.FullName, parentNumber))
 }
 
-// resolveRepoIssue resolves owner/repo/{number} and returns the repo + issue,
-// writing the appropriate error response on failure.
+// resolveRepoIssue resolves owner/repo/{number}, writing the error response on
+// failure.
 func (s *Server) resolveRepoIssue(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Issue, bool) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
@@ -1178,8 +1150,8 @@ func (s *Server) resolveRepoIssue(w http.ResponseWriter, r *http.Request) (*stor
 	return repo, issue, true
 }
 
-// resolveRepoIssueComment resolves owner/repo/{comment_id} and returns the repo
-// + issue comment, writing the appropriate error response on failure.
+// resolveRepoIssueComment resolves owner/repo/{comment_id}, writing the error
+// response on failure.
 func (s *Server) resolveRepoIssueComment(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Comment, bool) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
@@ -1241,8 +1213,8 @@ func (s *Server) handleListIssueTimeline(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Pull requests share the issue number space and are timeline-capable
-	// on real GitHub; resolve the number to whichever exists.
+	// PRs share the issue number space and are timeline-capable; resolve to
+	// whichever exists.
 	if issue := s.store.GetIssueByNumber(repo.ID, num); issue != nil {
 		timeline := s.store.BuildIssueTimeline(repo, issue.ID, s.baseURL(r))
 		timeline = s.mergeCrossReferencedEvents(repo, num, s.baseURL(r), timeline)
@@ -1263,21 +1235,18 @@ func (s *Server) handleListIssueTimeline(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, timeline))
 }
 
-// timelineRefRE matches a GitHub issue/PR reference: an optional owner/repo
-// prefix then #<number>. Mirrors the closing-issue reference grammar used by
-// the GraphQL closingIssuesReferences resolver.
+// timelineRefRE matches an issue/PR reference: optional owner/repo prefix then
+// #<number>.
 var timelineRefRE = regexp.MustCompile(`(?:\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#([0-9]+)`)
 
-// mergeCrossReferencedEvents appends "cross-referenced" timeline events for
-// every other issue or pull request in the repo whose body references this
-// issue/PR by number (#N or owner/repo#N), then re-sorts by created_at. github.com
-// threads these into the conversation timeline; bleephub derives them at read
-// time from the referencing bodies (no persisted event), matching the
-// timeline-cross-referenced-event schema (event/actor/created_at/updated_at/source).
+// mergeCrossReferencedEvents appends a "cross-referenced" event for every other
+// issue or PR in the repo whose body references this one (#N or owner/repo#N),
+// then re-sorts by created_at. Derived at read time from the referencing
+// bodies; no persisted event.
 func (s *Server) mergeCrossReferencedEvents(repo *store.Repo, targetNumber int, baseURL string, timeline []map[string]interface{}) []map[string]interface{} {
 	refsTarget := func(body string) bool {
 		for _, m := range timelineRefRE.FindAllStringSubmatch(body, -1) {
-			// m[1] = optional owner/repo, m[2] = number
+			// m[1] = optional owner/repo, m[2] = number.
 			if m[1] != "" && !strings.EqualFold(m[1], repo.FullName) {
 				continue
 			}
@@ -1297,7 +1266,7 @@ func (s *Server) mergeCrossReferencedEvents(repo *store.Repo, targetNumber int, 
 			s.store, baseURL, repo.FullName, src.AuthorID, src.CreatedAt, src.UpdatedAt,
 			issueToJSON(src, s.store, baseURL, repo.FullName)))
 	}
-	// Pull request sources (share the number space; render as an issue-shaped source).
+	// PR sources (render as an issue-shaped source).
 	for _, src := range s.store.ListPullRequests(repo.ID, "all") {
 		if src.Number == targetNumber || !refsTarget(src.Body) {
 			continue
@@ -1334,7 +1303,7 @@ func crossRefEvent(st *store.Store, baseURL, repoFullName string, actorID int, c
 }
 
 // timelineItemTime reads a timeline entry's sort timestamp (created_at, then
-// submitted_at). RFC3339 strings sort chronologically as plain strings.
+// submitted_at); RFC3339 strings sort chronologically as plain strings.
 func timelineItemTime(m map[string]interface{}) string {
 	if v, ok := m["created_at"].(string); ok && v != "" {
 		return v
@@ -1365,8 +1334,7 @@ func (s *Server) handleListIssueEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pull requests share the issue number space; their events serve
-	// through this endpoint too, as on real GitHub.
+	// PRs share the issue number space; their events serve through here too.
 	var events []*store.IssueEvent
 	if issue := s.store.GetIssueByNumber(repo.ID, num); issue != nil {
 		events = s.store.ListIssueEvents(repo.ID, issue.ID)
@@ -1380,9 +1348,8 @@ func (s *Server) handleListIssueEvents(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	result := make([]map[string]interface{}, 0, len(events))
 	for _, e := range events {
-		// GitHub's issue-events surface excludes comments — they live on the
-		// comments endpoint (a "commented" row here would carry an event id
-		// that is not a comment id).
+		// The issue-events surface excludes comments (they live on the comments
+		// endpoint; a "commented" row's id is not a comment id).
 		if e.Event == "commented" {
 			continue
 		}
@@ -1448,17 +1415,15 @@ func (s *Server) handleGetIssueEvent(w http.ResponseWriter, r *http.Request) {
 // --- JSON converters ---
 
 func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
-	// Every mutable field of *issue is read under the store read lock and
-	// captured into locals here: UpdateIssue / SetIssueOrPRLock mutate these
-	// fields under st.mu.Lock, so reading them after RUnlock (title, body,
-	// state, lock flags, timestamps) would race a concurrent writer.
+	// Read every mutable field into locals under the read lock: UpdateIssue /
+	// SetIssueOrPRLock write these under st.mu.Lock, so reading them after
+	// RUnlock would race a concurrent writer.
 	var authorJSON map[string]interface{}
 	st.Mu.RLock()
 	if u, ok := st.Users[issue.AuthorID]; ok {
 		authorJSON = store.UserToJSON(u, baseURL)
 	}
 
-	// Resolve labels
 	labels := make([]map[string]interface{}, 0)
 	for _, lid := range issue.LabelIDs {
 		if l, ok := st.Labels[lid]; ok {
@@ -1466,7 +1431,6 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 		}
 	}
 
-	// Resolve assignees
 	assignees := make([]map[string]interface{}, 0)
 	for _, aid := range issue.AssigneeIDs {
 		if u, ok := st.Users[aid]; ok {
@@ -1474,8 +1438,8 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 		}
 	}
 
-	// Grab the milestone pointer; conversion happens after unlock because
-	// milestoneToJSON derives issue counts under its own lock.
+	// Convert the milestone after unlock; milestoneToJSON derives counts under
+	// its own lock.
 	var milestone *store.Milestone
 	if issue.MilestoneID > 0 {
 		milestone = st.Milestones[issue.MilestoneID]
@@ -1486,10 +1450,9 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 		copied := *storedType
 		issueType = &copied
 	}
-	// Count comments via the maintained index while holding the lock.
 	commentCount := st.CountCommentsForLocked("issue", issue.ID)
 
-	// Snapshot the mutable scalar fields before releasing the lock.
+	// Snapshot mutable scalars before releasing the lock.
 	issueID := issue.ID
 	repoID := issue.RepoID
 	authorID := issue.AuthorID
@@ -1498,8 +1461,7 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 	title := issue.Title
 	body := issue.Body
 	rawState := issue.State
-	// StateReason is stored in the GraphQL upper-case form (COMPLETED,
-	// NOT_PLANNED, REOPENED); the REST enum is lower-case (PAR-010).
+	// StateReason is stored upper-case (GraphQL form); REST is lower-case (PAR-010).
 	stateReason := strings.ToLower(issue.StateReason)
 	locked := issue.Locked
 	activeLockReason := issue.ActiveLockReason
@@ -1520,13 +1482,12 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 		milestoneJSON = milestoneToJSON(milestone, st, baseURL, repoFullName)
 	}
 
-	// GitHub's assignee is the first assignee, null when unassigned.
+	// assignee is the first assignee, null when unassigned.
 	var assignee interface{}
 	if len(assignees) > 0 {
 		assignee = assignees[0]
 	}
 
-	// REST uses lowercase state
 	state := strings.ToLower(rawState)
 
 	var closedAt interface{}
@@ -1616,8 +1577,7 @@ func issueClosedByJSON(st *store.Store, repoID, issueID int, state, baseURL stri
 	return nil
 }
 
-// issueEventToJSON renders an IssueEvent to the repo-level GitHub
-// issue-event shape.
+// issueEventToJSON renders an IssueEvent to the repo-level issue-event shape.
 func issueEventToJSON(e *store.IssueEvent, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	st.Mu.RLock()
 	var labelJSON interface{}
@@ -1640,8 +1600,8 @@ func issueEventToJSON(e *store.IssueEvent, st *store.Store, baseURL, repoFullNam
 
 	out := store.IssueEventBase(e, st, baseURL, repoFullName)
 	out["performed_via_github_app"] = nil
-	// label and milestone are optional, non-nullable on the generic issue-event
-	// schema: present only on the events that carry them, omitted otherwise.
+	// label and milestone are optional non-nullable: present only on events
+	// that carry them.
 	if labelJSON != nil {
 		out["label"] = labelJSON
 	}
@@ -1654,8 +1614,7 @@ func issueEventToJSON(e *store.IssueEvent, st *store.Store, baseURL, repoFullNam
 }
 
 // issueEventForIssueToJSON renders an IssueEvent to the per-issue
-// issue-event-for-issue shape, which is a discriminated union of specific
-// event schemas rather than a generic object.
+// issue-event-for-issue shape, a discriminated union of per-event schemas.
 func issueEventForIssueToJSON(e *store.IssueEvent, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	out := store.IssueEventBase(e, st, baseURL, repoFullName)
 	out["performed_via_github_app"] = nil
@@ -1704,13 +1663,12 @@ func issueEventForIssueToJSON(e *store.IssueEvent, st *store.Store, baseURL, rep
 			reviewerJSON = store.UserToJSON(u, baseURL)
 		}
 		st.Mu.RUnlock()
-		// GitHub's actor on review-request events is the requester.
+		// The actor on review-request events is the requester.
 		out["review_requester"] = requesterJSON
 		out["requested_reviewer"] = reviewerJSON
 	default:
-		// opened, closed, reopened, merged, locked, unlocked, etc. map to
-		// the locked-issue-event schema which only adds a nullable
-		// lock_reason.
+		// opened/closed/reopened/merged/locked/unlocked etc. map to the
+		// locked-issue-event schema, which only adds a nullable lock_reason.
 		lockReason := interface{}(nil)
 		if e.Event == "locked" && e.LockReason != "" {
 			lockReason = e.LockReason
@@ -1720,13 +1678,9 @@ func issueEventForIssueToJSON(e *store.IssueEvent, st *store.Store, baseURL, rep
 	return out
 }
 
-// issueHasAllLabels / labelIDsCoverNames moved to internal/store
-// (ARCH-003): pure label predicates shared by REST and GraphQL.
-
-// handleListOrgIssues implements GET /orgs/{org}/issues: issues across the
-// organization's repositories that involve the authenticated user, selected
-// by the `filter` parameter exactly as on real GitHub (assigned is the
-// default; `repos`/`all` widen to every org-repo issue the user can see).
+// handleListOrgIssues lists org-repo issues involving the authenticated user,
+// selected by `filter` (default assigned; `repos`/`all` widen to every org-repo
+// issue the user can see).
 func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -1817,8 +1771,7 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		case "subscribed":
-			// Participation auto-subscribes on real GitHub: authored,
-			// assigned, or commented issues.
+			// Participation (authored, assigned, or commented) auto-subscribes.
 			if issue.AuthorID != user.ID && !assigned && !commentedIssueIDs[issue.ID] {
 				continue
 			}

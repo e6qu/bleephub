@@ -190,9 +190,7 @@ func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 	entries := make([]map[string]interface{}, 0, len(tree.Entries))
 	truncated := false
 	appendEntry := func(name string, e object.TreeEntry) {
-		// GitHub caps the tree response at 100,000 entries and sets
-		// truncated:true when exceeded, so clients fall back to per-subtree
-		// fetches instead of trusting a partial list as complete.
+		// GitHub caps the tree response at 100,000 entries and sets truncated:true.
 		if len(entries) >= gitTreeEntryLimit {
 			truncated = true
 			return
@@ -233,32 +231,23 @@ func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// gitTreeEntryLimit mirrors GitHub's 100,000-entry ceiling on a single tree
-// response; beyond it the response is truncated.
+// gitTreeEntryLimit is GitHub's 100,000-entry ceiling on a tree response.
 const gitTreeEntryLimit = 100000
 
 const (
-	// contentsAPIInlineFileBytes is the size above which the contents API
-	// stops inlining a file: "1 MB or smaller: all features of this endpoint
-	// are supported", "between 1-100 MB: … the content field will be an empty
-	// string and the encoding field will be "none"".
+	// contentsAPIInlineFileBytes: above 1 MB the contents API stops inlining
+	// (content:"", encoding:"none").
 	contentsAPIInlineFileBytes = 1 << 20
-	// contentsAPIMaxFileBytes is where the contents API stops answering at
-	// all: "greater than 100 MB: this endpoint is not supported".
+	// contentsAPIMaxFileBytes: above 100 MB the contents API is unsupported.
 	contentsAPIMaxFileBytes = 100 << 20
-	// gitBlobMaxFileBytes is the Git Data blob endpoint's ceiling — the
-	// "blobs up to 100 MB in size" the contents-API refusal points callers at.
+	// gitBlobMaxFileBytes is the Git Data blob endpoint's 100 MB ceiling.
 	gitBlobMaxFileBytes = 100 << 20
-	// contentsAPIDirectoryEntryLimit is GitHub's documented "upper limit of
-	// 1,000 files for a directory" on a contents-API listing. github.com
-	// truncates silently at exactly 1000 entries and still answers 200
-	// (nodejs/node's test/parallel, ~4,000 files, returns 1,000); clients that
-	// need more are told to use the Git trees API.
+	// contentsAPIDirectoryEntryLimit: GitHub truncates a directory listing at
+	// 1,000 entries and still answers 200.
 	contentsAPIDirectoryEntryLimit = 1000
 )
 
-// writeGHBlobTooLargeError writes GitHub's refusal for a blob past an API's
-// size ceiling: a 403 carrying the Blob/data/too_large error item.
+// writeGHBlobTooLargeError writes GitHub's 403 Blob/data/too_large refusal.
 func writeGHBlobTooLargeError(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
@@ -281,19 +270,15 @@ func gitTreeEntryJSON(stor gitStorage.Storer, baseURL, fullName, name string, en
 	}
 	out := map[string]interface{}{
 		"path": name,
-		// GitHub emits the 6-char octal mode (100644); go-git's Mode.String()
-		// is 7-char zero-padded (0100644), which breaks read→create-tree
-		// round-tripping and string comparisons.
+		// GitHub emits the 6-char octal mode (100644); go-git's Mode.String() is
+		// 7-char (0100644), which breaks round-tripping and comparisons.
 		"mode": fmt.Sprintf("%06o", uint32(entry.Mode)),
 		"type": entryType,
 		"sha":  entry.Hash.String(),
 	}
 	if entryType == "commit" {
-		// A gitlink names a commit in the *submodule's* repository, which this
-		// repository does not contain, so there is no object URL to hand out.
-		// github.com omits url (and size) for commit entries — rust-lang/rust's
-		// src tree answers {path, mode, type, sha} for src/llvm-project — and
-		// advertising /git/commits/{sha} here promised a guaranteed 404.
+		// A gitlink names a commit in the submodule's repository, absent here, so
+		// there is no object URL. github.com omits url and size for commit entries.
 		return out
 	}
 	out["url"] = baseURL + "/api/v3/repos/" + fullName + "/git/" + entryType + "s/" + entry.Hash.String()
@@ -327,10 +312,8 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The Git Data blob endpoint is the one that reaches past the contents
-	// API's 1 MB inline ceiling — it base64-encodes up to 100 MB (verified
-	// against github.com with a 12.9 MB blob) and refuses beyond that. Decided
-	// from blob.Size so a refused blob is never read into memory.
+	// Refuse past 100 MB, decided from blob.Size so an oversized blob is never
+	// read into memory.
 	if blob.Size > gitBlobMaxFileBytes {
 		writeGHBlobTooLargeError(w, "This API returns blobs up to 100 MB in size. The requested blob is too large to fetch via the API.")
 		return
@@ -349,9 +332,8 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GitHub's blob endpoint serves the raw bytes for the .raw media type.
-	// Unlike the contents API this one addresses an object by hash, with no
-	// path and so no filename to type it by, and answers octet-stream.
+	// The blob endpoint addresses an object by hash, with no filename to type it
+	// by, so the raw media type answers octet-stream.
 	if acceptsGitHubMediaType(r.Header.Get("Accept"), "raw") {
 		setGitHubMediaType(w, r, "raw")
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -388,7 +370,6 @@ func (s *Server) handleGetReadme(w http.ResponseWriter, r *http.Request) {
 	}
 	stor := s.gitStorageForRepo(repo)
 
-	// Search for README variants
 	for _, name := range []string{"README.md", "README", "README.txt", "readme.md"} {
 		entry, err := tree.FindEntry(name)
 		if err != nil {
@@ -438,8 +419,7 @@ func (s *Server) handleGetReadme(w http.ResponseWriter, r *http.Request) {
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
-// contentBlobSHA reports the blob sha at path on branch, and whether the path
-// holds a file there at all.
+// contentBlobSHA reports the blob sha at path on branch, and whether a file exists there.
 func contentBlobSHA(stor gitStorage.Storer, branch, path string) (string, bool) {
 	ref, err := stor.Reference(plumbing.NewBranchReferenceName(branch))
 	if err != nil || ref == nil {
@@ -461,10 +441,8 @@ func contentBlobSHA(stor gitStorage.Storer, branch, path string) (string, bool) 
 }
 
 // contentSHAPreconditionMet enforces the contents API's optimistic-concurrency
-// contract and writes the refusal itself, reporting whether the caller may
-// proceed. `sha` names the blob the write replaces: without it every write is
-// an unconditional overwrite and two concurrent editors silently lose one
-// edit. Creation carries no sha, since there is no blob to name.
+// check, writing the refusal itself. `sha` names the blob a write replaces;
+// without it concurrent editors would silently lose an edit. Creation carries none.
 func contentSHAPreconditionMet(w http.ResponseWriter, stor gitStorage.Storer, branch, path, given string) bool {
 	current, exists := contentBlobSHA(stor, branch, path)
 	switch {
@@ -579,10 +557,8 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 		sig = repoSignature(req.Author.Name, req.Author.Email)
 	}
 
-	// Determine whether this commit initializes an empty repository. A
-	// missing branch on a repository that already has branches is a 404 on
-	// real GitHub — PUT contents never creates branches (and committing via
-	// an unrelated worktree would silently advance the current branch).
+	// PUT contents never creates branches: a missing branch on a repo that
+	// already has branches is a 404; only an empty repo initializes here.
 	branchRef := plumbing.NewBranchReferenceName(branch)
 	ref, refErr := stor.Reference(branchRef)
 	var commitHash plumbing.Hash
@@ -661,8 +637,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 	s.afterCommittedRefUpdate(repo, user, branchRef.String(), beforeHash, commitHash.String(), base)
 	contentOut := contentFileJSON(base, repo, branch, path, entry.Hash.String(), blob.Size)
 
-	// 201 created, 200 updated — as on GitHub, and now answerable because the
-	// precondition above already established which one this was.
+	// 201 created, 200 updated.
 	status := http.StatusCreated
 	if replacing {
 		status = http.StatusOK
@@ -755,8 +730,8 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, fmt.Sprintf("path %s does not exist", path))
 		return
 	}
-	// The same precondition a write carries: a delete naming the wrong blob is
-	// a delete of something the caller has not seen.
+	// Same precondition as a write: a delete naming the wrong blob deletes
+	// something the caller has not seen.
 	if !contentSHAPreconditionMet(w, stor, branch, path, req.SHA) {
 		return
 	}
@@ -812,9 +787,7 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// contentFileJSON builds the common members of the GitHub content-file
-// shape (name/path/sha/size plus the hypermedia URLs and _links the
-// schema requires) for a blob at the given path on the given ref.
+// contentFileJSON builds the content-file shape for a blob at path on ref.
 func contentFileJSON(baseURL string, repo *store.Repo, ref, path, sha string, size int64) map[string]interface{} {
 	selfURL := baseURL + "/api/v3/repos/" + repo.FullName + "/contents/" + path + "?ref=" + ref
 	gitURL := baseURL + "/api/v3/repos/" + repo.FullName + "/git/blobs/" + sha
@@ -886,9 +859,8 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GitHub accepts a branch, tag, full ref, or commit SHA here. Keep the
-	// original ref text in hypermedia URLs while resolving it through the
-	// same treeish helper used by the rest of the repository read surface.
+	// ref accepts a branch, tag, full ref, or commit SHA; keep the original text
+	// in hypermedia URLs while resolving it through the treeish helper.
 	refName := r.URL.Query().Get("ref")
 	tree, _, err := s.repoTreeAtRef(repo, refName)
 	if err != nil {
@@ -900,13 +872,11 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 	}
 	stor := s.gitStorageForRepo(repo)
 
-	// Empty path means list the root tree.
 	if path == "" {
 		s.writeTreeListing(w, r, stor, repo, refName, tree, tree, "")
 		return
 	}
 
-	// Try as file first
 	entry, err := tree.FindEntry(path)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -942,7 +912,6 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// It's a directory (tree entry)
 	subTree, err := object.GetTree(stor, entry.Hash)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -967,13 +936,9 @@ func (s *Server) writeContentsFile(
 		return
 	}
 	accept := r.Header.Get("Accept")
-	// GitHub's blob-size contract, decided from blob.Size so an oversized file
-	// is never read into memory to learn how big it is:
-	//   <= 1 MB    every feature of the endpoint, content base64-encoded;
-	//   1-100 MB   only the raw (and object) media types work — a JSON reply
-	//              carries content:"" and encoding:"none", which is the signal
-	//              a client branches on to fall back to raw or /git/blobs;
-	//   > 100 MB   the endpoint is not supported at all.
+	// Blob-size contract, decided from blob.Size so an oversized file is never
+	// read into memory: <=1 MB base64-inlined; 1-100 MB JSON carries
+	// content:"" encoding:"none" (only raw/object media types work); >100 MB unsupported.
 	if blob.Size > contentsAPIMaxFileBytes {
 		writeGHBlobTooLargeError(w, "This API does not support blobs larger than 100 MB in size.")
 		return
@@ -1026,14 +991,9 @@ func (s *Server) writeContentsFile(
 	writeJSON(w, http.StatusOK, out)
 }
 
-// writeContentsRaw serves a file's bytes for the contents API's raw media type.
-//
-// GitHub answers text/plain; charset=utf-8, and the Content-Type is what
-// clients branch on: octokit hands a text/* body to the caller as a string and
-// anything else as a binary buffer, so application/octet-stream turns a
-// requested file's text into a Buffer. nosniff keeps a raw HTML file in the
-// repository from being rendered as a document by the browser, exactly as the
-// separate /{owner}/{repo}/raw/{ref}/{path} route does.
+// writeContentsRaw serves a file's bytes for the raw media type as
+// text/plain; charset=utf-8 — octokit returns text/* as a string and anything
+// else as a Buffer. nosniff stops a raw HTML file from rendering in a browser.
 func writeContentsRaw(w http.ResponseWriter, r *http.Request, content []byte) {
 	setGitHubMediaType(w, r, "raw")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -1054,13 +1014,9 @@ func (s *Server) writeTreeListing(
 ) {
 	items := make([]map[string]interface{}, 0, len(tree.Entries))
 	for _, e := range tree.Entries {
-		// GitHub caps a contents-API directory listing at 1,000 entries and
-		// answers 200 with the truncated list rather than an error; a client
-		// needing the rest is pointed at the git trees API. Entries keep git's
-		// own tree order, which is what github.com serves — it is not a plain
-		// name sort (rust-lang/rust's rustc_middle/src answers "thir.rs"
-		// before the "thir" directory, i.e. "thir/" compared with the trailing
-		// slash git stores).
+		// Cap the listing at 1,000 entries (200 with a truncated list, as GitHub
+		// does). Entries keep git's own tree order, not a plain name sort — a
+		// directory sorts as "name/" with the trailing slash git stores.
 		if len(items) >= contentsAPIDirectoryEntryLimit {
 			break
 		}
@@ -1131,7 +1087,6 @@ func submoduleGitURL(stor gitStorage.Storer, root *object.Tree, requestedPath st
 	return ""
 }
 
-// repoHasAnyBranch reports whether the repository has at least one branch.
 func repoHasAnyBranch(stor gitStorage.Storer) bool {
 	refs, err := stor.IterReferences()
 	if err != nil {

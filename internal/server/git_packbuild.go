@@ -20,40 +20,36 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// This file decides what a fetch answers with — which commits, which of their
-// objects, and how they are packed — for both protocol versions. Everything a
-// request can say about the shape of the answer (a depth, an existing shallow
-// boundary, an object filter, a thin pack, extra tags) is applied here once.
+// Decides what a fetch answers with — which commits, which objects, and how
+// they are packed — applying depth, shallow boundary, object filter, thin pack,
+// and extra-tag requests.
 
 // gitFetchBoundary is the slice of the commit graph one upload-pack answers
-// with, together with the shallow boundary the client must record for it.
+// with, plus the shallow boundary the client must record.
 type gitFetchBoundary struct {
-	// roots are the wanted commits the walk started from, with any annotated
-	// tag peeled away. The negotiation reads them to decide when the client's
-	// history and this one have met.
+	// roots are the wanted commits the walk starts from, annotated tags peeled.
 	roots []plumbing.Hash
-	// order lists the commits to send in breadth-first order from the roots,
-	// so the packfile built from it is stable across runs rather than being
-	// ordered by Go map iteration.
+	// order lists the commits to send, breadth-first from the roots, so the pack
+	// is stable across runs rather than map-ordered.
 	order []plumbing.Hash
 	// included indexes order.
 	included map[plumbing.Hash]bool
-	// extras are wanted objects that are not commits — annotated tags, and any
-	// tag chain above them — which the pack carries alongside the commits.
+	// extras are wanted non-commit objects (annotated tags and their chain) the
+	// pack carries alongside the commits.
 	extras []plumbing.Hash
-	// shallows are the commits whose parents this response withholds, and that
-	// the client must therefore record in .git/shallow.
+	// shallows are commits whose parents this response withholds; the client
+	// records them in .git/shallow.
 	shallows []plumbing.Hash
-	// unshallows are commits the client currently records as shallow but whose
-	// parents this response does supply, so it must forget the boundary there.
+	// unshallows are commits the client records as shallow but whose parents
+	// this response supplies, so it must forget the boundary there.
 	unshallows []plumbing.Hash
 }
 
-// gitDepthLimit decides which commits a deepening request keeps. A zero value
-// keeps everything, which is the ordinary non-shallow fetch.
+// gitDepthLimit decides which commits a deepening request keeps. The zero value
+// keeps everything (the ordinary non-shallow fetch).
 type gitDepthLimit struct {
-	// maxCommits bounds the number of commits on any path from a starting
-	// point; zero means unbounded. Depth 1 keeps only the starting points.
+	// maxCommits bounds commits on any path from a start; zero is unbounded,
+	// depth 1 keeps only the starting points.
 	maxCommits int
 	// since keeps only commits committed at or after this instant.
 	since time.Time
@@ -61,8 +57,8 @@ type gitDepthLimit struct {
 	excluded map[plumbing.Hash]bool
 }
 
-// keep reports whether a commit reached at the given distance from a starting
-// point belongs in the response.
+// keep reports whether a commit reached at the given depth belongs in the
+// response.
 func (l gitDepthLimit) keep(commit *object.Commit, depth int) bool {
 	if l.maxCommits > 0 && depth > l.maxCommits {
 		return false
@@ -73,16 +69,12 @@ func (l gitDepthLimit) keep(commit *object.Commit, depth int) bool {
 	return !l.excluded[commit.Hash]
 }
 
-// gitDepthLimitFor turns the deepen lines of a request into the predicate the
-// graph walk applies. git allows a depth, a cutoff date and any number of
-// excluded references in the same request, and each one narrows the result
-// further.
+// gitDepthLimitFor turns the deepen lines of a request into the walk predicate.
 //
 // A deepen-relative walk starts at the boundary the client already records, and
-// that boundary commit is itself the first commit of the walk, so its budget is
-// one larger than the number of commits the client asked to gain. A
-// deepen-relative request from a client with no boundary to count from asks to
-// extend a history that is already complete, so it is answered with all of it.
+// that boundary is itself the first commit walked, so its budget is one larger
+// than the commits the client asked to gain. A deepen-relative request with no
+// boundary extends an already-complete history, so it keeps all of it.
 func gitDepthLimitFor(stor storer.Storer, request *gitUploadRequest, relative bool) (gitDepthLimit, error) {
 	limit := gitDepthLimit{maxCommits: request.depth, since: request.since}
 	switch {
@@ -110,11 +102,9 @@ func gitDepthLimitFor(stor storer.Storer, request *gitUploadRequest, relative bo
 	return limit, nil
 }
 
-// resolveGitDeepenNot resolves the reference named by a deepen-not line.
-//
-// `git clone --shallow-exclude=v1` sends the short name the user typed, so the
-// same expansion rules git uses are applied, and a raw object id is accepted
-// too because that is also a legal --shallow-exclude argument.
+// resolveGitDeepenNot resolves the reference a deepen-not line names, applying
+// git's short-name expansion and accepting a raw object id, both legal
+// --shallow-exclude arguments.
 func resolveGitDeepenNot(stor storer.Storer, name string) (plumbing.Hash, error) {
 	for _, rule := range plumbing.RefRevParseRules {
 		ref, err := storer.ResolveReference(stor, plumbing.ReferenceName(fmt.Sprintf(rule, name)))
@@ -127,13 +117,12 @@ func resolveGitDeepenNot(stor storer.Storer, name string) (plumbing.Hash, error)
 			return hash, nil
 		}
 	}
-	// git's own wording, so a user who searches the message finds the same
-	// answers whichever server produced it.
+	// git's own wording, so an error search finds the same answers.
 	return plumbing.ZeroHash, &gitClientRefusal{reason: "git upload-pack: deepen-not is not a ref: deepen-not " + name}
 }
 
 // gitReachableCommits collects every commit reachable from a starting object,
-// peeling an annotated tag first so a tag reference works as a boundary.
+// peeling an annotated tag first.
 func gitReachableCommits(stor storer.EncodedObjectStorer, from plumbing.Hash) (map[plumbing.Hash]bool, error) {
 	start, err := peelGitObjectToCommit(stor, from)
 	if err != nil {
@@ -179,21 +168,13 @@ func peelGitObjectToCommit(stor storer.EncodedObjectStorer, hash plumbing.Hash) 
 }
 
 // gitFetchBoundaryFor walks the commit graph outward from the wants and stops
-// where the request's depth says to stop.
+// where the request's depth says to.
 //
-// The walk is breadth-first, so the first time a commit is reached is by a
-// shortest path from some starting point and its distance is final — which is
-// what makes "deepen <n>" mean n commits along every path rather than n along
-// whichever path happened to be explored first.
-//
-// A commit is a shallow boundary when it is included but at least one of its
-// parents is not: that is the exact point where the client's history is
-// truncated, so a root commit never becomes a boundary and a `--depth` larger
-// than the history produces no boundary at all — the same answer git gives.
-//
-// With deepen-relative the walk starts at the boundary the client already
-// records rather than at the wants, so `git fetch --deepen=<n>` gains n commits
-// beyond where the clone currently stops, however deep that is.
+// The walk is breadth-first, so a commit's first-reached distance is final —
+// which makes "deepen <n>" mean n commits along every path. A commit is a
+// shallow boundary when it is included but a parent is not, so a root or a
+// --depth past the history produces no boundary. With deepen-relative the walk
+// starts at the client's recorded boundary rather than the wants.
 func gitFetchBoundaryFor(stor storer.Storer, request *gitUploadRequest) (*gitFetchBoundary, error) {
 	roots, extras, err := peelGitWants(stor, request.wants)
 	if err != nil {
@@ -266,8 +247,7 @@ func gitFetchBoundaryFor(stor storer.Storer, request *gitUploadRequest) (*gitFet
 		clientShallow[hash] = true
 	}
 	for _, hash := range boundary.order {
-		// A boundary the client already recorded is not restated, matching
-		// git: the client's .git/shallow already says so.
+		// A boundary the client already recorded is not restated.
 		if truncated[hash] && !clientShallow[hash] {
 			boundary.shallows = append(boundary.shallows, hash)
 		}
@@ -280,10 +260,9 @@ func gitFetchBoundaryFor(stor storer.Storer, request *gitUploadRequest) (*gitFet
 	return boundary, nil
 }
 
-// gitReachableClientBoundary picks the commits a deepen-relative walk starts
-// from: the shallow boundary the client recorded, restricted to the part of it
-// the wanted commits actually reach. A boundary left over from a branch this
-// request does not ask for would otherwise pull unrelated history in.
+// gitReachableClientBoundary picks the deepen-relative walk's starting commits:
+// the client's recorded shallow boundary, restricted to the part the wants
+// actually reach, so a boundary from an unrelated branch pulls nothing in.
 func gitReachableClientBoundary(stor storer.EncodedObjectStorer, roots, shallows []plumbing.Hash) ([]plumbing.Hash, error) {
 	wanted := make(map[plumbing.Hash]bool, len(shallows))
 	for _, hash := range shallows {
@@ -318,14 +297,10 @@ func gitReachableClientBoundary(stor storer.EncodedObjectStorer, roots, shallows
 	return reachable, nil
 }
 
-// peelGitWants splits the wanted object ids into the commits the graph walk
-// starts from and the objects that have to be sent as they are.
-//
-// A client may want an annotated tag — `git clone` wants every advertised ref —
-// in which case the tag object itself belongs in the pack and the walk starts
-// at the commit it names, possibly through a chain of tags. A want naming a
-// tree or a blob outright, which is how a partial clone fetches an object it
-// had filtered out, is carried the same way.
+// peelGitWants splits the wanted object ids into the commits the walk starts
+// from and the objects sent as-is. A wanted annotated tag is carried itself and
+// the walk starts at the commit it names; a wanted tree or blob (a partial
+// clone refetching a filtered object) is carried the same way.
 func peelGitWants(stor storer.EncodedObjectStorer, wants []plumbing.Hash) (roots, extras []plumbing.Hash, err error) {
 	seen := make(map[plumbing.Hash]bool, len(wants))
 	for _, want := range wants {
@@ -333,9 +308,7 @@ func peelGitWants(stor storer.EncodedObjectStorer, wants []plumbing.Hash) (roots
 		for !seen[hash] {
 			encoded, err := stor.EncodedObject(plumbing.AnyObject, hash)
 			if errors.Is(err, plumbing.ErrObjectNotFound) {
-				// git's own wording for a want this repository cannot serve,
-				// so the client prints the reason rather than reporting a
-				// transport failure.
+				// git's own wording, so the client prints the reason.
 				return nil, nil, &gitClientRefusal{reason: "upload-pack: not our ref " + hash.String()}
 			}
 			if err != nil {
@@ -364,30 +337,22 @@ func peelGitWants(stor storer.EncodedObjectStorer, wants []plumbing.Hash) (roots
 type gitPackPlan struct {
 	// objects lists the object ids to write, in the order they were found.
 	objects []plumbing.Hash
-	// paths records the tree path each object was reached at. Two versions of
-	// the same file share a path, which is what makes one a good delta base
-	// for the other.
+	// paths records the tree path each object was reached at; two versions of a
+	// file share a path, making one a good delta base for the other.
 	paths map[plumbing.Hash]string
 	// packed indexes objects.
 	packed map[plumbing.Hash]bool
-	// clientAt is the object the client already holds at each tree path. Every
-	// entry is an object this pack does not carry, so a delta against one is
-	// exactly the "thin" part of a thin pack.
+	// clientAt is the object the client already holds at each tree path — never
+	// carried in this pack, so a delta against one is the thin part of a thin pack.
 	clientAt map[string]plumbing.Hash
 }
 
 // gitObjectsToSend enumerates the objects the packfile must carry.
 //
-// Objects the client already has are subtracted first, and that subtraction is
-// where a shallow client needs care: walking its have list to the root would
-// mark objects it does not actually hold as already-delivered, because its
-// history stops at the boundary it declared. The walk therefore stops at every
-// commit the client listed as shallow — it keeps that commit's own tree, which
-// the client does have, and leaves the parents beyond it to be sent.
-//
-// The have list is consulted for every fetch, which is what makes a fetch
-// incremental: without it a client that is one commit behind is sent the entire
-// history again, every time.
+// Objects the client already has are subtracted first. A shallow client needs
+// care: the have-walk stops at every commit it declared shallow, keeping that
+// commit's tree (which it has) and leaving the parents beyond to be sent. The
+// have list is what makes a fetch incremental rather than resending all history.
 func gitObjectsToSend(stor storer.Storer, boundary *gitFetchBoundary, request *gitUploadRequest, count func(int)) (*gitPackPlan, error) {
 	plan := &gitPackPlan{
 		paths:    map[plumbing.Hash]string{},
@@ -421,10 +386,8 @@ func gitObjectsToSend(stor storer.Storer, boundary *gitFetchBoundary, request *g
 			return nil, err
 		}
 		if encoded.Type() == plumbing.TreeObject {
-			// A want naming a tree is a partial clone reaching for a directory
-			// an earlier filter left out, and git's lazy fetch asks for it with
-			// blob:none — so the answer owes the subtree below it, not just the
-			// one object, or the client spends a round trip per level.
+			// A wanted tree is a partial clone refetching a filtered-out directory;
+			// owe the whole subtree below it, or the client round-trips per level.
 			if err := collectGitTree(stor, hash, request.filter, wanted, seen, emit); err != nil {
 				return nil, err
 			}
@@ -456,17 +419,12 @@ func gitObjectsToSend(stor storer.Storer, boundary *gitFetchBoundary, request *g
 }
 
 // collectGitHaveObjects marks everything the client already holds, walking its
-// have list backwards through the graph but stopping at stopAt — the commits it
-// told us are its shallow boundary, whose parents it does not have.
+// have list back through the graph but stopping at stopAt — the commits it
+// declared as its shallow boundary.
 //
-// Alongside the exclusion it records which object the client holds at each tree
-// path, keeping the first one reached. The walk starts at the client's tips, so
-// that first object is its most recent version of the path and therefore the
-// closest delta base for the version being sent.
-//
-// A have line naming an object this server does not hold is ignored rather than
-// failing the fetch: the client may have commits of its own that were never
-// pushed here.
+// It also records which object the client holds at each tree path, keeping the
+// first reached: the client's most recent version, the closest delta base. A
+// have naming an object this server lacks is ignored, not fatal.
 func collectGitHaveObjects(stor storer.EncodedObjectStorer, haves []plumbing.Hash, stopAt, seen map[plumbing.Hash]bool, at map[string]plumbing.Hash) error {
 	visited := make(map[plumbing.Hash]bool, len(haves))
 	queue := append([]plumbing.Hash(nil), haves...)
@@ -503,14 +461,13 @@ type gitTreeFrame struct {
 	hash  plumbing.Hash
 	path  string
 	depth int
-	// match is what the sparse specification said about this directory, and it
-	// is what a path beneath it inherits when no pattern names that path.
+	// match is the sparse decision for this directory, inherited by a path
+	// beneath it that no pattern names.
 	match   gitPatternMatch
 	entries []object.TreeEntry
 	next    int
-	// omitted records that some object below this directory was left out at
-	// the path it was reached by, which is what stops the walk from treating
-	// the directory as settled for every other path it appears at.
+	// omitted records that something below was left out at this path, so the
+	// directory is not treated as settled for other paths it appears at.
 	omitted bool
 }
 
@@ -521,27 +478,19 @@ type gitTreeWalk struct {
 	wanted map[plumbing.Hash]bool
 	seen   map[plumbing.Hash]bool
 	emit   func(plumbing.Hash, string)
-	// visited and complete are only built for a filter that decides objects by
-	// path. visited is the set of (tree, path) pairs already walked, and
-	// complete holds the trees whose whole subtree was included, which may
-	// therefore be skipped wherever else they appear.
+	// visited and complete are built only for a path-deciding filter. visited is
+	// the (tree, path) pairs already walked; complete holds trees whose whole
+	// subtree was included, skippable wherever else they appear.
 	visited  map[string]bool
 	complete map[plumbing.Hash]bool
 }
 
-// collectGitTree records a tree and everything beneath it, skipping any subtree
-// already in seen so a history that barely changes costs one walk, not one per
-// commit. Submodule entries name commits in another repository and are not
-// objects this one can send.
-//
-// The filter decides which of those objects the answer actually carries; an
-// object the client named in a want line is carried whatever the filter says,
-// because that request is the client asking for exactly the object an earlier
-// filtered fetch left out. A tree the filter drops is not descended into, so
-// nothing below it can be reached either.
-//
-// The walk is depth-first, which is the order git's own traversal visits paths
-// in, and it is iterative, so a deeply nested tree costs heap rather than stack.
+// collectGitTree records a tree and everything beneath it, skipping a subtree
+// already in seen. Submodule entries name commits in another repository and are
+// not sent. The filter decides which objects are carried, but a wanted object
+// is carried regardless, and a dropped tree is not descended into. The walk is
+// depth-first (git's traversal order) and iterative, so a deep tree costs heap,
+// not stack.
 func collectGitTree(stor storer.EncodedObjectStorer, root plumbing.Hash, filter gitObjectFilter, wanted, seen map[plumbing.Hash]bool, emit func(plumbing.Hash, string)) error {
 	walk := &gitTreeWalk{stor: stor, filter: filter, wanted: wanted, seen: seen, emit: emit}
 	if filter.pathDependent() {
@@ -598,19 +547,16 @@ func (w *gitTreeWalk) run(root plumbing.Hash) error {
 	return nil
 }
 
-// enter opens a directory, emitting the tree object unless it has already been
-// emitted or the filter drops it, and reports the frame the walk continues in.
-// A nil frame means there is nothing below this directory left to do.
+// enter opens a directory, emitting its tree unless already emitted or filtered
+// out, and returns the frame to continue in (nil when nothing is left below).
 func (w *gitTreeWalk) enter(hash plumbing.Hash, path string, depth int, inherited gitPatternMatch) (*gitTreeFrame, error) {
 	if w.visited == nil {
 		if w.seen[hash] {
 			return nil, nil
 		}
 	} else {
-		// The same tree object can sit at several paths — a directory copied
-		// with no other change — and a sparse specification may select one of
-		// those paths and not another, so a tree is only settled once a visit
-		// found nothing to omit below it.
+		// The same tree can sit at several paths, and a sparse spec may select one
+		// and not another, so a tree is settled only once a visit omits nothing below.
 		if w.complete[hash] {
 			return nil, nil
 		}
@@ -641,19 +587,17 @@ func (w *gitTreeWalk) enter(hash plumbing.Hash, path string, depth int, inherite
 	return &gitTreeFrame{hash: hash, path: path, depth: depth, match: match, entries: tree.Entries}, nil
 }
 
-// leave closes a directory whose entries are exhausted, recording a subtree
-// that was carried whole so no other path through it has to be walked again.
+// leave closes an exhausted directory, recording a subtree carried whole so no
+// other path through it is walked again.
 func (w *gitTreeWalk) leave(frame *gitTreeFrame) {
 	if w.visited != nil && !frame.omitted {
 		w.complete[frame.hash] = true
 	}
 }
 
-// blob decides one file, emitting it or reporting that it was left out.
-//
-// A blob the filter drops at this path is not recorded as settled when the
-// filter reads paths, because the same content may sit at another path the
-// specification does select, and that occurrence must still be sent.
+// blob decides one file, emitting it or reporting it was left out. A blob the
+// filter drops at this path is not settled when the filter reads paths, because
+// the same content may sit at another selected path.
 func (w *gitTreeWalk) blob(hash plumbing.Hash, path string, depth int, inherited gitPatternMatch) (bool, error) {
 	if w.seen[hash] {
 		return false, nil
@@ -680,12 +624,9 @@ func (w *gitTreeWalk) blob(hash plumbing.Hash, path string, depth int, inherited
 	return false, nil
 }
 
-// appendGitIncludedTags adds the annotated tag objects that point into the
-// pack, which is what the include-tag capability promises: a client fetching a
-// branch gets the tags on it without a second round trip.
-//
-// A chain of tags is added from the bottom up, so a tag of a tag arrives after
-// the tag it names.
+// appendGitIncludedTags adds the annotated tags that point into the pack — the
+// include-tag capability: a branch fetch gets its tags without a second round
+// trip. A tag chain is added bottom-up so a tag of a tag follows its target.
 func appendGitIncludedTags(stor storer.Storer, plan *gitPackPlan) error {
 	iter, err := stor.IterReferences()
 	if err != nil {
@@ -754,14 +695,11 @@ type gitObjectFilter struct {
 	rules []gitFilterRule
 }
 
-// omitsTree reports whether a tree at the given distance from the root tree is
-// left out. The root tree is at depth zero, so "tree:0" empties the pack of
-// everything but commits and tags.
+// omitsTree reports whether a tree at the given depth from the root is dropped;
+// the root is depth zero, so "tree:0" leaves only commits and tags.
 //
 // A sparse rule never answers here: git's sparse filter shows every tree it
-// walks through, whether or not the directory is in the sparse specification,
-// because the client needs the whole directory skeleton to know what it is
-// missing and to widen the cone later without another traversal.
+// walks so the client knows the directory skeleton and can widen the cone later.
 func (f gitObjectFilter) omitsTree(depth int) bool {
 	for _, rule := range f.rules {
 		if rule.kind == gitFilterTreeDepth && depth >= rule.treeDepth {
@@ -771,10 +709,8 @@ func (f gitObjectFilter) omitsTree(depth int) bool {
 	return false
 }
 
-// pathDependent reports whether the filter decides an object by the path it was
-// reached at rather than by the object itself. A path-dependent filter makes
-// the same blob answerable two ways, so the traversal that applies it may not
-// take the shortcuts an object-only filter allows.
+// pathDependent reports whether the filter decides an object by its path rather
+// than the object itself, which bars the shortcuts an object-only filter allows.
 func (f gitObjectFilter) pathDependent() bool {
 	for _, rule := range f.rules {
 		if rule.kind == gitFilterSparseOID {
@@ -784,10 +720,9 @@ func (f gitObjectFilter) pathDependent() bool {
 	return false
 }
 
-// matchSparse decides a path against every sparse rule the filter carries. A
-// path any one of them excludes is excluded, so combining a sparse filter with
-// another one narrows the answer rather than widening it, and a path none of
-// them names is left undecided for the enclosing directory to answer.
+// matchSparse decides a path against every sparse rule; any rule that excludes
+// it excludes it, and a path none name is left undecided for the enclosing
+// directory to answer.
 func (f gitObjectFilter) matchSparse(path string, isDir bool) gitPatternMatch {
 	decision := gitPatternUndecided
 	for _, rule := range f.rules {
@@ -805,9 +740,8 @@ func (f gitObjectFilter) matchSparse(path string, isDir bool) gitPatternMatch {
 	return decision
 }
 
-// omitsBlob reports whether a blob found at the given depth from the root tree
-// is left out. The size is only read when a rule needs it, so "blob:none"
-// costs no extra object lookups.
+// omitsBlob reports whether a blob at the given depth is dropped. The size is
+// read only when a rule needs it, so "blob:none" costs no extra lookups.
 func (f gitObjectFilter) omitsBlob(stor storer.EncodedObjectStorer, blob plumbing.Hash, depth int) (bool, error) {
 	needsSize := false
 	for _, rule := range f.rules {
@@ -839,13 +773,9 @@ func (f gitObjectFilter) omitsBlob(stor storer.EncodedObjectStorer, blob plumbin
 	return false, nil
 }
 
-// parseGitObjectFilter reads a filter-spec. A spec this server cannot honour is
-// refused with the message git uses for the same mistake, so the client prints
-// a reason instead of receiving a pack that quietly ignores the filter it
-// asked for.
-//
-// The repository is a parameter because "sparse:oid" names its patterns by a
-// blob-ish expression that only this repository can resolve.
+// parseGitObjectFilter reads a filter-spec, refusing an unsupported one with
+// git's own message so the client prints a reason. stor is needed because
+// "sparse:oid" names its patterns by a blob-ish only this repository resolves.
 func parseGitObjectFilter(stor storer.Storer, spec string) (gitObjectFilter, error) {
 	if spec == "" {
 		return gitObjectFilter{}, nil
@@ -884,8 +814,7 @@ func parseGitObjectFilter(stor storer.Storer, spec string) (gitObjectFilter, err
 		name := strings.TrimPrefix(spec, "sparse:oid=")
 		content, err := readGitBlobIsh(stor, name)
 		if err != nil {
-			// git's own wording, so the user who reads it finds the same
-			// answers whichever server produced the refusal.
+			// git's own wording.
 			return gitObjectFilter{}, &gitClientRefusal{reason: "unable to access sparse blob in '" + name + "'"}
 		}
 		return gitObjectFilter{rules: []gitFilterRule{{kind: gitFilterSparseOID, patterns: parseGitSparsePatterns(content)}}}, nil
@@ -894,13 +823,8 @@ func parseGitObjectFilter(stor storer.Storer, spec string) (gitObjectFilter, err
 }
 
 // readGitBlobIsh resolves the blob a "sparse:oid" filter names and returns its
-// content.
-//
-// git resolves that argument as a blob-ish, so both spellings a user can write
-// reach the same blob: a raw object id, which is what `git clone
-// --filter=sparse:oid=<oid>` sends, and a "<rev>:<path>" expression naming a
-// pattern file committed to the repository, which is how a monorepo keeps its
-// sparse specifications under review alongside the code they select.
+// content. git resolves the argument as a blob-ish, so both a raw object id and
+// a "<rev>:<path>" expression (a pattern file committed to the repo) work.
 func readGitBlobIsh(stor storer.Storer, name string) ([]byte, error) {
 	hash, err := resolveGitBlobIshHash(stor, name)
 	if err != nil {
@@ -918,15 +842,12 @@ func readGitBlobIsh(stor storer.Storer, name string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(reader, gitMaxSparseFilterBlobSize))
 }
 
-// gitMaxSparseFilterBlobSize bounds how much of a named pattern file is read.
-// A sparse specification is a list of paths; this is far past any real one and
-// keeps a client from making the server hold an arbitrary blob in memory by
-// pointing the filter at it.
+// gitMaxSparseFilterBlobSize bounds how much of a named pattern file is read,
+// so a client cannot make the server hold an arbitrary blob in memory.
 const gitMaxSparseFilterBlobSize = 8 << 20
 
-// resolveGitBlobIshHash resolves a blob-ish expression to the object id of a
-// blob, following annotated tags and reading a path out of a tree when the
-// expression names one.
+// resolveGitBlobIshHash resolves a blob-ish expression to a blob's object id,
+// following annotated tags and reading a path out of a tree when named.
 func resolveGitBlobIshHash(stor storer.Storer, name string) (plumbing.Hash, error) {
 	if revision, path, found := strings.Cut(name, ":"); found {
 		start, err := resolveGitRevision(stor, revision)
@@ -967,8 +888,8 @@ func resolveGitBlobIshHash(stor storer.Storer, name string) (plumbing.Hash, erro
 	}
 }
 
-// resolveGitRevision turns a reference name or an object id into the object it
-// names, using the same short-name expansion git's rev-parse applies.
+// resolveGitRevision turns a reference name or object id into the object it
+// names, using git's rev-parse short-name expansion.
 func resolveGitRevision(stor storer.Storer, revision string) (plumbing.Hash, error) {
 	for _, rule := range plumbing.RefRevParseRules {
 		ref, err := storer.ResolveReference(stor, plumbing.ReferenceName(fmt.Sprintf(rule, revision)))
@@ -995,13 +916,9 @@ func gitTreeOfCommitObject(stor storer.Storer, hash plumbing.Hash) (*object.Tree
 	return object.GetTree(stor, commit.TreeHash)
 }
 
-// parseGitBlobLimit reads the size a blob:limit filter cuts at, in the plain,
-// kibibyte, mebibyte and gibibyte spellings git accepts.
-// parseGitBlobLimit reads the size a "blob:limit=" spec names. The limit is an
-// int64 because that is what it is compared against — an object's size — so the
-// suffix is applied in the same width the comparison happens in and a spec whose
-// product would not fit is refused instead of wrapping to a negative limit that
-// would omit every blob.
+// parseGitBlobLimit reads the size a "blob:limit=" spec cuts at, in the plain,
+// k, m, and g spellings git accepts. The width is int64 (an object's size), and
+// a spec whose product would overflow is refused rather than wrapping negative.
 func parseGitBlobLimit(text string) (int64, error) {
 	multiplier := int64(1)
 	if len(text) > 0 {
@@ -1030,23 +947,17 @@ func parseGitBlobLimit(text string) (int64, error) {
 	return value * multiplier, nil
 }
 
-// gitMaxDeltaObjectSize bounds the objects a thin pack will try to deltify.
-// Computing a delta loads both the base and the target into memory, so past
-// this size the object is written whole and the pack pays bytes rather than the
-// server paying heap.
+// gitMaxDeltaObjectSize bounds objects a thin pack will deltify; computing a
+// delta loads base and target into memory, so past this the object is sent whole.
 const gitMaxDeltaObjectSize = 16 << 20
 
 // gitPackVersion is the packfile format version every git client understands.
 const gitPackVersion = 2
 
-// writeGitPackfile writes the packfile a finished plan describes.
-//
-// A client that asked for a thin pack and proved it holds objects this pack can
-// delta against gets the thin encoder. Otherwise the answer is built from the
-// packfiles storage already holds when they cover it — see git_packreuse.go for
-// what makes that a correct answer — and from go-git's encoder when they do
-// not, which searches a delta window across the objects in the pack and emits
-// offset deltas.
+// writeGitPackfile writes the packfile a finished plan describes: the thin
+// encoder when the client asked for a thin pack and holds delta bases, else
+// reused stored packfiles when they cover the plan (see git_packreuse.go), else
+// go-git's encoder.
 func writeGitPackfile(band *gitBandWriter, stor storer.EncodedObjectStorer, plan *gitPackPlan, thin bool) error {
 	if thin && len(plan.clientAt) > 0 {
 		return writeGitThinPack(band, stor, plan)
@@ -1068,23 +979,13 @@ func writeGitPackfile(band *gitBandWriter, stor storer.EncodedObjectStorer, plan
 	return nil
 }
 
-// writeGitThinPack writes a packfile whose entries may be deltas against
-// objects that are not in it.
+// writeGitThinPack writes a packfile whose entries may be deltas against objects
+// not in it. The base is the object the client holds at the same tree path,
+// always resolvable because its have lines put it in the table; nothing in the
+// table is also in the pack, so every delta is genuinely external.
 //
-// The base of such a delta is the object the client already holds at the same
-// tree path — the previous version of the file or directory being sent — which
-// the client can always resolve because the have lines it sent are what put the
-// object in that table in the first place. Nothing in the table is ever also in
-// the pack: everything the client holds was subtracted from the object list
-// before it was built, so every delta written here is genuinely external and
-// the pack is genuinely thin.
-//
-// go-git's packfile.Encoder cannot express this. Its only entry point takes the
-// list of object ids to pack and runs its own delta selector over exactly that
-// list, and writeBaseIfDelta puts any base it chose into the pack; the
-// encode([]*ObjectToPack) form that could accept an externally based delta is
-// unexported, as is any way to reach ObjectToPack.SetDelta from outside the
-// package. So the entries are written here.
+// go-git's packfile.Encoder cannot express an externally based delta (the entry
+// points that could are unexported), so the entries are written here.
 func writeGitThinPack(band *gitBandWriter, stor storer.EncodedObjectStorer, plan *gitPackPlan) error {
 	out := band.pack()
 	digest := plumbing.Hasher{Hash: hash.New(hash.CryptoType)}
@@ -1121,9 +1022,8 @@ func writeGitThinPack(band *gitBandWriter, stor storer.EncodedObjectStorer, plan
 	return err
 }
 
-// gitThinDelta computes the delta that turns the client's version of an object
-// into the one being sent, and reports it only when it is genuinely smaller
-// than the object itself.
+// gitThinDelta computes the delta from the client's version of an object to the
+// one being sent, returning it only when genuinely smaller than the object.
 func gitThinDelta(stor storer.EncodedObjectStorer, plan *gitPackPlan, id plumbing.Hash, target plumbing.EncodedObject) (plumbing.EncodedObject, plumbing.Hash, error) {
 	if target.Type() != plumbing.BlobObject && target.Type() != plumbing.TreeObject {
 		return nil, plumbing.ZeroHash, nil
@@ -1149,17 +1049,13 @@ func gitThinDelta(stor storer.EncodedObjectStorer, plan *gitPackPlan, id plumbin
 	return delta, baseHash, nil
 }
 
-// gitPackMaxEntries is the largest object count a packfile can state. The count
-// is a four-byte field, so a pack holding more objects than this has no header
-// that describes it.
+// gitPackMaxEntries is the largest object count a pack header can state (a
+// four-byte field).
 const gitPackMaxEntries = 1<<32 - 1
 
-// writeGitPackHeader writes the twelve bytes that open a packfile: the
-// signature, the format version and the number of entries that follow.
-//
-// A count the field cannot hold is an error rather than a truncation, because a
-// wrapped count produces a pack whose header disagrees with its body, and the
-// client would index it as a shorter pack and silently lose objects.
+// writeGitPackHeader writes the twelve opening bytes: signature, version, and
+// entry count. A count the field cannot hold is an error, not a truncation,
+// which would desync the header from the body and lose objects.
 func writeGitPackHeader(w io.Writer, entries int) error {
 	if entries < 0 || int64(entries) > gitPackMaxEntries {
 		return fmt.Errorf("pack header cannot state %d entries", entries)
@@ -1172,8 +1068,8 @@ func writeGitPackHeader(w io.Writer, entries int) error {
 	return err
 }
 
-// writeGitPackObject writes one whole object: its type-and-size header followed
-// by the deflated content.
+// writeGitPackObject writes one whole object: its type-and-size header and the
+// deflated content.
 func writeGitPackObject(w io.Writer, compressor *zlib.Writer, encoded plumbing.EncodedObject) error {
 	if err := writeGitPackEntryHeader(w, encoded.Type(), encoded.Size()); err != nil {
 		return err
@@ -1211,21 +1107,16 @@ func writeGitPackDelta(w io.Writer, compressor *zlib.Writer, base plumbing.Hash,
 	return compressor.Close()
 }
 
-// writeGitPackEntryHeader writes a packfile entry header: the object type in
-// three bits and the uncompressed size in a little-endian base-128 run, four
-// bits of it in the first byte and seven in each byte after.
-//
-// The run ends when the size has been shifted down to zero, which a negative
-// size never reaches, so a negative size is refused before the loop rather than
-// spinning in it.
+// writeGitPackEntryHeader writes an entry header: the object type in three bits
+// and the uncompressed size as a little-endian base-128 run. The run ends when
+// the size shifts to zero, which a negative size never reaches, so it is refused.
 func writeGitPackEntryHeader(w io.Writer, objectType plumbing.ObjectType, size int64) error {
 	if size < 0 {
 		return fmt.Errorf("pack entry header cannot state a size of %d", size)
 	}
 	header := make([]byte, 0, 10)
-	// Each byte of the run carries seven bits of size, and the first carries the
-	// type above the four bits of size it has room for; the masks are what make
-	// each one a byte.
+	// The first byte carries the type plus four bits of size; each later byte
+	// carries seven more.
 	current := byte((int64(objectType)<<4 | size&0x0f) & 0xff)
 	size >>= 4
 	for size != 0 {

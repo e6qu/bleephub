@@ -8,11 +8,9 @@ import (
 	"strconv"
 )
 
-// decodeIssueLabelsBody decodes the body of the "add labels to an issue"
-// endpoint. Real GitHub (and go-github / gh) accept EITHER a bare JSON array
-// `["bug","help wanted"]` OR the object form `{"labels":[...]}`. Returns the
-// label names, or false (after writing a 400) on malformed JSON. An empty body
-// is treated as no labels.
+// decodeIssueLabelsBody decodes the add-labels body. GitHub accepts either a
+// bare array `["bug"]` or the object form `{"labels":[...]}`; an empty body
+// means no labels. Returns false (after writing a 400) on malformed JSON.
 func decodeIssueLabelsBody(w http.ResponseWriter, r *http.Request) ([]string, bool) {
 	raw, ok := readLimitedBody(w, r, maxJSONBodyBytes)
 	if !ok {
@@ -40,20 +38,11 @@ func decodeIssueLabelsBody(w http.ResponseWriter, r *http.Request) ([]string, bo
 	return obj.Labels, true
 }
 
-// request body decoding tolerant of string-coerced booleans + integers.
-// Real GitHub's REST API accepts both:
-//   - `{"private": false}`              (typed JSON boolean)
-//   - `{"private": "false"}`            (string-coerced; what `gh api -f` sends)
-//
-// Bleephub must accept the same so `gh` CLI works natively. This isn't a
-// fallback — it's the GitHub API spec the official client relies on.
-//
-// Use the `flexBool` / `flexInt` field types in request structs instead of
-// `bool` / `int`. They Marshal back to the typed form, so JSON responses
-// keep the proper shape.
+// GitHub's REST API accepts both typed JSON booleans/ints and string-coerced
+// ones (`{"private":"false"}`, what `gh api -f` sends). Use flexBool/flexInt in
+// request structs for parity; they Marshal back to the typed form.
 
-// flexBool decodes either `true`/`false` (typed) or `"true"`/`"false"` (string).
-// Empty string → false (matches Rails strong params coercion).
+// flexBool decodes `true`/`false` or `"true"`/`"false"`; empty string → false.
 type flexBool bool
 
 func (b *flexBool) UnmarshalJSON(data []byte) error {
@@ -61,7 +50,6 @@ func (b *flexBool) UnmarshalJSON(data []byte) error {
 		*b = false
 		return nil
 	}
-	// Typed boolean
 	if data[0] == 't' || data[0] == 'f' {
 		var v bool
 		if err := json.Unmarshal(data, &v); err != nil {
@@ -70,7 +58,6 @@ func (b *flexBool) UnmarshalJSON(data []byte) error {
 		*b = flexBool(v)
 		return nil
 	}
-	// String-coerced
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err
@@ -81,10 +68,9 @@ func (b *flexBool) UnmarshalJSON(data []byte) error {
 	case "false", "0", "no", "":
 		*b = false
 	default:
-		// Not a json.UnmarshalTypeError: its Error method dereferences Type
-		// unconditionally, so constructing one with a nil Type produces a value
-		// that panics the moment anything formats it. Today nothing does, which
-		// is the only reason this has not fired.
+		// Deliberately not json.UnmarshalTypeError: its Error method
+		// dereferences Type unconditionally, so a nil-Type value panics when
+		// formatted.
 		return fmt.Errorf("invalid boolean value %q", s)
 	}
 	return nil
@@ -134,9 +120,8 @@ func (i flexInt) MarshalJSON() ([]byte, error) {
 }
 
 // coerceBool extracts a bool from an interface{} that may be a bool, a
-// "true"/"false" string, or a 0/1 number. Returns (value, found).
-// Used in handlers that decode the body into map[string]interface{} (e.g.
-// PATCH /repos/{o}/{r} which accepts a wide set of optional fields).
+// "true"/"false" string, or a 0/1 number, for handlers decoding into
+// map[string]interface{}. Returns (value, found).
 func coerceBool(v interface{}) (bool, bool) {
 	switch x := v.(type) {
 	case nil:
@@ -156,8 +141,8 @@ func coerceBool(v interface{}) (bool, bool) {
 	return false, false
 }
 
-// flexIntSlice decodes []int but tolerates a single int (string-coerced or typed),
-// matching how `gh api -f key=val` sends each `-f` as a separate field.
+// flexIntSlice decodes []int but tolerates a single int, matching how
+// `gh api -f key=val` sends each `-f` as a separate field.
 type flexIntSlice []int
 
 func (s *flexIntSlice) UnmarshalJSON(data []byte) error {
@@ -165,7 +150,6 @@ func (s *flexIntSlice) UnmarshalJSON(data []byte) error {
 		*s = nil
 		return nil
 	}
-	// Typed array
 	if data[0] == '[' {
 		var raw []json.RawMessage
 		if err := json.Unmarshal(data, &raw); err != nil {
@@ -182,7 +166,6 @@ func (s *flexIntSlice) UnmarshalJSON(data []byte) error {
 		*s = out
 		return nil
 	}
-	// Single scalar — wrap into one-element slice
 	var n flexInt
 	if err := json.Unmarshal(data, &n); err != nil {
 		return err

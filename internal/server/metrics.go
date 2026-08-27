@@ -9,9 +9,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Metrics is the live, mutable accumulator. It is never marshalled — the
-// serialized contract is MetricsSnapshot, produced by Snapshot() — so these
-// fields deliberately carry no JSON tags.
+// Metrics is the live, mutable accumulator; it is never marshalled (the
+// serialized contract is MetricsSnapshot), so its fields carry no JSON tags.
 type Metrics struct {
 	mu                  sync.Mutex
 	WorkflowSubmissions int64
@@ -51,13 +50,9 @@ func (m *Metrics) RecordJobDispatch() {
 	m.mu.Unlock()
 }
 
-// RecordJobCompletion takes the job rather than a precomputed duration.
-//
-// The caller used to pass time.Since(workflow.CreatedAt), which is the age of
-// the whole run: every job in a multi-job or needs-chained workflow reported a
-// duration inflated by all the work that preceded it. Deriving the duration
-// here from the one authoritative pair of timestamps means a caller cannot
-// supply the wrong clock.
+// RecordJobCompletion derives the duration from the job's own start/complete
+// timestamps rather than a caller-supplied clock, which would otherwise
+// inflate a chained job's duration by all the work preceding it.
 func (m *Metrics) RecordJobCompletion(job *store.WorkflowJob) {
 	if job == nil {
 		return
@@ -84,10 +79,6 @@ func (m *Metrics) RecordJobCompletion(job *store.WorkflowJob) {
 }
 
 // jobDurationPercentilesLocked summarizes the retained duration window.
-//
-// These were accumulated under a mutex on every job completion and then read
-// by nothing at all — a write-only side effect that looked like observability.
-// Reporting them is the smaller change; the alternative was deleting the field.
 func (m *Metrics) jobDurationPercentilesLocked() (p50, p95, p99 float64) {
 	if len(m.JobDurations) == 0 {
 		return 0, 0, 0
@@ -122,9 +113,8 @@ type MetricsSnapshot struct {
 }
 
 func (m *Metrics) Snapshot() MetricsSnapshot {
-	// ReadMemStats stops the world. Doing it before taking the lock keeps that
-	// pause off the job-accounting path, which every completing job contends
-	// for; previously a scrape of the metrics endpoint stalled them all.
+	// ReadMemStats stops the world; do it before taking the lock so the pause
+	// stays off the job-accounting path every completing job contends for.
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 

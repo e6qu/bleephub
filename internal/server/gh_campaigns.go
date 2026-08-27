@@ -9,8 +9,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub security campaigns: organization-scoped remediation drives over
-// linked code scanning alerts, with managers, an end date, and alert stats.
+// Org-scoped security campaigns: remediation drives over linked code scanning
+// alerts, with managers, an end date, and alert stats.
 
 func (s *Server) registerGHCampaignRoutes() {
 	s.route("GET /api/v3/orgs/{org}/campaigns",
@@ -154,8 +154,6 @@ func (s *Server) handleCreateOrgCampaign(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, s.campaignJSON(c, r))
 }
 
-// resolveCampaign parses {campaign_number} and loads the campaign, writing a
-// 404 on failure.
 func (s *Server) resolveCampaign(w http.ResponseWriter, r *http.Request) *store.Campaign {
 	number, err := strconv.Atoi(r.PathValue("campaign_number"))
 	if err != nil {
@@ -268,8 +266,8 @@ func (s *Server) handleDeleteOrgCampaign(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// campaignJSON renders the campaign-summary shape. Alert stats are derived
-// live from the linked code scanning alerts' current states.
+// campaignJSON renders the campaign summary. Alert stats are derived live from
+// the linked alerts' current states.
 func (s *Server) campaignJSON(c *store.Campaign, r *http.Request) map[string]interface{} {
 	base := s.baseURL(r)
 	managers := make([]map[string]interface{}, 0, len(c.ManagerLogins))
@@ -317,5 +315,3 @@ func (s *Server) campaignJSON(c *store.Campaign, r *http.Request) map[string]int
 	}
 	return out
 }
-
-// --- store ---

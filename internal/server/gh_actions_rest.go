@@ -1,16 +1,7 @@
 package bleephub
 
-// GitHub-shape REST surface for workflow runs / jobs / runners that
-// matches what the github-runner-dispatcher and unmodified `gh` CLI
-// poll today. Bleephub's internal `/internal/workflows` surface
-// already tracks every active Workflow + WorkflowJob in the in-memory
-// store; this file exposes that state via the public GitHub paths so
-// bleephub can stand in for real GitHub end-to-end.
-//
-// scope: actions/runs (with status filter),.../runs/{id},
-// .../runs/{id}/jobs, .../jobs/{id}, .../jobs/{id}/logs, run cancel +
-// rerun + delete, runners list + delete. Workflows REST + dispatch
-// land in.
+// GitHub-shape REST surface exposing the in-memory Workflow/WorkflowJob
+// store under the public actions/runs, jobs, and runners paths.
 
 import (
 	"bytes"
@@ -52,8 +43,8 @@ func (s *Server) registerGHActionsRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteRunner))
 
-	// Org-scoped runner surface: bleephub's pool is global, so the org
-	// scope serves the same agents (404 only for unknown orgs).
+	// bleephub's runner pool is global, so the org scope serves the same
+	// agents; only an unknown org 404s.
 	s.route("GET /api/v3/orgs/{org}/actions/runners",
 		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleListRunners))
 	s.route("GET /api/v3/orgs/{org}/actions/runners/downloads",
@@ -74,13 +65,10 @@ func (s *Server) handleListRunnerApplications(w http.ResponseWriter, r *http.Req
 	if _, ok := s.runnerTargetFromRequest(w, r); !ok {
 		return
 	}
-	// Bleephub runners are distributed as container images, not downloadable
-	// application archives. An empty catalog is the truthful GitHub shape.
+	// bleephub runners ship as container images, not downloadable archives.
 	writeJSON(w, http.StatusOK, []map[string]interface{}{})
 }
 
-// handleOrgRegistrationToken mirrors the repo-scoped registration token
-// at org scope (single global pool).
 func (s *Server) handleOrgRegistrationToken(w http.ResponseWriter, r *http.Request) {
 	if s.store.GetOrg(r.PathValue("org")) == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -89,7 +77,6 @@ func (s *Server) handleOrgRegistrationToken(w http.ResponseWriter, r *http.Reque
 	s.handleRegistrationToken(w, r)
 }
 
-// handleOrgRemoveToken mirrors the repo-scoped removal token at org scope.
 func (s *Server) handleOrgRemoveToken(w http.ResponseWriter, r *http.Request) {
 	if s.store.GetOrg(r.PathValue("org")) == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -98,7 +85,6 @@ func (s *Server) handleOrgRemoveToken(w http.ResponseWriter, r *http.Request) {
 	s.handleRemoveToken(w, r)
 }
 
-// handleOrgGenerateJITConfig mirrors the repo-scoped JIT config at org scope.
 func (s *Server) handleOrgGenerateJITConfig(w http.ResponseWriter, r *http.Request) {
 	if s.store.GetOrg(r.PathValue("org")) == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -107,33 +93,27 @@ func (s *Server) handleOrgGenerateJITConfig(w http.ResponseWriter, r *http.Reque
 	s.handleGenerateJITConfig(w, r)
 }
 
-// repoFullName returns "owner/repo" for the request's path params,
-// matching the format Workflow.RepoFullName uses (set at submit time).
+// repoFullName returns "owner/repo", the form Workflow.RepoFullName uses.
 func repoFullName(r *http.Request) string {
 	return r.PathValue("owner") + "/" + r.PathValue("repo")
 }
 
-// sortRunsNewestFirst orders runs the way real GitHub lists them
-// (most recent run first). Run lists are collected from a map, so
-// without an explicit sort the page boundaries shift between requests.
+// sortRunsNewestFirst orders runs newest-first; without it, map iteration
+// order shifts page boundaries between requests.
 func sortRunsNewestFirst(runs []*store.Workflow) {
 	sort.Slice(runs, func(i, j int) bool { return runs[i].RunID > runs[j].RunID })
 }
 
-// stableJobID maps a WorkflowJob's UUID to a stable positive GitHub-shape
-// `id`. IDs stay within JavaScript's exact integer range because GitHub API
-// consumers commonly parse and return them through JSON number values.
+// stableJobID maps a WorkflowJob UUID to a stable positive id, kept within
+// JavaScript's exact integer range for JSON-number consumers.
 func stableJobID(uuid string) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(uuid))
 	return store.JsonSafePositiveID(h.Sum64())
 }
 
-// runMatchesStatusFilter implements github's `status` list parameter, whose
-// enum accepts BOTH run status values (queued/in_progress/completed/…) AND
-// conclusion values (success/failure/cancelled/skipped/neutral/timed_out/…):
-// "Returns workflow runs with the check run status or conclusion that you
-// specify." Matching only the status silently dropped `?status=success` etc.
+// runMatchesStatusFilter implements the `status` parameter, whose enum
+// accepts both run-status and conclusion values (e.g. ?status=success).
 func runMatchesStatusFilter(wf *store.Workflow, filter string) bool {
 	status := runStatus(wf)
 	if status == filter {
@@ -145,12 +125,9 @@ func runMatchesStatusFilter(wf *store.Workflow, filter string) bool {
 	return false
 }
 
-// runStatus maps a Workflow → GitHub's run statuses (`queued`,
-// `in_progress`, `completed`, `waiting`). Bleephub's internal
-// "running" begins at submission, but real GitHub keeps the run
-// `queued` until a job actually STARTS executing — pollers that gate
-// on `?status=queued` (the github-runner dispatcher, ARC-style
-// autoscalers) depend on that distinction to see label-stranded runs.
+// runStatus maps a Workflow to GitHub's run status. A submitted-but-not-yet-
+// started run reports `queued`, not `in_progress`: pollers gating on
+// ?status=queued depend on that to see label-stranded runs.
 func runStatus(wf *store.Workflow) string {
 	switch string(wf.Status) {
 	case "completed":
@@ -173,9 +150,8 @@ func runStatus(wf *store.Workflow) string {
 	}
 }
 
-// runConclusion maps internal Workflow.Result → GitHub's nullable
-// conclusion field (`success`, `failure`, `cancelled`, `skipped`,
-// `timed_out`, etc.). Returned as nil for in-flight runs.
+// runConclusion maps Workflow.Result to GitHub's nullable conclusion; nil
+// while in flight.
 func runConclusion(status, result string) any {
 	if status != "completed" {
 		return nil
@@ -186,7 +162,6 @@ func runConclusion(status, result string) any {
 	return result
 }
 
-// jobStatus maps internal WorkflowJob.Status → GitHub status.
 func jobStatus(internal string) string {
 	switch internal {
 	case "queued":
@@ -212,14 +187,8 @@ func jobConclusion(status, result string) any {
 	return result
 }
 
-// workflowRunJSON converts a Workflow to GitHub's `WorkflowRun` shape.
-// Fields cover what `gh run list` + `gh run view` + the
-// runner-dispatcher's poll handler read; per-job + step detail comes
-// from the .../jobs endpoints.
-
-// runRepoJSON resolves the repository object embedded in workflow-run
-// responses (required `repository` / `head_repository` members). Runs
-// reference repos by full name; a run whose repo is gone renders null.
+// runRepoJSON resolves the `repository`/`head_repository` object embedded in
+// workflow-run responses; nil when the run's repo is gone.
 func (s *Server) runRepoJSON(fullName, baseURL string) map[string]interface{} {
 	repo := s.store.GetRepoByFullName(fullName)
 	if repo == nil {
@@ -236,11 +205,9 @@ func workflowRunJSON(wf *store.Workflow, baseURL, repoName string, repoJSON map[
 	apiBase := fmt.Sprintf("%s/api/v3/repos/%s", baseURL, repoPath)
 	htmlBase := fmt.Sprintf("%s/%s", baseURL, repoPath)
 	status := runStatus(wf)
-	// workflow_id / workflow_url / path reference the originating workflow
-	// FILE, which is stable across every run produced from it — never the
-	// per-run RunID. Use the values resolved at submit/dispatch time; fall
-	// back to a deterministic derivation for runs created without a backing
-	// file (e.g. directly seeded in tests).
+	// workflow_id/workflow_url/path reference the originating workflow FILE
+	// (stable across runs), never the per-run RunID. Derive deterministically
+	// for runs with no backing file (e.g. seeded in tests).
 	fileID := wf.WorkflowFileID
 	filePath := wf.WorkflowFilePath
 	if filePath == "" {
@@ -291,10 +258,8 @@ func workflowRunJSON(wf *store.Workflow, baseURL, repoName string, repoJSON map[
 			"committer": map[string]any{"name": "bleephub", "email": "actions@bleephub"},
 		},
 	}
-	// actor / triggering_actor are optional, non-nullable simple-user objects.
-	// The triggering user is only recoverable from the in-flight event payload
-	// (not persisted), so omit the keys rather than emit null for a seeded or
-	// reloaded run — GitHub omits them when unknown.
+	// actor/triggering_actor are optional non-nullable simple-user objects;
+	// omit the keys (never emit null) when the triggering user is unknown.
 	if actor := runActorJSON(wf); actor != nil {
 		run["actor"] = actor
 		run["triggering_actor"] = actor
@@ -302,9 +267,8 @@ func workflowRunJSON(wf *store.Workflow, baseURL, repoName string, repoJSON map[
 	return run
 }
 
-// runActorJSON resolves the run's actor from the triggering event's
-// sender payload (already user-shaped); nil when the run has no
-// originating user (directly seeded runs).
+// runActorJSON resolves the run's actor from the triggering event's sender
+// payload; nil when there is no originating user.
 func runActorJSON(wf *store.Workflow) any {
 	if wf.EventPayload == nil {
 		return nil
@@ -329,22 +293,16 @@ func eventOf(wf *store.Workflow) string {
 	return wf.EventName
 }
 
-// workflowJobJSON converts a WorkflowJob to GitHub's `Job` shape. Step
-// detail comes from the timeline records the runner reported for the
-// job's plan.
+// workflowJobJSON converts a WorkflowJob to GitHub's `Job` shape.
 func (s *Server) workflowJobJSON(wf *store.Workflow, wfJob *store.WorkflowJob, baseURL, repoName string) map[string]any {
-	// The job's mutable fields (Status/Result/StartedAt/CompletedAt/
-	// DisplayName) are written by the workflow engine under store.mu, and this
-	// renderer runs both on request goroutines and on the async webhook-drain
-	// goroutine. Hold the read lock across the whole render so those reads are
-	// synchronized with the engine's writes.
+	// The job's mutable fields are written by the engine under store.mu; hold
+	// the read lock across the whole render to synchronize with those writes.
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	return s.workflowJobJSONLocked(wf, wfJob, baseURL, repoName)
 }
 
-// workflowJobJSONLocked renders the job payload assuming the caller already
-// holds store.mu (read or write).
+// workflowJobJSONLocked renders the job payload; caller holds store.mu.
 func (s *Server) workflowJobJSONLocked(wf *store.Workflow, wfJob *store.WorkflowJob, baseURL, repoName string) map[string]any {
 	repoPath := repoName
 	if wf.RepoFullName != "" {
@@ -366,8 +324,8 @@ func (s *Server) workflowJobJSONLocked(wf *store.Workflow, wfJob *store.Workflow
 		queuedAt = wf.CreatedAt
 	}
 	createdAt := queuedAt.UTC().Format("2006-01-02T15:04:05Z")
-	// started_at is required and non-nullable: a still-queued job has no start
-	// time yet, so fall back to the queued/created timestamp rather than null.
+	// started_at is required and non-nullable; fall back to the queued/created
+	// timestamp for a still-queued job rather than emit null.
 	if startedAt == nil {
 		startedAt = createdAt
 	}
@@ -406,11 +364,9 @@ func (s *Server) workflowJobJSONLocked(wf *store.Workflow, wfJob *store.Workflow
 	}
 }
 
-// jobStepsJSONLocked renders the GitHub-shape `steps` array from the timeline
-// records the runner uploaded for the job's plan (Type "Task", in Order).
-// A job whose runner hasn't reported records yet has no step truth to
-// serve, so the array is empty — step state is never fabricated. The caller
-// holds store.mu (the only caller is workflowJobJSONLocked).
+// jobStepsJSONLocked renders the `steps` array from the runner-uploaded Task
+// timeline records; empty (never fabricated) until the runner reports. Caller
+// holds store.mu.
 func (s *Server) jobStepsJSONLocked(wfJob *store.WorkflowJob) []map[string]any {
 	tasks := s.taskRecordsForJobLocked(wfJob.JobID)
 	steps := make([]map[string]any, 0, len(tasks))
@@ -427,8 +383,8 @@ func (s *Server) jobStepsJSONLocked(wfJob *store.WorkflowJob) []map[string]any {
 	return steps
 }
 
-// taskRecordsForJobLocked returns the job's "Task" (step) timeline records
-// sorted by Order. Caller must hold store.mu.
+// taskRecordsForJobLocked returns the job's Task timeline records in Order.
+// Caller holds store.mu.
 func (s *Server) taskRecordsForJobLocked(jobUUID string) []*store.TimelineRecord {
 	planID := ""
 	if job := s.store.Jobs[jobUUID]; job != nil {
@@ -455,9 +411,7 @@ func (s *Server) taskRecordsForJobLocked(jobUUID string) []*store.TimelineRecord
 	return tasks
 }
 
-// stepStatus maps the runner's timeline record state (pending |
-// inProgress | completed) to GitHub's step status enum (queued |
-// in_progress | completed).
+// stepStatus maps a runner timeline-record state to GitHub's step status enum.
 func stepStatus(state string) string {
 	switch state {
 	case "inProgress":
@@ -469,8 +423,8 @@ func stepStatus(state string) string {
 	}
 }
 
-// stepConclusion maps the runner's timeline record result to GitHub's
-// step conclusion; null until the step completes.
+// stepConclusion maps a timeline-record result to GitHub's step conclusion;
+// null until the step completes.
 func stepConclusion(state, result string) any {
 	if state != "completed" {
 		return nil
@@ -489,10 +443,8 @@ func stepConclusion(state, result string) any {
 	}
 }
 
-// stepTimestamp normalizes the runner's ISO-8601 timestamps (which carry
-// fractional seconds) to GitHub's second-resolution RFC3339; null when
-// the runner hasn't reported the time. A value that doesn't parse is
-// passed through verbatim rather than dropped.
+// stepTimestamp normalizes a runner ISO-8601 timestamp to second-resolution
+// RFC3339; null when unreported, passed through verbatim when it won't parse.
 func stepTimestamp(ts string) any {
 	if ts == "" {
 		return nil
@@ -504,9 +456,8 @@ func stepTimestamp(ts string) any {
 }
 
 func labelsForJob(wfJob *store.WorkflowJob) []string {
-	// JobDef.RunsOn is `interface{}` because YAML allows either a
-	// scalar ("ubuntu-latest") or a sequence (["self-hosted", "linux"]).
-	// Normalize both into the GitHub-shape `labels` array.
+	// RunsOn is interface{}: YAML allows a scalar or a sequence. Normalize
+	// both into the `labels` array.
 	if wfJob.Def == nil || wfJob.Def.RunsOn == nil {
 		return []string{}
 	}
@@ -533,9 +484,7 @@ func labelsForJob(wfJob *store.WorkflowJob) []string {
 	return []string{}
 }
 
-// runnerJSON converts a registered Agent to GitHub's `Runner` shape
-// (`/repos/{o}/{r}/actions/runners`). GitHub's Runner.id is int64;
-// bleephub Agent.ID is int — direct cast is safe.
+// runnerJSON converts a registered Agent to GitHub's `Runner` shape.
 func runnerJSON(a *store.Agent, busy bool) map[string]any {
 	labels := make([]map[string]any, 0, len(a.Labels))
 	for _, l := range a.Labels {
@@ -562,9 +511,8 @@ func runnerJSON(a *store.Agent, busy bool) map[string]any {
 	}
 }
 
-// busyAgentIDsLocked returns the agents with an assigned, unfinished
-// job (same predicate the broker uses to keep jobs away from busy
-// runners). Callers hold the store lock.
+// busyAgentIDsLocked returns agents with an assigned, unfinished job. Caller
+// holds store.mu.
 func (s *Server) busyAgentIDsLocked() map[int]bool {
 	busy := map[int]bool{}
 	for _, j := range s.store.Jobs {
@@ -575,8 +523,7 @@ func (s *Server) busyAgentIDsLocked() map[int]bool {
 	return busy
 }
 
-// versionForRunner reports the agent's reported version, or nil when the
-// agent never advertised one (GitHub renders absent versions as null).
+// versionForRunner reports the agent's version, or nil when it advertised none.
 func versionForRunner(a *store.Agent) any {
 	if a.Version == "" {
 		return nil
@@ -591,17 +538,16 @@ func agentStatusForRunner(internal string) string {
 	return "offline"
 }
 
-// findWorkflowByRunID looks up a workflow in the store by RunID.
-// Returns nil if not present. Bleephub keys workflows by UUID
-// internally; the GitHub-facing run_id is the int RunID.
+// findWorkflowByRunID looks up a workflow by its GitHub-facing RunID; nil if
+// absent.
 func (s *Server) findWorkflowByRunID(runID int) *store.Workflow {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	if wf := s.store.WorkflowsByRunID[runID]; wf != nil {
 		return wf
 	}
-	// Fallback scan for directly-seeded stores (tests) only; every engine
-	// insertion path maintains the index.
+	// Fallback scan for directly-seeded stores (tests); the engine maintains
+	// the index otherwise.
 	for _, wf := range s.store.Workflows {
 		if wf.RunID == runID {
 			return wf
@@ -622,9 +568,8 @@ func workflowBelongsToRepo(wf *store.Workflow, repo string) bool {
 	return wf != nil && wf.RepoFullName == repo
 }
 
-// findJobByStableID resolves the stable int64 GitHub-shape job ID
-// back to (workflow, job). Returns (nil, nil) if no job in any
-// workflow hashes to this ID.
+// findJobByStableID resolves a stable job ID back to (workflow, job);
+// (nil, nil) if none hashes to it.
 func (s *Server) findJobByStableID(jobID int64) (*store.Workflow, *store.WorkflowJob) {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
@@ -646,10 +591,7 @@ func (s *Server) findJobByStableIDInRepo(jobID int64, repo string) (*store.Workf
 	return wf, job
 }
 
-// handleListWorkflowRuns — GET /api/v3/repos/{owner}/{repo}/actions/runs
-// Filters: ?status= (queued/in_progress/completed), ?branch=, ?event=,
-// ?per_page=, ?page=. Returns `{total_count, workflow_runs:[...]}`
-// matching the real GitHub paginated-list shape.
+// handleListWorkflowRuns serves GET .../actions/runs (?status, ?branch, ?event).
 func (s *Server) handleListWorkflowRuns(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -692,7 +634,6 @@ func (s *Server) handleListWorkflowRuns(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// handleGetWorkflowRun — GET .../actions/runs/{run_id}
 func (s *Server) handleGetWorkflowRun(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -711,10 +652,8 @@ func (s *Server) handleGetWorkflowRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, workflowRunJSON(wf, base, repoFullName(r), s.runRepoJSON(repoFullName(r), base)))
 }
 
-// handleListWorkflowRunJobs — GET .../actions/runs/{run_id}/jobs
-// Real GitHub supports ?filter=latest|all (default latest, returns the
-// most recent attempt's jobs). Bleephub doesn't track attempts so the
-// filter is accepted but ignored.
+// handleListWorkflowRunJobs serves GET .../actions/runs/{run_id}/jobs. The
+// ?filter=latest|all parameter is accepted but ignored (attempts untracked here).
 func (s *Server) handleListWorkflowRunJobs(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -733,7 +672,7 @@ func (s *Server) handleListWorkflowRunJobs(w http.ResponseWriter, r *http.Reques
 	allJobs := make([]*store.WorkflowJob, 0, len(wf.Jobs))
 	for _, j := range wf.Jobs {
 		// Synthetic reusable-workflow gate/collector nodes are engine
-		// bookkeeping; real GitHub lists only the called jobs.
+		// bookkeeping; GitHub lists only the called jobs.
 		if j.Hidden {
 			continue
 		}
@@ -754,7 +693,6 @@ func (s *Server) handleListWorkflowRunJobs(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// handleGetWorkflowJob — GET .../actions/jobs/{job_id}
 func (s *Server) handleGetWorkflowJob(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -772,10 +710,8 @@ func (s *Server) handleGetWorkflowJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.workflowJobJSON(wf, j, s.baseURL(r), repoFullName(r)))
 }
 
-// handleGetWorkflowJobLogs — GET .../actions/jobs/{job_id}/logs
-// Real GitHub returns text/plain logs (sometimes 302 to a pre-signed
-// URL). Bleephub serves the complete log from the runner-uploaded log
-// files referenced by the job's timeline records.
+// handleGetWorkflowJobLogs serves GET .../actions/jobs/{job_id}/logs as
+// text/plain assembled from the runner-uploaded log files.
 func (s *Server) handleGetWorkflowJobLogs(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -829,10 +765,8 @@ type jobLogRef struct {
 	Name string
 }
 
-// jobLogContent assembles the job's complete log from runner-uploaded
-// log files referenced by the job's Task records, concatenated in step
-// Order. Live console capture is not a durable log artifact and is never
-// used as a download substitute.
+// jobLogContent assembles the job's log from runner-uploaded log files in
+// step Order. Live console capture is never used as a download substitute.
 func (s *Server) jobLogContent(ctx context.Context, jobUUID string) ([]byte, bool, error) {
 	s.store.Mu.RLock()
 	refs := s.jobLogRefsLocked(jobUUID)
@@ -859,8 +793,8 @@ func (s *Server) jobLogContent(ctx context.Context, jobUUID string) ([]byte, boo
 	return nil, false, nil
 }
 
-// jobLogRefsLocked returns the runner-uploaded log references for the job
-// in step order. Caller must hold store.mu.
+// jobLogRefsLocked returns the job's log references in step order. Caller
+// holds store.mu.
 func (s *Server) jobLogRefsLocked(jobUUID string) []jobLogRef {
 	tasks := s.taskRecordsForJobLocked(jobUUID)
 	refs := make([]jobLogRef, 0, len(tasks))
@@ -873,9 +807,8 @@ func (s *Server) jobLogRefsLocked(jobUUID string) []jobLogRef {
 	return refs
 }
 
-// memoryLogFilesForDownloadLocked snapshots runner-uploaded log bytes only
-// when no object byte store is configured. Production object-store mode
-// reads logs back from the byte store, proving the durable path works.
+// memoryLogFilesForDownloadLocked snapshots log bytes only when no object
+// byte store is configured; otherwise logs are read back from the byte store.
 func (s *Server) memoryLogFilesForDownloadLocked(refs []jobLogRef) map[int][]byte {
 	if s.artifactStore.ByteStore != nil {
 		return nil
@@ -906,8 +839,6 @@ func (s *Server) logFileContent(ctx context.Context, logID int, memoryContent []
 	return memoryContent, true, nil
 }
 
-// handleCancelWorkflowRun — POST .../actions/runs/{run_id}/cancel
-// Real GitHub returns 202 Accepted with empty body when accepted.
 func (s *Server) handleCancelWorkflowRun(w http.ResponseWriter, r *http.Request) {
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
@@ -920,18 +851,14 @@ func (s *Server) handleCancelWorkflowRun(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.actions.CancelWorkflow(wf)
-	// The documented response is 202 with schema empty-object, not an empty
-	// body: `gh run cancel` decodes the body and aborts on a zero-length one.
+	// 202 with an empty object, not an empty body: `gh run cancel` decodes the
+	// body and aborts on a zero-length one.
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{})
 }
 
-// handleRerunWorkflowRun — POST .../actions/runs/{run_id}/rerun.
-// Real GitHub: 201 Created. Bleephub re-submits the run by looking up
-// the matching WorkflowFile and replaying its cached
-// YAML through submitWorkflow with the original event metadata.
-// Returns 422 if no cached YAML exists or the run cannot be tied to a
-// registered WorkflowFile — caller should re-submit via
-// /api/v3/bleephub/workflow or push the YAML to git.
+// handleRerunWorkflowRun serves POST .../actions/runs/{run_id}/rerun by
+// replaying the run's cached WorkflowFile YAML with its original event
+// metadata; 422 when no cached YAML ties the run to a registered file.
 func (s *Server) handleRerunWorkflowRun(w http.ResponseWriter, r *http.Request) {
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
@@ -968,7 +895,7 @@ func (s *Server) handleRerunWorkflowRun(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnprocessableEntity, "rerun submit: "+err.Error())
 		return
 	}
-	// 201 with schema empty-object, for the same reason as cancel above.
+	// 201 with an empty object, same reason as cancel above.
 	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
@@ -1002,11 +929,9 @@ func (s *Server) cachedWorkflowFileForRun(repo string, wf *store.Workflow) (*sto
 	}
 }
 
-// rerunWorkflowAsNewAttempt archives the current run as a prior attempt
-// and re-submits the parsed definition under the SAME run id with
-// run_attempt+1 (real GitHub never mints a new run id for a re-run).
-// carryOver pre-completes the listed job keys with the previous
-// attempt's results (rerun-failed-jobs).
+// rerunWorkflowAsNewAttempt archives the current run and re-submits under the
+// SAME run id with run_attempt+1 (GitHub never mints a new run id for a rerun).
+// carryOver pre-completes the listed job keys with the prior attempt's results.
 func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *store.Workflow, file *store.WorkflowFile, def *store.WorkflowDef, serverURL string, carryOver map[string]*store.WorkflowJob) error {
 	// Archive + remove the old attempt first; restore on submit failure.
 	s.store.Mu.Lock()
@@ -1051,8 +976,8 @@ func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *store.Workflow,
 	return nil
 }
 
-// findRunAttempt resolves a run's specific attempt: the live run when
-// attempt matches its number, else the archived attempt.
+// findRunAttempt resolves a run's specific attempt: the live run, else an
+// archived attempt.
 func (s *Server) findRunAttempt(runID, attempt int, repo string) *store.Workflow {
 	current := s.findWorkflowByRunIDInRepo(runID, repo)
 	if current != nil && current.AttemptNumber() == attempt {
@@ -1068,7 +993,6 @@ func (s *Server) findRunAttempt(runID, attempt int, repo string) *store.Workflow
 	return nil
 }
 
-// handleGetRunAttempt — GET .../actions/runs/{run_id}/attempts/{attempt_number}
 func (s *Server) handleGetRunAttempt(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -1093,7 +1017,6 @@ func (s *Server) handleGetRunAttempt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, workflowRunJSON(wf, base, repo, s.runRepoJSON(repo, base)))
 }
 
-// handleListRunAttemptJobs — GET .../runs/{run_id}/attempts/{attempt_number}/jobs
 func (s *Server) handleListRunAttemptJobs(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -1135,9 +1058,6 @@ func (s *Server) handleListRunAttemptJobs(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// handleDeleteWorkflowRun — DELETE .../actions/runs/{run_id}
-// Real GitHub returns 204 No Content. Bleephub deletes the workflow
-// entry from the in-memory store.
 func (s *Server) handleDeleteWorkflowRun(w http.ResponseWriter, r *http.Request) {
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
@@ -1160,8 +1080,8 @@ func (s *Server) handleDeleteWorkflowRun(w http.ResponseWriter, r *http.Request)
 	deleted := s.store.Workflows[foundKey]
 	delete(s.store.Workflows, foundKey)
 	s.store.UnindexWorkflowLocked(deleted)
-	// Eagerly tear down the run's replica-local job runtime state (job stubs,
-	// plan scopes, log masks/lines) rather than waiting for the janitor.
+	// Eagerly tear down the run's replica-local job runtime state rather than
+	// waiting for the janitor.
 	planIDs := s.store.DropWorkflowJobStateLocked(deleted)
 	for _, attempt := range s.store.WorkflowAttempts[runID] {
 		planIDs = append(planIDs, s.store.DropWorkflowJobStateLocked(attempt)...)
@@ -1174,10 +1094,9 @@ func (s *Server) handleDeleteWorkflowRun(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListRunners serves repository, organization, and enterprise runner
-// inventories. Repository inventories include runners registered directly to
-// the repository and runners shared by its organization; the broader
-// inventories only include runners registered at that exact scope.
+// handleListRunners serves repo, org, and enterprise runner inventories. A
+// repo inventory also includes runners shared by its org; org and enterprise
+// inventories include only runners registered at that exact scope.
 func (s *Server) handleListRunners(w http.ResponseWriter, r *http.Request) {
 	target, ok := s.runnerTargetFromRequest(w, r)
 	if !ok {
@@ -1205,7 +1124,6 @@ func (s *Server) handleListRunners(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGetRunner — GET .../actions/runners/{runner_id} (repo + org scope).
 func (s *Server) handleGetRunner(w http.ResponseWriter, r *http.Request) {
 	target, ok := s.runnerTargetFromRequest(w, r)
 	if !ok {
@@ -1227,9 +1145,6 @@ func (s *Server) handleGetRunner(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, runnerJSON(a, busy[a.ID]))
 }
 
-// handleDeleteRunner — DELETE .../actions/runners/{runner_id}
-// Real GitHub returns 204 No Content. Symmetric with the existing
-// agent-CRUD path on `_apis/v1/Agent/{poolId}/{agentId}`.
 func (s *Server) handleDeleteRunner(w http.ResponseWriter, r *http.Request) {
 	target, ok := s.runnerTargetFromRequest(w, r)
 	if !ok {
@@ -1253,9 +1168,6 @@ func (s *Server) handleDeleteRunner(w http.ResponseWriter, r *http.Request) {
 }
 
 // runnerTargetFromRequest resolves the runner inventory named by a REST path.
-// A repository inventory can see its own repository runner and runners
-// registered at its organization; organization and enterprise inventories
-// contain only runners registered at that exact level.
 func (s *Server) runnerTargetFromRequest(w http.ResponseWriter, r *http.Request) (store.RunnerScope, bool) {
 	target, err := s.runnerScopeFromRequest(r)
 	if err != nil {
