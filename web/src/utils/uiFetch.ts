@@ -2,19 +2,11 @@ import { ghFetch } from "../api.js";
 import type { Page } from "../api.js";
 import type { BleephubRepo, RepoListFilters } from "../types.js";
 
-/*
- * Page-local fetch helpers shared by the profile/org/repo-list pages. They
- * live here (not api.ts) so they ride in the lazy page chunks, keeping the
- * entry bundle at its budget.
- */
+// Page-local fetch helpers kept out of api.ts so they ride the lazy page
+// chunks, keeping the entry bundle under budget.
 
-// ─── Concurrency-capped ghFetch ─────────────────────────────────────────────
-//
-// List rows lazily hydrate details (fork parents, user bios, team counts).
-// A page of rows firing fetches at once would stampede the server, so cap the
-// in-flight lazy hydrations. React-query dedupes/caches per queryKey, so each
-// distinct resource is fetched once.
-
+// Cap in-flight lazy row hydrations so a page of rows doesn't stampede the
+// server. React-query dedupes per queryKey, so each resource is fetched once.
 const MAX_CONCURRENT_HYDRATIONS = 4;
 let active = 0;
 const waiters: (() => void)[] = [];
@@ -31,7 +23,7 @@ function release(): void {
   waiters.shift()?.();
 }
 
-/** ghFetch with a small global concurrency cap — use for per-row lazy hydration. */
+/** ghFetch with a global concurrency cap, for per-row lazy hydration. */
 export async function limitedGhFetch<T>(path: string): Promise<T> {
   await acquire();
   try {
@@ -41,9 +33,7 @@ export async function limitedGhFetch<T>(path: string): Promise<T> {
   }
 }
 
-// ─── Multi-page walks ───────────────────────────────────────────────────────
-
-/** How many Link-header pages a client-side search/sort may walk before giving up. */
+/** Max Link-header pages a client-side search/sort walks before giving up. */
 export const WALK_PAGE_CAP = 10;
 
 export interface WalkResult<T> {
@@ -52,11 +42,8 @@ export interface WalkResult<T> {
   truncated: boolean;
 }
 
-/**
- * Walk every page of a Link-paginated repo list (capped). Used when a filter
- * the server cannot apply (search text, archived, star sort) must see ALL
- * repos, not just the loaded page.
- */
+// Walk every page of a Link-paginated repo list (capped) so a client-only
+// filter (search text, archived, star sort) sees all repos.
 export async function walkRepoPages(
   fetchPage: (filters: RepoListFilters, pageUrl?: string) => Promise<Page<BleephubRepo>>,
   filters: RepoListFilters,
@@ -73,10 +60,8 @@ export async function walkRepoPages(
   return { items, truncated: true };
 }
 
-/**
- * Walk a paginated array endpoint by page number (for endpoints without a
- * Page-returning fetcher). Stops at the first short page or the cap.
- */
+// Walk a paginated array endpoint by page number. Stops at the first short
+// page or the cap.
 export async function walkNumberedPages<T>(
   basePath: string,
   perPage = 100,
@@ -93,14 +78,9 @@ export async function walkNumberedPages<T>(
   return { items, truncated: true };
 }
 
-// ─── Viewer's role in an organization ───────────────────────────────────────
-
-/**
- * The viewer's own membership role in an org, from
- * GET /api/v3/user/memberships/orgs/{org} — "admin" for owners, "member"
- * otherwise, null when not a member (404) or signed out. Drives the org-admin
- * gating of invite/role/remove controls and the pinned-repos editor.
- */
+// Viewer's org membership role from GET /user/memberships/orgs/{org}: "admin"
+// for owners, "member" otherwise, null when not a member (404) or signed out.
+// Gates org-admin controls and the pinned-repos editor.
 export async function fetchViewerOrgRole(org: string): Promise<"admin" | "member" | null> {
   try {
     const m = await ghFetch<{ role?: string }>(

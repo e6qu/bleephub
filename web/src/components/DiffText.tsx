@@ -1,11 +1,6 @@
-/*
- * Colored unified-diff rendering for read-only patch surfaces (compare view,
- * commit detail). PRFilesView keeps its parse/style helpers module-private
- * (they are entangled with review-comment targeting), so this is a standalone
- * renderer for plain patches — same visual language, no comment affordances.
- */
+// Standalone colored-diff renderer for plain patches (compare, commit detail);
+// PRFilesView's own helpers stay private, entangled with comment targeting.
 
-/** Color a unified-diff line by its leading marker. */
 export function diffLineStyle(line: string): { bg: string; fg: string } {
   if (line.startsWith("@@")) {
     return { bg: "color-mix(in srgb, var(--color-accent) 10%, transparent)", fg: "var(--color-accent)" };
@@ -28,7 +23,6 @@ export interface DiffTextLine {
   newLine: number | null;
 }
 
-/** Walk a unified patch assigning old/new line numbers to each row. */
 export function parseDiffText(patch: string): DiffTextLine[] {
   let oldLine = 0;
   let newLine = 0;
@@ -39,8 +33,7 @@ export function parseDiffText(patch: string): DiffTextLine[] {
       newLine = Number(header[2]);
       return { text, oldLine: null, newLine: null };
     }
-    // split() produces one empty sentinel when the patch ends in a newline;
-    // "\ No newline" markers carry no source coordinates either.
+    // Trailing-newline sentinel and "\ No newline" markers have no coordinates.
     if (text === "" || text.startsWith("\\ No newline")) {
       return { text, oldLine: null, newLine: null };
     }
@@ -64,7 +57,6 @@ const GUTTER_STYLE = {
   color: "var(--color-fg-subtle)",
 } as const;
 
-/** GitHub-style colored diff block for one file's patch. */
 export function DiffText({ patch }: { patch: string }) {
   return (
     <div style={{ overflowX: "auto" }}>

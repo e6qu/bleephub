@@ -4,11 +4,6 @@ import { fetchOAuthGrants, revokeOAuthGrant } from "../api.js";
 import { Box, Button, ErrorBanner } from "./ui.js";
 import { confirmAction } from "./confirmAction.js";
 
-/**
- * The viewer's authorized OAuth/GitHub Apps with a per-grant revoke, as on
- * github.com Settings → Applications → Authorized OAuth Apps. Shared by the
- * OAuth flows page and the account settings Applications tab.
- */
 export function AuthorizedApplications() {
   const queryClient = useQueryClient();
   const grants = useQuery({ queryKey: ["oauth-grants"], queryFn: fetchOAuthGrants });

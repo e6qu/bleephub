@@ -2,18 +2,9 @@ import { type ReactNode, useEffect, useState } from "react";
 import { AppHeader } from "./AppHeader.js";
 import { fetchHealth } from "../api.js";
 
-// The repo/org context headers (RepoHeader/OrgHeader) live in ./PageHeader.js and
-// are imported directly by the lazily-loaded repo/org pages, so their heavy
-// octicon/api imports stay out of this always-loaded shell module — and thus out
-// of the entry chunk.
+// RepoHeader/OrgHeader live in ./PageHeader.js so their heavy imports stay out of the entry chunk.
 
-/**
- * App chrome: the GitHub-faithful global header ({@link AppHeader}) above the
- * routed page content. The header owns the brand, global search, create menu,
- * Issues / Pull requests, notifications, and the user menu — bleephub's
- * server-operational surfaces live in the header's "Operations" drawer section,
- * not in the primary GitHub-shaped nav.
- */
+/** Global header (AppHeader) above the routed page content. */
 export function BleephubShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col" style={{ background: "var(--color-bg)", color: "var(--color-fg)" }}>
@@ -46,7 +37,7 @@ export function BleephubShell({ children }: { children: ReactNode }) {
 const buildVersion = import.meta.env.VITE_BLEEPHUB_VERSION || "development";
 const publishedAt = import.meta.env.VITE_BLEEPHUB_PUBLISHED_AT || "not yet published";
 
-/** Release identity shown on every Bleephub surface, including the sign-in page. */
+/** Release identity shown on every surface, including sign-in. */
 export function BleephubBuildFooter() {
   const [identity, setIdentity] = useState({ version: buildVersion, publishedAt });
   useEffect(() => {
@@ -60,8 +51,7 @@ export function BleephubBuildFooter() {
         });
       })
       .catch(() => {
-        // The footer is informational and must never obscure the page if the
-        // public health probe is temporarily unreachable.
+        // Footer is informational; never surface a failed health probe.
       });
     return () => {
       current = false;

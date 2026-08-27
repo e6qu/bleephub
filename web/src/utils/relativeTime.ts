@@ -1,12 +1,3 @@
-/*
- * GitHub-style timestamp wording for timeline surfaces: relative up to a
- * month ("2 hours ago"), absolute past that ("on Aug 19, 2026" — year
- * omitted inside the current year, as github.com does). Follows the
- * conventions of utils/format.ts relativeTimeFromNow ("just now" under 45s,
- * "" for missing/unparsable input) but adds the week tier and the absolute
- * switch that component surfaces need.
- */
-
 const MINUTE = 60;
 const HOUR = 3600;
 const DAY = 86400;
@@ -17,7 +8,7 @@ function plural(value: number, unit: string): string {
   return `${value} ${unit}${value === 1 ? "" : "s"} ago`;
 }
 
-/** Absolute wording used past the one-month boundary: "on Aug 19, 2026". */
+/** Absolute wording past one month; year omitted inside the current year. */
 export function formatOnDate(date: Date, now: Date): string {
   const sameYear = date.getFullYear() === now.getFullYear();
   const text = date.toLocaleDateString("en-US", {
@@ -42,7 +33,7 @@ export function formatRelative(iso: string, now: Date = new Date()): string {
   return formatOnDate(date, now);
 }
 
-/** Full timestamp for the hover title, e.g. "Aug 19, 2026, 10:14 AM GMT+2". */
+/** Full timestamp for the hover title. */
 export function formatAbsolute(iso: string): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return "";

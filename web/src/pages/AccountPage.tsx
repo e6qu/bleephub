@@ -98,8 +98,7 @@ const ACCOUNT_NAV: SettingsNavSection<AccountNavKey>[] = [
 
 export function AccountPage() {
   const navigate = useNavigate();
-  // The active tab lives in the URL (?tab=) so back/refresh keep place and
-  // every settings section is deep-linkable, like github.com/settings/*.
+  // Active tab lives in ?tab= so back/refresh and deep links work.
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get("tab");
   const tab: AccountTab = ACCOUNT_TABS.includes(requested as AccountTab)
@@ -176,10 +175,7 @@ function dateInDays(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * Expiration preset dropdown + optional custom date. Computes the concrete
- * date client-side into the caller's date state; "none" clears it and warns.
- */
+/** Expiration preset dropdown + optional custom date; "none" clears it and warns. */
 function ExpirationPicker({
   idPrefix,
   preset,
@@ -368,10 +364,7 @@ function FineGrainedTokensTab() {
 
 // ─── Tokens (classic) — the legacy /authorizations API ─────────────────────────────
 
-/**
- * Classic OAuth scopes the server's classic-scope map knows how to evaluate
- * (internal/server/gh_apps_perms.go classicScopeGrants).
- */
+/** Classic OAuth scopes the server's classicScopeGrants map evaluates. */
 const CLASSIC_SCOPES: { name: string; hint: string }[] = [
   { name: "repo", hint: "Full control of private repositories" },
   { name: "public_repo", hint: "Access public repositories" },
@@ -406,10 +399,8 @@ function ClassicTokensSection() {
   const [credential, setCredential] = useState<string | null>(null);
 
   const createMutation = useMutation({
-    // The legacy /api/v3/authorizations API has no expiration field (as on
-    // GitHub, where a classic PAT's expiry is chosen in the web UI), so
-    // creation goes through the browser-only /ui-data endpoint, which accepts
-    // expires_at (RFC 3339, or null for no expiration) alongside note/scopes.
+    // /api/v3/authorizations has no expiry field, so create via the /ui-data
+    // endpoint, which accepts expires_at (RFC 3339, or null).
     mutationFn: () =>
       ghPostJSON<GithubClassicAuthorization>("/ui-data/user/tokens/classic", {
         scopes,
@@ -655,10 +646,8 @@ const truncatedMono: React.CSSProperties = {
 };
 
 /**
- * SHA256 fingerprint of an OpenSSH public key ("SHA256:<unpadded base64>",
- * the format `ssh-keygen -lf` and github.com print), computed client-side
- * from the key's base64 blob via WebCrypto. Null while computing or when the
- * key text is unparsable.
+ * SHA256 fingerprint of an OpenSSH public key ("SHA256:<unpadded base64>", the
+ * form ssh-keygen and github.com print). Null while computing or when unparsable.
  */
 async function sshKeyFingerprint(keyText: string): Promise<string | null> {
   try {
@@ -798,8 +787,7 @@ function EmailsTab() {
     },
     onError: (err: Error) => setError(err.message),
   });
-  // Re-pointing primary is web-only on github.com too; the /ui-data endpoint
-  // returns the refreshed list, which the invalidation re-fetches.
+  // Re-pointing primary is web-only on github.com too; via /ui-data.
   const primaryMut = useMutation({
     mutationFn: (email: string) => ghSend("PUT", "/ui-data/user/emails/primary", { email }),
     onSuccess: () => {
@@ -1039,8 +1027,7 @@ function CodespacesSecretsTab() {
     queryClient.invalidateQueries({ queryKey: ["user-codespaces-secrets"] });
 
   const addMut = useMutation({
-    // Sealed-box encrypt the value in the browser against the user
-    // Codespaces public key; only ciphertext + key_id leave the client.
+    // Sealed-box encrypt in the browser; only ciphertext + key_id leave the client.
     mutationFn: async () => {
       const secretName = name.trim();
       if (!secretName) throw new Error("Name is required");
@@ -1181,8 +1168,7 @@ interface BillingModelReport {
   usageItems: Record<string, unknown>[];
 }
 
-// Billing amounts are decimal US dollars (grossAmount = quantity * pricePerUnit),
-// not integer cents; format them as currency.
+// Billing amounts are decimal USD, not integer cents.
 const usd = (n: number, maxFrac = 2) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -1504,22 +1490,11 @@ function AppearanceTab() {
   );
 }
 
-/**
- * Section headers inside the account settings cards are real headings, so the
- * page has a navigable outline for screen readers rather than bold text.
- */
+/** Real headings (not bold text) so screen readers get a navigable outline. */
 const sectionHeading: React.CSSProperties = { fontWeight: 600, fontSize: "inherit", margin: 0 };
 
 // ─── Password and authentication ───────────────────────────────────────────
-//
-// github.com's Settings → "Password and authentication" page. Every control
-// here is real: enrolling walks an authenticator pairing (secret → QR → a code
-// the user has to produce), recovery codes are single-use, and disabling costs
-// a code. An account whose credentials live in an identity provider is told
-// exactly that instead of being shown switches that cannot work.
-//
-// The fetch wrappers are defined in this lazily loaded page rather than in the
-// shared API module, which is at its bundle budget.
+// Fetch wrappers defined here, not in the shared API module, which is at its bundle budget.
 
 interface AccountAuthentication {
   kind: "local" | "external";
@@ -1589,11 +1564,7 @@ const changePassword = (currentPassword: string, newPassword: string) =>
 const revokeBrowserSession = (handle: string) =>
   ghSend("DELETE", `/ui-data/user/sessions/${enc(handle)}`);
 
-/**
- * The API layer prefixes its errors with the method and status and appends the
- * raw body. The server sends a plain `{"message": …}` written for a person, so
- * pull that out rather than showing the envelope.
- */
+/** Pull the server's {"message":…} out of the API layer's method/status/body envelope. */
 function describeAccountError(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
   const brace = text.indexOf("{");
@@ -1602,20 +1573,16 @@ function describeAccountError(error: unknown): string {
       const parsed = JSON.parse(text.slice(brace)) as { message?: string };
       if (parsed.message) return parsed.message;
     } catch {
-      // Not a JSON body; fall through to the raw text.
+      // Not JSON; fall through to raw text.
     }
   }
   return text;
 }
 
 /**
- * Draws the provisioning QR code as a single SVG path — one subpath per dark
- * module, which is far lighter than a few thousand <rect> elements.
- *
- * The colours are fixed black-on-white in both themes, with the four-module
- * quiet zone the standard requires: camera scanners expect dark-on-light and
- * commonly fail on an inverted or low-contrast code, so this is one of the very
- * few places where following the page's theme would make the feature worse.
+ * QR code as a single SVG path (one subpath per dark module — lighter than
+ * thousands of <rect>). Colours are fixed black-on-white in both themes with the
+ * standard 4-module quiet zone: scanners expect dark-on-light, so theming it breaks scanning.
  */
 function ProvisioningQRCode({ modules, label }: { modules: string[]; label: string }) {
   const size = modules.length;
@@ -1746,11 +1713,7 @@ function AuthenticationTab() {
   );
 }
 
-/**
- * The honest answer for a federated account. There is no local password and no
- * local second factor to enrol, so the page says who does hold them instead of
- * rendering controls that would fail.
- */
+/** Federated account: no local password/2FA to manage, so show who holds them. */
 function IdentityProviderNotice({ providers }: { providers: string[] }) {
   return (
     <Box header={<h2 style={sectionHeading}>Password and authentication</h2>}>
@@ -2247,7 +2210,7 @@ function AccountAdminTab() {
     mutationFn: (next: string) =>
       ghSend("PATCH", `/api/v3/admin/users/${enc(login)}`, { login: next }),
     onSuccess: (_ignored, next) => {
-      // The viewer identity changed; every cached login-derived read is stale.
+      // Viewer identity changed; every login-derived cache read is stale.
       void qc.invalidateQueries({ queryKey: ["viewer"] });
       void qc.invalidateQueries({ queryKey: ["current-user"] });
       navigate(`/ui/${enc(next)}`);
@@ -2324,8 +2287,7 @@ function DeleteAccountDialog({ login, onClose }: { login: string; onClose: () =>
   const deleteMut = useMutation({
     mutationFn: () => ghSend("DELETE", `/api/v3/admin/users/${enc(login)}`),
     onSuccess: () => {
-      // The account (and its session) is gone: leave through the sign-out
-      // flow so the server clears cookies and the SPA drops its state.
+      // Account and session are gone: leave via sign-out so cookies/state clear.
       const form = document.createElement("form");
       form.method = "post";
       form.action = "/auth/logout";
@@ -2367,12 +2329,7 @@ function DeleteAccountDialog({ login, onClose }: { login: string; onClose: () =>
 }
 
 // ─── Notifications ─────────────────────────────────────────────────────────
-//
-// github.com's Settings → Notifications page: a subscription class
-// (participating vs watching) with its own delivery channels, automatic
-// watching, per-event-type delivery, and the digest options. Every control is
-// stored per user and the web channels actually gate what reaches the inbox,
-// so switching one off has a visible effect rather than only being remembered.
+// Web channels actually gate the inbox, so a toggle has a visible effect.
 
 interface NotificationChannels {
   email: boolean;
@@ -2426,7 +2383,6 @@ const NOTIFICATION_EVENTS: { key: string; label: string; hint: string }[] = [
 
 const DEFAULT_CHANNELS: NotificationChannels = { email: true, web: true };
 
-/** A labelled email/web checkbox pair for one row. */
 function ChannelChecks({
   name,
   channels,
@@ -2459,10 +2415,8 @@ function NotificationsSettingsTab() {
     queryKey: ["notification-preferences"],
     queryFn: ({ signal }) => fetchNotificationPreferences(signal),
   });
-  // Each control saves as you toggle it, so the checkbox has to move on the
-  // click rather than a round trip later — a controlled input that waits for
-  // the server reads as a broken checkbox. The draft is re-seeded from every
-  // fetch, so the server stays the authority and a rejected save snaps back.
+  // Save-on-toggle: the checkbox moves optimistically (waiting on the server
+  // reads as broken). Re-seeded from every fetch, so a rejected save snaps back.
   const [draft, setDraft] = useState<NotificationPreferences | null>(null);
   useEffect(() => {
     if (query.data) setDraft(query.data);

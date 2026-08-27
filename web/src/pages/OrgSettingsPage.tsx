@@ -18,12 +18,8 @@ import {
 
 const enc = encodeURIComponent;
 
-/**
- * Organization Settings landing. github.com gathers org settings under
- * /orgs/{org}/settings; bleephub previously scattered them across top-level
- * tabs. This page edits the core org profile (PATCH /orgs/{org}) and links to
- * the existing settings surfaces so there is a single Settings entry point.
- */
+// Org Settings landing: edits the org profile (PATCH /orgs/{org}) and links to
+// the other settings surfaces.
 export function OrgSettingsPage() {
   const { org = "" } = useParams<{ org: string }>();
   const qc = useQueryClient();
@@ -118,9 +114,7 @@ export function OrgSettingsPage() {
   );
 }
 
-// ─── Billing and plans ──────────────────────────────────────────────────
-// Enhanced billing platform surface: read-only usage summary plus full CRUD
-// over spending budgets (POST/PATCH/DELETE previously had no UI).
+// Billing: read-only usage summary plus CRUD over spending budgets.
 
 interface OrgBudget {
   id: string;

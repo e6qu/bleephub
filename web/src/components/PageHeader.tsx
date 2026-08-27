@@ -40,14 +40,7 @@ import { loginPath, useSignedIn } from "../session.js";
 
 export type RepoTab = "code" | "issues" | "pulls" | "actions" | "projects-classic" | "wiki" | "discussions" | "insights" | "security" | "settings";
 
-/**
- * Repo context bar: the Watch / Fork / Star actions above the GitHub-style tab
- * row (Code / Issues / Pull requests). Rendered by the repo pages, which
- * already hold the open-issue / open-PR counts shown on the tab badges.
- *
- * The owner/repo breadcrumb deliberately lives in the global header
- * (AppHeader) rather than here — see G57.
- */
+/** Watch / Fork / Star actions above the repo tab row. */
 export function RepoHeader({
   owner,
   repo,
@@ -71,8 +64,7 @@ export function RepoHeader({
   const [forkOwner, setForkOwner] = useState("");
   const socialKey = ["repo-social-counts", owner, repo] as const;
   const viewerKey = ["repo-viewer", owner, repo] as const;
-  // The viewer-state and current-user reads 401 for an anonymous visitor, so
-  // they only run signed in; the social counters are public.
+  // Viewer-state / current-user 401 when anonymous; run only signed in.
   const signedIn = useSignedIn();
   const social = useQuery({ queryKey: socialKey, queryFn: ({ signal }) => fetchRepoSocialCounts(owner, repo, signal) });
   const viewer = useQuery({
@@ -90,8 +82,7 @@ export function RepoHeader({
     staleTime: 60_000,
     enabled: signedIn,
   });
-  // github.com shows the Settings tab only to repo admins; while permissions
-  // load the tab is simply absent (it appears once the payload arrives).
+  // github.com shows the Settings tab only to repo admins.
   const { isAdmin } = useRepoPermissions(owner, repo);
   const organizations = useQuery({
     queryKey: ["viewer-organizations"],
@@ -128,10 +119,7 @@ export function RepoHeader({
   return (
     <div className="repo-context mb-6">
       <div className="repo-context-inner">
-        {/* G57: the owner/repo breadcrumb is NOT repeated here. github.com's
-            2023+ chrome carries it in the global header row next to the logo,
-            so it lives in AppHeader (route-matched) and this bar keeps only
-            the repository actions above the tab row. */}
+        {/* G57: owner/repo breadcrumb lives in AppHeader, not here (github.com 2023+ chrome). */}
         <div className="repo-title-row">
           <div className="repo-actions" aria-label="Repository actions">
             {signedIn ? (
@@ -163,8 +151,7 @@ export function RepoHeader({
                 />
               </>
             ) : (
-              // Signed out, the actions keep their counts but link to
-              // sign-in — github.com prompts for login on click.
+              // Signed out: keep counts, link to sign-in like github.com.
               <>
                 <RepoActionLoginLink icon={<EyeIcon size={15} />} label="Watch" count={social.data?.subscribers_count} tone="watch" />
                 <RepoActionLoginLink icon={<RepoForkedIcon size={15} />} label="Fork" count={social.data?.forks_count} tone="fork" />
@@ -310,7 +297,6 @@ export function RepoHeader({
   );
 }
 
-/** Signed-out Watch/Fork/Star: same chrome, but a link to the sign-in page. */
 function RepoActionLoginLink({
   icon,
   label,
@@ -382,13 +368,7 @@ export type OrgTab =
   | "settings"
   | "insights";
 
-/**
- * Org context bar: organization login breadcrumb with org-level tabs.
- * The tab set mirrors GitHub's org navigation (Overview, Repositories,
- * Packages, People, Teams …) with the bleephub-specific governance
- * surfaces (Rulesets, Governance, Webhooks, Copilot) appended. The
- * breadcrumb login links to the org's Overview landing page.
- */
+/** Org breadcrumb + tabs; governance surfaces (Rulesets…Copilot) are bleephub-specific. */
 export function OrgHeader({ org, active }: { org: string; active: OrgTab }) {
   const base = `/ui/orgs/${org}`;
   return (

@@ -18,9 +18,8 @@ import { MutationError } from "../components/MutationError.js";
 import { confirmAction } from "../components/confirmAction.js";
 
 // ─── Scoped runner-registry fetchers ─────────────────────────────────────
-// The runner registry exists at BOTH the repository and the organization
-// level (GET/DELETE /api/v3/{repos/{o}/{r}|orgs/{org}}/actions/runners…);
-// these page-local helpers target whichever scope the picker selects.
+// The registry exists at both repo and org level
+// (/api/v3/{repos/{o}/{r}|orgs/{org}}/actions/runners); these target the picked scope.
 
 type RunnerScope = { kind: "repo"; fullName: string } | { kind: "org"; org: string };
 
@@ -118,9 +117,8 @@ export function RunnersPage() {
   const repos = reposQ.data ?? [];
   const orgs = orgsQ.data ?? [];
 
-  // The selection is URL-addressable (?repo=owner/name or ?org=login) so a
-  // specific registry view is linkable; with no query the first repository
-  // the viewer can see is managed, never silently repos[0]-only.
+  // URL-addressable (?repo=owner/name or ?org=login) so a registry view is
+  // linkable; with no query, fall back to the first visible repository.
   const orgParam = searchParams.get("org");
   const repoParam = searchParams.get("repo");
   const scope: RunnerScope | null = orgParam

@@ -6,12 +6,8 @@ import { limitedGhFetch } from "../utils/uiFetch.js";
 import { StarIcon, RepoForkedIcon } from "./octicons.js";
 import { RelativeTime } from "./RelativeTime.js";
 
-/*
- * The GitHub repo-card meta strip: language dot, star count (linking to the
- * stargazers list), fork count and last-updated time — shared by every repo
- * row/card (repo lists, profile Repositories/Stars, pinned cards, org
- * overview). Plus the lazy "Forked from owner/name" line for forks.
- */
+// Repo-card meta strip shared by every repo row/card, plus the lazy
+// "Forked from owner/name" line.
 
 // Small standalone links need an inline-block box with ≥1.625rem line-height
 // to clear the WCAG 2.2 target-size ratchet.
@@ -41,7 +37,6 @@ export function LanguageDot({ language }: { language: string }) {
   );
 }
 
-/** Language dot + stars (→ stargazers) + forks (+ updated time unless showUpdated={false}). */
 export function RepoStatsLine({
   repo,
   showUpdated = true,
@@ -79,12 +74,8 @@ export function RepoStatsLine({
   );
 }
 
-/**
- * "Forked from owner/name" line under a fork's card. List payloads carry only
- * the `fork` flag (parent rides only on the full-repo response, as on real
- * GitHub), so the parent is hydrated lazily — concurrency-capped and cached
- * forever per repo — only for rows where fork === true.
- */
+// "Forked from owner/name" line. List payloads carry only the `fork` flag
+// (the parent rides only on the full-repo response), so hydrate it lazily.
 export function ForkedFromLine({ repo }: { repo: BleephubRepo }) {
   const isFork = repo.fork === true;
   const [owner, name] = repo.full_name.split("/");
@@ -111,7 +102,7 @@ export function ForkedFromLine({ repo }: { repo: BleephubRepo }) {
   );
 }
 
-// ─── Octicons the shared set lacks (profile/org meta rows) ──────────────────
+// Octicons the shared set lacks.
 
 export function LocationIcon({ size = 15 }: { size?: number }) {
   return (

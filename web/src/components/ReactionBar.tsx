@@ -27,11 +27,7 @@ export const REACTION_EMOJI: Record<GithubReactionContent, string> = {
   eyes: "👀",
 };
 
-/**
- * GitHub's reaction row for an issue/PR body or a comment. `viewerLogin`
- * identifies "my" reactions so the toggle can remove an existing one. Errors
- * surface via InlineError — never swallowed.
- */
+// `viewerLogin` identifies "my" reactions so the toggle can remove an existing one.
 export function ReactionBar({
   queryKey,
   fetchList,
@@ -46,8 +42,7 @@ export function ReactionBar({
   viewerLogin: string | null;
 }) {
   const qc = useQueryClient();
-  // Reaction lists are public reads; toggling them is not. Signed out the row
-  // renders read-only — counts as static pills, no picker (github.com).
+  // Reaction lists are public reads; toggling is not. Signed out: static pills, no picker.
   const signedIn = useSignedIn();
   const q = useQuery({ queryKey, queryFn: fetchList });
   const [pickerOpen, setPickerOpen] = useState(false);

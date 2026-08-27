@@ -96,8 +96,7 @@ import {
   LawIcon,
 } from "../components/octicons.js";
 
-// Lazy so the fuzzy finder (and its recursive-tree fetch) stay out of the entry
-// bundle; loaded on first "Go to file".
+// Code-split from the entry bundle; loads on first "Go to file".
 const GoToFile = lazy(() => import("../components/GoToFile.js").then((m) => ({ default: m.GoToFile })));
 
 /** Read a File's bytes as base64 (no data: prefix) for the contents API. */
@@ -113,12 +112,9 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-/*
- * Per-row metadata fetches (latest commit per file, head commit per branch or
- * tag, ahead/behind per branch) fan out across many rows, so they run through
- * a small shared semaphore and a session cache: one request per key, at most
- * MAX_META_FETCHES in flight at a time.
- */
+// Per-row metadata fetches fan out across many rows, so throttle through a
+// shared semaphore + session cache: one request per key, at most
+// MAX_META_FETCHES in flight.
 const MAX_META_FETCHES = 6;
 let metaInFlight = 0;
 const metaWaiters: Array<() => void> = [];
@@ -166,8 +162,7 @@ const latestCommitForPath = (owner: string, repo: string, ref: string, path: str
     return c && typeof c === "object" && "commit" in c ? c : null;
   });
 
-/** Full commit object for a sha (branch/tag head dates). Answers null when the
- * response is not commit-shaped, so metadata rows degrade to em-dashes. */
+/** Full commit for a sha. null when not commit-shaped, so rows degrade to em-dashes. */
 const commitBySha = (owner: string, repo: string, sha: string): Promise<GithubCommit | null> =>
   cachedMeta(`commit:${owner}/${repo}@${sha}`, async () => {
     const c = await fetchRepoCommit(owner, repo, sha);
@@ -181,14 +176,8 @@ const aheadBehind = (owner: string, repo: string, base: string, head: string) =>
     return { ahead: cmp.ahead_by, behind: cmp.behind_by };
   });
 
-/**
- * G9: github.com has no second tab row under the repository tabs. Every
- * destination this page can render is reached the way github.com reaches it —
- * Code from the repository tab row, Commits from the "N commits" link on the
- * tree header, Branches and Tags from the branch/tag switcher's own tabs,
- * Activity and Releases from the About sidebar — so the sub-tab is a pure
- * function of the URL and never a control.
- */
+// G9: no second tab row — every destination is reached github.com's way, so the
+// sub-tab is a pure function of the URL, never a control.
 type SubTab = "code" | "commits" | "branches" | "tags" | "activity";
 
 /** A recorded repository ref-update, as served by GET /repos/{o}/{r}/activity. */
@@ -202,8 +191,7 @@ interface RepoActivityItem {
   actor: { login?: string; avatar_url?: string } | null;
 }
 
-// Inline fetch (per the repo's ghFetch convention) — the activity feed is the
-// only caller, so it lives here rather than in the shared api module.
+// Inline — the activity feed is the only caller.
 const fetchRepoActivity = (owner: string, repo: string) =>
   ghFetch<RepoActivityItem[]>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/activity`,
@@ -227,8 +215,7 @@ function UseThisTemplateBanner({ owner, repo }: { owner: string; repo: string })
   const [isPrivate, setIsPrivate] = useState(false);
 
   const generateMut = useMutation({
-    // POST /repos/{template_owner}/{template_repo}/generate — owner omitted so
-    // the new repository is created under the authenticated viewer's account.
+    // POST .../generate with no owner creates the repo under the viewer's account.
     mutationFn: () =>
       ghPostJSON<BleephubRepo>(`/api/v3/repos/${owner}/${repo}/generate`, {
         name: name.trim(),
@@ -323,17 +310,15 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   }, [initialTab]);
 
   const mainQc = useQueryClient();
-  // One aggregate request replaces the page's first-paint fan-out: on success
-  // it seeds the exact query keys the hooks below (and RepoHeader / the About
-  // sidebar / CodeView) read, so those hooks become cache hits. On failure
-  // nothing is seeded and every hook fetches standalone as before.
+  // One aggregate request seeds the exact query keys the hooks below read, so
+  // they become cache hits. On failure nothing seeds and each hook fetches standalone.
   const bootstrapQ = useQuery({
     queryKey: repoBootstrapKey(owner, repo),
     queryFn: async ({ signal }) => {
       const data = await fetchRepoBootstrap(owner, repo, signal);
       const defaultBranch = data.repo.default_branch;
-      // Decode the README the same way the readme hook does; a corrupt
-      // payload just skips the seed so that hook fetches and errors itself.
+      // Decode like the readme hook; a corrupt payload skips the seed so that
+      // hook fetches and errors itself.
       let readmeSeed: { name: string; text: string } | null = null;
       try {
         readmeSeed = data.readme
@@ -379,23 +364,19 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   } = useQuery({
     queryKey: ["commits", owner, repo, routeRef],
     queryFn: () => fetchRepoCommits(owner, repo, routeRef ? { sha: routeRef } : {}),
-    // GitHub returns 409 for the commits endpoint on an empty repository.
-    // `pushed_at` is the reliable emptiness signal here; `size` is not,
-    // because in-memory and S3-backed repositories legitimately report zero.
+    // GitHub 409s the commits endpoint on an empty repo; pushed_at is the
+    // reliable emptiness signal (size can be zero for in-memory/S3 repos).
     enabled:
       tab === "code"
       && repoData !== undefined
       && repoData.pushed_at !== null,
   });
-  // Tab badges from the bootstrap's exact open counts; the standalone count
-  // fetches only run when the bootstrap itself failed.
+  // Tab badges from the bootstrap's counts; standalone fetches only when the
+  // bootstrap failed.
   const counts = useSeededOpenCounts(owner, repo, { fallbackEnabled: bootstrapQ.isError });
-  // github.com hides what the viewer cannot do: write affordances need push,
-  // the administration menu needs admin. Read straight off the page's own
-  // repo query (NOT useRepoPermissions): that hook's query is ungated, and
-  // mounting it here would race the bootstrap seed with a standalone
-  // /repos/{owner}/{repo} fetch. Child components mount after the seed, so
-  // they use the hook as a pure cache hit.
+  // Read push off the page's repo query, not useRepoPermissions — that hook is
+  // ungated and would race the bootstrap seed with a standalone fetch. Children
+  // mount after the seed and hit cache.
   const canPush = repoData?.permissions?.push === true;
   const syncForkMut = useMutation({
     mutationFn: () => syncFork(owner, repo, repoData?.default_branch ?? ""),
@@ -407,8 +388,8 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   const { data: tags = [], isError: tagsError, error: tagsErr } = useQuery({
     queryKey: ["repo-tags", owner, repo],
     queryFn: () => fetchRepoTags(owner, repo),
-    // bootstrapSettled: the bootstrap seeds this key, so a deep link straight
-    // to the Tags tab must not race it with a duplicate standalone fetch.
+    // Gate on bootstrapSettled so a deep link to Tags doesn't race the seed
+    // with a duplicate fetch.
     enabled: tab === "tags" && !!owner && !!repo && bootstrapSettled,
   });
   const { data: activity = [], isLoading: activityLoading, isError: activityError, error: activityErr } = useQuery({
@@ -429,8 +410,8 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
 
   if (bootstrapQ.isPending || isLoading) return <Spinner label={`loading ${owner}/${repo}`} />;
   if (isError || !repoData) {
-    // A missing repository gets github.com's full-page 404 (which also cloaks
-    // private repos); every other failure keeps the raw error banner.
+    // Missing repo → full-page 404 (also cloaks private repos); other failures
+    // keep the banner.
     if (isNotFoundError(error)) return <RepoNotFound />;
     return <InlineError title={`Failed to load ${owner}/${repo}`} detail={String(error)} />;
   }
@@ -441,14 +422,10 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
 
       {repoData?.is_template && <UseThisTemplateBanner owner={owner} repo={repo} />}
 
-      {/* GitHub's two-column Code page: file browser + README on the left,
-          the About sidebar (description, topics, releases, packages,
-          languages, social counts) on the right. */}
       {tab === "code" && (
         commitsError ? (
-          // The repo exists (its query succeeded above), so a 404 here means
-          // the URL names a ref the repository does not have — stay inside
-          // the repo shell, github.com-style.
+          // Repo exists, so a 404 here means the ref doesn't; stay inside the
+          // repo shell.
           isNotFoundError(commitsErr) ? (
             <Blankslate icon={<BranchIcon size={26} />} title="This branch could not be found">
               {`${routeRef ? `The "${routeRef}" branch or ref` : "The requested ref"} does not exist in ${owner}/${repo}.`}
@@ -551,8 +528,7 @@ function CodeView({
   initialPath?: string;
 }) {
   const navigate = useNavigate();
-  // File writes need push access; read affordances (Go to file, clone box)
-  // stay for everyone.
+  // File writes need push; read affordances (Go to file, clone box) stay for everyone.
   const { canPush } = useRepoPermissions(owner, repo);
   const [branch, setBranch] = useState(initialRef || defaultBranch);
   const [path, setPath] = useState(initialPath ?? "");
@@ -579,8 +555,8 @@ function CodeView({
     isError: readmeError,
   } = useQuery({
     queryKey: ["readme", owner, repo, branch],
-    // Decode here so a corrupt base64 payload surfaces as readmeError
-    // instead of throwing mid-render.
+    // Decode here so a corrupt base64 payload surfaces as readmeError, not a
+    // mid-render throw.
     queryFn: async () => {
       const file = await fetchRepoReadme(owner, repo, branch);
       return { name: file.name, text: decodeContentsBase64(file.content) };
@@ -592,7 +568,7 @@ function CodeView({
   const [adding, setAdding] = useState(false);
   const [goToFileOpen, setGoToFileOpen] = useState(false);
 
-  // GitHub's `t` shortcut opens "Go to file" (ignored while typing in a field).
+  // GitHub's `t` shortcut opens "Go to file"; ignore it while typing in a field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "t" || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -633,8 +609,8 @@ function CodeView({
   const [uploadMessage, setUploadMessage] = useState("");
   const uploadFilesMut = useMutation({
     mutationFn: async () => {
-      // Sequential so a mid-batch failure surfaces the file that failed and the
-      // earlier commits still land (matching github.com's per-file commits).
+      // Sequential so a mid-batch failure surfaces the failing file and earlier
+      // commits still land (github.com's per-file commits).
       for (const file of uploadItems) {
         const contentBase64 = await fileToBase64(file);
         const fullPath = path ? `${path}/${file.name}` : file.name;
@@ -653,9 +629,8 @@ function CodeView({
     },
   });
 
-  // One tree-meta call per (ref, path) supplies every file row's
-  // latest-commit column and the subdirectory banner, replacing the old
-  // per-entry `commits?path=&per_page=1` fan-out.
+  // One tree-meta call per (ref, path) supplies every row's latest-commit
+  // column and the subdir banner.
   const treeMetaQ = useQuery({
     queryKey: ["tree-meta", owner, repo, branch, path],
     queryFn: ({ signal }) => fetchTreeMeta(owner, repo, branch, path, signal),
@@ -671,9 +646,8 @@ function CodeView({
       ? "success"
       : "pending";
 
-  // GitHub shows the latest-commit banner in subdirectories too, scoped to
-  // the commits that touched the directory. Per-path fallback only when
-  // tree-meta failed or could not attribute the directory.
+  // Subdir latest-commit banner. Per-path fallback only when tree-meta failed
+  // or couldn't attribute the directory.
   const dirCommitQ = useQuery({
     queryKey: ["dir-latest-commit", owner, repo, branch, path],
     queryFn: () => latestCommitForPath(owner, repo, branch, path),
@@ -688,9 +662,8 @@ function CodeView({
     return <EmptyRepoSetup owner={owner} repo={repo} defaultBranch={defaultBranch} sshUrl={sshUrl} />;
   }
   if (itemsError) {
-    // The repository exists — a 404 on the contents read means the ref/path
-    // combination doesn't. Rendered inside the repo shell (this component is
-    // a Code-tab body), matching github.com's in-repo missing-path page.
+    // Repo exists, so a 404 on contents means the ref/path doesn't; render
+    // inside the repo shell.
     if (isNotFoundError(itemsErr)) {
       return (
         <Blankslate icon={<DirectoryIcon size={26} />} title="This branch or path could not be found">
@@ -906,9 +879,8 @@ function LatestCommitBanner({
   commit: GithubCommit;
   /** Repo-root banner: total commit count. Absent in subdirectories. */
   total?: number;
-  // The commits query fetches a single page (per_page=100); when it comes back
-  // full there are likely more, so render "100+" rather than assert an exact
-  // count we did not fetch. A precise total would need a dedicated count endpoint.
+  // Commits query fetches one page (per_page=100); when full, render "100+"
+  // rather than assert an exact count.
   hasMore?: boolean;
   /** Subdirectory banner: link to the path-scoped history instead of a count. */
   historyPath?: string;
@@ -1139,8 +1111,8 @@ function AboutSidebar({
     queryFn: () => fetchReleases(owner, repo),
     enabled: !!owner && !!repo,
   });
-  // The /ui-data package handlers require a user, so the sidebar section is
-  // signed-in only (an anonymous fetch would 401 into the console).
+  // Package handlers require a user; signed-in only, else an anonymous fetch
+  // 401s into the console.
   const sidebarSignedIn = useSignedIn();
   const { data: packages, isError: packagesError } = useQuery({
     queryKey: ["repo-packages", owner, repo],
@@ -1220,10 +1192,8 @@ function AboutSidebar({
             </Link>
           </div>
         )}
-        {/* G9: the ref-update feed and the deployments/environments view, in
-            github.com's About rail beside the social counters, now that the
-            extra sub-tab row is gone. Deployments was previously reachable
-            ONLY from that row's admin overflow. */}
+        {/* G9: Activity and Deployments live in the About rail now the extra
+            sub-tab row is gone. */}
         <div className="mt-1.5 flex flex-col gap-1.5">
           <Link
             to={`${base}/activity`}
@@ -1250,8 +1220,7 @@ function AboutSidebar({
       <hr style={divider} />
 
       <section>
-        {/* G9: with the extra sub-tab row gone, this heading is the repo's
-            route to the releases page — github.com's own entry point. */}
+        {/* G9: this heading is the route to Releases now the sub-tab row is gone. */}
         <SectionLabel>
           <Link to={`${base}/releases`} style={{ color: "inherit", textDecoration: "none" }}>
             Releases
@@ -1378,10 +1347,9 @@ function FileRow({
   href: string;
 }) {
   const isDir = item.type === "dir";
-  // GitHub's per-file columns come from the directory's ONE tree-meta call.
-  // The old per-path commits fetch survives strictly as a fallback: when
-  // tree-meta failed outright, or answered but could not attribute this
-  // entry (latest: null). While tree-meta is pending the row shows em-dashes.
+  // Per-file columns come from the directory's one tree-meta call. Per-path
+  // fetch is a fallback only when tree-meta failed or couldn't attribute this
+  // entry; pending rows show em-dashes.
   const fallbackEnabled =
     treeMetaStatus === "error" || (treeMetaStatus === "success" && treeLatest === null);
   const commitQ = useQuery({
@@ -1557,8 +1525,8 @@ function CommitHistory({
     since: "",
     until: "",
   };
-  // Deep-link support for the per-file "History" control: ?path=… (&sha=…)
-  // pre-fills the path filter so the commits tab lands scoped to that file.
+  // Deep link ?path=…(&sha=…) pre-fills the filters so Commits lands scoped to
+  // that file.
   const [searchParams] = useSearchParams();
   const initialFilters: CommitHistoryFilters = {
     ...emptyFilters,
@@ -1985,9 +1953,8 @@ export function RepoCommitPage() {
   );
 }
 
-// Pull requests that introduce a commit — GET /commits/{sha}/pulls returns an
-// array of pull-request-simple objects. Defined inline per the ghFetch
-// convention; RepoCommitPage is the only caller.
+// GET /commits/{sha}/pulls — PRs that introduce a commit. Inline; RepoCommitPage
+// is the only caller.
 interface CommitPullSimple {
   number: number;
   title: string;
@@ -2145,8 +2112,8 @@ function CommitCommentsSection({ owner, repo, sha }: { owner: string; repo: stri
       setBody("");
     },
   });
-  // Anonymous visitors have no viewer (the read would 401); reactions render
-  // read-only and the composer is replaced by a sign-in prompt.
+  // Anonymous has no viewer (read 401s); reactions render read-only, composer
+  // becomes a sign-in prompt.
   const signedIn = useSignedIn();
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
@@ -2267,8 +2234,7 @@ export function RepoComparePage() {
                   {" "}· {query.data.ahead_by} ahead · {query.data.behind_by} behind · {query.data.total_commits} commits
                 </span>
               </span>
-              {/* PullsPage has no query-param prefill yet; ?compare={base}...{head}
-                  is the agreed hand-off contract for its create flow. */}
+              {/* ?compare={base}...{head} is the hand-off contract for PullsPage's create flow. */}
               <ButtonLink
                 variant="primary"
                 size="sm"
@@ -2337,9 +2303,8 @@ export function RepoFilePage() {
   const [draft, setDraft] = useState("");
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState(false);
-  // "Copy permalink" pins the URL to the ref's current commit SHA (github.com's
-  // `y` shortcut), so the link keeps pointing at this exact revision. The
-  // current #L… selection rides along.
+  // Pin the URL to the ref's current SHA (github.com's `y`), carrying any
+  // #L… selection.
   const copyPermalink = async () => {
     try {
       const commits = await fetchRepoCommits(owner, repo, { sha: ref, perPage: 1 });
@@ -2379,8 +2344,8 @@ export function RepoFilePage() {
 
   if (query.isLoading) return <Spinner label={`loading ${path}`} />;
   if (query.isError || !query.data) {
-    // Missing blob (bad ref or bad path) inside an existing repo: keep the
-    // repo chrome and show github.com's missing-path state, not the banner.
+    // Missing blob in an existing repo: keep the repo chrome, show the
+    // missing-path state.
     if (isNotFoundError(query.error)) {
       return (
         <div>
@@ -2394,9 +2359,8 @@ export function RepoFilePage() {
     return <InlineError title={`Failed to load ${path}`} detail={String(query.error)} />;
   }
 
-  // null means the bytes are not UTF-8 text (image or other binary); the
-  // BlobContent viewer picks the right rendering, and text-only affordances
-  // (Raw, Edit) hide themselves.
+  // null = bytes aren't UTF-8 text (binary); BlobContent picks the rendering
+  // and Raw/Edit hide themselves.
   const content = decodeBlobText(query.data.content);
 
   return (
@@ -2427,8 +2391,7 @@ export function RepoFilePage() {
                   size="sm"
                   aria-label="View raw file"
                   onClick={() => {
-                    // The decoded file text is already loaded; open it as a raw
-                    // text blob, mirroring github.com's "Raw" view.
+                    // Open the already-loaded text as a raw blob (github.com's "Raw").
                     const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
                     window.open(url, "_blank", "noopener");
                     setTimeout(() => URL.revokeObjectURL(url), 30_000);
@@ -2590,8 +2553,7 @@ function BranchesList({
   defaultBranch: string;
 }) {
   const qc = useQueryClient();
-  // Creating and deleting branches needs push access (github.com hides both
-  // from read-only viewers).
+  // Create/delete branch needs push (github.com hides both from read-only viewers).
   const { canPush } = useRepoPermissions(owner, repo);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -2658,8 +2620,8 @@ function BranchesList({
     </Modal>
   );
 
-  // Head commits for every branch (author + date), concurrency-capped and
-  // cached; used both for the row metadata and the Active/Stale bucketing.
+  // Head commit per branch, capped + cached; drives row metadata and the
+  // Active/Stale bucketing.
   const headsQ = useQuery({
     queryKey: ["branch-heads", owner, repo, branches.map((b) => b.commit.sha).join(",")],
     queryFn: async () => {
@@ -2755,8 +2717,7 @@ function BranchRow({
   onDelete: () => void;
 }) {
   const isDefault = b.name === defaultBranch;
-  // Ahead/behind vs the default branch, computed lazily per rendered row and
-  // cached (cachedMeta), so the fan-out stays bounded.
+  // Ahead/behind vs default, lazy per row + cached so the fan-out stays bounded.
   const cmpQ = useQuery({
     queryKey: ["branch-ahead-behind", owner, repo, defaultBranch, b.name],
     queryFn: () => aheadBehind(owner, repo, defaultBranch, b.name),
@@ -2791,8 +2752,8 @@ function BranchRow({
           </span>
         )}
         {b.protected && (
-          // The protection editor is an admin settings surface; read-only
-          // viewers get the informational badge without the link affordance.
+          // Read-only viewers get the badge without the link to the admin
+          // protection editor.
           canPush ? (
             <Link
               to={`/ui/${owner}/${repo}/settings/branch-protection`}
@@ -3017,8 +2978,8 @@ function TagRow({
   deletePending: boolean;
   onDelete: () => void;
 }) {
-  // The tags REST payload carries only the commit sha; GitHub's tag list also
-  // shows when the tagged commit landed, so resolve it (capped + cached).
+  // Tags payload has only the sha; resolve the commit date (capped + cached)
+  // for the tag list.
   const commitQ = useQuery({
     queryKey: ["tag-commit", owner, repo, t.commit.sha],
     queryFn: () => commitBySha(owner, repo, t.commit.sha),

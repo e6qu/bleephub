@@ -369,7 +369,7 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** "refs/heads/main" → "main"; leaves non-branch refs (or missing) alone. */
+/** "refs/heads/main" → "main"; leaves non-branch refs alone. */
 function shortRef(ref: string | undefined | null): string | null {
   if (!ref) return null;
   return ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;

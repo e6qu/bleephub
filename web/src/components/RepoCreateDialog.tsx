@@ -26,9 +26,8 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
   const [error, setError] = useState<string | null>(null);
   const [createdRepo, setCreatedRepo] = useState<BleephubRepo | null>(null);
 
-  // Templates the viewer can generate from: GitHub exposes no list-templates
-  // endpoint, so a template is any accessible repository with is_template set.
-  // /user/repos already spans owner + collaborator + org-member affiliation.
+  // No list-templates endpoint exists; a template is any accessible repo with
+  // is_template set, and /user/repos already spans all affiliations.
   const templatesQ = useQuery({
     queryKey: ["repo-templates"],
     queryFn: () => ghFetch<BleephubRepo[]>("/api/v3/user/repos?per_page=100"),
@@ -72,8 +71,7 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
     try {
       let repository: BleephubRepo;
       if (template) {
-        // POST /repos/{template_owner}/{template_repo}/generate. owner omitted
-        // for a user target (server uses the caller); set to the org otherwise.
+        // Omit owner for a user target (server uses the caller); set for an org.
         repository = await ghPostJSON<BleephubRepo>(`/api/v3/repos/${template}/generate`, {
           owner: org || undefined,
           name: name.trim(),

@@ -1,21 +1,17 @@
 import { parse } from "yaml";
 
-/** One job entry parsed out of workflow YAML for dependency display. */
 export interface WorkflowJobSpec {
   /** YAML key under `jobs:`. */
   key: string;
-  /** `jobs.<key>.name` when it is a plain string. */
   name?: string;
-  /** `jobs.<key>.needs`, normalized to a list of YAML keys. */
+  /** `needs`, normalized to a list of YAML keys. */
   needs: string[];
 }
 
 /**
- * Read the `jobs:` map out of workflow YAML and return each job's `needs`
- * list. The GitHub jobs REST payload carries no dependency information —
- * the workflow file is the only client-visible source — so this is
- * best-effort: unparsable YAML or exotic shapes yield an empty list, never
- * a crash.
+ * Parse each job's `needs` from workflow YAML — the only client-visible source
+ * of dependency info (the jobs REST payload has none). Best-effort: bad YAML
+ * yields an empty list, never a crash.
  */
 export function parseWorkflowJobSpecs(yamlText: string): WorkflowJobSpec[] {
   let doc: unknown;
@@ -50,9 +46,8 @@ function displayNameFor(specs: WorkflowJobSpec[], key: string): string {
 }
 
 /**
- * Resolve the `needs` list (as display names) for a job the REST payload
- * names `jobName`. Matches the YAML job by its `name:` or key, including
- * the `name (matrix, …)` expansion GitHub renders for matrix jobs.
+ * Resolve a job's `needs` (as display names) from its REST `jobName`, matching
+ * the YAML job by `name:` or key, including the `name (matrix, …)` expansion.
  */
 export function needsForJobName(specs: WorkflowJobSpec[], jobName: string): string[] {
   const spec =

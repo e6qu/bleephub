@@ -1,17 +1,10 @@
 /**
- * Page-bootstrap aggregation client + TanStack Query cache seeding.
+ * Page-bootstrap aggregation + query-cache seeding.
  *
- * The `/ui-data/bootstrap` endpoints collapse the repo-home / issue-detail /
- * PR-detail / insights first-paint fan-out into one request per page. Every
- * sub-payload is produced server-side by the SAME handler the standalone
- * endpoint runs, so it is byte-identical to what the page's existing hooks
- * would fetch — on bootstrap success a page seeds those hooks' exact query
- * keys and the hooks become cache hits. On bootstrap failure nothing is
- * seeded and every hook fetches standalone exactly as before, so resilience
- * is unchanged.
- *
- * This module lives in utils/ and is imported only by lazy pages (the fetch
- * primitive is api.ts's exported ghFetch), keeping the entry bundle flat.
+ * /ui-data/bootstrap collapses a page's first-paint fan-out into one request.
+ * Each sub-payload is byte-identical to the standalone endpoint's, so on success
+ * pages seed the hooks' query keys (cache hits); on failure nothing seeds and
+ * hooks fetch standalone as before.
  */
 import { useQuery, type QueryClient, type QueryKey } from "@tanstack/react-query";
 import { ghFetch, fetchRepoIssuesPage, fetchRepoPRsPage, type Page } from "../api.js";
@@ -39,12 +32,8 @@ import type {
 } from "../types.js";
 
 /**
- * Freshness window for seeded cache entries. Seeding alone does not stop a
- * mounting observer from refetching (the app's default staleTime is 0), so
- * seeded keys also get a per-key staleTime default. Mutations invalidate
- * their keys explicitly throughout the app, so the window only affects
- * passive cross-page navigation — matching the existing 60s conventions
- * (current-user, branch-heads).
+ * Freshness window for seeded entries: the default staleTime is 0, so seeded keys
+ * also get a per-key staleTime or a mounting observer refetches immediately.
  */
 export const SEED_STALE_TIME = 60_000;
 
@@ -71,10 +60,8 @@ export interface IssueBootstrap {
   timeline: GithubTimelineItem[];
   labels: GithubLabel[];
   /**
-   * state=ALL — the list IssueSidebar's ["milestones", o, r, "all"] hook
-   * reads. NewIssue's ["milestones", o, r, "open"] key is seeded from the
-   * same list filtered client-side to state === "open" (identical to what
-   * the standalone state=open fetch answers).
+   * state=ALL — seeds ["milestones",o,r,"all"]. The "open" key is seeded from
+   * this list filtered to state==="open" client-side.
    */
   milestones: GithubMilestone[];
   assignees_available: Array<{ login: string }>;
@@ -91,9 +78,7 @@ export interface PullBootstrap {
   check_runs: { total_count: number; check_runs: GithubCheckRun[] } | null;
   combined_status: GithubCombinedStatus | null;
   files_summary: { changed_files: number; additions: number; deletions: number };
-  /** Same sidebar sub-payloads the issue aggregate carries, so the PR
-   * sidebar's labels / milestones (state=ALL) / assignees hooks are cache
-   * hits too. */
+  /** Sidebar sub-payloads (labels / milestones state=ALL / assignees), same as the issue aggregate. */
   labels: GithubLabel[];
   milestones: GithubMilestone[];
   assignees_available: Array<{ login: string }>;
@@ -139,11 +124,7 @@ export interface TreeMeta {
 
 const enc = encodeURIComponent;
 
-/**
- * A bootstrap payload that is not the expected aggregate object must surface
- * as a bootstrap ERROR (which the pages treat as "seed nothing, fall back to
- * standalone fetches"), never seed garbage into other hooks' caches.
- */
+/** A malformed payload throws (pages then fall back to standalone) rather than seeding garbage. */
 function expectKeys<T>(body: unknown, keys: string[], what: string): T {
   if (
     body === null ||
@@ -237,12 +218,8 @@ export const repoBootstrapKey = (owner: string, repo: string) =>
   ["repo-bootstrap", owner, repo] as const;
 
 /**
- * Seed each [key, data] pair into the cache and register a per-key staleTime
- * default so the observers that read the key (including ones in shared
- * components that set no staleTime of their own) treat the seed as fresh
- * instead of refetching on mount. null/undefined data means "the aggregate
- * could not provide this sub-resource" — the entry is skipped so the owning
- * hook fetches standalone (and surfaces its own error state) as before.
+ * Seed each [key, data] pair and register a per-key staleTime so observers treat
+ * it as fresh. null/undefined data is skipped so that hook fetches standalone.
  */
 export function seedQueryCache(
   queryClient: QueryClient,
@@ -256,10 +233,8 @@ export function seedQueryCache(
 }
 
 /**
- * Copy an already-fetched cache entry to a second key whose hook calls the
- * byte-identical endpoint (["current-user"] and ["viewer"] both GET
- * /api/v3/user). The copy keeps the source's dataUpdatedAt, so it never
- * claims to be fresher than the fetch that produced it.
+ * Copy a cache entry to a second key whose hook hits the same endpoint
+ * (["current-user"] and ["viewer"] both GET /api/v3/user). Keeps dataUpdatedAt.
  */
 export function mirrorQueryData(queryClient: QueryClient, from: QueryKey, to: QueryKey): void {
   const state = queryClient.getQueryState(from);
@@ -268,22 +243,14 @@ export function mirrorQueryData(queryClient: QueryClient, from: QueryKey, to: Qu
   queryClient.setQueryData(to, state.data, { updatedAt: state.dataUpdatedAt });
 }
 
-/**
- * Register the staleTime default WITHOUT data for keys the aggregate cannot
- * supply but that a warm session has already fetched (e.g. ["repo-viewer"]),
- * so cross-page navigation inside the window reuses the earlier response
- * instead of refetching on every mount.
- */
+/** Register the staleTime default WITHOUT data, so a warm session's earlier fetch is reused. */
 export function freshenQueryDefaults(queryClient: QueryClient, keys: QueryKey[]): void {
   for (const key of keys) queryClient.setQueryDefaults(key, { staleTime: SEED_STALE_TIME });
 }
 
 // ─── Seed-shape adapters (post-processed forms hooks actually cache) ──────
 
-/**
- * fetchCheckRuns post-processes the {total_count, check_runs} envelope into
- * an EnvelopePage ({items, totalCount, nextUrl}); seed that form.
- */
+/** fetchCheckRuns caches the envelope as an EnvelopePage; seed that form. */
 export function checkRunsEnvelopeToPage(
   raw: PullBootstrap["check_runs"],
 ): { items: GithubCheckRun[]; totalCount: number; nextUrl: null } | null {
@@ -306,20 +273,16 @@ export function validCombinedStatus(
 // ─── Open-count badges ────────────────────────────────────────────────────
 
 /**
- * Drop-in for hooks/useOpenCounts that prefers the cached repo bootstrap's
- * exact open counts (issues_open_count excludes PRs) and only falls back to
- * the two standalone first-page count fetches when no bootstrap is cached —
- * or when the caller gates the fallback (the repo home passes
- * `fallbackEnabled: bootstrapQ.isError` so the fallback never races the
- * bootstrap it is a fallback for).
+ * Prefers the cached bootstrap's open counts (issues_open_count excludes PRs),
+ * falling back to standalone count fetches only when no bootstrap is cached or
+ * the caller gates it (fallbackEnabled avoids racing the bootstrap).
  */
 export function useSeededOpenCounts(
   owner: string,
   repo: string,
   opts: { fallbackEnabled?: boolean } = {},
 ): { issueCount?: number | string | undefined; prCount?: number | string | undefined } {
-  // Read-only observer: never fetches (enabled: false); it just reflects the
-  // repo-home bootstrap already in the cache, reactively.
+  // Read-only observer (enabled: false); reflects the cached repo bootstrap.
   const bootstrap = useQuery<RepoBootstrap>({
     queryKey: repoBootstrapKey(owner, repo),
     queryFn: ({ signal }) => fetchRepoBootstrap(owner, repo, signal),

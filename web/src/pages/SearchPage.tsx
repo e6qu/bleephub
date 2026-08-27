@@ -57,19 +57,14 @@ const TABS: { key: SearchTab; label: string }[] = [
   { key: "topics", label: "Topics" },
 ];
 
-// Types whose count can be probed with just the free-text query. Labels are
-// excluded (the endpoint requires a repository_id) and code is skipped when
-// the query has no free-text term (the server 422s qualifier-only code
-// queries).
+// Countable via a free-text probe. Excludes labels (endpoint requires
+// repository_id); code is gated separately (422 on qualifier-only queries).
 const COUNTABLE_TABS: SearchTab[] = ["repositories", "code", "issues", "users", "commits", "topics"];
 
-/** Auto-search debounce: URL-driven re-queries (filter keystrokes, sort
- *  changes) wait this long before hitting the 30/min search budget. */
+// Debounce URL-driven re-queries against the 30/min search budget.
 const SEARCH_DEBOUNCE_MS = 250;
 
-// Sort keys the server actually honors (gh_search.go: issue rows sort on
-// created/updated plus the comments render-all path; user results sort on
-// followers/created/updated). Only these are offered so no control is a no-op.
+// Only the sort keys the server honors, so no control is a no-op.
 const ISSUE_SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "created", label: "Newest" },
   { value: "updated", label: "Recently updated" },
@@ -81,7 +76,6 @@ const USER_SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "updated", label: "Recently active" },
 ];
 
-/** True if the query has at least one non-qualifier free-text token. */
 function hasFreeTextTerm(query: string): boolean {
   return query
     .trim()
@@ -91,19 +85,15 @@ function hasFreeTextTerm(query: string): boolean {
 
 // ─── page-local search helpers ───────────────────────────────────────────────
 
-/** GET /search/code item plus the opt-in text-match payload; the repository is
- *  the full REST repo shape, so default_branch is available for blob links. */
+// GET /search/code item plus opt-in text-match payload; default_branch on the
+// repo powers blob links.
 export type CodeSearchItem = GithubSearchCodeItem & {
   repository: GithubSearchCodeItem["repository"] & { default_branch?: string };
   text_matches?: GithubSearchTextMatch[];
 };
 
-/**
- * Code search with the text-match media type: the plain api.ts search wrappers
- * cannot set an Accept header, so this page-local fetcher opts into
- * application/vnd.github.text-match+json itself and mirrors the module's
- * rate-limit ApiError contract (retryAfterSeconds on a throttled 403).
- */
+// Page-local so it can send Accept: application/vnd.github.text-match+json,
+// which the api.ts wrappers can't; mirrors their rate-limit ApiError contract.
 async function searchCodeWithMatches(q: string, page: number): Promise<SearchResultPage<CodeSearchItem>> {
   const params = new URLSearchParams({ q, page: String(page), per_page: String(SEARCH_PER_PAGE) });
   const res = await fetch(`/api/v3/search/code?${params}`, {
@@ -117,7 +107,7 @@ async function searchCodeWithMatches(q: string, page: number): Promise<SearchRes
   return { totalCount: body.total_count, incompleteResults: body.incomplete_results, items: body.items };
 }
 
-/** retryAfterSeconds for a throttled 403, mirroring api.ts's classification. */
+// retryAfterSeconds for a throttled 403, mirroring api.ts's classification.
 function rateLimitOptions(res: Response): { retryAfterSeconds: number } | undefined {
   if (res.status !== 403) return undefined;
   const retryAfter = Number(res.headers.get("Retry-After"));
@@ -126,24 +116,19 @@ function rateLimitOptions(res: Response): { retryAfterSeconds: number } | undefi
   return undefined;
 }
 
-/** Exact result count for one type: search envelopes carry total_count, so a
- *  per_page=1 probe answers the sidebar count in one cheap request. */
+// per_page=1 probe: the envelope's total_count answers the sidebar count cheaply.
 const fetchSearchCount = (endpoint: SearchTab, q: string) =>
   ghFetch<{ total_count: number }>(
     `/api/v3/search/${endpoint}?${new URLSearchParams({ q, per_page: "1" })}`,
   ).then((body) => body.total_count);
 
-/** The ref segment of a …/{owner}/{repo}/blob/{ref}/{path} html_url. */
 export function blobRefFromHtmlUrl(htmlUrl: string): string | null {
   const m = htmlUrl.match(/\/blob\/([^/]+)\//);
   return m ? m[1]! : null;
 }
 
-/**
- * Splits a text-match fragment into plain/matched runs. Match indices are
- * fragment-relative BYTE offsets (the server is Go), so the fragment is
- * sliced on its UTF-8 bytes, not on UTF-16 code units.
- */
+// Match indices are fragment-relative UTF-8 BYTE offsets (Go server), so slice
+// on bytes, not UTF-16 code units.
 export function splitTextMatchFragment(
   fragment: string,
   matches: GithubSearchTextMatchSpan[],
@@ -187,8 +172,7 @@ export function SearchPage() {
   const [draft, setDraft] = useState(q);
   const [labelsRepoDraft, setLabelsRepoDraft] = useState(labelsRepo);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  // The active type's count is reported up by its ResultList; the other types'
-  // counts are probed lazily (below) once the active search has answered.
+  // Active type's count comes from its ResultList; others probed lazily below.
   const [activeCount, setActiveCount] = useState<number | null>(null);
   const repositoryFilters: RepositorySearchFilters = {
     visibility: params.get("visibility") ?? "",
@@ -200,9 +184,8 @@ export function SearchPage() {
     sort: params.get("sort") ?? "",
     order: params.get("order") ?? "desc",
   };
-  // Issues and Users share the sort/order URL params with Repositories, so a
-  // sort carried across tabs is normalized to "best match" unless it is valid
-  // for the active tab.
+  // Issues/Users/Repositories share the sort/order params; a sort carried
+  // across tabs falls back to "best match" unless valid for the active tab.
   const rawSort = params.get("sort") ?? "";
   const order = params.get("order") === "asc" ? "asc" : "desc";
   const issuesSort = ISSUE_SORT_OPTIONS.some((o) => o.value === rawSort) ? rawSort : "";
@@ -215,12 +198,10 @@ export function SearchPage() {
   useEffect(() => setLabelsRepoDraft(labelsRepo), [labelsRepo]);
   useEffect(() => setActiveCount(null), [q, tab]);
 
-  // Lazy per-type counts for the sidebar: probed only after the active type's
-  // search has answered (so a throttled session doesn't fan out further), one
-  // cheap per_page=1 request per type, cached for a minute per (type, query).
+  // Sidebar counts, probed only after the active search answers so a throttled
+  // session doesn't fan out; cached per (type, query).
   const trimmedQ = q.trim();
-  // Code search requires authentication (the server, like real GitHub, 401s
-  // anonymous code queries), so its count probe is signed-in only.
+  // Code search 401s anonymous queries, so its count probe is signed-in only.
   const signedIn = useSignedIn();
   const countQueries = useQueries({
     queries: COUNTABLE_TABS.map((key) => ({
@@ -304,7 +285,6 @@ export function SearchPage() {
         terms and prefix a qualifier with <code>-</code> to exclude matches.
       </p>
       <div className="grid items-start gap-6 md:grid-cols-[13rem_minmax(0,1fr)]">
-        {/* github.com's search sidebar: result types with per-type counts. */}
         <SearchTypeNav active={tab} counts={hasSearch ? counts : {}} onChange={(next) => update({ type: next, page: "" })} />
         <div className="min-w-0">
           {tab === "repositories" && (
@@ -363,8 +343,7 @@ export function SearchPage() {
   );
 }
 
-/** Left sidebar of result types with per-type counts (github.com's search
- *  layout). Counts render as "—" until known. */
+// Counts render as "—" until known.
 function SearchTypeNav({
   active,
   counts,
@@ -434,8 +413,7 @@ interface AdvancedSearchFields {
   stars: string;
 }
 
-/** Assemble a GitHub qualifier query from the advanced-search fields. Multi-word
- *  values are quoted; `stars` becomes a `>=N` range. Empty fields are dropped. */
+// Multi-word values are quoted; `stars` becomes a `>=N` range; empty fields drop.
 export function buildAdvancedQuery(f: AdvancedSearchFields): string {
   const parts: string[] = [];
   if (f.keywords.trim()) parts.push(f.keywords.trim());
@@ -448,7 +426,7 @@ export function buildAdvancedQuery(f: AdvancedSearchFields): string {
   return parts.join(" ");
 }
 
-// GitHub's /search/advanced query builder, inlined so it needs no extra route.
+// Inlined so it needs no extra route.
 function AdvancedSearchForm({ onBuild }: { onBuild: (query: string) => void }) {
   const [fields, setFields] = useState<AdvancedSearchFields>({
     keywords: "", language: "", repo: "", user: "", org: "", topic: "", stars: "",
@@ -518,7 +496,6 @@ function SearchResults({
   onPage: (page: number) => void;
   onCount: (count: number) => void;
 }) {
-  // Code search is signed-in only (see the "code" case below).
   const signedIn = useSignedIn();
   switch (tab) {
     case "repositories": {
@@ -573,13 +550,11 @@ function SearchResults({
       );
     }
     case "code":
-      // Code search requires authentication on the server (and on real
-      // GitHub, which asks anonymous visitors to sign in for code search).
+      // Code search 401s anonymous queries.
       if (!signedIn) {
         return <SignInPrompt action="search code" />;
       }
-      // The server (and real GitHub) 422 a code query with no free-text term
-      // (qualifiers only). Guide instead of firing a request that errors.
+      // A code query with no free-text term 422s; guide instead of erroring.
       if (!hasFreeTextTerm(q)) {
         return (
           <Blankslate title="Enter a search term">
@@ -649,8 +624,7 @@ function SearchResults({
             <div>
               <Link
                 to={accountRoute(u.login, u.type)}
-                // inline-block + ≥24px line-height: a standalone list link must
-                // clear WCAG 2.5.8 target-size.
+                // inline-block + ≥24px line-height clears WCAG 2.5.8 target-size.
                 style={{
                   display: "inline-block",
                   color: "var(--color-accent)",
@@ -728,8 +702,6 @@ function SearchResults({
   }
 }
 
-/** One code search result: the file links to its blob view and the opt-in
- *  text-match fragments render with the matched spans highlighted. */
 function CodeResultRow({ item }: { item: CodeSearchItem }) {
   const [owner = "", repo = ""] = item.repository.full_name.split("/");
   const ref = blobRefFromHtmlUrl(item.html_url) ?? item.repository.default_branch ?? "main";
@@ -739,8 +711,7 @@ function CodeResultRow({ item }: { item: CodeSearchItem }) {
       <div>
         <Link
           to={repoCodeRoute(owner, repo, { kind: "blob", ref, path: item.path })}
-          // inline-block + ≥24px line-height: a standalone list link must
-          // clear WCAG 2.5.8 target-size.
+          // inline-block + ≥24px line-height clears WCAG 2.5.8 target-size.
           style={{
             display: "inline-block",
             color: "var(--color-accent)",
@@ -814,9 +785,7 @@ export function buildRepositoryQuery(q: string, filters: RepositorySearchFilters
   return [q.trim(), ...qualifiers].filter(Boolean).join(" ");
 }
 
-/** Sort + order controls for the Issues and Users result tabs, mirroring the
- *  Repositories tab. The Order menu appears only once a sort key is chosen
- *  (best-match ordering has no direction). */
+// Order menu appears only once a sort key is chosen (best-match has no direction).
 function SortControls({
   title,
   sortLabel,
@@ -1019,7 +988,7 @@ function RepositoryFilters({
   );
 }
 
-/** Label search requires a repository_id; resolve the typed owner/repo first. */
+// Label search requires a repository_id; resolve owner/repo first.
 function LabelResults({
   q,
   page,
@@ -1089,16 +1058,14 @@ function LabelResults({
   );
 }
 
-/** Friendly throttle state: countdown from the server's Retry-After, one
- *  automatic retry when it elapses, then a manual "Try again". */
+// Counts down from Retry-After, auto-retries once, then offers manual retry.
 function SearchRateLimitNotice({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const seconds =
     error instanceof ApiError && error.retryAfterSeconds !== undefined ? error.retryAfterSeconds : 60;
   const [left, setLeft] = useState(seconds);
   const autoRetriedRef = useRef(false);
 
-  // A fresh throttle answer (the auto-retry got throttled again) restarts
-  // the countdown.
+  // A fresh throttle answer restarts the countdown.
   useEffect(() => setLeft(seconds), [error, seconds]);
   useEffect(() => {
     if (left <= 0) return;
@@ -1144,9 +1111,8 @@ function ResultList<T>({
   noun: { singular: string; plural: string };
   render: (item: T) => React.ReactNode;
 }) {
-  // Auto-search debounce: the first render queries immediately, but URL-driven
-  // key changes (filter keystrokes, sort switches) settle for a beat before a
-  // request goes out — search is budgeted at 30/min per user.
+  // First render queries immediately; later key changes settle for a beat
+  // before firing (search is budgeted at 30/min per user).
   const signature = JSON.stringify(queryKey);
   const [debounced, setDebounced] = useState({ signature, queryKey });
   const queryFnRef = useRef(queryFn);
@@ -1161,9 +1127,7 @@ function ResultList<T>({
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: debounced.queryKey,
     queryFn: () => queryFnRef.current(),
-    // A throttled 403 is final for the current window — retrying only deepens
-    // the exhaustion. The friendly notice below owns the single retry. (Same
-    // guard pattern as AppHeader's current-user query.)
+    // Don't retry a throttled 403; the notice below owns the single retry.
     retry: (failureCount, err) => !isRateLimited(err) && failureCount < 1,
   });
 

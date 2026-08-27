@@ -1,15 +1,9 @@
 import { useMemo } from "react";
 import type { GithubUserEvent } from "../types.js";
 
-/**
- * A GitHub-style contribution calendar built from a user's activity events.
- *
- * The simulator's events feed only surfaces a handful of derived event types
- * (Create/Delete/Push/Issues/IssueComment/PullRequest), so this is an
- * approximation of GitHub's commit-based calendar — but it is real data, one
- * cell per day for the trailing 53 weeks, shaded by that day's event count.
- * Intensity uses `color-mix` over `--color-accent` so it themes in both modes.
- */
+// The simulator's events feed only surfaces derived event types, so this
+// approximates GitHub's commit-based calendar: one cell per day for the
+// trailing 53 weeks, shaded by that day's event count.
 
 const WEEKS = 53;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -39,10 +33,10 @@ export function ContributionGraph({ events }: { events: GithubUserEvent[] }) {
       counts.set(dayKey(d), (counts.get(dayKey(d)) ?? 0) + 1);
     }
 
-    // Anchor the last column on the current week (grid ends on Saturday).
+    // Grid ends on the current week's Saturday.
     const today = new Date();
     const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    end.setDate(end.getDate() + (6 - end.getDay())); // forward to Saturday
+    end.setDate(end.getDate() + (6 - end.getDay()));
     const start = new Date(end.getTime() - (WEEKS * 7 - 1) * DAY_MS);
 
     const cols: { date: Date; count: number; level: number }[][] = [];

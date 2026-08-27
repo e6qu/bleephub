@@ -2,16 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GithubRuleset, GithubRulesetTarget } from "../types.js";
 import { Button, FormLabel } from "./ui.js";
 
-// The fragment of a ruleset payload this editor owns: everything except the
-// name/target/enforcement, which the host form manages. `conditions` is omitted
-// entirely when no ref-name targeting is set (GitHub then applies to all refs).
+// Omit `conditions` entirely for no ref-name targeting — GitHub then applies to all refs.
 export interface RulesetRuleConfig {
   rules: Array<{ type: string; parameters?: Record<string, unknown> }>;
   conditions?: { ref_name: { include: string[]; exclude: string[] } };
   bypass_actors: Array<{ actor_id: number; actor_type: string; bypass_mode: string }>;
 }
 
-// Simple no-parameter rules the evaluator enforces directly.
 const SIMPLE_RULES: Array<{ type: string; label: string }> = [
   { type: "creation", label: "Restrict creations" },
   { type: "update", label: "Restrict updates" },
@@ -21,13 +18,10 @@ const SIMPLE_RULES: Array<{ type: string; label: string }> = [
   { type: "required_signatures", label: "Require signed commits" },
 ];
 
-// GitHub's actor_type + bypass_mode enums for the bypass list.
 const ACTOR_TYPES = ["User", "Team", "Integration", "OrganizationAdmin", "RepositoryRole", "DeployKey"];
 const BYPASS_MODES = ["always", "pull_request"];
 
-// GitHub's fixed actor_id values for role-based bypass actors: RepositoryRole
-// uses the documented role ids (2 = maintain, 4 = write, 5 = admin) and
-// OrganizationAdmin always uses actor_id 1. DeployKey carries no meaningful id.
+// GitHub's fixed role ids: 2 = maintain, 4 = write, 5 = admin; OrganizationAdmin is always 1.
 const REPOSITORY_ROLES: Array<{ id: number; label: string }> = [
   { id: 5, label: "Repository admin" },
   { id: 2, label: "Maintain" },
@@ -43,7 +37,6 @@ export interface RulesetTeamOption {
 }
 const PATTERN_OPERATORS = ["starts_with", "ends_with", "contains", "regex"];
 
-// splitPatterns turns a newline/comma-separated textarea into a trimmed list.
 function splitPatterns(text: string): string[] {
   return text
     .split(/[\n,]/)
@@ -51,7 +44,7 @@ function splitPatterns(text: string): string[] {
     .filter(Boolean);
 }
 
-// GitHub's repository-rule-pull-request requires all five of these fields.
+// GitHub's repository-rule-pull-request requires all five fields.
 interface PullRequestParams {
   required_approving_review_count: number;
   dismiss_stale_reviews_on_push: boolean;
@@ -70,10 +63,8 @@ function ruleByType(ruleset: GithubRuleset | null | undefined, type: string) {
   return ruleset?.rules?.find((r) => r.type === type);
 }
 
-// RulesetEditor renders GitHub's ruleset targeting + rule + bypass controls and
-// reports the assembled config to the host on every change. It is deliberately
-// self-contained so the org modal and the repo settings tab share one authoring
-// surface (no duplication) without either becoming entry-resident.
+// Self-contained so the org modal and repo settings tab share one surface
+// without either becoming entry-resident.
 export function RulesetEditor({
   target,
   initial,
@@ -83,18 +74,12 @@ export function RulesetEditor({
   target: GithubRulesetTarget;
   initial?: GithubRuleset | null;
   onChange: (config: RulesetRuleConfig) => void;
-  /**
-   * Optional org teams for the Team bypass-actor picker. When absent (e.g. a
-   * user-owned repo, or a host that has not wired it) the Team type falls back
-   * to a raw numeric id input — a purely additive prop, existing hosts keep
-   * their behavior.
-   */
+  /** Org teams for the Team bypass picker; absent falls back to a raw numeric id input. */
   teams?: RulesetTeamOption[];
 }) {
   const namePatternType = target === "tag" ? "tag_name_pattern" : "branch_name_pattern";
   const showRefConditions = target === "branch" || target === "tag";
 
-  // ── targeting (conditions.ref_name) ──────────────────────────────────────
   const initialInclude = initial?.conditions?.ref_name?.include ?? [];
   const initialExclude = initial?.conditions?.ref_name?.exclude ?? [];
   const [includeDefault, setIncludeDefault] = useState(initialInclude.includes("~DEFAULT_BRANCH"));
@@ -104,12 +89,10 @@ export function RulesetEditor({
   );
   const [excludePatterns, setExcludePatterns] = useState(initialExclude.join("\n"));
 
-  // ── simple rules ─────────────────────────────────────────────────────────
   const [enabled, setEnabled] = useState<Set<string>>(
     () => new Set(SIMPLE_RULES.map((r) => r.type).filter((t) => ruleByType(initial, t))),
   );
 
-  // ── pull_request ─────────────────────────────────────────────────────────
   const prInit = ruleByType(initial, "pull_request")?.parameters as Record<string, unknown> | undefined;
   const [prEnabled, setPrEnabled] = useState(Boolean(ruleByType(initial, "pull_request")));
   const [pr, setPr] = useState<PullRequestParams>({
@@ -120,7 +103,6 @@ export function RulesetEditor({
     required_review_thread_resolution: Boolean(prInit?.["required_review_thread_resolution"]),
   });
 
-  // ── required_status_checks ───────────────────────────────────────────────
   const scInit = ruleByType(initial, "required_status_checks")?.parameters as Record<string, unknown> | undefined;
   const [scEnabled, setScEnabled] = useState(Boolean(ruleByType(initial, "required_status_checks")));
   const [scStrict, setScStrict] = useState(Boolean(scInit?.["strict_required_status_checks_policy"]));
@@ -129,7 +111,6 @@ export function RulesetEditor({
     return raw.map((c) => (typeof c === "string" ? c : c.context ?? "")).filter(Boolean).join("\n");
   });
 
-  // ── name pattern ─────────────────────────────────────────────────────────
   const npRule = ruleByType(initial, namePatternType);
   const npInit = npRule?.parameters as Record<string, unknown> | undefined;
   const [npEnabled, setNpEnabled] = useState(Boolean(npRule));
@@ -139,7 +120,6 @@ export function RulesetEditor({
     negate: Boolean(npInit?.["negate"]),
   });
 
-  // ── bypass actors ────────────────────────────────────────────────────────
   const [bypass, setBypass] = useState<Array<{ actor_id: number; actor_type: string; bypass_mode: string }>>(
     () => (initial?.bypass_actors ?? []).map((a) => ({ actor_id: a.actor_id, actor_type: a.actor_type, bypass_mode: a.bypass_mode })),
   );
@@ -191,7 +171,7 @@ export function RulesetEditor({
     includeAll, includeDefault, includePatterns, excludePatterns, showRefConditions, bypass,
   ]);
 
-  // Report upward without making the parent re-render mid-render.
+  // Report upward without re-rendering the parent mid-render.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   useEffect(() => {
@@ -355,8 +335,7 @@ export function RulesetEditor({
               <select aria-label={`Bypass actor ${i + 1} type`} value={actor.actor_type}
                 onChange={(e) => {
                   const nextType = e.target.value;
-                  // Reset the id to the type's sensible default so a stale id
-                  // from the previous type never leaks into the payload.
+                  // Reset the id so a stale id from the previous type never leaks into the payload.
                   const nextId =
                     nextType === "RepositoryRole" ? REPOSITORY_ROLES[0]!.id
                     : nextType === "OrganizationAdmin" ? ORGANIZATION_ADMIN_ACTOR_ID
@@ -390,7 +369,6 @@ const selStyle = { fontSize: "0.8rem", borderRadius: "var(--radius-md)", border:
 const subForm = { display: "flex", flexWrap: "wrap" as const, gap: "0.6rem", alignItems: "end", padding: "0.4rem 0 0.4rem 1.6rem" };
 const inlineField = { display: "flex", flexDirection: "column" as const, gap: "0.2rem", fontSize: "0.8rem" };
 const inlineCheck = { display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8rem" };
-// Tightly-stacked targeting checkboxes need a ≥24px row so adjacent checkbox
-// centers clear WCAG 2.5.8 target-size (they have no inter-row gap).
+// ≥24px row so adjacent checkbox centers clear WCAG 2.5.8 target-size (no inter-row gap).
 const condCheck = { display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem", minHeight: "1.625rem" };
 const mutedType = { color: "var(--color-fg-muted)", fontSize: "0.72rem", fontFamily: "var(--font-mono, monospace)" };

@@ -1,12 +1,7 @@
 import type { ReactNode } from "react";
 
-/*
- * GitHub-style settings shell: a LEFT vertical sub-navigation with an
- * adjacent content pane on the right (not a horizontal tab strip). Nav
- * items are grouped into optionally-titled sections, mirroring GitHub's
- * repo/account settings sidebars. The selected item is a plain <button>
- * so it stays keyboard- and screen-reader-accessible.
- */
+// Settings shell: left vertical sub-nav + content pane, mirroring github.com's
+// settings sidebars.
 
 export interface SettingsNavItem<K extends string> {
   key: K;
@@ -15,7 +10,6 @@ export interface SettingsNavItem<K extends string> {
 }
 
 export interface SettingsNavSection<K extends string> {
-  /** Optional group heading rendered above the section's items. */
   title?: string;
   items: SettingsNavItem<K>[];
 }

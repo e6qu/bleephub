@@ -49,9 +49,8 @@ export function ReleasesPage() {
   const location = useLocation();
   const creating = location.pathname.endsWith("/releases/new");
   const id = releaseId ? Number(releaseId) : 0;
-  // /releases/new is a write surface: github.com 404s it for viewers without
-  // push access. Wait for the permissions payload before deciding so writers
-  // never see a 404 flash.
+  // /releases/new 404s without push access; wait for the permissions payload
+  // so writers never see a 404 flash.
   const { canPush, loaded } = useRepoPermissions(owner, repo);
 
   return (
@@ -203,7 +202,7 @@ function ReleaseFeedItem({ owner, repo, release, isLatest }: {
                 </span>
               </li>
             ))}
-            {/* GitHub auto-lists the source archives for the release's tag. */}
+            {/* Auto-listed source archives for the release's tag. */}
             <li style={{ padding: "0.15rem 0" }}>
               <a href={`${archiveBase}/zipball/${encodeURIComponent(release.tag_name)}`} style={assetLink}>
                 Source code (zip)
@@ -221,9 +220,7 @@ function ReleaseFeedItem({ owner, repo, release, isLatest }: {
   );
 }
 
-// github.com's "Generate release notes" — autogenerates the title + a
-// changelog body from the commits since the previous tag. Defined here so it
-// rides this lazy chunk rather than weighing on the entry bundle.
+// Defined here to ride the lazy chunk rather than the entry bundle.
 const generateReleaseNotes = (owner: string, repo: string, tag_name: string, target_commitish?: string) =>
   ghPostJSON<{ name: string; body: string }>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/generate-notes`,
@@ -239,9 +236,8 @@ function ReleaseEditor({ owner, repo, release, onSaved }: { owner: string; repo:
   const [body, setBody] = useState(release?.body ?? "");
   const [draft, setDraft] = useState(release?.draft ?? false);
   const [prerelease, setPrerelease] = useState(release?.prerelease ?? false);
-  // GitHub's "Set as the latest release" checkbox. The release REST object does
-  // not expose whether it is currently excluded from latest, so this reflects
-  // GitHub's default (eligible/on); unchecking sends make_latest:"false".
+  // "Set as the latest release". The REST object doesn't expose the current
+  // latest-eligibility, so default on; unchecking sends make_latest:"false".
   const [makeLatest, setMakeLatest] = useState(true);
 
   useEffect(() => {
@@ -334,10 +330,10 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
-  // Editing/deleting a release (and managing its assets) needs push access.
+  // Editing/deleting a release and managing its assets needs push access.
   const { canPush } = useRepoPermissions(owner, repo);
   const release = useQuery({ queryKey: ["release", owner, repo, releaseId], queryFn: () => fetchRelease(owner, repo, releaseId) });
-  // Anonymous visitors have no viewer (the read would 401).
+  // The viewer read 401s anonymously.
   const signedIn = useSignedIn();
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
@@ -350,8 +346,8 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
   });
   if (release.isLoading) return <Spinner label="loading release" />;
   if (release.isError || !release.data) {
-    // The repo shell is rendered by the parent — a 404 here is a missing
-    // release inside an existing repo, so the chrome stays (github.com-style).
+    // The parent renders the repo shell; a 404 here is a missing release
+    // inside an existing repo, so keep the chrome.
     if (isNotFoundError(release.error)) {
       return (
         <Blankslate icon={<TagIcon size={26} />} title="Release not found">

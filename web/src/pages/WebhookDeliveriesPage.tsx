@@ -13,11 +13,7 @@ import { OrgHeader, RepoHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, Blankslate, Button, CodeBlock, ErrorBanner } from "../components/ui.js";
 import { ChevronDownIcon, ChevronRightIcon } from "../components/octicons.js";
 
-/**
- * Webhook delivery drill-down for a repository or organization hook —
- * the route decides the scope: /ui/{o}/{r}/hooks/{id}/deliveries
- * vs /ui/orgs/{org}/hooks/{id}/deliveries.
- */
+// Webhook delivery drill-down; the route (repo vs orgs) decides the scope.
 export function WebhookDeliveriesPage() {
   const { owner, repo, org, hookId = "" } = useParams<{
     owner?: string;
@@ -188,7 +184,7 @@ function DeliveryRow({
   );
 }
 
-/** Pretty-print a payload: JSON gets indented; strings that parse as JSON too. */
+// Indent JSON payloads, including strings that parse as JSON.
 function prettyPayload(payload: unknown): string {
   if (payload == null) return "(empty)";
   if (typeof payload === "string") {

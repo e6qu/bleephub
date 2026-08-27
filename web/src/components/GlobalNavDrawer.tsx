@@ -23,15 +23,11 @@ import {
   LockIcon,
 } from "./octicons.js";
 
-// ─── global-nav drawer (hamburger) ──────────────────────────────────────────
-// Code-split out of the always-loaded AppHeader: it only mounts when the
-// hamburger is clicked, so its two nav tables + drawer chrome load on demand
-// rather than sitting in the entry bundle.
+// Code-split from the always-loaded AppHeader; mounts only when opened.
 
 type DrawerItem = { label: string; to: string; icon: ReactNode; end?: boolean };
 
-// Issues / Pull requests are viewer-scoped when signed in, matching
-// github.com's global nav ("your" issues and PRs, via search qualifiers).
+// Issues / Pull requests are viewer-scoped when signed in, like github.com.
 function githubNav(viewerLogin?: string): DrawerItem[] {
   const issuesQ = viewerLogin ? `is:issue author:${viewerLogin}` : "is:issue";
   const pullsQ = viewerLogin ? `is:pr author:${viewerLogin}` : "is:pr";
@@ -54,8 +50,6 @@ function githubNav(viewerLogin?: string): DrawerItem[] {
   ];
 }
 
-// Bleephub service administration surfaces that map to public GitHub or GitHub
-// Enterprise Server routes stay grouped away from the repository/product nav.
 const OPS_NAV: DrawerItem[] = [
   { label: "System status", to: "/ui/operations", icon: <GraphIcon size={16} />, end: true },
   { label: "Workflow runs", to: "/ui/workflows", icon: <RepoIcon size={16} /> },
@@ -129,9 +123,7 @@ export function GlobalNavDrawer({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    // Move focus into the drawer on open and restore it to the trigger on
-    // close, so a keyboard user is not left focused on the obscured page
-    // behind the backdrop.
+    // Move focus into the drawer on open, restore to the trigger on close.
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const first = navRef.current?.querySelector<HTMLElement>(
       'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',

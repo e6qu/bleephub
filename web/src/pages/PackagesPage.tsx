@@ -233,8 +233,7 @@ function PackagesList({
   );
 }
 
-// Deleted packages (github.com's "?state=deleted") with a per-package Restore.
-// Only user/org scopes have a restore endpoint (there is no repo-scoped one).
+// Only user/org scopes have a package restore endpoint; repo scope has none.
 function packageRestorePath(scope: PackageScope, pkgType: string, name: string): string | null {
   const seg = `packages/${encodeURIComponent(pkgType)}/${encodeURIComponent(name)}/restore`;
   switch (scope.kind) {
@@ -302,11 +301,8 @@ function DeletedPackages({ scope, packageType }: { scope: PackageScope; packageT
   );
 }
 
-/**
- * GitHub-style per-ecosystem install command. Covers every package type the
- * server's store accepts (npm/maven/rubygems/nuget/docker/container); the
- * container/docker pull path uses this host as the registry.
- */
+// Per-ecosystem install command; the container/docker pull path uses this host
+// as the registry.
 function installCommand(pkg: GithubPackage, latestVersion: string | undefined): string {
   const host = window.location.host;
   const ownerLogin = pkg.owner?.login ?? "OWNER";
@@ -386,8 +382,7 @@ function PackageDetailDialog({
         header: "Description",
         cell: (info) => info.getValue() || "—",
       }),
-      // The package-version payload carries no download counters (GitHub's
-      // REST schema has none either), so timestamps are the row's metadata.
+      // No download counters exist in the REST schema, so timestamp is the metadata.
       verCol.accessor("created_at", {
         header: "Published",
         cell: (info) => <RelativeTime iso={info.getValue<string>()} />,
@@ -406,8 +401,7 @@ function PackageDetailDialog({
           return (
             <div className="flex flex-wrap items-center gap-2">
               {deleted ? (
-                // GitHub has no repository-scoped package-version restore endpoint —
-                // restore is only available for user- and organization-scoped packages.
+                // Version restore exists only for user/org scopes, not repo scope.
                 scope.kind !== "repo" && (
                   <Button
                     size="sm"

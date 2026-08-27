@@ -9,7 +9,7 @@ import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { Box, PageTitle, SectionLabel, ButtonLink } from "../components/ui.js";
 import { LockIcon, GraphIcon, PlayIcon, EyeIcon } from "../components/octicons.js";
 
-// GitHub checks these locations, in order, for a repository security policy.
+// GitHub's search order for a repository security policy.
 const SECURITY_POLICY_PATHS = ["SECURITY.md", ".github/SECURITY.md", "docs/SECURITY.md"];
 
 async function findSecurityPolicy(owner: string, repo: string): Promise<GithubContentFile | null> {
@@ -24,11 +24,6 @@ async function findSecurityPolicy(owner: string, repo: string): Promise<GithubCo
   return null;
 }
 
-/**
- * Repository Security overview — the landing page github.com shows on the
- * Security tab: the security policy (SECURITY.md) status and entry points into
- * each security feature, instead of jumping straight into secret scanning.
- */
 export function RepoSecurityOverviewPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
   const counts = useOpenCounts(owner, repo);

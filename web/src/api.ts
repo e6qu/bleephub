@@ -170,19 +170,10 @@ import type {
 } from "./types.js";
 import { encodeContentsBase64 } from "./utils/contents.js";
 
-// One AbortController behind every request this module makes.
-//
-// The client had no cancellation of any kind: TanStack Query passes an
-// AbortSignal into every queryFn and the API layer discarded it, so
-// queryClient.cancelQueries() — which sign-out calls — could not actually stop
-// anything. In-flight polls therefore landed after the token was cleared, got
-// 401, and the browser logged a console error the end-to-end suite treats as a
-// failure. Aborting is the only fix available: a 401 console entry is emitted
-// by the browser for the response itself and cannot be suppressed from script.
-//
-// This is deliberately coarse — one controller for the whole module rather than
-// per-query plumbing. Per-request signals are the better shape and are tracked
-// separately; this gives sign-out something real to cancel with.
+// One module-wide AbortController so sign-out (queryClient.cancelQueries) can
+// actually abort in-flight polls; otherwise they land after the token clears,
+// 401, and log a console error the e2e suite treats as a failure. Deliberately
+// coarse — one controller for the whole module, not per-query plumbing.
 let pendingRequests = new AbortController();
 
 /** Aborts every request this module currently has in flight. */
@@ -192,10 +183,9 @@ export function abortPendingRequests(): void {
 }
 
 /**
- * apiFetch is the single exit point to the network for this module. Every
- * request inherits the module-wide abort signal; a caller-supplied signal is
- * combined with it rather than replacing it, so passing a per-request deadline
- * never costs the request its sign-out cancellation.
+ * The single network exit point. A caller signal is combined with the
+ * module-wide abort signal, never replacing it, so a per-request deadline never
+ * costs the request its sign-out cancellation.
  */
 type ApiFetchInit = Omit<RequestInit, "signal" | "body"> & {
   signal?: AbortSignal | null | undefined;
@@ -210,21 +200,14 @@ function apiFetch(input: RequestInfo | URL, init?: ApiFetchInit): Promise<Respon
 }
 
 /**
- * Default deadline for a single HTTP request the query layer makes. It bounds a
- * hung connection so a poll or a page navigation cannot wait forever on a
- * socket the server will never answer. It is applied by the JSON read helpers
- * only; long-poll and download paths (job logs, blob exports) call apiFetch
- * directly and are deliberately left unbounded.
+ * Default per-request deadline, bounding a hung socket. Applied by the JSON read
+ * helpers only; long-poll and download paths (job logs, blob exports) call
+ * apiFetch directly and stay unbounded.
  */
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
-/**
- * Builds the signal a read helper hands to apiFetch: the caller's per-request
- * signal — the one TanStack Query passes into a queryFn and aborts on unmount,
- * key change, or a superseding refetch — combined with a default timeout.
- * apiFetch folds the module-wide sign-out signal in on top, so any of the three
- * aborts the in-flight request.
- */
+/** Combines the caller's queryFn signal with the default timeout; apiFetch then
+ * folds the module-wide sign-out signal in on top. */
 function readSignal(signal?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS);
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -242,10 +225,7 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   transientToken = null;
-  // Purge the legacy localStorage entry written by versions that predate the
-  // HttpOnly session-cookie exchange. This is the name of a browser storage
-  // slot we only ever delete — not a credential value — and it is never read
-  // back into JavaScript.
+  // Purge the legacy localStorage entry from before the cookie-session exchange.
   localStorage.removeItem("bleephub_token");
 }
 
@@ -257,11 +237,9 @@ export function isLoggedIn(): boolean {
 export const SESSION_PROBE_TIMEOUT_MS = 5000;
 
 /**
- * Reports whether the browser holds a valid cookie session.
- *
- * `/auth/session` answers 200 with `{authenticated: false}` for an anonymous
- * visitor, so any rejection here is a transport or server fault and must stay
- * distinguishable from "signed out" — it is thrown, never folded into `false`.
+ * Reports whether the browser holds a valid cookie session. `/auth/session`
+ * answers 200 `{authenticated: false}` for anonymous, so any rejection here is a
+ * transport/server fault and is thrown, never folded into `false`.
  */
 export async function fetchBrowserSession(
   timeoutMs: number = SESSION_PROBE_TIMEOUT_MS,
@@ -298,16 +276,13 @@ export async function createTokenBrowserSession(token: string): Promise<void> {
 
 export const UNAUTHORIZED_EVENT = "bleephub:unauthorized";
 
-// A 401 means the browser credential is no longer valid. Tell the application
-// session state rather than navigating from a background request: the router
-// can preserve the exact return location and concurrent polls collapse into
-// the same idempotent signed-out transition.
+// A 401 dispatches the signed-out event rather than navigating from a
+// background request, so the router keeps the return location and concurrent
+// polls collapse into one idempotent transition.
 //
-// A 403 whose headers say the budget is spent (Retry-After or
-// X-RateLimit-Remaining: 0) is a throttle, not an authorization answer. Throw
-// it here — ahead of the call sites' generic throw — as an ApiError carrying
-// retryAfterSeconds, so callers can tell it apart (isRateLimited) and back
-// off instead of hot-looping against an exhausted window.
+// A 403 with a spent budget (Retry-After or X-RateLimit-Remaining: 0) is a
+// throttle, thrown here as an ApiError with retryAfterSeconds so callers can
+// tell it apart (isRateLimited) and back off instead of hot-looping.
 function handleUnauthorized(res: Response): void {
   if (res.status === 401) {
     clearToken();
@@ -349,20 +324,14 @@ export function isNotFound(err: unknown): boolean {
   return err instanceof ApiError && err.status === 404;
 }
 
-/**
- * True when the server refused on authorization grounds. This is an answer,
- * not a fault: retrying or reporting it as a failure is wrong.
- */
+/** True when the server refused on authorization grounds — an answer, not a
+ * fault: do not retry or report it as a failure. */
 export function isForbidden(err: unknown): boolean {
   return err instanceof ApiError && err.status === 403;
 }
 
-/**
- * True when the server refused because the rate-limit budget is exhausted
- * (403 with Retry-After / X-RateLimit-Remaining: 0). Unlike a plain
- * forbidden answer this is transient, but retrying before the window resets
- * only deepens the exhaustion — pollers must stop, not spin.
- */
+/** True when the 403 is a rate-limit exhaustion, not a plain refusal. Transient,
+ * but retrying before the window resets deepens it — pollers must stop, not spin. */
 export function isRateLimited(err: unknown): boolean {
   return err instanceof ApiError && err.status === 403 && err.retryAfterSeconds !== undefined;
 }
@@ -451,18 +420,10 @@ function mapWorkflowRun(repoFullName: string, run: GithubWorkflowRun, jobs: Gith
 }
 
 /**
- * Most recent workflow runs across every repository the viewer can see.
- *
- * This cannot become a single request. There is no cross-repository runs
- * route, so the repository list plus one runs page per repository is
- * irreducible over the public API; and `GET .../actions/runs` carries no
- * per-run job count (it mirrors GitHub's payload, which has none), so a job
- * count costs one request per run.
- *
- * What is avoidable is fetching jobs for runs nobody displays: this used to
- * ask for the jobs of every run on every repository's first page. Runs are
- * merged and trimmed to `limit` first, so the job requests are bounded by
- * what the caller actually renders.
+ * Most recent workflow runs across every repo the viewer can see. There is no
+ * cross-repo runs route, so the repo list plus one runs page per repo is
+ * irreducible, and per-run job counts cost one request per run. Runs are merged
+ * and trimmed to `limit` before fetching jobs, so job requests match what renders.
  */
 export async function fetchWorkflows(limit: number, signal?: AbortSignal): Promise<BleephubWorkflow[]> {
   const repos = await fetchAllUserRepos(signal);
@@ -537,14 +498,8 @@ interface WireInternalStatus {
 }
 
 /**
- * Reads the server's own counters.
- *
- * This used to be computed in the browser by walking every repository, every
- * page of its workflow runs, and every run's jobs — several hundred requests
- * per poll. The server already counts all of it.
- *
- * `jobs_by_status` and `connected_runners` live on /internal/status; the rest
- * on /internal/metrics. Two requests, not several hundred.
+ * Reads the server's own counters. `jobs_by_status` and `connected_runners`
+ * live on /internal/status; the rest on /internal/metrics.
  */
 export async function fetchMetrics(signal?: AbortSignal): Promise<BleephubMetrics> {
   const [metrics, status] = await Promise.all([
@@ -596,10 +551,8 @@ export async function fetchInstallations(signal?: AbortSignal): Promise<Bleephub
   );
   return raw.installations.map(normalizeInstallation);
 }
-// The browser settings and GitHub REST surfaces return snake_case wire shapes.
-// The user interface types are camelCase, so normalize at this boundary.
-// Fields are mapped 1:1 from the server contract, with no defaults, so a
-// contract break shows as undefined rather than a plausible-looking blank.
+// Normalize snake_case wire shapes to camelCase UI types. Mapped 1:1 with no
+// defaults, so a contract break surfaces as undefined, not a plausible blank.
 function normalizeGitHubApp(raw: WireGitHubApp): BleephubApp {
   return {
     id: raw.id,
@@ -682,9 +635,8 @@ export async function createApp(payload: {
     },
     body: form,
   });
-	// Follow the real App Manifest redirect. Browser Fetch deliberately hides
-	// manual redirect status and Location, but exposes the final same-origin
-	// response URL; GitHub returns the one-time conversion code there.
+	// Fetch hides the redirect Location but exposes the final response URL, where
+	// the App Manifest flow returns the one-time conversion code.
   if (!createRes.ok) {
     const text = await createRes.text();
     throw new Error(`createApp manifest ${createRes.status}: ${text || createRes.statusText}`);
@@ -953,19 +905,14 @@ export function parseLinkNext(link: string | null): string | null {
   return null;
 }
 
-// The server paginates list endpoints (per_page max 100) and advertises the
-// follow-up page via the Link header — honor it instead of silently showing
-// only the first 50 items.
+// Honor the Link header's follow-up page instead of showing only the first page.
 async function ghFetchPage<T>(url: string, signal?: AbortSignal): Promise<Page<T>> {
   const res = await apiFetch(url, { headers: authHeaders(), signal: readSignal(signal) });
   if (!res.ok) {
     handleUnauthorized(res);
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
   }
-  // No silent cast: a Link-paginated list endpoint must answer with a JSON
-  // array. A non-array body (an error object, a wrapped envelope) would
-  // otherwise flow to the caller as fake "items" and render as garbage or a
-  // mid-render crash — surface it as a clear error instead.
+  // A non-array body would flow to the caller as fake "items"; surface it.
   const body = (await res.json()) as unknown;
   if (!Array.isArray(body)) {
     throw new Error("malformed response: expected a JSON array");
@@ -1096,9 +1043,8 @@ export const fetchRepoFile = (
 };
 
 /**
- * Create or update a file through the contents API. `content` is raw text; it is
- * base64-encoded here. Pass `sha` (the blob sha from the file response) to update
- * an existing file, omit it to create a new one. `branch` targets a branch.
+ * Create or update a file via the contents API. `content` is raw text,
+ * base64-encoded here. Pass `sha` (the blob sha) to update; omit it to create.
  */
 export const putFile = (
   owner: string,
@@ -1125,9 +1071,8 @@ export const putFile = (
 };
 
 /**
- * Upload a file whose `contentBase64` is ALREADY base64 (from a File's bytes) —
- * used by the drag/drop "Upload files" flow, where re-encoding would corrupt
- * binary content. Pass `sha` to overwrite an existing path.
+ * Upload a file whose `contentBase64` is ALREADY base64 (raw File bytes) — the
+ * drag/drop flow, where re-encoding would corrupt binary content.
  */
 export const uploadFile = (
   owner: string,
@@ -1162,18 +1107,14 @@ export const deleteFile = (
   );
 };
 
-/**
- * Create a git ref (branch or tag) at `sha`. `ref` is the fully-qualified name,
- * e.g. "refs/heads/feature" for a branch or "refs/tags/v1" for a lightweight tag.
- */
+/** Create a git ref at `sha`. `ref` is fully-qualified, e.g. "refs/heads/feature". */
 export const createRef = (owner: string, repo: string, ref: string, sha: string) =>
   ghPostJSON<{ ref: string; object: { sha: string } }>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/refs`,
     { ref, sha },
   );
 
-// ref is the ref path without the leading "refs/", e.g. "heads/feature" or
-// "tags/v1.0". The server rejects deleting a default/protected ref.
+// ref is the path without the leading "refs/", e.g. "heads/feature".
 export const deleteRef = (owner: string, repo: string, ref: string) =>
   ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/refs/${ref.split("/").map(encodeURIComponent).join("/")}`);
 
@@ -1183,9 +1124,9 @@ export const fetchRepoReadme = (owner: string, repo: string, ref?: string): Prom
 };
 
 // ─── Repository wiki (simulator page store) ─────────────────────────────────
-// Real GitHub wikis are git-only with no REST API; the simulator exposes a
-// page-store under the repo. Slug derivation mirrors the Go store.WikiSlug so a
-// page created client-side lands at the same key the server would compute.
+// GitHub wikis are git-only; the simulator exposes a page-store under /ui-data.
+// Slug derivation mirrors Go store.WikiSlug so a client-created page lands at
+// the same key the server would compute.
 
 const wikiPath = (owner: string, repo: string): string =>
   `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/wiki/pages`;
@@ -1556,20 +1497,14 @@ export const fetchRepoIssuesPage = (
 export const fetchIssueDetail = (owner: string, repo: string, number: number, signal?: AbortSignal) =>
   ghFetch<GithubIssue>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`, signal);
 
-/**
- * Post a comment on an issue or pull request. GitHub models a PR's conversation
- * on the shared issue-comments endpoint, so this serves both surfaces.
- */
+/** Comment on an issue or PR (both share the issue-comments endpoint). */
 export const createIssueComment = (owner: string, repo: string, number: number, body: string) =>
   ghPostJSON<GithubComment>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments`,
     { body },
   );
 
-/**
- * Patch an issue's editable fields. `state` closes/reopens it; `title`/`body`
- * edit it. GitHub uses one PATCH endpoint for all three.
- */
+/** Patch an issue's editable fields. `state` closes/reopens; `title`/`body` edit. */
 export const updateIssue = (
   owner: string,
   repo: string,
@@ -1817,8 +1752,7 @@ export async function createIssue(
 }
 
 
-// Bring the PR's head branch up to date with its base (the "Update branch"
-// button on a behind PR).
+// "Update branch": bring the PR head up to date with its base.
 export const updatePRBranch = (owner: string, repo: string, number: number) =>
   ghSend("PUT", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/update-branch`, {});
 
@@ -1835,9 +1769,7 @@ export const fetchWebhooks = (owner: string, repo: string) =>
 const repoHooksPath = (owner: string, repo: string): string =>
   `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`;
 
-/** Create a repository webhook — POST repos/{owner}/{repo}/hooks. */
-
-/** Patch a repository webhook (toggle active, change events/url) — PATCH repos/{owner}/{repo}/hooks/{id}. */
+/** Patch a repository webhook (toggle active, change events/url). */
 export const updateRepoHook = (
   owner: string,
   repo: string,
@@ -1845,18 +1777,16 @@ export const updateRepoHook = (
   patch: { active?: boolean; events?: string[]; config?: { url?: string; content_type?: string } },
 ) => ghPatchJSON<GithubWebhook>(`${repoHooksPath(owner, repo)}/${id}`, patch);
 
-/** Delete a repository webhook — DELETE repos/{owner}/{repo}/hooks/{id}. */
+/** Delete a repository webhook. */
 export const deleteRepoHook = (owner: string, repo: string, id: number) =>
   ghSend("DELETE", `${repoHooksPath(owner, repo)}/${id}`);
 
-/** Send a ping event to a repository webhook — POST repos/{owner}/{repo}/hooks/{id}/pings. */
+/** Send a ping event to a repository webhook. */
 export const pingRepoHook = (owner: string, repo: string, id: number) =>
   ghSend("POST", `${repoHooksPath(owner, repo)}/${id}/pings`);
 
-// Secrets + environments come back in GitHub's list envelope
-// ({secrets:[…], total_count}) — unwrap to the array the user interface renders.
-// No `?? []`: if the server ever stops sending the array, the missing
-// field should surface as an error, not a silent "none configured".
+// Unwrap the {secrets:[…]} envelope. No `?? []`: a missing array must surface
+// as an error, not a silent "none configured".
 export const fetchSecrets = (owner: string, repo: string) =>
   ghFetch<{ secrets: GithubSecret[] }>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/secrets`
@@ -1890,8 +1820,7 @@ export interface ReleasePayload {
   body?: string | undefined;
   draft?: boolean | undefined;
   prerelease?: boolean | undefined;
-  // "true" keeps the release eligible to be the repo's latest (GitHub's default);
-  // "false" excludes it permanently. "legacy" defers to date-based selection.
+  // "true" keeps it eligible as latest; "false" excludes it; "legacy" defers to date.
   make_latest?: "true" | "false" | "legacy" | undefined;
 }
 
@@ -1964,9 +1893,8 @@ export async function deleteReleaseAsset(owner: string, repo: string, assetId: n
 // ─── GitHub Actions Representational State Transfer ─────────────────────
 
 /**
- * One page of a GitHub envelope list ({total_count, <key>: [...]}) plus
- * the Link rel="next" URL. total_count is the full filtered count, not
- * the page size — list pages use it for "N workflow runs" headers.
+ * One page of a GitHub envelope list ({total_count, <key>: [...]}) plus the Link
+ * rel="next" URL. total_count is the full filtered count, not the page size.
  */
 export interface EnvelopePage<T> {
   items: T[];
@@ -1989,8 +1917,7 @@ async function ghFetchEnvelope<T>(
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new Error("malformed response: expected a JSON object");
   }
-  // No `?? []`: a missing array member is a contract break that must
-  // surface as an error, not render as an empty list.
+  // No `?? []`: a missing array is a contract break that must surface.
   const items = (body as Record<string, unknown>)[key];
   if (!Array.isArray(items)) {
     throw new Error(`malformed response: missing "${key}" array`);
@@ -2104,8 +2031,7 @@ export const fetchJobSummary = (owner: string, repo: string, jobId: number) =>
 export const cancelRun = (owner: string, repo: string, runId: number) =>
   ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/cancel`);
 
-// Force-cancel bypasses conditions/`always()` cleanup steps that keep a normal
-// cancel from finishing; approve releases a fork-PR / deployment-gated run.
+// Force-cancel bypasses `always()` cleanup steps that stall a normal cancel.
 export const forceCancelRun = (owner: string, repo: string, runId: number) =>
   ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/force-cancel`);
 
@@ -2186,11 +2112,7 @@ export const fetchCheckRuns = (owner: string, repo: string, sha: string) =>
 
 // ─── Secrets & variables (repo / environment / org scopes) ──────────────
 
-/**
- * The three scopes GitHub stores Actions secrets + variables under. Each
- * maps to a URL prefix that `/secrets`, `/secrets/public-key`,
- * `/secrets/{name}`, `/variables` and `/variables/{name}` append to.
- */
+/** The three scopes for Actions secrets + variables; each maps to a URL prefix. */
 export type SecretsScope =
   | { kind: "repo"; owner: string; repo: string }
   | { kind: "env"; owner: string; repo: string; env: string }
@@ -2382,11 +2304,8 @@ export async function setRepoFlag(owner: string, repo: string, flag: string, ena
   await ghPatchJSON<void>(base, { [flag]: enabled });
 }
 
-// The three repo security toggles each have a dedicated *status* endpoint. The
-// repo object does not carry a `security_and_analysis` block, so the settings
-// page must read each flag from its own endpoint (mirroring setRepoFlag's
-// dedicated writes) — reading it off the repo detail left every toggle stuck
-// unchecked regardless of the real state.
+// The repo object carries no `security_and_analysis` block, so each security
+// toggle must be read from its own status endpoint (mirroring setRepoFlag).
 
 /** GET automated-security-fixes → { enabled, paused }. */
 export const fetchRepoAutomatedSecurityFixes = (owner: string, repo: string): Promise<boolean> =>
@@ -2412,11 +2331,7 @@ export const fetchRepoVulnerabilityAlerts = async (owner: string, repo: string):
   return false;
 };
 
-/**
- * Reads the repo's current interaction limit. The endpoint returns `{}` (no
- * active limit) or an object whose `limit` field matches the values accepted by
- * {@link setRepoInteractionLimit}.
- */
+/** Reads the repo's interaction limit; `{}` means no active limit. */
 export const fetchRepoInteractionLimit = (owner: string, repo: string) =>
   ghFetch<{ limit?: string }>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/interaction-limits`);
 
@@ -2473,10 +2388,8 @@ export const fetchAuditLog = (filters: {
 export const fetchAuthenticatedUserOrgs = (signal?: AbortSignal) =>
   ghFetch<BleephubOrg[]>("/api/v3/user/orgs?per_page=100", signal);
 
-// The audit log is an operator surface: a site admin viewing it typically holds
-// no personal org membership, so listing only the viewer's memberships (the old
-// behaviour) wrongly reported "you don't belong to an organization". List every
-// organization on the instance instead, which is what an operator can audit.
+// Operator surface: a site admin holds no personal org membership, so list
+// every org on the instance rather than only the viewer's memberships.
 export const fetchAuditLogOrgs = async (signal?: AbortSignal): Promise<BleephubOrg[]> => {
   const orgs = await ghFetch<BleephubOrg[]>("/api/v3/organizations?per_page=100", signal);
   return [...orgs].sort((a, b) => a.login.localeCompare(b.login));
@@ -3000,8 +2913,7 @@ export const fetchOrgMigrationLockStatus = (org: string, id: number, repoName: s
     `/api/v3/orgs/${encodeURIComponent(org)}/migrations/${id}/repos/${encodeURIComponent(repoName)}/lock`,
   );
 
-/** Download a migration archive by fetching the authenticated binary and
- *  triggering a browser save-as for the given filename. */
+/** Fetch a migration archive and trigger a browser save-as. */
 export async function downloadMigrationArchive(
   scope: MigrationScope,
   id: number,
@@ -3152,8 +3064,7 @@ export function packageListPath(scope: PackageScope, pkgType?: string): string {
 }
 
 export const fetchPackages = (scope: PackageScope, pkgType?: string) => {
-  // per_page=100 so package types beyond the server's 30-item first page (the
-  // Packages tab filters by type client-side) aren't silently dropped.
+  // per_page=100 so types past the server's 30-item first page aren't dropped.
   const base = packageListPath(scope, pkgType);
   return ghFetch<GithubPackage[]>(`${base}${base.includes("?") ? "&" : "?"}per_page=100`);
 };
@@ -3447,8 +3358,7 @@ export async function deleteDiscussion(discussionId: string): Promise<void> {
   );
 }
 
-// Edit a discussion's title, body, and/or category (github.com's "Edit" on the
-// discussion itself). Only the provided fields are changed.
+// Edit a discussion's title, body, and/or category. Only provided fields change.
 export async function updateDiscussion(
   discussionId: string,
   fields: { title?: string; body?: string; categoryId?: string },
@@ -4239,9 +4149,8 @@ export const requestPagesBuild = (
   ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages/builds`, {});
 
 /**
- * Pages custom-domain health check. Unlike ghFetch this surfaces the
- * response body's message — the endpoint answers 400 with an explanation
- * ("There isn't a custom domain on this Pages site") the panel must show.
+ * Pages custom-domain health check. Surfaces the response body's message — the
+ * endpoint answers 400 with an explanation the panel must show.
  */
 export async function fetchPagesHealth(owner: string, repo: string, signal?: AbortSignal): Promise<GithubPagesHealth> {
   const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages/health`, {
@@ -4285,10 +4194,9 @@ export const updateAuthenticatedUser = (payload: {
   twitter_username?: string;
 }): Promise<GithubUserProfile> => ghPatchJSON<GithubUserProfile>("/api/v3/user", payload);
 
-// Account security (password, TOTP, sessions) and notification preferences are
-// web-only on github.com, so the simulator exposes them under /ui-data. Their
-// fetch wrappers live in the lazily loaded settings page rather than here, so
-// they do not weigh on the entry chunk.
+// Account security and notification preferences are web-only; the simulator
+// serves them under /ui-data, with wrappers in the lazy settings page (off the
+// entry chunk).
 
 export const fetchPRReviews = (owner: string, repo: string, number: number) =>
   ghFetch<GithubPRReview[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`);
@@ -4663,8 +4571,7 @@ export const createOrgProjectV2Draft = (
 ): Promise<GithubProjectV2Item> =>
   ghPostJSON(`/api/v3/orgs/${encodeURIComponent(org)}/projectsV2/${number}/drafts`, payload);
 
-// Set an item's field value — e.g. move it to another single-select option
-// (value is the option id string for single-select fields).
+// Set an item's field value (single-select value is the option id string).
 export const setOrgProjectV2ItemField = (
   org: string,
   number: number,
@@ -4919,11 +4826,9 @@ export const fetchUserReposByLoginPage = (
 export const fetchUserOrgsByLogin = (login: string) =>
   ghFetch<GithubOrgSummary[]>(`/api/v3/users/${encodeURIComponent(login)}/orgs`);
 
-/** Repositories a named user has starred — the profile Stars tab (GET /users/{login}/starred). */
 /**
- * A user's pinned repositories (profile Overview grid). GitHub exposes pins only
- * over GraphQL, so the simulator serves them from /ui-data. `setPinnedRepos`
- * replaces the ordered list (max 6) and only works on your own account.
+ * A user's pinned repositories (profile Overview grid), served from /ui-data.
+ * `setPinnedRepos` replaces the ordered list (max 6) on your own account only.
  */
 export const fetchPinnedRepos = (login: string) =>
   ghFetch<BleephubRepo[]>(`/ui-data/users/${encodeURIComponent(login)}/pinned`);
@@ -4935,19 +4840,11 @@ export const setPinnedRepos = (login: string, repos: string[]) =>
 export const fetchUserProjectsV2 = (login: string) =>
   ghFetch<GithubProjectV2[]>(`/api/v3/users/${encodeURIComponent(login)}/projectsV2`);
 
-/**
- * A named user's public activity feed (GET /users/{login}/events). The
- * simulator derives Create/Delete/Push/Issues/IssueComment/PullRequest events
- * on the fly; the profile Overview aggregates these into the contribution graph
- * and a recent-activity list.
- */
+/** A named user's public activity feed; drives the profile contribution graph. */
 export const fetchUserEvents = (login: string) =>
   ghFetch<GithubUserEvent[]>(`/api/v3/users/${encodeURIComponent(login)}/events`);
 
-/**
- * The viewer's dashboard "following" news feed — activity from people and repos
- * they follow/watch (GET /users/{login}/received_events).
- */
+/** The viewer's dashboard "following" news feed. */
 export const fetchReceivedEvents = (login: string) =>
   ghFetch<GithubUserEvent[]>(`/api/v3/users/${encodeURIComponent(login)}/received_events`);
 
@@ -5046,11 +4943,7 @@ export const unfollowUser = (login: string) =>
 export const fetchOrgTeams = (org: string) =>
   ghFetch<GithubOrgTeam[]>(`/api/v3/orgs/${encodeURIComponent(org)}/teams`);
 
-/**
- * The authenticated user's cross-repo issue feed (GET /issues) — issues
- * they created, are assigned to, or are involved in, most-recently
- * updated first. Powers the dashboard's activity feed.
- */
+/** The authenticated user's cross-repo issue feed; powers the dashboard. */
 export const fetchDashboardIssues = (signal?: AbortSignal) =>
   ghFetch<GithubFeedIssue[]>(
     "/api/v3/issues?filter=all&state=all&sort=updated&per_page=15",
@@ -5135,11 +5028,7 @@ export const createMarketplacePlanSettings = (
 ) => ghPostJSON<GithubMarketplacePlan>(`/settings/apps/${encodeURIComponent(publisher)}/marketplace/plans`, payload);
 // ─── WP-C: Issues & Pull Requests GitHub-faithful layout ────────────────
 
-/**
- * First page of a repo's issues by state; follow-up pages by the Link
- * rel="next" URL. Label/author/assignee/milestone + sort are applied
- * client-side over the loaded set so picking a facet narrows instantly.
- */
+/** First page of a repo's issues by state; follow-up pages via the Link header. */
 export const fetchRepoIssuesFilteredPage = (
   owner: string,
   repo: string,
@@ -5157,8 +5046,7 @@ export const fetchRepoIssuesFilteredPage = (
 ) => {
   if (pageUrl) return ghFetchPage<GithubIssue>(pageUrl, signal);
   const params = new URLSearchParams({ state: opts.state ?? "open", per_page: "50" });
-  // The issues list endpoint honors these server-side, so filtering/sorting is
-  // correct across every page, not just the loaded set.
+  // Honored server-side, so filtering/sorting is correct across every page.
   if (opts.labels) params.set("labels", opts.labels);
   if (opts.creator) params.set("creator", opts.creator);
   if (opts.assignee) params.set("assignee", opts.assignee);
@@ -5168,11 +5056,7 @@ export const fetchRepoIssuesFilteredPage = (
   return ghFetchPage<GithubIssue>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?${params}`, signal);
 };
 
-/**
- * First page of a repo's pull requests by state; follow-up pages by the Link
- * rel="next" URL. Label/author/sort are applied client-side over the loaded set
- * (the pulls list endpoint honors state/head/base server-side).
- */
+/** First page of a repo's pull requests by state; follow-up pages via the Link header. */
 export const fetchRepoPRsFilteredPage = (
   owner: string,
   repo: string,
@@ -5182,9 +5066,8 @@ export const fetchRepoPRsFilteredPage = (
 ) => {
   if (pageUrl) return ghFetchPage<GithubPR>(pageUrl, signal);
   const params = new URLSearchParams({ state: opts.state ?? "open", per_page: "50" });
-  // The pulls list endpoint honors state/sort/direction/base/head server-side.
-  // (Label/author/assignee are not supported by GitHub's REST /pulls, so those
-  // stay client-side in filterAndSortItems.)
+  // /pulls honors state/sort/direction/base/head server-side; label/author/
+  // assignee are unsupported there, so they stay client-side in filterAndSortItems.
   if (opts.sort) params.set("sort", opts.sort);
   if (opts.direction) params.set("direction", opts.direction);
   if (opts.base) params.set("base", opts.base);

@@ -9,12 +9,7 @@ import {
   XCircleIcon,
 } from "./octicons.js";
 
-/**
- * GitHub Actions status glyph for runs / jobs / steps / check runs:
- * green check (success), red X (failure), spinning yellow arc
- * (in_progress), yellow dot (queued), clock (waiting on approval),
- * gray stop/slash (cancelled / skipped).
- */
+// GitHub Actions status glyph for runs / jobs / steps / check runs.
 export function RunStatusIcon({
   status,
   conclusion,

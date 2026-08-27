@@ -2,10 +2,9 @@ import { Link, useLocation } from "react-router";
 import { loginPath } from "../session.js";
 
 /**
- * GitHub's signed-out stand-in for a write surface: a bordered box with a
- * "Sign in" link that returns the visitor to the current page afterwards.
- * Rendered in place of comment composers and similar controls when the
- * visitor is anonymous.
+ * Signed-out stand-in for a write surface: a "Sign in" link that returns the
+ * visitor to the current page. Rendered in place of composers for anonymous
+ * visitors.
  */
 export function SignInPrompt({ action = "comment" }: { action?: string }) {
   const location = useLocation();

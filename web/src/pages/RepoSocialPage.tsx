@@ -23,7 +23,6 @@ const TITLES: Record<RepoSocialKind, string> = {
   forks: "Forks",
 };
 
-/** Simple list views behind a repo's star/watch/fork counters. */
 export function RepoSocialPage({ kind }: { kind: RepoSocialKind }) {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
   return (
@@ -88,7 +87,6 @@ function StargazersList({ owner, repo }: { owner: string; repo: string }) {
   return <UserRows users={data} />;
 }
 
-/** Link-paginated user list accumulated across "Load more" clicks. */
 function PagedUserList({
   label,
   emptyTitle,

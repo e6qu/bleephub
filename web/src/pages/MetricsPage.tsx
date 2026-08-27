@@ -13,8 +13,7 @@ const STAT_TITLES = [
 export function MetricsPage() {
   const { metrics, status, isLoading, isError, isOperatorOnly } = useMetricsData();
 
-  // A transport fault is a failure; a refusal is not. Only the first gets an
-  // error surface — the second is explained in place of the figures below.
+  // A refusal isn't isError; it's explained in place of the figures below.
   if (isError) return <InlineError title="Failed to load metrics" />;
   if (isLoading && !metrics) return <Spinner label="loading metrics" />;
 

@@ -31,12 +31,8 @@ import { Avatar } from "./Avatar.js";
 import { ErrorBanner } from "./ui.js";
 import { GearIcon } from "./octicons.js";
 
-/**
- * One sidebar section. When `gearFor` names an element id, the gear is a
- * real button that moves focus to that section's picker — github.com's gear
- * opens the section's editor. Sections whose control is already inline
- * render no gear at all (no decorative fake-interactive icons).
- */
+// `gearFor` names an element id; the gear button moves focus to that section's
+// picker. Sections with an inline control render no gear (no fake-interactive icons).
 function SidebarSection({
   title,
   children,
@@ -87,18 +83,13 @@ function SidebarSection({
   );
 }
 
-/** GitHub REST lock reasons, exactly as the API accepts them. */
+// Lock reasons exactly as the REST API accepts them.
 const LOCK_REASONS = ["off-topic", "too heated", "resolved", "spam"] as const;
 type LockReason = (typeof LOCK_REASONS)[number];
 
-// ─── Notifications (thread subscription) ────────────────────────────────
-//
-// bleephub has no per-issue subscription REST endpoint (GitHub's real one is
-// the notification-thread subscription: /notifications/threads/{id}/subscription,
-// which also exists here). A thread for this conversation exists once the
-// viewer has a notification for it — locate it via the repo notifications
-// list and manage its subscription; without a thread there is nothing to
-// subscribe to, and the section says so instead of faking a control.
+// No per-issue subscription endpoint exists; a thread appears once the viewer
+// has a notification for it. Locate it via the repo notifications list and
+// manage its subscription at /notifications/threads/{id}/subscription.
 interface NotificationThreadRow {
   id: string;
   unread?: boolean;
@@ -119,8 +110,7 @@ function NotificationsField({
   const muted = { fontSize: "0.82rem", color: "var(--color-fg-muted)" } as const;
   const subjectSuffix = kind === "pr" ? `/pulls/${number}` : `/issues/${number}`;
 
-  // Notification threads are viewer-scoped: the list read 401s anonymously,
-  // and there is nothing to subscribe to without a session.
+  // The thread list 401s anonymously.
   const signedIn = useSignedIn();
   const threadQ = useQuery({
     queryKey: ["notification-thread", owner, repo, kind, number],
@@ -136,11 +126,9 @@ function NotificationsField({
   });
   const threadId = threadQ.data?.id ?? null;
 
-  // A thread only exists because the viewer receives its notifications, so
-  // "subscribed" is the initial state whenever a thread is found. Probing
-  // GET .../subscription instead would 404 when no explicit record exists,
-  // and the browser logs every 4xx as a console error (the e2e harness fails
-  // on those), so the state is tracked from the viewer's own toggles.
+  // A found thread means the viewer is subscribed, so that's the initial state.
+  // Probing GET .../subscription would 404 with no explicit record, and the e2e
+  // harness fails on the resulting console error — track state from toggles instead.
   const [explicitSub, setExplicitSub] = useState<boolean | null>(null);
   const subscribed = explicitSub ?? true;
   const toggleMut = useMutation({
@@ -156,13 +144,10 @@ function NotificationsField({
   });
 
   if (!signedIn) {
-    // github.com asks anonymous visitors to sign in before subscribing.
     return <span style={muted}>Sign in to receive notifications for this thread.</span>;
   }
   if (threadQ.isLoading) return <span style={muted}>Loading…</span>;
   if (threadQ.isError || threadId === null) {
-    // No notification thread for this conversation yet — nothing to
-    // subscribe to on this server, so say so honestly.
     return <span style={muted}>No notification thread for this conversation yet.</span>;
   }
 
@@ -195,12 +180,6 @@ function NotificationsField({
   );
 }
 
-/**
- * GitHub's issue/PR right sidebar: Assignees, Labels, Projects, Milestone,
- * Development and a participants block. For issues, Labels and Milestone are
- * editable (the same controls the triage panel exposed); for PRs the sidebar
- * additionally renders a Reviewers slot on top. Errors surface, never swallowed.
- */
 export function IssueSidebar({
   owner,
   repo,
@@ -229,10 +208,8 @@ export function IssueSidebar({
   locked?: boolean;
 }) {
   const qc = useQueryClient();
-  // github.com renders this sidebar read-only for viewers without write
-  // access: current values as plain chips/text, no pickers, no gears, and no
-  // Lock section. While the repo payload is still loading we render the same
-  // neutral state so no 403-able control flashes in.
+  // Read-only without write access: plain chips/text, no pickers/gears/Lock.
+  // Hold that neutral state while the repo payload loads so no 403-able control flashes in.
   const { canPush } = useRepoPermissions(owner, repo);
   const [error, setError] = useState<string | null>(null);
   const baseId = useId();
@@ -250,8 +227,7 @@ export function IssueSidebar({
     queryKey: ["milestones", owner, repo, "all"],
     queryFn: () => fetchRepoMilestones(owner, repo, "all"),
   });
-  // Issue types ride org-admin REST + GraphQL reads, both of which refuse
-  // anonymous callers — signed out the Type section simply stays empty.
+  // Issue-type reads refuse anonymous callers, so the Type section stays empty signed out.
   const signedIn = useSignedIn();
   const {
     data: issueTypes = [],
@@ -602,14 +578,8 @@ export function IssueSidebar({
   );
 }
 
-/**
- * The issue/PR sidebar Projects section. Real GitHub lets you add the item to
- * ProjectsV2 boards and shows which it belongs to. ProjectsV2 are org-scoped
- * here, so this activates for org-owned repos: it lists the org's projects,
- * marks the ones containing this item (from their item lists), and adds/removes
- * via the org project-item endpoints. A user-owned repo has no org projects, so
- * it truthfully shows "None yet".
- */
+// ProjectsV2 are org-scoped, so this activates only for org-owned repos; a
+// user-owned repo has no org projects and shows "None yet".
 function ProjectsField({
   owner,
   repo,
@@ -624,9 +594,8 @@ function ProjectsField({
   ownerType?: string | undefined;
   number: number;
   kind: "issue" | "pr";
-  /** id for the "Add to project" select, so the section gear can focus it. */
+  // id for the "Add to project" select, so the section gear can focus it.
   selectId?: string | undefined;
-  /** Read-only (memberships as plain text, no add/remove) when false. */
   canPush: boolean;
 }) {
   const qc = useQueryClient();
@@ -634,11 +603,9 @@ function ProjectsField({
   const contentType = kind === "pr" ? "PullRequest" : "Issue";
   const muted = { fontSize: "0.82rem", color: "var(--color-fg-muted)" } as const;
 
-  // Org project reads 401 anonymously, so the section stays at "None yet"
-  // for signed-out visitors instead of firing refused requests.
+  // Org project reads 401 anonymously; stay at "None yet" signed out.
   const signedIn = useSignedIn();
-  // Fetch the org's projects and, for each, whether this item is in it (and the
-  // membership's item id, needed to remove it).
+  // For each org project, whether this item is in it (and the item id, needed to remove it).
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["issue-projects", owner, repo, kind, number],
     enabled: isOrg && signedIn,

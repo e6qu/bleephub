@@ -10,12 +10,7 @@ import {
 import Markdown from "./Markdown.js";
 import { useComposerDraft } from "../hooks/useComposerDraft.js";
 
-/*
- * GitHub-style comment box: Write/Preview tabs plus a markdown toolbar over a
- * controlled textarea. Drop-in upgrade for a bare <textarea> — same
- * value/placeholder/rows/disabled/id surface, but onChange receives the next
- * string (toolbar edits have no DOM event to forward).
- */
+// onChange receives the next string, not a DOM event (toolbar edits have none to forward).
 
 interface EditResult {
   value: string;
@@ -23,8 +18,7 @@ interface EditResult {
   selEnd: number;
 }
 
-// Wrap the selection in `marker` (bold/italic/inline code), or unwrap when
-// the selection is already wrapped so the shortcut toggles like github.com.
+// Wrap the selection in `marker`, or unwrap when already wrapped (toggle).
 function wrapInline(value: string, start: number, end: number, marker: string): EditResult {
   const len = marker.length;
   if (value.slice(start - len, start) === marker && value.slice(end, end + len) === marker) {
@@ -42,8 +36,7 @@ function wrapInline(value: string, start: number, end: number, marker: string): 
   };
 }
 
-// Prefix every line the selection touches ("### ", "> ", "- ", "- [ ] ",
-// "1. " with incrementing numbers), keeping the whole block selected.
+// Prefix every line the selection touches, keeping the whole block selected.
 function prefixLines(value: string, start: number, end: number, prefix: string, numbered: boolean): EditResult {
   const lineStart = value.lastIndexOf("\n", start - 1) + 1;
   const lineEndIdx = value.indexOf("\n", end);
@@ -129,11 +122,7 @@ export function MarkdownComposer({
   rows?: number;
   disabled?: boolean;
   id?: string;
-  /**
-   * Stable identity for sessionStorage draft durability (github.com restores
-   * half-typed comments after navigating away). null/undefined disables it —
-   * the default, so existing callers and modal editors are unaffected.
-   */
+  // Stable identity for sessionStorage draft durability; null/undefined disables it.
   draftKey?: string | null;
 }) {
   useComposerDraft(draftKey ?? null, value, onChange);
@@ -146,8 +135,7 @@ export function MarkdownComposer({
   const writePanelId = `${baseId}-write`;
   const previewPanelId = `${baseId}-preview`;
 
-  // Toolbar edits land through onChange, so the new selection can only be
-  // applied after React re-renders the textarea with the new value.
+  // Apply the new selection only after React re-renders the textarea with the new value.
   useEffect(() => {
     const sel = pendingSelection.current;
     const ta = textareaRef.current;
@@ -175,7 +163,7 @@ export function MarkdownComposer({
     event.preventDefault();
   };
 
-  // Same roving-tabindex pattern as ui.tsx Tabs, scoped to the two tabs.
+  // Roving-tabindex pattern (see ui.tsx Tabs), scoped to the two tabs.
   const tabs: { key: ComposerTab; label: string; id: string; panelId: string }[] = [
     { key: "write", label: "Write", id: writeTabId, panelId: writePanelId },
     { key: "preview", label: "Preview", id: previewTabId, panelId: previewPanelId },

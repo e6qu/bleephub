@@ -133,15 +133,9 @@ function prState(pr: GithubPR): "open" | "merged" | "closed" | "draft" {
   return "closed";
 }
 
-/**
- * Live merge-box convergence: while a PR is open (draft included) the detail
- * page polls the PR itself plus the check-runs/combined-status keys the merge
- * box reads, so a required check completing elsewhere flips the blocked box
- * without a manual reload — github.com's live-update behaviour. TanStack's
- * default `refetchIntervalInBackground: false` pauses the poll while the tab
- * is hidden, and the interval turns off once the PR reports merged/closed.
- * Sessions are exempt from the core rate budget, so 15s is affordable.
- */
+// While a PR is open, poll the PR + check-runs/combined-status keys so the merge
+// box converges live. The poll pauses while the tab is hidden and stops once the
+// PR is merged/closed. Sessions are exempt from the rate budget, so 15s is fine.
 const MERGE_BOX_POLL_MS = 15_000;
 
 function PRStateIcon({ pr, size }: { pr: GithubPR; size?: number }) {
@@ -170,8 +164,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
   const counts = useSeededOpenCounts(owner, repo);
   const closedCount = usePRClosedCount(owner, repo);
 
-  // Compare deep-link: /pulls?compare=base...head (the compare view and
-  // branch rows link here) opens the create-PR flow prefilled.
+  // Compare deep-link /pulls?compare=base...head opens the create-PR flow prefilled.
   const [searchParams] = useSearchParams();
   const compare = searchParams.get("compare");
   const compareParts =
@@ -197,14 +190,11 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
     },
   });
 
-  // base/head are PR-only server filters (github's REST /pulls supports them,
-  // but issues don't have them, so they live here rather than in the shared
-  // ListControls). sort/direction come from the shared sort facet.
+  // base/head are PR-only server filters, so they live here, not in ListControls.
   const [baseFilter, setBaseFilter] = useState("");
   const [headFilter, setHeadFilter] = useState("");
   const serverSort = sortToServerParams(filters.sort);
-  // The shared sort facet speaks the issues dialect; GitHub's /pulls endpoint
-  // calls the most-commented sort "popularity".
+  // GitHub's /pulls calls the most-commented sort "popularity".
   if (serverSort.sort === "comments") serverSort.sort = "popularity";
   const serverOpts = {
     state,
@@ -413,11 +403,9 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
     suffix === "commits" || suffix === "files" || suffix === "checks" ? suffix : "conversation";
 
   const qc = useQueryClient();
-  // One aggregate request replaces the detail's first-paint fan-out: it seeds
-  // the exact keys the conversation tab, merge box, checks badge and
-  // reviewers panel read, so those hooks are cache hits. On failure nothing
-  // is seeded and every hook fetches standalone as before. (The files list is
-  // NOT aggregated — the Files tab keeps its own fetch.)
+  // One aggregate request seeds the keys the conversation tab, merge box, checks
+  // badge, and reviewers panel read, so those hooks hit cache. On failure nothing
+  // is seeded and each hook fetches standalone. The Files tab is not aggregated.
   const bootstrapQ = useQuery({
     queryKey: ["pull-bootstrap", owner, repo, number],
     queryFn: async ({ signal }) => {
@@ -431,14 +419,12 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
         [["pr-requested-reviewers", owner, repo, number], validReviewRequest(data.requested_reviewers)],
         [["check-runs", owner, repo, sha], checkRunsEnvelopeToPage(data.check_runs)],
         [["combined-status", owner, repo, sha], validCombinedStatus(data.combined_status)],
-        // Sidebar sub-payloads (same keys IssueSidebar and the reviewers
-        // picker read), so the PR sidebar stops fetching them standalone.
+        // Sidebar sub-payloads (IssueSidebar + reviewers-picker keys).
         [["labels", owner, repo], data.labels],
         [["milestones", owner, repo, "all"], data.milestones],
         [["assignable-users", owner, repo], data.assignees_available],
       ]);
-      // ["viewer"] and ["current-user"] both GET /api/v3/user; reuse whichever
-      // response the session already holds instead of refetching it here.
+      // ["viewer"] and ["current-user"] both GET /api/v3/user; reuse one response.
       mirrorQueryData(qc, ["current-user"], ["viewer"]);
       freshenQueryDefaults(qc, [
         ["repo", owner, repo],
@@ -447,9 +433,7 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
       ]);
       return data;
     },
-    // No numeric guard: a garbage number (NaN) 404s the bootstrap, which
-    // settles it into the error fallback and the not-found path, exactly
-    // like the old standalone fetch.
+    // No numeric guard: a NaN number 404s the bootstrap into the not-found path.
     enabled: !!owner && !!repo,
     staleTime: SEED_STALE_TIME,
   });
@@ -459,22 +443,17 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
     queryKey: ["pr", owner, repo, number],
     queryFn: ({ signal }) => fetchPRDetail(owner, repo, number, signal),
     enabled: bootstrapSettled,
-    // Function form: the interval reads the FETCHED state, so it turns itself
-    // off on the refetch that reports merged/closed. Interval refetches ignore
-    // staleTime, so the bootstrap-seeded entry (SEED_STALE_TIME) still polls.
+    // Interval reads the fetched state, so it stops on the merged/closed refetch.
+    // Interval refetches ignore staleTime, so the seeded entry still polls.
     refetchInterval: (query) =>
       query.state.data?.state === "open" ? MERGE_BOX_POLL_MS : false,
   });
 
-  // Checks-tab count: check runs + commit statuses on the head SHA (both
-  // queries are shared with the merge box / checks tab via their keys).
-  // Check-run reads are auth-gated on the server (401 anonymously); commit
-  // statuses are public.
+  // Checks-tab count: check runs + commit statuses on the head SHA (keys shared
+  // with the merge box). Check-run reads are auth-gated (401 anonymously);
+  // commit statuses are public.
   const signedIn = useSignedIn();
   const headSha = pr?.head.sha ?? "";
-  // While the PR is open these observers poll so the merge box (whose own
-  // hooks share these exact keys) converges live; a head-sha change from the
-  // polled PR detail re-keys them naturally.
   const checksPollInterval = pr?.state === "open" ? MERGE_BOX_POLL_MS : false;
   const checksCountQ = useQuery({
     queryKey: ["check-runs", owner, repo, headSha],
@@ -491,23 +470,19 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
   const checksCount =
     (checksCountQ.data?.items.length ?? 0) + (statusCountQ.data?.statuses.length ?? 0);
 
-  // Draft-review pending count for the Files-changed tab badge. This is the
-  // usePendingReview logic inlined so its viewer/reviews queries wait for the
-  // bootstrap (the hook itself would fire them on mount and race the seeding
-  // with duplicate fetches); the Files tab's own usePendingReview then reads
-  // the same keys as cache hits.
+  // Draft-review pending count for the Files-changed tab badge. usePendingReview
+  // inlined so its viewer/reviews queries wait for the bootstrap instead of
+  // firing on mount and racing the seeding with duplicate fetches.
   const pendingViewerQ = useQuery({
     queryKey: ["viewer"],
     queryFn: fetchAuthenticatedUser,
-    // Anonymous visitors have no viewer (the read would 401) and no
-    // pending review either.
+    // Anonymous visitors have no viewer (401) and no pending review.
     enabled: bootstrapSettled && signedIn,
   });
   const pendingLogin =
     typeof pendingViewerQ.data?.login === "string" ? pendingViewerQ.data.login : null;
-  // The reviews read is auth-gated on the server (401 anonymously); the
-  // bootstrap seeds this key for everyone, so signed out we render the
-  // seeded snapshot without ever refetching it.
+  // Reviews are auth-gated (401 anonymously); the bootstrap seeds this key, so
+  // signed out we render the seeded snapshot without refetching.
   const pendingReviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
     queryFn: () => fetchPRReviews(owner, repo, number),
@@ -528,8 +503,7 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
   const pendingComments =
     pendingReview && Array.isArray(pendingCommentsQ.data) ? pendingCommentsQ.data : [];
 
-  // Title/body editing follows github.com's author-or-write rule; while
-  // permissions load the neutral (hidden) state renders.
+  // Title/body editing follows the author-or-write rule.
   const { canPush } = useRepoPermissions(owner, repo);
   const canEdit = canPush || (pendingLogin !== null && pendingLogin === pr?.user?.login);
 
@@ -735,8 +709,7 @@ function ConversationTab({
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
   const s = prState(pr);
 
-  // github.com's viewer-role rules: merge-area actions need write access;
-  // closing/reopening (like ready-for-review) follow author-or-write.
+  // Merge-area actions need write access; close/reopen follows author-or-write.
   const { canPush } = useRepoPermissions(owner, repo);
   const isPRAuthor = viewerLogin !== null && viewerLogin === pr.user?.login;
   const canClose = canPush || isPRAuthor;
@@ -745,9 +718,8 @@ function ConversationTab({
     queryKey: ["pr-timeline", owner, repo, number],
     queryFn: () => fetchIssueTimeline(owner, repo, number),
   });
-  // Reviews are auth-gated on the server (401 anonymously); signed out the
-  // conversation renders from the public timeline plus the bootstrap-seeded
-  // snapshot of this key.
+  // Reviews are auth-gated (401 anonymously); signed out, the conversation
+  // renders from the public timeline plus the seeded snapshot.
   const reviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
     queryFn: () => fetchPRReviews(owner, repo, number),
@@ -757,8 +729,7 @@ function ConversationTab({
     queryKey: ["pr-review-comments", owner, repo, number],
     queryFn: () => fetchPRReviewComments(owner, repo, number),
   });
-  // Review threads ride GraphQL, which refuses anonymous callers; signed
-  // out the conversation renders from the public REST timeline alone.
+  // Review threads ride GraphQL, which refuses anonymous callers.
   const threadsQ = useQuery({
     queryKey: ["pr-review-threads", owner, repo, number],
     queryFn: () => fetchPRReviewThreads(owner, repo, number),
@@ -769,8 +740,6 @@ function ConversationTab({
   const reviews = Array.isArray(reviewsQ.data) ? reviewsQ.data : [];
   const allComments = Array.isArray(commentsQ.data) ? commentsQ.data : [];
 
-  // Everyone who authored something in the conversation: the PR author,
-  // conversation commenters, reviewers, and inline-thread commenters.
   const participants = useMemo(() => {
     const logins = new Set<string>();
     if (pr.user?.login) logins.add(pr.user.login);
@@ -910,8 +879,7 @@ function DevelopmentSection({
   headRef: string;
   baseRef: string;
 }) {
-  // GraphQL refuses anonymous callers — signed out the section renders its
-  // empty state without fetching.
+  // GraphQL refuses anonymous callers.
   const signedIn = useSignedIn();
   const q = useQuery({
     queryKey: ["pr-closing-issues", owner, repo, number],
@@ -1014,8 +982,7 @@ function MergedBranchActions({
     onSuccess: invalidate,
   });
 
-  // Cross-repo heads and the base branch itself are not deletable from here;
-  // branch deletion/restoration needs push, like the branches tab.
+  // Cross-repo heads and the base branch are not deletable; needs push.
   if (!canPush || !branchesQ.data || pr.head.ref === pr.base.ref) return null;
   const exists = branchesQ.data.some((b) => b.name === pr.head.ref);
 
@@ -1059,16 +1026,15 @@ function MergeBox({
 }) {
   const qc = useQueryClient();
   const [method, setMethod] = useState<"merge" | "squash" | "rebase">("merge");
-  // GitHub's two-step flow: the merge (or enable-auto-merge) button opens a
-  // confirmation panel with the editable commit title/message; only
-  // "Confirm …" performs the mutation.
+  // Two-step flow: the merge button opens a confirmation panel; only "Confirm"
+  // performs the mutation.
   const [confirming, setConfirming] = useState<false | "merge" | "auto-merge">(false);
-  // null = "use the GitHub-style default for the chosen method".
+  // null = use the default commit title/message for the chosen method.
   const [commitTitle, setCommitTitle] = useState<string | null>(null);
   const [commitMessage, setCommitMessage] = useState<string | null>(null);
   const effectiveTitle = commitTitle ?? defaultCommitTitle(method, owner, pr);
   const effectiveMessage = commitMessage ?? defaultCommitMessage(method, pr);
-  // Check-run reads are auth-gated on the server (401 anonymously).
+  // Check-run reads are auth-gated (401 anonymously).
   const signedIn = useSignedIn();
   const checksQ = useQuery({
     queryKey: ["check-runs", owner, repo, pr.head.sha],
@@ -1096,8 +1062,7 @@ function MergeBox({
         },
       ),
     onSuccess: () => {
-      // Stay on the PR — the refetched detail flips to the merged state
-      // (GitHub keeps you on the page and shows the merged box).
+      // Stay on the PR — the refetched detail flips to the merged box.
       setConfirming(false);
       qc.invalidateQueries({ queryKey: ["prs", owner, repo] });
       qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
@@ -1105,8 +1070,7 @@ function MergeBox({
       qc.invalidateQueries({ queryKey: ["branches", owner, repo] });
     },
     onError: () => {
-      // A 405 usually means the PR changed behind this tab (merged/closed by
-      // someone else) — refetch so the box converges to the real state.
+      // A 405 usually means the PR changed behind this tab — refetch to converge.
       qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
     },
   });
@@ -1114,8 +1078,7 @@ function MergeBox({
     mutationFn: () => updatePRBranch(owner, repo, number),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] }),
   });
-  // Whether the repo allows auto-merge, read from the repo detail RepoHeader
-  // already fetched (enabled: false makes this a read-only cache observer).
+  // Read-only cache observer of the repo detail RepoHeader already fetched.
   const repoQ = useQuery({
     queryKey: ["repo", owner, repo],
     queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
@@ -1198,8 +1161,8 @@ function MergeBox({
   const statuses = statusQ.data?.statuses ?? [];
   const summary = mergeBoxSummary(checks, statuses);
   const mergeBlocked = pr.mergeable_state === "blocked" || pr.draft;
-  // Auto-merge only arms while merging is not currently possible (GitHub
-  // refuses to arm a clean PR), and only when the repo allows it.
+  // Auto-merge only arms while merging is not currently possible, and only
+  // when the repo allows it.
   const notMergeableNow =
     pr.mergeable_state === "blocked" ||
     pr.mergeable_state === "unstable" ||
@@ -1286,8 +1249,7 @@ function MergeBox({
             </div>
           )}
           {!canPush ? (
-            // github.com's read-only merge box: the checks/conflict status
-            // above stays visible, the action row is replaced by the notice.
+            // Read-only merge box: status stays, the action row becomes a notice.
             <>
               <div style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
                 Only those with write access to this repository can merge pull requests.
@@ -1377,7 +1339,7 @@ function MergeBox({
               value={method}
               onChange={(e) => {
                 setMethod(e.target.value as "merge" | "squash" | "rebase");
-                // A new method gets its own GitHub-style defaults.
+                // New method → its own default commit title/message.
                 setCommitTitle(null);
                 setCommitMessage(null);
               }}
@@ -1455,7 +1417,7 @@ function MergeBox({
 
 /** Rolled-up check/status icon for one commit, hidden when nothing reported. */
 function CommitChecksIcon({ owner, repo, sha }: { owner: string; repo: string; sha: string }) {
-  // Check-run reads are auth-gated on the server (401 anonymously).
+  // Check-run reads are auth-gated (401 anonymously).
   const signedIn = useSignedIn();
   const checksQ = useQuery({
     queryKey: ["check-runs", owner, repo, sha],
@@ -1590,8 +1552,8 @@ function ChecksSection({
   sha: string;
   standalone?: boolean;
 }) {
-  // Check-run reads are auth-gated on the server (401 anonymously); the
-  // checks pane shows statuses alone for signed-out visitors.
+  // Check-run reads are auth-gated (401 anonymously); signed out, the pane
+  // shows commit statuses alone.
   const signedIn = useSignedIn();
   const checksQ = useQuery({
     queryKey: ["check-runs", owner, repo, sha],
@@ -1616,8 +1578,7 @@ function ChecksSection({
   }
   const checks = checksQ.data?.items ?? [];
   const statuses = statusQ.data?.statuses ?? [];
-  // GitHub hides the checks box entirely for commits with neither check
-  // runs nor commit statuses.
+  // Hide the checks box entirely when there are no check runs or statuses.
   if (statusQ.isError && checks.length === 0) {
     return <InlineError title="Failed to load commit statuses" detail={String(statusQ.error)} />;
   }
@@ -1738,11 +1699,10 @@ function RequestedReviewersSection({
   number: number;
 }) {
   const qc = useQueryClient();
-  // Requesting, re-requesting, and removing reviewers needs write access —
-  // github.com shows read-only reviewer chips to everyone else.
+  // Requesting/removing reviewers needs write access; others see read-only chips.
   const { canPush } = useRepoPermissions(owner, repo);
-  // Both reads are auth-gated on the server (401 anonymously); signed out
-  // the section renders the bootstrap-seeded snapshots (or empty).
+  // Both reads are auth-gated (401 anonymously); signed out, the section
+  // renders the seeded snapshots (or empty).
   const signedIn = useSignedIn();
   const q = useQuery({
     queryKey: ["pr-requested-reviewers", owner, repo, number],
@@ -1755,18 +1715,15 @@ function RequestedReviewersSection({
     queryFn: () => fetchPRReviews(owner, repo, number),
     enabled: signedIn,
   });
-  // Reviewers must be repo collaborators; a free-text login just produced a 422
-  // on a typo. Offer the assignable users the same way IssueSidebar offers
-  // assignees.
+  // Reviewers must be repo collaborators (a free-text login 422s on a typo),
+  // so offer the assignable users.
   const { data: assignableUsers = [] } = useQuery({
     queryKey: ["assignable-users", owner, repo],
     queryFn: () => fetchAssignableUsers(owner, repo),
   });
-  // Teams belonging to the repo's owning org, for the team-reviewer picker.
-  // Only orgs have a teams endpoint, so gate on the owner type from the
-  // already-cached repo detail (RepoHeader owns that fetch; enabled: false
-  // makes this a read-only cache observer) instead of issuing a fetch that is
-  // guaranteed to fail on user-owned repos.
+  // Only orgs have a teams endpoint, so gate the team picker on owner type read
+  // from the cached repo detail (read-only observer), not a fetch that would
+  // fail on user-owned repos.
   const repoQ = useQuery({
     queryKey: ["repo", owner, repo],
     queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
@@ -1806,8 +1763,7 @@ function RequestedReviewersSection({
   const requestedTeamSlugs = new Set((q.data?.teams ?? []).map((t) => t.slug));
   const addableTeams = orgTeams.filter((t) => !requestedTeamSlugs.has(t.slug));
 
-  // Latest non-pending verdict per login. Reviews come oldest-first, so the
-  // last write wins.
+  // Latest non-pending verdict per login. Reviews are oldest-first, last wins.
   const verdictByLogin = new Map<string, GithubReviewState>();
   const reviews = Array.isArray(reviewsQ.data) ? reviewsQ.data : [];
   for (const r of reviews) {
@@ -1818,8 +1774,8 @@ function RequestedReviewersSection({
     }
     verdictByLogin.set(r.user.login, r.state);
   }
-  // Reviewers who already submitted a verdict but are not (or no longer)
-  // requested — shown with their state icon and a re-request affordance.
+  // Reviewers who submitted a verdict but are no longer requested — shown with
+  // a re-request affordance.
   const reviewedNotRequested = [...verdictByLogin.entries()].filter(
     ([login]) => !requestedLogins.has(login),
   );
@@ -1832,8 +1788,7 @@ function RequestedReviewersSection({
     color: "var(--color-fg)",
   } as const;
 
-  // Rendered inside the sidebar's "Reviewers" section, which supplies the
-  // heading — so this body carries none of its own.
+  // The sidebar's "Reviewers" section supplies the heading; this body has none.
   return (
     <div>
       {q.isError || !q.data ? (
@@ -2002,11 +1957,7 @@ function ReviewStateBadge({ state }: { state: GithubReviewState }) {
   );
 }
 
-/**
- * One submitted review in the conversation stream: verdict header, optional
- * summary body, and the review's inline comment threads nested inside
- * (GitHub-style), instead of separate stacked sections.
- */
+/** One submitted review: verdict header, summary body, and nested inline threads. */
 function ReviewCard({
   owner,
   repo,
@@ -2037,7 +1988,7 @@ function ReviewCard({
       qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
     },
   });
-  // Dismissing someone's review is a write-access action on GitHub.
+  // Dismissing a review needs write access.
   const dismissable = canPush && (review.state === "APPROVED" || review.state === "CHANGES_REQUESTED");
 
   return (
@@ -2119,8 +2070,7 @@ function ReviewCard({
 }
 
 // ─── Conversation stream ─────────────────────────────────────────────────
-// Timeline events, issue comments, and reviews (with their inline threads
-// nested inside the review card) merged into one chronological stream.
+// Timeline events, issue comments, and reviews merged into one chronological stream.
 
 interface StreamEntry {
   at: string;
@@ -2159,8 +2109,8 @@ function ConversationStream({
 }) {
   if (timelineLoading) return null;
 
-  // Draft (pending) reviews and their comments stay out of the public
-  // conversation — GitHub only shows them to their author, in the Files tab.
+  // Draft (pending) reviews stay out of the public conversation — author-only,
+  // in the Files tab.
   const pendingIds = new Set(reviews.filter((r) => r.state === "PENDING").map((r) => r.id));
   const submittedById = new Map(
     reviews.filter((r) => r.state !== "PENDING").map((r) => [r.id, r]),
@@ -2208,8 +2158,7 @@ function ConversationStream({
       typeof item.id === "number" &&
       submittedById.has(item.id)
     ) {
-      // The full review card replaces the bare timeline row — one rendering
-      // per review, not two.
+      // The full review card replaces the bare timeline row.
       consumedReviewIds.add(item.id);
       entries.push({
         at: item.submitted_at ?? at,
@@ -2247,8 +2196,7 @@ function ConversationStream({
       return;
     }
     if (item.event === "reviewed" && item.body) {
-      // A review the reviews endpoint did not return (e.g. hidden by
-      // pagination) still renders from its timeline payload.
+      // A review the reviews endpoint omitted still renders from its timeline payload.
       entries.push({
         at: item.submitted_at ?? at,
         key: `reviewed-${item.id ?? i}`,
@@ -2274,8 +2222,7 @@ function ConversationStream({
     });
   });
 
-  // Reviews the timeline did not carry (or an empty timeline) still stream in
-  // chronological position.
+  // Reviews the timeline did not carry still stream in chronological position.
   for (const review of submittedById.values()) {
     if (consumedReviewIds.has(review.id)) continue;
     entries.push({
@@ -2285,8 +2232,7 @@ function ConversationStream({
     });
   }
 
-  // Threads whose review is unknown (single inline comments, unfetched
-  // reviews) render standalone at their root comment's timestamp.
+  // Threads with no known review render standalone at their root timestamp.
   for (const g of orphanGroups) {
     entries.push({
       at: g.root.created_at,

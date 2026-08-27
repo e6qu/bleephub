@@ -12,15 +12,14 @@ import { RefSwitcher } from "../components/RefSwitcher.js";
 import { PathBreadcrumbs } from "../components/PathBreadcrumbs.js";
 import { repoCodeRoute } from "../routes.js";
 
-// Defined here (not in api.ts) so the blame wrapper rides this lazily-loaded
-// chunk rather than weighing on the entry bundle.
+// Defined here, not in api.ts, to keep this off the entry bundle.
 const fetchBlame = (owner: string, repo: string, path: string, ref: string) =>
   ghFetch<GithubBlameResult>(
     `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/blame/${path}?ref=${encodeURIComponent(ref)}`,
   );
 
-// Hunk commits are resolved one-per-sha with a small concurrency cap, only to
-// find the parent for the "view blame prior to this change" hop.
+// Resolve hunk commits (one per sha, concurrency-capped) to find the parent for
+// the "view blame prior to this change" hop.
 const MAX_COMMIT_FETCHES = 6;
 let inFlight = 0;
 const waiters: Array<() => void> = [];
@@ -54,10 +53,7 @@ function commitBySha(owner: string, repo: string, sha: string): Promise<GithubCo
   return p;
 }
 
-/**
- * GitHub buckets each hunk's age into a small heat scale (newest = hottest);
- * eight steps mapped onto the accent token via color-mix.
- */
+// Eight age buckets (newest = hottest) mapped onto the accent token via color-mix.
 function heatColor(bucket: number): string {
   const pct = Math.max(8, 85 - bucket * 11);
   return `color-mix(in srgb, var(--color-accent) ${pct}%, transparent)`;
@@ -66,7 +62,6 @@ function heatColor(bucket: number): string {
 function ageBucket(date: string, oldest: number, newest: number): number {
   const t = new Date(date).getTime();
   if (!Number.isFinite(t) || newest <= oldest) return 7;
-  // 0 = newest, 7 = oldest.
   return Math.min(7, Math.max(0, Math.round(((newest - t) / (newest - oldest)) * 7)));
 }
 

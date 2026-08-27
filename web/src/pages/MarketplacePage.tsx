@@ -52,8 +52,6 @@ function MarketplaceHero({ subscriptions }: { subscriptions: number }) {
   );
 }
 
-// The pricing and app-kind facets. Categories come from the Marketplace
-// taxonomy and are listed alongside them.
 type MarketplaceFilter = "all" | "free" | "trial" | "github-apps" | "oauth-apps";
 
 const MARKETPLACE_FILTERS: { key: MarketplaceFilter; label: string }[] = [
@@ -64,7 +62,6 @@ const MARKETPLACE_FILTERS: { key: MarketplaceFilter; label: string }[] = [
   { key: "oauth-apps", label: "OAuth Apps" },
 ];
 
-/** One entry in the GitHub Marketplace taxonomy. */
 export interface MarketplaceCategoryRow {
   slug: string;
   name: string;
@@ -73,7 +70,6 @@ export interface MarketplaceCategoryRow {
   secondary_listing_count: number;
 }
 
-/** A listing's category membership and publication state. */
 export interface MarketplaceListingProfileRow {
   slug: string;
   primary_category_slug: string;
@@ -82,8 +78,7 @@ export interface MarketplaceListingProfileRow {
   has_verified_owner: boolean;
 }
 
-// Defined here rather than in api.ts: api.ts is reachable from the entry
-// chunk, which sits against its 160 KB budget.
+// Defined here, not in api.ts, to keep these off the budget-constrained entry chunk.
 const fetchMarketplaceCategories = (signal?: AbortSignal) =>
   ghFetch<MarketplaceCategoryRow[]>("/ui-data/marketplace/categories", signal);
 const fetchMarketplaceListingProfiles = (signal?: AbortSignal) =>
@@ -280,8 +275,7 @@ function MarketplaceDetail({ slug }: { slug: string }) {
     mutationFn: () => cancelMarketplacePlan(slug, selectedAccount),
     onSuccess: invalidate,
   });
-  // A scheduled downgrade or cancellation can be called off until it takes
-  // effect; GitHub announces that as marketplace_purchase/pending_change_cancelled.
+  // Call off a scheduled downgrade or cancellation before it takes effect.
   const revoke = useMutation({
     mutationFn: () => revokeMarketplacePendingChange(slug, selectedAccount),
     onSuccess: invalidate,

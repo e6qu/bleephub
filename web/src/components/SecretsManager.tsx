@@ -27,12 +27,9 @@ import {
 } from "./ui.js";
 import { LockIcon, KeyIcon } from "./octicons.js";
 
-// Actions secrets + variables manager for any secrets scope (repo / environment
-// / organization). Extracted from the repo Secrets page so the organization
-// Settings surface can reuse the exact same encryption, CRUD, and visibility
-// logic against an { kind: "org" } scope. Secrets are sealed-box encrypted in the
-// browser against the scope's public key before upload.
-/** Stable cache-key suffix for a scope. */
+// Actions secrets + variables manager for any scope (repo / environment / org).
+// Secrets are sealed-box encrypted in the browser against the scope's public
+// key before upload.
 function scopeKey(scope: SecretsScope): string {
   switch (scope.kind) {
     case "repo":
@@ -153,8 +150,7 @@ function SecretModal({
       const secretName = name.trim();
       if (!secretName) throw new Error("Name is required");
       if (!value) throw new Error("Value is required");
-      // Sealed-box encrypt against the scope's public key; the PUT body
-      // carries ciphertext + key_id only.
+      // Sealed-box encrypt; the PUT body carries ciphertext + key_id only.
       const pk = await fetchScopedPublicKey(scope);
       const encrypted = await sealSecret(value, pk.key);
       await putScopedSecret(scope, secretName, {

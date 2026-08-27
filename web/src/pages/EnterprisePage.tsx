@@ -371,8 +371,7 @@ function EnterpriseTeamOrgsDialog({
   const [error, setError] = useState<string | null>(null);
   const [orgSlug, setOrgSlug] = useState("");
 
-  // The endpoints 422 unless the team's organization selection type is
-  // "selected" — "all" and "disabled" derive the assignment set instead.
+  // Endpoints 422 unless selection type is "selected" (all/disabled derive the set).
   const editable = team.organization_selection_type === "selected";
 
   const { data: orgs, isLoading, isError, error: loadErr } = useQuery({
@@ -489,8 +488,7 @@ interface EnterpriseBudgetList {
   has_next_page: boolean;
 }
 
-// Same request family as the org budgets — budget_alerting is required on
-// create even when alerting is disabled, so send an explicit empty envelope.
+// budget_alerting is required on create even when disabled; send an empty envelope.
 interface EnterpriseBudgetBody {
   budget_amount: number;
   prevent_further_usage: boolean;
@@ -929,11 +927,7 @@ function DependabotAccessSettings() {
 }
 
 // ─── Enterprise account ─────────────────────────────────────────────────
-//
-// The account surface is GraphQL: the enterprise profile, its policy set,
-// its members and its organizations all live on the Enterprise type. The
-// queries are declared here rather than in api.ts because this page is a
-// lazy route and its wrappers must not land in the entry chunk.
+// GraphQL queries declared here, not api.ts, to keep this lazy route out of the entry chunk.
 
 interface EnterpriseAccount {
   id: string;
@@ -1185,9 +1179,8 @@ function EnterpriseField({ label, value }: { label: string; value: string | null
 
 // ─── Enterprise policies ────────────────────────────────────────────────
 
-// enterprisePolicyControls is the whole policy surface, one row per setting:
-// the EnterpriseOwnerInfo field it reads, the mutation that writes it, and the
-// values the mutation admits. Adding a policy is a row here, not a component.
+// One row per policy: the field read, the mutation that writes it, the admitted
+// values. Adding a policy is a row here, not a component.
 const enterprisePolicyControls: Array<{
   field: string;
   mutation: string;

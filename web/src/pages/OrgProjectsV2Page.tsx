@@ -27,7 +27,7 @@ function itemOptionId(item: GithubProjectV2Item, fieldId: number): string | null
   return null;
 }
 
-/** Human-readable display of an item's value for one field (for the table view). */
+/** Display an item's value for one field. */
 function itemFieldValue(item: GithubProjectV2Item, field: GithubProjectV2Field): string {
   const fv = item.fields?.find((f) => f.id === field.id);
   if (!fv || fv.value == null) return "";
@@ -144,8 +144,8 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
   const items = needle
     ? allItems.filter((it) => (it.content?.title ?? "").toLowerCase().includes(needle))
     : allItems;
-  // The board groups by a single-select field — the user's choice, defaulting to
-  // the first one that has options; "none" renders an ungrouped list.
+  // Board grouping field: the user's choice, defaulting to the first with
+  // options; "none" renders ungrouped.
   const singleSelectFields = (fieldsQ.data ?? []).filter(
     (f) => f.data_type === "single_select" && (f.options?.length ?? 0) > 0,
   );
@@ -323,12 +323,9 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
 
 // ─── Project overview, status updates and workflows ──────────────────────────
 //
-// These read and write through GraphQL rather than REST: GitHub's documented
-// REST surface for Projects v2 covers items, fields and views only, so a
-// project's description, its status updates and its automation rules have no
-// REST route to call. The queries are declared here rather than in the shared
-// api module so the entry chunk does not grow for a page most sessions never
-// open.
+// Via GraphQL: the REST Projects v2 surface covers only items, fields and
+// views, so description/status-updates/workflows have no REST route. Declared
+// page-local to keep the entry chunk from growing.
 
 interface ProjectOverview {
   id: string;
@@ -385,7 +382,7 @@ const DELETE_STATUS_UPDATE_MUTATION = `mutation($id:ID!){
 
 const STATUS_CHOICES = ["INACTIVE", "ON_TRACK", "AT_RISK", "OFF_TRACK", "COMPLETE"] as const;
 
-/** Turns GitHub's SCREAMING_SNAKE status into the label the UI shows. */
+/** SCREAMING_SNAKE status to display label. */
 function statusLabel(status: string): string {
   return status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ");
 }
@@ -608,9 +605,8 @@ function ProjectOverviewPanel({ org, number }: { org: string; number: number }) 
   );
 }
 
-// One editable table cell. Single-select renders a dropdown; text/number/date
-// render an input committed on blur; anything else is read-only. All go through
-// the same setOrgProjectV2ItemField mutation (value is a string or number).
+// Editable cell: single-select is a dropdown, text/number/date an input
+// committed on blur, anything else read-only.
 function ProjectFieldCell({
   item,
   field,
@@ -669,9 +665,7 @@ function ProjectFieldCell({
   return <td style={{ ...cellStyle, color: "var(--color-fg-muted)" }}>{itemFieldValue(item, field) || "—"}</td>;
 }
 
-// GitHub's Projects v2 default view: a spreadsheet-style table, one row per
-// item and one column per field. Single-select, text, number and date fields
-// are editable inline (the same mutation the board uses).
+// Spreadsheet table: one row per item, one column per field, editable inline.
 function ProjectTableView({
   items,
   fields,
@@ -685,7 +679,7 @@ function ProjectTableView({
   onMove: (itemId: number, fieldId: number, value: string | number) => void;
   onRemove: (itemId: number) => void;
 }) {
-  // The item title is its own column, so drop any field literally named "Title".
+  // Title is its own column; drop any field named "Title".
   const columns = fields.filter((f) => f.name.toLowerCase() !== "title");
   return (
     <Box className="mt-3">

@@ -45,10 +45,10 @@ import { MutationError } from "../components/MutationError.js";
 import { DiscussionIcon } from "../components/octicons.js";
 import { isNotFoundError } from "../components/notFound.js";
 
-/** Cap enforced by the server's PUT /ui-data/.../discussions/pinned handler. */
+// Enforced by the server's PUT /ui-data/.../discussions/pinned handler.
 const MAX_PINNED_DISCUSSIONS = 4;
 
-/** REST-style snake_case discussion row served by the /ui-data pinned surface. */
+// snake_case row shape served by the /ui-data pinned surface.
 interface PinnedDiscussion {
   number: number;
   title: string;
@@ -400,8 +400,7 @@ function DiscussionDetail({
   const [editDiscBody, setEditDiscBody] = useState("");
   const [editCategory, setEditCategory] = useState("");
 
-  // Draft durability, github.com-style: the comment box and each reply box
-  // keep distinct drafts (switching reply targets switches drafts too).
+  // The comment box and each reply target keep distinct drafts.
   const commentDraftKey = replyTo
     ? `discussion-comment:${owner}/${repo}/${number}:reply:${replyTo.id}`
     : `discussion-comment:${owner}/${repo}/${number}`;
@@ -421,8 +420,7 @@ function DiscussionDetail({
     queryFn: ({ signal }) => fetchPinnedDiscussions(owner, repo, signal),
   });
 
-  // Pin/unpin needs write access; mark-as-answer follows github.com's
-  // author-or-write rule, so the viewer's login is needed for the comparison.
+  // mark-as-answer follows github.com's author-or-write rule, hence viewerLogin.
   const { canPush } = useRepoPermissions(owner, repo);
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
@@ -507,8 +505,7 @@ function DiscussionDetail({
   });
 
   if (isError) {
-    // Missing discussion inside an existing repo: keep the repo chrome and
-    // show a 404 state, github.com-style; other failures keep the banner.
+    // Missing discussion: keep repo chrome + 404 state; other failures banner.
     if (isNotFoundError(error)) {
       return (
         <div>

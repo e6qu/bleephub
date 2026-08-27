@@ -67,11 +67,7 @@ export function OrgTeamsPage() {
   );
 }
 
-/**
- * The org team list nested GitHub-style: child teams (list rows carry a
- * nullable `parent` ref) sit under their parent, expandable and indented.
- * A child whose parent isn't visible in the list renders as a root.
- */
+// Nest child teams under their parent; a child whose parent isn't in the list renders as a root.
 function TeamTree({ org, teams }: { org: string; teams: GithubOrgTeam[] }) {
   const { roots, children } = useMemo(() => {
     const slugs = new Set(teams.map((t) => t.slug));
@@ -219,11 +215,8 @@ function TeamRow({
   );
 }
 
-/**
- * Member/repo counts for a team row. The list payload is GitHub's `team`
- * shape (no counts — they only ride on team-full), so hydrate each row
- * lazily from GET /orgs/{org}/teams/{slug}, concurrency-capped and cached.
- */
+// The list payload omits counts (team-full only), so hydrate each row from GET
+// /orgs/{org}/teams/{slug}, concurrency-capped and cached.
 function TeamCounts({ org, slug }: { org: string; slug: string }) {
   const { data } = useQuery({
     queryKey: ["team-counts", org, slug],

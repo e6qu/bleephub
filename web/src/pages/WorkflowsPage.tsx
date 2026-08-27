@@ -208,9 +208,8 @@ function DispatchDialog({
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
-  // Branch selector seeded from the repository's branches, the default
-  // branch preselected; a free-text ref input remains the fallback for
-  // repositories whose branch list can't be read.
+  // Branch selector preselects the default branch; falls back to a free-text
+  // ref input when the branch list can't be read.
   const branchesQ = useQuery({
     queryKey: ["branches", owner, repo],
     queryFn: () => fetchRepoBranches(owner, repo),
@@ -233,8 +232,8 @@ function DispatchDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultBranch, branchesQ.data]);
 
-  // Typed inputs from the workflow file's on.workflow_dispatch.inputs;
-  // an unreadable file falls back to the raw JSON inputs textarea.
+  // Typed inputs from on.workflow_dispatch.inputs; an unreadable file falls
+  // back to the raw JSON inputs textarea.
   const yamlQ = useQuery({
     queryKey: ["workflow-yaml", owner, repo, target.path],
     queryFn: () => fetchFileContent(owner, repo, target.path),

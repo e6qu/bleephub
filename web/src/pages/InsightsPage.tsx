@@ -30,8 +30,7 @@ import { Box, Blankslate, SectionLabel, StatCard } from "../components/ui.js";
 import { GraphIcon, PeopleIcon, CheckCircleIcon, XCircleIcon } from "../components/octicons.js";
 import { useSignedIn } from "../session.js";
 
-// GitHub's Insights left-nav sections, URL-addressable via ?section= so a
-// specific pane is linkable without new App routes.
+// URL-addressable via ?section= so a pane is linkable without new App routes.
 const INSIGHTS_SECTIONS = [
   { key: "pulse", label: "Pulse" },
   { key: "contributors", label: "Contributors" },
@@ -50,19 +49,15 @@ export function InsightsPage() {
   const counts = useSeededOpenCounts(owner, repo);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // The default pane (Pulse) is aggregate-backed with a search fallback, and
-  // both answer 200-ish shapes for a nonexistent repository — probe the repo
-  // itself so a bad URL degrades to a visible error instead of a plausible
-  // empty Pulse. Uses the same ["repo", ...] key as RepoHeader so the two
-  // observers share one fetch (and a warm session's seeded repo is a hit).
+  // Pulse answers a 200-ish shape even for a nonexistent repo, so probe the repo
+  // itself to turn a bad URL into a visible error. Shares RepoHeader's ["repo", ...] key.
   const repoQ = useQuery({
     queryKey: ["repo", owner, repo],
     queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
     retry: false,
   });
 
-  // Traffic reads require push access and 403 for an anonymous visitor, so
-  // the pane is absent signed-out (github.com shows it to pushers only).
+  // Traffic reads require push access (403 anonymous), so hide the pane signed out.
   const signedIn = useSignedIn();
   const sections = signedIn ? INSIGHTS_SECTIONS : INSIGHTS_SECTIONS.filter((s) => s.key !== "traffic");
   const raw = searchParams.get("section");
@@ -565,8 +560,7 @@ function DependencyGraphSection({ owner, repo }: { owner: string; repo: string }
   );
 }
 
-// Lane palette — every entry is a token defined in both the light and dark
-// theme blocks, so the graph never leaks a hardcoded colour.
+// Lane palette — all tokens (defined in both themes), never hardcoded colours.
 const NETWORK_LANE_COLORS = [
   "var(--color-accent)",
   "var(--gh-merged)",
@@ -601,9 +595,8 @@ const NET_DY = 20;
 const NET_PAD = 12;
 const NET_R = 4;
 
-// computeCommitGraph lays out the commit ancestry DAG as a horizontal railroad
-// (time flows left→old to right→new). Merge commits and branch points spawn and
-// retire lanes exactly as git's own graph does.
+// Lay out the commit ancestry DAG as a horizontal railroad (old left, new right),
+// spawning and retiring lanes at merges and branch points.
 function computeCommitGraph(commits: GithubCommit[]): {
   nodes: NetworkNode[];
   edges: NetworkEdge[];
@@ -634,8 +627,7 @@ function computeCommitGraph(commits: GithubCommit[]): {
     const c = commits[i];
     if (!c) continue;
     const lane = claim(c.sha);
-    // A branch point: two children both reserved this sha in different lanes —
-    // collapse the duplicates into the chosen lane so it isn't leaked forever.
+    // Branch point: collapse duplicate reservations of this sha into the chosen lane.
     for (let l = 0; l < active.length; l++) {
       if (l !== lane && active[l] === c.sha) active[l] = null;
     }
@@ -647,8 +639,7 @@ function computeCommitGraph(commits: GithubCommit[]): {
     } else {
       const first = parents[0] as string;
       const existing = active.indexOf(first);
-      // If the first parent is already expected elsewhere, free this lane;
-      // otherwise this lane keeps following it.
+      // Free this lane if the first parent is already expected elsewhere.
       active[lane] = existing !== -1 && existing !== lane ? null : first;
       for (let k = 1; k < parents.length; k++) {
         const p = parents[k];
@@ -693,8 +684,7 @@ function computeCommitGraph(commits: GithubCommit[]): {
         y1,
         x2: xAt(pi),
         y2: yAt(parentLane),
-        // First-parent edge keeps the child's lane colour; a merge edge takes
-        // the incoming branch's colour.
+        // First-parent edge keeps the child's lane colour; merge edge takes the branch's.
         lane: k === 0 ? childLane : parentLane,
       });
     });
@@ -800,8 +790,7 @@ function NetworkSection({ owner, repo }: { owner: string; repo: string }) {
                 })}
               </svg>
             </div>
-            {/* Screen-reader fallback: the SVG is decorative topology, so expose
-                the same commits as a linked, ordered list off-screen. */}
+            {/* Screen-reader fallback for the decorative SVG: same commits as an off-screen list. */}
             <ol
               style={{
                 position: "absolute",
@@ -838,7 +827,7 @@ const PULSE_PERIODS = [
 ] as const;
 type PulsePeriod = (typeof PULSE_PERIODS)[number]["key"];
 
-/** Exact count of issues/PRs matching `q` — the search payload's total_count. */
+// Exact count of issues/PRs matching `q` (search payload's total_count).
 function usePulseCount(q: string, enabled: boolean) {
   return useQuery({
     queryKey: ["pulse-count", q],
@@ -852,9 +841,8 @@ function PulseSection({ owner, repo }: { owner: string; repo: string }) {
   const [period, setPeriod] = useState<PulsePeriod>("1w");
   const qc = useQueryClient();
 
-  // One aggregate request per period supplies all four Pulse counters (and,
-  // as a bonus, seeds the Commits/languages sections' keys). The old four
-  // search-count queries survive strictly as the bootstrap-failure fallback.
+  // One aggregate request per period supplies all four Pulse counters and seeds
+  // the Commits/languages keys; the search-count queries are the failure fallback.
   const bootstrapQ = useQuery({
     queryKey: ["insights-bootstrap", owner, repo, period],
     queryFn: async ({ signal }) => {
@@ -871,13 +859,10 @@ function PulseSection({ owner, repo }: { owner: string; repo: string }) {
   const searchFallback = bootstrapQ.isError;
 
   const ms = PULSE_PERIODS.find((p) => p.key === period)!.ms;
-  // RFC3339 without fractional seconds — the shape the search-qualifier
-  // date parser accepts alongside plain dates.
+  // RFC3339 without fractional seconds — what the search-qualifier date parser accepts.
   const since = new Date(Date.now() - ms).toISOString().replace(/\.\d{3}Z$/, "Z");
   const scope = `repo:${owner}/${repo}`;
 
-  // Search totals are exact counts (no first-page-length undercounting) and
-  // the created:/closed: qualifiers scope them to the selected period.
   const merged = usePulseCount(`${scope} is:pr is:merged closed:>=${since}`, searchFallback);
   const openedPRs = usePulseCount(`${scope} is:pr is:open created:>=${since}`, searchFallback);
   const closedIssues = usePulseCount(`${scope} is:issue is:closed closed:>=${since}`, searchFallback);

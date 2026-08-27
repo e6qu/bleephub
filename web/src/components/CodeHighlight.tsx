@@ -1,16 +1,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
-/*
- * Syntax-highlighted code for blob views, diffs and gists. highlight.js is
- * loaded on demand via dynamic import() so it never rides in the entry
- * bundle: the component renders a plain <pre><code> immediately (same font,
- * padding and line-height as the highlighted result — no layout shift) and
- * swaps in highlighted markup once the library arrives.
- */
+// highlight.js is loaded via dynamic import() to keep it out of the entry bundle.
 
-// Registered subset — the common languages a forge actually renders. Each
-// import() below must stay a literal so the bundler can see it; the name
-// list and the import list are consumed pairwise, keep them in sync.
+// Each import() below must stay a literal so the bundler can see it; NAMES and
+// the import list are consumed pairwise — keep them in sync.
 const LANGUAGE_NAMES = [
   "go",
   "typescript",
@@ -72,11 +65,8 @@ function loadHljs(): Promise<HLJSApi> {
   return hljsPromise;
 }
 
-// Hand-rolled token palette keyed off the app's theme tokens (index.css
-// defines every var for both :root and .dark), instead of a stock hljs theme
-// CSS whose hard-coded colors would break dark mode. Injected once, only
-// after the library actually loads, so pages that never highlight pay
-// nothing.
+// Token palette keyed off theme vars so highlighting works in dark mode; a
+// stock hljs theme's hard-coded colors would not. Injected once, on load.
 const HIGHLIGHT_CSS = `
 .code-highlight .hljs-comment,.code-highlight .hljs-quote{color:var(--color-fg-muted)}
 .code-highlight .hljs-keyword,.code-highlight .hljs-selector-tag,.code-highlight .hljs-type,.code-highlight .hljs-doctag{color:var(--color-status-error)}
@@ -101,9 +91,7 @@ function ensureHighlightStyles(): void {
   document.head.appendChild(style);
 }
 
-// Extension → hljs language (or alias — aliases like tsx/jsx/html/sh resolve
-// through hljs.getLanguage). Special-cased basenames (Dockerfile, Makefile)
-// follow GitHub's linguist behavior.
+// Extension → hljs language or alias. Special-cased basenames follow linguist.
 const EXT_LANGUAGE: Record<string, string> = {
   go: "go",
   ts: "typescript",
@@ -167,10 +155,8 @@ function highlightValue(hljs: HLJSApi, code: string, language: string | undefine
   return hljs.highlight(code, { language, ignoreIllegals: true }).value;
 }
 
-// hljs spans can cross newlines (block comments, template strings), so a
-// naive split would emit unbalanced HTML. Re-open the still-open spans at the
-// start of each line and close them at its end, keeping every entry
-// self-contained — what a per-line diff/blob renderer needs.
+// hljs spans can cross newlines, so re-open still-open spans at each line's
+// start and close them at its end to keep every line's HTML balanced.
 function splitHighlightedLines(html: string): string[] {
   const lines: string[] = [];
   const openStack: string[] = [];
@@ -188,9 +174,8 @@ function splitHighlightedLines(html: string): string[] {
 }
 
 /**
- * Highlight a whole file and return one safe-HTML string per line (hljs
- * escapes source text; unknown languages fall back to plain escaping).
- * Render each entry inside an element with the `code-highlight` class.
+ * Highlight a file into one safe-HTML string per line; unknown languages fall
+ * back to plain escaping. Render each line inside a `code-highlight` element.
  */
 export async function highlightLines(code: string, language: string | undefined): Promise<string[]> {
   const hljs = await loadHljs();
@@ -213,10 +198,8 @@ const PRE_STYLE: CSSProperties = {
 };
 
 /**
- * Blob/gist code block. Renders the source as plain text immediately and
- * upgrades in place to highlighted markup when highlight.js finishes
- * loading. `language` wins over `path`; with neither (or an unregistered
- * language) it stays a plain block.
+ * Blob/gist code block: renders plain text immediately, upgrades to
+ * highlighted markup once highlight.js loads. `language` wins over `path`.
  */
 export function CodeHighlight({
   code,

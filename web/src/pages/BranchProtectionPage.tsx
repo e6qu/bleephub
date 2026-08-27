@@ -52,9 +52,8 @@ interface FormState {
   restrictedTeams: string;
 }
 
-// A web-only wildcard rule from /ui-data branch-protection-patterns. The
-// protection member serializes like the REST GET protection shape but with
-// omitempty members, hence Partial.
+// Wildcard rule from /ui-data branch-protection-patterns. protection has the
+// REST GET protection shape with omitempty members, hence Partial.
 interface BranchProtectionPatternRule {
   pattern: string;
   protection: Partial<GithubBranchProtection>;
@@ -63,12 +62,11 @@ interface BranchProtectionPatternRule {
 const patternsPath = (owner: string, repo: string) =>
   `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branch-protection-patterns`;
 
-// Wildcard names are pattern rules (git forbids * and ? in branch names, so
-// an exact branch can never be mistaken for a pattern).
+// Wildcard names are pattern rules; git forbids * and ? in real branch names.
 const isWildcardPattern = (name: string) => /[*?]/.test(name);
 
-// The stored dismissal-restriction team entries serialize with the slug in
-// `login` (server BPActor shape) while the published type says `slug` — read both.
+// Team entries carry the slug in `login` (server BPActor shape) though the
+// published type names it `slug` — read both.
 function teamSlug(team: unknown): string {
   const t = team as { slug?: string; login?: string };
   return t.slug ?? t.login ?? "";
@@ -139,12 +137,10 @@ function splitLines(value: string): string[] {
     .filter(Boolean);
 }
 
-// Builds the PUT protection body shared by the exact-branch REST endpoint and
-// the /ui-data pattern endpoint (the pattern endpoint accepts the same
-// members). Exact rules manage push-restriction actors through the dedicated
-// restrictions sub-endpoints; pattern rules have no sub-endpoints, so their
-// actors travel inline (the server stores actors as {login} — team slugs in
-// `login`, store.BPActor has no slug field).
+// PUT protection body for both the exact-branch REST endpoint and the /ui-data
+// pattern endpoint. Exact rules set push-restriction actors via the dedicated
+// restrictions sub-endpoints; pattern rules have none, so actors travel inline
+// as {login} (team slugs in `login` — store.BPActor has no slug field).
 function formToProtectionPayload(next: FormState, inlineRestrictionActors: boolean): Partial<GithubBranchProtection> {
   const contextList = splitLines(next.contexts);
   const dismissalUsers = splitLines(next.dismissalUsers);
@@ -197,9 +193,8 @@ function formToProtectionPayload(next: FormState, inlineRestrictionActors: boole
   };
 }
 
-// Cap the per-branch protection fan-out when assembling the rules list: the
-// REST surface is per-branch (there is no "list all rules" endpoint), so we
-// probe at most this many protected branches.
+// The REST surface has no list-all-rules endpoint, so the rules list probes
+// protection per branch — capped at this many.
 const RULES_LIST_CAP = 20;
 
 function summarizeRule(bp: Partial<GithubBranchProtection>): string {
@@ -217,9 +212,8 @@ function summarizeRule(bp: Partial<GithubBranchProtection>): string {
 export function BranchProtectionPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
   const queryClient = useQueryClient();
-  // Branch protection editing is admin-only: github.com 404s this URL for
-  // non-admin viewers. The guard renders after the repo query settles (the
-  // hook reads the same payload), so admins never see a 404 flash.
+  // Admin-only; github.com 404s this URL for non-admins. Guarded after the repo
+  // query settles so admins never see a 404 flash.
   const { isAdmin } = useRepoPermissions(owner, repo);
 
   const repoQuery = useQuery({
@@ -244,7 +238,7 @@ export function BranchProtectionPage() {
   }, [repoQuery.data?.default_branch, branch]);
 
   // A wildcard target edits a /ui-data pattern rule; the REST protection
-  // endpoints are exact-name only (never GET them for a wildcard — 404).
+  // endpoints are exact-name only and 404 on a wildcard.
   const isPatternTarget = isWildcardPattern(branch);
 
   const protectionQuery = useQuery({
@@ -255,8 +249,7 @@ export function BranchProtectionPage() {
 
   const patternsQuery = useQuery({
     queryKey: ["branch-protection-patterns", owner, repo],
-    // A payload that is not the expected rule array must surface as a query
-    // ERROR (banner + empty list), never crash the render mid-.map.
+    // Surface a non-array payload as a query error, not a mid-.map crash.
     queryFn: async () => {
       const raw = await ghFetch<unknown>(patternsPath(owner, repo));
       if (!Array.isArray(raw)) throw new Error("malformed branch-protection-patterns payload");
@@ -265,8 +258,6 @@ export function BranchProtectionPage() {
     enabled: !!owner && !!repo,
   });
 
-  // Assemble the current rules by probing protection for each protected
-  // branch (capped — the REST surface has no list-all-rules endpoint).
   const protectedNames = (branchesQuery.data ?? [])
     .filter((b) => b.protected)
     .map((b) => b.name)
@@ -301,8 +292,8 @@ export function BranchProtectionPage() {
     onSuccess: invalidateAll,
   });
 
-  // Removing one pattern rule = PUT the remaining ordered list (the endpoint
-  // replaces the whole list); DELETE clears the list when none remain.
+  // The pattern endpoint replaces the whole list: PUT the remaining rules, or
+  // DELETE when none remain.
   const deletePatternRuleMutation = useMutation({
     mutationFn: async (pattern: string) => {
       const path = patternsPath(owner, repo);

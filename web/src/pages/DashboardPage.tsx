@@ -31,8 +31,6 @@ const TOP_REPOS_STEP = 8;
 
 export function DashboardPage() {
   const user = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
-  // Link-paginated: "Show more" walks the next pages instead of capping the
-  // rail at the first 30 repositories.
   const repos = useInfiniteQuery({
     queryKey: ["dashboard-repos"],
     queryFn: ({ pageParam, signal }) => fetchUserReposPage({ sort: "pushed" }, pageParam, signal),
@@ -41,8 +39,7 @@ export function DashboardPage() {
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 30000,
   });
-  // github.com's "Find a repository…" rail filter — client-side over the
-  // fetched pages.
+  // Client-side rail filter over the fetched pages.
   const [repoFilter, setRepoFilter] = useState("");
   const [visibleRepos, setVisibleRepos] = useState(TOP_REPOS_INITIAL);
   const issues = useQuery({
@@ -76,7 +73,6 @@ export function DashboardPage() {
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_minmax(0,1fr)_260px]">
-      {/* Left rail: top repositories + New */}
       <aside className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
           {user.data ? (
@@ -93,8 +89,7 @@ export function DashboardPage() {
           ) : (
             <SectionLabel>Top repositories</SectionLabel>
           )}
-          {/* A single primary-styled anchor — NOT a <Link> wrapping a <Button>:
-              nesting interactive-in-interactive trips WCAG 2.5.8 target-size. */}
+          {/* One anchor, not a <Link> wrapping a <Button>: nesting interactive-in-interactive trips WCAG 2.5.8. */}
           <ButtonLink to="/ui/repos" aria-label="New repository" variant="primary" size="sm">
             <RepoIcon size={14} /> New
           </ButtonLink>
@@ -145,7 +140,6 @@ export function DashboardPage() {
         )}
       </aside>
 
-      {/* Center: the following/news feed (github.com's home feed), then your issues */}
       <section className="flex flex-col gap-6">
         <div>
           <SectionLabel>Following</SectionLabel>
@@ -189,7 +183,6 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* Right panel: quick links */}
       <aside className="flex flex-col gap-3">
         <SectionLabel>Explore</SectionLabel>
         <Box>
@@ -226,8 +219,7 @@ function TopRepoRow({ repo, last }: { repo: BleephubRepo; last: boolean }) {
       <Link
         to={`/ui/${owner}/${name}`}
         className="truncate"
-        // inline-block + ≥24px line-height: a standalone list link (not inline
-        // text) must clear WCAG 2.5.8 target-size.
+        // inline-block + ≥24px line-height: standalone list link must clear WCAG 2.5.8 target-size.
         style={{
           display: "inline-block",
           color: "var(--color-accent)",
@@ -260,9 +252,7 @@ function FeedIssueRow({ issue, last }: { issue: GithubFeedIssue; last: boolean }
       <div className="min-w-0 flex-1">
         <Link
           to={`/ui/${owner}/${name}/issues/${issue.number}`}
-          // inline-block + ≥24px line-height so the title's own hit box clears
-          // WCAG 2.5.8 target-size (it sits alone on its line, so the inline-text
-          // exemption doesn't apply).
+          // inline-block + ≥24px line-height: title sits alone on its line, must clear WCAG 2.5.8.
           style={{
             display: "inline-block",
             color: "var(--color-fg)",
@@ -270,8 +260,7 @@ function FeedIssueRow({ issue, last }: { issue: GithubFeedIssue; last: boolean }
             fontSize: "0.9rem",
             lineHeight: "1.625rem",
             textDecoration: "none",
-            // List rows must survive unbroken 200+-char titles without
-            // widening the page (the detail page wraps; rows break).
+            // Break unbroken 200+-char titles so a row never widens the page.
             overflowWrap: "anywhere",
             maxWidth: "100%",
           }}

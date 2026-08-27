@@ -33,12 +33,10 @@ type SeverityFilter = "all" | GithubSecurityAdvisorySeverity;
 const SEVERITIES: GithubSecurityAdvisorySeverity[] = ["critical", "high", "medium", "low"];
 
 // ─── Store-backed extras beyond the base advisory payloads ─────────────────────────
-// The server's CreateAdvisoryReq (create + report) also persists cvss_score,
-// cvss_vector, and a vulnerabilities[] product list; the update handler
-// accepts cvss_score/cvss_vector (but not vulnerabilities). Create and update
-// accept credits: [{login, type}] (unknown login/type → 422); the private
-// vulnerability REPORT endpoint does NOT accept credits, so the report form
-// intentionally has no credits editor.
+// Create + report persist cvss_score, cvss_vector, and vulnerabilities[]; update
+// takes cvss_score/cvss_vector but not vulnerabilities. Create/update accept
+// credits: [{login, type}] (unknown login/type → 422); the report endpoint does
+// NOT accept credits, so the report form has no credits editor.
 
 interface AdvisoryVulnerabilityPayload {
   package: { ecosystem: string; name: string };
@@ -100,9 +98,8 @@ function creditTypeLabel(type: string): string {
 }
 
 /**
- * Repeatable {login, type} credit rows shared by the create and edit forms.
- * The private vulnerability report form must NOT render this (the report
- * endpoint rejects a credits member).
+ * Repeatable {login, type} credit rows for the create/edit forms. The report
+ * form must NOT render this — the report endpoint rejects a credits member.
  */
 function CreditsEditor({
   idPrefix,
@@ -728,9 +725,8 @@ function AdvisoryFormModal({
   error,
 }: {
   title: string;
-  /** Render the credits editor and include `credits` in the payload. Must
-   * stay false for the private vulnerability report — that endpoint does
-   * not accept credits. */
+  /** Include the credits editor. Must stay false for the report form — that
+   * endpoint rejects credits. */
   withCredits?: boolean;
   onClose: () => void;
   onSubmit: (payload: GithubVulnerabilityReportPayload & AdvisoryCreateExtras) => void;

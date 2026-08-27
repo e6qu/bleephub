@@ -1,12 +1,7 @@
 import { StatCard } from "./ui.js";
 
-/**
- * Stand-in for figures the server serves only to site admins.
- *
- * A refusal on authorization grounds is an answer about who is asking, not a
- * fault, so this deliberately carries no alert semantics: the cards keep their
- * shape and the reason is stated plainly.
- */
+// Placeholder for site-admin-only figures. No alert semantics: an authz refusal
+// is an answer about who's asking, not a fault.
 export function OperatorOnlyStats({ titles }: { titles: string[] }) {
   return (
     <>

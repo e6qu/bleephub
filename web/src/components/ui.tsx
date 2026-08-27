@@ -10,14 +10,9 @@ import {
 } from "react";
 import { Link } from "react-router";
 
-/*
- * bleephub UI primitives — GitHub-familiar shapes (sans type, soft 6px
- * boxes, normal-case buttons, solid state pills). These intentionally do
- * NOT reuse the ui-core brutalist primitives (PageHeading/Button/
- * MetricsCard), whose italic-serif + uppercase-mono shapes can't be
- * reshaped by tokens alone. They DO read the same --color-* tokens, so
- * light/dark just works.
- */
+// bleephub UI primitives. Deliberately not the ui-core brutalist primitives,
+// whose italic-serif/uppercase-mono shapes can't be reshaped by tokens alone;
+// these read the same --color-* tokens so light/dark works.
 
 // ─── Button ──────────────────────────────────────────────────────────────
 
@@ -31,9 +26,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const BUTTON_BASE_CLASS = "inline-flex items-center justify-center gap-1.5";
 
-// Shared button visuals so a real <Link> can look identical to a <Button>
-// (see ButtonLink) without nesting one inside the other — nesting interactive
-// content trips WCAG 2.5.8 target-size (the anchor's hit box reads as obscured).
+// Shared button visuals so a <Link> can match a <Button> (see ButtonLink)
+// without nesting them — nested interactive content trips WCAG 2.5.8 target-size.
 function buttonStyle(variant: ButtonVariant, size: ButtonSize): CSSProperties {
   const sizeStyle: CSSProperties =
     size === "sm"
@@ -70,9 +64,8 @@ function buttonStyle(variant: ButtonVariant, size: ButtonSize): CSSProperties {
   return {
     ...variantStyle,
     ...sizeStyle,
-    // WCAG 2.5.8 (AA) minimum touch-target height; 26px (not a flat 24) so
-    // borderline targets clear the threshold after Linux Chromium's subpixel
-    // rounding, which trims a flat 24px below it (surfaced only in CI).
+    // WCAG 2.5.8 min touch-target; 26px not 24 so it clears the threshold after
+    // Linux Chromium's subpixel rounding (trims a flat 24px below it, CI-only).
     minHeight: "1.625rem",
     fontFamily: "var(--font-sans)",
     fontWeight: 600,
@@ -82,8 +75,8 @@ function buttonStyle(variant: ButtonVariant, size: ButtonSize): CSSProperties {
   };
 }
 
-/** A react-router Link with Button visuals. Use this instead of wrapping a
- *  <Button> in a <Link> — nested interactive content fails target-size. */
+// A Link with Button visuals. Use instead of nesting <Button> in <Link> —
+// nested interactive content fails target-size.
 export function ButtonLink({
   to,
   variant = "secondary",
@@ -161,10 +154,8 @@ export function PageTitle({
           </div>
         )}
       </div>
-      {/* max-w-full + flex-wrap: at phone widths a long actions row clamps to
-          the header width and wraps instead of forcing page-level horizontal
-          scroll; on desktop the row is narrower than the header so both are
-          inert and shrink-0 keeps titles from squeezing the controls. */}
+      {/* max-w-full + flex-wrap: a long actions row wraps at phone widths
+          instead of forcing page-level horizontal scroll. */}
       {actions && <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </header>
   );
@@ -172,7 +163,6 @@ export function PageTitle({
 
 // ─── Box ─────────────────────────────────────────────────────────────────
 
-/** Bordered, rounded container — GitHub's "Box". Optional header strip. */
 export function Box({
   header,
   children,
@@ -368,7 +358,6 @@ export interface TabItem<K extends string> {
   label: ReactNode;
 }
 
-/** Underline tab strip (GitHub's in-page tab nav). */
 export function Tabs<K extends string>({
   items,
   active,
@@ -470,12 +459,9 @@ function focusablesWithin(panel: HTMLElement | null): HTMLElement[] {
   );
 }
 
-// Only the topmost open Modal reacts to Escape and Tab. Modals appear both
-// nested (a detail dialog rendering an edit dialog) and as independent
-// siblings, and effects run child-first, so mount order does not identify
-// the top one — document order does: a nested panel is contained by its
-// parent panel, and sibling panels share a z-index so the later one paints
-// on top.
+// Only the topmost open Modal reacts to Escape and Tab. Effects run child-first,
+// so mount order can't identify the top one — document order does (later sibling
+// paints on top; a nested panel is contained by its parent).
 type PanelRef = { current: HTMLElement | null };
 const openPanels = new Set<PanelRef>();
 

@@ -3,15 +3,6 @@ import { useLocation, useNavigate } from "react-router";
 import Markdown from "./Markdown.js";
 import { highlightLines, languageFromPath } from "./CodeHighlight.js";
 
-/*
- * GitHub-style blob rendering:
- *  - images render as an <img> from a data: URI,
- *  - markdown gets a Preview/Code toggle (Preview by default),
- *  - undecodable binaries show an honest fallback with a raw download,
- *  - everything else renders as code with a numbered, linkable gutter
- *    (#L3 / #L3-L9 anchors with on-load scroll and shift-click ranges).
- */
-
 /** Decode base64 file content as UTF-8 text; null when the bytes are binary. */
 export function decodeBlobText(b64: string): string | null {
   try {
@@ -34,7 +25,7 @@ const IMAGE_MIME: Record<string, string> = {
   ico: "image/x-icon",
 };
 
-/** image/* MIME for a path GitHub renders as a picture; undefined otherwise. */
+/** image/* MIME for an image path; undefined otherwise. */
 export function blobImageMime(path: string): string | undefined {
   const dot = path.lastIndexOf(".");
   if (dot < 0) return undefined;
@@ -72,7 +63,6 @@ function CodeLines({ text, path }: { text: string; path: string }) {
     };
   }, [text, path]);
 
-  // On load (and on hash navigation) bring the targeted line into view.
   useEffect(() => {
     if (!range) return;
     const el = document.getElementById(`L${range.start}`);
@@ -85,7 +75,7 @@ function CodeLines({ text, path }: { text: string; path: string }) {
   const setHash = (hash: string) => navigate({ hash }, { replace: true });
   const onLineClick = (e: React.MouseEvent, n: number) => {
     e.preventDefault();
-    // Shift-click extends from the current anchor, GitHub's #L3-L9 ranges.
+    // Shift-click extends the current anchor into a #L3-L9 range.
     if (e.shiftKey && range) {
       const [a, b] = n < range.start ? [n, range.end] : [range.start, n];
       setHash(`#L${a}-L${b}`);
@@ -150,7 +140,7 @@ export function BlobContent({
   const imageMime = blobImageMime(path);
   const text = useMemo(() => (imageMime ? null : decodeBlobText(base64)), [imageMime, base64]);
   const isMarkdown = languageFromPath(path) === "markdown";
-  // GitHub opens markdown blobs in the rendered Preview by default.
+  // Markdown blobs open in Preview by default, matching github.com.
   const [mdView, setMdView] = useState<"preview" | "code">("preview");
 
   if (imageMime) {

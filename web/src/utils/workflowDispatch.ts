@@ -1,10 +1,9 @@
 import { parse } from "yaml";
 import type { WorkflowDispatchInput } from "../types.js";
 
-/** Parsed `on.workflow_dispatch` section of a workflow file. */
 export interface WorkflowDispatchSpec {
   hasDispatch: boolean;
-  /** Input name → definition, in YAML declaration order. */
+  // Input name → definition, in YAML declaration order.
   inputs: Record<string, WorkflowDispatchInput>;
 }
 
@@ -31,13 +30,7 @@ function normalizeInput(raw: unknown): WorkflowDispatchInput {
   return input;
 }
 
-/**
- * Read `on.workflow_dispatch` (and its `inputs`) out of workflow YAML.
- * Handles every shape `on:` takes: a scalar event name, an event list,
- * or an event map. A YAML-1.1-minded parser can also turn the bare `on`
- * key into boolean true (serialized as the "true" key) — accept both.
- * Unparsable YAML means "no dispatch form", never a crash.
- */
+// YAML 1.1 parsers coerce the bare `on` key to boolean true (the "true" key), so accept both.
 export function parseWorkflowDispatch(yamlText: string): WorkflowDispatchSpec {
   let doc: unknown;
   try {

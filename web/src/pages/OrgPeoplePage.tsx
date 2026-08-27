@@ -29,13 +29,11 @@ type PeopleTab = "members" | "outside";
 export function OrgPeoplePage() {
   const { org = "" } = useParams<{ org: string }>();
   const [tab, setTab] = useState<PeopleTab>("members");
-  // Anonymous visitors see the public members list only: the viewer-role
-  // read 401s signed out, and outside collaborators are member-only data.
+  // Signed out: public members list only (viewer-role read 401s, collaborators are member-only).
   const signedIn = useSignedIn();
 
-  // The viewer's own membership role gates the write controls: only org
-  // owners see the invite box and the per-member role/remove/convert actions
-  // (GET /api/v3/user/memberships/orgs/{org}; 404/non-admin → hidden).
+  // The viewer's org role gates write controls: only owners see the invite box
+  // and per-member actions (GET /api/v3/user/memberships/orgs/{org}).
   const roleQ = useQuery({
     queryKey: ["viewer-org-role", org],
     queryFn: () => fetchViewerOrgRole(org),
@@ -76,8 +74,7 @@ function OrgMembersPanel({ org, isOrgAdmin }: { org: string; isOrgAdmin: boolean
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["org-members", org],
-    // per_page=100 so orgs with >30 members aren't silently truncated to the
-    // first page (the server defaults to 30). Inline to avoid touching api.ts.
+    // per_page=100 so >30-member orgs aren't truncated (server defaults to 30).
     queryFn: () => ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/members?per_page=100`),
   });
   const signedIn = useSignedIn();
@@ -90,8 +87,7 @@ function OrgMembersPanel({ org, isOrgAdmin }: { org: string; isOrgAdmin: boolean
     queryKey: ["org-public-members", org],
     queryFn: () => fetchPublicOrgMembers(org),
   });
-  // Owner badges: the members list supports GitHub's ?role=admin narrowing,
-  // so one extra request tells us which members are org owners.
+  // ?role=admin narrows the list to org owners, for the owner badges.
   const ownersQ = useQuery({
     queryKey: ["org-owner-members", org],
     queryFn: () => ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/members?role=admin&per_page=100`),
@@ -133,9 +129,8 @@ function OrgMembersPanel({ org, isOrgAdmin }: { org: string; isOrgAdmin: boolean
     mutationFn: (login: string) => removeOrgMember(org, login),
     onSuccess: invalidate,
   });
-  // Convert an existing org member into an outside collaborator (github's
-  // "Convert to outside collaborator"). Defined inline via ghSend to avoid a new
-  // api.ts export (the entry bundle sits at its budget).
+  // Convert an org member into an outside collaborator. Inline ghSend to keep
+  // this off api.ts (entry bundle budget).
   const convertMut = useMutation({
     mutationFn: (login: string) =>
       ghSend("PUT", `/api/v3/orgs/${encodeURIComponent(org)}/outside_collaborators/${encodeURIComponent(login)}`),
@@ -344,11 +339,6 @@ function MemberCard({
   );
 }
 
-/**
- * Outside collaborators — non-members with access to org repos, from
- * GET /orgs/{org}/outside_collaborators (the same source the Governance
- * page uses). Removal is org-owner-only.
- */
 function OutsideCollaboratorsPanel({ org, isOrgAdmin }: { org: string; isOrgAdmin: boolean }) {
   const qc = useQueryClient();
   const [filter, setFilter] = useState("");

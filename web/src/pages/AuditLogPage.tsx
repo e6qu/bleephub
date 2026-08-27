@@ -44,13 +44,10 @@ export interface ParsedAuditQuery {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/**
- * GitHub-style audit-log qualifier syntax: `action:repo.create actor:admin
- * created:2026-01-01..2026-02-01` (also `created:>=DATE`, `created:<=DATE`,
- * bare `created:DATE`). The server's phrase matcher is a plain AND-of-substring
- * search with no qualifier support, so qualifier VALUES are folded into the
- * phrase and `created:` ranges are applied client-side after fetching.
- */
+// Parse GitHub-style audit qualifiers (action:/actor:/created:, with created:
+// ranges and >=/<= forms). The server's phrase matcher is plain AND-of-substring
+// with no qualifiers, so values fold into the phrase and created: ranges filter
+// client-side.
 export function parseAuditQuery(input: string): ParsedAuditQuery {
   const out: ParsedAuditQuery = { text: "" };
   const rest: string[] = [];
@@ -77,7 +74,7 @@ export function parseAuditQuery(input: string): ParsedAuditQuery {
         out.from = value;
         out.to = value;
       }
-      // Anything else after created: is ignored rather than silently searched.
+      // Ignore anything else after created: instead of searching it.
     }
   }
   out.text = rest.join(" ");
@@ -99,7 +96,6 @@ export function filterByCreated(
   });
 }
 
-/** Trigger a browser download of `content` as `filename`. */
 function downloadTextFile(filename: string, mime: string, content: string): void {
   const url = URL.createObjectURL(new Blob([content], { type: mime }));
   const a = document.createElement("a");
@@ -111,8 +107,7 @@ function downloadTextFile(filename: string, mime: string, content: string): void
   URL.revokeObjectURL(url);
 }
 
-// Export fan-out cap: walk at most this many 100-row pages of the filtered
-// result. Labelled next to the export buttons so the limit is never silent.
+// Export walks at most this many 100-row pages; the cap is shown by the buttons.
 const EXPORT_PAGE_CAP = 10;
 const EXPORT_ROW_CAP = EXPORT_PAGE_CAP * 100;
 
@@ -137,10 +132,8 @@ function rawToEvent(entry: RawAuditEntry, org: string): BleephubAuditEvent {
   };
 }
 
-/**
- * Walk the audit-log pages for the CURRENT server-side filters (up to the
- * labelled cap), so exports cover all matching rows, not just the loaded page.
- */
+// Walk the audit-log pages for the current server filters, up to the cap, so
+// exports cover all matching rows.
 async function fetchAllAuditEvents(
   org: string,
   phrase: string | undefined,
@@ -207,8 +200,7 @@ export function AuditLogPage() {
   });
 
   const apply = () => {
-    // The search phrase understands action:/actor:/created: qualifiers; the
-    // qualifiers merge with (and win over) the dedicated inputs.
+    // Phrase qualifiers merge with, and win over, the dedicated inputs.
     const parsed = parseAuditQuery(phrase);
     setAppliedFilters({
       org: org.trim() || effectiveOrg,
@@ -284,8 +276,8 @@ export function AuditLogPage() {
         const details = info.getValue();
         return (
           <pre
-            // A scrollable region must be keyboard-focusable so it can be
-            // scrolled without a mouse (axe scrollable-region-focusable).
+            // Focusable so the scroll region is keyboard-scrollable
+            // (axe scrollable-region-focusable).
             tabIndex={0}
             aria-label="Event details"
             style={{

@@ -94,11 +94,8 @@ function LoginRedirect() {
   return <Navigate to={`/ui/login?return_to=${encodeURIComponent(returnTo)}`} replace />;
 }
 
-/**
- * A signed-out visitor and an unreachable server are different situations and
- * must not collapse into the same blank screen, so the probe's outcome is
- * modelled explicitly rather than as a nullable boolean.
- */
+// Model the probe outcome explicitly: signed-out and unreachable-server are
+// distinct states, not one nullable boolean.
 type SessionState =
   | { status: "probing" }
   | { status: "signed-in" }
@@ -200,35 +197,21 @@ export function App() {
 }
 
 /**
- * The full route table, rendered for signed-in AND signed-out visitors so
- * public content is browsable anonymously (github.com behaviour). Every
- * viewer-scoped surface is wrapped in `gate(...)`: signed-in renders the
- * page, signed-out redirects to the sign-in page preserving the location.
+ * Route table rendered for signed-in and signed-out visitors alike; public
+ * content browses anonymously. `gate(...)` wraps any route that is either
+ * viewer-scoped or whose server reads 401 anonymously — an anonymous page
+ * must fire zero 401ing requests.
  *
- * A route is gated when its page's data is viewer-scoped (dashboard,
- * notifications, settings, …) OR when the server refuses its reads
- * anonymously (discussions and projects-classic are GraphQL/auth-only,
- * packages / marketplace / org teams & projects / security alerts all 401
- * without a session) — an anonymous page must fire zero 401ing requests.
- *
- * Repositories live at `/ui/{owner}/{repo}`, mirroring github.com's
- * `/{owner}/{repo}`: the SPA is mounted at `/ui/` (Vite `base`), so `/ui/` is
- * this app's site root and a repository sits one segment below it, exactly as
- * the `/ui/:login` profile route already mirrors github.com's `/{login}`.
- *
- * Disambiguation from the app's own top-level pages is the router's ranking
- * rule, not declaration order: React Router scores a static segment above a
- * dynamic one, so `/ui/gists/:id`, `/ui/orgs/:org` and `/ui/settings/…` all
- * beat `/ui/:owner/:repo` no matter where they appear below. Consumers that
- * parse the pathname WITHOUT the router (the global header's repo scope and
- * breadcrumb) cannot use that ranking, so they filter through the explicit
- * reserved-word list in routes.ts — github.com's own mechanism for keeping
- * `settings` and `notifications` from being claimed as account names.
+ * Repositories live at `/ui/{owner}/{repo}`, one segment below the SPA's
+ * `/ui/` root. React Router ranks static segments above dynamic ones, so
+ * `/ui/gists/:id`, `/ui/orgs/:org`, etc. beat `/ui/:owner/:repo` regardless
+ * of declaration order. Non-router pathname parsers (header repo scope,
+ * breadcrumb) can't use that ranking and instead filter through the
+ * reserved-word list in routes.ts.
  */
 function AppRoutes({ signedIn }: { signedIn: boolean }) {
   const location = useLocation();
-  // The sign-in page renders chromeless, exactly as the signed-out app did
-  // before anonymous browsing existed; a signed-in visitor bounces home.
+  // The sign-in page renders chromeless; a signed-in visitor bounces home.
   if (location.pathname === "/ui/login") {
     return signedIn ? (
       <Navigate to="/ui/" replace />
@@ -299,9 +282,7 @@ function AppRoutes({ signedIn }: { signedIn: boolean }) {
               <Route path="/ui/apps/:publisher/marketplace" element={gate(<MarketplacePublisherPage />)} />
               <Route path="/ui/oauth" element={gate(<OAuthPage />)} />
               <Route path="/ui/metrics" element={gate(<MetricsPage />)} />
-              {/* The advisory database is public: no gate(). A published
-                  advisory is a fact about a package, readable by anyone,
-                  which is exactly what the REST /advisories routes serve. */}
+              {/* Advisory database is public: no gate(). */}
               <Route path="/ui/advisories" element={<GlobalAdvisoriesPage />} />
               <Route path="/ui/advisories/:ghsaId" element={<GlobalAdvisoryDetailPage />} />
               <Route path="/ui/gists" element={<GistsPage />} />
@@ -329,33 +310,25 @@ function AppRoutes({ signedIn }: { signedIn: boolean }) {
               <Route path="/ui/operations/teams" element={gate(<TeamsPage />)} />
               <Route path="/ui/operations/enterprise" element={gate(<EnterprisePage />)} />
               <Route path="/ui/operations/audit-log" element={gate(<AuditLogPage />)} />
-              {/* Deployments + webhook deliveries + Pages */}
               <Route path="/ui/:owner/:repo/deployments" element={<DeploymentsPage />} />
               <Route path="/ui/:owner/:repo/hooks/:hookId/deliveries" element={gate(<WebhookDeliveriesPage />)} />
               <Route path="/ui/orgs/:org/hooks" element={gate(<OrgHooksPage />)} />
               <Route path="/ui/orgs/:org/hooks/:hookId/deliveries" element={gate(<WebhookDeliveriesPage />)} />
-              {/* Search + repo social + account */}
               <Route path="/ui/search" element={<SearchPage />} />
               <Route path="/ui/account" element={gate(<AccountPage />)} />
               <Route path="/ui/settings/organizations" element={gate(<MyOrganizationsPage />)} />
               <Route path="/ui/:owner/:repo/stargazers" element={<RepoSocialPage kind="stargazers" />} />
               <Route path="/ui/:owner/:repo/watchers" element={<RepoSocialPage kind="watchers" />} />
               <Route path="/ui/:owner/:repo/forks" element={<RepoSocialPage kind="forks" />} />
-              {/* Bleephub organization overview, people, teams, and user profile pages.
-                  Org sub-pages share the OrgHeader tab bar. The bare
-                  top-level /ui/:login profile route is registered LAST so
-                  every literal /ui/<page> route wins over it. */}
+              {/* /ui/:login profile route is registered LAST so every literal
+                  /ui/<page> route wins over it. */}
               <Route path="/ui/orgs/:org" element={<OrgOverviewPage />} />
               <Route path="/ui/orgs/:org/people" element={<OrgPeoplePage />} />
               <Route path="/ui/orgs/:org/teams" element={gate(<OrgTeamsPage />)} />
               <Route path="/ui/orgs/:org/teams/:slug" element={gate(<OrgTeamDetailPage />)} />
               <Route path="/ui/users/:login" element={<ProfilePage />} />
-              {/* Any unknown /ui/* path lands back on the dashboard
-                  (which, signed out, redirects to sign-in). /ui/login is
-                  handled above, before the shell. */}
               <Route path="/ui/:login" element={<ProfilePage />} />
-                {/* github.com shows a 404 for unknown paths; silently landing
-                    on the dashboard hides typos and broken links. */}
+                {/* Unknown paths 404, matching github.com. */}
                 <Route path="/ui/*" element={<RepoNotFound />} />
               </Routes>
         </Suspense>

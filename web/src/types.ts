@@ -1,17 +1,10 @@
 import type { components } from "../../third_party/github-openapi.js";
 
-// Enum unions mirror the exact strings the server emits (bleephub Go:
-// workflows.go / store_workflow_files.go). Empty result = still in flight.
-// Keeping these as unions makes a typo'd comparison (e.g. "failed" vs the
-// real "failure") a compile error rather than a silently-dead branch.
-// Only values the server actually ASSIGNS belong here — a workflow is never
-// "queued"/"skipped", a workflow file is never anything but "active".
-// "waiting" = held on a reviewer-protected environment approval.
-/**
- * Like Partial<T> but each optional member also explicitly admits `undefined`,
- * for exactOptionalPropertyTypes: callers build patch payloads with
- * `field: value || undefined`, which is a present-but-undefined property.
- */
+// Enum unions mirror the exact strings the server emits; only values the server
+// assigns belong here. "waiting" = held on a reviewer-protected environment approval.
+
+// Like Partial<T> but each optional member also admits `undefined`, for
+// exactOptionalPropertyTypes (callers build patches with `field: value || undefined`).
 export type Undef<T> = { [K in keyof T]?: T[K] | undefined };
 
 export type WorkflowStatus =
@@ -40,12 +33,8 @@ export type WorkflowResult = "" | JobResult;
 export type WorkflowFileState = "active" | "disabled_manually" | "disabled_inactivity";
 export type WorkflowFileSource = "submitted" | "discovered";
 
-/**
- * Workflow represents a running multi-job workflow, as projected by the
- * management API's workflowView (handle_mgmt.go) — NOT the full Go
- * Workflow struct. Fields the view never emits (runNumber, ref, sha,
- * concurrencyGroup, …) are deliberately absent.
- */
+// Projected by the management API's workflowView, not the full Go Workflow
+// struct; fields the view never emits (runNumber, ref, sha, …) are absent.
 export interface BleephubWorkflow {
   id: string;
   name: string;
@@ -58,7 +47,6 @@ export interface BleephubWorkflow {
   repoFullName?: string;
 }
 
-/** WorkflowJob represents a single job within a workflow. */
 export interface BleephubWorkflowJob {
   key: string;
   jobId: string;
@@ -69,11 +57,8 @@ export interface BleephubWorkflowJob {
   outputs?: Record<string, string>;
   matrix?: Record<string, unknown>;
   continueOnError?: boolean;
-  /**
-   * startedAt / completedAt are Go time.Time fields, always serialized —
-   * a job that hasn't started/finished carries the zero-time sentinel
-   * "0001-01-01T00:00:00Z" rather than omitting the field.
-   */
+  // Always serialized; an unstarted/unfinished job carries the zero-time
+  // sentinel "0001-01-01T00:00:00Z" rather than omitting the field.
   startedAt: string;
   completedAt: string;
   matrixGroup?: string;
@@ -87,7 +72,6 @@ export interface RepoListFilters {
   direction?: "asc" | "desc" | undefined;
 }
 
-/** Repo represents a GitHub repository. */
 export interface BleephubRepo {
   id: number;
   node_id: string;
@@ -132,13 +116,8 @@ export interface BleephubRepo {
   topics?: string[];
 }
 
-/**
- * Dashboard metrics, as reported by the server's own counters.
- *
- * `workflow_submissions` is the server's submission counter; it is not a count
- * of stored workflow runs, and the server exposes no such total, so nothing
- * here may be labelled "workflow runs".
- */
+// `workflow_submissions` is a submission counter, not a count of stored workflow
+// runs; the server exposes no such total, so nothing here is "workflow runs".
 export interface BleephubMetrics {
   workflow_submissions: number;
   job_dispatches: number;
@@ -154,7 +133,6 @@ export interface BleephubMetrics {
   job_duration_p99_seconds: number;
 }
 
-/** Runtime status reported by the server. */
 export interface BleephubStatus {
   active_workflows: number;
   jobs_by_status: Record<string, number>;
@@ -171,7 +149,6 @@ export interface BleephubHealth {
   published_at: string;
 }
 
-/** WorkflowFile is the file-level workflow YAML entity. */
 export interface BleephubWorkflowFile {
   id: number;
   name: string;
@@ -189,7 +166,6 @@ export interface BleephubDispatchRequest {
   inputs?: Record<string, string>;
 }
 
-/** GitHub App row from the settings-owned browser surface. */
 export interface BleephubApp {
   id: number;
   slug: string;
@@ -208,7 +184,6 @@ export interface BleephubApp {
   updatedAt: string;
 }
 
-/** GitHub App installation row normalized from GitHub's REST installation shape. */
 export interface BleephubInstallation {
   id: number;
   appId: number;
@@ -223,7 +198,6 @@ export interface BleephubInstallation {
   suspendedAt: string | null;
 }
 
-/** OAuth App row from the settings-owned browser surface, distinct from GitHub App. */
 export interface BleephubOAuthApp {
   clientId: string;
   name: string;
@@ -274,10 +248,8 @@ export interface WireInstallation {
   account: { login: string };
 }
 
-// Wire shapes: the snake_case JSON the `/api/v3/bleephub/*` endpoints emit
-// (server: oauthAppToJSON / appToJSON). Typing the raw response lets the
-// snake→camel normalizers in api.ts drop their `as` casts, so a renamed or
-// missing server field becomes a compile error at the mapping site.
+// Raw snake_case JSON the `/api/v3/bleephub/*` endpoints emit. Typing it lets
+// the api.ts normalizers drop `as` casts, so a renamed field fails to compile.
 export interface WireOAuthApp {
   client_id: string;
   name: string;
@@ -297,14 +269,10 @@ export interface WireAppCreated {
   webhook_secret: string;
 }
 
-/** GitHub REST issue/PR state. */
 export type GithubState = "open" | "closed";
 
-/** GitHub Issue. */
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubIssue = components["schemas"]["issue"];
 
-/** GitHub Pull Request. */
 export interface GithubPR {
   id: number;
   node_id: string;
@@ -335,7 +303,6 @@ export interface GithubPR {
   commits?: number;
 }
 
-/** GitHub comment. */
 export interface GithubComment {
   id: number;
   /** null when the authoring user no longer resolves (GitHub parity). */
@@ -345,9 +312,7 @@ export interface GithubComment {
   updated_at: string;
 }
 
-/** Git commit. */
-// Generated from the vendored GitHub OpenAPI description (WEB-013). Spec marks
-// commit.author nullable; consumers optional-chain it.
+// Spec marks commit.author nullable; consumers optional-chain it.
 export type GithubCommit = components["schemas"]["commit"];
 
 export interface GithubComparison {
@@ -511,8 +476,8 @@ export interface GithubWorkflowPermissions {
   can_approve_pull_request_reviews: boolean;
 }
 
-/** One package in the SPDX SBOM (GET .../dependency-graph/sbom). The first
- * package describes the repo itself; the rest are its dependencies. */
+/** SPDX SBOM package (GET .../dependency-graph/sbom); the first is the repo,
+ * the rest its dependencies. */
 export interface GithubSBOMPackage {
   SPDXID: string;
   name: string;
@@ -522,9 +487,8 @@ export interface GithubSBOMPackage {
 
 // ─── GitHub Actions REST shapes (/api/v3/repos/{o}/{r}/actions/*) ───────
 
-/** GitHub workflow-run status. */
 export type GHRunStatus = "queued" | "in_progress" | "completed" | "waiting";
-/** GitHub run/job/step conclusion (null while in flight). */
+/** Run/job/step conclusion; null while in flight. */
 export type GHConclusion =
   | "success"
   | "failure"
@@ -551,11 +515,8 @@ export interface GithubWorkflowRun {
   updated_at: string;
   /** null when the server can't attribute the run to a user. */
   actor: { login: string; avatar_url?: string } | null;
-  /**
-   * GitHub's row title for the run (commit message / PR title / manual
-   * dispatch title). Always present in the server payload; optional here
-   * because older fixtures omit it — consumers fall back to `name`.
-   */
+  // Run row title (commit message / PR title / dispatch title). Optional here
+  // because older fixtures omit it; consumers fall back to `name`.
   display_title?: string;
 }
 
@@ -570,7 +531,6 @@ export interface GithubWorkflow {
   badge_url: string;
 }
 
-/** Per-step entry inside a job. */
 export interface GithubJobStep {
   name: string;
   status: GHRunStatus;
@@ -623,9 +583,7 @@ export interface GithubActionsCacheUsage {
 }
 
 /** Pending deployment — GET .../actions/runs/{run_id}/pending_deployments. */
-// Generated from the vendored GitHub OpenAPI description (WEB-013). The spec
-// marks environment.id optional, so consumers filter it before building
-// environment_ids (see DeploymentsPage/RunDetailPage).
+// Spec marks environment.id optional; consumers filter it before building environment_ids.
 export type GithubPendingDeployment = components["schemas"]["pending-deployment"];
 
 /** Check run — GET .../commits/{sha}/check-runs (items). */
@@ -642,8 +600,7 @@ export interface GithubCheckRun {
 }
 
 /** Actions secrets public key — GET {scope}/secrets/public-key. */
-// Generated from the vendored GitHub OpenAPI description (WEB-013). `key` is a
-// base64-encoded 32-byte X25519 public key for sealed-box encryption.
+// `key` is a base64-encoded 32-byte X25519 public key for sealed-box encryption.
 export type GithubPublicKey = components["schemas"]["actions-public-key"];
 
 export type GithubOrgVisibility = "all" | "private" | "selected";
@@ -669,9 +626,6 @@ export interface GithubRunner {
 }
 
 /** Content-file response — GET .../contents/{path} (file variant). */
-// Generated from the vendored GitHub OpenAPI description (WEB-013). The full
-// spec shape is a superset of the six fields the UI reads; adopting the
-// generated schema replaces a hand-written cast with the documented contract.
 export type GithubContentFile = components["schemas"]["content-file"];
 
 /** One run of consecutive lines attributed to the same commit (git blame). */
@@ -734,7 +688,6 @@ export interface GithubRelease {
   assets: GithubReleaseAsset[];
 }
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubReleaseAsset = components["schemas"]["release-asset"];
 
 export type GithubMigrationState = "pending" | "exporting" | "exported" | "failed";
@@ -803,10 +756,8 @@ export interface BleephubTeam {
   created_at: string;
 }
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubTeamMember = components["schemas"]["team-member"];
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubTeamMembership = components["schemas"]["team-membership"];
 
 export interface GithubTeamRepo {
@@ -818,7 +769,6 @@ export interface GithubTeamRepo {
   role_name?: string;
 }
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubDeployKey = components["schemas"]["deploy-key"];
 export type GithubAutolink = components["schemas"]["autolink"];
 export type GithubCommitComment = components["schemas"]["commit-comment"];
@@ -922,7 +872,6 @@ export interface BleephubGist {
   commits_url?: string;
 }
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubGistCommit = components["schemas"]["gist-commit"];
 export type GithubGistComment = components["schemas"]["gist-comment"];
 
@@ -943,7 +892,6 @@ export interface GithubNotificationThread {
   url: string;
 }
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubThreadSubscription = components["schemas"]["thread-subscription"];
 
 // ─── GitHub Discussions GraphQL shapes ──────────────────────────────────
@@ -1072,7 +1020,6 @@ export interface GithubSecretScanningLocation {
   details: GithubSecretScanningLocationDetails;
 }
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubSecretScanningAlert = components["schemas"]["secret-scanning-alert"];
 
 export type GithubSecretScanningResolution =
@@ -1092,14 +1039,11 @@ export type GithubCodeScanningDismissedReason =
   | "won't fix"
   | "used in tests";
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013). Spec marks
-// location/commit_sha optional; CodeScanningPage optional-chains them.
+// Spec marks location/commit_sha optional; CodeScanningPage optional-chains them.
 export type GithubCodeScanningAlertInstance = components["schemas"]["code-scanning-alert-instance"];
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubCodeScanningAlert = components["schemas"]["code-scanning-alert"];
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubCodeScanningAnalysis = components["schemas"]["code-scanning-analysis"];
 
 export interface GithubCodeScanningSARIFUpload {
@@ -1137,10 +1081,8 @@ export type GithubDependabotDismissedReason =
   | "not_used"
   | "tolerable_risk";
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubDependabotAlert = components["schemas"]["dependabot-alert"];
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubDependabotSecret = components["schemas"]["dependabot-secret"];
 
 // ─── GitHub Codespaces shapes ───────────────────────────────────────────
@@ -1164,7 +1106,6 @@ export type GithubCodespaceState =
   | "Rebuilding"
   | "Unavailable";
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubCodespaceMachine = components["schemas"]["codespace-machine"];
 
 export interface GithubCodespace {
@@ -1214,7 +1155,6 @@ export interface GithubPackage {
   repository: BleephubRepo | null;
 }
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubPackageVersion = components["schemas"]["package-version"];
 
 export interface GithubPackageFile {
@@ -1402,7 +1342,6 @@ export interface GithubCommitActivityWeek {
  * [unix week timestamp, additions (>=0), deletions (<=0)]. */
 export type GithubCodeFrequencyWeek = [number, number, number];
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubCommunityProfile = components["schemas"]["community-profile"];
 
 // ─── Labels + milestones ────────────────────────────────────────────────
@@ -1415,7 +1354,6 @@ export interface GithubLabel {
   default: boolean;
 }
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubMilestone = NonNullable<components["schemas"]["nullable-milestone"]>;
 
 // ─── Organization governance ────────────────────────────────────────────
@@ -1449,11 +1387,9 @@ export type GithubCustomPropertyValueType =
   | "true_false"
   | "url";
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubCustomProperty = components["schemas"]["custom-property"];
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013). The spec
-// models the whole type nullable; NonNullable strips that for list consumers.
+// Spec models the whole type nullable; NonNullable strips it for list consumers.
 export type GithubIssueType = NonNullable<components["schemas"]["issue-type"]>;
 
 export interface GithubOrgRole {
@@ -1483,7 +1419,6 @@ export interface GithubOrgRoleUser extends GithubAccount {
 
 // ─── Enterprise administration ──────────────────────────────────────────
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubEnterpriseTeam = components["schemas"]["enterprise-team"];
 
 export interface GithubEnterpriseDependabotAccess {
@@ -1550,13 +1485,11 @@ export interface GithubCopilotSpaceCollaborator {
   name?: string;
 }
 
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubCopilotSpaceResource = components["schemas"]["copilot-space-resource"];
 
 // ─── Deployments + webhook deliveries + Pages ───────────────────────────
 
 /** Deployment — GET /repos/{o}/{r}/deployments (items). */
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubDeployment = NonNullable<components["schemas"]["nullable-deployment"]>;
 
 /** Deployment status state (the POST statuses `state` enum). */
@@ -1570,7 +1503,6 @@ export type GithubDeploymentState =
   | "success";
 
 /** Deployment status — GET .../deployments/{id}/statuses (items). */
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubDeploymentStatus = components["schemas"]["deployment-status"];
 
 // ─── PR reviews, statuses, reactions & timeline ─────────────────────────
@@ -1618,7 +1550,6 @@ export interface GithubOrgSimple {
 }
 
 /** One repository row of GET /orgs/{org}/properties/values. */
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubOrgRepoCustomPropertyValues = components["schemas"]["org-repo-custom-property-values"];
 
 /** Wait-timer / required-reviewers rule nested in the environment object. */
@@ -1630,10 +1561,8 @@ export interface GithubEnvironmentProtectionRule {
   reviewers?: { type: string; reviewer?: { login?: string } }[];
 }
 
-/**
- * Full environment — GET /repos/{o}/{r}/environments (items). Carries the
- * protection config the slim GithubEnvironment omits.
- */
+// Full environment — GET /repos/{o}/{r}/environments (items). Carries the
+// protection config the slim GithubEnvironment omits.
 export interface GithubEnvironmentDetail {
   id: number;
   node_id: string;
@@ -1650,7 +1579,6 @@ export interface GithubEnvironmentDetail {
 }
 
 /** Branch/tag pattern — GET .../environments/{env}/deployment-branch-policies. */
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubDeploymentBranchPolicy = components["schemas"]["deployment-branch-policy"];
 
 /** Custom (app-backed) rule — GET .../environments/{env}/deployment_protection_rules. */
@@ -1795,11 +1723,8 @@ export interface GithubReaction {
   created_at: string;
 }
 
-/**
- * Issue-timeline union member — GET .../issues/{n}/timeline (items).
- * Only `event` is guaranteed; every other member depends on the event
- * variant (commented, reviewed, labeled, assigned, renamed, …).
- */
+// Issue-timeline union member — GET .../issues/{n}/timeline (items). Only
+// `event` is guaranteed; every other member depends on the event variant.
 export interface GithubTimelineItem {
   event: string;
   id?: number;
@@ -1899,10 +1824,8 @@ export interface GithubSearchTopicItem {
 }
 
 /** Repo collaborator: simple user plus permission grants. */
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubCollaborator = NonNullable<components["schemas"]["nullable-collaborator"]>;
 
-/** Pending repository invitation. */
 export interface GithubRepoInvitation {
   id: number;
   invitee: { login: string } | null;
@@ -1937,13 +1860,11 @@ export interface GithubRepoSubscription {
   repository_url: string;
 }
 
-/** Viewer-specific state normalized for repository page rendering. */
 export interface GithubRepoViewerState {
   starred: boolean;
   subscribed: boolean;
 }
 
-/** Email address on the authenticated user's account. */
 export interface GithubUserEmail {
   email: string;
   primary: boolean;
@@ -1951,7 +1872,6 @@ export interface GithubUserEmail {
   visibility: string | null;
 }
 
-/** SSH authentication key on the authenticated user's account. */
 export interface GithubSSHKey {
   id: number;
   key: string;
@@ -1967,7 +1887,6 @@ export interface GithubGPGKeyEmail {
   primary: boolean;
 }
 
-/** GPG key on the authenticated user's account. */
 export interface GithubGPGKey {
   id: number;
   key_id: string;
@@ -1981,8 +1900,6 @@ export interface GithubGPGKey {
   expires_at?: string;
 }
 
-/** SSH signing key on the authenticated user's account. */
-// Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubSSHSigningKey = components["schemas"]["ssh-signing-key"];
 
 /** Entry in GET /user/blocks. */
@@ -1997,12 +1914,8 @@ export interface GithubBlockedUser {
 
 // ─── Bleephub dashboard, user profile, and organization pages ───────────
 
-/**
- * The GitHub `public-user` shape served by GET /users/{login} and
- * GET /user — the simple-user members plus the profile fields and live
- * counters (followers/following/public_repos). company/location/
- * twitter_username are null when unset, matching real GitHub.
- */
+// GitHub `public-user` — GET /users/{login} and GET /user. company/location/
+// twitter_username are null when unset.
 export interface GithubUserProfile {
   login: string;
   id: number;
@@ -2023,10 +1936,7 @@ export interface GithubUserProfile {
   html_url?: string;
 }
 
-/**
- * The GitHub `organization-full` shape served by GET /orgs/{org} —
- * profile fields plus the live public_repos counter.
- */
+/** GitHub `organization-full` — GET /orgs/{org}. */
 export interface GithubOrgProfile {
   login: string;
   id: number;
@@ -2072,11 +1982,8 @@ export interface GithubOrgTeam {
   parent: { slug: string; name: string } | null;
 }
 
-/**
- * An issue from GET /issues (the authenticated user's cross-repo issue
- * feed). Unlike the repo-scoped issue shape it carries the `repository`
- * each result lives in, since results span repositories.
- */
+// GET /issues (the viewer's cross-repo feed); carries `repository` since results
+// span repositories.
 export interface GithubFeedIssue {
   id: number;
   number: number;
@@ -2215,18 +2122,13 @@ export interface GithubSearchTextMatch {
   matches: GithubSearchTextMatchSpan[];
 }
 
-/**
- * Notification thread as served by the web-only /ui-data/notifications views:
- * the REST thread shape plus the simulator-only `saved` bookmark flag.
- */
+// REST thread shape plus the web-only `saved` bookmark flag (/ui-data views).
 export type GithubNotificationThreadWithSaved = GithubNotificationThread & { saved?: boolean };
 
 // ─── Account settings: classic personal access tokens (legacy authorizations API)
 
-/**
- * A classic authorization row from GET /api/v3/authorizations. `token` is
- * only populated in the POST response (shown once); list/get return "".
- */
+// GET /api/v3/authorizations. `token` is populated only in the POST response
+// (shown once); list/get return "".
 export interface GithubClassicAuthorization {
   id: number;
   url: string;
@@ -2244,9 +2146,8 @@ export interface GithubClassicAuthorization {
 }
 
 // ─── PR-specific declaration-merged additions (PullsPage/PRFilesView) ─────
-// TypeScript merges same-named interface declarations within a module, so
-// these append optional fields to the interfaces declared above without
-// touching their original definitions.
+// Same-named interface declarations merge, appending optional fields to the
+// interfaces declared above.
 
 export interface GithubPR {
   /**
@@ -2262,9 +2163,9 @@ export interface GithubPRReviewComment {
 }
 
 // ─── Server-conformance additions (auto-merge, fork syncing, credits, repo
-// viewer permissions) — same declaration-merging convention as above. ──────
+// viewer permissions) — declaration-merged as above. ──────────────────────
 
-/** REST pull payload `auto_merge` member (null when auto-merge is not armed). */
+/** REST pull payload `auto_merge` member; null when not armed. */
 export interface GithubPRAutoMerge {
   enabled_by: { login: string; avatar_url?: string } | null;
   merge_method: "merge" | "squash" | "rebase";
@@ -2278,7 +2179,6 @@ export interface GithubPR {
 }
 
 export interface BleephubRepo {
-  /** Whether GitHub Discussions are enabled on the repository. */
   has_discussions?: boolean;
   /** The viewer's own capabilities on the repository. */
   permissions?: { admin: boolean; push: boolean; pull: boolean };
@@ -2302,7 +2202,6 @@ export type GithubAdvisoryCreditType =
   | "tool"
   | "other";
 
-/** A `credits` request/response row: the credited login and its credit type. */
 export interface GithubAdvisoryCredit {
   login: string;
   type: GithubAdvisoryCreditType;
@@ -2328,11 +2227,8 @@ export interface GithubSecurityAdvisoryUpdatePayload {
   credits?: GithubAdvisoryCredit[] | undefined;
 }
 
-/**
- * A profile achievement badge from GET /ui-data/users/{login}/achievements.
- * Server-computed from stored state; `tier` is GitHub's multiplier level
- * (1 = base badge) and `count` the raw number that earned it.
- */
+// GET /ui-data/users/{login}/achievements. `tier` is the multiplier level
+// (1 = base badge); `count` is the raw number that earned it.
 export interface GithubAchievement {
   slug: string;
   name: string;

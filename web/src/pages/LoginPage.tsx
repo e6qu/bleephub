@@ -42,10 +42,8 @@ export function LoginPage() {
         }
         setProviders((await response.json()) as { github?: boolean; shauth?: boolean });
       } catch (err) {
-        // An unreachable provider list is not the same as an instance with no
-        // providers configured. Token sign-in still works, so fall through to
-        // it — but say why the other options are missing instead of just
-        // rendering none of them.
+        // An unreachable provider list is not "no providers configured": token
+        // sign-in still works, so fall through but report why the rest are gone.
         setProvidersError(describeFailure(err));
         setProviders({});
       }
@@ -110,8 +108,6 @@ export function LoginPage() {
     return (
       <div
         className="flex min-h-screen flex-col px-4"
-        // G10: flat neutral canvas in both themes, like github.com's sign-in
-        // page — no blue/pink radial wash.
         style={{ background: "var(--color-bg-subtle)" }}
       >
         <div className="flex w-full flex-1 items-center justify-center">

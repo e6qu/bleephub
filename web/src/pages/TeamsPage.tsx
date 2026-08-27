@@ -159,8 +159,8 @@ function TeamsTable() {
 
 function CreateTeamDialog({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  // Teams can only be created in an org the viewer belongs to; a free-text
-  // field just produced a confusing 404/403. Offer the viewer's orgs.
+  // Teams need an org the viewer belongs to; offer their orgs, not a free-text
+  // field that 404/403'd.
   const { data: orgs = [] } = useQuery({
     queryKey: ["viewer-orgs"],
     queryFn: ({ signal }) => fetchAuthenticatedUserOrgs(signal),
@@ -367,9 +367,8 @@ export function TeamMembersPanel({ org, slug }: { org: string; slug: string }) {
     queryFn: () => fetchTeamMembers(org, slug),
     enabled: !!org && !!slug,
   });
-  // A team member must be an org member; a free-text login just 404/422'd on a
-  // typo or a non-member. Offer the org's members, minus those already on the
-  // team.
+  // A team member must be an org member; offer org members not already on the
+  // team, not a free-text login.
   const { data: orgMembers = [] } = useQuery({
     queryKey: ["org-members", org],
     queryFn: () => fetchOrgMembers(org),
