@@ -13,24 +13,19 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// maxWorkflowCallDepth bounds reusable-workflow nesting: GitHub allows
-// connecting up to four levels of workflows (the caller plus three
-// nested calls).
+// maxWorkflowCallDepth bounds reusable-workflow nesting; GitHub allows four
+// levels (the caller plus three nested calls).
 const maxWorkflowCallDepth = 4
 
-// expandReusableWorkflows replaces every `uses:` job in def with the
-// called workflow's jobs plus two synthetic server-completed nodes:
+// expandReusableWorkflows replaces every `uses:` job in def with the called
+// workflow's jobs plus two synthetic server-completed nodes:
 //
-//	<caller>/__call  — the gate: carries the caller job's needs/if and
-//	                   resolves `with:` templates when it completes
-//	<caller>/<k>     — each called job (display "caller / called");
-//	                   roots need the gate
-//	<caller>         — the collector: needs every called job, computes
-//	                   the workflow_call outputs, and serves downstream
-//	                   `needs.<caller>` edges under the original key
+//	<caller>/__call  — gate: carries the caller's needs/if, resolves `with:`
+//	<caller>/<k>     — each called job (display "caller / called"); roots need the gate
+//	<caller>         — collector: needs every called job, computes workflow_call
+//	                   outputs, serves downstream `needs.<caller>` edges
 //
-// repoKey provides the resolution context for "./" references; depth
-// starts at 1 for the top-level workflow.
+// repoKey resolves "./" references; depth starts at 1 for the top-level workflow.
 func (s *Engine) expandReusableWorkflows(def *store.WorkflowDef, repoKey string, depth int) (*store.WorkflowDef, error) {
 	hasCalls := false
 	for _, jd := range def.Jobs {
@@ -94,8 +89,7 @@ func (s *Engine) expandOneCall(out *store.WorkflowDef, callerKey string, caller 
 		secretDefs = callDef.Secrets
 	}
 
-	// Validate the caller's inputs/secrets against the declarations now —
-	// real GitHub rejects the run at creation for these.
+	// GitHub rejects these at run creation, so validate here.
 	for name := range caller.With {
 		if _, ok := inputDefs[name]; !ok {
 			return fmt.Errorf("called workflow %s does not define input %q", calledPath, name)
@@ -128,10 +122,9 @@ func (s *Engine) expandOneCall(out *store.WorkflowDef, callerKey string, caller 
 		return fmt.Errorf("called workflow %s: %w", calledPath, err)
 	}
 
-	// Bindings already attached to the called workflow's jobs belong to calls
-	// it makes itself. Their roots become children of this call so secret
-	// resolution narrows outside-in. Collected before `binding` exists, so the
-	// chain can never close on itself.
+	// Bindings already on the called jobs belong to calls it makes itself; make
+	// their roots children of this call so secret resolution narrows outside-in.
+	// Collect before `binding` exists so the chain can never close on itself.
 	nestedRoots := map[*store.WorkflowCallBinding]bool{}
 	for _, cjd := range calledDef.Jobs {
 		if cjd.Call != nil {
@@ -163,7 +156,7 @@ func (s *Engine) expandOneCall(out *store.WorkflowDef, callerKey string, caller 
 		Name:            callerDisplay,
 		Needs:           caller.Needs,
 		If:              caller.If,
-		Env:             caller.Env, // carries __matrix_* for `with:` evaluation
+		Env:             caller.Env, // carries __matrix_* for `with:`
 		Call:            binding,
 		ServerCompleted: true,
 		CallRole:        "gate",
@@ -172,7 +165,7 @@ func (s *Engine) expandOneCall(out *store.WorkflowDef, callerKey string, caller 
 	collectorNeeds := []string{gateKey}
 	for k, cjd := range calledDef.Jobs {
 		childKey := callerKey + "/" + k
-		child := *cjd // shallow copy; nested expansion already ran
+		child := *cjd
 		childDisplay := cjd.Name
 		if childDisplay == "" {
 			childDisplay = k
@@ -216,9 +209,8 @@ func callBindingRoot(binding *store.WorkflowCallBinding) *store.WorkflowCallBind
 }
 
 // resolveCalledWorkflow loads the YAML a `uses:` reference points at:
-// "./.github/workflows/x.yml" resolves in the caller's repo at HEAD;
-// "owner/repo/.github/workflows/x.yml@ref" resolves in another repo on
-// this server at the given ref.
+// "./..." resolves in the caller's repo at HEAD; "owner/repo/...@ref" resolves
+// in another repo on this server at the given ref.
 func (s *Engine) resolveCalledWorkflow(repoKey, uses string) (calledRepo, calledPath string, yaml []byte, err error) {
 	if strings.HasPrefix(uses, "./") {
 		if repoKey == "" {
@@ -253,8 +245,7 @@ func (s *Engine) resolveCalledWorkflow(repoKey, uses string) (calledRepo, called
 	return nameWithOwner, path, content, nil
 }
 
-// gitFileAtRef reads one file from git storage at a ref (branch, tag, or
-// sha); empty ref means HEAD.
+// gitFileAtRef reads one file at a ref (branch, tag, or sha); empty ref means HEAD.
 func gitFileAtRef(stor gitStorage.Storer, ref, path string) ([]byte, error) {
 	var hash plumbing.Hash
 	if ref == "" {
@@ -307,7 +298,7 @@ func gitFileAtRef(stor gitStorage.Storer, ref, path string) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-// completeServerJob finishes a synthetic gate/collector node in place.
+// completeServerJobLocked finishes a synthetic gate/collector node in place.
 // Callers hold the store write lock.
 func (s *Engine) completeServerJobLocked(wf *store.Workflow, wfJob *store.WorkflowJob) {
 	jd := wfJob.Def
@@ -332,9 +323,9 @@ func (s *Engine) completeServerJobLocked(wf *store.Workflow, wfJob *store.Workfl
 	}
 }
 
-// ResolveCallInputsLocked evaluates the caller's `with:` templates with
-// the contexts available to jobs.<id>.with (github, needs, vars, inputs,
-// matrix) and applies the called workflow's defaults and typing.
+// ResolveCallInputsLocked evaluates the caller's `with:` templates against the
+// contexts available to jobs.<id>.with (github, needs, vars, inputs, matrix),
+// then applies the called workflow's defaults and typing.
 func (s *Engine) ResolveCallInputsLocked(wf *store.Workflow, gate *store.WorkflowJob) bool {
 	binding := gate.Def.Call
 	if binding == nil {
@@ -384,8 +375,8 @@ func (s *Engine) ResolveCallInputsLocked(wf *store.Workflow, gate *store.Workflo
 	return true
 }
 
-// TypedCallInput converts a resolved string input to the declared type without
-// accepting prefixes or truthy spellings that GitHub's input contract rejects.
+// TypedCallInput converts a resolved string input to the declared type,
+// rejecting the truthy spellings GitHub's input contract rejects.
 func TypedCallInput(def *store.WorkflowInputDef, val string) (interface{}, error) {
 	if def == nil {
 		return val, nil
@@ -418,10 +409,9 @@ func TypedCallInput(def *store.WorkflowInputDef, val string) (interface{}, error
 	}
 }
 
-// collectCallOutputsLocked finishes a collector node: outputs evaluate
-// the workflow_call output templates against the called jobs' results;
-// the node reports skipped when every called job skipped (mirroring the
-// caller job's state on real GitHub).
+// collectCallOutputsLocked finishes a collector node: it evaluates the
+// workflow_call output templates against the called jobs' results, and reports
+// skipped when every called job skipped (matching GitHub's caller-job state).
 func (s *Engine) collectCallOutputsLocked(wf *store.Workflow, collector *store.WorkflowJob) {
 	binding := collector.Def.Call
 	allSkipped := true
@@ -476,7 +466,7 @@ func (s *Engine) collectCallOutputsLocked(wf *store.Workflow, collector *store.W
 	}
 }
 
-// parseJSONNumber parses a numeric string the way expression numbers work.
+// parseJSONNumber parses a numeric string as expression numbers work.
 func parseJSONNumber(s string) (float64, error) {
 	return strconv.ParseFloat(strings.TrimSpace(s), 64)
 }

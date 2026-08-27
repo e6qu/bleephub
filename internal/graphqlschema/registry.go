@@ -1,60 +1,31 @@
 // Package graphqlschema is the complete GitHub GraphQL type universe,
-// generated from the vendored public schema
-// (third_party/github-graphql-schema.graphql.gz) by
-// internal/graphqlschemagen.
-//
-// The package holds types only: every object, interface, union, enum,
-// input object and custom scalar GitHub publishes, with GitHub's exact
-// field names, argument names, argument types, default values,
-// nullability, list nesting, deprecations, interface implementations and
-// descriptions. It deliberately carries no field resolvers — binding
-// resolvers is a later phase, and a resolver-free schema is what lets the
-// generated definitions be diffed against the vendored SDL without any
-// runtime data.
-//
-// The generated definitions are ordinary Go, not a runtime SDL parse: the
-// contract is checked by the compiler, the type expressions are visible in
-// review, and no schema text has to ship in the binary.
-//
-// It depends on graphql-go only. Nothing in this package may import
-// internal/graphqlapi or internal/server — the dependency runs the other
-// way once the serving schema is switched over.
+// generated from the vendored public schema by internal/graphqlschemagen. It
+// holds types only (no resolvers), so the generated definitions diff against
+// the vendored SDL without runtime data. Import graphql-go only; never import
+// internal/graphqlapi or internal/server.
 //
 // # What graphql-go v0.8.1 cannot express
 //
-// Three things in GitHub's SDL survive into the generated Go but cannot be
-// carried all the way through the library. None changes a field's name,
-// type, nullability or list nesting, so none is visible to the
-// completeness ratchet — they are recorded here because a client that
-// introspects the schema can see two of them.
+// Three SDL features survive into the generated Go but not through the library.
+// None changes a field's name, type, nullability or list nesting, so none is
+// visible to the completeness ratchet; two are visible to an introspecting
+// client. TestDefaultValuesAreReproducedAndIntrospectionIsLimited pins them.
 //
-//   - Applied directives. GitHub annotates 274 fields and 48 unions with
-//     @docsCategory, 373 input fields with @possibleTypes, and declares
-//     @preview. graphql-go's type system has no place to attach a
-//     directive application, and GraphQL introspection has no way to
-//     report one either, so GitHub's own API does not expose them.
-//     Documentation-only; dropped deliberately.
+//   - Applied directives (@docsCategory, @possibleTypes, @preview). graphql-go
+//     has no place to attach a directive application and introspection cannot
+//     report one, so GitHub's own API does not expose them either.
 //
-//   - Explicit "null" argument defaults (19 of them, e.g.
-//     Enterprise.members(hasTwoFactorEnabled: Boolean = null)). The
-//     vendored parser has no NullValue AST node, and graphql-go models
-//     "no default" as a nil DefaultValue with no way to distinguish it
-//     from a default of null. Introspection reports null for both.
+//   - Explicit "null" argument defaults (19, e.g.
+//     Enterprise.members(hasTwoFactorEnabled: Boolean = null)). graphql-go
+//     models "no default" as a nil DefaultValue, indistinguishable from a null
+//     default; introspection reports null for both.
 //
-//   - Non-scalar default values in introspection.
-//     __InputValue.defaultValue is rendered by
-//     astFromValue(inputValue.DefaultValue, inputValue), which passes the
-//     input value where the function expects its type
-//     (graphql-go introspection.go:265, :272), so the *List and *Enum
-//     branches never fire; astFromValue also carries an explicit
-//     "TODO: implement astFromValue from Map to Value" (introspection.go:738).
-//     Enum, list and input-object defaults are therefore printed by Go's
-//     %v fallback — {field: CREATED_AT, direction: DESC} introspects as
-//     "map[direction:DESC field:CREATED_AT]". The DefaultValue graphql-go
-//     coerces a missing argument to is the correct Go value, so execution
-//     is unaffected; only the introspected string deviates.
-//     TestDefaultValuesAreReproducedAndIntrospectionIsLimited pins both
-//     halves.
+//   - Non-scalar default values in introspection. astFromValue is passed the
+//     input value where it expects its type (graphql-go introspection.go:265,
+//     :272), so the *List/*Enum branches never fire and enum/list/input-object
+//     defaults print via Go's %v fallback ({field: CREATED_AT} introspects as
+//     "map[field:CREATED_AT]"). The coerced DefaultValue is the correct Go
+//     value, so execution is unaffected — only the introspected string deviates.
 package graphqlschema
 
 import (
@@ -64,29 +35,22 @@ import (
 	"github.com/graphql-go/graphql/language/ast"
 )
 
-// TypenameKey is the discriminator key the resolver layer sets on a
-// map-shaped resolver result so an interface or union field knows which
-// concrete object type the value is. It is spelled "__typename" because
-// that is the key the hand-written resolvers in internal/graphqlapi
-// already set, so resolvers moved onto the generated schema dispatch
-// through the same channel they do today.
+// TypenameKey is the discriminator key a map-shaped resolver result sets to
+// name its concrete object type. Spelled "__typename" to match the existing
+// internal/graphqlapi resolvers.
 const TypenameKey = "__typename"
 
-// Typed is the struct-shaped half of the same discriminator: a resolver
-// that returns a concrete Go value rather than a map reports its GraphQL
-// type by implementing this interface. Interface and union dispatch reads
-// the discriminator through [TypenameOf], never through Go reflection on
-// the value's dynamic type, so the resolver layer stays free to return the
-// same Go type for several GraphQL types (the store's *store.User backs
-// both User and, for a bot login, Bot).
+// Typed is the struct-shaped half of the discriminator: a resolver returning a
+// concrete Go value reports its GraphQL type by implementing this. Dispatch
+// reads the discriminator through [TypenameOf], never Go reflection, so one Go
+// type can back several GraphQL types (*store.User backs both User and Bot).
 type Typed interface {
 	GraphQLTypename() string
 }
 
-// TypenameOf reads the abstract-type discriminator off a resolver result.
-// It returns "" when the value carries none, which the generated
-// ResolveType renders as a GraphQL "cannot resolve abstract type" error
-// rather than a silently wrong concrete type.
+// TypenameOf reads the abstract-type discriminator off a resolver result,
+// returning "" when the value carries none (ResolveType turns that into a
+// "cannot resolve abstract type" error, not a wrong concrete type).
 func TypenameOf(value interface{}) string {
 	switch typed := value.(type) {
 	case Typed:
@@ -100,28 +64,24 @@ func TypenameOf(value interface{}) string {
 	return ""
 }
 
-// Registry owns every named type of the generated schema and the abstract
-// type membership that interface and union dispatch reads.
+// Registry owns every named type of the generated schema and the abstract-type
+// membership that interface and union dispatch reads.
 //
-// Construction is two-phase, which is how the schema's cycles are handled
-// without any per-type special casing: [New] first creates every named
-// type's shell (a *graphql.Object, *graphql.Interface, … with its name and
-// description), passing its fields, interfaces and union members as
-// deferred thunks. graphql-go does not call a thunk until the schema is
-// assembled, by which point every shell is registered, so a thunk that
-// names Repository from Issue from User from Repository resolves through
-// the map instead of needing a definition order that cannot exist.
+// Construction is two-phase to handle the schema's cycles without per-type
+// special casing: [New] creates every type's shell with its fields/interfaces/
+// members as deferred thunks. graphql-go calls no thunk until the schema is
+// assembled, by which point every shell is registered, so a thunk naming a
+// not-yet-defined type resolves through the map.
 type Registry struct {
 	types      map[string]graphql.Type
 	objects    map[string]*graphql.Object
 	interfaces map[string]*graphql.Interface
-	// members maps an interface or union name to the object types that
-	// satisfy it. Interface membership is inverted from each object's
-	// "implements" list at registration time, so the dispatch table cannot
-	// disagree with the declared implementations.
+	// members maps an interface or union name to its satisfying object types,
+	// inverted from each object's "implements" list at registration time so the
+	// dispatch table cannot disagree with the declared implementations.
 	members map[string]map[string]bool
-	// order is the registration order (the generator emits definitions
-	// sorted by name), which makes SchemaConfig.Types deterministic.
+	// order is the registration order (sorted by name), making
+	// SchemaConfig.Types deterministic.
 	order []string
 }
 
@@ -134,8 +94,7 @@ func New() *Registry {
 		members:    make(map[string]map[string]bool, generatedAbstractCount),
 		order:      make([]string, 0, generatedTypeCount),
 	}
-	// The five built-in scalars are graphql-go's own; the schema must not
-	// define a second copy of them.
+	// The five built-in scalars are graphql-go's own; do not redefine them.
 	r.types["Int"] = graphql.Int
 	r.types["Float"] = graphql.Float
 	r.types["String"] = graphql.String
@@ -145,16 +104,12 @@ func New() *Registry {
 	return r
 }
 
-// Schema assembles the generated types into an executable schema. Every
-// field resolves to nil until a later phase binds resolvers; the schema is
-// nonetheless fully introspectable, which is what the completeness ratchet
-// checks.
+// Schema assembles the generated types into an executable, fully
+// introspectable schema (every field resolves to nil until resolvers bind).
 func (r *Registry) Schema() (graphql.Schema, error) {
-	// Most of the 1,800 types are reachable from Query or Mutation, but
-	// not all are (payload types for mutations that only appear behind a
-	// preview, abstract members reached solely through a union, …).
-	// Listing them explicitly puts every generated type in the schema's
-	// type map, so introspection reports the full universe.
+	// Not every type is reachable from Query or Mutation (preview-only payloads,
+	// union-only members, …); list them all so introspection reports the full
+	// universe.
 	types := make([]graphql.Type, 0, len(r.order))
 	for _, name := range r.order {
 		types = append(types, r.types[name])
@@ -166,28 +121,20 @@ func (r *Registry) Schema() (graphql.Schema, error) {
 	})
 }
 
-// Type returns a generated named type, or nil when the schema has none by
-// that name.
+// Type returns a generated named type, or nil when none has that name.
 func (r *Registry) Type(name string) graphql.Type { return r.types[name] }
 
-// TypeNames lists every generated named type in registration order
-// (sorted by name), excluding the five built-in scalars.
+// TypeNames lists every generated named type in registration order,
+// excluding the five built-in scalars.
 func (r *Registry) TypeNames() []string {
 	names := make([]string, len(r.order))
 	copy(names, r.order)
 	return names
 }
 
-// NewStringScalar builds a string-serialized custom scalar.
-//
-// All thirteen of GitHub's custom scalars are transported as JSON strings
-// (URI, DateTime, HTML, GitObjectID, Base64String, GitTimestamp,
-// PreciseDateTime, X509Certificate, GitSSHRemote, GitRefname, BigInt,
-// Date, CustomPropertyValue), and this reproduces exactly what
-// internal/graphqlapi's stringScalar does for the subset bleephub already
-// serves, so moving a resolver onto a generated scalar cannot change a
-// single byte on the wire. graphqlapi's copy stays the definition of
-// record until the swap; a test there pins the two to identical behaviour.
+// NewStringScalar builds a string-serialized custom scalar. All thirteen of
+// GitHub's custom scalars transport as JSON strings, and this reproduces
+// internal/graphqlapi's stringScalar byte-for-byte (a test there pins the two).
 func NewStringScalar(name, description string) *graphql.Scalar {
 	return graphql.NewScalar(graphql.ScalarConfig{
 		Name:        name,
@@ -213,8 +160,8 @@ func (r *Registry) register(name string, typ graphql.Type) {
 	r.order = append(r.order, name)
 }
 
-// t resolves a named type inside a generated thunk. A miss is a generator
-// bug, not a runtime condition: the SDL is closed over its own type names.
+// t resolves a named type inside a generated thunk. A miss is a generator bug,
+// not a runtime condition.
 func (r *Registry) t(name string) graphql.Type {
 	typ, ok := r.types[name]
 	if !ok {
@@ -248,18 +195,17 @@ func (r *Registry) addMember(abstract, concrete string) {
 	set[concrete] = true
 }
 
-// Members lists nothing publicly; abstract membership is exposed only
-// through resolveType so it cannot drift from the declared implementations.
+// resolveType is the only exposure of abstract membership, so it cannot drift
+// from the declared implementations.
 func (r *Registry) resolveType(abstract string) graphql.ResolveTypeFn {
 	return func(p graphql.ResolveTypeParams) *graphql.Object {
 		name := TypenameOf(p.Value)
 		if name == "" {
 			return nil
 		}
-		// A discriminator naming a type that does not satisfy this
-		// abstract type is a resolver bug. Returning nil surfaces it as a
-		// GraphQL error; returning the object anyway would serve a value
-		// under a type the client's fragment never selected.
+		// A discriminator naming a type that does not satisfy this abstract type
+		// is a resolver bug; nil surfaces it as a GraphQL error rather than
+		// serving a value under an unselected type.
 		if !r.members[abstract][name] {
 			return nil
 		}

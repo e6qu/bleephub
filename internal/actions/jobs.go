@@ -7,22 +7,20 @@ import (
 	"github.com/google/uuid"
 )
 
-// SubmitRequest is the simplified job submission format. HostMode runs
-// the job directly on the runner (jobContainer null) — what real GitHub
-// does for jobs without `container:`.
+// SubmitRequest is the simplified job submission format. HostMode runs the job
+// directly on the runner (jobContainer null), as GitHub does for jobs without
+// `container:`.
 type SubmitRequest struct {
 	Image    string       `json:"image"`
 	HostMode bool         `json:"hostMode"`
 	Steps    []SubmitStep `json:"steps"`
 }
 
-// SubmitStep is a simplified step.
 type SubmitStep struct {
 	Run string `json:"run"`
 }
 
-// ExpandMatrixJobs expands matrix strategies in a WorkflowDef, creating
-// multiple job entries per matrix combination.
+// ExpandMatrixJobs expands matrix strategies into one job entry per combination.
 func ExpandMatrixJobs(wf *store.WorkflowDef) *store.WorkflowDef {
 	expanded := &store.WorkflowDef{
 		Name:        wf.Name,
@@ -34,22 +32,16 @@ func ExpandMatrixJobs(wf *store.WorkflowDef) *store.WorkflowDef {
 		Concurrency: wf.Concurrency,
 	}
 
-	// Two passes. The needs rewrite has to run after every job has been
-	// expanded, because it must be able to see expansions that had not been
-	// produced yet when it ran: wf.Jobs is a map, so a single interleaved pass
-	// rewrote `needs` against a partially-built result and left a dependent job
-	// pointing at a key that no longer existed whenever iteration happened to
-	// reach it before its dependency. That failed ValidateJobGraph on roughly
-	// half of runs, which reads as flakiness rather than as a bug.
+	// Rewrite `needs` in a second pass: wf.Jobs is a map, so an interleaved
+	// single pass can rewrite a dependent against expansions not yet produced,
+	// leaving it pointing at a key that no longer exists.
 	expandedKeysFor := make(map[string][]string, len(wf.Jobs))
 
 	for key, jd := range wf.Jobs {
 		var combos []map[string]interface{}
 		if jd.Strategy != nil {
-			// Gate on the expansion, not on Values. A matrix declaring only
-			// `include:` has no Values and is a perfectly ordinary GitHub
-			// matrix; testing Values skipped it and emitted the job once with
-			// no matrix context at all, silently dropping every include entry.
+			// Gate on the expansion, not on Values: an `include:`-only matrix
+			// has no Values but is still a valid matrix.
 			combos = ExpandMatrix(&jd.Strategy.Matrix)
 		}
 		if len(combos) == 0 {
@@ -72,8 +64,7 @@ func ExpandMatrixJobs(wf *store.WorkflowDef) *store.WorkflowDef {
 				newJD.MatrixValues[matrixKey] = matrixValue
 			}
 
-			// Deep-copy the environment without smuggling internal matrix
-			// values into it. Matrix is its own typed runner context.
+			// Deep-copy env; matrix values stay out of it (their own context).
 			newJD.Env = make(map[string]string, len(jd.Env))
 			for k, v := range jd.Env {
 				newJD.Env[k] = v
@@ -100,9 +91,8 @@ func ExpandMatrixJobs(wf *store.WorkflowDef) *store.WorkflowDef {
 	return expanded
 }
 
-// jobContainerValue maps an image reference onto the job message's
-// jobContainer: a bare string for container jobs, null for host-mode
-// jobs (what real GitHub sends when the YAML has no `container:`).
+// jobContainerValue renders the job message's jobContainer: a bare string for
+// container jobs, null for host-mode jobs (GitHub's shape with no `container:`).
 func jobContainerValue(image string) interface{} {
 	if image == "" {
 		return nil
@@ -110,21 +100,19 @@ func jobContainerValue(image string) interface{} {
 	return image
 }
 
-// BuildJobMessage builds the AgentJobRequestMessage in the internal format
-// that the official GitHub Actions runner expects.
-// Format matches ChristopherHX/runner.server's PipelineContextData + TemplateToken serialization.
-// scopeID names the plan and jobToken is the runtime bearer credential the
-// caller minted for it (token minting stays in the server's auth layer).
+// BuildJobMessage builds the AgentJobRequestMessage the official GitHub Actions
+// runner expects, matching ChristopherHX/runner.server's PipelineContextData +
+// TemplateToken serialization. scopeID names the plan; jobToken is the runtime
+// bearer credential the caller minted for it.
 func BuildJobMessage(serverURL, jobID, planID, timelineID string, requestID int64, req *SubmitRequest, scopeID, jobToken string) map[string]interface{} {
 
-	// Build steps — only user-defined steps. The runner adds setup/cleanup internally.
+	// Only user-defined steps; the runner adds setup/cleanup internally.
 	steps := make([]map[string]interface{}, 0, len(req.Steps))
 
 	for i, step := range req.Steps {
 		stepID := uuid.New().String()
 		displayName := fmt.Sprintf("Run %s", truncateDisplay(step.Run, 40))
-		// Step type "action" (ActionStepType.Action) with ScriptReference
-		// Inputs must be TemplateToken MappingToken: {"type":2,"map":[{"Key":k,"Value":v},...]}
+		// Inputs must be a TemplateToken MappingToken: {"type":2,"map":[{"Key":k,"Value":v},...]}.
 		contextName := fmt.Sprintf("__run_%d", i+1)
 		steps = append(steps, map[string]interface{}{
 			"type": "action",
@@ -148,7 +136,6 @@ func BuildJobMessage(serverURL, jobID, planID, timelineID string, requestID int6
 		})
 	}
 
-	// Build the full message matching runner.server format
 	return map[string]interface{}{
 		"messageType": "PipelineAgentJobRequest",
 		"plan": map[string]interface{}{
@@ -167,13 +154,11 @@ func BuildJobMessage(serverURL, jobID, planID, timelineID string, requestID int6
 			"changeId": 1,
 			"location": nil,
 		},
-		"jobId":          jobID,
-		"jobDisplayName": "test",
-		"jobName":        "test",
-		"requestId":      requestID,
-		"lockedUntil":    "0001-01-01T00:00:00",
-		// jobContainer: bare string for simple image reference; null
-		// runs the job on the runner host (no `container:`).
+		"jobId":                jobID,
+		"jobDisplayName":       "test",
+		"jobName":              "test",
+		"requestId":            requestID,
+		"lockedUntil":          "0001-01-01T00:00:00",
 		"jobContainer":         jobContainerValue(req.Image),
 		"jobServiceContainers": nil,
 		"jobOutputs":           nil,
@@ -199,9 +184,8 @@ func BuildJobMessage(serverURL, jobID, planID, timelineID string, requestID int6
 			"repositories": []interface{}{},
 			"containers":   []interface{}{},
 		},
-		// contextData uses PipelineContextData format:
-		// String values = bare JSON strings
-		// Dictionary = {"t": 2, "d": [{"k":"key","v":<value>}, ...]}
+		// contextData uses PipelineContextData format: strings are bare JSON
+		// strings; a Dictionary is {"t": 2, "d": [{"k":"key","v":<value>}, ...]}.
 		"contextData": map[string]interface{}{
 			"github": DictContextData(
 				"server_url", serverURL,
@@ -219,8 +203,8 @@ func BuildJobMessage(serverURL, jobID, planID, timelineID string, requestID int6
 				"workspace", "/github/workspace",
 				"token", jobToken,
 			),
-			// Built runner-agnostic; the broker rebinds this to the leasing
-			// agent at delivery (ACT-051, rebindRunnerContext).
+			// Runner-agnostic; the broker rebinds this to the leasing agent at
+			// delivery (ACT-051, rebindRunnerContext).
 			"runner":   RunnerContextData(nil),
 			"env":      DictContextData(),
 			"vars":     DictContextData(),

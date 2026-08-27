@@ -7,39 +7,13 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// This file holds the Actions hot-path indexes and the garbage collection of
-// replica-local job runtime state (ACT-044).
-//
-// Before these indexes existed, every runner long-poll scanned all of
-// store.Jobs under the write lock, every artifact/cache call and ~15 REST
-// handlers scanned all of store.Workflows, and — worst — every job-token
-// request json.Unmarshal'ed each job's full secret-bearing Message. None of
-// Jobs / LogMasks / LogLines / LogFiles was ever deleted, so a long-lived
-// server held every GITHUB_TOKEN and secret value ever dispatched, forever.
-//
-// The GC policy implemented here:
-//
-//  1. At run finalization the run's job Messages (which embed GITHUB_TOKEN and
-//     every secret value) are cleared; auth for late runner calls keeps working
-//     through planScopes, which carries only {scopeIdentifier, repo}.
-//  2. A janitor (startActionsJanitor) deletes a job's remaining replica-local
-//     state — the Job stub, plan scope, log masks, captured log lines and
-//     in-memory log bytes — once CompletedAt + runnerTokenTTL (6h) has passed:
-//     no valid runner credential can address the job after that.
-//  3. Run deletion and repository deletion tear the same state down eagerly.
-//
-// All swept state is replica-local and non-persisted; durable run history
-// (Workflows, TimelineRecords, byte-store log objects) is not touched.
+// Actions hot-path indexes and GC of replica-local job runtime state (ACT-044).
+// A completed job's Message embeds GITHUB_TOKEN and secret values, so its
+// replica-local state is torn down once no valid runner credential can still
+// reach it. Swept state is non-persisted; durable run history is untouched.
 
-// --- workflow indexes ---
-
-// --- garbage collection ---
-
-// ReleaseJobLogFiles releases the in-memory log bytes claimed by the given
-// plans: the ArtifactStore claim registry maps log ids to the plan that
-// reserved them. Durable byte-store log objects are left alone — GC here is
-// purely in-memory. Must be called without the store lock held (the
-// ArtifactStore has its own mutex).
+// ReleaseJobLogFiles frees the in-memory log bytes claimed by the given plans.
+// Call without the store lock held (the ArtifactStore has its own mutex).
 func (s *Engine) ReleaseJobLogFiles(planIDs []string) {
 	if len(planIDs) == 0 || s.artifactStore == nil {
 		return
@@ -55,19 +29,10 @@ func (s *Engine) ReleaseJobLogFiles(planIDs []string) {
 	s.store.Mu.Unlock()
 }
 
-// actionsJanitorInterval is how often the janitor sweeps retired job state.
 const actionsJanitorInterval = 10 * time.Minute
 
-// Engine.completedJobRetention is how long a completed job's replica-local
-// runtime state stays addressable. The server wires it to its runner token
-// TTL: that bounds the lifetime of the job's runtime token and the agent
-// session token that could still name it, and completed-job teardown calls
-// (DELETE AgentRequest, late log flushes) can arrive that late — so nothing
-// valid can reach the job afterwards.
-
-// startActionsJanitor runs the periodic sweep of retired Actions job state for
-// the server's lifetime. There is deliberately one janitor per process,
-// started with the server and stopped through ctx at shutdown.
+// startActionsJanitor runs the periodic sweep of retired Actions job state,
+// stopping through ctx at shutdown.
 func (s *Engine) startActionsJanitor(ctx context.Context) {
 	s.goBackground(func() {
 		ticker := time.NewTicker(actionsJanitorInterval)
@@ -83,9 +48,8 @@ func (s *Engine) startActionsJanitor(ctx context.Context) {
 	})
 }
 
-// SweepRetiredActionsJobs deletes the replica-local state of every job whose
-// retirement stamp is older than completedJobRetention. Returns how many jobs
-// were swept (for tests and logging).
+// SweepRetiredActionsJobs deletes the replica-local state of every job
+// completed longer ago than completedJobRetention, returning the count swept.
 func (s *Engine) SweepRetiredActionsJobs(now time.Time) int {
 	var planIDs []string
 	s.store.Mu.Lock()

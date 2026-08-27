@@ -15,26 +15,15 @@ import (
 )
 
 // defaultPackChunkSize is the granularity the pack read path fetches and caches
-// at.
-//
-// It is the trade between the two costs a ranged read balances. Too small and a
-// sequential walk of a large pack pays a round trip every few objects; too
-// large and reading one blob out of a monorepo drags megabytes across the wire.
-// Four mebibytes holds roughly forty thousand of the small objects a source
-// tree is mostly made of, so a clone streams a gigabyte pack in 256 round trips
-// while a single blob lookup transfers at most four mebibytes.
-//
-// It is tunable because the balance depends on the endpoint: a store with a
-// long round trip and wide pipe wants larger extents, one nearby wants smaller.
-// The size in force is folded into every cache entry's name, so a replica that
-// is reconfigured reads its old chunks under names the new configuration never
-// asks for rather than mistaking a four mebibyte extent for a one mebibyte one.
+// at. Too small and a sequential pack walk pays a round trip every few objects;
+// too large and one blob lookup drags megabytes across the wire. Tunable per
+// endpoint; the size in force is folded into every cache entry's name, so a
+// reconfigured replica never mistakes a 4 MiB extent for a 1 MiB one.
 const (
 	defaultPackChunkSize = 4 << 20
 	packChunkBytesEnv    = "BLEEPHUB_GITSTORE_CHUNK_BYTES"
 )
 
-// packChunkSize reports the extent size to read and cache at.
 func packChunkSize() int64 {
 	if raw := strings.TrimSpace(os.Getenv(packChunkBytesEnv)); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
@@ -45,13 +34,10 @@ func packChunkSize() int64 {
 }
 
 // packDiskCache is a byte-budgeted LRU of pack and index extents on local disk,
-// shared by every repository in the process and read back after a restart.
-//
-// It caches content-addressed keys only. A packfile is named for the SHA of its
-// own contents and an index is named for the pack it indexes, so a cached chunk
-// can never be stale: the name changing is the content changing. That property
-// is what lets the cache survive a restart with no validation step and no
-// coherence protocol between replicas — there is nothing to invalidate.
+// shared by every repository in the process and read back after a restart. It
+// caches content-addressed keys only, so a cached chunk can never be stale and
+// survives a restart with no validation step or cross-replica coherence
+// protocol.
 type packDiskCache struct {
 	root  string
 	limit int64
@@ -60,24 +46,19 @@ type packDiskCache struct {
 
 	mu      sync.Mutex
 	entries map[string]*packCacheEntry
-	// hot holds recently read chunks in memory. Without it every object
-	// decoded out of a pack re-reads the whole four mebibyte extent that holds
-	// it from disk, which for a clone of a hundred thousand objects is
-	// hundreds of gigabytes of local reads to serve nine megabytes of pack.
-	// The chunks are immutable and shared read-only, exactly like the files
-	// they came from.
+	// hot holds recently read chunks in memory; without it, each object decoded
+	// re-reads its whole extent from disk. Chunks are immutable and shared
+	// read-only.
 	hot        map[string][]byte
 	hotOrder   map[string]int64
 	hotBytes   int64
 	hotEvicted int64
-	// clock counts admissions and is the recency stamp. A counter rather than
-	// a wall clock: eviction only needs an order, and a monotonic counter
-	// cannot be perturbed by the host's clock moving.
+	// clock counts admissions and stamps recency. A monotonic counter cannot be
+	// perturbed by the host's clock moving.
 	clock int64
 	bytes int64
-	// inited records that the on-disk contents have been enumerated, which
-	// happens once on first use rather than at construction so that a process
-	// that never touches a pack never scans the directory.
+	// inited records that on-disk contents have been enumerated, done once on
+	// first use so a process that never touches a pack never scans the directory.
 	inited bool
 }
 
@@ -87,14 +68,10 @@ type packCacheEntry struct {
 	used int64
 }
 
-// packCaches memoizes one cache per configured directory. Keying the memo on
-// the directory rather than on a once-only initialization means a process that
-// is reconfigured gets the cache it was reconfigured to use, and it keeps the
-// resolution a pure function of the environment with no test-only entry point.
+// packCaches memoizes one cache per configured directory, so a reconfigured
+// process gets the cache it was reconfigured to use.
 var packCaches sync.Map
 
-// packCacheDirEnv names the directory holding the shared pack cache and
-// packCacheBytesEnv its byte budget.
 const (
 	packCacheDirEnv    = "BLEEPHUB_GITSTORE_CACHE_DIR"
 	packCacheBytesEnv  = "BLEEPHUB_GITSTORE_CACHE_BYTES"
@@ -104,8 +81,8 @@ const (
 	defaultPackMemoryBytes = 256 << 20
 )
 
-// sharedPackDiskCache returns the cache for the directory this process is
-// configured to use, creating it on first reference.
+// sharedPackDiskCache returns the cache for this process's configured
+// directory, creating it on first reference.
 func sharedPackDiskCache() *packDiskCache {
 	dir := packCacheDir()
 	if cached, ok := packCaches.Load(dir); ok {
@@ -129,7 +106,6 @@ func sharedPackDiskCache() *packDiskCache {
 	return cached.(*packDiskCache)
 }
 
-// packCacheDir resolves the directory holding cached pack extents.
 func packCacheDir() string {
 	if dir := strings.TrimSpace(os.Getenv(packCacheDirEnv)); dir != "" {
 		return dir
@@ -148,9 +124,8 @@ func newPackDiskCache(root string, limit int64) *packDiskCache {
 	}
 }
 
-// hotLoad returns a chunk held in memory. The slice is shared with every other
-// reader of the same chunk and must not be written to; the keys it serves are
-// content addressed, so its contents can never need to change.
+// hotLoad returns a chunk held in memory. The slice is shared read-only with
+// every other reader and must not be written to.
 func (c *packDiskCache) hotLoad(name string) []byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -194,16 +169,14 @@ func (c *packDiskCache) hotStore(name string, data []byte) {
 	}
 }
 
-// packCacheSizeChunk is the pseudo-chunk index under which an object's total
-// length is cached. The length has to be cached with the bytes: a reader that
-// finds chunk zero already resident would otherwise have to ask the object
-// store how long the object is, which is the round trip the cache exists to
-// avoid.
+// packCacheSizeChunk is the pseudo-chunk index caching an object's total
+// length, kept beside the bytes so a reader with chunk zero resident need not
+// round-trip to the object store for the length.
 const packCacheSizeChunk = -1
 
 // cacheKey names one chunk of one bucket-absolute object key. The object key is
-// hashed so that a key containing a path separator, or one longer than a file
-// name may be, still maps to exactly one cache file.
+// hashed so a key with a path separator, or longer than a file name, still maps
+// to exactly one cache file.
 func cacheKey(bucket, key string, chunkSize, chunk int64) string {
 	digest := sha256.Sum256([]byte(bucket + "\x00" + key + "\x00" + strconv.FormatInt(chunkSize, 10)))
 	return hex.EncodeToString(digest[:]) + "." + strconv.FormatInt(chunk, 10)
@@ -213,7 +186,6 @@ func (c *packDiskCache) pathFor(name string) string {
 	return filepath.Join(c.root, name[:2], name)
 }
 
-// loadSize returns an object's cached total length.
 func (c *packDiskCache) loadSize(bucket, key string, chunkSize int64) (int64, bool) {
 	raw := c.load(bucket, key, chunkSize, packCacheSizeChunk)
 	if raw == nil {
@@ -226,12 +198,11 @@ func (c *packDiskCache) loadSize(bucket, key string, chunkSize int64) (int64, bo
 	return size, true
 }
 
-// storeSize records an object's total length beside its chunks.
 func (c *packDiskCache) storeSize(bucket, key string, chunkSize, size int64) {
 	c.store(bucket, key, chunkSize, packCacheSizeChunk, []byte(strconv.FormatInt(size, 10)))
 }
 
-// load returns a cached chunk, or nil when the chunk is not resident.
+// load returns a cached chunk, or nil when not resident.
 func (c *packDiskCache) load(bucket, key string, chunkSize, chunk int64) []byte {
 	if c == nil {
 		return nil
@@ -263,9 +234,8 @@ func (c *packDiskCache) load(bucket, key string, chunkSize, chunk int64) []byte 
 	return data
 }
 
-// store admits a chunk. A failure to write is not an error the caller needs to
-// see: the bytes are already in hand, and a cache that cannot be written just
-// costs the next reader a round trip.
+// store admits a chunk. A write failure is not surfaced: the bytes are in hand,
+// and an unwritten cache only costs the next reader a round trip.
 func (c *packDiskCache) store(bucket, key string, chunkSize, chunk int64, data []byte) {
 	if c == nil || len(data) == 0 {
 		return
@@ -275,9 +245,8 @@ func (c *packDiskCache) store(bucket, key string, chunkSize, chunk int64, data [
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return
 	}
-	// A reader that opened a half-written cache file would decode a truncated
-	// packfile extent, so the bytes land under a temporary name and become
-	// visible with a rename, which is atomic within a directory.
+	// Write to a temp name and rename in: a half-written file would decode as a
+	// truncated packfile extent, and rename is atomic within a directory.
 	temp, err := os.CreateTemp(filepath.Dir(path), "tmp-")
 	if err != nil {
 		return
@@ -349,9 +318,8 @@ func (c *packDiskCache) forget(name string) {
 	delete(c.entries, name)
 }
 
-// initLocked enumerates what a previous run of this process left behind. This
-// is the whole of the restart-survival mechanism: the chunk files are the
-// cache, and the in-memory map is a recency index rebuilt from them.
+// initLocked enumerates what a previous run left behind: the chunk files are
+// the cache, and the in-memory map is a recency index rebuilt from them.
 func (c *packDiskCache) initLocked() error {
 	if c.inited {
 		return nil
@@ -359,11 +327,8 @@ func (c *packDiskCache) initLocked() error {
 	if err := os.MkdirAll(c.root, 0o750); err != nil {
 		return fmt.Errorf("pack cache %s: %w", c.root, err)
 	}
-	// The walk runs inside an os.Root on the cache directory rather than over
-	// absolute paths, so the names it hands back are relative to that root and
-	// the removal below resolves under it. A symlink that appeared in the cache
-	// directory between the walk reading a name and this deleting it therefore
-	// has nothing outside the cache it could name.
+	// Walk inside an os.Root so names resolve under the cache directory; a
+	// symlink that appears mid-walk cannot name anything outside the cache.
 	root, err := os.OpenRoot(c.root)
 	if err == nil {
 		defer func() { _ = root.Close() }()
@@ -376,9 +341,8 @@ func (c *packDiskCache) initLocked() error {
 			}
 			name := entry.Name()
 			if strings.HasPrefix(name, "tmp-") {
-				// A temporary file is a write that did not finish, from this
-				// run or a previous one. It is not a cache entry and never
-				// becomes one, because admission renames rather than links.
+				// An unfinished write, never a cache entry since admission
+				// renames rather than links.
 				_ = root.Remove(walked)
 				return nil
 			}

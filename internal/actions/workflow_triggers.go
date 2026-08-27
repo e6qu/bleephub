@@ -14,9 +14,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// TriggerDef is one event entry under a workflow's `on:` with its
-// filters. A nil *TriggerDef (event listed without filters) means
-// "match every activity the event's defaults cover".
+// TriggerDef is one event entry under a workflow's `on:` with its filters. A
+// nil *TriggerDef (event listed without filters) matches every activity the
+// event's defaults cover.
 type TriggerDef struct {
 	Branches       []string
 	BranchesIgnore []string
@@ -25,19 +25,14 @@ type TriggerDef struct {
 	Paths          []string
 	PathsIgnore    []string
 	Types          []string
-	// Workflows names the source workflows an `on.workflow_run` trigger
-	// listens to. Empty means every workflow in the repository.
+	// Workflows names the source workflows an `on.workflow_run` trigger listens
+	// to; empty means every workflow in the repository.
 	Workflows []string
-	// Inputs carries workflow_dispatch / workflow_call input declarations.
-	Inputs map[string]*store.WorkflowInputDef
-	// Schedules carries every cron line together with its optional IANA
-	// timezone. GitHub evaluates each entry independently and exposes the
-	// matching cron expression through github.event.schedule.
+	Inputs    map[string]*store.WorkflowInputDef
+	// Schedules carries every cron line with its optional IANA timezone.
 	Schedules []WorkflowScheduleDef
-	// Outputs carries workflow_call output declarations: name → the
-	// `${{ jobs.<id>.outputs.<o> }}` value template.
+	// Outputs maps a workflow_call output name to its value template.
 	Outputs map[string]string
-	// Secrets carries workflow_call secret declarations.
 	Secrets map[string]*WorkflowCallSecretDef
 }
 
@@ -47,44 +42,41 @@ type WorkflowScheduleDef struct {
 	Timezone string
 }
 
-// WorkflowCallSecretDef is a declared workflow_call secret.
 type WorkflowCallSecretDef struct {
 	Description string `yaml:"description"`
 	Required    bool   `yaml:"required"`
 }
 
-// workflowCallOutputDef is the YAML shape of one workflow_call output.
 type workflowCallOutputDef struct {
 	Description string `yaml:"description"`
 	Value       string `yaml:"value"`
 }
 
-// TriggerEvent describes a concrete event occurrence to match against
-// workflow `on:` definitions.
+// TriggerEvent is a concrete event occurrence to match against workflow `on:`
+// definitions.
 type TriggerEvent struct {
 	Type   string // "push", "pull_request", ...
 	Action string // activity type ("opened", ...) or repository_dispatch event_type
 	Ref    string // full ref ("refs/heads/main", "refs/tags/v1")
-	// ChangedFiles lists paths touched by the event; valid only when
-	// ChangedFilesKnown (path filters pass open when a diff can't be
-	// computed, matching GitHub's behavior for new-branch pushes).
+	// ChangedFiles is valid only when ChangedFilesKnown; when unknown, path
+	// filters pass open like GitHub does for new-branch pushes.
 	ChangedFiles      []string
 	ChangedFilesKnown bool
-	// WorkflowName is the name of the workflow whose run raised a
-	// `workflow_run` event; it is what `on.workflow_run.workflows` filters on.
+	// WorkflowName is the workflow whose run raised a `workflow_run` event,
+	// filtered on by `on.workflow_run.workflows`.
 	WorkflowName string
 }
 
-// defaultActivityTypes are the activity types an event matches when its
-// trigger declares no `types:` filter — GitHub's documented defaults for
-// the events where the default is NOT "all types".
+// defaultActivityTypes holds GitHub's documented default activity types for the
+// events whose default is not "all types", used when a trigger declares no
+// `types:` filter.
 var defaultActivityTypes = map[string][]string{
 	"pull_request":        {"opened", "synchronize", "reopened"},
 	"pull_request_target": {"opened", "synchronize", "reopened"},
 }
 
-// ParseWorkflowOn extracts the structured `on:` definition from workflow
-// YAML: event name → filters (nil when the event has no filters).
+// ParseWorkflowOn extracts the `on:` definition from workflow YAML as event
+// name → filters (nil when the event has no filters).
 func ParseWorkflowOn(yamlContent []byte) (map[string]*TriggerDef, error) {
 	var raw struct {
 		On yaml.Node `yaml:"on"`
@@ -96,8 +88,8 @@ func ParseWorkflowOn(yamlContent []byte) (map[string]*TriggerDef, error) {
 	node := &raw.On
 	switch node.Kind {
 	case 0:
-		// No `on:` at all. YAML quirk: an unquoted `on:` key parses as
-		// boolean true — callers see an empty map either way.
+		// No `on:` at all. An unquoted `on:` key parses as boolean true, so
+		// callers see an empty map either way.
 		return out, nil
 	case yaml.ScalarNode:
 		var s string
@@ -211,17 +203,16 @@ func parseTriggerDef(event string, node *yaml.Node) (*TriggerDef, error) {
 	return td, nil
 }
 
-// WorkflowTriggersOn decides whether a workflow (by its parsed `on:`)
-// fires for a concrete event. Invalid filter combinations were rejected
-// at parse; an event absent from `on:` never fires.
+// WorkflowTriggersOn reports whether a workflow's parsed `on:` fires for a
+// concrete event. An event absent from `on:` never fires.
 func WorkflowTriggersOn(on map[string]*TriggerDef, ev TriggerEvent) bool {
 	td, ok := on[ev.Type]
 	if !ok {
 		return false
 	}
 
-	// Activity types: explicit list, else the event's documented default
-	// (events without an entry in defaultActivityTypes match any action).
+	// Explicit types list, else the event's documented default; events with no
+	// default match any action.
 	types := defaultActivityTypes[ev.Type]
 	if td != nil && len(td.Types) > 0 {
 		types = td.Types
@@ -243,9 +234,8 @@ func WorkflowTriggersOn(on map[string]*TriggerDef, ev TriggerEvent) bool {
 		return true
 	}
 
-	// `on.workflow_run.workflows` names the source workflows the trigger
-	// listens to. Without it a listener starts on EVERY run in the repository,
-	// including its own — the filter is what scopes it.
+	// Without `on.workflow_run.workflows` a listener fires on every run in the
+	// repository, including its own; the filter is what scopes it.
 	if len(td.Workflows) > 0 {
 		matched := false
 		for _, name := range td.Workflows {
@@ -259,9 +249,9 @@ func WorkflowTriggersOn(on map[string]*TriggerDef, ev TriggerEvent) bool {
 		}
 	}
 
-	// Branch / tag filters. For push events they apply to the pushed ref;
-	// for pull_request events the branches filter applies to the BASE
-	// branch (ev.Ref carries the base ref for PR events at the call site).
+	// Branch/tag filters apply to the pushed ref for push events; for
+	// pull_request events ev.Ref carries the base ref, which the branches
+	// filter applies to.
 	isTag := strings.HasPrefix(ev.Ref, "refs/tags/")
 	branchName := strings.TrimPrefix(ev.Ref, "refs/heads/")
 	tagName := strings.TrimPrefix(ev.Ref, "refs/tags/")
@@ -269,7 +259,7 @@ func WorkflowTriggersOn(on map[string]*TriggerDef, ev TriggerEvent) bool {
 	hasTagFilter := len(td.Tags) > 0 || len(td.TagsIgnore) > 0
 
 	if isTag {
-		// A push trigger filtered to branches only never matches tags.
+		// A trigger filtered to branches only never matches tags.
 		if hasBranchFilter && !hasTagFilter {
 			return false
 		}
@@ -291,8 +281,7 @@ func WorkflowTriggersOn(on map[string]*TriggerDef, ev TriggerEvent) bool {
 		}
 	}
 
-	// Path filters: when the diff is unknown (new branch, shallow data)
-	// the filter passes open, matching GitHub.
+	// Path filters pass open when the diff is unknown, matching GitHub.
 	if len(td.Paths) > 0 && ev.ChangedFilesKnown {
 		any := false
 		for _, f := range ev.ChangedFiles {
@@ -321,9 +310,9 @@ func WorkflowTriggersOn(on map[string]*TriggerDef, ev TriggerEvent) bool {
 	return true
 }
 
-// filterPatternsMatch evaluates GitHub filter patterns in order: a
-// matching pattern includes the value, a later matching `!pattern`
-// excludes it again (and a yet-later positive match re-includes).
+// filterPatternsMatch evaluates GitHub filter patterns in order: a matching
+// pattern includes the value, a later matching `!pattern` excludes it, and a
+// yet-later positive match re-includes it.
 func filterPatternsMatch(patterns []string, value string) bool {
 	matched := false
 	for _, p := range patterns {
@@ -340,15 +329,13 @@ func filterPatternsMatch(patterns []string, value string) bool {
 	return matched
 }
 
-// filterPatternCache memoizes compiled filter patterns. Trigger evaluation
-// runs concurrently for every pushed ref, and a plain map written from more
-// than one goroutine is an unrecoverable runtime fatal error, not a panic a
-// handler could survive.
+// filterPatternCache memoizes compiled filter patterns; trigger evaluation
+// runs concurrently across pushed refs, so it must be a sync.Map.
 var filterPatternCache sync.Map // pattern string → *regexp.Regexp
 
-// FilterPatternMatch matches one GitHub filter pattern: `*` (any except
-// '/'), `**` (any), `?` / `+` (zero-or-one / one-or-more of the
-// preceding token), `[...]` character classes.
+// FilterPatternMatch matches one GitHub filter pattern: `*` (any except '/'),
+// `**` (any), `?`/`+` (zero-or-one / one-or-more of the preceding token),
+// `[...]` character classes.
 func FilterPatternMatch(pattern, value string) bool {
 	re, err := compileFilterPattern(pattern)
 	if err != nil {
@@ -412,9 +399,9 @@ func compileFilterPattern(pattern string) (*regexp.Regexp, error) {
 	return actual.(*regexp.Regexp), nil
 }
 
-// ChangedFilesBetween computes the paths touched between two commits in
-// git storage. ok is false when the diff cannot be computed (zero/unknown
-// shas) — path filters then pass open like real GitHub.
+// ChangedFilesBetween computes the paths touched between two commits. ok is
+// false when the diff cannot be computed (zero/unknown shas), which makes path
+// filters pass open like real GitHub.
 func ChangedFilesBetween(stor gitStorage.Storer, beforeSha, afterSha string) (files []string, ok bool) {
 	const zeroSha = "0000000000000000000000000000000000000000"
 	if beforeSha == "" || afterSha == "" || beforeSha == zeroSha || afterSha == zeroSha {

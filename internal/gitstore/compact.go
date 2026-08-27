@@ -27,23 +27,9 @@ import (
 
 // Compaction turns the loose tier into the pack tier.
 //
-// The storage this package presents to go-git is a log-structured merge tree
-// whose levels git already defines. A loose object is a memtable entry: one
-// object, one key, written once and never rewritten. A packfile is a sorted
-// string table and its .idx is the table's index: many objects in one key, with
-// an exact object id to byte offset map beside it. Everything the design gains
-// — one round trip per clone instead of one per object, ranged reads that cost
-// the size of the object rather than the size of the store, a cache with
-// nothing to invalidate — follows from moving objects down that one level.
-//
-// ORDERING, AND WHY A CRASH CANNOT CORRUPT A REPOSITORY
-//
-// go-git discovers a pack by listing objects/pack/ for names ending in .pack
-// (dotgit.objectPacks), and this package's own index does the same. A pack is
-// therefore invisible until its .pack key exists, and an S3 PutObject — like a
-// CompleteMultipartUpload — either publishes the whole object or none of it.
-// That single fact is what makes the sequence below crash-safe, and it is why
-// the .pack key is written last:
+// ORDERING / CRASH SAFETY. A pack is invisible until its .pack key exists
+// (go-git lists objects/pack/ for *.pack), and S3 PutObject / multipart
+// completion publishes an object all-or-nothing. So .pack is written last:
 //
 //	1. build the pack and its index on local disk
 //	2. upload pack-<sha>.idx
@@ -52,71 +38,47 @@ import (
 //	5. make the new pack visible to this process (Reindex, index invalidate)
 //	6. delete the loose keys that step 1 actually packed
 //
-// A crash before step 4 leaves the loose objects untouched and authoritative;
-// the .idx and .bfilter that may be lying around are named for a pack nothing
-// lists, so no reader will ever open them, and the next compaction sweeps them.
-// A crash after step 4 and during step 6 leaves both the pack and some loose
-// objects; go-git reads either, and the duplicates are removed by the next
-// compaction. There is no instant at which an object is in neither place,
-// because the deletion of a loose key strictly follows the publication of the
-// pack that contains it.
+// Crash before step 4: loose objects stay authoritative; the orphan .idx/.bfilter
+// name a pack nothing lists and the next compaction sweeps them. Crash between 4
+// and 6: pack and some loose objects both exist; go-git reads either and the
+// next compaction removes the duplicates. No object is ever in neither place,
+// because a loose delete strictly follows publication of the pack holding it.
 //
-// CONCURRENCY
-//
-// Compaction against a concurrent push to the same repository: compaction packs
-// the set of loose keys it listed, and step 6 deletes exactly the keys it
-// packed — never "every loose key". An object a push writes after that listing
-// is not in the pack and is not deleted, so it survives as a loose object and
-// the next compaction picks it up.
-//
-// Two replicas compacting the same repository at once: both list, and their
-// listings may overlap entirely. Each writes its own pack — the packs are named
-// for their own contents, so they do not collide — and each deletes only the
-// keys it packed. Every deleted key is therefore in at least one published
-// pack. The one interleaving that needs care is a replica reading a loose
-// object that the other has already deleted, in the middle of building its
-// pack; that read fails with a definite not-exist, and buildPackTolerantly
-// drops the object and rebuilds rather than failing, precisely because the only
-// way that key can be gone is that the other replica already published it in a
-// pack of its own. A durable lock is taken to stop the duplicated work from happening
-// in the first place, but correctness does not rest on it, which matters
-// because the lock has a lease and a compaction of a large repository can
-// outlive one.
-//
-// Compaction against a concurrent read on this replica: the new pack is made
-// visible (step 5) before any loose key is deleted (step 6), and both happen
-// under the repository's storage lock for the moment it takes to swap the
-// pack index. A reader that runs before the swap finds the loose object; one
-// that runs after finds the pack.
+// CONCURRENCY. Step 6 deletes only the keys this compaction listed and packed,
+// so a push after the listing survives as loose. Two replicas may list the same
+// keys; each writes a content-named pack (no collision) and deletes only what it
+// packed, so every deleted key is in some published pack. If one replica reads a
+// loose object the other already deleted mid-build, the read fails not-exist and
+// buildPackTolerantly drops it and rebuilds — safe because the only way that key
+// is gone is that the other replica already packed it. The durable lock avoids
+// the duplicated work but correctness does not depend on it (its lease can
+// expire under a long compaction). Against a concurrent read on this replica,
+// step 5 precedes step 6 under the storage lock, so a reader finds the object
+// loose before the swap and packed after.
 
 const (
-	// compactionMinLooseObjects is the number of loose objects below which
-	// packing is not worth its own round trips.
+	// compactionMinLooseObjects is the loose count below which packing is not
+	// worth its round trips.
 	compactionMinLooseObjects = 64
 	// compactionPackWindow is the delta window the pack encoder searches.
 	compactionPackWindow = 10
-	// compactionMergeThreshold is the pack count above which a compaction
-	// rewrites the existing packs into the new one as well. Every pack costs a
-	// resident index and a filter, and go-git loads every index of every pack
-	// before it can answer a single packed lookup, so a repository that
-	// accumulated one pack per push would give back what packing bought.
+	// compactionMergeThreshold is the pack count above which a compaction also
+	// rewrites existing packs into the new one. go-git loads every pack's index
+	// before answering any packed lookup, so one-pack-per-push would give back
+	// what packing bought.
 	compactionMergeThreshold = 8
-	// supersededPackRetention is how long a pack that has been merged into a
-	// newer one is kept before its bytes are removed. A request that began
-	// before the merge may still be reading it, and a pack is only a few keys,
-	// so the safe answer is to let the old one age out.
+	// supersededPackRetention is how long a merged-away pack is kept before its
+	// bytes are removed, in case a request that began before the merge still
+	// reads it.
 	supersededPackRetention = time.Hour
 	// defaultMultipartThreshold is the size above which a pack is uploaded in
-	// parts rather than in one request. Amazon S3 accepts a five gigabyte
-	// single upload, but other endpoints that speak the same protocol accept
-	// far less, so the point at which a pack switches to a multipart upload is
-	// configurable.
+	// parts. Configurable because non-Amazon endpoints cap the single-request
+	// upload well below Amazon's 5 GiB.
 	defaultMultipartThreshold = 64 << 20
 	multipartThresholdEnv     = "BLEEPHUB_GITSTORE_MULTIPART_BYTES"
 	multipartPartSize         = 32 << 20
 )
 
-// multipartThreshold reports the single-request upload ceiling.
 func multipartThreshold() int64 {
 	if raw := strings.TrimSpace(os.Getenv(multipartThresholdEnv)); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
@@ -126,36 +88,33 @@ func multipartThreshold() int64 {
 	return defaultMultipartThreshold
 }
 
-// CompactionResult reports what one compaction did, so a caller scheduling it
-// can log or meter it.
+// CompactionResult reports what one compaction did.
 type CompactionResult struct {
 	// Packed is the number of loose objects written into the new pack.
 	Packed int
 	// Merged is the number of previously packed objects rewritten into it.
 	Merged int
-	// PackName is the pack-<sha> base name that was published, empty when
-	// there was nothing to do.
+	// PackName is the published pack-<sha> base name, empty when there was
+	// nothing to do.
 	PackName string
 	// PackBytes is the size of the published packfile.
 	PackBytes int64
 	// RetiredPacks lists packs whose bytes were removed after their retention
 	// window elapsed.
 	RetiredPacks []string
-	// FilterBytes is the size of the membership filter published beside the
-	// pack, which is what a replica keeps resident to answer absence.
+	// FilterBytes is the size of the membership filter published beside the pack.
 	FilterBytes int
 }
 
-// Compactor is implemented by a git storage handle that can pack its own loose
-// objects. Storage backed by a local filesystem does not implement it: git's
-// own maintenance owns that layout, and a loose object on local disk costs one
-// file open rather than one network round trip.
+// Compactor is a git storage handle that can pack its own loose objects.
+// Local-filesystem storage does not implement it: git's own maintenance owns
+// that layout and a loose object there is one file open, not a round trip.
 type Compactor interface {
 	Compact(ctx context.Context) (CompactionResult, error)
 }
 
-// CompactRepository packs the loose objects of a repository whose storage
-// supports it, and reports an empty result for storage that does not.
+// CompactRepository packs a repository's loose objects when its storage
+// supports it, reporting an empty result otherwise.
 func CompactRepository(ctx context.Context, stor gitStorage.Storer) (CompactionResult, error) {
 	compactor, ok := stor.(Compactor)
 	if !ok {
@@ -164,24 +123,19 @@ func CompactRepository(ctx context.Context, stor gitStorage.Storer) (CompactionR
 	return compactor.Compact(ctx)
 }
 
-// compactionTriggerEnv names the number of objects a repository may accumulate
-// in its loose tier before a compaction is started in the background.
+// compactionTriggerEnv sets the loose-object count that triggers a background
+// compaction.
 const compactionTriggerEnv = "BLEEPHUB_GITSTORE_COMPACT_AFTER"
 
-// defaultCompactionTrigger is deliberately larger than an ordinary push. A
-// compaction reads every loose object once, so running one after every push
-// would spend that read on a handful of objects; waiting until a repository has
-// accumulated a few thousand amortizes it over a batch worth packing.
+// defaultCompactionTrigger is deliberately larger than an ordinary push, so the
+// once-per-object read a compaction costs is amortized over a batch worth
+// packing.
 const defaultCompactionTrigger = 4096
 
-// noteObjectWritten counts an object into the loose tier and starts a
-// compaction once enough have accumulated.
-//
-// The write path is where the trigger belongs: the loose tier is a memtable,
-// and a memtable is flushed when it fills. Only one compaction of a repository
-// runs at a time in this process, and a compaction that is already running
-// simply absorbs the writes that arrive while it works, because it deletes only
-// the keys it listed.
+// noteObjectWritten counts a loose write and starts a compaction once enough
+// accumulate. Only one compaction per repository runs at a time in this process;
+// one already running absorbs concurrent writes, since it deletes only the keys
+// it listed.
 func (s *atomicRefStorer) noteObjectWritten() {
 	if s.fs == nil {
 		return
@@ -196,31 +150,19 @@ func (s *atomicRefStorer) noteObjectWritten() {
 	}
 }
 
-// compactionRequested is called when a repository's loose tier has filled.
-//
-// The signal belongs on the write path — the loose tier is a memtable, and a
-// memtable is flushed when it fills — but the goroutine that performs the
-// flush does not belong here: this package has no lifecycle to attach one to,
-// and a compaction started from a bare `go` statement can outlive the process
-// that started it, still writing to storage after shutdown has stopped waiting.
-// The owner of the signal is whoever has a lifetime to bound it with. The
-// server sets this to its own scheduler, which claims one compaction per
-// repository, runs it under a supervised goroutine, and cancels it at
-// shutdown. Left unset — in a test, or an embedding with no scheduler — the
-// loose tier simply keeps accumulating, which is a slower repository and not a
-// broken one.
-//
-// Not every object reaches storage through a push: the REST git-database
-// endpoints write blobs, trees and commits directly, so a repository built
-// entirely through the API depends on this signal rather than on the
-// post-receive scheduling.
+// compactionRequestFunc is invoked when a repository's loose tier fills. The
+// package owns no goroutine lifecycle, so the actual flush is delegated to an
+// installed handler: the server's scheduler runs one supervised, cancel-at-
+// shutdown compaction per repository. Left unset (tests, embeddings), the loose
+// tier just keeps accumulating — slower, not broken. The signal is needed
+// because the REST git-database endpoints write objects directly, outside the
+// post-receive path.
 var (
 	compactionRequestMu   sync.RWMutex
 	compactionRequestFunc func(repo string, stor gitStorage.Storer)
 )
 
-// SetCompactionRequestHandler installs the handler that performs a compaction
-// when a repository's loose tier fills. Passing nil removes it.
+// SetCompactionRequestHandler installs the loose-tier-full handler; nil removes it.
 func SetCompactionRequestHandler(request func(repo string, stor gitStorage.Storer)) {
 	compactionRequestMu.Lock()
 	defer compactionRequestMu.Unlock()
@@ -334,9 +276,8 @@ func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, 
 	result.PackBytes = built.packSize
 	result.FilterBytes = built.filterBits / 8
 
-	// The new pack is authoritative from here. Making it visible before any
-	// loose key disappears is what keeps a concurrent reader on this replica
-	// from looking in the one place the object is no longer in.
+	// Make the pack visible before deleting any loose key (step 5 before 6), so a
+	// concurrent reader never looks only where the object no longer is.
 	s.adoptPack()
 
 	if err := s.deleteLooseObjects(ctx, packedLoose); err != nil {
@@ -350,12 +291,10 @@ func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, 
 	return result, nil
 }
 
-// buildPackTolerantly encodes the pack, and if an object vanished between the
-// listing and the read — which can only be another replica's compaction having
-// published it in a pack of its own and removed the loose key — drops it and
-// tries again. The check is made this way round rather than by probing every
-// object first because probing is one object store round trip per object, which
-// is the cost compaction exists to remove.
+// buildPackTolerantly encodes the pack; if an object vanished between listing
+// and read (only possible when another replica already packed it), it drops the
+// object and retries. Retrying beats probing every object up front, which would
+// cost the per-object round trip compaction exists to remove.
 func (s *atomicRefStorer) buildPackTolerantly(hashes []plumbing.Hash) (*builtPack, map[plumbing.Hash]bool, error) {
 	built, err := s.buildPack(hashes)
 	if err == nil {
@@ -389,8 +328,8 @@ func hashSet(hashes []plumbing.Hash) map[plumbing.Hash]bool {
 	return set
 }
 
-// retainPacked narrows the loose keys due for deletion to the ones that
-// actually made it into the published pack.
+// retainPacked narrows the loose keys due for deletion to those that made it
+// into the published pack.
 func retainPacked(objects []looseObject, packed map[plumbing.Hash]bool) []looseObject {
 	kept := objects[:0]
 	for _, object := range objects {
@@ -407,9 +346,7 @@ type looseObject struct {
 	key  string
 }
 
-// listLooseObjects enumerates every loose object of the repository. One listing
-// page carries a thousand keys, so enumerating a million loose objects costs a
-// thousand round trips rather than the million a per-object probe would.
+// listLooseObjects enumerates every loose object of the repository.
 func (s *atomicRefStorer) listLooseObjects(ctx context.Context) ([]looseObject, error) {
 	prefix := s.fs.key("objects") + "/"
 	packPrefix := prefix + "pack/"
@@ -449,8 +386,8 @@ func (s *atomicRefStorer) listLooseObjects(ctx context.Context) ([]looseObject, 
 	return objects, nil
 }
 
-// listPublishedPacks names every pack that is visible to a reader, which is
-// exactly the set whose .pack key exists.
+// listPublishedPacks names every reader-visible pack, i.e. those whose .pack
+// key exists.
 func (s *atomicRefStorer) listPublishedPacks(ctx context.Context) ([]string, error) {
 	keys, err := s.listPackDirectory(ctx)
 	if err != nil {
@@ -490,8 +427,8 @@ func (s *atomicRefStorer) listPackDirectory(ctx context.Context) (map[string]tim
 	}
 }
 
-// hashesInPacks reads the object ids out of the existing packs' indexes, which
-// is what a merging compaction rewrites.
+// hashesInPacks reads the object ids from the existing packs' indexes, the set
+// a merging compaction rewrites.
 func (s *atomicRefStorer) hashesInPacks(packs []string) ([]plumbing.Hash, error) {
 	var hashes []plumbing.Hash
 	for _, pack := range packs {
@@ -530,15 +467,13 @@ func (s *atomicRefStorer) readPackIndex(pack string) (*idxfile.MemoryIndex, erro
 	return index, nil
 }
 
-// builtPack is a finished pack sitting on local disk, waiting to be published.
+// builtPack is a finished pack on local disk, waiting to be published.
 type builtPack struct {
 	name string
-	// stagingDir is the directory the pack was staged in and packFile its bare
-	// name inside that directory — a name, never a path. The two are kept apart
-	// so that every use of the staged file goes through an os.Root opened on the
-	// directory: the name is then resolved by the kernel underneath that root,
-	// and neither the name nor a symlink appearing in the directory can reach a
-	// file outside it.
+	// stagingDir is the staging directory and packFile the staged file's bare
+	// name within it (never a path). Kept apart so every use resolves the name
+	// under an os.Root on the directory, which stops the name or a planted
+	// symlink from escaping it.
 	stagingDir string
 	packFile   string
 	packSize   int64
@@ -547,7 +482,7 @@ type builtPack struct {
 	filterBits int
 }
 
-// openRoot scopes access to the directory the pack was staged in.
+// openRoot scopes access to the pack's staging directory.
 func (b *builtPack) openRoot() (*os.Root, error) {
 	root, err := os.OpenRoot(b.stagingDir)
 	if err != nil {
@@ -556,8 +491,8 @@ func (b *builtPack) openRoot() (*os.Root, error) {
 	return root, nil
 }
 
-// open opens the staged pack for reading. The file stays usable after the root
-// it was opened through is closed.
+// open opens the staged pack for reading; the file outlives the root it was
+// opened through.
 func (b *builtPack) open() (*os.File, error) {
 	root, err := b.openRoot()
 	if err != nil {
@@ -580,9 +515,9 @@ func (b *builtPack) cleanup() {
 }
 
 // buildPack encodes the objects into a packfile on local disk and derives the
-// index and membership filter from the bytes it wrote. The pack is staged
-// locally rather than streamed to the object store because its name is the hash
-// of its own contents, which is not known until the last byte is written.
+// index and membership filter from the bytes it wrote. It stages locally rather
+// than streaming because the pack's name is the hash of its contents, unknown
+// until the last byte.
 func (s *atomicRefStorer) buildPack(hashes []plumbing.Hash) (*builtPack, error) {
 	dir, err := compactionScratchDir()
 	if err != nil {
@@ -615,9 +550,8 @@ func (s *atomicRefStorer) buildPack(hashes []plumbing.Hash) (*builtPack, error) 
 		built.cleanup()
 		return nil, fmt.Errorf("rewind staged pack: %w", err)
 	}
-	// The index is derived by parsing the bytes that were actually written
-	// rather than from the encoder's own bookkeeping, so an index can only
-	// describe a pack that exists byte for byte.
+	// Derive the index by parsing the written bytes, not the encoder's
+	// bookkeeping, so it can only describe the pack that exists byte for byte.
 	writer := new(idxfile.Writer)
 	parser, err := packfile.NewParser(packfile.NewScanner(temp), writer)
 	if err != nil {
@@ -675,9 +609,8 @@ func (s *atomicRefStorer) buildPack(hashes []plumbing.Hash) (*builtPack, error) 
 	return built, nil
 }
 
-// compactionScratchDir is where a pack is staged while it is being built. It
-// shares the pack cache's directory because both hold pack bytes and both are
-// sized against the same local disk budget.
+// compactionScratchDir stages a pack while it is built. It shares the pack
+// cache's directory: both hold pack bytes against the same local disk budget.
 func compactionScratchDir() (string, error) {
 	dir := filepath.Join(packCacheDir(), "staging")
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -686,8 +619,8 @@ func compactionScratchDir() (string, error) {
 	return dir, nil
 }
 
-// publishPack uploads the index, the filter and finally the pack. The order is
-// the crash-safety argument: see the top of this file.
+// publishPack uploads the index, the filter, and finally the pack. See the
+// crash-safety argument at the top of this file.
 func (s *atomicRefStorer) publishPack(ctx context.Context, built *builtPack) error {
 	base := path.Join("objects", "pack", built.name)
 	if err := s.putObject(ctx, base+".idx", built.index); err != nil {
@@ -699,9 +632,8 @@ func (s *atomicRefStorer) publishPack(ctx context.Context, built *builtPack) err
 	if err := s.uploadPackFile(ctx, base+".pack", built); err != nil {
 		return err
 	}
-	// The replica that built the pack already holds its bytes, so seeding the
-	// shared disk cache from the staged file saves it downloading back what it
-	// just uploaded.
+	// Seed the disk cache from the staged file so this replica does not download
+	// back the pack it just uploaded.
 	s.seedPackCache(base+".pack", built)
 	s.fs.rememberObjectSize(s.fs.key(base+".pack"), built.packSize)
 	return nil
@@ -720,11 +652,9 @@ func (s *atomicRefStorer) putObject(ctx context.Context, name string, body []byt
 	return nil
 }
 
-// uploadPackFile publishes the packfile. A pack small enough for one request is
-// sent as one, and a large one goes through a multipart upload, which is what
-// keeps a monorepo's multi-gigabyte pack from having to be held in memory —
-// and which is still atomic, because the object appears only when the
-// completion request succeeds.
+// uploadPackFile publishes the packfile: one request when small, else a
+// multipart upload so a multi-gigabyte pack need not be held in memory. Both
+// are atomic — the object appears only once the (completion) request succeeds.
 func (s *atomicRefStorer) uploadPackFile(ctx context.Context, name string, built *builtPack) error {
 	key := s.fs.key(name)
 	size := built.packSize
@@ -826,9 +756,8 @@ func (s *atomicRefStorer) seedPackCache(name string, built *builtPack) {
 	chunkSize := s.fs.shared().chunkSize
 	cache.storeSize(s.fs.bucket, key, chunkSize, size)
 	for chunk := int64(0); ; chunk++ {
-		// Each chunk gets its own buffer: an admitted chunk is shared with
-		// every later reader of it, so a buffer reused for the next chunk
-		// would rewrite bytes another goroutine is reading.
+		// Each chunk needs its own buffer: an admitted chunk is shared with later
+		// readers, so reusing the buffer would rewrite bytes they are reading.
 		buffer := make([]byte, chunkSize)
 		read, err := io.ReadFull(file, buffer)
 		if read > 0 {
@@ -840,34 +769,27 @@ func (s *atomicRefStorer) seedPackCache(name string, built *builtPack) {
 	}
 }
 
-// adoptPack makes the pack this replica just published visible to the storer,
-// and drops the membership snapshots so the next negative answer is taken
-// against the new shape of the repository.
+// adoptPack makes the just-published pack visible to the storer and drops the
+// membership snapshots so the next negative answer reflects the new repository.
 func (s *atomicRefStorer) adoptPack() {
 	s.mu.Lock()
 	if reindexer, ok := s.storer.(interface{ Reindex() }); ok {
 		reindexer.Reindex()
-		// Reindex only clears go-git's lazily-built pack index; the rebuild
-		// happens inside the next requireIndex(), which mutates the shared
-		// index and pack list. Every read method (EncodedObject and friends)
-		// calls requireIndex, and this wrapper runs those under RLock — so
-		// leaving the rebuild to them lets concurrent readers race to
-		// repopulate the index right after a compaction, and one can observe a
-		// partial pack set: a spurious ErrObjectNotFound for an object the
-		// freshly published pack holds (a concurrent clone reading a ref's
-		// commit while its objects move loose->pack). Force the rebuild here,
-		// under the exclusive lock, so every RLock reader afterwards finds a
-		// complete, non-nil index and requireIndex is a no-op for them. The
-		// probe's result is irrelevant; it exists only to drive requireIndex
-		// through go-git's public surface.
+		// Reindex only clears go-git's lazy pack index; requireIndex rebuilds it
+		// on the next read, mutating the shared index/pack list. Read methods run
+		// under RLock, so leaving the rebuild to them lets concurrent readers race
+		// and observe a partial pack set — a spurious ErrObjectNotFound for an
+		// object the new pack holds. Force the rebuild here under the exclusive
+		// lock; the probe only drives requireIndex through go-git's public surface,
+		// its result is irrelevant.
 		_ = s.storer.HasEncodedObject(plumbing.ZeroHash)
 	}
 	s.mu.Unlock()
 	s.fs.repoIndexFor().invalidate()
 }
 
-// deleteLooseObjects removes exactly the keys that went into the published
-// pack, a thousand at a time.
+// deleteLooseObjects removes the keys that went into the published pack, a
+// thousand at a time.
 func (s *atomicRefStorer) deleteLooseObjects(ctx context.Context, objects []looseObject) error {
 	const batch = 1000
 	keys := make([]string, 0, len(objects))
@@ -898,10 +820,10 @@ func (s *atomicRefStorer) deleteLooseObjects(ctx context.Context, objects []loos
 	return nil
 }
 
-// markSuperseded records that a pack has been rewritten into a newer one. The
-// marker rather than the deletion is written because a request that started
-// before the merge may still be reading the old pack; retireSupersededPacks
-// removes the bytes once the marker has aged.
+// markSuperseded records that a pack was rewritten into a newer one. It writes
+// a marker rather than deleting, since a request begun before the merge may
+// still read the old pack; retireSupersededPacks removes the bytes once the
+// marker ages.
 func (s *atomicRefStorer) markSuperseded(ctx context.Context, packs []string, replacement string) error {
 	for _, pack := range packs {
 		if pack == replacement {
@@ -915,9 +837,9 @@ func (s *atomicRefStorer) markSuperseded(ctx context.Context, packs []string, re
 	return nil
 }
 
-// retireSupersededPacks removes the packs whose supersession marker is older
-// than the retention window, using the object store's own record of when the
-// marker was written rather than this replica's clock.
+// retireSupersededPacks removes packs whose supersession marker is older than
+// the retention window, aging against the object store's LastModified rather
+// than this replica's clock.
 func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context) ([]string, error) {
 	entries, err := s.listPackDirectory(ctx)
 	if err != nil {
@@ -953,8 +875,7 @@ func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context) ([]string, 
 	if len(doomed) == 0 {
 		return nil, nil
 	}
-	// The .pack key is what makes a pack visible, so it goes first: after it
-	// is gone no reader will look for the index or the filter.
+	// Delete the .pack key first: once gone, no reader looks for the index or filter.
 	sort.Slice(doomed, func(i, j int) bool {
 		return strings.HasSuffix(doomed[i], ".pack") && !strings.HasSuffix(doomed[j], ".pack")
 	})

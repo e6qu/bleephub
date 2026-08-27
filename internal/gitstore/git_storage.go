@@ -30,9 +30,8 @@ import (
 )
 
 // S3FSCacheState memoizes the process-wide S3 filesystem built from the
-// environment. Its fields are exported state, not functions, so tests in
-// dependent packages can reset the memo between environment changes without a
-// test-only exported function tripping the deadcode gate.
+// environment. Fields are exported so dependent-package tests can reset the memo
+// without a test-only exported function tripping the deadcode gate.
 type S3FSCacheState struct {
 	Mu     sync.Mutex
 	FS     *S3FS
@@ -50,13 +49,10 @@ var (
 )
 
 // checkSafeRefName rejects a reference name that cannot be safely turned into a
-// storage path. Every backend composes the ref file path from the name, and
-// the S3 backend joins it with `path.Join`, which cleans `..` — so a crafted
-// name like `refs/heads/../../other-repo/refs/heads/main` would escape the
-// per-repository chroot. go-git's IsSafe applies git's own check-ref-format
-// rules (no empty/`.`/`..` segments, no backslash), which accepts every
-// legitimate ref bleephub stores (`refs/heads/*`, `refs/pull/N/merge`,
-// `refs/tags/v1.0`, `HEAD`).
+// storage path. The S3 backend joins the name with `path.Join`, which cleans
+// `..`, so a crafted name like `refs/heads/../../other-repo/refs/heads/main`
+// would escape the per-repository chroot. go-git's IsSafe applies git's own
+// check-ref-format rules and accepts every legitimate ref bleephub stores.
 func checkSafeRefName(name plumbing.ReferenceName) error {
 	if !name.IsSafe() {
 		return fmt.Errorf("%w: %q", ErrUnsafeReferenceName, name)
@@ -64,42 +60,30 @@ func checkSafeRefName(name plumbing.ReferenceName) error {
 	return nil
 }
 
-// atomicRefStorer is the single git-storage handle bleephub keeps per
-// repository (the value in Store.GitStorages), so every goroutine that touches
-// one repository's git data goes through one instance of this type. Two of
-// those goroutines routinely run at once: a `git clone`/`git fetch` reads refs
-// and objects on its net/http connection goroutine while a `git push`, a REST
-// blob/tree/commit/tag write, or repository creation writes them on another
-// request goroutine. Neither side holds Store.Mu — GetGitStorage takes and
-// releases it just to look the handle up — so without a lock here the backing
-// go-git maps are read and written concurrently.
-//
-// mu is therefore the repository's storage lock and every method below takes
-// it: RLock for reads so the common case (many concurrent clones) still runs
-// in parallel, Lock for anything that mutates. It is a field rather than a
-// process-wide map because the racing accesses are accesses to *this*
-// instance's Go memory; a second handle opened over the same on-disk or S3
-// repository has its own maps and caches, and cross-handle (and cross-replica)
-// exclusion is what refMutationLocks and the durable GitObjectLocker provide.
+// atomicRefStorer is the single git-storage handle bleephub keeps per repository
+// (the value in Store.GitStorages). Concurrent goroutines routinely touch one
+// repository's git data at once (a clone/fetch reading refs and objects while a
+// push or REST write mutates them), and neither side holds Store.Mu, so mu
+// guards the backing go-git maps: RLock for reads, Lock for mutations. It is a
+// field, not a process-wide map, because the races are on this instance's Go
+// memory; cross-handle and cross-replica exclusion come from refMutationLocks
+// and the durable GitObjectLocker.
 //
 // The delegate is a named field, not an embedded interface: promotion would
-// silently leave any method this type forgets to override unguarded, whereas a
-// named field makes the interface assertion below fail to compile instead.
+// silently leave any un-overridden method unguarded, whereas the named field
+// makes the interface assertion below fail to compile instead.
 type atomicRefStorer struct {
 	storer  gitStorage.Storer
 	repo    string
 	mu      sync.RWMutex
 	modules map[string]gitStorage.Storer
-	// fs is the object store this repository's git data lives in, or nil when
-	// the repository is backed by a local directory or by memory. It is the
-	// handle the pack tier needs: compaction publishes through it, and the
-	// membership index that answers "no" without a round trip is keyed by its
-	// prefix. Storage that is not object-backed has neither.
+	// fs is the object store this repository's git data lives in, or nil for
+	// local-directory or memory backing. The pack tier needs it: compaction
+	// publishes through it, and the membership index is keyed by its prefix.
 	fs *S3FS
 	// looseWrites counts objects written into the loose tier since the last
-	// compaction was requested. Admitting one compaction at a time is the
-	// scheduler's job, not this counter's: the handler that owns the goroutine
-	// is the only place that knows whether one is already running.
+	// compaction request. Admitting one compaction at a time is the scheduler's
+	// job, not this counter's.
 	looseWrites atomic.Int64
 	triggerOnce sync.Once
 	trigger     int64
@@ -112,8 +96,8 @@ func WrapAtomicRefStorage(repo string, stor gitStorage.Storer) gitStorage.Storer
 	return &atomicRefStorer{storer: stor, repo: repo}
 }
 
-// wrapObjectStoreStorage is the object-store form of WrapAtomicRefStorage. It
-// carries the filesystem alongside the storer so the pack tier can reach it.
+// wrapObjectStoreStorage is the object-store form of WrapAtomicRefStorage,
+// carrying the filesystem alongside the storer so the pack tier can reach it.
 func wrapObjectStoreStorage(repo string, stor gitStorage.Storer, fs *S3FS) *atomicRefStorer {
 	return &atomicRefStorer{storer: stor, repo: repo, fs: fs}
 }
@@ -165,9 +149,8 @@ func (s *atomicRefStorer) InitializeRepositoryReferences(branch *plumbing.Refere
 	digest := sha256.Sum256([]byte(s.repo + "\x00repository-initialization"))
 	name := "git-ref:" + hex.EncodeToString(digest[:])
 	return s.withLockName(name, func() error {
-		// The read-then-write sequence runs under one exclusive hold so no
-		// reader observes the branch without HEAD, and so the rollback below
-		// cannot race a concurrent clone.
+		// One exclusive hold so no reader observes the branch without HEAD and
+		// the rollback below cannot race a concurrent clone.
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		refs, err := s.storer.IterReferences()
@@ -284,8 +267,8 @@ func (s *atomicRefStorer) CountLooseRefs() (int, error) {
 	return s.storer.CountLooseRefs()
 }
 
-// PackRefs rewrites the loose refs into packed-refs, so it is a mutation even
-// though callers reach it from a maintenance path rather than a write path.
+// PackRefs rewrites loose refs into packed-refs, so it takes the write lock
+// despite arriving from a maintenance path.
 func (s *atomicRefStorer) PackRefs() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -302,18 +285,14 @@ func (s *atomicRefStorer) IterReferences() (storer.ReferenceIter, error) { //nol
 	return &lockedReferenceIter{mu: &s.mu, iter: iter}, nil
 }
 
-// lockedReferenceIter holds the repository's read lock across each call into
-// the underlying iterator but never across the caller's callback. Holding it
-// for the whole walk would deadlock two ways: callers legitimately write to the
-// same storer from inside ForEach (copyGitStorage's dst==src degenerate case,
-// ref-pruning loops), and callers legitimately read from it (gh_import's
-// object.DecodeCommit(stor, obj)) — and a recursive RLock deadlocks as soon as
-// a writer is queued between the two acquisitions, which is exactly the
-// clone-during-push situation this lock exists for. Per-call locking still
-// removes the race, because both backends materialize the reference set inside
-// IterReferences itself, so the guarded construction above already yields a
-// snapshot; the per-call holds cover the lazy backends' remaining state and
-// establish the happens-before edge with the writer.
+// lockedReferenceIter holds the repository's read lock across each call into the
+// underlying iterator but never across the caller's callback. Holding it for the
+// whole walk would deadlock: callers legitimately read and write the same storer
+// from inside ForEach, and a recursive RLock deadlocks once a writer queues
+// between the two acquisitions — the clone-during-push case this lock exists for.
+// Per-call locking still removes the race: both backends materialize the
+// reference set inside IterReferences, so the construction above already yields a
+// snapshot, and the per-call holds establish the happens-before edge with the writer.
 type lockedReferenceIter struct {
 	mu   *sync.RWMutex
 	iter storer.ReferenceIter
@@ -332,8 +311,8 @@ func (i *lockedReferenceIter) Close() {
 }
 
 // ForEach mirrors go-git's forEachReferenceIter contract: io.EOF and
-// storer.ErrStop both end the walk without an error, and the iterator is closed
-// on the way out.
+// storer.ErrStop both end the walk without error, and the iterator is closed on
+// the way out.
 func (i *lockedReferenceIter) ForEach(cb func(*plumbing.Reference) error) error {
 	defer i.Close()
 	for {
@@ -376,16 +355,11 @@ func (s *atomicRefStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) 
 	return s.storer.EncodedObject(t, h)
 }
 
-// HasEncodedObject answers the question a fetch negotiation asks once per
-// object it is considering. On object-backed storage that answer used to cost
-// an S3 GET that returned a 404, because go-git looks for a loose object first
-// and every object of a packed repository is absent from the loose tier.
-//
-// The membership index answers it without a round trip when it can prove the
-// object is absent from every pack and from the loose directory that could hold
-// it. That is a negative-only use: a filter that says "maybe" delegates to the
-// real lookup below, which is exactly what would have happened anyway. See the
-// filter invariant in filter.go.
+// HasEncodedObject short-circuits a fetch negotiation's per-object presence
+// check. On object-backed storage the real lookup costs an S3 GET (go-git tries
+// the loose tier first, always a 404 for a packed repository), so the membership
+// index returns ErrObjectNotFound when it can prove absence. Negative-only: a
+// "maybe" delegates to the real lookup. See the filter invariant in filter.go.
 func (s *atomicRefStorer) HasEncodedObject(h plumbing.Hash) error {
 	if s.fs != nil && !s.fs.repoIndexFor().maybePresent(s.fs, oidKeyFrom(h[:])) {
 		return plumbing.ErrObjectNotFound
@@ -418,11 +392,10 @@ func (s *atomicRefStorer) IterEncodedObjects(t plumbing.ObjectType) (storer.Enco
 }
 
 // lockedObjectIter guards the object walk on the same terms as
-// lockedReferenceIter, and for the same reason: the object iterator is where
-// the packfile encoder meets a concurrent writer. Snapshotting every object
-// under one hold is not an option here — the filesystem backend's iterator is
-// lazy precisely so a clone of a large repository does not materialize the
-// whole object database in memory.
+// lockedReferenceIter: the object iterator is where the packfile encoder meets a
+// concurrent writer. Snapshotting under one hold is not an option — the
+// filesystem backend's iterator is lazy so a clone of a large repository never
+// materializes the whole object database in memory.
 type lockedObjectIter struct {
 	mu   *sync.RWMutex
 	iter storer.EncodedObjectIter
@@ -497,10 +470,9 @@ func (s *atomicRefStorer) Config() (*config.Config, error) {
 }
 
 // Module returns the submodule's storage wrapped in its own guard, memoized so
-// that repeated lookups of one submodule name share a single lock. The
-// underlying backends cache the submodule storage too, so handing out a fresh
-// unguarded wrapper each call would leave two goroutines racing on the same
-// maps one level down.
+// repeated lookups of one name share a lock. The backends cache the submodule
+// storage too, so a fresh unguarded wrapper each call would leave two goroutines
+// racing on the same maps one level down.
 func (s *atomicRefStorer) Module(name string) (gitStorage.Storer, error) { //nolint:ireturn
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -606,9 +578,8 @@ func GetS3FS(ctx context.Context) (*S3FS, error) {
 	prefix := os.Getenv("BLEEPHUB_S3_PREFIX")
 	fs, err := NewS3FS(ctx, endpoint, bucket, prefix)
 	if err != nil {
-		// Configuration discovery can fail transiently (for example while an
-		// ECS task waits for credentials). Do not poison Git storage for the
-		// lifetime of the process; the next repository operation retries.
+		// Discovery can fail transiently (e.g. while an ECS task waits for
+		// credentials); leave the memo uninited so the next operation retries.
 		return nil, err
 	}
 	S3FSCache.FS = fs
@@ -625,10 +596,9 @@ func IsS3GitStorage() bool {
 	return os.Getenv("BLEEPHUB_S3_BUCKET") != ""
 }
 
-// ValidateRepoStorageFullName keeps every filesystem and object-store backend
-// at the same trust boundary. Repository keys are always exactly owner/name;
-// accepting an absolute path, a dot component, or a platform separator here
-// would let a valid API request escape the configured repository namespace.
+// ValidateRepoStorageFullName holds every backend to one trust boundary.
+// Repository keys are always exactly owner/name; an absolute path, dot
+// component, or platform separator would escape the configured namespace.
 func ValidateRepoStorageFullName(fullName string) error {
 	if fullName == "" ||
 		strings.Contains(fullName, `\`) ||
@@ -652,12 +622,9 @@ func RepoGitDirPath(gitDir, fullName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve git directory %q: %w", gitDir, err)
 	}
-	// The containment guard sits directly on the value that feeds
-	// filepath.Join — not on a derived variable after the join — so the
-	// barrier is visible to dataflow analysis (CodeQL models a
-	// filepath.IsLocal guard as a tainted-path sanitizer). The rejection set
-	// is identical to the previous post-join Rel+IsLocal check: a local
-	// relative path joined onto an absolute root cannot escape it.
+	// Guard the value that feeds filepath.Join directly, not a post-join
+	// derivative, so CodeQL sees the filepath.IsLocal tainted-path sanitizer.
+	// A local relative path joined onto an absolute root cannot escape it.
 	relative := filepath.FromSlash(fullName)
 	if !filepath.IsLocal(relative) {
 		return "", fmt.Errorf("repository storage name %q escapes git directory", fullName)
