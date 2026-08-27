@@ -366,7 +366,7 @@
       "shared_types": 1809,
       "signature_exact_fields": 8364
     },
-    "introspection_snapshot_sha256": "b49800b4e7276d5582131a655744df0517a63e2adec712875b41e2a54a4f8c62",
+    "introspection_snapshot_sha256": "0ba26e8188dab475c1b1551832db7d3df1aee75565a7ba99b0f0d68b34736ffa",
     "official_schema": {
       "content_sha256": "e67fbf3cf655481ac815f53b0495efabed0f792a12a405577f74d6532e70b792",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -9269,28 +9269,28 @@
         "category": "GQL",
         "finding": "`User.status` and `Organization.memberStatuses` need a user-status model (emoji, message, expiry, organization scope) that does not exist",
         "id": "GQL-094",
-        "location": "gh_users_surface_graphql.go",
+        "location": "gh_users_org_fields_graphql.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `store.UserStatus` carries emoji/message/expiry/organization and `User.status`, `Organization.memberStatuses` and `Team.memberStatuses` all resolve from it (gh_users_org_fields_graphql.go, gh_teams_fields_graphql.go); the finding predated the model",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
         "finding": "`packages` on Repository, User and Organization is unserved although the package store holds the data; it needs the `Package`/`PackageVersion`/`PackageStatistics` type graph",
         "id": "GQL-095",
-        "location": "gh_account_surface_graphql.go",
+        "location": "gh_final_residue_graphql.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the `Package`/`PackageVersion`/`PackageStatistics`/`PackageFile` graph resolves from the package store, and `PackageVersion.files` now returns the stored files once `store.PackageFile` gained the `updatedAt` its non-null `DateTime!` field requires",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
         "finding": "`Organization.auditLog` needs github's roughly one hundred typed audit-entry objects; the store keeps one generic entry row",
         "id": "GQL-096",
-        "location": "gh_orgs_surface_graphql.go",
+        "location": "gh_audit_log_graphql.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `auditLog` dispatches each entry to its concrete typed `*AuditEntry` object (not a generic row); every recorded action with a GitHub `OrganizationAuditEntry` union counterpart is typed (`org.invite_member` added). The remaining union members model audit events bleephub does not record",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -9471,8 +9471,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 95,
-            "open": 5
+            "fixed": 98,
+            "open": 2
           },
           "total": 100
         },
@@ -9517,8 +9517,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 983,
-        "open": 6
+        "fixed": 986,
+        "open": 3
       },
       "total": 992
     }
@@ -10200,6 +10200,17 @@
         "path": "/enterprises/{enterprise}/dependabot/repository-access/default-level",
         "statuses": [
           "204",
+          "403",
+          "404"
+        ]
+      },
+      {
+        "method": "GET",
+        "operation_id": "enterprise-team-memberships/list-teams-for-user",
+        "path": "/enterprises/{enterprise}/members/{username}/teams",
+        "statuses": [
+          "200",
+          "401",
           "403",
           "404"
         ]
@@ -21512,8 +21523,9 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1470,
+          "documented_operations": 1472,
           "missing_operations": [
+            "DELETE /enterprises/{}/credential-authorizations",
             "GET /enterprises/{}/actions/runners/deprecations/{}",
             "GET /orgs/{}/actions/runners/deprecations/{}",
             "GET /repos/{}/{}/actions/runners/deprecations/{}",
@@ -21522,7 +21534,7 @@
             "POST /orgs/{}/credential-authorizations/{}/revoke",
             "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type"
           ],
-          "represented_operations": 1463
+          "represented_operations": 1464
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -22022,19 +22034,19 @@
         "source": "internal/server/gh_enterprise_billing.go"
       },
       {
-        "line": 17,
+        "line": 18,
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 24,
+        "line": 25,
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/{username}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 31,
+        "line": 32,
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}",
         "source": "internal/server/gh_enterprise_teams.go"
@@ -23942,6 +23954,12 @@
         "source": "internal/server/gh_enterprise_copilot_v2.go"
       },
       {
+        "line": 15,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/members/{username}/teams",
+        "source": "internal/server/gh_enterprise_teams.go"
+      },
+      {
         "line": 44,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/network-configurations",
@@ -24104,31 +24122,31 @@
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 15,
+        "line": 16,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 22,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/{username}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 26,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 29,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}",
         "source": "internal/server/gh_enterprise_teams.go"
@@ -28100,7 +28118,7 @@
         "source": "internal/server/gh_enterprise_billing.go"
       },
       {
-        "line": 16,
+        "line": 17,
         "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}",
         "source": "internal/server/gh_enterprise_teams.go"
@@ -28910,25 +28928,25 @@
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 20,
+        "line": 21,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/add",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/remove",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 27,
+        "line": 28,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/add",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 28,
+        "line": 29,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/remove",
         "source": "internal/server/gh_enterprise_teams.go"
@@ -30266,13 +30284,13 @@
         "source": "internal/server/gh_enterprise_rulesets.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/{username}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 30,
+        "line": 31,
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}",
         "source": "internal/server/gh_enterprise_teams.go"
@@ -31082,7 +31100,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "f7afa5fa749313ad5d98e7c771be8b0c2571cadac9244290fe8158f503bf9b64"
+    "vendored_openapi_sha256": "f7faf6baadf09ecf59042a10e2901b136f99faa13938c7cd3c4e1b1602bfbb91"
   },
   "schema_version": 1,
   "sources": {

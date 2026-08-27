@@ -79,6 +79,10 @@ type PackageFile struct {
 	HTMLURL     string `json:"html_url"`
 	DownloadURL string `json:"download_url"`
 	StoragePath string `json:"storage_path,omitempty"`
+	// UpdatedAt backs GitHub's PackageFile.updatedAt (DateTime!), which the
+	// GraphQL PackageVersion.files connection requires. Set when the file is
+	// written; a file is immutable afterward, so it equals the upload time.
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type decodedPackageFileInput struct {
@@ -364,6 +368,7 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 			VersionID:   v.ID,
 			Name:        fin.Name,
 			ContentType: fin.ContentType,
+			UpdatedAt:   now,
 			Size:        int64(len(fin.Data)),
 		}
 		if st.ObjectByteStore != nil {

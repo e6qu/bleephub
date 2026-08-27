@@ -200,10 +200,9 @@ func (s *Resolver) addAuditEntryShells() {
 			"singleSignOnUrl":    gqlField(uri),
 		}),
 		s.auditShellObject("OrgEnableTwoFactorRequirementAuditEntry", base(), id(), org()),
-		s.auditShellObject("OrgInviteMemberAuditEntry", base(), id(), org(), graphql.Fields{
-			"email":                  gqlField(graphql.String),
-			"organizationInvitation": gqlField(s.reachOrganizationInvitationType()),
-		}),
+		// OrgInviteMemberAuditEntry is not a shell: it is a produced member of
+		// the OrganizationAuditEntry union (org.invite_member is recorded), built
+		// as a real interface-implementing type in gh_audit_log_graphql.go.
 		s.auditShellObject("OrgInviteToBusinessAuditEntry", base(), id(), ent(), org()),
 		s.auditShellObject("OrgOauthAppAccessApprovedAuditEntry", base(), id(), oauthApp(), org()),
 		s.auditShellObject("OrgOauthAppAccessBlockedAuditEntry", base(), id(), oauthApp(), org()),

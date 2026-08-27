@@ -75,6 +75,7 @@ func TestOrganizationAuditLogConnectionServesModeledEntries(t *testing.T) {
 	// Record one entry per modeled concrete type, plus one whose action has no
 	// modeled type (it must be omitted from the connection).
 	h.store.RecordAuditEntry("org.create", "admin", "acme", map[string]interface{}{"org_id": org.ID, "billing_plan": "FREE"})
+	h.store.RecordAuditEntry("org.invite_member", "admin", "acme", map[string]interface{}{"invitation_id": 1, "role": "direct_member", "email": "invitee@example.com"})
 	h.store.RecordAuditEntry("org.block_user", "admin", "acme", map[string]interface{}{"blocked_user": "mallory"})
 	h.store.RecordAuditEntry("org.unblock_user", "admin", "acme", map[string]interface{}{"blocked_user": "mallory"})
 	h.store.RecordAuditEntry("org.remove_outside_collaborator", "admin", "acme", map[string]interface{}{"user": "mallory"})
@@ -93,6 +94,7 @@ func TestOrganizationAuditLogConnectionServesModeledEntries(t *testing.T) {
 	      ... on AuditEntry { action actorLogin createdAt operationType actor { __typename ... on User { login } } }
 	      ... on OrganizationAuditEntryData { organizationName organization { login } }
 	      ... on OrgCreateAuditEntry { billingPlan }
+	      ... on OrgInviteMemberAuditEntry { email }
 	      ... on OrgBlockUserAuditEntry { blockedUserName blockedUser { login } }
 	      ... on OrgUnblockUserAuditEntry { blockedUserName }
 	      ... on OrgRemoveOutsideCollaboratorAuditEntry { userLogin user { login } }
@@ -109,12 +111,12 @@ func TestOrganizationAuditLogConnectionServesModeledEntries(t *testing.T) {
 	data := decodeAuditResult(t, result.Data)
 
 	conn, _ := data["auditLog"].(map[string]interface{})
-	if got, _ := conn["totalCount"].(float64); int(got) != 5 {
-		t.Fatalf("totalCount = %v, want 5 (team.create must be omitted)", conn["totalCount"])
+	if got, _ := conn["totalCount"].(float64); int(got) != 6 {
+		t.Fatalf("totalCount = %v, want 6 (team.create must be omitted)", conn["totalCount"])
 	}
 	nodes, _ := conn["nodes"].([]interface{})
-	if len(nodes) != 5 {
-		t.Fatalf("nodes = %d, want 5", len(nodes))
+	if len(nodes) != 6 {
+		t.Fatalf("nodes = %d, want 6", len(nodes))
 	}
 
 	byType := map[string]map[string]interface{}{}
@@ -135,12 +137,16 @@ func TestOrganizationAuditLogConnectionServesModeledEntries(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"OrgCreateAuditEntry", "OrgBlockUserAuditEntry", "OrgUnblockUserAuditEntry",
-		"OrgRemoveOutsideCollaboratorAuditEntry", "RepoCreateAuditEntry",
+		"OrgCreateAuditEntry", "OrgInviteMemberAuditEntry", "OrgBlockUserAuditEntry",
+		"OrgUnblockUserAuditEntry", "OrgRemoveOutsideCollaboratorAuditEntry", "RepoCreateAuditEntry",
 	} {
 		if byType[want] == nil {
 			t.Errorf("missing node of type %s", want)
 		}
+	}
+
+	if email := byType["OrgInviteMemberAuditEntry"]["email"]; email != "invitee@example.com" {
+		t.Errorf("OrgInviteMemberAuditEntry.email = %#v, want invitee@example.com", email)
 	}
 
 	if bp := byType["OrgCreateAuditEntry"]["billingPlan"]; bp != "FREE" {

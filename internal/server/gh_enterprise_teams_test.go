@@ -447,3 +447,54 @@ func TestEnterpriseTeamBulk_AtomicOnInvalid(t *testing.T) {
 		t.Fatalf("cleanup delete: got %d", resp.StatusCode)
 	}
 }
+
+// TestEnterpriseMemberTeams_ListsTheMembersTeams covers the re-vendored
+// GET /enterprises/{enterprise}/members/{username}/teams operation.
+func TestEnterpriseMemberTeams_ListsTheMembersTeams(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+
+	resp := s.post(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Squad", "description": "The squad"})
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		t.Fatalf("create team: got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	_ = s.createEnterpriseTestUser(t, "ent-squad-a")
+	resp = s.put(t, enterpriseAPI+"/teams/squad/memberships/ent-squad-a", defaultToken, nil)
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		t.Fatalf("add member: got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// The member's teams include the squad they joined.
+	resp = s.get(t, enterpriseAPI+"/members/ent-squad-a/teams", defaultToken)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("list member teams: got %d, want 200", resp.StatusCode)
+	}
+	teams := decodeJSONArray(t, resp)
+	if len(teams) != 1 || teams[0]["slug"] != "squad" {
+		t.Fatalf("member teams = %v, want one team slug=squad", teams)
+	}
+
+	// A member with no team assignments gets an empty array (not an error).
+	_ = s.createEnterpriseTestUser(t, "ent-squad-b")
+	resp = s.get(t, enterpriseAPI+"/members/ent-squad-b/teams", defaultToken)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("list teams for teamless member: got %d, want 200", resp.StatusCode)
+	}
+	if teams := decodeJSONArray(t, resp); len(teams) != 0 {
+		t.Fatalf("teamless member teams = %v, want empty", teams)
+	}
+
+	// Unknown user → 404.
+	resp = s.get(t, enterpriseAPI+"/members/no-such-user/teams", defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown member: got %d, want 404", resp.StatusCode)
+	}
+}

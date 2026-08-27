@@ -1431,6 +1431,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/enterprises/{enterprise}/members/{username}/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List enterprise teams for a user
+         * @description Lists all enterprise teams that a user is a member of. This endpoint is available only for
+         *     enterprises using the new enterprise teams experience.
+         *
+         *     The authenticated user must be an enterprise owner or have the `enterprise_teams:read` permission.
+         */
+        get: operations["enterprise-team-memberships/list-teams-for-user"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/enterprises/{enterprise}/teams": {
         parameters: {
             query?: never;
@@ -13723,7 +13746,11 @@ export interface paths {
         };
         /**
          * Export a software bill of materials (SBOM) for a repository.
-         * @description Exports the software bill of materials (SBOM) for a repository in SPDX JSON format.
+         * @deprecated
+         * @description > [!WARNING]
+         *     > **Closing down notice:** This operation is closing down and will not be accessible after November 13, 2026. Please migrate to the asynchronous flow. Use "[Request generation of a software bill of materials (SBOM) for a repository](https://docs.github.com/rest/dependency-graph/sboms#request-generation-of-a-software-bill-of-materials-sbom-for-a-repository)" to trigger the report, then "[Fetch a software bill of materials (SBOM) for a repository](https://docs.github.com/rest/dependency-graph/sboms#fetch-a-software-bill-of-materials-sbom-for-a-repository)" to retrieve it. For more information, see the [changelog](https://github.blog/changelog/2026-05-12-synchronous-sbom-api-deprecated/).
+         *
+         *     Exports the software bill of materials (SBOM) for a repository in SPDX JSON format.
          */
         get: operations["dependency-graph/export-sbom"];
         put?: never;
@@ -21020,6 +21047,8 @@ export interface paths {
          * Get a user
          * @description Provides publicly available information about someone with a GitHub account.
          *
+         *     The `events_url` value is a URI template. Replace `{/privacy}` with `/public` to retrieve only public events. Omit it to retrieve public events and, when authenticated as the user, private events. For more information, see "[List events for the authenticated user](https://docs.github.com/rest/activity/events#list-events-for-the-authenticated-user)."
+         *
          *     If you are requesting information about an [Enterprise Managed User](https://docs.github.com/enterprise-cloud@latest/admin/managing-iam/understanding-iam-for-enterprises/about-enterprise-managed-users), or a GitHub App bot that is installed in an organization that uses Enterprise Managed Users, your requests must be authenticated as a user or GitHub App that has access to the organization to view that account's information. If you are not authorized, the request will return a `404 Not Found` status.
          *
          *     The `email` key in the following response is the publicly visible email address from your GitHub [profile page](https://github.com/settings/profile). When setting up your profile, you can select a primary email address to be public which provides an email entry for this endpoint. If you do not set a public email address for `email`, then it will have a value of `null`. You only see publicly visible email addresses when authenticated with GitHub. For more information, see [Authentication](https://docs.github.com/rest/guides/getting-started-with-the-rest-api#authentication).
@@ -25292,6 +25321,54 @@ export interface components {
             description: string | null;
         };
         /**
+         * Enterprise Team
+         * @description Group of enterprise owners and/or members
+         */
+        "enterprise-team-with-member-count": {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            description?: string;
+            slug: string;
+            /** Format: uri */
+            url: string;
+            /**
+             * @description Retired: this field will not be returned with GHEC enterprise teams.
+             * @example disabled
+             */
+            sync_to_organizations?: string;
+            /** @example selected */
+            organization_selection_type?: string;
+            /** @example 62ab9291-fae2-468e-974b-7e45096d5021 */
+            group_id: string | null;
+            /**
+             * @description Retired: this field will not be returned with GHEC enterprise teams.
+             * @example Justice League
+             */
+            group_name?: string | null;
+            /**
+             * Format: uri
+             * @example https://github.com/enterprises/dc/teams/justice-league
+             */
+            html_url: string;
+            members_url: string;
+            /**
+             * @description The number of members in the enterprise team.
+             * @example 3
+             */
+            members_count: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /**
+             * @description Whether team members will receive notifications when the team is mentioned.
+             * @example notifications_enabled
+             * @enum {string}
+             */
+            notification_setting?: "notifications_enabled" | "notifications_disabled";
+        };
+        /**
          * Actor
          * @description Actor
          */
@@ -27612,19 +27689,19 @@ export interface components {
             /** @example github */
             name?: string;
             /** @example GitHub */
-            company?: string;
+            company?: string | null;
             /**
              * Format: uri
              * @example https://github.com/blog
              */
-            blog?: string;
+            blog?: string | null;
             /** @example San Francisco */
-            location?: string;
+            location?: string | null;
             /**
              * Format: email
              * @example octocat@github.com
              */
-            email?: string;
+            email?: string | null;
             /** @example github */
             twitter_username?: string | null;
             /** @example true */
@@ -33524,19 +33601,19 @@ export interface components {
             /** @example github */
             name?: string;
             /** @example GitHub */
-            company?: string;
+            company?: string | null;
             /**
              * Format: uri
              * @example https://github.com/blog
              */
-            blog?: string;
+            blog?: string | null;
             /** @example San Francisco */
-            location?: string;
+            location?: string | null;
             /**
              * Format: email
              * @example octocat@github.com
              */
-            email?: string;
+            email?: string | null;
             /** @example github */
             twitter_username?: string | null;
             /** @example true */
@@ -98822,10 +98899,10 @@ export interface components {
          *     `epss_percentage` sorts alerts by the Exploit Prediction Scoring System (EPSS) percentage.
          */
         "dependabot-alert-sort": "created" | "updated" | "epss_percentage";
-        /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-        "enterprise-team": string;
         /** @description The handle for the GitHub user account. */
         username: string;
+        /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
+        "enterprise-team": string;
         /** @description The organization name. The name is not case sensitive. */
         org: string;
         /** @description The slug of the team name. */
@@ -102864,6 +102941,40 @@ export interface operations {
             404: components["responses"]["not_found"];
         };
     };
+    "enterprise-team-memberships/list-teams-for-user": {
+        parameters: {
+            query?: {
+                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                per_page?: components["parameters"]["per-page"];
+                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                page?: components["parameters"]["page"];
+            };
+            header?: never;
+            path: {
+                /** @description The slug version of the enterprise name. */
+                enterprise: components["parameters"]["enterprise"];
+                /** @description The handle for the GitHub user account. */
+                username: components["parameters"]["username"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    Link: components["headers"]["link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["enterprise-team"][];
+                };
+            };
+            401: components["responses"]["requires_authentication"];
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+        };
+    };
     "enterprise-teams/list": {
         parameters: {
             query?: {
@@ -103329,7 +103440,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["enterprise-team"];
+                    "application/json": components["schemas"]["enterprise-team-with-member-count"];
                 };
             };
             403: components["responses"]["forbidden"];

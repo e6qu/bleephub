@@ -361,6 +361,7 @@ GET /api/v3/enterprises/{enterprise}/innersource-vulnerabilities/sync/status/{jo
 GET /api/v3/enterprises/{enterprise}/installation
 GET /api/v3/enterprises/{enterprise}/license-sync-status
 GET /api/v3/enterprises/{enterprise}/members/{username}/copilot
+GET /api/v3/enterprises/{enterprise}/members/{username}/teams
 GET /api/v3/enterprises/{enterprise}/network-configurations
 GET /api/v3/enterprises/{enterprise}/network-configurations/{network_configuration_id}
 GET /api/v3/enterprises/{enterprise}/network-settings/{network_settings_id}

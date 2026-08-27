@@ -20,6 +20,7 @@ package graphqlapi
 
 import (
 	"sort"
+	"time"
 
 	"github.com/graphql-go/graphql"
 
@@ -61,6 +62,29 @@ func packageVersionSourceMap(v *store.PackageVersion, pkgSource map[string]inter
 		"_versionStoreID": v.ID,
 		"_package":        optionalObject(pkgSource),
 	}
+}
+
+// packageFileSourceMap renders a store package file into the PackageFile source
+// shape. versionSource is threaded as the PackageFile.packageVersion
+// back-reference. GitHub's md5/sha1/sha256 checksums are unmodeled by the store
+// and render null; updatedAt (DateTime!) is the file's immutable upload time.
+func packageFileSourceMap(f *store.PackageFile, versionSource map[string]interface{}) map[string]interface{} {
+	out := map[string]interface{}{
+		"id":             f.NodeID,
+		"name":           f.Name,
+		"size":           int(f.Size),
+		"updatedAt":      f.UpdatedAt.UTC().Format(time.RFC3339),
+		"packageVersion": optionalObject(versionSource),
+	}
+	// url is URI (nullable): prefer the download URL, else the API url; leave it
+	// null when the store recorded neither rather than emit an empty string.
+	switch {
+	case f.DownloadURL != "":
+		out["url"] = f.DownloadURL
+	case f.URL != "":
+		out["url"] = f.URL
+	}
+	return out
 }
 
 // addPackageResidueFields completes GitHub's Package object with the members
@@ -214,7 +238,24 @@ func (s *Resolver) gqlPackageVersionType() *graphql.Object {
 				Type: graphql.NewNonNull(s.gqlConnectionType("PackageFile", s.gqlPackageFileType())),
 				Args: connectionArgs(nil),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					return paginateGQLItems(nil, p.Args), nil
+					src, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return paginateGQLItems(nil, p.Args), nil
+					}
+					versionID, ok := src["_versionStoreID"].(int)
+					if !ok {
+						return paginateGQLItems(nil, p.Args), nil
+					}
+					files := s.store.ListPackageFiles(versionID)
+					var items []gqlConnItem
+					for i := range files {
+						f := files[i]
+						items = append(items, gqlConnItem{
+							identity: f.NodeID,
+							render:   func() map[string]interface{} { return packageFileSourceMap(f, src) },
+						})
+					}
+					return paginateGQLItems(items, p.Args), nil
 				},
 			},
 		}
@@ -235,9 +276,10 @@ func (s *Resolver) gqlPackageVersionStatisticsType() *graphql.Object {
 	})
 }
 
-// gqlPackageFileType is GitHub's PackageFile object. The file connection it
-// nodes is always truthful-empty, so the non-null id/name/updatedAt resolvers
-// never run; the type is declared for the connection to name.
+// gqlPackageFileType is GitHub's PackageFile object, nodes of the
+// PackageVersion.files connection. id/name/size/updatedAt/url come from the
+// stored package file; md5/sha1/sha256 are checksums the store does not model
+// and render null.
 func (s *Resolver) gqlPackageFileType() *graphql.Object {
 	return s.mutationObject("PackageFile", graphql.Fields{
 		"id":             &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},

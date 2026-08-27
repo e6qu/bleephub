@@ -108,10 +108,13 @@ func TestDependabotAlertWebhookLifecycle(t *testing.T) {
 		t.Error("dependabot_alert delivery carried no repository")
 	}
 
-	// Publication of the advisory itself is announced too.
-	if !recorder.has("repository_advisory", "published") {
-		t.Error("no repository_advisory/published delivery")
-	}
+	// Publication of the advisory itself is announced too. Both this delivery
+	// and the security_advisory one below are dispatched asynchronously, so
+	// wait for them rather than reading the recorder synchronously (a bare read
+	// races the delivery goroutine when the suite runs under load).
+	waitUntil(t, "repository_advisory published", func() bool {
+		return recorder.has("repository_advisory", "published")
+	})
 	waitUntil(t, "security_advisory published", func() bool {
 		return recorder.has("security_advisory", "published")
 	})
