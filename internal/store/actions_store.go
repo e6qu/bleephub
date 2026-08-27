@@ -11,9 +11,8 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
-// ActionsVariable is a GitHub Actions configuration variable. The same
-// shape serves all three scopes; Visibility/SelectedRepoIDs are populated
-// only at the organization level (all|private|selected).
+// ActionsVariable is an Actions configuration variable. Visibility and
+// SelectedRepoIDs are populated only at the organization level.
 type ActionsVariable struct {
 	Name            string    `json:"name"`
 	Value           string    `json:"value"`
@@ -23,30 +22,23 @@ type ActionsVariable struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
-// OrgSecret is an organization-level Actions secret: a Secret plus the
-// org-only visibility scoping (all|private|selected + selected repos).
+// OrgSecret is an organization-level Actions secret plus its visibility scoping.
 type OrgSecret struct {
 	Secret
 	Visibility      string `json:"visibility"`
 	SelectedRepoIDs []int  `json:"selected_repository_ids,omitempty"`
 }
 
-// SecretsKeyPair is the X25519 keypair backing the Actions secrets
-// sealed-box contract: clients GET the public key, libsodium-seal the
-// secret value, and PUT {encrypted_value, key_id}; the server decrypts
-// with the private key when injecting secrets into job messages. The
-// pair is persisted so key_id stays stable across restarts (a client
-// caching the public key must not go stale silently).
+// SecretsKeyPair is the X25519 keypair backing the Actions sealed-box contract.
+// Persisted so key_id stays stable across restarts for clients caching the public key.
 type SecretsKeyPair struct {
 	KeyID      string `json:"key_id"`
 	PublicKey  string `json:"public_key"`  // base64 32-byte X25519 public key
 	PrivateKey string `json:"private_key"` // base64 32-byte X25519 private key
 }
 
-// TimelineRecord is the slice of the runner's Azure-DevOps-style timeline
-// record bleephub consumes: enough to surface real per-step status, timing,
-// and log association on the jobs API. Records arrive via
-// PATCH /_apis/v1/Timeline/.../{timelineId}; Type is "Job" for the job
+// TimelineRecord is the slice of the runner's timeline record bleephub consumes
+// for per-step status, timing and log association. Type is "Job" for the job
 // record and "Task" for each step.
 type TimelineRecord struct {
 	ID         string          `json:"id"`
@@ -67,8 +59,8 @@ type TimelineLogRef struct {
 	ID int `json:"id"`
 }
 
-// ActionsKeyPair returns the server-wide sealed-box keypair, generating
-// and persisting it on first use.
+// ActionsKeyPair returns the server-wide sealed-box keypair, generating and
+// persisting it on first use.
 func (st *Store) ActionsKeyPair() (*SecretsKeyPair, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -79,8 +71,7 @@ func (st *Store) ActionsKeyPair() (*SecretsKeyPair, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generate actions secrets keypair: %w", err)
 	}
-	// GitHub key_ids are decimal strings; derive one deterministically from
-	// the public key so the id and key can never disagree.
+	// Derive the decimal key_id from the public key so the two can never disagree.
 	kp := &SecretsKeyPair{
 		KeyID:      strconv.FormatUint(binary.BigEndian.Uint64(pub[:8]), 10),
 		PublicKey:  base64.StdEncoding.EncodeToString(pub[:]),
@@ -93,8 +84,8 @@ func (st *Store) ActionsKeyPair() (*SecretsKeyPair, error) {
 	return kp, nil
 }
 
-// OpenSealedSecret decrypts a base64 libsodium sealed-box ciphertext
-// (crypto_box_seal) produced against the server's Actions public key.
+// OpenSealedSecret decrypts a base64 libsodium sealed-box ciphertext produced
+// against the server's Actions public key.
 func (st *Store) OpenSealedSecret(encryptedValue string) (string, error) {
 	kp, err := st.ActionsKeyPair()
 	if err != nil {
@@ -122,9 +113,8 @@ func (st *Store) OpenSealedSecret(encryptedValue string) (string, error) {
 	return string(plain), nil
 }
 
-// SealSecretValue encrypts a plaintext against the server's own Actions
-// public key — the client side of the sealed-box contract, used by tests
-// and internal flows that exercise the real PUT shape.
+// SealSecretValue encrypts a plaintext against the server's own Actions public
+// key — the client side of the sealed-box contract.
 func (st *Store) SealSecretValue(plaintext string) (encryptedValue, keyID string, err error) {
 	kp, err := st.ActionsKeyPair()
 	if err != nil {

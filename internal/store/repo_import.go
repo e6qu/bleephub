@@ -2,22 +2,12 @@ package store
 
 import "time"
 
-// Source Import API (sunset on github.com, still real on GitHub Enterprise
-// Server).
-// Endpoints:
-//
-//	GET/PUT/PATCH/DELETE /repos/{o}/{r}/import
-//	PATCH /repos/{o}/{r}/import/lfs
-//	GET   /repos/{o}/{r}/import/authors
-//	PATCH /repos/{o}/{r}/import/authors/{author_id}
-//	GET   /repos/{o}/{r}/import/large_files
-//
-// The import is a real git fetch: PUT (and PATCH restarts) fetch vcs_url's
-// refs into the repository's git storage over any transport go-git speaks,
-// synchronously. The status field reflects what actually happened —
-// "complete" only after a successful fetch, "auth_failed"/"error" with the
-// transport's failure otherwise, and "error" with an explanatory message
-// for VCS types bleephub cannot really import (everything but git).
+// RepoImport backs the Source Import API (sunset on github.com, still real on
+// GitHub Enterprise Server). The import is a real synchronous git fetch: PUT
+// (and PATCH restarts) fetch vcs_url's refs into the repository's git storage.
+// Status reflects what happened — "complete" only after a successful fetch,
+// "auth_failed"/"error" on transport failure, and "error" for VCS types other
+// than git, which bleephub cannot import.
 type RepoImport struct {
 	RepoID          int             `json:"repo_id"`
 	VCS             string          `json:"vcs"` // empty until detected/declared

@@ -1,16 +1,14 @@
 package store
 
-// planScope is the plan identity of one dispatched job, recorded at dispatch
-// time so job-token authentication never has to re-parse the secret-bearing
-// job message — and keeps working after that message is cleared.
+// planScope records a dispatched job's plan identity so job-token auth keeps
+// working after the secret-bearing job message is cleared.
 type planScope struct {
 	ScopeID string // plan scopeIdentifier — the job runtime token's sub
 	Repo    string // repository the job runs as ("" for operator-submitted jobs)
 }
 
-// registerDispatchedJobLocked indexes a freshly dispatched job and records its
-// plan scope. msg is the built job message (pre-marshal). Callers hold the
-// store write lock.
+// RegisterDispatchedJobLocked indexes a dispatched job and records its plan
+// scope. msg is the pre-marshal job message. Callers hold the write lock.
 func (st *Store) RegisterDispatchedJobLocked(job *Job, msg map[string]interface{}, repo string) {
 	if job == nil {
 		return
@@ -27,8 +25,8 @@ func (st *Store) RegisterDispatchedJobLocked(job *Job, msg map[string]interface{
 	}
 }
 
-// jobByPlanIDLocked resolves a job by plan Id: index first, falling back to a
-// scan for jobs seeded outside the dispatch path. Callers hold the store lock.
+// JobByPlanIDLocked resolves a job by plan id, falling back to a scan for jobs
+// seeded outside the dispatch path. Callers hold the store lock.
 func (st *Store) JobByPlanIDLocked(planID string) *Job {
 	if planID == "" {
 		return nil
@@ -44,9 +42,8 @@ func (st *Store) JobByPlanIDLocked(planID string) *Job {
 	return nil
 }
 
-// jobByRequestIDLocked resolves a job by request Id: index first, falling back
-// to a scan for jobs seeded outside the dispatch path. Callers hold the store
-// lock.
+// JobByRequestIDLocked resolves a job by request id, falling back to a scan for
+// jobs seeded outside the dispatch path. Callers hold the store lock.
 func (st *Store) JobByRequestIDLocked(reqID int64) *Job {
 	if job := st.jobsByRequestID[reqID]; job != nil {
 		return job
@@ -59,9 +56,8 @@ func (st *Store) JobByRequestIDLocked(reqID int64) *Job {
 	return nil
 }
 
-// planScopeForJobLocked answers the plan scope identity for a Job: the
-// dispatch-time record first, else the job's message (jobs seeded directly by
-// tests). Callers hold the store lock.
+// PlanScopeForJobLocked answers a job's plan scope: the dispatch-time record
+// first, else the job's message. Callers hold the store lock.
 func (st *Store) PlanScopeForJobLocked(job *Job) planScope {
 	if job == nil {
 		return planScope{}
@@ -73,11 +69,9 @@ func (st *Store) PlanScopeForJobLocked(job *Job) planScope {
 	return planScope{ScopeID: scopeID, Repo: repo}
 }
 
-// syncWorkflowIndexesLocked reconciles the derived indexes with one workflow's
-// current state. It is invoked from persistWorkflowRecord, which every engine
-// mutation site already calls under the store write lock, so index maintenance
-// cannot drift from the map it mirrors. A workflow that is not (any longer)
-// the store's entry for its ID is not indexed.
+// SyncWorkflowIndexesLocked reconciles the derived indexes with one workflow's
+// current state. Callers hold the write lock. A workflow that is no longer the
+// store's entry for its ID is not indexed.
 func (st *Store) SyncWorkflowIndexesLocked(wf *Workflow) {
 	if wf == nil || st.WorkflowsByRunID == nil {
 		return
@@ -105,9 +99,8 @@ func (st *Store) SyncWorkflowIndexesLocked(wf *Workflow) {
 	}
 }
 
-// syncJobConcurrencyEntryLocked adds or removes one job's concurrency-group
-// index entry according to its current status. Callers hold the store write
-// lock.
+// SyncJobConcurrencyEntryLocked adds or removes one job's concurrency-group
+// index entry per its status. Callers hold the write lock.
 func (st *Store) SyncJobConcurrencyEntryLocked(wf *Workflow, wfJob *WorkflowJob) {
 	if wfJob == nil || wfJob.ConcurrencyGroup == "" || st.jobsByConcurrencyGroup == nil {
 		return
@@ -138,8 +131,8 @@ func (st *Store) removeWorkflowGroupEntryLocked(wf *Workflow) {
 	}
 }
 
-// unindexWorkflowLocked removes a workflow (being deleted from st.Workflows)
-// from every derived index. Callers hold the store write lock.
+// UnindexWorkflowLocked removes a deleted workflow from every derived index.
+// Callers hold the write lock.
 func (st *Store) UnindexWorkflowLocked(wf *Workflow) {
 	if wf == nil || st.WorkflowsByRunID == nil {
 		return
@@ -164,8 +157,7 @@ func (st *Store) UnindexWorkflowLocked(wf *Workflow) {
 }
 
 // rebuildWorkflowIndexesLocked recomputes every Workflows-derived index from
-// scratch. Called wherever the Workflows map itself is replaced or reloaded:
-// initial load from persistence and replica snapshot refresh.
+// scratch, for when the Workflows map is replaced or reloaded.
 func (st *Store) rebuildWorkflowIndexesLocked() {
 	st.WorkflowsByRunID = make(map[int]*Workflow, len(st.Workflows))
 	st.workflowsByConcurrencyGroup = make(map[string]map[string]*Workflow)
@@ -175,9 +167,9 @@ func (st *Store) rebuildWorkflowIndexesLocked() {
 	}
 }
 
-// workflowConcurrencyPeersLocked snapshots the non-completed workflows in a
-// concurrency group, lazily pruning entries that have completed since they
-// were indexed. Callers hold the store write lock.
+// WorkflowConcurrencyPeersLocked snapshots the non-completed workflows in a
+// concurrency group, lazily pruning entries completed since indexing. Callers
+// hold the write lock.
 func (st *Store) WorkflowConcurrencyPeersLocked(group string) []*Workflow {
 	entries := st.workflowsByConcurrencyGroup[group]
 	if len(entries) == 0 {
@@ -197,9 +189,9 @@ func (st *Store) WorkflowConcurrencyPeersLocked(group string) []*Workflow {
 	return peers
 }
 
-// jobConcurrencyPeersLocked snapshots the non-terminal jobs in a job
-// concurrency group, lazily pruning entries that have reached a terminal state
-// since they were indexed. Callers hold the store write lock.
+// JobConcurrencyPeersLocked snapshots the non-terminal jobs in a job
+// concurrency group, lazily pruning entries gone terminal since indexing.
+// Callers hold the write lock.
 func (st *Store) JobConcurrencyPeersLocked(group string) []jobConcurrencyPeer {
 	entries := st.jobsByConcurrencyGroup[group]
 	if len(entries) == 0 {
@@ -219,12 +211,10 @@ func (st *Store) JobConcurrencyPeersLocked(group string) []jobConcurrencyPeer {
 	return peers
 }
 
-// clearRunJobMessagesLocked drops the secret-bearing job messages of a
-// finalized run and stamps each job's retirement time. Late runner calls
-// (completed-job teardown, log flushes) keep authenticating through
-// planScopes; reclaimExpiredJobLeases only redelivers non-completed jobs, and
-// every job of a finalized run is terminal. Callers hold the store write lock
-// and must only call this once the run has completed.
+// ClearRunJobMessagesLocked drops the secret-bearing job messages of a
+// finalized run and stamps each job's retirement time. Late runner calls keep
+// authenticating through planScopes. Callers hold the write lock and must call
+// this only once the run has completed.
 func (st *Store) ClearRunJobMessagesLocked(wf *Workflow) {
 	now := st.CurrentTime()
 	for _, wfJob := range wf.Jobs {
@@ -239,9 +229,9 @@ func (st *Store) ClearRunJobMessagesLocked(wf *Workflow) {
 	}
 }
 
-// markJobCompletedLocked stamps a job's terminal transition and releases the
-// broker's busy bookkeeping for its (non-ephemeral) agent. Callers hold the
-// store write lock.
+// MarkJobCompletedLocked stamps a job's terminal transition and releases the
+// broker's busy bookkeeping for its non-ephemeral agent. Callers hold the write
+// lock.
 func (st *Store) MarkJobCompletedLocked(job *Job) {
 	if job == nil {
 		return
@@ -253,10 +243,10 @@ func (st *Store) MarkJobCompletedLocked(job *Job) {
 	st.ClearAgentAssignmentLocked(job)
 }
 
-// clearAgentAssignmentLocked clears the AssignedJobID of the agent holding a
-// job that no longer binds it. EverAssigned is deliberately left set: it is
-// what keeps a used ephemeral agent disqualified after its job's stub is
-// swept. Callers hold the store write lock.
+// ClearAgentAssignmentLocked clears the AssignedJobID of the agent holding a
+// job that no longer binds it. EverAssigned stays set: it keeps a used
+// ephemeral agent disqualified after its job's stub is swept. Callers hold the
+// write lock.
 func (st *Store) ClearAgentAssignmentLocked(job *Job) {
 	if job == nil || job.AgentID == 0 {
 		return
@@ -267,12 +257,9 @@ func (st *Store) ClearAgentAssignmentLocked(job *Job) {
 	}
 }
 
-// dropJobStateLocked deletes every piece of replica-local state held for one
-// Job: the Job stub, its plan-id/request-id index entries, its plan scope, its
-// log masks and its captured console lines. The in-memory log FILE bytes are
-// keyed by log id and claimed in the ArtifactStore, so the caller collects the
-// returned plan id and releases them outside the store lock
-// (releaseJobLogFiles). Callers hold the store write lock.
+// DropJobStateLocked deletes every piece of replica-local state held for one
+// job. The caller releases the returned plan id's in-memory log bytes outside
+// the store lock (releaseJobLogFiles). Callers hold the write lock.
 func (st *Store) DropJobStateLocked(job *Job) (planID string) {
 	if job == nil {
 		return ""
@@ -295,10 +282,9 @@ func (st *Store) DropJobStateLocked(job *Job) (planID string) {
 	return job.PlanID
 }
 
-// dropWorkflowJobStateLocked eagerly tears down the replica-local job state of
-// every job in a run (run deletion, repository deletion). Returns the plan ids
-// whose in-memory log bytes should be released via releaseJobLogFiles once the
-// store lock is dropped. Callers hold the store write lock.
+// DropWorkflowJobStateLocked tears down the replica-local job state of every
+// job in a run. Returns the plan ids whose in-memory log bytes to release via
+// releaseJobLogFiles once the lock is dropped. Callers hold the write lock.
 func (st *Store) DropWorkflowJobStateLocked(wf *Workflow) (planIDs []string) {
 	if wf == nil {
 		return nil
@@ -315,15 +301,13 @@ func (st *Store) DropWorkflowJobStateLocked(wf *Workflow) (planIDs []string) {
 	return planIDs
 }
 
-// jobConcurrencyPeer is one (job, owning workflow) pair in a job concurrency
-// group.
+// jobConcurrencyPeer is one (job, owning workflow) pair in a concurrency group.
 type jobConcurrencyPeer struct {
 	Job *WorkflowJob `json:"-"`
 	Wf  *Workflow    `json:"-"`
 }
 
-// messagePlanScopeID reads plan.scopeIdentifier from a built (pre-marshal) job
-// message.
+// messagePlanScopeID reads plan.scopeIdentifier from a pre-marshal job message.
 func messagePlanScopeID(msg map[string]interface{}) string {
 	plan, _ := msg["plan"].(map[string]interface{})
 	scopeID, _ := plan["scopeIdentifier"].(string)

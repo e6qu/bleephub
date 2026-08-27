@@ -16,10 +16,8 @@ type CustomProperty struct {
 	AllowedValues         []string    `json:"allowed_values"`
 	ValuesEditableBy      string      `json:"values_editable_by"`
 	RequireExplicitValues bool        `json:"require_explicit_values"`
-	// Regex is the pattern a `string` property's values must match. It is a
-	// GraphQL-surface member (createRepositoryCustomProperty carries it);
-	// GitHub's REST schema shape does not include it, so the REST renderers
-	// leave it out.
+	// Regex is a GraphQL-only member (createRepositoryCustomProperty); GitHub's
+	// REST schema omits it, so the REST renderers leave it out.
 	Regex *string `json:"regex,omitempty"`
 }
 
@@ -66,16 +64,15 @@ func (st *Store) UpsertCustomProperty(orgLogin string, def *CustomProperty) {
 }
 
 // DeleteCustomProperty removes a property definition and every repo value
-// assigned under it. Returns true when the definition existed.
+// assigned under it, returning true when the definition existed.
 func (st *Store) DeleteCustomProperty(orgLogin, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	if st.OrgCustomProperties[orgLogin][name] == nil {
 		return false
 	}
-	// One transaction: removing the property definition and clearing its value
-	// from every repo commit together, so a crash cannot leave a repo carrying a
-	// value for a property that no longer exists (STORE-001/002).
+	// One transaction: a crash must not leave a repo carrying a value for a
+	// property that no longer exists (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	delete(st.OrgCustomProperties[orgLogin], name)
 	prefix := orgLogin + "/"
@@ -95,10 +92,9 @@ func (st *Store) DeleteCustomProperty(orgLogin, name string) bool {
 	return true
 }
 
-// OrgOwnsCustomProperty reports whether the definition is the organization's
-// own rather than one inherited from the enterprise schema. The GraphQL
-// mutations need the distinction because editing an enterprise-level
-// definition is the enterprise owner's call, not the organization's.
+// OrgOwnsCustomProperty reports whether the definition is the org's own
+// rather than inherited from the enterprise schema. Editing an
+// enterprise-level definition is the enterprise owner's call, not the org's.
 func (st *Store) OrgOwnsCustomProperty(orgLogin, name string) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -106,7 +102,7 @@ func (st *Store) OrgOwnsCustomProperty(orgLogin, name string) bool {
 }
 
 // GetEnterpriseCustomProperty returns a detached snapshot of the
-// enterprise-level repository property definition by name, or nil.
+// enterprise-level property definition by name, or nil.
 func (st *Store) GetEnterpriseCustomProperty(name string) *CustomProperty {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -114,8 +110,7 @@ func (st *Store) GetEnterpriseCustomProperty(name string) *CustomProperty {
 }
 
 // UpsertEnterpriseCustomProperty creates or replaces an enterprise-level
-// repository property definition — the same map the enterprise properties
-// REST surface writes.
+// property definition.
 func (st *Store) UpsertEnterpriseCustomProperty(def *CustomProperty) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -123,8 +118,8 @@ func (st *Store) UpsertEnterpriseCustomProperty(def *CustomProperty) {
 	st.PersistEnterpriseSettings()
 }
 
-// DeleteEnterpriseCustomProperty removes an enterprise-level repository
-// property definition. Returns true when the definition existed.
+// DeleteEnterpriseCustomProperty removes an enterprise-level property
+// definition, returning true when it existed.
 func (st *Store) DeleteEnterpriseCustomProperty(name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -136,10 +131,9 @@ func (st *Store) DeleteEnterpriseCustomProperty(name string) bool {
 	return true
 }
 
-// PromoteCustomProperty copies an organization's property definition into the
-// enterprise schema — the same write PUT /enterprises/{e}/properties/schema/
-// organizations/{org}/{name}/promote performs — and returns the promoted
-// definition, or nil when the organization holds no such definition.
+// PromoteCustomProperty copies an org's property definition into the
+// enterprise schema and returns the promoted definition, or nil when the org
+// holds no such definition.
 func (st *Store) PromoteCustomProperty(orgLogin, name string) *CustomProperty {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -154,7 +148,7 @@ func (st *Store) PromoteCustomProperty(orgLogin, name string) *CustomProperty {
 }
 
 // SetRepoCustomPropertyValues applies a validated batch of values to one
-// repo; null values unset.
+// repo; a null value unsets.
 func (st *Store) SetRepoCustomPropertyValues(repoKey string, values []CustomPropertyValuePayload) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -165,9 +159,8 @@ func (st *Store) SetRepoCustomPropertyValues(repoKey string, values []CustomProp
 		if v.Value == nil {
 			delete(st.RepoCustomPropertyValues[repoKey], v.PropertyName)
 		} else {
-			// Request arrays/maps are mutable. Adopt a deep copy at the store
-			// boundary so applying one batch to several repositories cannot
-			// make those repositories share a caller-owned backing array.
+			// Deep-copy at the boundary: applying one batch to several repos
+			// must not make them share a caller-owned backing array.
 			st.RepoCustomPropertyValues[repoKey][v.PropertyName] = CloneCustomPropertyValue(v.Value)
 		}
 	}
@@ -176,10 +169,9 @@ func (st *Store) SetRepoCustomPropertyValues(repoKey string, values []CustomProp
 	}
 }
 
-// EffectiveRepoCustomPropertyValues renders the repo's property values in the
-// custom-property-value shape: the explicitly set value, else the property's
-// default. Properties with no effective value are omitted, matching real
-// GitHub.
+// EffectiveRepoCustomPropertyValues renders the repo's property values: the
+// explicitly set value, else the property's default. Properties with no
+// effective value are omitted, matching GitHub.
 func (st *Store) EffectiveRepoCustomPropertyValues(orgLogin, repoKey string) []map[string]interface{} {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -214,8 +206,8 @@ func (st *Store) EffectiveRepoCustomPropertyValues(orgLogin, repoKey string) []m
 }
 
 // ListOrgReposForProperties returns the org's repositories, optionally
-// filtered by a repository_query keyword matched against the repo name
-// (the `repo:owner/name` qualifier is honored as an exact match).
+// filtered by a repository_query keyword against the repo name (the
+// `repo:owner/name` qualifier is honored as an exact match).
 func (st *Store) ListOrgReposForProperties(orgLogin, query string) []*Repo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -242,9 +234,8 @@ func (st *Store) ListOrgReposForProperties(orgLogin, query string) []*Repo {
 }
 
 // ValidateCustomPropertyValue checks a non-null value against the property's
-// value type (and allowed values for the select types). The REST values
-// routes and the GraphQL setRepositoryCustomPropertyValues mutation both ask
-// it, so the two surfaces cannot drift on what a value may be.
+// value type (and allowed values for the select types). Shared by the REST
+// values routes and the GraphQL setRepositoryCustomPropertyValues mutation.
 func ValidateCustomPropertyValue(def *CustomProperty, value interface{}) error {
 	allowed := func(str string) bool {
 		for _, v := range def.AllowedValues {
@@ -272,7 +263,7 @@ func ValidateCustomPropertyValue(def *CustomProperty, value interface{}) error {
 	case "multi_select":
 		switch v := value.(type) {
 		case string:
-			// A bare string is accepted as a one-element selection.
+			// A bare string is a one-element selection.
 			if !allowed(v) {
 				return fmt.Errorf("property %q expects a subset of its allowed values", def.PropertyName)
 			}

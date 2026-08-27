@@ -1,9 +1,7 @@
 package store
 
-// LicenseMeta carries the choosealicense.com attributes GitHub returns for a
-// license beyond its text: the human description, an implementation note, the
-// permission/condition/limitation slug arrays, and whether it is a featured
-// (commonly-used) license the default /licenses listing includes.
+// LicenseMeta carries the choosealicense.com attributes GitHub returns beyond
+// license text. Featured licenses appear in the default /licenses listing.
 type LicenseMeta struct {
 	Description    string
 	Implementation string
@@ -13,7 +11,7 @@ type LicenseMeta struct {
 	Featured       bool
 }
 
-// LicenseMetadata maps each LicenseTemplates key to its choosealicense metadata.
+// LicenseMetadata maps each LicenseTemplates key to its metadata.
 var LicenseMetadata = map[string]LicenseMeta{
 	"mit": {
 		Description:    "A short and simple permissive license with conditions only requiring preservation of copyright and license notices. Licensed works, modifications, and larger works may be distributed under different terms and without source code.",
@@ -73,9 +71,8 @@ var LicenseMetadata = map[string]LicenseMeta{
 	},
 }
 
-// LicenseTemplates is a curated list of common open-source license keys and
-// full texts. Keys match the SPDX identifiers GitHub accepts in the
-// license_template field of repo creation.
+// LicenseTemplates maps license keys to full texts. Keys match the SPDX
+// identifiers GitHub accepts in the license_template field of repo creation.
 var LicenseTemplates = map[string]struct {
 	Name   string `json:"-"`
 	SpdxID string `json:"-"`

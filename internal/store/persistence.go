@@ -72,9 +72,8 @@ var (
 	}
 )
 
-// CurrentSchemaVersion is the schema this build writes and reads. A database
-// stamped with a higher version was written by a newer build whose row layout
-// this one cannot be trusted to decode, so startup refuses it.
+// CurrentSchemaVersion is the schema this build writes and reads. Startup
+// refuses a database stamped with a higher version.
 const CurrentSchemaVersion = 3
 
 const (
@@ -83,10 +82,8 @@ const (
 	OpaquePersistenceKeyPrefix          = "hmac:v1:"
 )
 
-// sensitivePersistenceBuckets is deliberately centralized at the persistence
-// boundary. A caller cannot accidentally write a newly-added value in one of
-// these established credential stores as plaintext just because it used Put,
-// PutBatch, or a bespoke transaction.
+// sensitivePersistenceBuckets are sealed at the persistence boundary so no
+// caller can write one as plaintext through Put, PutBatch, or a bespoke transaction.
 var sensitivePersistenceBuckets = map[string]struct{}{
 	"actions_crypto":          {},
 	"agents_org_secrets":      {},
@@ -107,9 +104,9 @@ var sensitivePersistenceBuckets = map[string]struct{}{
 	"user_to_server_tokens":   {},
 }
 
-// opaquePersistenceKeyBuckets use bearer credentials as their logical map
-// keys. Persist only a keyed digest so a database read does not disclose a
-// credential even though point lookup remains possible.
+// opaquePersistenceKeyBuckets key rows by bearer credentials. Store only a keyed
+// digest of the key, so a database read discloses no credential while point
+// lookup still works.
 var opaquePersistenceKeyBuckets = map[string]struct{}{
 	"installation_tokens":   {},
 	"login_sessions":        {},
@@ -118,8 +115,8 @@ var opaquePersistenceKeyBuckets = map[string]struct{}{
 	"user_to_server_tokens": {},
 }
 
-// SchemaMetaDDL bootstraps the table that carries the schema version itself.
-// It predates versioning, so it is created unconditionally on every open.
+// SchemaMetaDDL bootstraps the schema-version table. It predates versioning, so
+// it is created unconditionally on every open.
 const SchemaMetaDDL = `CREATE TABLE IF NOT EXISTS schema_meta (
 	key   TEXT NOT NULL PRIMARY KEY,
 	value TEXT NOT NULL
@@ -175,8 +172,8 @@ type Persistence struct {
 	encryptionKey []byte
 	keyDigestKey  []byte
 	localRevision atomic.Int64
-	// keyHighWater caches the durable per-bucket identifier high-water mark
-	// already written by this process, so the common case costs no extra SQL.
+	// keyHighWater caches the per-bucket identifier high-water mark this process
+	// has written, so the common case costs no extra SQL.
 	keyHighWater map[string]int64
 }
 
@@ -190,10 +187,8 @@ func (p *Persistence) Ready(ctx context.Context) error {
 	return nil
 }
 
-// PersistenceFailure is raised by the Must* helpers. It aborts the request
-// that was mid-write instead of the process: killing the process from inside a
-// handler leaves the mutation half-applied everywhere else with no chance to
-// report it.
+// PersistenceFailure is raised by the Must* helpers to abort the mid-write
+// request rather than the process.
 type PersistenceFailure struct {
 	Op     string `json:"-"`
 	Bucket string `json:"-"`
@@ -227,9 +222,8 @@ type persistOp struct {
 	raw    []byte
 }
 
-// PersistBatch accumulates the record writes of one multi-step mutation so
-// they reach the database as a single transaction. A crash before Commit
-// leaves the previous state intact rather than a partially cascaded one.
+// PersistBatch accumulates one multi-step mutation's writes into a single
+// transaction; a crash before Commit leaves the previous state intact.
 type PersistBatch struct {
 	p   *Persistence
 	ops []persistOp
@@ -323,8 +317,8 @@ func (p *Persistence) apply(ops []persistOp) error {
 	return nil
 }
 
-// PutBatch commits related records in one SQLite transaction. Callers update
-// their in-memory indexes only after this returns successfully.
+// PutBatch commits related records in one transaction. Callers update their
+// in-memory indexes only after it returns successfully.
 func (p *Persistence) PutBatch(entries ...PersistencePut) error {
 	if p == nil {
 		return nil
@@ -348,8 +342,8 @@ func (p *Persistence) DeleteBatch(entries ...PersistencePut) error {
 }
 
 // ClaimOIDCLogoutAndDeleteSessions stores a replay marker and deletes the
-// selected browser sessions in one SQLite/dqlite transaction. The kv primary
-// key makes token claiming exclusive across processes and replicas.
+// matching browser sessions in one transaction. The kv primary key makes the
+// claim exclusive across processes and replicas.
 func (p *Persistence) ClaimOIDCLogoutAndDeleteSessions(replayKey string, expiresAt, now time.Time, provider, issuer, sid, subject string) (bool, error) {
 	marker, err := json.Marshal(oidcLogoutReplayMarker{ExpiresAt: expiresAt})
 	if err != nil {
@@ -490,12 +484,9 @@ func OpenSQLite(dataDir string) (*sql.DB, error) {
 		return nil, fmt.Errorf("mkdir %s: %w", dataDir, err)
 	}
 	dbPath := filepath.Join(dataDir, "bleephub.db")
-	// Durability contract for the single-node store: journal_mode(WAL) with
-	// synchronous(FULL) fsyncs the write-ahead log at every commit, so a write
-	// this layer has acknowledged (a returned MustPut/Commit) survives an OS
-	// crash or power loss — not only a process crash, which synchronous(NORMAL)
-	// alone guarantees. dqlite deployments get durability from Raft replication
-	// instead and do not use this path.
+	// synchronous(FULL) fsyncs the WAL at every commit, so an acknowledged write
+	// survives OS crash or power loss, not only process crash (NORMAL's
+	// guarantee). dqlite gets durability from Raft and does not use this path.
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite %s: %w", dbPath, err)
@@ -506,9 +497,8 @@ func OpenSQLite(dataDir string) (*sql.DB, error) {
 	return db, nil
 }
 
-// OpenDqlite connects to the durable dqlite quorum using its stable private
-// addresses. The dqlite driver discovers the current leader from this seed
-// set and refreshes its membership knowledge from the quorum itself.
+// OpenDqlite connects to the dqlite quorum from a seed set of private addresses;
+// the driver discovers the leader and refreshes membership from the quorum.
 func OpenDqlite(addresses string) (*sql.DB, error) {
 	addressMap, err := dqliteaddr.FromEnvironment(os.Getenv(dqliteaddr.Environment))
 	if err != nil {
@@ -556,18 +546,17 @@ func OpenDqlite(addresses string) (*sql.DB, error) {
 	return db, nil
 }
 
-// DqliteDialer binds durable-member address resolution and the cluster
-// credential to the transport used by the driver.
+// DqliteDialer binds member address resolution and the cluster credential to
+// the driver's transport.
 func DqliteDialer(addresses dqliteaddr.Map, secret string) client.DialFunc {
 	return func(ctx context.Context, address string) (net.Conn, error) {
 		return DqliteHTTPDial(ctx, addresses.Resolve(address), secret)
 	}
 }
 
-// DqliteHTTPDial opens the dqlite HTTP-upgrade transport exposed by each
-// private Cloud Map member address. The upgrade keeps the dqlite wire protocol
-// private while allowing Amazon ECS tasks to retain stable advertised member
-// identities across replacement and scale-to-zero restarts.
+// DqliteHTTPDial opens the dqlite HTTP-upgrade transport at a private member
+// address. The upgrade keeps the wire protocol private while letting ECS tasks
+// keep stable advertised identities across replacement and scale-to-zero.
 func DqliteHTTPDial(ctx context.Context, address, secret string) (net.Conn, error) {
 	dialer := &net.Dialer{}
 	rawConn, err := dialer.DialContext(ctx, "tcp", address)
@@ -701,12 +690,10 @@ func (p *Persistence) StorageKey(bucket, key string) string {
 	return p.opaqueDigestKey(bucket, key)
 }
 
-// opaqueLookupKey derives the storage key for a value presented by a client
-// (a bearer token or session id). Unlike storageKey it NEVER passes an already
-// "hmac:v1:"-prefixed value through: the stored row keys are those digests, so
-// honoring a client-supplied digest as a key would let anyone who read a row
-// key (a backup, a replica, a leaked query) use it as the credential itself.
-// A non-opaque bucket keeps the raw value.
+// opaqueLookupKey derives the storage key for a client-presented value (bearer
+// token or session id). Unlike StorageKey it never passes an already
+// "hmac:v1:"-prefixed value through, so a leaked row key cannot be replayed as
+// the credential itself. A non-opaque bucket keeps the raw value.
 func (p *Persistence) opaqueLookupKey(bucket, value string) string {
 	if !isOpaquePersistenceKeyBucket(bucket) {
 		return value
@@ -752,7 +739,7 @@ func (p *Persistence) openValue(bucket, key string, raw []byte) ([]byte, error) 
 		return raw, nil
 	}
 	if !strings.HasPrefix(string(raw), SealedPersistenceValuePrefix) {
-		return raw, nil // legacy plaintext; migrateSensitiveRows rewrites it.
+		return raw, nil // legacy plaintext; migrateSensitiveRows rewrites it
 	}
 	envelope, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(string(raw), SealedPersistenceValuePrefix))
 	if err != nil {
@@ -777,10 +764,9 @@ func (p *Persistence) openValue(bucket, key string, raw []byte) ([]byte, error) 
 	return plain, nil
 }
 
-// migrateSensitiveRows encrypts legacy plaintext values and replaces raw
-// bearer-token keys with keyed digests in one transaction. It also decrypts
-// every existing envelope during startup, making a wrong deployment key a
-// fail-fast configuration error rather than delayed data loss.
+// migrateSensitiveRows encrypts legacy plaintext values and rekeys raw
+// bearer-token keys to digests in one transaction. Decrypting every envelope on
+// the way makes a wrong deployment key fail fast rather than lose data later.
 func (p *Persistence) migrateSensitiveRows() error {
 	p.Mu.Lock()
 	defer p.Mu.Unlock()
@@ -844,10 +830,9 @@ func (p *Persistence) migrateSensitiveRows() error {
 	return nil
 }
 
-// migrateSchema brings the database up to CurrentSchemaVersion and refuses a
-// database written by a newer build. Rows are marshalled structs, so decoding
-// them against a layout this build does not know silently drops or zeroes
-// fields; startup stops instead.
+// migrateSchema brings the database up to CurrentSchemaVersion and refuses one
+// written by a newer build, whose row layout this build would silently
+// mis-decode.
 func migrateSchema(db *sql.DB, dialect dbDialect) error {
 	if _, err := db.Exec(SchemaMetaDDL); err != nil {
 		return fmt.Errorf("persistence schema metadata: %w", err)
@@ -883,12 +868,9 @@ func migrateSchema(db *sql.DB, dialect dbDialect) error {
 	return nil
 }
 
-// permanentPersistenceError marks a persistence-initialization failure that no
-// amount of retrying can fix: a misconfiguration (malformed dqlite address map,
-// missing transport secret, unusable encryption key, empty server set) or a
-// schema written by a newer bleephub. It is distinct from the transient
-// connect/query failures that occur while a dqlite quorum is still forming, and
-// MustNewPersistence fails fast on it instead of looping forever.
+// permanentPersistenceError marks an init failure no retry can fix (a
+// misconfiguration or a newer-bleephub schema), distinct from the transient
+// failures while a quorum forms. MustNewPersistence fails fast on it.
 type permanentPersistenceError struct{ err error }
 
 func (e *permanentPersistenceError) Error() string { return e.err.Error() }
@@ -906,17 +888,14 @@ func IsPermanentPersistenceError(err error) bool {
 	return errors.As(err, &p)
 }
 
-// startupQuorumDeadline bounds how long MustNewPersistence retries a transient
-// dqlite failure. Quorum forms in seconds; a wait this long means a downed peer
-// or a misconfiguration, and failing loudly beats retrying forever behind a
-// listener that never starts (so a health check sees nothing).
+// startupQuorumDeadline bounds MustNewPersistence's retry of transient dqlite
+// failures. Quorum forms in seconds, so a wait this long means a downed peer or
+// misconfiguration; failing loudly beats hanging before the listener starts.
 const startupQuorumDeadline = 5 * time.Minute
 
 func MustNewPersistence() *Persistence {
-	// Honour SIGTERM during the wait: this runs before the HTTP listener
-	// exists, so without it an orchestrator can only SIGKILL a still-starting
-	// process. A second registration alongside main's is harmless and is
-	// unregistered as soon as quorum forms.
+	// Honour SIGTERM during the wait: this runs before the HTTP listener exists,
+	// so without it an orchestrator can only SIGKILL a still-starting process.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	giveUpAt := time.Now().Add(startupQuorumDeadline)
@@ -925,10 +904,8 @@ func MustNewPersistence() *Persistence {
 		if err == nil {
 			return p
 		}
-		// A misconfiguration or an unsupported schema can never be fixed by
-		// waiting; retrying it forever only hides the real cause behind an
-		// endless "waiting for dqlite quorum" log. Only transient failures
-		// (dial/ping/query while the quorum forms) are worth retrying.
+		// Only transient failures (dial/ping/query while the quorum forms) are
+		// worth retrying; a permanent one never resolves by waiting.
 		if IsPermanentPersistenceError(err) {
 			zlog.Fatal().Err(err).Msg("persistence configuration is unrecoverable")
 		}
@@ -948,9 +925,8 @@ func MustNewPersistence() *Persistence {
 	}
 }
 
-// MustPut writes a record or aborts the calling request. The panic is caught
-// by the server's recovery middleware and reported as a 500; the deferred
-// unlocks on the way out release the store lock the caller was holding.
+// MustPut writes a record or panics; the server's recovery middleware turns the
+// panic into a 500 and the caller's deferred unlocks release the store lock.
 func (p *Persistence) MustPut(bucket, key string, v interface{}) {
 	if err := p.Put(bucket, key, v); err != nil {
 		panic(&PersistenceFailure{Op: "write", Bucket: bucket, Key: key, Err: err})
@@ -972,9 +948,8 @@ func (p *Persistence) Put(bucket, key string, v interface{}) error {
 	return batch.Commit()
 }
 
-// OwnedExclusively reports whether this process is the only writer of the
-// database. A local SQLite file is exclusive; a dqlite quorum is shared with
-// every other replica, so state this process did not create is not its to
+// OwnedExclusively reports whether this process is the only writer: true for a
+// local SQLite file, false for a shared dqlite quorum this process must not
 // rewrite at startup.
 func (p *Persistence) OwnedExclusively() bool {
 	if p == nil {
@@ -983,12 +958,11 @@ func (p *Persistence) OwnedExclusively() bool {
 	return p.Dialect.Name == "sqlite"
 }
 
-// bucketKeyCounter names the durable high-water mark for a bucket whose keys
-// are allocated identifiers.
+// bucketKeyCounter names the high-water counter for an identifier-keyed bucket.
 func bucketKeyCounter(bucket string) string { return "kv_max_key:" + bucket }
 
-// keyHighWaterCandidate reports the next free identifier implied by a record
-// key. Buckets keyed by names rather than identifiers have no counter.
+// keyHighWaterCandidate reports the next free identifier implied by a key, or
+// false for a name-keyed bucket.
 func keyHighWaterCandidate(key string) (int64, bool) {
 	id, err := strconv.ParseInt(key, 10, 64)
 	if err != nil || id < 0 || id == math.MaxInt64 {
@@ -1018,10 +992,9 @@ func (p *Persistence) raiseKeyHighWaterTx(tx *sql.Tx, bucket, key string, raised
 	return nil
 }
 
-// KeyHighWater returns the highest identifier ever written to a bucket plus
-// one. Loaders take the maximum of this and the surviving rows so a deleted
-// entity's identifier — which for attestations, package files and artifacts is
-// also its object-store key — is never handed to a new entity.
+// KeyHighWater returns one past the highest identifier ever written to a bucket.
+// Loaders max it with surviving rows so a deleted entity's id — also its
+// object-store key for attestations, package files and artifacts — is never reused.
 func (p *Persistence) KeyHighWater(bucket string) (int64, error) {
 	if p == nil {
 		return 0, nil
@@ -1029,9 +1002,8 @@ func (p *Persistence) KeyHighWater(bucket string) (int64, error) {
 	return p.GetCounter(bucketKeyCounter(bucket))
 }
 
-// AcquireLock takes the named lock for owner until ttl elapses, returning
-// false when another owner still holds it. The expiry bounds a lock stranded
-// by a replica that died while holding it.
+// AcquireLock takes the named lock for owner until ttl elapses, returning false
+// when another owner holds it. The expiry frees a lock stranded by a dead replica.
 func (p *Persistence) AcquireLock(name, owner string, ttl time.Duration) (bool, error) {
 	if p == nil {
 		return false, fmt.Errorf("acquire lock %s: persistence is disabled", name)
@@ -1062,8 +1034,8 @@ func (p *Persistence) ReleaseLock(name, owner string) error {
 }
 
 // ClaimScheduleFiring atomically selects one replica for a cron tuple/minute.
-// Claims are intentionally outside the metadata revision feed: they coordinate
-// the creation of a durable Workflow row but are not themselves API state.
+// Claims stay outside the metadata revision feed: they coordinate a Workflow
+// row's creation but are not themselves API state.
 func (p *Persistence) ClaimScheduleFiring(key string, minute time.Time) (bool, error) {
 	if p == nil {
 		return false, fmt.Errorf("claim scheduled workflow: persistence is disabled")
@@ -1094,9 +1066,8 @@ func (p *Persistence) ClaimScheduleFiring(key string, minute time.Time) (bool, e
 	return inserted == 1, nil
 }
 
-// ReleaseScheduleFiring drops a claim taken by ClaimScheduleFiring when the
-// firing it guarded failed transiently, so another replica or a later attempt
-// can retry rather than silently dropping the occurrence. The digest mirrors
+// ReleaseScheduleFiring drops a ClaimScheduleFiring claim whose firing failed
+// transiently, so the occurrence can be retried. The digest mirrors
 // ClaimScheduleFiring exactly.
 func (p *Persistence) ReleaseScheduleFiring(key string, minute time.Time) error {
 	if p == nil {
@@ -1146,9 +1117,8 @@ func (p *Persistence) observeLocalRevision(revision int64) {
 	if revision == observed+1 {
 		p.localRevision.Store(revision)
 	}
-	// A gap means another replica committed since this process last loaded
-	// state. Do not bless the new revision merely because our write happened
-	// to be last; the request middleware must reload the missing rows.
+	// A gap means another replica committed since this process last loaded state;
+	// leave the revision so the request middleware reloads the missing rows.
 }
 
 func (p *Persistence) List(bucket string) (map[string][]byte, error) {
@@ -1178,22 +1148,18 @@ func (p *Persistence) List(bucket string) (map[string][]byte, error) {
 	return out, rows.Err()
 }
 
-// ListPrefix returns every row in bucket whose key begins with prefix, as an
-// indexed range scan `[prefix, prefixSuccessor)` on the (bucket, key) primary
-// key — never a whole-bucket scan. Used for secondary indexes whose composite
-// keys embed a grouping field (e.g. login sessions keyed by user), so one
-// group's rows are fetched without reading the others. The bucket must not be a
-// sensitive one: a range scan cannot recover a per-row opaque storage key, so
-// only plaintext index buckets belong here.
+// ListPrefix returns rows whose key begins with prefix via an indexed range
+// scan `[prefix, prefixSuccessor)`, never a whole-bucket scan, for composite-key
+// secondary indexes (e.g. login sessions keyed by user). The bucket must not be
+// sensitive: a range scan cannot recover a per-row opaque storage key.
 func (p *Persistence) ListPrefix(bucket, prefix string) (map[string][]byte, error) {
 	if p == nil {
 		return nil, nil
 	}
 	hi, ok := prefixUpperBound(prefix)
 	if !ok {
-		// A prefix of all 0xff bytes has no finite successor; fall back to the
-		// full-bucket list filtered by prefix. This never arises for the numeric
-		// grouping prefixes used here.
+		// An all-0xff prefix has no finite successor; fall back to a filtered
+		// full-bucket list. Never arises for the numeric grouping prefixes here.
 		all, err := p.List(bucket)
 		if err != nil {
 			return nil, err
@@ -1228,9 +1194,8 @@ func (p *Persistence) ListPrefix(bucket, prefix string) (map[string][]byte, erro
 	return out, rows.Err()
 }
 
-// prefixUpperBound returns the exclusive upper bound of the key range that
-// starts with prefix: the prefix with its last byte incremented. It reports
-// false when the prefix is empty or every trailing byte is 0xff (no successor).
+// prefixUpperBound returns the exclusive upper bound for keys starting with
+// prefix (last byte incremented), or false when the prefix is empty or all 0xff.
 func prefixUpperBound(prefix string) (string, bool) {
 	b := []byte(prefix)
 	for i := len(b) - 1; i >= 0; i-- {
@@ -1284,10 +1249,9 @@ func (p *Persistence) SetCounter(name string, value int64) error {
 	return err
 }
 
-// AllocateCounterValue atomically reserves one value from a durable sequence.
-// minimum is the first value the caller is willing to accept. Unlike a
-// GetCounter/SetCounter pair, the single upsert is safe when multiple dqlite
-// clients allocate from the same sequence concurrently.
+// AllocateCounterValue atomically reserves one value (>= minimum) from a durable
+// sequence. The single upsert is safe under concurrent dqlite allocators, unlike
+// a GetCounter/SetCounter pair.
 func (p *Persistence) AllocateCounterValue(name string, minimum int64) (int64, error) {
 	if p == nil {
 		return minimum, nil
@@ -1313,7 +1277,7 @@ func (p *Persistence) Close() error {
 		return nil
 	}
 	// A closed database cannot arbitrate git object locks; leaving it installed
-	// would fail every ref update with "database is closed".
+	// fails every ref update with "database is closed".
 	gitstore.ClearGitObjectLocker(p)
 	return p.Db.Close()
 }

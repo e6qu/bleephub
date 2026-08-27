@@ -27,17 +27,15 @@ type PRReviewComment struct {
 	OriginalCommitID  string    `json:"original_commit_id"`
 	Body              string    `json:"body"`
 	AuthorID          int       `json:"-"`
-	ThreadID          int       `json:"-"` // shared id for the thread root + replies
-	Resolved          bool      `json:"-"` // thread-level resolved flag stored on the root
-	ResolvedByID      int       `json:"-"` // user who resolved the thread (0 when unresolved)
+	ThreadID          int       `json:"-"` // shared by thread root + replies
+	Resolved          bool      `json:"-"` // thread-level flag, stored on the root
+	ResolvedByID      int       `json:"-"` // 0 when unresolved
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 
-// prReviewCommentRecord is the persistence DTO for PRReviewComment. The
-// struct's json:"-" linkage fields (PR, author, thread, resolved) must
-// survive a reload while the public REST shape omits them, so the record
-// carries them explicitly.
+// prReviewCommentRecord is the persistence DTO: it carries the json:"-" linkage
+// fields explicitly so they survive a reload the REST shape omits.
 type prReviewCommentRecord struct {
 	*PRReviewComment
 	PullRequestID int  `json:"pull_request_id"`
@@ -47,8 +45,8 @@ type prReviewCommentRecord struct {
 	ResolvedByID  int  `json:"resolved_by_id,omitempty"`
 }
 
-// restore copies the record's explicit fields back onto the wrapped comment
-// after unmarshal (the wrapped fields are json:"-" so decode skips them).
+// restore copies the record's explicit fields back onto the wrapped comment,
+// which decode skips because they are json:"-".
 func (r *prReviewCommentRecord) restore() *PRReviewComment {
 	c := r.PRReviewComment
 	c.PullRequestID = r.PullRequestID
@@ -59,7 +57,6 @@ func (r *prReviewCommentRecord) restore() *PRReviewComment {
 	return c
 }
 
-// PRReviewCommentStore — concurrency-safe storage.
 type PRReviewCommentStore struct {
 	Mu          sync.RWMutex             `json:"-"`
 	ByID        map[int]*PRReviewComment `json:"-"`
@@ -69,8 +66,7 @@ type PRReviewCommentStore struct {
 	Persist     *Persistence `json:"-"`
 }
 
-// persistComment writes the comment through to disk as its storage record.
-// Caller must hold s.Mu.
+// persistComment writes the comment as its storage record. Caller holds s.Mu.
 func (s *PRReviewCommentStore) persistComment(c *PRReviewComment) {
 	if s.Persist == nil {
 		return
@@ -88,7 +84,7 @@ func NewPRReviewCommentStore(p *Persistence) *PRReviewCommentStore {
 	}
 }
 
-// CreateRootComment is the top-level review comment.
+// CreateRootComment creates a top-level review comment.
 func (s *PRReviewCommentStore) CreateRootComment(prID, authorID int, path, body, commitID, side string, line, startLine int) *PRReviewComment {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -127,7 +123,7 @@ func (s *PRReviewCommentStore) CreateRootComment(prID, authorID int, path, body,
 	return clonePRReviewComment(c)
 }
 
-// Reply appends a reply to a root comment. Real GH's POST /pulls/{n}/comments/{id}/replies.
+// Reply appends a reply to a root comment.
 func (s *PRReviewCommentStore) Reply(prID, rootID, authorID int, body string) *PRReviewComment {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -135,7 +131,7 @@ func (s *PRReviewCommentStore) Reply(prID, rootID, authorID int, body string) *P
 	if !ok || root.PullRequestID != prID {
 		return nil
 	}
-	// Walk to true thread root (replies-to-replies share the same thread).
+	// Walk to the true thread root: replies-to-replies share one thread.
 	threadRoot := rootID
 	if tr, ok := s.threadRoots[rootID]; ok {
 		threadRoot = tr
@@ -171,8 +167,7 @@ func (s *PRReviewCommentStore) Reply(prID, rootID, authorID int, body string) *P
 	return clonePRReviewComment(c)
 }
 
-// AttachToReview links a review comment to the pull request review that
-// created it (the create-review API's comments array).
+// AttachToReview links a review comment to the review that created it.
 func (s *PRReviewCommentStore) AttachToReview(commentID, reviewID int) bool {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -214,9 +209,8 @@ func (s *PRReviewCommentStore) Update(id int, body string) bool {
 	return true
 }
 
-// Delete removes a review comment. The comment row and its reactions delete
-// in one transaction, so a crash cannot durably drop the reactions while the
-// comment survives (STORE-001/002).
+// Delete removes a review comment. The comment row and its reactions delete in
+// one transaction (STORE-001/002).
 func (s *PRReviewCommentStore) Delete(id int, reactions *ReactionStore) bool {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -273,8 +267,8 @@ func (s *PRReviewCommentStore) DeleteForPRBatch(prID int, batch *PersistBatch) {
 	delete(s.byPR, prID)
 }
 
-// ResolveThread flips the thread root's Resolved flag and records who resolved
-// it (resolverID; ignored when unresolving, which clears the resolver).
+// ResolveThread sets the thread root's Resolved flag and resolver. Unresolving
+// clears the resolver.
 func (s *PRReviewCommentStore) ResolveThread(threadID int, resolved bool, resolverID int) bool {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -322,7 +316,6 @@ func (s *PRReviewCommentStore) ListThreads(prID int) []*ReviewThread {
 		if !ok {
 			t = &ReviewThread{ID: threadID}
 			threads[threadID] = t
-			// Pick up resolved flag + resolver from root.
 			if root := s.ByID[threadID]; root != nil {
 				t.IsResolved = root.Resolved
 				t.ResolvedByID = root.ResolvedByID

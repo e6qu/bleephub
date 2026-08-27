@@ -38,7 +38,7 @@ type Repo struct {
 	HasIssues                 bool       `json:"has_issues"`
 	HasProjects               bool       `json:"has_projects"`
 	HasWiki                   bool       `json:"has_wiki"`
-	WikiEditsUnrestricted     bool       `json:"wiki_edits_unrestricted"` // github's "restrict editing to collaborators only", inverted so the zero value is the checked default (see viewerMayEditWiki)
+	WikiEditsUnrestricted     bool       `json:"wiki_edits_unrestricted"` // inverse of github's "restrict editing to collaborators", so the zero value is the checked default (see viewerMayEditWiki)
 	HasDiscussions            *bool      `json:"has_discussions"`
 	HasPullRequests           bool       `json:"has_pull_requests"`
 	AllowSquashMerge          bool       `json:"allow_squash_merge"`
@@ -54,14 +54,11 @@ type Repo struct {
 	MergeCommitMessage        string     `json:"merge_commit_message"`
 	PullRequestCreationPolicy string     `json:"pull_request_creation_policy"`
 	IssueCreationPolicy       string     `json:"issue_creation_policy"`
-	// HasSponsorships records an explicit answer to "does this repository show
-	// a sponsor button". Nil means the repository never said, and the answer is
-	// derived from the owner's Sponsors listing and the FUNDING file, which is
-	// what GitHub does until the setting is touched.
+	// HasSponsorships records whether to show a sponsor button. Nil means unset,
+	// so the answer derives from the owner's Sponsors listing and FUNDING file.
 	HasSponsorships *bool `json:"has_sponsorships,omitempty"`
-	// DeclinedTopics are the topic names an administrator declined for this
-	// repository. A declined topic is never applied by a suggestion accept and
-	// is not offered again.
+	// DeclinedTopics are topics an admin declined; never applied by a suggestion
+	// accept nor offered again.
 	DeclinedTopics                           []string          `json:"declined_topics,omitempty"`
 	LicenseKey                               string            `json:"license_key"`
 	LicenseName                              string            `json:"license_name"`
@@ -105,9 +102,8 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 	st.PendingRepoCreations[fullName] = true
 	st.Mu.Unlock()
 
-	// Storage initialization can include filesystem or S3 I/O. The pending
-	// name reservation preserves duplicate-create atomicity while ordinary
-	// reads and unrelated mutations continue.
+	// Storage init can do filesystem/S3 I/O, so run it outside the lock; the
+	// pending-name reservation preserves duplicate-create atomicity.
 	openStorage := st.RepoStorageOpen
 	if openStorage == nil {
 		openStorage = gitstore.OpenOrInitGitStorage
@@ -130,16 +126,14 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 	return st.createRepoLocked(nil, fullName, name, description, private, ownerID, ownerType, owner, stor)
 }
 
-// createRepoLocked creates a repo record around prepared git storage. Caller
-// must hold st.Mu. A nil storer is retained only for the Codespaces publish
-// transaction. The repo row and its default discussion categories commit in
-// one transaction (STORE-001/002); a non-nil batch stages them into the
-// caller's transaction instead (e.g. PublishCodespace commits the repo and
-// codespace rows together) and the caller commits.
+// createRepoLocked creates a repo record around prepared git storage; caller
+// holds st.Mu. The repo row and its default discussion categories commit in one
+// transaction (STORE-001/002); a non-nil batch stages them into the caller's
+// transaction instead (e.g. PublishCodespace commits repo and codespace rows
+// together).
 func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, description string, private bool, ownerID int, ownerType string, owner *User, stor gitStorage.Storer) *Repo {
-	// Folded existence check: GitHub rejects a repository whose name differs
-	// from an existing one only by case, and the folded index (name_fold.go)
-	// relies on canonical names never colliding under folding.
+	// GitHub rejects a name colliding only by case; the folded index
+	// (name_fold.go) relies on canonical names never colliding under folding.
 	if st.RepoByNameLocked(fullName) != nil {
 		return nil
 	}
@@ -168,11 +162,9 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 		HasWiki:         true,
 		HasDiscussions:  BoolPointer(false),
 		HasPullRequests: true,
-		// Git LFS is on for every new repository, as it is on github.com and on
-		// a GHES instance whose site admin enabled LFS; the per-repository
-		// PUT/DELETE /repos/{owner}/{repo}/lfs toggle exists to turn it *off*.
-		// A default of false would make `git lfs push` fail on every freshly
-		// created repository until someone called an enterprise-only endpoint.
+		// LFS is on for every new repo, as on github.com; the per-repo lfs
+		// toggle exists to turn it off. A false default would break `git lfs
+		// push` until an enterprise-only endpoint was called.
 		LFSEnabled:                true,
 		AllowSquashMerge:          true,
 		AllowMergeCommit:          true,
@@ -207,11 +199,10 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.IndexRepoNameLocked(fullName)
-	// A name that is live again is not a name that redirects.
+	// A live name no longer redirects.
 	delete(st.RepoRedirects, FoldName(fullName))
 	st.GitStorages[fullName] = stor
-	// git.Init leaves HEAD on refs/heads/master; the repository's default
-	// branch is what a clone must check out.
+	// git.Init leaves HEAD on refs/heads/master; point it at the default branch.
 	if err := SetGitHeadBranch(stor, repo.DefaultBranch); err != nil {
 		st.Logger.Error().Str("repo", fullName).Err(err).Msg("create repo: could not point git HEAD at the default branch")
 	}
@@ -233,13 +224,9 @@ func (st *Store) GetRepo(owner, name string) *Repo {
 	return cloneRepo(st.RepoByNameLocked(owner + "/" + name))
 }
 
-// GetRepoByFullName resolves an "owner/name" key under the read lock.
-//
-// Handlers must use this rather than indexing ReposByName directly. That map is
-// written under the write lock by repository create, rename and delete, and an
-// unsynchronized read racing one of those is a concurrent map read and map
-// write — which the runtime reports as a fatal error and kills the process,
-// rather than a panic a recovery middleware could turn into a 500.
+// GetRepoByFullName resolves an "owner/name" key under the read lock. Handlers
+// must use this rather than indexing ReposByName directly: an unsynchronized
+// read racing a create/rename/delete write is a fatal concurrent map access.
 func (st *Store) GetRepoByFullName(fullName string) *Repo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -260,8 +247,7 @@ func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
 	if current == nil {
 		return false
 	}
-	// The write must land under the repo's canonical key even when the caller
-	// spelled the name with different casing.
+	// Write under the canonical key even if the caller used different casing.
 	repoKey := current.FullName
 	repo := cloneRepo(current)
 	fn(repo)
@@ -276,9 +262,8 @@ func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
 	return true
 }
 
-// ForkRepo creates a fork of sourceRepo owned by owner. It copies the git
-// storage and records parent/source linkage. Returns nil if the source repo
-// does not exist or the target name is already taken.
+// ForkRepo forks sourceRepo under owner, copying git storage and recording
+// parent/source linkage. Returns nil if the source is gone or the name is taken.
 func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	st.Mu.Lock()
 	fullName := owner.Login + "/" + name
@@ -303,9 +288,8 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	st.PendingRepoCreations[fullName] = true
 	st.Mu.Unlock()
 
-	// Opening a backend and copying the complete object graph may involve S3
-	// and must not hold the global store lock. The target reservation prevents
-	// a create/fork race from publishing the same full name.
+	// Copying the object graph may hit S3, so run it outside the lock; the
+	// target reservation prevents a create/fork race on the same name.
 	openStorage := st.RepoStorageOpen
 	if openStorage == nil {
 		openStorage = gitstore.OpenOrInitGitStorage
@@ -390,27 +374,25 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		UpdatedAt:                 now,
 		PushedAt:                  source.PushedAt,
 	}
-	// One transaction: the fork's repo row and its default discussion
-	// categories commit together (STORE-001/002).
+	// The fork's repo row and its default discussion categories commit in one
+	// transaction (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
 
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.IndexRepoNameLocked(fullName)
-	// A name that is live again is not a name that redirects.
+	// A live name no longer redirects.
 	delete(st.RepoRedirects, FoldName(fullName))
 	st.GitStorages[fullName] = stor
-	// The copied storage carries the source repository's HEAD, which may name
-	// a branch the fork does not treat as its default.
+	// The copied storage carries the source's HEAD, which may not be the fork's
+	// default branch.
 	if err := SetGitHeadBranch(stor, repo.DefaultBranch); err != nil {
 		st.Logger.Error().Str("repo", fullName).Err(err).Msg("fork repo: could not point git HEAD at the default branch")
 	}
 
 	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, repo.ID)
-	// A fork starts from GitHub's default label set, not the parent's labels:
-	// a fork of a repository carrying custom labels lists exactly the nine
-	// `default: true` labels.
+	// A fork starts from GitHub's default label set, not the parent's.
 	st.ensureDefaultLabelsBatchLocked(batch, repo.ID)
 	if err := batch.Commit(); err != nil {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "repos", Key: strconv.Itoa(repo.ID), Err: err})
@@ -437,13 +419,11 @@ func cloneTimePtr(t *time.Time) *time.Time {
 	return &clone
 }
 
-// cloneRepo returns a deep copy of a repository detached from the stored row:
-// every mutable reference field (time pointers, the *bool, the topics slice and
-// the stargazers map) is copied so a caller can neither observe a concurrent
-// in-place mutation (e.g. StarRepo writing the Stargazers map under the write
-// lock) nor leak a write back into the store. The Owner *User is a shared
-// cross-entity pointer kept shallow — detaching users is GetUser's concern.
-// It backs both the copy-on-write UpdateRepo path and the read getters.
+// cloneRepo returns a deep copy detached from the stored row (STORE-021): every
+// mutable reference field is copied so a caller can't observe a concurrent
+// in-place mutation (e.g. StarRepo writing Stargazers) nor leak a write back.
+// Owner *User stays shallow — detaching users is GetUser's concern. Backs both
+// the copy-on-write UpdateRepo path and the read getters.
 func cloneRepo(repo *Repo) *Repo {
 	if repo == nil {
 		return nil
@@ -468,11 +448,9 @@ func cloneRepo(repo *Repo) *Repo {
 	return &clone
 }
 
-// snapshotRepos returns detached clones of a repo list so a caller iterating and
-// rendering them can't race an in-place element mutation — most acutely
-// StarRepo/UnstarRepo writing an element's Stargazers map, a fatal concurrent
-// map access (STORE-021). Named to avoid colliding with the test-only
-// cloneRepoSlice.
+// snapshotRepos returns detached clones so a caller can't race an in-place
+// element mutation — acutely StarRepo/UnstarRepo writing Stargazers, a fatal
+// concurrent map access (STORE-021).
 func snapshotRepos(in []*Repo) []*Repo {
 	if in == nil {
 		return nil
@@ -484,10 +462,8 @@ func snapshotRepos(in []*Repo) []*Repo {
 	return out
 }
 
-// snapshot* helpers detach a list of store pointers (STORE-021): a caller
-// iterating and rendering them can't race an in-place element mutation, and a
-// value copy can't leak a write back into the stored row. Each reuses the
-// element's existing clone helper.
+// snapshot* helpers detach a list of store pointers (STORE-021), each reusing
+// the element's existing clone helper.
 func snapshotIssues(in []*Issue) []*Issue {
 	if in == nil {
 		return nil
@@ -686,13 +662,10 @@ func snapshotEnterpriseCodeSecurityConfigs(in []*EnterpriseCodeSecurityConfigura
 	return out
 }
 
-// RenameRepo renames owner/name to owner/newName, moving every map keyed by
-// the repo full name and updating embedded repo-name strings. It returns true
-// on success.
-// RenameRepo renames owner/name to owner/newName, moving its git bytes. For
-// filesystem and in-memory storage the move is constant-time and stays under the
-// store lock; for S3 the object-prefix copy is slow, so it runs outside the lock
-// behind a target reservation and a crash-recoverable intent (STORE-013).
+// RenameRepo renames owner/name to owner/newName, moving its git bytes. The
+// filesystem/in-memory move is constant-time under the store lock; the S3
+// object-prefix copy is slow, so it runs outside the lock behind a target
+// reservation and a crash-recoverable intent (STORE-013).
 func (st *Store) RenameRepo(owner, name, newName string) bool {
 	if st.renameNeedsSlowMove() {
 		return st.renameRepoS3(owner, name, newName)
@@ -704,9 +677,8 @@ func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	// Resolve the source case-insensitively and continue with its canonical
-	// key; the target must not collide with any live repo under folding —
-	// except the repo itself, so a case-only rename (hello → Hello) works.
+	// Resolve the source case-insensitively; the target must not collide with a
+	// live repo under folding, except itself (a case-only rename must work).
 	repo := st.RepoByNameLocked(owner + "/" + name)
 	if repo == nil {
 		return false
@@ -721,10 +693,9 @@ func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 		return false
 	}
 
-	// Move the bytes and rebind the storer first; if either fails, abort before
-	// mutating in-memory indexes. A path-bound storer keeps addressing the
-	// prefix the bytes just left, so it has to be reopened against the new one.
-	// An in-memory storer holds the objects itself and is simply re-keyed.
+	// Move the bytes and rebind the storer first, aborting before touching
+	// in-memory indexes if either fails. A path-bound storer still addresses the
+	// old prefix, so reopen it; an in-memory storer is simply re-keyed.
 	if err := moveRepoGitStorage(oldFull, newFull); err != nil {
 		st.Logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo failed")
 		return false
@@ -755,7 +726,7 @@ func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 		st.RekeyWikiGitStorage(oldFull, newFull)
 	}
 	// Re-key the repos row and every subresource bucket in one transaction, so a
-	// crash can never leave the repository split across its old and new names.
+	// crash can't leave the repo split across its old and new names.
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
 	st.moveRepoKeyLocked(batch, oldFull, newFull)
@@ -766,17 +737,15 @@ func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 	return true
 }
 
-// renameRepoS3 performs a rename whose object-prefix copy is too slow to hold
-// the store lock. It reserves the target name and records a rename intent under
-// the lock, copies the object graph outside the lock (both prefixes coexist, so
-// old-name readers keep working), swaps the metadata under the lock, then purges
-// the old prefix outside the lock. A crash at any point is finished by
-// finishInterruptedRenames.
+// renameRepoS3 renames when the object-prefix copy is too slow to hold the
+// lock. Under the lock it reserves the target and records an intent; outside it
+// copies the object graph (both prefixes coexist, so old-name readers keep
+// working); under the lock it swaps the metadata; outside it purges the old
+// prefix. A crash at any point is finished by finishInterruptedRenames.
 func (st *Store) renameRepoS3(owner, name, newName string) bool {
 	st.Mu.Lock()
-	// Resolve the source case-insensitively and continue with its canonical
-	// key; the target must not collide with any live repo under folding —
-	// except the repo itself, so a case-only rename (hello → Hello) works.
+	// Resolve the source case-insensitively; the target must not collide with a
+	// live repo under folding, except itself (a case-only rename must work).
 	repo := st.RepoByNameLocked(owner + "/" + name)
 	if repo == nil {
 		st.Mu.Unlock()
@@ -807,16 +776,16 @@ func (st *Store) renameRepoS3(owner, name, newName string) bool {
 	}
 	st.Mu.Unlock()
 
-	// Outside the lock: copy the object graph. The source stays intact, so a
-	// reader resolving the old name during the copy still finds its bytes.
+	// Copy the object graph outside the lock; the source stays intact, so an
+	// old-name reader during the copy still finds its bytes.
 	if err := st.copyRepoPrefixBytes(oldFull, newFull); err != nil {
 		st.abortRenameReservation(newFull)
 		st.Logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: copy object prefix failed")
 		return false
 	}
 
-	// Re-lock and re-validate: the repo must still be the same one at the old
-	// name (a concurrent delete or competing rename may have moved it).
+	// Re-validate under the lock: a concurrent delete or rename may have moved
+	// the repo off the old name.
 	st.Mu.Lock()
 	live := st.Repos[repoID]
 	if conflict := st.RepoByNameLocked(newFull); live == nil || live.FullName != oldFull || (conflict != nil && conflict != live) {
@@ -858,9 +827,8 @@ func (st *Store) renameRepoS3(owner, name, newName string) bool {
 	delete(st.PendingRepoCreations, newFull)
 	st.Mu.Unlock()
 
-	// The metadata now points at the new name, so the old prefix is unreferenced.
-	// Purge it, then clear the intent; a crash before either is finished by
-	// recovery. Keep the intent if the purge fails so recovery can retry it.
+	// The old prefix is now unreferenced. Purge it, then clear the intent;
+	// keep the intent if the purge fails so recovery retries it.
 	if err := st.deleteRepoPrefixBytes(oldFull); err != nil {
 		st.Logger.Warn().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: purge old object prefix deferred to recovery")
 		return true
@@ -871,9 +839,9 @@ func (st *Store) renameRepoS3(owner, name, newName string) bool {
 	return true
 }
 
-// abortRenameReservation unwinds a rename that did not publish: it drops the
-// target reservation, purges the (partial or unpublished) new-name copy, and
-// clears the intent — keeping the intent for recovery if the purge fails.
+// abortRenameReservation unwinds a rename that did not publish: drop the target
+// reservation, purge the new-name copy, and clear the intent (keeping it for
+// recovery if the purge fails).
 func (st *Store) abortRenameReservation(newFull string) {
 	st.Mu.Lock()
 	delete(st.PendingRepoCreations, newFull)
@@ -884,9 +852,9 @@ func (st *Store) abortRenameReservation(newFull string) {
 	_ = st.Persist.Delete(PendingRenamesBucket, PendingRepoRenameKey(newFull))
 }
 
-// DeleteRepo removes a repository, its cascade and its bytes. The metadata
-// goes first and atomically; the object bytes go afterwards, outside the store
-// lock, guarded by a recorded deletion intent that a later start can finish.
+// DeleteRepo removes a repo, its cascade and its bytes. Metadata goes first and
+// atomically; the bytes go afterwards outside the lock, guarded by a recorded
+// deletion intent that a later start can finish.
 func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	fullName := owner + "/" + name
 	existed, intent, err := st.deleteRepoMetadata(owner, name)
@@ -896,9 +864,9 @@ func (st *Store) DeleteRepo(owner, name string) (bool, error) {
 	return true, st.PurgeDeletedRepoBytes(fullName, intent)
 }
 
-// purgeDeletedRepoBytes destroys the git bytes of an already-unregistered
-// repository and clears its deletion intent. Nothing can reach the repository
-// at this point, so the object-store round trip does not need the store lock.
+// PurgeDeletedRepoBytes destroys the git bytes of an already-unregistered repo
+// and clears its deletion intent. Nothing can reach the repo now, so the
+// object-store round trip needs no lock.
 func (st *Store) PurgeDeletedRepoBytes(fullName string, fallback PendingDeletion) error {
 	raw, err := st.Persist.Get(PendingDeletionsBucket, PendingRepoDeletionKey(fullName))
 	if err != nil {
@@ -988,18 +956,16 @@ func (st *Store) deleteRepoMetadata(owner, name string) (bool, PendingDeletion, 
 	return st.deleteRepoLocked(owner, name)
 }
 
-// deleteRepoLocked purges the repository from memory and, in one transaction,
-// from the database. Caller must hold st.Mu and must call
-// purgeDeletedRepoBytes afterwards to finish the deletion.
+// deleteRepoLocked purges the repo from memory and, in one transaction, from
+// the database. Caller holds st.Mu and must call PurgeDeletedRepoBytes
+// afterwards to finish the deletion.
 func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, error) {
 	repo := st.RepoByNameLocked(owner + "/" + name)
 	if repo == nil {
 		return false, PendingDeletion{}, nil
 	}
-	// Cascades below key off the canonical name, whatever casing the caller
-	// used.
+	// Cascades below key off the canonical name.
 	fullName := repo.FullName
-	// A deleted repository leaves nothing for its former names to redirect to.
 	st.dropRepoRedirectsLocked(repo.ID)
 
 	intent := st.repoDeletionIntentLocked(repo)
@@ -1035,10 +1001,9 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 	st.DropWikiGitStorage(fullName)
 	batch.Delete("repos", strconv.Itoa(repo.ID))
 
-	// Cascade: purge everything keyed to this repo from memory AND the DB.
-	// Hook IDs, issue numbers and release IDs restart from the surviving
-	// maxima after a reload, so leftovers would be inherited by a recreated
-	// same-name repo.
+	// Cascade: purge everything keyed to this repo from memory and the DB. IDs
+	// restart from surviving maxima after a reload, so leftovers would be
+	// inherited by a recreated same-name repo.
 	for _, h := range st.Hooks[fullName] {
 		delete(st.HookDeliveries, h.ID)
 		batch.Delete("hook_deliveries", strconv.Itoa(h.ID))
@@ -1048,9 +1013,8 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 	delete(st.RepoVariables, fullName)
 	delete(st.RepoCollaborators, fullName)
 	delete(st.RepoAutolinks, fullName)
-	// The LFS object bytes are content-addressed and shared with any other
-	// repository holding the same content, so deleting a repository drops its
-	// membership rows, not the bytes.
+	// LFS bytes are content-addressed and shared across repos, so deletion drops
+	// membership rows, not bytes.
 	delete(st.LFSObjects, fullName)
 	delete(st.LFSLocks, fullName)
 	delete(st.RepoInvitations, fullName)
@@ -1236,11 +1200,9 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 			batch.Delete("codespaces", strconv.Itoa(id))
 		}
 	}
-	// Enumerate the authoritative package set filtered by owner rather than the
-	// PackagesByOwnerKey secondary index: a soft-deleted package is removed from
-	// that index but kept in st.Packages, so iterating the index left its rows
-	// (and, in repoDeletionIntentLocked, its file bytes) orphaned when the
-	// owning repo was deleted (STORE-028).
+	// Filter the authoritative package set by owner, not the PackagesByOwnerKey
+	// index: a soft-deleted package leaves that index but stays in st.Packages,
+	// so iterating the index orphaned its rows and file bytes (STORE-028).
 	for pkgID, pkg := range st.Packages {
 		if pkg.OwnerKey != fullName {
 			continue
@@ -1338,7 +1300,7 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 	releaseIDs := st.Releases.deleteAllForRepoBatch(repo.ID, batch)
 	st.Reactions.DeleteParentsBatch("release", releaseIDs, batch)
 
-	// Discussion surfaces — comments first because they reference discussions.
+	// Comments first: they reference discussions.
 	for id, c := range st.DiscussionComments {
 		if d := st.Discussions[c.DiscussionID]; d != nil && d.RepoID == repo.ID {
 			delete(st.DiscussionComments, id)
@@ -1358,8 +1320,7 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 		}
 	}
 
-	// Misc surfaces: branch protection is keyed "repoID:branch", pages
-	// builds by "owner/name".
+	// Branch protection is keyed "repoID:branch", pages builds by "owner/name".
 	st.Misc.Mu.Lock()
 	bpPrefix := strconv.Itoa(repo.ID) + ":"
 	for key := range st.Misc.BranchProtection {
@@ -1484,17 +1445,15 @@ func (st *Store) repoDeletionIntentLocked(repo *Repo) PendingDeletion {
 	return record
 }
 
-// repoGitStorageIsPathBound reports whether a repository's storer addresses
-// its bytes by path. An in-memory storer does not, so it survives a rename
-// while a path-bound one has to be reopened against the new location.
+// repoGitStorageIsPathBound reports whether a storer addresses its bytes by
+// path. An in-memory storer does not, so it survives a rename in place while a
+// path-bound one must be reopened.
 func repoGitStorageIsPathBound() bool {
 	return gitstore.GitDataDir() != "" || gitstore.IsS3GitStorage()
 }
 
-// moveRepoGitStorage moves a repository's git bytes, and with them its wiki's:
-// the wiki lives at its own storage key beside the repository, so a rename that
-// moved only the repository would leave the wiki addressable under a name
-// nothing resolves to.
+// moveRepoGitStorage moves a repo's git bytes and its wiki's; the wiki lives at
+// its own storage key, so moving only the repo would strand it.
 func moveRepoGitStorage(oldFull, newFull string) error {
 	if err := moveOneGitStoragePrefix(oldFull, newFull); err != nil {
 		return err
@@ -1581,10 +1540,9 @@ func deleteOneGitStoragePrefix(fullName string) error {
 	return nil
 }
 
-// renameNeedsSlowMove reports whether a rename must move its object bytes
-// through a slow backend (S3 — filesystem and in-memory moves are constant-time),
-// in which case RenameRepo copies outside the store lock. A test seam forces the
-// slow path without a live S3 backend.
+// renameNeedsSlowMove reports whether a rename must move bytes through a slow
+// backend (S3), in which case RenameRepo copies outside the lock. A test seam
+// forces the slow path without a live S3 backend.
 func (st *Store) renameNeedsSlowMove() bool {
 	if st.RepoPrefixCopy != nil {
 		return true
@@ -1937,9 +1895,9 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *PersistBatch, repoI
 		threadIDs = append(threadIDs, NotificationThreadID("PullRequest", prID))
 	}
 	st.deleteNotificationThreadStateBatchLocked(batch, threadIDs)
-	// Collect the reaction parents and stage their deletes into the same batch
-	// as the comment rows: a crash mid-cascade must not durably drop reactions
-	// while leaving the repo, issues, and comments intact (STORE-001/002).
+	// Stage reaction-parent deletes into the same batch as the comment rows: a
+	// crash mid-cascade must not drop reactions while comments survive
+	// (STORE-001/002).
 	commentReactionIDs := map[string]map[int]bool{}
 	for id, c := range st.Comments {
 		if (c.ParentType == "issue" && issueIDs[c.IssueID]) || (c.ParentType == "pull_request" && prIDs[c.IssueID]) {
@@ -2040,8 +1998,7 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *PersistBatch, repoI
 	st.Reactions.DeleteParentsBatch("pull_request", prIDs, batch)
 }
 
-// ListForks returns all repositories whose ParentID or SourceID matches
-// sourceRepoID, sorted/paged according to opts.
+// ListForks returns repos forked from sourceRepoID, sorted/paged per opts.
 func (st *Store) ListForks(sourceRepoID int, opts RepoListOptions) []*Repo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -2055,8 +2012,7 @@ func (st *Store) ListForks(sourceRepoID int, opts RepoListOptions) []*Repo {
 	return snapshotRepos(filterSortPaginateRepos(repos, opts))
 }
 
-// CountForks returns how many repositories were forked from the given
-// repository (matched by ParentID or SourceID lineage).
+// CountForks counts repos forked from sourceRepoID.
 func (st *Store) CountForks(sourceRepoID int) int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -2352,8 +2308,8 @@ func FilterSortRepos(repos []*Repo, opts RepoListOptions) []*Repo {
 func (st *Store) GetGitStorage(owner, name string) gitStorage.Storer {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// GitStorages is keyed by the canonical full name; resolve a case-variant
-	// clone URL to it, matching GitHub's case-insensitive git transport.
+	// Resolve a case-variant clone URL to the canonical key, matching GitHub's
+	// case-insensitive git transport.
 	return st.GitStorages[st.canonicalRepoKeyLocked(owner+"/"+name)]
 }
 
@@ -2367,10 +2323,8 @@ func (st *Store) GitStorageForRepoID(repoID int) (gitStorage.Storer, string) {
 	return st.GitStorages[repo.FullName], repo.FullName
 }
 
-// RepoSize returns the on-disk size of the repository's git storage in
-// kilobytes, matching GitHub's `size` field unit. For in-memory storage the
-// result is 0; for S3-backed storage the result is also 0 until a real
-// list-objects sum is implemented.
+// RepoSize returns the git storage size in kilobytes (GitHub's `size` unit).
+// In-memory and S3-backed storage report 0 (S3 until a list-objects sum lands).
 func (st *Store) RepoSize(fullName string) int64 {
 	if gitstore.IsS3GitStorage() {
 		return 0
@@ -2402,9 +2356,8 @@ const (
 	RepoPermAdmin RepoPermission = "admin"
 )
 
-// AddRepoCollaborator grants permission to login on the repo. Only pull,
-// push, and admin are accepted (matches GitHub). Returns true if the repo
-// exists and the user exists.
+// AddRepoCollaborator grants login the given permission (pull/push/admin) on
+// the repo. Returns true when both repo and user exist.
 func (st *Store) AddRepoCollaborator(owner, name, login, permission string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -2417,8 +2370,8 @@ func (st *Store) AddRepoCollaborator(owner, name, login, permission string) bool
 	if u == nil {
 		return false
 	}
-	// Key the grant by canonical names so the permission lattice (rbac.go)
-	// finds it regardless of the casing the request used.
+	// Key the grant by canonical name so the permission lattice (rbac.go) finds
+	// it regardless of request casing.
 	fullName := repo.FullName
 	perm := normalizeRepoPermission(permission)
 	if st.RepoCollaborators[fullName] == nil {
@@ -2426,8 +2379,7 @@ func (st *Store) AddRepoCollaborator(owner, name, login, permission string) bool
 	}
 	st.RepoCollaborators[fullName][u.Login] = perm
 	repo.UpdatedAt = st.CurrentTime()
-	// One transaction: the collaborator set and the repo's updated_at must not
-	// disagree across a crash mid-persist.
+	// One transaction: collaborator set and repo updated_at must not disagree.
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repo_collaborators", fullName, st.RepoCollaborators[fullName])
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
@@ -2437,8 +2389,7 @@ func (st *Store) AddRepoCollaborator(owner, name, login, permission string) bool
 	return true
 }
 
-// RemoveRepoCollaborator removes a collaborator from the repo. Returns true
-// if one was removed.
+// RemoveRepoCollaborator removes a collaborator, returning true if one was.
 func (st *Store) RemoveRepoCollaborator(owner, name, login string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -2459,8 +2410,7 @@ func (st *Store) RemoveRepoCollaborator(owner, name, login string) bool {
 	}
 	delete(st.RepoCollaborators[fullName], login)
 	repo.UpdatedAt = st.CurrentTime()
-	// One transaction: the collaborator set and the repo's updated_at must not
-	// disagree across a crash mid-persist.
+	// One transaction: collaborator set and repo updated_at must not disagree.
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repo_collaborators", fullName, st.RepoCollaborators[fullName])
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
@@ -2470,8 +2420,7 @@ func (st *Store) RemoveRepoCollaborator(owner, name, login string) bool {
 	return true
 }
 
-// GetRepoCollaboratorPermission returns the permission string for a
-// collaborator, or "" if none.
+// GetRepoCollaboratorPermission returns the collaborator's permission, or "".
 func (st *Store) GetRepoCollaboratorPermission(owner, name, login string) string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -2518,8 +2467,7 @@ func normalizeRepoPermission(p string) string {
 	}
 }
 
-// StarRepo adds userID to the repo's stargazers and records the starred repo
-// on the user. Idempotent. Returns true if the star was newly added.
+// StarRepo stars the repo for userID, idempotently. Returns true if newly added.
 func (st *Store) StarRepo(userID int, owner, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -2542,18 +2490,15 @@ func (st *Store) StarRepo(userID int, owner, name string) bool {
 	if _, already := repo.Stargazers[userID]; already {
 		return false
 	}
-	// The star instant is recorded per (repo, user) so the GraphQL
-	// Stargazer/StarredRepository edges' non-null starredAt and the REST star
-	// media type report the real time, not a stand-in. Both sides share one
-	// timestamp so they can never disagree.
+	// One shared instant per (repo, user) backs both sides' starredAt, so the
+	// GraphQL edge and REST star media type can never disagree.
 	now := st.CurrentTime()
 	repo.Stargazers[userID] = now
 	repo.StargazersCount = len(repo.Stargazers)
 	repo.UpdatedAt = now
 	user.StarredRepos[fullName] = now
 	user.UpdatedAt = now
-	// One transaction: the repo's stargazer count and the user's starred list
-	// must never disagree across a crash mid-persist.
+	// One transaction: stargazer count and the user's starred list must agree.
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
 	batch.Put("users", strconv.Itoa(user.ID), user)
@@ -2563,8 +2508,7 @@ func (st *Store) StarRepo(userID int, owner, name string) bool {
 	return true
 }
 
-// UnstarRepo removes userID from the repo's stargazers. Returns true if a
-// star was actually removed.
+// UnstarRepo unstars the repo for userID, returning true if a star was removed.
 func (st *Store) UnstarRepo(userID int, owner, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -2588,8 +2532,7 @@ func (st *Store) UnstarRepo(userID int, owner, name string) bool {
 		delete(user.StarredRepos, fullName)
 	}
 	user.UpdatedAt = st.CurrentTime()
-	// One transaction: the repo's stargazer count and the user's starred list
-	// must never disagree across a crash mid-persist.
+	// One transaction: stargazer count and the user's starred list must agree.
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
 	batch.Put("users", strconv.Itoa(user.ID), user)
@@ -2647,9 +2590,8 @@ func (st *Store) ListStarredRepos(userID int) []string {
 	return out
 }
 
-// RepoStargazersAt returns a detached copy of the repo's stargazers with the
-// instant each user starred it, backing the non-null starredAt of the GraphQL
-// Stargazer edge and the REST star media type. Empty when the repo is unknown.
+// RepoStargazersAt returns a detached copy of the stargazers with the instant
+// each starred, backing starredAt. Empty when the repo is unknown.
 func (st *Store) RepoStargazersAt(owner, name string) map[int]time.Time {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -2751,8 +2693,7 @@ func (st *Store) CreateRepoDeployKey(repoID int, title, key string, readOnly boo
 	st.RepoDeployKeys[repo.FullName][k.ID] = k
 	st.NextDeployKeyID++
 	repo.UpdatedAt = st.CurrentTime()
-	// One transaction: the deploy-key set and the repo's updated_at must not
-	// disagree across a crash mid-persist.
+	// One transaction: deploy-key set and repo updated_at must not disagree.
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repo_deploy_keys", repo.FullName, st.RepoDeployKeys[repo.FullName])
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
@@ -2770,8 +2711,7 @@ func (st *Store) DeleteRepoDeployKey(id int) bool {
 	for repoKey, keys := range st.RepoDeployKeys {
 		if k := keys[id]; k != nil {
 			delete(keys, id)
-			// One transaction: the deploy-key set and the repo's updated_at must
-			// not disagree across a crash mid-persist.
+			// One transaction: deploy-key set and repo updated_at must not disagree.
 			batch := NewPersistBatch(st.Persist)
 			if repo := st.Repos[k.RepoID]; repo != nil {
 				repo.UpdatedAt = st.CurrentTime()
@@ -2801,8 +2741,7 @@ func RepoSubscriptionKey(userID, repoID int) string {
 }
 
 // SetRepoSubscription creates or updates a subscription. `ignored` mutes all
-// notifications for the repo (github's watch "ignore" state) and is independent
-// of `subscribed`.
+// repo notifications (github's watch "ignore") independently of `subscribed`.
 func (st *Store) SetRepoSubscription(userID int, repoID int, subscribed, ignored bool) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -2849,10 +2788,8 @@ func (st *Store) GetRepoSubscription(userID int, repoID int) *RepoSubscription {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	// SetRepoSubscription swaps in a fresh row rather than mutating in place, so
-	// this is already race-free; return a detached value copy anyway (the struct
-	// has no reference fields) to keep the getter safe against a future in-place
-	// writer.
+	// Return a detached copy to stay safe against a future in-place writer
+	// (STORE-021); the struct has no reference fields.
 	sub := st.RepoSubscriptions[RepoSubscriptionKey(userID, repoID)]
 	if sub == nil {
 		return nil
@@ -2883,16 +2820,14 @@ func (st *Store) ListRepoSubscriptionsForUser(userID int) []*Repo {
 	return snapshotRepos(out)
 }
 
-// TransferRepo transfers ownership of a repository to a new owner account.
-// It returns true on success.
+// TransferRepo transfers a repo to a new owner account, returning true on
+// success.
 func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	// Resolve source repo and destination account case-insensitively, then
-	// compare and re-key on canonical names only: a raw-string comparison here
-	// would treat "Admin" and "admin" as different owners and let a transfer
-	// "move" a repository onto itself under a second casing.
+	// Resolve and re-key on canonical names; a raw comparison would treat "Admin"
+	// and "admin" as different owners and let a transfer move a repo onto itself.
 	repo := st.RepoByNameLocked(owner + "/" + name)
 	if repo == nil {
 		return false
@@ -2960,7 +2895,7 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	}
 
 	// Re-key the repos row and every subresource bucket in one transaction, so a
-	// crash can never leave the repository split across its old and new names.
+	// crash can't leave the repo split across its old and new names.
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
 	st.moveRepoKeyLocked(batch, oldFull, newFull)
@@ -2970,9 +2905,9 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	return true
 }
 
-// moveRepoKeyLocked renames all in-memory maps keyed by repo full name from
-// oldFull to newFull, staging every durable re-key into batch so the whole move
-// commits in one transaction. Caller must hold st.Mu.
+// moveRepoKeyLocked re-keys every in-memory map keyed by repo full name from
+// oldFull to newFull, staging the durable re-keys into batch so the whole move
+// commits in one transaction. Caller holds st.Mu.
 func (st *Store) moveRepoKeyLocked(batch *PersistBatch, oldFull, newFull string) {
 	st.moveNotificationRepoKeyBatchLocked(batch, oldFull, newFull)
 	if v := st.RepoSecrets[oldFull]; v != nil {
@@ -3426,11 +3361,10 @@ func (st *Store) moveRepoKeyLocked(batch *PersistBatch, oldFull, newFull string)
 			wf.RepoFullName = newFull
 		}
 	}
-	// STORE-029: a workflow file's ID (map key and persistence key) is
-	// StableWorkflowFileID(RepoFullName, Path), so a rename must re-key it. Only
-	// rewriting the field left the row keyed by the old-name hash while the next
-	// registration under the new name derived a different hash and inserted a
-	// duplicate. Snapshot first — never insert into a map being ranged.
+	// STORE-029: a workflow file's ID is StableWorkflowFileID(RepoFullName,
+	// Path), so a rename must re-key it — rewriting only the field left the row
+	// under the old hash and the next registration inserted a duplicate.
+	// Snapshot first — never insert into a map being ranged.
 	type workflowFileMove struct {
 		oldID int64
 		newID int64
@@ -3498,16 +3432,14 @@ func (st *Store) RenameBranch(repoID int, branch, newName string) bool {
 	if err := stor.RemoveReference(oldRef); err != nil {
 		return false
 	}
-	// One transaction: re-keying the branch protection to the new branch name
-	// and the repo row's default-branch/updated-at write commit together (both
-	// target the same durable store), so a crash can never duplicate the protection
-	// under both names or persist a repo whose recorded default branch disagrees
-	// with the protection re-key (STORE-001/002).
+	// One transaction: the branch-protection re-key and the repo's
+	// default-branch/updated-at write commit together, so a crash can't duplicate
+	// the protection under both names or disagree with the recorded default
+	// branch (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	if repo.DefaultBranch == branch {
 		repo.DefaultBranch = newName
-		// HEAD followed the old name; renaming the default branch must move it
-		// or the next clone checks out nothing.
+		// Move HEAD too, or the next clone checks out nothing.
 		if err := SetGitHeadBranch(stor, newName); err != nil {
 			st.Logger.Error().Str("repo", repo.FullName).Err(err).Msg("rename branch: could not point git HEAD at the default branch")
 		}

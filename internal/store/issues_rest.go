@@ -31,8 +31,7 @@ func CommentToJSON(c *Comment, st *Store, baseURL, repoFullName string, issueNum
 	}
 }
 
-// IssueEventBase returns the common fields shared by every issue-event
-// response shape.
+// IssueEventBase returns the fields common to every issue-event response.
 func IssueEventBase(e *IssueEvent, st *Store, baseURL, repoFullName string) map[string]interface{} {
 	st.Mu.RLock()
 	var actorJSON map[string]interface{}
@@ -64,8 +63,7 @@ func IssueEventBase(e *IssueEvent, st *Store, baseURL, repoFullName string) map[
 	}
 }
 
-// IssueEventLabelToJSON returns the slim label shape used inside issue
-// events (name + color only).
+// IssueEventLabelToJSON returns the slim label shape used inside issue events.
 func IssueEventLabelToJSON(l *IssueLabel) map[string]interface{} {
 	return map[string]interface{}{
 		"name":  l.Name,
@@ -73,8 +71,7 @@ func IssueEventLabelToJSON(l *IssueLabel) map[string]interface{} {
 	}
 }
 
-// IssueEventMilestoneToJSON returns the slim milestone shape used inside
-// issue events (title only).
+// IssueEventMilestoneToJSON returns the slim milestone shape used inside issue events.
 func IssueEventMilestoneToJSON(ms *Milestone) map[string]interface{} {
 	return map[string]interface{}{
 		"title": ms.Title,

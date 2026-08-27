@@ -11,23 +11,13 @@ import (
 	"sync"
 )
 
-// The byte store a deployment without object storage falls back to.
-//
-// BLEEPHUB_OBJECT_S3_BUCKET is how a persistent, multi-replica deployment
-// holds service bytes, and validatePersistentServerStorage still refuses to run
-// one without it. But a single-process deployment has no such requirement, and
-// the features that need somewhere to put bytes must still work: real GitHub
-// always has Git LFS, so `git lfs push` against a freshly started server has to
-// succeed rather than answer "object storage is not configured".
-//
-// This mirrors the precedent PackageDataDir set for package files: when a data
-// directory is configured the bytes live under it, and when nothing is
-// configured — the wholly in-memory development server — they live in the
-// process, exactly like every other piece of that server's state.
+// The byte store a deployment without object storage falls back to, so
+// features that need somewhere to put bytes (Git LFS) still work on a
+// single-process server. Filesystem-backed under a data directory, else
+// process-memory-backed like the rest of the in-memory dev server's state.
 
-// NewLocalByteStore returns the fallback byte store for a deployment with no
-// object storage: filesystem-backed beneath dataDir when one is configured,
-// process-memory-backed when it is not.
+// NewLocalByteStore returns the fallback byte store: filesystem-backed beneath
+// dataDir when one is configured, process-memory-backed when it is not.
 func NewLocalByteStore(dataDir string) ActionsByteStore {
 	if dataDir == "" {
 		return &MemoryByteStore{objects: map[string][]byte{}}
@@ -36,17 +26,16 @@ func NewLocalByteStore(dataDir string) ActionsByteStore {
 }
 
 // FilesystemByteStore keeps object bytes in a directory tree, one file per key.
-// Like the S3 store it streams: an upload is written straight to a temporary
-// file and renamed into place, and a download hands back the open file, so an
-// object larger than the process's memory never lands on the heap (STORE-019).
+// It streams uploads through a temp file renamed into place and hands back the
+// open file on download, so an oversized object never lands on the heap
+// (STORE-019).
 type FilesystemByteStore struct {
 	Root string `json:"-"`
 }
 
 // resolve maps a key to a path beneath Root, refusing any key that could climb
-// out of it. Keys are server-generated (LFSObjectDataKey and friends build them
-// from validated digests), so a rejected key is a programming error rather than
-// a caller's input — but the check is what makes the join safe to read back.
+// out of it. Keys are server-generated, so a rejection is a programming error —
+// but the check is what makes the join safe.
 func (s *FilesystemByteStore) resolve(key string) (string, error) {
 	clean := strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(key)), "/")
 	if clean == "" {
@@ -59,10 +48,8 @@ func (s *FilesystemByteStore) resolve(key string) (string, error) {
 	}
 	joined := filepath.Join(s.Root, filepath.FromSlash(clean))
 	// Containment guard: the joined path must stay strictly beneath Root. The
-	// per-segment check above already rejects traversal, so this only ever
-	// holds — but stating it at the boundary makes the join provably safe (and
-	// satisfies path-injection analysis) rather than relying on the reader to
-	// trust the segment loop.
+	// segment check above already rejects traversal; restating it here makes the
+	// join provably safe and satisfies path-injection analysis.
 	root := filepath.Clean(s.Root)
 	if joined != root && !strings.HasPrefix(joined, root+string(os.PathSeparator)) {
 		return "", fmt.Errorf("invalid object key %q", key)
@@ -89,8 +76,7 @@ func (s *FilesystemByteStore) PutStream(_ context.Context, key string, r io.Read
 	}
 	defer os.Remove(tmp.Name())
 	if _, err := io.Copy(tmp, r); err != nil {
-		// The copy already failed; the close can only add noise, and the
-		// deferred Remove discards the partial file either way.
+		// Copy already failed; the deferred Remove discards the partial file.
 		_ = tmp.Close()
 		return fmt.Errorf("object put %s: %w", key, err)
 	}
@@ -100,8 +86,7 @@ func (s *FilesystemByteStore) PutStream(_ context.Context, key string, r io.Read
 	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
 		return fmt.Errorf("object put %s: %w", key, err)
 	}
-	// Rename publishes the object atomically: a reader either sees the whole
-	// object or no object, never a half-written one.
+	// Rename publishes atomically: a reader sees the whole object or none.
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("object put %s: %w", key, err)
 	}
@@ -147,8 +132,8 @@ func (s *FilesystemByteStore) Delete(_ context.Context, key string) error {
 }
 
 // MemoryByteStore keeps object bytes in the process. It is the fallback for a
-// server with no data directory — the development default, whose git objects,
-// repositories and metadata are already in memory and equally lost on restart.
+// server with no data directory, whose other state is already in memory and
+// equally lost on restart.
 type MemoryByteStore struct {
 	mu      sync.RWMutex
 	objects map[string][]byte

@@ -5,8 +5,8 @@ import "strconv"
 // MaxPinnedRepos matches github.com's limit of six pinned items on a profile.
 const MaxPinnedRepos = 6
 
-// ListPinnedRepos returns a detached copy of the user's ordered pinned-repo
-// full names, or an empty slice.
+// ListPinnedRepos returns a detached copy of the user's ordered pinned-repo full
+// names, or an empty slice.
 func (st *Store) ListPinnedRepos(userID int) []string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -19,9 +19,9 @@ func (st *Store) ListPinnedRepos(userID int) []string {
 	return out
 }
 
-// SetPinnedRepos replaces the user's pinned list with the given full names,
-// preserving order, dropping duplicates and repos that do not exist, and
-// capping at MaxPinnedRepos. Returns the stored list. Persists the user.
+// SetPinnedRepos replaces the user's pinned list, preserving order, dropping
+// duplicates and nonexistent repos, and capping at MaxPinnedRepos. Returns the
+// stored list.
 func (st *Store) SetPinnedRepos(userID int, fullNames []string) ([]string, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

@@ -5,9 +5,8 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// copyGitStorage copies all encoded objects and references from src to dst.
-// It is used to implement repository forks while keeping the copy independent
-// of the original.
+// copyGitStorage copies all objects and references from src to dst, yielding a
+// fork independent of the original.
 func copyGitStorage(src, dst gitStorage.Storer) error {
 	if err := CopyGitObjects(src, dst); err != nil {
 		return err

@@ -15,46 +15,27 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// A repository's wiki IS a git repository on github, reachable at
-// `<owner>/<repo>.wiki.git` and at nothing else — there is no REST API for wiki
-// content, which is why the vendored contract is silent about it. This file is
-// that repository: the pages the browser UI reads are a projection of its tip
-// commit, and every write the UI makes is a commit on it.
-//
-// One source of truth, not two. The pages map below is a memo of the pure
-// function project(tip) → pages, stamped with the tip it was computed from, and
-// every read re-derives it when the tip has moved. A `git push` therefore cannot
-// leave the UI stale — the push moves the ref, the next read sees a tip it has
-// no memo for, and rebuilds — and a UI edit cannot leave a clone stale, because
-// the edit is a commit before it is anything else. There is no writer that
-// updates one and not the other, so there is no state in which they can
-// disagree; a memo that is out of date is *detected* by comparing object ids
-// rather than invalidated by a writer that has to remember to.
+// A repository's wiki is itself a git repository (`<owner>/<repo>.wiki.git`),
+// with no REST API. The pages the UI reads are a projection of the tip commit
+// and every UI write is a commit; the projection is a memo keyed by the tip it
+// was computed from, so a stale memo is detected by comparing object ids rather
+// than invalidated by a writer that has to remember to.
 
-// WikiStorageSuffix is appended to a repository's full name to key its wiki's
-// git storage: `admin/docs` stores its wiki under `admin/docs.wiki.git`.
-//
-// The suffix carries `.git` deliberately. Repository names ending in `.git` are
-// refused at creation (isValidNewRepoName), so no repository can ever own this
-// key — where a bare `.wiki` suffix would collide with a repository someone
-// legitimately named `docs.wiki` and silently serve one repository's objects as
-// another's. It is also the shape of the URL clients already use, so the
-// on-disk layout and the S3 prefix read the way the remote does, and the wiki
-// gets the same pluggable storer, packing, compaction and caching as any other
-// repository rather than a second storage tier.
+// WikiStorageSuffix keys a wiki's git storage: `admin/docs` stores its wiki
+// under `admin/docs.wiki.git`. The `.git` is deliberate — repository names
+// ending in `.git` are refused at creation, so no repository can collide with
+// this key, and the wiki gets the same pluggable storer as any other repository.
 const WikiStorageSuffix = ".wiki.git"
 
 // WikiURLSuffix is the repository-name suffix a git client addresses a wiki
-// with, after the transport has trimmed the trailing `.git`.
+// with, after the transport trims the trailing `.git`.
 const WikiURLSuffix = ".wiki"
 
 // WikiStorageName maps a repository's full name to its wiki's storage key.
 func WikiStorageName(repoKey string) string { return repoKey + WikiStorageSuffix }
 
-// wikiMarkupExtensions are the file extensions github renders as wiki pages.
-// A file in the wiki repository with any other extension (an image, a CSS file,
-// a _Sidebar asset) is content the wiki carries but not a page, so it round
-// trips through clone and push untouched and never appears in the page list.
+// wikiMarkupExtensions are the extensions github renders as wiki pages. A file
+// with any other extension is content the wiki carries but not a page.
 var wikiMarkupExtensions = []string{
 	".md", ".markdown", ".mdown", ".mkdn",
 	".asciidoc", ".adoc", ".asc",
@@ -70,25 +51,23 @@ var wikiMarkupExtensions = []string{
 }
 
 // WikiPageExtension is the extension a page created through the UI is written
-// with; github's own editor writes markdown too.
+// with (markdown, as github's editor writes).
 const WikiPageExtension = ".md"
 
 // maxWikiHistoryCommits bounds the first-parent walk that derives page
 // timestamps and revisions from the wiki's history.
 const maxWikiHistoryCommits = 5000
 
-// WikiPageFileName maps a page title to its file name in the wiki repository,
-// the way github does: spaces become hyphens and the markup extension is
-// appended, so "Getting Started" is `Getting-Started.md`. Path separators are
-// folded into hyphens too — a title never creates a directory, because the
-// title is the identity and a title that escaped into a subdirectory would no
-// longer round trip back to itself.
+// WikiPageFileName maps a page title to its file name the way github does:
+// spaces (and path separators) become hyphens and the extension is appended, so
+// "Getting Started" is `Getting-Started.md`. Folding separators keeps a title
+// from escaping into a subdirectory, where it would no longer round-trip.
 func WikiPageFileName(title string) string {
 	return WikiPageName(title) + WikiPageExtension
 }
 
 // WikiPageName is WikiPageFileName without the extension: the hyphenated name
-// github addresses a page by in `/{owner}/{repo}/wiki/{Page-Name}`.
+// github addresses a page by.
 func WikiPageName(title string) string {
 	var b strings.Builder
 	prevHyphen := false
@@ -107,12 +86,9 @@ func WikiPageName(title string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-// WikiTitleFromPath is the inverse mapping: the page title a wiki file's name
-// carries, with hyphens read back as spaces. A page is a markup file at the
-// repository root, where the mapping is a bijection and a title therefore round
-// trips through its file name and back to itself. Everything else the wiki
-// repository carries — an image, a stylesheet, a file in a subdirectory — is
-// content it stores and serves without being a page, and reports false here.
+// WikiTitleFromPath is the inverse mapping, with hyphens read back as spaces.
+// Only a markup file at the repository root is a page (the mapping is a
+// bijection there); anything else reports false.
 func WikiTitleFromPath(filePath string) (string, bool) {
 	if filePath == "" || strings.Contains(filePath, "/") {
 		return "", false
@@ -135,10 +111,9 @@ func WikiTitleFromPath(filePath string) (string, bool) {
 	return strings.ReplaceAll(name, "-", " "), true
 }
 
-// WikiProjection is the wiki repository's tip commit read as pages: the
-// derived value the browser UI is served, together with the object id it was
-// derived from. A projection whose Tip is not the wiki's current tip is stale
-// by construction and is thrown away rather than patched.
+// WikiProjection is the wiki's tip commit read as pages, stamped with the tip it
+// was derived from. A projection whose Tip is not the current tip is stale and
+// thrown away rather than patched.
 type WikiProjection struct {
 	Tip       plumbing.Hash
 	Branch    string
@@ -146,8 +121,7 @@ type WikiProjection struct {
 	Revisions map[string][]*WikiPageRevision
 }
 
-// WikiPageChange is one page a wiki commit range created, edited or deleted —
-// what the gollum webhook reports.
+// WikiPageChange is one page a wiki commit range changed, as the gollum webhook reports.
 type WikiPageChange struct {
 	Slug     string
 	Title    string
@@ -156,10 +130,8 @@ type WikiPageChange struct {
 	SHA      string
 }
 
-// openWikiStorage opens or initializes the wiki's git storage through the same
-// pluggable storer ordinary repositories use, so a wiki lands on the S3-backed
-// object store, the local git directory or memory exactly as its repository
-// does. Caller must hold WikiMu.
+// openWikiStorageLocked opens or initializes the wiki's git storage through the
+// same pluggable storer ordinary repositories use. Caller holds WikiMu.
 func (st *Store) openWikiStorageLocked(repoKey, defaultBranch string) gitStorage.Storer { //nolint:ireturn
 	if stor, ok := st.WikiGitStorages[repoKey]; ok {
 		return stor
@@ -180,9 +152,8 @@ func (st *Store) openWikiStorageLocked(repoKey, defaultBranch string) gitStorage
 	return stor
 }
 
-// wikiRepoDefaults reads the canonical repository key and the branch a fresh
-// wiki should be created on, taking and releasing the store lock before any git
-// I/O begins so a slow object-store round trip never holds it.
+// wikiRepoDefaults reads the canonical repo key and default branch, releasing
+// st.Mu before any git I/O so a slow object-store round trip never holds it.
 func (st *Store) wikiRepoDefaults(repoKey string) (string, string) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -194,9 +165,8 @@ func (st *Store) wikiRepoDefaults(repoKey string) (string, string) {
 	return repoKey, branch
 }
 
-// WikiGitStorage is the storer both git transports serve a wiki from. It opens
-// the wiki repository on first use, which is what lets a client push to the
-// wiki of a repository whose wiki nobody has touched yet.
+// WikiGitStorage is the storer both git transports serve a wiki from, opening
+// the wiki repository on first use so a client can push to an untouched wiki.
 func (st *Store) WikiGitStorage(repoKey string) gitStorage.Storer { //nolint:ireturn
 	repoKey, branch := st.wikiRepoDefaults(repoKey)
 	st.WikiMu.Lock()
@@ -212,8 +182,8 @@ func (st *Store) WikiHeadBranch(repoKey string) string {
 	return wikiHeadBranchLocked(st.openWikiStorageLocked(repoKey, fallback), fallback)
 }
 
-// DropWikiGitStorage forgets a repository's wiki handle and projection. The
-// bytes are removed by the caller that removes the repository's own storage.
+// DropWikiGitStorage forgets a wiki's handle and projection; the bytes are
+// removed by the caller that removes the repository's own storage.
 func (st *Store) DropWikiGitStorage(repoKey string) {
 	st.WikiMu.Lock()
 	defer st.WikiMu.Unlock()
@@ -221,9 +191,9 @@ func (st *Store) DropWikiGitStorage(repoKey string) {
 	delete(st.WikiProjections, repoKey)
 }
 
-// RekeyWikiGitStorage follows a repository rename: the wiki handle and its
-// projection are dropped so the next access reopens them against the new
-// storage key. The bytes themselves are moved by MoveWikiGitStorageBytes.
+// RekeyWikiGitStorage follows a repository rename, dropping the wiki handle and
+// projection so the next access reopens them against the new key. The bytes are
+// moved by MoveWikiGitStorageBytes.
 func (st *Store) RekeyWikiGitStorage(oldKey, newKey string) {
 	st.WikiMu.Lock()
 	defer st.WikiMu.Unlock()
@@ -233,8 +203,8 @@ func (st *Store) RekeyWikiGitStorage(oldKey, newKey string) {
 	delete(st.WikiProjections, newKey)
 }
 
-// wikiHeadBranchLocked reports the branch the wiki's HEAD names, falling back
-// to the repository's default branch when HEAD is missing or detached.
+// wikiHeadBranchLocked reports the branch the wiki's HEAD names, falling back to
+// fallback when HEAD is missing or detached.
 func wikiHeadBranchLocked(stor gitStorage.Storer, fallback string) string {
 	if stor == nil {
 		return fallback
@@ -246,11 +216,9 @@ func wikiHeadBranchLocked(stor gitStorage.Storer, fallback string) string {
 	return fallback
 }
 
-// RepairWikiHead points a wiki's HEAD at a branch that exists, so a clone of it
-// checks something out. A client is free to push whatever branch name it likes
-// to a wiki nobody has written yet — the conformance harness pushes `main`,
-// github's own wikis use `master` — and HEAD has to follow the branch that
-// actually landed rather than the one the server guessed.
+// RepairWikiHead points a wiki's HEAD at a branch that exists, so a clone checks
+// something out. A client may push any branch name to a fresh wiki, so HEAD must
+// follow the branch that actually landed rather than the one the server guessed.
 func (st *Store) RepairWikiHead(repoKey string) {
 	repoKey, fallback := st.wikiRepoDefaults(repoKey)
 	st.WikiMu.Lock()
@@ -286,8 +254,7 @@ func (st *Store) RepairWikiHead(repoKey string) {
 }
 
 // wikiProjectionLocked returns the projection of the wiki's current tip,
-// rebuilding it when the tip has moved since the memo was taken. Caller holds
-// WikiMu.
+// rebuilding it when the tip has moved. Caller holds WikiMu.
 func (st *Store) wikiProjectionLocked(repoKey, fallbackBranch string) *WikiProjection {
 	stor := st.openWikiStorageLocked(repoKey, fallbackBranch)
 	empty := &WikiProjection{Branch: fallbackBranch, Pages: map[string]*WikiPage{}, Revisions: map[string][]*WikiPageRevision{}}
@@ -316,12 +283,10 @@ func (st *Store) wikiProjectionLocked(repoKey, fallbackBranch string) *WikiProje
 	return projection
 }
 
-// buildWikiProjection walks the wiki's first-parent history oldest-first and
-// replays it: each commit's page files are compared with the previous commit's,
-// so a page's revisions are the commits that changed its blob, its creation is
-// the commit the file appeared in, and its history restarts when the file is
-// deleted and written again — which is what a page's history means to someone
-// reading it.
+// buildWikiProjection replays the wiki's first-parent history oldest-first,
+// comparing each commit's page files with the previous commit's: a page's
+// revisions are the commits that changed its blob, and its history restarts when
+// the file is deleted and written again.
 func buildWikiProjection(stor gitStorage.Storer, repoKey, branch string, tip plumbing.Hash) (*WikiProjection, error) {
 	commits, err := wikiFirstParentHistory(stor, tip)
 	if err != nil {
@@ -336,8 +301,8 @@ func buildWikiProjection(stor gitStorage.Storer, repoKey, branch string, tip plu
 		if err != nil {
 			return nil, err
 		}
-		// Sorted, because two file names can fold to one slug and the winner
-		// has to be the same on every replica and every restart.
+		// Sorted so the winner is deterministic when two file names fold to
+		// one slug.
 		for _, filePath := range sortedKeys(current) {
 			blob := current[filePath]
 			if previous[filePath] == blob {
@@ -454,8 +419,7 @@ func wikiFirstParentHistory(stor gitStorage.Storer, tip plumbing.Hash) ([]*objec
 	return commits, nil
 }
 
-// wikiPageFiles flattens a commit's tree into path → blob for the files that
-// are wiki pages. Anything else the repository carries is left alone.
+// wikiPageFiles flattens a commit's tree into path → blob for its wiki pages.
 func wikiPageFiles(stor gitStorage.Storer, commit *object.Commit) (map[string]plumbing.Hash, error) {
 	files := map[string]plumbing.Hash{}
 	tree, err := object.GetTree(stor, commit.TreeHash)
@@ -463,8 +427,8 @@ func wikiPageFiles(stor gitStorage.Storer, commit *object.Commit) (map[string]pl
 		return nil, fmt.Errorf("read wiki tree %s: %w", commit.TreeHash, err)
 	}
 	for _, entry := range tree.Entries {
-		// Any regular file is a page candidate, whatever mode bits a client
-		// happened to push it with; a directory, a symlink or a submodule is not.
+		// Any regular file is a page candidate, whatever mode bits it was pushed
+		// with; a directory, symlink or submodule is not.
 		if entry.Mode != filemode.Regular && entry.Mode != filemode.Deprecated && entry.Mode != filemode.Executable {
 			continue
 		}
@@ -476,9 +440,9 @@ func wikiPageFiles(stor gitStorage.Storer, commit *object.Commit) (map[string]pl
 	return files, nil
 }
 
-// wikiCommitPageFiles is wikiPageFiles for a commit named by object id, with a
-// missing or unreadable commit reading as an empty wiki so a ref that was just
-// created compares against nothing.
+// wikiCommitPageFiles is wikiPageFiles for a commit named by object id; a
+// missing or unreadable commit reads as an empty wiki, so a just-created ref
+// compares against nothing.
 func wikiCommitPageFiles(stor gitStorage.Storer, hash plumbing.Hash) map[string]plumbing.Hash {
 	if hash.IsZero() {
 		return map[string]plumbing.Hash{}
@@ -494,10 +458,9 @@ func wikiCommitPageFiles(stor gitStorage.Storer, hash plumbing.Hash) map[string]
 	return files
 }
 
-// WikiPagesChanged reports what a wiki commit range did to the wiki's pages,
-// which is what the gollum webhook carries. github's documented payload can
-// name a page as created or edited and has no vocabulary for a deletion, so a
-// commit that only removes pages produces no entries.
+// WikiPagesChanged reports what a wiki commit range did to the wiki's pages, as
+// the gollum webhook carries. github's payload has no vocabulary for a deletion,
+// so a commit that only removes pages produces no entries.
 func (st *Store) WikiPagesChanged(repoKey, before, after string) []WikiPageChange {
 	repoKey, fallback := st.wikiRepoDefaults(repoKey)
 	st.WikiMu.Lock()
@@ -535,8 +498,7 @@ func (st *Store) WikiPagesChanged(repoKey, before, after string) []WikiPageChang
 	return changes
 }
 
-// WikiTipSHA is the object id of the wiki's current tip commit, or "" when the
-// wiki has no commits.
+// WikiTipSHA is the object id of the wiki's tip commit, or "" when it has none.
 func (st *Store) WikiTipSHA(repoKey string) string {
 	repoKey, fallback := st.wikiRepoDefaults(repoKey)
 	st.WikiMu.Lock()
@@ -567,9 +529,9 @@ func wikiWriteBlob(stor gitStorage.Storer, content []byte) (plumbing.Hash, error
 	return stor.SetEncodedObject(obj)
 }
 
-// wikiWriteTree stores a tree with the given entries, sorted the way git sorts
-// them (a directory sorts as though its name ended in "/"), and reports whether
-// the tree has any entries left so a caller can prune an emptied subtree.
+// wikiWriteTree stores a tree with entries in git's sort order (a directory
+// sorts as though its name ended in "/") and reports whether any entries remain,
+// so a caller can prune an emptied subtree.
 func wikiWriteTree(stor gitStorage.Storer, entries []object.TreeEntry) (plumbing.Hash, bool, error) {
 	sort.Slice(entries, func(i, j int) bool {
 		return wikiTreeSortKey(entries[i]) < wikiTreeSortKey(entries[j])
@@ -649,10 +611,9 @@ func wikiTreeSet(stor gitStorage.Storer, base *object.Tree, segments []string, b
 	return wikiWriteTree(stor, entries)
 }
 
-// wikiCommitEdits writes one commit that applies every path → content edit in
-// edits (a nil content removes the path) and advances the branch to it with a
-// compare-and-set against the tip it was built on, so a concurrent push cannot
-// be overwritten.
+// wikiCommitEdits writes one commit applying every path → content edit (nil
+// content removes the path) and advances the branch with a compare-and-set
+// against the tip it was built on, so a concurrent push cannot be overwritten.
 func (st *Store) wikiCommitEdits(stor gitStorage.Storer, branch string, edits map[string][]byte, sig object.Signature, message string) (plumbing.Hash, error) {
 	branchRef := plumbing.NewBranchReferenceName(branch)
 	var parents []plumbing.Hash
@@ -736,8 +697,8 @@ func (st *Store) wikiCommitEdits(stor gitStorage.Storer, branch string, edits ma
 	return commitHash, nil
 }
 
-// wikiSignature is the commit identity a UI edit is recorded under. The login
-// is the author name because that is what a page's history shows as its editor.
+// wikiSignature is the commit identity a UI edit is recorded under; the login is
+// the author name so it shows as the page's editor in history.
 func (st *Store) wikiSignature(author string) object.Signature {
 	if author == "" {
 		author = "bleephub"
@@ -749,8 +710,8 @@ func (st *Store) wikiSignature(author string) object.Signature {
 	}
 }
 
-// wikiDefaultMessage is the commit subject github writes when an editor saves a
-// page without an edit summary.
+// wikiDefaultMessage is the commit subject github writes when a page is saved
+// without an edit summary.
 func wikiDefaultMessage(verb, title string) string {
 	return fmt.Sprintf("%s %s (markdown)", verb, title)
 }

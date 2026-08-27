@@ -11,20 +11,17 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// Pure git/pull-request resolution helpers shared by the REST handlers and
-// the GraphQL resolver layer. Moved down from the server package in ARCH-003
-// (the ResolveBranchSha / SplitRepoFullName precedent): they depend only on
-// store data and go-git storage, and both API surfaces need them.
+// Pure git/pull-request resolution helpers shared by the REST handlers and the
+// GraphQL resolver layer (ARCH-003).
 
-// ResolveGitRef turns a user-supplied ref name (branch, tag, full ref, or SHA)
-// into a commit hash. It returns an error describing the resolution failure so
-// callers can choose a 404/422 response.
+// ResolveGitRef turns a ref name (branch, tag, full ref, or SHA) into a commit
+// hash, returning an error describing the resolution failure.
 func ResolveGitRef(stor gitStorage.Storer, ref string) (plumbing.Hash, error) {
 	if ref == "" {
 		return plumbing.ZeroHash, errors.New("ref is empty")
 	}
 
-	// 1. Full reference name.
+	// Full reference name.
 	if strings.HasPrefix(ref, "refs/") {
 		r, err := stor.Reference(plumbing.ReferenceName(ref))
 		if err == nil {
@@ -32,16 +29,10 @@ func ResolveGitRef(stor gitStorage.Storer, ref string) (plumbing.Hash, error) {
 		}
 	}
 
-	// 2. The literal HEAD, then branch or tag shorthand.
-	//
-	// HEAD is a real ref name on github.com: GET /contents/{p}?ref=HEAD,
-	// /git/trees/HEAD, /commits/HEAD and /tarball/HEAD all answer 200 from the
-	// repository's default branch. SetGitHeadBranch (git_head.go) keeps the
-	// symref pointed at that branch, so resolving it here is a symref hop, not
-	// a second source of truth. An unborn HEAD — the empty repository, whose
-	// symref names a branch no commit has landed on yet — resolves to nothing
-	// and must fall through to the not-found result below rather than
-	// masquerading as a ref that exists.
+	// The literal HEAD, then branch or tag shorthand. HEAD is a real ref name on
+	// github.com resolving to the default branch. An unborn HEAD (empty repo)
+	// resolves to nothing and must fall through to not-found below rather than
+	// masquerading as an existing ref.
 	names := []plumbing.ReferenceName{
 		plumbing.NewBranchReferenceName(ref),
 		plumbing.NewTagReferenceName(ref),
@@ -61,8 +52,8 @@ func ResolveGitRef(stor gitStorage.Storer, ref string) (plumbing.Hash, error) {
 		return hash, nil
 	}
 
-	// 3. Short or full SHA. plumbing.NewHash accepts hex and returns ZeroHash
-	// on invalid input; IsZero prevents treating garbage as zero hash.
+	// Short or full SHA. NewHash returns ZeroHash on invalid input; the IsZero
+	// guard prevents treating garbage as the zero hash.
 	h := plumbing.NewHash(ref)
 	if !h.IsZero() {
 		if _, err := object.GetCommit(stor, h); err == nil {
@@ -91,10 +82,8 @@ func RefHash(r *plumbing.Reference, stor gitStorage.Storer) (plumbing.Hash, erro
 	return h, nil
 }
 
-// FindMergeBase returns the nearest common ancestor of a and b. A simple
-// ancestor-set algorithm is sufficient for bleephub's linear/short-history
-// repositories; it walks parents from a, then walks from b until it hits the
-// set. If none exists it returns ZeroHash.
+// FindMergeBase returns the nearest common ancestor of a and b, or ZeroHash if
+// none exists. It walks a's ancestor set, then walks from b until it hits it.
 func FindMergeBase(stor gitStorage.Storer, a, b plumbing.Hash) (plumbing.Hash, error) {
 	if a == b {
 		return a, nil
@@ -134,9 +123,8 @@ func FindMergeBase(stor gitStorage.Storer, a, b plumbing.Hash) (plumbing.Hash, e
 	return found, nil
 }
 
-// CommitsBetween returns the commits reachable from head but not from base,
-// ordered from newest to oldest (head first). If base is not an ancestor of
-// head the result is the full history reachable from head.
+// CommitsBetween returns the commits reachable from head but not base, newest
+// first. If base is not an ancestor of head, the result is head's full history.
 func CommitsBetween(stor gitStorage.Storer, base, head plumbing.Hash) ([]*object.Commit, error) {
 	baseCommit, err := object.GetCommit(stor, base)
 	if err != nil {
@@ -168,9 +156,8 @@ func CommitsBetween(stor gitStorage.Storer, base, head plumbing.Hash) ([]*object
 	return commits, nil
 }
 
-// PullRequestCommitObjectsFromStorage lists the PR's commits (oldest first)
-// from git storage: the commits reachable from head but not from the merge
-// base with the base branch.
+// PullRequestCommitObjectsFromStorage lists the PR's commits (oldest first):
+// those reachable from head but not from the merge base with the base branch.
 func PullRequestCommitObjectsFromStorage(stor gitStorage.Storer, pr *PullRequest) ([]*object.Commit, error) {
 	headHash, err := ResolveGitRef(stor, pr.HeadRefName)
 	if err != nil {
@@ -199,15 +186,15 @@ func PullRequestCommitObjectsFromStorage(stor gitStorage.Storer, pr *PullRequest
 	if err != nil {
 		return nil, err
 	}
-	// CommitsBetween is newest-first; the API lists oldest first.
+	// Reverse to oldest-first, which is what the API lists.
 	for i, j := 0, len(commits)-1; i < j; i, j = i+1, j-1 {
 		commits[i], commits[j] = commits[j], commits[i]
 	}
 	return commits, nil
 }
 
-// PullRequestHeadRepoID is the repository the PR's head branch lives in —
-// the fork for cross-repository PRs, the base repository otherwise.
+// PullRequestHeadRepoID is the repository the PR's head branch lives in — the
+// fork for cross-repository PRs, the base repository otherwise.
 func PullRequestHeadRepoID(pr *PullRequest) int {
 	if pr == nil {
 		return 0
@@ -234,9 +221,9 @@ func PullRequestHeadRepoLocked(st *Store, pr *PullRequest) *Repo {
 	return st.Repos[PullRequestHeadRepoID(pr)]
 }
 
-// ResolvePullRequestHead resolves a PR `head` filter/spec ("branch" or
-// "owner:branch") to the repository holding that branch within the base
-// repository's fork network, and the branch name.
+// ResolvePullRequestHead resolves a PR head spec ("branch" or "owner:branch")
+// to the repository holding that branch within the base repository's fork
+// network, and the branch name.
 func ResolvePullRequestHead(st *Store, baseRepo *Repo, head string) (*Repo, string) {
 	if baseRepo == nil || strings.TrimSpace(head) == "" {
 		return nil, ""
@@ -318,9 +305,8 @@ func PullRequestHeadSHALocked(pr *PullRequest, st *Store) string {
 	return ResolveBranchSha(st.GitStorages[repo.FullName], pr.HeadRefName)
 }
 
-// PRReviewThreadNodeID renders the GraphQL node id of a PR review thread
-// (node-ID codecs live in store so both API surfaces and their tests share
-// one format — ARCH-003).
+// PRReviewThreadNodeID renders the GraphQL node id of a PR review thread. Node-ID
+// codecs live in store so both API surfaces share one format (ARCH-003).
 func PRReviewThreadNodeID(threadID int) string {
 	return fmt.Sprintf("PRT_kgDO%08d", threadID)
 }

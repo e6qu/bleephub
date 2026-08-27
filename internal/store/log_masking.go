@@ -6,10 +6,9 @@ import (
 	"strings"
 )
 
-// registerJobLogMasksLocked records every secret variable delivered in a job
-// message. This is a server-side backstop for the official runner's own mask
-// handling: uploaded logs remain safe even when a runner is buggy or hostile.
-// The caller must hold Store.Mu.
+// RegisterJobLogMasksLocked records every secret variable in a job message: a
+// server-side backstop so uploaded logs stay masked even against a buggy or
+// hostile runner. Caller holds Store.Mu.
 func (st *Store) RegisterJobLogMasksLocked(planID string, message map[string]interface{}) {
 	variables, _ := message["variables"].(map[string]interface{})
 	for _, raw := range variables {

@@ -8,8 +8,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// computeRepoLanguages walks the repository's default branch tree and returns
-// a map of language name to byte size, sorted by descending size.
+// ComputeRepoLanguages walks the default-branch tree and returns language name
+// to byte size.
 func (st *Store) ComputeRepoLanguages(repo *Repo) map[string]int64 {
 	st.Mu.RLock()
 	stor := st.GitStorages[repo.FullName]
@@ -60,10 +60,8 @@ func isVendoredPath(p string) bool {
 	return false
 }
 
-// LanguageForFilename maps a file name to its Linguist-style language. The
-// mapping is intentionally small but covers the common cases; GitHub's API
-// returns byte totals only, so an approximate mapping is acceptable for tests
-// and UI color labels.
+// LanguageForFilename maps a file name to its Linguist-style language. The small
+// approximate mapping suffices since the API returns byte totals only.
 func LanguageForFilename(name string) (string, bool) {
 	ext := strings.ToLower(path.Ext(name))
 	if ext == "" {
@@ -74,7 +72,6 @@ func LanguageForFilename(name string) (string, bool) {
 		return "", false
 	}
 
-	// Strip leading dot.
 	ext = ext[1:]
 
 	lang, ok := extensionLanguageMap[ext]
@@ -178,9 +175,8 @@ var extensionLanguageMap = map[string]string{
 	"wat":        "WebAssembly",
 }
 
-// linguistVendoredPaths matches directory/file names that GitHub Linguist
-// excludes from language statistics. Only exact segment matches are needed for
-// the simple paths bleephub repositories contain.
+// linguistVendoredPaths names segments GitHub Linguist excludes from language
+// statistics; exact segment matches only.
 var linguistVendoredPaths = map[string]bool{
 	"node_modules": true,
 	"vendor":       true,

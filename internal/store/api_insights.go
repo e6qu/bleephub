@@ -8,40 +8,32 @@ import (
 
 // APIRequestRecord is one observed, attributed /api/v3 request.
 type APIRequestRecord struct {
-	ID          int64     `json:"id"`
-	Timestamp   time.Time `json:"timestamp"`
-	Method      string    `json:"method"`
-	Route       string    `json:"route"` // route template relative to /api/v3, e.g. "/repos/{owner}/{repo}"
-	StatusCode  int       `json:"status_code"`
-	RateLimited bool      `json:"rate_limited"`
-	// Actor identifies the credential that made the request, using the
-	// actor taxonomy of GitHub's API insights.
-	ActorType APIInsightsActorType `json:"actor_type"` // installation | classic_pat | fine_grained_pat | oauth_app | github_app_user_to_server
-	ActorID   int64                `json:"actor_id"`
-	ActorName string               `json:"actor_name"`
-	// Subject is the account on whose behalf the request ran.
+	ID          int64                  `json:"id"`
+	Timestamp   time.Time              `json:"timestamp"`
+	Method      string                 `json:"method"`
+	Route       string                 `json:"route"` // route template relative to /api/v3, e.g. "/repos/{owner}/{repo}"
+	StatusCode  int                    `json:"status_code"`
+	RateLimited bool                   `json:"rate_limited"`
+	ActorType   APIInsightsActorType   `json:"actor_type"` // installation | classic_pat | fine_grained_pat | oauth_app | github_app_user_to_server
+	ActorID     int64                  `json:"actor_id"`
+	ActorName   string                 `json:"actor_name"`
 	SubjectType APIInsightsSubjectType `json:"subject_type"` // "user" | "installation"
 	SubjectID   int64                  `json:"subject_id"`
 	SubjectName string                 `json:"subject_name"`
-	// UserID is the authenticated user's ID (0 for installation tokens).
-	UserID int `json:"user_id,omitempty"`
-	// IntegrationID / OAuthAppID carry the GitHub App / OAuth app identity
-	// behind app-derived actors, when one exists.
+	UserID      int                    `json:"user_id,omitempty"` // 0 for installation tokens
+	// GitHub App / OAuth app identity behind an app-derived actor.
 	IntegrationID *int64 `json:"integration_id,omitempty"`
 	OAuthAppID    *int64 `json:"oauth_application_id,omitempty"`
-	// OrgLogins are the organizations this request was attributed to at
-	// request time (the actor's active memberships, or the installation's
-	// target organization).
+	// Orgs attributed at request time: the actor's active memberships, or the
+	// installation's target org.
 	OrgLogins []string `json:"org_logins,omitempty"`
 }
 
-// maxAPIRequestRecords caps the durable in-memory request log; once the cap
-// is reached the oldest records are evicted FIFO so unbounded traffic cannot
-// grow the store without limit.
+// maxAPIRequestRecords caps the request log; oldest evicted FIFO.
 const maxAPIRequestRecords = 10000
 
-// ActiveOrgLoginsForUser returns the logins of every organization where the
-// user holds an active membership.
+// ActiveOrgLoginsForUser returns the logins of every org where the user holds
+// an active membership.
 func (st *Store) ActiveOrgLoginsForUser(userID int) []string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -58,8 +50,7 @@ func (st *Store) ActiveOrgLoginsForUser(userID int) []string {
 	return out
 }
 
-// PATIdentityByTokenValue resolves a fine-grained personal access token
-// value to its token ID + name via the PAT grant/request tables.
+// PATIdentityByTokenValue resolves a fine-grained PAT value to its token ID and name.
 func (st *Store) PATIdentityByTokenValue(value string) (int, string, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -69,8 +60,8 @@ func (st *Store) PATIdentityByTokenValue(value string) (int, string, bool) {
 	return 0, "", false
 }
 
-// RecordAPIRequest appends an attributed request record and persists it.
-// The log is capped at maxAPIRequestRecords with FIFO eviction.
+// RecordAPIRequest appends an attributed request record and persists it, with
+// FIFO eviction at the cap.
 func (st *Store) RecordAPIRequest(rec *APIRequestRecord) {
 	st.apiInsightsMu.Lock()
 	defer st.apiInsightsMu.Unlock()
@@ -81,11 +72,8 @@ func (st *Store) RecordAPIRequest(rec *APIRequestRecord) {
 		recordCap = maxAPIRequestRecords
 	}
 	st.APIRequestRecords = append(st.APIRequestRecords, rec)
-	// Commit the new record together with any FIFO evictions in one transaction
-	// so a crash can't apply the insert without the eviction (or vice versa),
-	// leaving the durable bucket over its cap or missing the just-served request
-	// (STORE-001/002; the eviction itself is STORE-024). The defer releases the
-	// lock if the commit panics.
+	// Insert and evictions commit in one transaction so a crash cannot leave the
+	// bucket over its cap or missing the just-served request (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	if overflow := len(st.APIRequestRecords) - recordCap; overflow > 0 {
 		for _, evicted := range st.APIRequestRecords[:overflow] {
@@ -99,8 +87,7 @@ func (st *Store) RecordAPIRequest(rec *APIRequestRecord) {
 	}
 }
 
-// apiInsightsRecords returns the org's attributed records inside [minT, maxT],
-// oldest first.
+// ApiInsightsRecords returns the org's records inside [minT, maxT], oldest first.
 func (st *Store) ApiInsightsRecords(orgLogin string, minT, maxT time.Time) []*APIRequestRecord {
 	st.apiInsightsMu.RLock()
 	defer st.apiInsightsMu.RUnlock()
@@ -119,10 +106,8 @@ func (st *Store) ApiInsightsRecords(orgLogin string, minT, maxT time.Time) []*AP
 	return out
 }
 
-// APIInsightsActorType is the credential taxonomy of an observed request's
-// actor; APIInsightsSubjectType is the account it ran on behalf of. Both are
-// produced internally from credential analysis (never unmarshaled from a
-// request), and a typed string marshals to JSON identically to a plain string.
+// APIInsightsActorType is the credential taxonomy of a request's actor;
+// APIInsightsSubjectType is the account it ran on behalf of.
 type APIInsightsActorType string
 
 type APIInsightsSubjectType string

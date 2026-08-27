@@ -89,8 +89,8 @@ type Rule struct {
 	Parameters map[string]interface{} `json:"parameters,omitempty"`
 }
 
-// RulesetVersion is a historical snapshot of a ruleset. ActorID records the
-// user who performed the update that superseded this version.
+// RulesetVersion is a historical snapshot of a ruleset. ActorID is the user
+// whose update superseded this version.
 type RulesetVersion struct {
 	VersionID int       `json:"version_id"`
 	Ruleset   Ruleset   `json:"ruleset"`
@@ -131,8 +131,8 @@ func cloneRuleset(rs *Ruleset) *Ruleset {
 	}
 	copy := *rs
 	copy.BypassActors = append([]RulesetBypassActor(nil), rs.BypassActors...)
-	// Start from a non-nil slice: GitHub always emits ref_name.include/exclude
-	// as arrays, so an empty condition must marshal to [] rather than null.
+	// Non-nil so an empty condition marshals to [], not null: GitHub always
+	// emits ref_name.include/exclude as arrays.
 	copy.Conditions.RefName.Include = append([]string{}, rs.Conditions.RefName.Include...)
 	copy.Conditions.RefName.Exclude = append([]string{}, rs.Conditions.RefName.Exclude...)
 	copy.Rules = make([]Rule, len(rs.Rules))
@@ -502,8 +502,8 @@ func (st *Store) ListRulesetsForRepository(repo *Repo, includeParents bool) []*R
 }
 
 // ApplicableRulesets snapshots every repository and organization ruleset that
-// targets ref. Returning values rather than the live map entries lets push
-// evaluation run without holding the global store lock across Git reads.
+// targets ref. It returns values, not live map entries, so push evaluation can
+// run without holding the store lock across Git reads.
 func (st *Store) ApplicableRulesets(repo *Repo, ref string) []Ruleset {
 	if repo == nil {
 		return nil
@@ -576,10 +576,9 @@ func (st *Store) ListRulesForBranch(repo *Repo, branch string) []map[string]inte
 	return out
 }
 
-// BranchProtectedByRuleset reports whether an enforced branch-targeting
-// repository or organization ruleset applies to the branch. Rulesets in
-// evaluate mode are observable through the rules API but do not enforce
-// restrictions and therefore do not make the branch protected.
+// BranchProtectedByRuleset reports whether an enforced (active, not evaluate)
+// branch-targeting repo or org ruleset applies to the branch. Evaluate-mode
+// rulesets are observable through the rules API but do not protect the branch.
 func (st *Store) BranchProtectedByRuleset(repo *Repo, branch string) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

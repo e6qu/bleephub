@@ -5,8 +5,7 @@ import (
 	"strconv"
 )
 
-// DeploymentBranchPolicyRule is one branch/tag name pattern allowed to
-// deploy to an environment.
+// DeploymentBranchPolicyRule is one branch/tag pattern allowed to deploy to an environment.
 type DeploymentBranchPolicyRule struct {
 	ID     int                        `json:"id"`
 	NodeID string                     `json:"node_id"`
@@ -14,8 +13,7 @@ type DeploymentBranchPolicyRule struct {
 	Type   DeploymentBranchPolicyType `json:"type"`
 }
 
-// EnvCustomProtectionRule is a custom deployment protection rule enabled on
-// an environment, backed by a GitHub App integration.
+// EnvCustomProtectionRule is a custom deployment protection rule backed by a GitHub App.
 type EnvCustomProtectionRule struct {
 	ID      int    `json:"id"`
 	NodeID  string `json:"node_id"`
@@ -23,9 +21,8 @@ type EnvCustomProtectionRule struct {
 	AppID   int    `json:"app_id"`
 }
 
-// CreateEnvBranchPolicy appends a branch/tag policy to an environment.
-// Returns (nil, existing) when a policy with the same name+type already
-// exists (the API answers 303 See Other pointing at it).
+// CreateEnvBranchPolicy appends a branch/tag policy. Returns (nil, existing)
+// on a duplicate name+type (the API answers 303 pointing at it).
 func (st *Store) CreateEnvBranchPolicy(envID int, name, policyType string) (created, existing *DeploymentBranchPolicyRule) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -48,8 +45,7 @@ func (st *Store) CreateEnvBranchPolicy(envID int, name, policyType string) (crea
 	return p, nil
 }
 
-// ListEnvBranchPolicies returns an environment's branch/tag policies in
-// creation order.
+// ListEnvBranchPolicies returns an environment's branch/tag policies in creation order.
 func (st *Store) ListEnvBranchPolicies(envID int) []*DeploymentBranchPolicyRule {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -64,7 +60,7 @@ func (st *Store) GetEnvBranchPolicy(envID, policyID int) *DeploymentBranchPolicy
 	defer st.Mu.RUnlock()
 	for _, p := range st.EnvBranchPolicies[envID] {
 		if p.ID == policyID {
-			// Detach: DeploymentBranchPolicyRule is all-value (STORE-021).
+			// Detached snapshot; all-value struct (STORE-021).
 			clone := *p
 			return &clone
 		}
@@ -72,8 +68,7 @@ func (st *Store) GetEnvBranchPolicy(envID, policyID int) *DeploymentBranchPolicy
 	return nil
 }
 
-// UpdateEnvBranchPolicy renames a policy's pattern. Returns the updated
-// policy, or nil when not found.
+// UpdateEnvBranchPolicy renames a policy's pattern. Returns nil when not found.
 func (st *Store) UpdateEnvBranchPolicy(envID, policyID int, name string) *DeploymentBranchPolicyRule {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -89,7 +84,7 @@ func (st *Store) UpdateEnvBranchPolicy(envID, policyID int, name string) *Deploy
 	return nil
 }
 
-// DeleteEnvBranchPolicy removes a policy. Returns true if it existed.
+// DeleteEnvBranchPolicy removes a policy, returning whether it existed.
 func (st *Store) DeleteEnvBranchPolicy(envID, policyID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -106,9 +101,8 @@ func (st *Store) DeleteEnvBranchPolicy(envID, policyID int) bool {
 	return false
 }
 
-// CreateEnvProtectionRule enables a custom protection rule (a GitHub App
-// integration) on an environment. Returns nil when the app already has an
-// enabled rule on the environment.
+// CreateEnvProtectionRule enables a GitHub App protection rule. Returns nil
+// when the app already has one on the environment.
 func (st *Store) CreateEnvProtectionRule(envID, appID int) *EnvCustomProtectionRule {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -131,8 +125,7 @@ func (st *Store) CreateEnvProtectionRule(envID, appID int) *EnvCustomProtectionR
 	return rule
 }
 
-// ListEnvProtectionRules returns an environment's enabled custom protection
-// rules in creation order.
+// ListEnvProtectionRules returns an environment's custom protection rules in creation order.
 func (st *Store) ListEnvProtectionRules(envID int) []*EnvCustomProtectionRule {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -147,7 +140,7 @@ func (st *Store) GetEnvProtectionRule(envID, ruleID int) *EnvCustomProtectionRul
 	defer st.Mu.RUnlock()
 	for _, rule := range st.EnvProtectionRules[envID] {
 		if rule.ID == ruleID {
-			// Detach: EnvCustomProtectionRule is all-value (STORE-021).
+			// Detached snapshot; all-value struct (STORE-021).
 			clone := *rule
 			return &clone
 		}
@@ -155,7 +148,7 @@ func (st *Store) GetEnvProtectionRule(envID, ruleID int) *EnvCustomProtectionRul
 	return nil
 }
 
-// DeleteEnvProtectionRule disables (removes) a rule. Returns true if it existed.
+// DeleteEnvProtectionRule removes a rule, returning whether it existed.
 func (st *Store) DeleteEnvProtectionRule(envID, ruleID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -172,14 +165,12 @@ func (st *Store) DeleteEnvProtectionRule(envID, ruleID int) bool {
 	return false
 }
 
-// PruneEnvironmentPolicies drops all policies and protection rules for a
-// deleted environment.
+// PruneEnvironmentPolicies drops all policies and protection rules for a deleted environment.
 func (st *Store) PruneEnvironmentPolicies(envID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	// One transaction: an environment's branch policies and protection rules are
-	// pruned together, so a crash cannot leave half an environment's policy set
-	// behind after it is gone (STORE-001/002).
+	// Prune branch policies and protection rules in one transaction, so a crash
+	// cannot leave half the policy set behind (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	if _, ok := st.EnvBranchPolicies[envID]; ok {
 		delete(st.EnvBranchPolicies, envID)
@@ -194,7 +185,5 @@ func (st *Store) PruneEnvironmentPolicies(envID int) {
 	}
 }
 
-// DeploymentBranchPolicyType is the kind of a deployment branch/tag policy
-// rule. GitHub accepts only these two. A typed string marshals to JSON
-// identically to a plain string.
+// DeploymentBranchPolicyType is the kind of a deployment branch/tag policy rule.
 type DeploymentBranchPolicyType string

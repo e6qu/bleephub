@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-// parseAndVerifyAppJWT validates an RS256 JWT against stored app keys.
+// ParseAndVerifyAppJWT validates an RS256 JWT against stored app keys.
 func (st *Store) ParseAndVerifyAppJWT(tokenStr string) (*App, error) {
 	parts := strings.SplitN(tokenStr, ".", 3)
 	if len(parts) != 3 {
@@ -50,10 +50,9 @@ func (st *Store) ParseAndVerifyAppJWT(tokenStr string) (*App, error) {
 	iat := int64(payload.Iat)
 	exp := int64(payload.Exp)
 
-	// Real GitHub bounds the claims relative to ITS clock: exp at most 10
-	// minutes ahead and iat in the past, each with ~60s drift tolerance.
-	// It does not constrain exp-iat directly, so a client that backdates
-	// iat for clock skew (ghinstallation sets iat=now-60) stays valid.
+	// Bound claims against our clock (exp <=10min ahead, iat in the past, ~60s
+	// drift), matching GitHub. exp-iat is unconstrained, so a client backdating
+	// iat for skew (ghinstallation sets iat=now-60) stays valid.
 	now := st.CurrentTime().Unix()
 	if exp <= now {
 		return nil, fmt.Errorf("JWT expired")
@@ -106,11 +105,10 @@ func (st *Store) ParseAndVerifyAppJWT(tokenStr string) (*App, error) {
 	return app, nil
 }
 
-// appJWTIssuer accepts both issuer shapes GitHub supports. Octokit serializes a
-// numeric App ID as a JSON number, while newer integrations may send the
-// GitHub App's Client ID as a JSON string (GitHub's currently recommended
-// form). Restrict the numeric form to a positive base-10 integer so floats,
-// objects, booleans, and null never become lookup keys by string coercion.
+// appJWTIssuer accepts both issuer shapes GitHub supports: a numeric App ID
+// (JSON number) or a Client ID (JSON string). The numeric form is restricted
+// to a positive base-10 integer so floats/objects/booleans/null never coerce
+// into lookup keys.
 func appJWTIssuer(raw json.RawMessage) (string, error) {
 	if len(raw) == 0 {
 		return "", fmt.Errorf("invalid iss claim: missing")
@@ -131,7 +129,6 @@ func appJWTIssuer(raw json.RawMessage) (string, error) {
 
 // Base64urlDecode handles JWT's unpadded base64url encoding.
 func Base64urlDecode(s string) ([]byte, error) {
-	// Add padding if needed
 	switch len(s) % 4 {
 	case 2:
 		s += "=="
@@ -144,6 +141,6 @@ func Base64urlDecode(s string) ([]byte, error) {
 const (
 	// jwtMaxLifetimeSeconds mirrors GitHub's 10-minute cap on app JWT expiry.
 	jwtMaxLifetimeSeconds = 600
-	// jwtClockDriftSeconds is the tolerance GitHub allows for client clock skew.
+	// jwtClockDriftSeconds is GitHub's tolerance for client clock skew.
 	jwtClockDriftSeconds = 60
 )

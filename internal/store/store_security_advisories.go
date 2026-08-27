@@ -41,17 +41,16 @@ type SecurityAdvisory struct {
 	Credits                []SecurityAdvisoryCredit        `json:"credits,omitempty"`
 }
 
-// SecurityAdvisoryCredit is one credited participant on a repository security
-// advisory, matching the spec's request member shape ({login, type}). bleephub
-// auto-accepts credits, so no per-credit state is stored — the rendered
+// SecurityAdvisoryCredit is one credited participant ({login, type}). bleephub
+// auto-accepts credits, so no per-credit state is stored; rendered
 // credits_detailed state is always "accepted".
 type SecurityAdvisoryCredit struct {
 	Login string `json:"login"`
 	Type  string `json:"type"`
 }
 
-// ValidAdvisoryCreditType reports whether t is one of the spec's
-// security-advisory-credit-types enum values.
+// ValidAdvisoryCreditType reports whether t is a security-advisory-credit-types
+// enum value.
 func ValidAdvisoryCreditType(t string) bool {
 	switch t {
 	case "analyst", "finder", "reporter", "coordinator", "remediation_developer",
@@ -89,19 +88,16 @@ type CreateAdvisoryReq struct {
 	Summary     string `json:"summary"`
 	Description string `json:"description"`
 	Severity    string `json:"severity"`
-	// CVEID is the spec's cve_id member: a reporter who already holds a CVE
-	// identifier names it at creation rather than requesting one.
+	// CVEID lets a reporter who already holds a CVE name it at creation.
 	CVEID     string  `json:"cve_id"`
 	CVSSScore float64 `json:"cvss_score"`
-	// CVSSVector is spelt cvss_vector_string, which is the member name
-	// repository-advisory-create and -update both use. It was cvss_vector,
-	// which no GitHub client sends, so every SDK's CVSS vector was silently
-	// discarded and the advisory came back with a null one.
+	// CVSSVector must be spelt cvss_vector_string (the member
+	// repository-advisory-create/-update use); cvss_vector silently discarded
+	// every SDK's vector.
 	CVSSVector string   `json:"cvss_vector_string"`
 	CWEs       []string `json:"cwe_ids"`
 	State      string   `json:"state"`
-	// StartPrivateFork asks for the temporary private fork maintainers
-	// collaborate on the fix in.
+	// StartPrivateFork requests the temporary private fork for fixing.
 	StartPrivateFork       bool   `json:"start_private_fork"`
 	VulnerableVersionRange string `json:"vulnerable_version_range"`
 	Vulnerabilities        []struct {
@@ -114,11 +110,9 @@ type CreateAdvisoryReq struct {
 		PatchedVersions        string   `json:"patched_versions"`
 		VulnerableFunctions    []string `json:"vulnerable_functions"`
 	} `json:"vulnerabilities"`
-	Credits []SecurityAdvisoryCredit `json:"credits"`
-	// CollaboratingUsers and CollaboratingTeams are the accounts granted
-	// access to the advisory's private drafting workspace.
-	CollaboratingUsers []string `json:"collaborating_users"`
-	CollaboratingTeams []string `json:"collaborating_teams"`
+	Credits            []SecurityAdvisoryCredit `json:"credits"`
+	CollaboratingUsers []string                 `json:"collaborating_users"`
+	CollaboratingTeams []string                 `json:"collaborating_teams"`
 }
 
 func ValidAdvisorySeverity(s string) bool {
@@ -157,7 +151,6 @@ func generateCVEID(now time.Time) (string, error) {
 	return fmt.Sprintf("CVE-%d-%04d", now.UTC().Year(), n%10000), nil
 }
 
-// CreateSecurityAdvisory creates a new security advisory in the given repo.
 func (st *Store) CreateSecurityAdvisory(repoID, authorID int, req CreateAdvisoryReq) *SecurityAdvisory {
 	adv, err := st.CreateSecurityAdvisoryE(repoID, authorID, req)
 	if err != nil {
@@ -250,15 +243,9 @@ func (st *Store) CreateSecurityAdvisoryE(repoID, authorID int, req CreateAdvisor
 	return adv, nil
 }
 
-// ListSecurityAdvisories returns all security advisories for a repo, newest first.
-// cloneSecurityAdvisory returns a deep copy safe to hand outside the store
-// lock (STORE-021). Mutations go through UpdateSecurityAdvisory (keyed by
-// id), never the getter's result.
-//
-// SecurityAdvisoryCredit is all-value, so its slice detaches by copying.
-// SecurityAdvisoryVulnerability is NOT: it carries a VulnerableFunctions
-// slice, so copying the outer slice alone would leave every clone sharing
-// one backing array with the live row.
+// cloneSecurityAdvisory deep-copies an advisory for handing outside the store
+// lock (STORE-021). SecurityAdvisoryVulnerability carries a VulnerableFunctions
+// slice, so each element needs its own copy, not just the outer slice.
 func cloneSecurityAdvisory(a *SecurityAdvisory) *SecurityAdvisory {
 	if a == nil {
 		return nil
@@ -293,6 +280,7 @@ func cloneSecurityAdvisory(a *SecurityAdvisory) *SecurityAdvisory {
 	return &clone
 }
 
+// ListSecurityAdvisories returns a repo's advisories, newest first.
 func (st *Store) ListSecurityAdvisories(repoID int) []*SecurityAdvisory {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -311,7 +299,6 @@ func (st *Store) ListSecurityAdvisories(repoID int) []*SecurityAdvisory {
 	return snapshotSecurityAdvisories(out)
 }
 
-// GetSecurityAdvisoryByGHSA returns an advisory by repo and GHSA ID.
 func (st *Store) GetSecurityAdvisoryByGHSA(repoID int, ghsaID string) *SecurityAdvisory {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -368,7 +355,7 @@ func (st *Store) RequestCVEE(id int) (bool, error) {
 	return true, nil
 }
 
-// CreateTemporaryFork creates a private fork of the advisory's repo for collaboration.
+// CreateTemporaryFork creates the private fork maintainers collaborate on.
 func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -472,15 +459,15 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 	st.ReposByName[fullName] = fork
 	st.IndexRepoNameLocked(fullName)
 	st.GitStorages[fullName] = stor
-	// The copied storage carries the source repository's HEAD; the private
-	// fork's own default branch is what its clones must check out.
+	// The copied storage carries the source's HEAD; point it at the fork's own
+	// default branch so clones check that out.
 	if err := SetGitHeadBranch(stor, fork.DefaultBranch); err != nil {
 		st.Logger.Error().Str("repo", fullName).Err(err).Msg("security advisory fork: could not point git HEAD at the default branch")
 	}
 
-	// One transaction: the advisory's PrivateForkID, the fork repo row, and its
-	// default discussion categories commit together, so a crash cannot record a
-	// fork ID whose repo never landed (STORE-001/002).
+	// One transaction: PrivateForkID, the fork repo row, and its discussion
+	// categories commit together, so a crash cannot record a fork ID whose repo
+	// never landed (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, fork.ID)
 
@@ -493,7 +480,6 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 	return fork
 }
 
-// CreateSecurityAdvisoryReport persists a report record.
 func (st *Store) CreateSecurityAdvisoryReport(report SecurityAdvisoryReport) *SecurityAdvisoryReport {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

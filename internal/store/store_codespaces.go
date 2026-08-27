@@ -21,39 +21,38 @@ import (
 )
 
 // Codespace represents a GitHub Codespace. Docker-backed instances use a
-// container; installations without a Docker CLI retain an isolated workspace
-// and expose the same lifecycle through the built-in workspace runtime.
+// container; without a Docker CLI they fall back to the built-in workspace
+// runtime with the same lifecycle.
 type Codespace struct {
-	ID                     int       `json:"id"`
-	Name                   string    `json:"name"`
-	OwnerLogin             string    `json:"owner_login"`
-	RepoKey                string    `json:"repo_key,omitempty"`
-	GitRef                 string    `json:"git_ref"`
-	MachineName            string    `json:"machine_name"`
-	MachineDisplayName     string    `json:"machine_display_name"`
-	MachineType            string    `json:"machine_type"`
-	DisplayName            string    `json:"display_name"`
-	Location               string    `json:"location,omitempty"`
-	WorkingDirectory       string    `json:"working_directory,omitempty"`
-	Geolocation            string    `json:"geolocation,omitempty"`
-	IdleTimeoutMinutes     int       `json:"idle_timeout_minutes"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
-	LastUsedAt             time.Time `json:"last_used_at"`
-	State                  string    `json:"state"`
-	ContainerID            string    `json:"container_id"`
-	ContainerName          string    `json:"container_name"`
-	DevcontainerPath       string    `json:"devcontainer_path"`
-	ImageName              string    `json:"image_name"`
-	RetentionPeriodMinutes int       `json:"retention_period_minutes"`
-	WorkspaceMount         string    `json:"workspace_mount,omitempty"`
-	Runtime                string    `json:"runtime,omitempty"`
-	// LatestExport records the most recent export of this codespace.
-	LatestExport *CodespaceExport `json:"latest_export,omitempty"`
+	ID                     int              `json:"id"`
+	Name                   string           `json:"name"`
+	OwnerLogin             string           `json:"owner_login"`
+	RepoKey                string           `json:"repo_key,omitempty"`
+	GitRef                 string           `json:"git_ref"`
+	MachineName            string           `json:"machine_name"`
+	MachineDisplayName     string           `json:"machine_display_name"`
+	MachineType            string           `json:"machine_type"`
+	DisplayName            string           `json:"display_name"`
+	Location               string           `json:"location,omitempty"`
+	WorkingDirectory       string           `json:"working_directory,omitempty"`
+	Geolocation            string           `json:"geolocation,omitempty"`
+	IdleTimeoutMinutes     int              `json:"idle_timeout_minutes"`
+	CreatedAt              time.Time        `json:"created_at"`
+	UpdatedAt              time.Time        `json:"updated_at"`
+	LastUsedAt             time.Time        `json:"last_used_at"`
+	State                  string           `json:"state"`
+	ContainerID            string           `json:"container_id"`
+	ContainerName          string           `json:"container_name"`
+	DevcontainerPath       string           `json:"devcontainer_path"`
+	ImageName              string           `json:"image_name"`
+	RetentionPeriodMinutes int              `json:"retention_period_minutes"`
+	WorkspaceMount         string           `json:"workspace_mount,omitempty"`
+	Runtime                string           `json:"runtime,omitempty"`
+	LatestExport           *CodespaceExport `json:"latest_export,omitempty"`
 }
 
-// CodespaceExport captures one export of a codespace to a repository
-// branch. GitHub addresses export details with the id "latest".
+// CodespaceExport captures one export of a codespace to a repository branch.
+// GitHub addresses export details with the id "latest".
 type CodespaceExport struct {
 	ID          string    `json:"id"`
 	State       string    `json:"state"`
@@ -66,16 +65,14 @@ type CodespaceExport struct {
 type CodespaceSecret struct {
 	Name            string    `json:"name"`
 	Key             string    `json:"key"`
-	Value           string    `json:"value"` // decrypted plaintext; never surfaced in an API response, persisted only in the encrypted codespace_secrets bucket
+	Value           string    `json:"value"` // decrypted plaintext; never returned by an API response, persisted only in the encrypted bucket
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	SelectedRepoIDs []int     `json:"selected_repository_ids,omitempty"`
 	Visibility      string    `json:"visibility,omitempty"`
 }
 
-// CodespaceMachine describes a machine type offered for Codespaces,
-// including the per-machine resources the codespace-machine schema
-// reports (cpus, memory_in_bytes, storage_in_bytes).
+// CodespaceMachine describes a machine type offered for Codespaces.
 type CodespaceMachine struct {
 	Name         string
 	DisplayName  string
@@ -94,9 +91,8 @@ var CodespaceMachines = []CodespaceMachine{
 	{Name: "largeLinux64", DisplayName: "16 cores, 32 GB RAM, 64 GB storage", Type: "premium", CPUs: 16, MemoryBytes: 32 * CodespaceGiB, StorageBytes: 64 * CodespaceGiB},
 }
 
-// CodespaceMachineByName resolves a catalog machine by name; unknown
-// names fall back to the default machine (CreateCodespace snaps every
-// codespace onto a catalog entry, so lookups always resolve).
+// CodespaceMachineByName resolves a catalog machine by name; unknown names fall
+// back to the default machine.
 func CodespaceMachineByName(name string) CodespaceMachine {
 	for _, m := range CodespaceMachines {
 		if m.Name == name {
@@ -106,9 +102,9 @@ func CodespaceMachineByName(name string) CodespaceMachine {
 	return CodespaceDefaultMachine()
 }
 
-// CodespaceMachineExists reports whether name matches a known catalog
-// machine exactly; unlike CodespaceMachineByName it does not fall back to
-// the default, so the create handlers can reject unknown names with 422.
+// CodespaceMachineExists reports whether name matches a catalog machine exactly;
+// unlike CodespaceMachineByName it does not fall back, so create handlers can
+// reject unknown names with 422.
 func CodespaceMachineExists(name string) bool {
 	for _, m := range CodespaceMachines {
 		if m.Name == name {
@@ -124,17 +120,15 @@ const (
 	codespaceDefaultImage    = "mcr.microsoft.com/devcontainers/universal:latest"
 )
 
-// persistCodespaceLocked writes a codespace row through to persistence.
-// Caller must hold st.Mu.
+// persistCodespaceLocked writes a codespace row through. Caller holds st.Mu.
 func (st *Store) persistCodespaceLocked(cs *Codespace) {
 	if st.Persist != nil {
 		st.Persist.MustPut("codespaces", strconv.Itoa(cs.ID), cs)
 	}
 }
 
-// persistCodespaceSecretScopeLocked writes a whole secret scope through
-// to persistence — the scope map is the bucket row, mirroring the
-// Dependabot secret buckets. Caller must hold st.Mu.
+// PersistCodespaceSecretScopeLocked writes a whole secret scope through; the
+// scope map is the bucket row. Caller holds st.Mu.
 func (st *Store) PersistCodespaceSecretScopeLocked(scope string) {
 	if st.Persist == nil {
 		return
@@ -147,8 +141,7 @@ func (st *Store) PersistCodespaceSecretScopeLocked(scope string) {
 	st.Persist.MustPut("codespace_secrets", scope, m)
 }
 
-// CodespaceCreateOptions carries the caller-supplied create fields that
-// CreateCodespace threads onto the codespace record beyond identity/ref.
+// CodespaceCreateOptions carries the create fields beyond identity/ref.
 type CodespaceCreateOptions struct {
 	MachineName            string
 	DisplayName            string
@@ -159,16 +152,13 @@ type CodespaceCreateOptions struct {
 	RetentionPeriodMinutes int
 }
 
-// CreateCodespace records a new codespace and starts its runtime. A Docker
-// image pull and container start can take minutes, so the codespace is
-// registered in the Creating state first and the store lock is released for
-// the duration. If Docker cannot provision the requested image, the prepared
-// workspace is retained and promoted to the built-in lifecycle runtime.
+// CreateCodespace records a new codespace and starts its runtime. The image
+// pull and container start run with the store lock released; if Docker cannot
+// provision the image, the prepared workspace is promoted to the built-in
+// runtime instead.
 func (st *Store) CreateCodespace(ownerLogin, repoKey, gitRef, location string, opts CodespaceCreateOptions) (*Codespace, error) {
 	if location == "" {
-		// GitHub assigns a region when the request names none; location is a
-		// non-empty enum (EastUs/SouthEastAsia/WestEurope/WestUs2), never ""
-		// (PAR-010).
+		// location is a non-empty enum, never "" (PAR-010).
 		location = "EastUs"
 	}
 	cs, workspace, cleanup, err := st.ReserveCodespace(ownerLogin, repoKey, gitRef, location, opts)
@@ -219,10 +209,10 @@ func (st *Store) ReserveCodespace(ownerLogin, repoKey, gitRef, location string, 
 		return nil, "", nil, err
 	}
 
-	// Snapshot repository identity and storage under the lock, then perform
-	// object/filesystem reads without blocking unrelated store operations.
-	// The identity check before publication rejects a workspace prepared from
-	// a repository that was deleted or replaced in the meantime.
+	// Snapshot repo identity and storage under the lock, then read
+	// objects/filesystem without holding it; the identity recheck before
+	// publication rejects a workspace prepared from a repo deleted or replaced
+	// in the meantime.
 	var repo *Repo
 	var stor gitStorage.Storer
 	st.Mu.RLock()
@@ -280,8 +270,6 @@ func (st *Store) ReserveCodespace(ownerLogin, repoKey, gitRef, location string, 
 		displayName = name
 	}
 	if location == "" {
-		// GitHub reports the Azure region a codespace runs in (e.g. "EastUs",
-		// "WestEurope"); "local" is not a value the real API ever emits.
 		location = "EastUs"
 	}
 	idleTimeout := opts.IdleTimeoutMinutes
@@ -329,21 +317,18 @@ func (st *Store) ReserveCodespace(ownerLogin, repoKey, gitRef, location string, 
 	return CloneCodespace(cs), repoDir, cleanup, nil
 }
 
-// GetCodespace returns a codespace by ID.
 func (st *Store) GetCodespace(id int) *Codespace {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return CloneCodespace(st.Codespaces[id])
 }
 
-// GetCodespaceByName returns a codespace by its unique name.
 func (st *Store) GetCodespaceByName(name string) *Codespace {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return CloneCodespace(st.CodespacesByName[name])
 }
 
-// ListCodespacesByOwner returns all codespaces owned by a user.
 func (st *Store) ListCodespacesByOwner(ownerLogin string) []*Codespace {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -357,7 +342,6 @@ func (st *Store) ListCodespacesByOwner(ownerLogin string) []*Codespace {
 	return snapshotCodespaces(out)
 }
 
-// ListCodespacesByRepo returns all codespaces for a repository.
 func (st *Store) ListCodespacesByRepo(repoKey string) []*Codespace {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -449,10 +433,9 @@ const (
 	codespaceWorkspaceNone codespaceWorkspaceKind = iota
 	// codespaceWorkspaceScratch is an export this server created and owns.
 	codespaceWorkspaceScratch
-	// codespaceWorkspaceBorrowed is the repository's own git directory: it
-	// outlives the codespace, so removing the codespace must leave it alone.
-	// Treating it as unremovable instead made the codespace, and through
-	// DeleteRepo's cascade the repository too, permanently undeletable.
+	// codespaceWorkspaceBorrowed is the repo's own git directory: it outlives the
+	// codespace, so deletion must leave it alone (treating it as unremovable made
+	// the codespace, and via DeleteRepo's cascade the repo, undeletable).
 	codespaceWorkspaceBorrowed
 	codespaceWorkspaceForeign
 )
@@ -467,8 +450,8 @@ func classifyCodespaceWorkspace(mount string) codespaceWorkspaceKind {
 	if pathIsUnderDir(mount, os.TempDir()) {
 		return codespaceWorkspaceScratch
 	}
-	// The temporary directory can move between restarts; the export prefix
-	// still identifies a directory this server created.
+	// TempDir can move between restarts; the export prefix still identifies a
+	// directory this server created.
 	if strings.HasPrefix(filepath.Base(mount), codespaceWorkspacePrefix) {
 		return codespaceWorkspaceScratch
 	}
@@ -484,7 +467,6 @@ func pathIsUnderDir(path, dir string) bool {
 	return strings.HasPrefix(cleanPath, cleanDir+string(os.PathSeparator))
 }
 
-// UpdateCodespace updates mutable fields of a codespace.
 func (st *Store) UpdateCodespace(id int, displayName, machineName string, retention int) (*Codespace, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -521,7 +503,7 @@ func (st *Store) UpdateCodespace(id int, displayName, machineName string, retent
 	return CloneCodespace(cs), true
 }
 
-// RefreshCodespaceState queries Docker for the current state of a codespace.
+// RefreshCodespaceState queries Docker for a codespace's current state.
 func (st *Store) RefreshCodespaceState(id int) string {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -542,7 +524,6 @@ func (st *Store) RefreshCodespaceState(id int) string {
 	return cs.State
 }
 
-// SetCodespaceContainerState sets the recorded state and container ID.
 func (st *Store) SetCodespaceContainerState(id int, containerID, state string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -555,8 +536,7 @@ func (st *Store) SetCodespaceContainerState(id int, containerID, state string) {
 	st.persistCodespaceLocked(cs)
 }
 
-// SetCodespaceState records the observed state of a codespace; markUsed
-// additionally bumps LastUsedAt (a successful start counts as use).
+// SetCodespaceState records a codespace's observed state; markUsed also bumps LastUsedAt.
 func (st *Store) SetCodespaceState(id int, state string, markUsed bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -579,8 +559,7 @@ func CodespaceSecretScopeKey(scope, key string) string { return scope + "\x1f" +
 func (st *Store) CreateCodespaceSecret(scope, name, value, visibility string, selectedRepoIDs []int) *CodespaceSecret {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	// Clone rather than adopt the caller's slice by reference (both the create
-	// and update branches below store it on the secret).
+	// Clone rather than adopt the caller's slice by reference.
 	selectedRepoIDs = append([]int(nil), selectedRepoIDs...)
 	m := st.CodespaceSecrets[scope]
 	if m == nil {
@@ -611,7 +590,6 @@ func (st *Store) CreateCodespaceSecret(scope, name, value, visibility string, se
 	return sec
 }
 
-// GetCodespaceSecret returns a secret by scope+name.
 func (st *Store) GetCodespaceSecret(scope, name string) *CodespaceSecret {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -621,7 +599,7 @@ func (st *Store) GetCodespaceSecret(scope, name string) *CodespaceSecret {
 	return nil
 }
 
-// ListCodespaceSecrets returns secrets in a scope sorted by name.
+// ListCodespaceSecrets returns a scope's secrets sorted by name.
 func (st *Store) ListCodespaceSecrets(scope string) []*CodespaceSecret {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -638,7 +616,6 @@ func (st *Store) ListCodespaceSecrets(scope string) []*CodespaceSecret {
 	return snapshotCodespaceSecrets(out)
 }
 
-// DeleteCodespaceSecret removes a secret.
 func (st *Store) DeleteCodespaceSecret(scope, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -651,7 +628,7 @@ func (st *Store) DeleteCodespaceSecret(scope, name string) bool {
 	return true
 }
 
-// SetCodespaceSecretSelectedRepos updates the selected repositories for an org secret.
+// SetCodespaceSecretSelectedRepos replaces an org secret's selected repositories.
 func (st *Store) SetCodespaceSecretSelectedRepos(scope, name string, ids []int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -665,8 +642,7 @@ func (st *Store) SetCodespaceSecretSelectedRepos(scope, name string, ids []int) 
 	return true
 }
 
-// AddCodespaceSecretSelectedRepo adds one repository to a secret's
-// selected list; adding an already-selected repository is a no-op.
+// AddCodespaceSecretSelectedRepo adds a repository to a secret's selected list; a duplicate is a no-op.
 func (st *Store) AddCodespaceSecretSelectedRepo(scope, name string, repoID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -686,8 +662,7 @@ func (st *Store) AddCodespaceSecretSelectedRepo(scope, name string, repoID int) 
 	return true
 }
 
-// RemoveCodespaceSecretSelectedRepo removes one repository from a
-// secret's selected list; removing an unselected repository is a no-op.
+// RemoveCodespaceSecretSelectedRepo removes a repository from a secret's selected list; an absent one is a no-op.
 func (st *Store) RemoveCodespaceSecretSelectedRepo(scope, name string, repoID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -717,10 +692,8 @@ var (
 	ErrRepoNameTaken         = fmt.Errorf("repository name already exists")
 )
 
-// ExportCodespace exports the codespace's current git ref to a new
-// branch (codespace-<name>) in its repository — the same state
-// transition GitHub performs when exporting unpushed codespace changes —
-// and records the export details under the id "latest".
+// ExportCodespace exports the codespace's git ref to a new branch
+// (codespace-<name>) in its repository and records the export under id "latest".
 func (st *Store) ExportCodespace(id int) (*CodespaceExport, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -764,11 +737,10 @@ func (st *Store) ExportCodespace(id int) (*CodespaceExport, error) {
 	return export, nil
 }
 
-// PublishCodespace creates a repository for an unpublished codespace and
-// associates the codespace with it. The repo row (with its default discussion
-// categories) and the codespace row commit in one transaction: a crash between
-// the two would otherwise leave the codespace permanently unpublishable — the
-// repo name is durably taken but the codespace never learned it (STORE-001/002).
+// PublishCodespace creates a repository for an unpublished codespace and links
+// them. The repo and codespace rows commit in one transaction (STORE-001/002):
+// a crash between them would durably take the repo name yet leave the codespace
+// permanently unpublishable.
 func (st *Store) PublishCodespace(id int, owner *User, name string, private bool) (*Codespace, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -850,8 +822,8 @@ func DockerStateToCodespaceState(containerID string) string {
 	}
 }
 
-// resolveDevcontainer reads .devcontainer/devcontainer.json from a repository
-// storage snapshot and extracts the image if present.
+// resolveDevcontainer reads the devcontainer config from a repo storage snapshot
+// and extracts the image if present.
 func resolveDevcontainer(stor gitStorage.Storer, gitRef string) (image, path string, ok bool) {
 	if stor == nil {
 		return "", "", false
@@ -878,10 +850,10 @@ func resolveDevcontainer(stor gitStorage.Storer, gitRef string) (image, path str
 	return "", "", false
 }
 
-// prepareCodespaceWorkspace returns a host directory that can be mounted as
-// /workspaces/<repo>. For filesystem-backed git storage it returns the git
-// directory directly; for in-memory storage it exports the ref into a temp dir.
-// The returned cleanup func removes any temp directory created.
+// prepareCodespaceWorkspace returns a host directory to mount as
+// /workspaces/<repo>: the git directory directly for filesystem-backed storage,
+// or a temp-dir export of the ref for in-memory storage. cleanup removes any
+// temp dir created.
 func prepareCodespaceWorkspace(repoKey string, repo *Repo, stor gitStorage.Storer, gitRef string) (dir string, cleanup func(), err error) {
 	cleanup = func() {}
 	if repoKey == "" {

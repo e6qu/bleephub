@@ -2,41 +2,27 @@ package store
 
 // OrgActionsPermissions models the organization-level Actions settings.
 type OrgActionsPermissions struct {
-	EnabledRepositories     string          `json:"enabled_repositories"`
-	SelectedRepositoriesURL string          `json:"selected_repositories_url,omitempty"`
-	AllowedActions          string          `json:"allowed_actions"`
-	SelectedActionsURL      string          `json:"selected_actions_url,omitempty"`
-	SelectedRepositoryIDs   []int           `json:"selected_repository_ids,omitempty"`
-	ActionsAllowed          *ActionsAllowed `json:"actions_allowed,omitempty"`
-	WorkflowPermissions     *WorkflowPermissions
-	CacheRetentionLimitDays int
-	CacheStorageLimitGB     int64
-	// ArtifactAndLogRetentionDays is the org-wide artifact/log retention
-	// setting (GET/PUT /orgs/{org}/actions/permissions/artifact-and-log-retention).
+	EnabledRepositories         string          `json:"enabled_repositories"`
+	SelectedRepositoriesURL     string          `json:"selected_repositories_url,omitempty"`
+	AllowedActions              string          `json:"allowed_actions"`
+	SelectedActionsURL          string          `json:"selected_actions_url,omitempty"`
+	SelectedRepositoryIDs       []int           `json:"selected_repository_ids,omitempty"`
+	ActionsAllowed              *ActionsAllowed `json:"actions_allowed,omitempty"`
+	WorkflowPermissions         *WorkflowPermissions
+	CacheRetentionLimitDays     int
+	CacheStorageLimitGB         int64
 	ArtifactAndLogRetentionDays int
-	// ForkPRApprovalPolicy names which fork-PR contributors a maintainer's
-	// approval is demanded of (actions-fork-pr-contributor-approval enum:
-	// first_time_contributors_new_to_github, first_time_contributors,
-	// all_external_contributors). Whether approval is demanded at all is
+	// ForkPRApprovalPolicy names which fork-PR contributors an approval is
+	// demanded of. Whether approval is demanded at all is
 	// ForkPRWorkflowsPrivateRepos.RequireApprovalForForkPRWorkflows.
-	ForkPRApprovalPolicy string
-	// ForkPRWorkflowsPrivateRepos holds the org's fork-PR-workflow policy
-	// for private repositories (four booleans).
-	ForkPRWorkflowsPrivateRepos *ForkPRWorkflowsPrivateRepos
-	// SelfHostedRunnersEnabledRepositories is the org policy controlling
-	// which repositories may use repository-level self-hosted runners
-	// (all | selected | none) with its selected repository ids.
+	ForkPRApprovalPolicy                 string
+	ForkPRWorkflowsPrivateRepos          *ForkPRWorkflowsPrivateRepos
 	SelfHostedRunnersEnabledRepositories string
 	SelfHostedRunnersSelectedRepoIDs     []int
-	// MaxCacheRetentionDays / MaxCacheSizeGB back the
-	// /organizations/{org}/actions/cache/{retention,storage}-limit
-	// policy endpoints.
-	MaxCacheRetentionDays int
-	MaxCacheSizeGB        int
+	MaxCacheRetentionDays                int
+	MaxCacheSizeGB                       int
 }
 
-// ForkPRWorkflowsPrivateRepos is the actions-fork-pr-workflows-private-repos
-// settings shape.
 type ForkPRWorkflowsPrivateRepos struct {
 	RunWorkflowsFromForkPullRequests  bool `json:"run_workflows_from_fork_pull_requests"`
 	SendWriteTokensToWorkflows        bool `json:"send_write_tokens_to_workflows"`
@@ -44,7 +30,6 @@ type ForkPRWorkflowsPrivateRepos struct {
 	RequireApprovalForForkPRWorkflows bool `json:"require_approval_for_fork_pr_workflows"`
 }
 
-// RepoActionsPermissions models the repository-level Actions settings.
 type RepoActionsPermissions struct {
 	Enabled                     bool            `json:"enabled"`
 	AllowedActions              string          `json:"allowed_actions"`
@@ -59,24 +44,20 @@ type RepoActionsPermissions struct {
 	CacheStorageLimitGB         int64
 }
 
-// ActionsAllowed is the "selected actions" allow-list shape.
 type ActionsAllowed struct {
 	GithubOwnedAllowed bool     `json:"github_owned_allowed"`
 	VerifiedAllowed    bool     `json:"verified_allowed"`
 	PatternsAllowed    []string `json:"patterns_allowed"`
 }
 
-// WorkflowPermissions is the default workflow-token permissions shape.
 type WorkflowPermissions struct {
 	DefaultWorkflowPermissions   string `json:"default_workflow_permissions"`
 	CanApprovePullRequestReviews bool   `json:"can_approve_pull_request_reviews"`
 }
 
-// lookupOrgActionsPermissionsLocked returns an org's stored Actions settings
-// without creating or amending them, and is therefore safe to call while
-// holding only a read lock. It returns nil when the org has never been
-// configured; callers that need a value should fall back to
-// DefaultOrgActionsPermissions rather than materializing one here.
+// LookupOrgActionsPermissionsLocked returns an org's stored Actions settings
+// without creating them; safe under a read lock. Returns nil when the org has
+// never been configured.
 func (st *Store) LookupOrgActionsPermissionsLocked(orgLogin string) *OrgActionsPermissions {
 	if st.OrgActionsPermissions == nil {
 		return nil
@@ -84,18 +65,14 @@ func (st *Store) LookupOrgActionsPermissionsLocked(orgLogin string) *OrgActionsP
 	return st.OrgActionsPermissions[orgLogin]
 }
 
-// getOrgActionsPermissionsLocked materializes an org's Actions settings,
-// creating the entry and filling in defaults for fields whose zero value is not
-// a valid configuration. It writes to the store, so the caller must hold the
-// WRITE lock — a read lock here is a concurrent map write, which is fatal and
-// unrecoverable rather than a recoverable panic.
+// GetOrgActionsPermissionsLocked materializes an org's Actions settings,
+// filling defaults for fields whose zero value is invalid. Writes to the store:
+// caller must hold the WRITE lock (a read lock is a fatal concurrent map write).
 func (st *Store) GetOrgActionsPermissionsLocked(orgLogin string) *OrgActionsPermissions {
 	if st.OrgActionsPermissions == nil {
 		st.OrgActionsPermissions = map[string]*OrgActionsPermissions{}
 	}
 	if p, ok := st.OrgActionsPermissions[orgLogin]; ok && p != nil {
-		// Materialize defaults for settings whose zero value is not a
-		// valid configuration (enum-shaped policies and limits).
 		if p.ArtifactAndLogRetentionDays == 0 {
 			p.ArtifactAndLogRetentionDays = 90
 		}
@@ -144,8 +121,6 @@ func (st *Store) getRepoActionsPermissionsLocked(repoKey string) *RepoActionsPer
 		st.RepoActionsPermissions = map[string]*RepoActionsPermissions{}
 	}
 	if p, ok := st.RepoActionsPermissions[repoKey]; ok && p != nil {
-		// Materialize the settings whose zero value is not a valid
-		// configuration, the same way the org materializer does.
 		if p.ForkPRContributorApproval == "" {
 			p.ForkPRContributorApproval = "first_time_contributors"
 		}
@@ -177,8 +152,6 @@ func (st *Store) SetRepoActionsPermissions(repoKey string, p *RepoActionsPermiss
 	}
 }
 
-// persistOrgActionsPermissionsLocked writes the org permissions when the store
-// lock is already held.
 func (st *Store) persistOrgActionsPermissionsLocked(orgLogin string) {
 	if st.Persist == nil {
 		return
@@ -188,8 +161,7 @@ func (st *Store) persistOrgActionsPermissionsLocked(orgLogin string) {
 	}
 }
 
-// AddOrgSelectedRepo adds a repository to the org's selected list (no-op if
-// already present).
+// AddOrgSelectedRepo adds a repository to the org's selected list.
 func (st *Store) AddOrgSelectedRepo(orgLogin string, repoID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -208,9 +180,8 @@ func (st *Store) RemoveOrgSelectedRepo(orgLogin string, repoID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	p := st.GetOrgActionsPermissionsLocked(orgLogin)
-	// A fresh slice rather than the in-place s[:0] idiom: the old backing
-	// array is still referenced by any list a reader was handed earlier, and
-	// rewriting it in place mutates their copy retroactively.
+	// Fresh slice, not in-place s[:0]: a reader handed the old backing array
+	// earlier must not see it rewritten (STORE-021).
 	kept := make([]int, 0, len(p.SelectedRepositoryIDs))
 	for _, id := range p.SelectedRepositoryIDs {
 		if id != repoID {
@@ -230,10 +201,8 @@ func (st *Store) SetOrgSelectedRepos(orgLogin string, repoIDs []int) {
 	st.persistOrgActionsPermissionsLocked(orgLogin)
 }
 
-// ListOrgSelectedRepos returns the org's selected repository IDs. An org that
-// has never been configured has no selected list; reporting that as empty is
-// correct and, unlike materializing a default here, does not write to the
-// store from underneath a read lock.
+// ListOrgSelectedRepos returns the org's selected repository IDs. Uses the
+// non-materializing lookup so a read lock never writes to the store.
 func (st *Store) ListOrgSelectedRepos(orgLogin string) []int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

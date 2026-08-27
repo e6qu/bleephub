@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// CommitStatus is a single commit status context.
 type CommitStatus struct {
 	ID          int               `json:"id"`
 	NodeID      string            `json:"node_id"`
@@ -36,7 +35,6 @@ func newCommitStatusStore(p *Persistence) *CommitStatusStore {
 	}
 }
 
-// Create appends a new status for the given repo+sha.
 func (s *CommitStatusStore) Create(repoKey, sha string, creatorID int, state, targetURL, description, context string) *CommitStatus {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -67,7 +65,7 @@ func (s *CommitStatusStore) Create(repoKey, sha string, creatorID int, state, ta
 	return st
 }
 
-// List returns statuses for a repo+ref sorted newest-first.
+// List returns statuses for a repo+ref newest-first.
 func (s *CommitStatusStore) List(repoKey, ref string) []*CommitStatus {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
@@ -81,10 +79,10 @@ func (s *CommitStatusStore) List(repoKey, ref string) []*CommitStatus {
 	return out
 }
 
-// Combined returns the combined status state plus the latest status per context.
+// Combined returns the combined state plus the latest status per context.
 func (s *CommitStatusStore) Combined(repoKey, ref string) (state string, total int, statuses []*CommitStatus) {
 	all := s.List(repoKey, ref)
-	// latest per context (all is already newest-first)
+	// all is newest-first, so first seen per context is the latest.
 	latestByCtx := map[string]*CommitStatus{}
 	for _, st := range all {
 		if _, ok := latestByCtx[st.Context]; !ok {
@@ -110,9 +108,8 @@ func (s *CommitStatusStore) persistStatuses(key string) {
 	s.Persist.MustPut("commit_statuses", key, s.byKey[key])
 }
 
-// moveRepoKeyBatch re-keys a repository's commit-status entries from oldFull to
-// newFull on a rename/transfer, staging its durable re-key into batch so it
-// commits in the same transaction as the rest of the move.
+// moveRepoKeyBatch re-keys a repo's commit-status entries on a rename/transfer,
+// staging the durable re-key into batch so it commits with the rest of the move.
 func (s *CommitStatusStore) moveRepoKeyBatch(oldFull, newFull string, batch *PersistBatch) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()

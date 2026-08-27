@@ -14,11 +14,9 @@ import (
 	"time"
 )
 
-// ArtifactStore holds artifact/cache metadata for @actions/artifact v4
-// and the byte backend used for artifact/cache/log content.
-// When dataDir is set, metadata and non-persistent local-development bytes
-// are written to disk; persisted server startup requires byteStore so durable
-// bytes are written to object storage.
+// ArtifactStore holds artifact/cache metadata for @actions/artifact v4 and the
+// byte backend for artifact/cache/log content. Persisted startup requires
+// byteStore so durable bytes reach object storage rather than local disk.
 type ArtifactStore struct {
 	Mu          sync.RWMutex          `json:"-"`
 	Artifacts   map[int64]*Artifact   `json:"-"`
@@ -32,23 +30,19 @@ type ArtifactStore struct {
 	Persist     *Persistence          `json:"-"`
 	revision    int64
 	refreshMu   sync.Mutex
-	// maxRepoCacheBytes is the per-repository cache budget; finalizing a cache
-	// that pushes a repo over it evicts least-recently-used finalized entries
-	// until the repo is back under budget. Defaults to GitHub's 10 GiB; kept as
-	// a field so tests can drive eviction with small caches.
+	// MaxRepoCacheBytes is the per-repo cache budget; finalizing over it evicts
+	// LRU finalized entries. A field so tests can drive eviction with small caches.
 	MaxRepoCacheBytes int64 `json:"-"`
 }
 
-// claimLog records the plan a log container was reserved for.
 func (as *ArtifactStore) ClaimLog(logID int, planID string) {
 	as.Mu.Lock()
 	defer as.Mu.Unlock()
 	as.logPlans[logID] = planID
 }
 
-// logBelongsToPlan reports whether planID reserved logID. A log id nobody
-// reserved belongs to nobody: uploads to it are refused rather than accepted
-// into a container no plan owns.
+// LogBelongsToPlan reports whether planID reserved logID. An unreserved log id
+// belongs to nobody, so uploads to it are refused.
 func (as *ArtifactStore) LogBelongsToPlan(logID int, planID string) bool {
 	if planID == "" {
 		return false
@@ -77,14 +71,10 @@ func NewArtifactStoreWithByteStore(dataDir string, byteStore ActionsByteStore) *
 	return store
 }
 
-// SetPersistence moves Actions artifact/cache metadata onto the same durable
-// SQLite/dqlite store as workflow runs. Object storage holds the bytes; these
-// records are the durable index that makes those bytes discoverable after a
-// restart without relying on one replica's local filesystem.
-//
-// Existing local metadata is migrated only when the durable buckets are
-// empty. Once durable metadata exists it is authoritative, preventing stale
-// files on one replica from overwriting newer shared records.
+// SetPersistence moves Actions artifact/cache metadata onto the durable
+// SQLite/dqlite store. Local metadata is migrated only when the durable buckets
+// are empty; once durable metadata exists it is authoritative, so a stale
+// replica cannot overwrite newer shared records.
 func (as *ArtifactStore) SetPersistence(p *Persistence) error {
 	if p == nil {
 		return nil
@@ -180,9 +170,9 @@ func (as *ArtifactStore) SetPersistence(p *Persistence) error {
 	return nil
 }
 
-// RefreshFromPersistenceIfStale brings Actions artifact/cache indexes written
-// by another dqlite replica into this process. In-flight local uploads are
-// deliberately preserved; only finalized rows are durable and replaceable.
+// RefreshFromPersistenceIfStale pulls Actions metadata written by another
+// dqlite replica into this process. In-flight local uploads are preserved; only
+// finalized rows are durable and replaceable.
 func (as *ArtifactStore) RefreshFromPersistenceIfStale() error {
 	as.Mu.RLock()
 	persist := as.Persist
@@ -337,7 +327,6 @@ func (as *ArtifactStore) ReserveID(bucket string, local *int64) (int64, error) {
 	return id, nil
 }
 
-// recoverFromDisk scans the artifacts directory and rebuilds the in-memory map.
 func (as *ArtifactStore) recoverFromDisk() {
 	as.recoverArtifactsFromDisk()
 	as.recoverCachesFromDisk()
@@ -347,7 +336,7 @@ func (as *ArtifactStore) recoverArtifactsFromDisk() {
 	artDir := filepath.Join(as.DataDir, "artifacts")
 	entries, err := os.ReadDir(artDir)
 	if err != nil {
-		return // Directory doesn't exist yet
+		return
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -412,8 +401,8 @@ func (as *ArtifactStore) recoverCachesFromDisk() {
 	}
 }
 
-// persistMeta writes finalized artifact metadata to durable persistence and
-// keeps the local development copy in sync when configured.
+// PersistMeta writes finalized artifact metadata to durable persistence, and to
+// the local disk copy when configured.
 func (as *ArtifactStore) PersistMeta(art *Artifact) error {
 	if as.Persist != nil && art.Finalized {
 		if err := as.Persist.Put(ActionsArtifactsBucket, strconv.FormatInt(art.ID, 10), art); err != nil {
@@ -446,9 +435,8 @@ func (as *ArtifactStore) WriteLogData(ctx context.Context, logID int, data []byt
 	return as.writeBytes(ctx, LogDataKey(logID), "", data)
 }
 
-// releaseLogClaimsForPlans drops the log-container claims held by the given
-// plans and reports the released log ids, so the caller can free the
-// in-memory log bytes those ids key. Only the in-memory claim registry is
+// ReleaseLogClaimsForPlans drops the log-container claims held by the given
+// plans and reports the released log ids. Only the in-memory claim registry is
 // touched; durable byte-store log objects are not.
 func (as *ArtifactStore) ReleaseLogClaimsForPlans(planIDs []string) []int {
 	if len(planIDs) == 0 {
@@ -473,8 +461,7 @@ func (as *ArtifactStore) ReleaseLogClaimsForPlans(planIDs []string) []int {
 }
 
 func (as *ArtifactStore) DeleteLogData(ctx context.Context, logID int) error {
-	// Deleting a run's logs releases the container too, so the claim does not
-	// outlive the bytes it guards.
+	// Releasing the claim so it does not outlive the bytes it guards.
 	as.Mu.Lock()
 	delete(as.logPlans, logID)
 	as.Mu.Unlock()
@@ -592,9 +579,9 @@ func (as *ArtifactStore) RenameRepository(oldFullName, newFullName string) error
 }
 
 // prepareRepositoryDeletion holds the artifact index stable while the caller
-// commits the durable intent. Calling the returned closure with a batch stages
-// metadata deletion and releases the lock; calling it with nil aborts without
-// mutation and releases the lock.
+// commits the durable intent. The returned closure stages metadata deletion
+// when given a batch, or aborts without mutation when given nil; either way it
+// releases the lock.
 func (as *ArtifactStore) prepareRepositoryDeletion(repoFullName string, logIDs map[int]bool, record *PendingDeletion) func(*PersistBatch) {
 	as.Mu.Lock()
 	for id, art := range as.Artifacts {
@@ -672,11 +659,9 @@ func (as *ArtifactStore) PersistCacheMeta(entry *CacheEntry) error {
 	return os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o600)
 }
 
-// writeCacheDataAt writes a ranged chunk to the cache's data file at the
-// offset its Content-Range declared, so out-of-order chunks land in place.
-// The in-memory entry.Data is authoritative for this process; this is the
-// on-disk copy used for restart recovery, so the error is returned for the
-// caller to surface rather than silently dropped.
+// WriteCacheDataAt writes a ranged chunk to the cache's on-disk data file at
+// its Content-Range offset, for restart recovery (entry.Data is authoritative
+// in-process).
 func (as *ArtifactStore) WriteCacheDataAt(entry *CacheEntry, chunk []byte, offset int64) error {
 	if as.ByteStore != nil {
 		return as.writeCacheData(context.Background(), entry)
@@ -684,8 +669,8 @@ func (as *ArtifactStore) WriteCacheDataAt(entry *CacheEntry, chunk []byte, offse
 	return as.WriteCacheChunkToDisk(entry, chunk, offset)
 }
 
-// writeCacheChunkToDisk lands one ranged chunk in the cache's local data file
-// at the offset its Content-Range declared. No-op in in-memory mode.
+// WriteCacheChunkToDisk lands one ranged chunk at its Content-Range offset in
+// the cache's local data file. No-op in in-memory mode.
 func (as *ArtifactStore) WriteCacheChunkToDisk(entry *CacheEntry, chunk []byte, offset int64) error {
 	if as.DataDir == "" {
 		return nil
@@ -709,8 +694,7 @@ func (as *ArtifactStore) WriteCacheChunkToDisk(entry *CacheEntry, chunk []byte, 
 	return f.Close()
 }
 
-// finalizedRepoCaches returns every finalized cache scoped to repo,
-// ordered by id for a stable list.
+// FinalizedRepoCaches returns every finalized cache for repo, ordered by id.
 func (as *ArtifactStore) FinalizedRepoCaches(repo string) []*CacheEntry {
 	as.Mu.RLock()
 	defer as.Mu.RUnlock()
@@ -740,7 +724,6 @@ func (as *ArtifactStore) FindArtifactByNameLocked(name, workflowRunBackendID str
 	return found
 }
 
-// Artifact represents an uploaded artifact.
 type Artifact struct {
 	ID                   int64     `json:"id"`
 	Name                 string    `json:"name"`
@@ -755,11 +738,10 @@ type Artifact struct {
 	Digest               string    `json:"digest,omitempty"`
 }
 
-// CacheEntry represents one immutable Actions dependency cache archive.
-// Entries are scoped to the repository whose run created them, mirroring
-// GitHub's per-repository cache isolation. DownloadToken plays the role of
-// GitHub's pre-signed archive URL: the cache toolkit fetches archiveLocation
-// with an unauthenticated client, so the URL itself must be unguessable.
+// CacheEntry is one immutable Actions dependency cache archive, scoped to the
+// repository whose run created it. DownloadToken stands in for GitHub's
+// pre-signed archive URL: the toolkit fetches it unauthenticated, so it must be
+// unguessable.
 type CacheEntry struct {
 	ID             int64     `json:"id"`
 	Repo           string    `json:"repo"`
@@ -772,11 +754,10 @@ type CacheEntry struct {
 	CreatedAt      time.Time `json:"createdAt"`
 	LastAccessedAt time.Time `json:"lastAccessedAt"`
 
-	// chunks holds the ranged bodies received for an unfinalized
-	// reservation; finalize tiles them into Data. Buffering what arrived
-	// instead of writing into a buffer sized from Content-Range keeps the
-	// memory a client can make this server allocate bounded by the bytes it
-	// actually uploaded.
+	// Chunks holds the ranged bodies received for an unfinalized reservation;
+	// finalize tiles them into Data. Buffering only what arrived bounds the
+	// memory a client can make this server allocate by the bytes it uploaded,
+	// not by the Content-Range it declared.
 	Chunks   []CacheChunk `json:"-"`
 	Received int64        `json:"-"`
 }
@@ -788,9 +769,8 @@ func CacheLookupKey(repo, key, version string) string {
 // defaultMaxRepoCacheBytes is GitHub's default per-repository Actions cache limit.
 const defaultMaxRepoCacheBytes = 10 << 30
 
-// JobMessageScopeAndRepo reads a dispatched job message's plan
-// scopeIdentifier and the repository it runs as. An operator-submitted job
-// (/internal/exec/submit) carries no repository and yields "".
+// JobMessageScopeAndRepo reads a dispatched job message's plan scopeIdentifier
+// and repository. An operator-submitted job carries no repository and yields "".
 func JobMessageScopeAndRepo(message string) (scopeID, repo string) {
 	var msg struct {
 		Plan struct {
@@ -820,7 +800,7 @@ func JobMessageScopeAndRepo(message string) (scopeID, repo string) {
 	return msg.Plan.ScopeIdentifier, repo
 }
 
-// CacheChunk is one ranged upload body and the offset it covers.
+// CacheChunk is one ranged upload body and its start offset.
 type CacheChunk struct {
 	Start int64  `json:"-"`
 	Data  []byte `json:"-"`

@@ -2,8 +2,7 @@ package store
 
 import "time"
 
-// AuthCode is a one-time-use OAuth authorization code keyed off a
-// client_id + state pair. Used by the web-flow endpoints below.
+// AuthCode is a one-time-use OAuth authorization code keyed off a client_id + state pair.
 type AuthCode struct {
 	Code        string
 	ClientID    string
@@ -15,7 +14,7 @@ type AuthCode struct {
 	ExpiresAt   time.Time
 }
 
-// createTokenLocked generates a new token (caller must hold st.Mu write lock).
+// CreateTokenLocked generates a new token; caller holds st.Mu write lock.
 func (st *Store) CreateTokenLocked(userID int, scopes string) *Token {
 	value, err := generateTokenValue()
 	if err != nil {

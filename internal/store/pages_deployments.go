@@ -5,20 +5,9 @@ import (
 	"time"
 )
 
-// GitHub Pages deployments + the Pages health check.
-// Endpoints:
-//
-//	POST /repos/{o}/{r}/pages/deployments
-//	GET  /repos/{o}/{r}/pages/deployments/{pages_deployment_id}
-//	GET  /repos/{o}/{r}/pages/deployments/{pages_deployment_id}/status
-//	POST /repos/{o}/{r}/pages/deployments/{pages_deployment_id}/cancel
-//	GET  /repos/{o}/{r}/pages/health
-//
-// A deployment publishes an Actions artifact to the repo's Pages site. The
-// publish is synchronous (there is no CDN tier to wait on), so a stored
-// deployment is already terminal: "succeed" — the same value real GitHub
-// reports once its pipeline finishes. Cancelling is therefore only possible
-// for a non-terminal deployment, which cannot be observed in-process.
+// PagesDeploymentRecord is one Pages deployment. The publish is synchronous
+// (no CDN tier), so a stored deployment is already terminal ("succeed") and
+// cancellation, which needs a non-terminal deployment, is never observable.
 type PagesDeploymentRecord struct {
 	ID           int       `json:"id"`
 	RepoID       int       `json:"repo_id"`
@@ -89,8 +78,8 @@ func (st *Store) GetPagesDeploymentByIdentifier(repoID int, ident string) *Pages
 	return nil
 }
 
-// SetPagesDeploymentStatus transitions a Pages deployment's status.
-// Returns false if the deployment does not exist.
+// SetPagesDeploymentStatus transitions a deployment's status, or false if it
+// does not exist.
 func (st *Store) SetPagesDeploymentStatus(repoID, id int, status string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

@@ -7,12 +7,10 @@ import (
 	"time"
 )
 
-// Organization artifact metadata: storage records (where an artifact
-// lives) and deployment records (where it runs), keyed by the
-// artifact's subject digest.
+// Organization artifact metadata: storage records (where an artifact lives) and
+// deployment records (where it runs), keyed by subject digest.
 
-// ArtifactStorageRecord records where an artifact identified by digest
-// is stored.
+// ArtifactStorageRecord records where a digest-identified artifact is stored.
 type ArtifactStorageRecord struct {
 	ID               int       `json:"id"`
 	OrgID            int       `json:"org_id"`
@@ -29,10 +27,8 @@ type ArtifactStorageRecord struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// ArtifactDeploymentRecord records one deployment of an artifact. A
-// deployment is identified by (logical environment, physical
-// environment, cluster, deployment name); repeated posts for the same
-// identity update the record in place.
+// ArtifactDeploymentRecord records one deployment, identified by (logical env,
+// physical env, cluster, deployment name); repeated posts update it in place.
 type ArtifactDeploymentRecord struct {
 	ID                  int               `json:"id"`
 	OrgID               int               `json:"org_id"`
@@ -51,10 +47,9 @@ type ArtifactDeploymentRecord struct {
 	UpdatedAt           time.Time         `json:"updated_at"`
 }
 
-// ArtifactDeploymentJob records one asynchronous bulk cluster update. The
-// implementation applies the validated batch before returning 202, so a newly
-// created job is already completed; keeping the job as a durable resource
-// preserves GitHub's polling contract and makes retries observable.
+// ArtifactDeploymentJob records one bulk cluster update. The batch is applied
+// before the 202, so a new job is already completed; it persists to preserve
+// GitHub's polling contract.
 type ArtifactDeploymentJob struct {
 	ID         int       `json:"job_id"`
 	OrgID      int       `json:"org_id"`

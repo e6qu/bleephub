@@ -6,9 +6,9 @@ import (
 	"strconv"
 )
 
-// ExprToString renders a value the way GitHub interpolates it into
-// strings: null→”, bools→true/false, numbers in shortest form,
-// arrays/objects as the literal words GitHub uses.
+// ExprToString renders a value as GitHub interpolates it into strings:
+// null→"", bools→true/false, numbers in shortest form, arrays/objects as the
+// literal words "Array"/"Object".
 func ExprToString(v interface{}) string {
 	switch t := v.(type) {
 	case nil:

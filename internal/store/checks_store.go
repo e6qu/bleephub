@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// CheckRun is a single check execution attached to a git ref (commit SHA).
-// Mirrors GitHub's Checks API shape. Created and updated by a GitHub App's
-// installation token; visible to anyone with read access to the repo.
+// CheckRun is a single check execution attached to a commit SHA, mirroring
+// GitHub's Checks API shape.
 type CheckRun struct {
 	ID          int64           `json:"id"`
 	NodeID      string          `json:"node_id"`
@@ -22,30 +21,28 @@ type CheckRun struct {
 	CompletedAt *time.Time      `json:"completed_at,omitempty"`
 	Output      *CheckRunOutput `json:"output,omitempty"`
 	DetailsURL  string          `json:"details_url"`
-	// Actions are the integrator-defined requested-action buttons attached to
-	// the run. GitHub's REST responses do not render them (they surface only
-	// as requested_action webhook triggers), so they persist on the record
-	// without a member in checkRunToJSON.
+	// Actions are the integrator-defined requested-action buttons. GitHub's REST
+	// responses do not render them (they surface only as requested_action webhook
+	// triggers), so checkRunToJSON emits no member for them.
 	Actions []*CheckRunAction `json:"actions,omitempty"`
 	AppID   int               `json:"app_id"`
 	SuiteID int64             `json:"check_suite_id"`
-	// RepoKey carries a real json name so persistence round-trips it
-	// (post-reload commit lookups match on it). Client responses never
-	// marshal this struct — checkRunToJSON emits an explicit map.
+	// RepoKey carries a real json name so persistence round-trips it (post-reload
+	// commit lookups match on it). Client responses go through checkRunToJSON.
 	RepoKey string `json:"repo_key"`
 }
 
-// CheckRunOutput is the title/summary/text/annotations bundle attached to a CheckRun.
+// CheckRunOutput is the title/summary/text/annotations bundle on a CheckRun.
 type CheckRunOutput struct {
 	Title            string             `json:"title,omitempty"`
 	Summary          string             `json:"summary,omitempty"`
 	Text             string             `json:"text,omitempty"`
 	AnnotationsCount int                `json:"annotations_count"`
-	Annotations      []*CheckAnnotation `json:"annotations"` // persisted with the run; rendered only via the annotations list endpoint
+	Annotations      []*CheckAnnotation `json:"annotations"` // rendered only via the annotations list endpoint
 	Images           []*CheckImage      `json:"images,omitempty"`
 }
 
-// CheckAnnotation is a per-line annotation attached to a CheckRun's output.
+// CheckAnnotation is a per-line annotation on a CheckRun's output.
 type CheckAnnotation struct {
 	Path            string `json:"path"`
 	StartLine       int    `json:"start_line"`
@@ -58,15 +55,15 @@ type CheckAnnotation struct {
 	RawDetails      string `json:"raw_details,omitempty"`
 }
 
-// CheckImage attaches an image (e.g. coverage report screenshot) to a CheckRun.
+// CheckImage attaches an image to a CheckRun.
 type CheckImage struct {
 	Alt      string `json:"alt"`
 	ImageURL string `json:"image_url"`
 	Caption  string `json:"caption,omitempty"`
 }
 
-// CheckRunAction is one requested-action button an integrator attaches to a
-// check run (the `actions` member of the create/update requests).
+// CheckRunAction is one requested-action button (the `actions` member of the
+// create/update requests).
 type CheckRunAction struct {
 	Label       string `json:"label"`
 	Description string `json:"description"`
@@ -87,8 +84,8 @@ type CheckSuite struct {
 	WorkflowName         string `json:"workflow_name,omitempty"`
 	WorkflowFileID       int64  `json:"workflow_file_id,omitempty"`
 	WorkflowFilePath     string `json:"workflow_file_path,omitempty"`
-	// RepoKey carries a real json name so persistence round-trips it;
-	// client responses go through checkSuiteToJSON (explicit map).
+	// RepoKey carries a real json name so persistence round-trips it; client
+	// responses go through checkSuiteToJSON.
 	RepoKey   string    `json:"repo_key"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -138,9 +135,8 @@ func (st *Store) GetCheckSuite(id int64) *CheckSuite {
 	if suite == nil {
 		return nil
 	}
-	// Return a snapshot, not the live pointer: the engine mutates the stored
-	// suite's fields under the lock, so a caller that reads fields off the
-	// returned pointer after RUnlock would race those writes.
+	// Snapshot, not the live pointer (STORE-021): the engine mutates suite fields
+	// under the lock, which a post-RUnlock read would race.
 	cp := *suite
 	return &cp
 }
@@ -158,8 +154,7 @@ func (st *Store) ListCheckSuitesForCommit(repoKey, headSHA string, appID int) []
 		if appID > 0 && s.AppID != appID {
 			continue
 		}
-		// Snapshot, not the live pointer — the engine mutates suite fields
-		// under the lock; callers read fields off the result after RUnlock.
+		// Snapshot, not the live pointer — see GetCheckSuite.
 		cp := *s
 		out = append(out, &cp)
 	}
@@ -172,12 +167,11 @@ func (st *Store) CreateCheckRun(repoKey, headSHA, name string, appID int, suiteI
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	// One transaction: an inline-created check suite and the check run that
-	// belongs to it commit together, so a crash cannot persist a check run whose
-	// suite was never written (STORE-001/002).
+	// One transaction: an inline-created suite and its check run commit together,
+	// so a crash cannot persist a run whose suite was never written
+	// (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	if suiteID == 0 {
-		// inline suite create (mirror logic from CreateCheckSuite without re-locking)
 		for _, s := range st.CheckSuites {
 			if s.RepoKey == repoKey && s.HeadSHA == headSHA && s.AppID == appID {
 				suiteID = s.ID
@@ -237,10 +231,9 @@ func (st *Store) GetCheckRun(id int64) *CheckRun {
 	return &cp
 }
 
-// FindCheckRunByNodeID resolves a check run's global id within one
-// repository, or nil. The repository is required: run ids are global, so the
-// caller's repository is what ties the id to a tenant, exactly as the REST
-// {owner}/{repo}/check-runs/{id} path does.
+// FindCheckRunByNodeID resolves a check run within one repository, or nil. The
+// repository is required: run ids are global, so it ties the id to a tenant as
+// the REST {owner}/{repo}/check-runs/{id} path does.
 func (st *Store) FindCheckRunByNodeID(repoKey, nodeID string) *CheckRun {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -357,10 +350,8 @@ func (st *Store) GetCheckSuitePreferences(repoKey string) []*CheckSuitePref {
 	return st.CheckSuitePrefs[repoKey]
 }
 
-// checkSuiteNodeID and checkRunNodeID mint the global ids the Checks surface
-// serves. They are minted from the row's own id — a node id must name exactly
-// one node, which a head-SHA-derived spelling cannot (every suite on a commit
-// would share one id, and the GraphQL mutations that address a suite or run by
-// node id could not tell them apart).
+// checkSuiteNodeID and checkRunNodeID mint node ids from the row's own id — a
+// node id must name exactly one node, which a head-SHA-derived spelling cannot
+// (every suite on a commit would collide).
 func checkSuiteNodeID(id int64) string { return fmt.Sprintf("CS_kwDO%08d", id) }
 func checkRunNodeID(id int64) string   { return fmt.Sprintf("CR_kwDO%08d", id) }

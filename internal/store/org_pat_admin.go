@@ -8,16 +8,15 @@ import (
 	"time"
 )
 
-// OrgPATPermissions groups the permissions a fine-grained PAT requested,
-// mirroring the organization-programmatic-access-grant permissions shape.
+// OrgPATPermissions mirrors the organization-programmatic-access-grant
+// permissions shape.
 type OrgPATPermissions struct {
 	Organization map[string]string `json:"organization,omitempty"`
 	Repository   map[string]string `json:"repository,omitempty"`
 	Other        map[string]string `json:"other,omitempty"`
 }
 
-// OrgPATGrantRequest is a pending request for organization access via a
-// fine-grained personal access token.
+// OrgPATGrantRequest is a pending request for org access via a fine-grained PAT.
 type OrgPATGrantRequest struct {
 	ID                  int               `json:"id"`
 	OrgLogin            string            `json:"org_login"`
@@ -33,7 +32,7 @@ type OrgPATGrantRequest struct {
 	CreatedAt           time.Time         `json:"created_at"`
 }
 
-// OrgPATGrant is an approved fine-grained personal access token grant.
+// OrgPATGrant is an approved fine-grained PAT grant.
 type OrgPATGrant struct {
 	ID                  int               `json:"id"`
 	OrgLogin            string            `json:"org_login"`
@@ -70,8 +69,8 @@ func (st *Store) persistOrgPATGrantsLocked(orgLogin string) {
 	}
 }
 
-// CreateOrgPATGrantRequest mints a real fine-grained token for the user and
-// files the pending grant request that references it.
+// CreateOrgPATGrantRequest mints a fine-grained token and files the pending
+// grant request referencing it.
 func (st *Store) CreateOrgPATGrantRequest(orgLogin string, ownerUserID int, tokenName string, reason *string, repositorySelection string, repositoryIDs []int, perms OrgPATPermissions, expiresAt *time.Time) (*OrgPATGrantRequest, error) {
 	return st.createOrgPATGrantRequestWithRandom(orgLogin, ownerUserID, tokenName, reason, repositorySelection, repositoryIDs, perms, expiresAt, rand.Reader)
 }
@@ -118,9 +117,8 @@ func (st *Store) createOrgPATGrantRequestWithRandom(orgLogin string, ownerUserID
 	return req, nil
 }
 
-// ReviewOrgPATGrantRequest resolves a pending request: approve converts it
-// into an active grant, deny removes it. Returns false when the request
-// does not exist.
+// ReviewOrgPATGrantRequest resolves a pending request: approve converts it into
+// an active grant, deny removes it. Returns false when it does not exist.
 func (st *Store) ReviewOrgPATGrantRequest(orgLogin string, requestID int, approve bool) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -156,8 +154,7 @@ func (st *Store) ReviewOrgPATGrantRequest(orgLogin string, requestID int, approv
 	return true
 }
 
-// RevokeOrgPATGrant removes an active grant. Returns false when it does not
-// exist.
+// RevokeOrgPATGrant removes an active grant. Returns false when it does not exist.
 func (st *Store) RevokeOrgPATGrant(orgLogin string, grantID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

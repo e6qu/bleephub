@@ -1,7 +1,6 @@
 package store
 
-// Store types and methods for GitHub Copilot Spaces — interactive AI
-// workspaces owned by a user or an organization, each carrying
+// GitHub Copilot Spaces: AI workspaces owned by a user or org, carrying
 // collaborators (users or teams, with a role) and attached resources.
 
 import (
@@ -10,8 +9,7 @@ import (
 	"time"
 )
 
-// CopilotSpace is one GitHub Copilot Space. Number identifies the space
-// within its owner; ID is globally unique.
+// CopilotSpace is one space. Number identifies it within its owner; ID is global.
 type CopilotSpace struct {
 	ID                  int64                       `json:"id"`
 	Number              int                         `json:"number"`
@@ -37,7 +35,6 @@ type CopilotSpaceCollaborator struct {
 	Role      string `json:"role"`       // reader | writer | admin
 }
 
-// CopilotSpaceResource is a resource attached to a space.
 type CopilotSpaceResource struct {
 	ID           int                    `json:"id"`
 	ResourceType string                 `json:"resource_type"`
@@ -46,9 +43,8 @@ type CopilotSpaceResource struct {
 	UpdatedAt    time.Time              `json:"updated_at"`
 }
 
-// CreateCopilotSpace creates a space for the owner, numbering it after
-// the owner's highest existing space so numbers are never reused within
-// an owner while IDs stay globally unique.
+// CreateCopilotSpace creates a space, numbering it past the owner's highest
+// existing space so numbers are never reused within an owner.
 func (st *Store) CreateCopilotSpace(ownerType, ownerLogin string, creatorID int, name, description, instructions, baseRole string) *CopilotSpace {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -88,23 +84,20 @@ func (st *Store) persistCopilotSpaceLocked(space *CopilotSpace) {
 	}
 }
 
-// SaveCopilotSpace bumps the space's UpdatedAt and persists it after
-// the caller mutated its fields, collaborators, or resources.
+// SaveCopilotSpace bumps UpdatedAt and persists a space the caller mutated.
 func (st *Store) SaveCopilotSpace(space *CopilotSpace) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	space.UpdatedAt = st.CurrentTime()
-	// The caller mutated a detached snapshot from GetCopilotSpace; publish it as
-	// the live row (copy-on-write) so the update is visible in memory, not just
-	// persisted.
+	// space is a detached snapshot from GetCopilotSpace; publish it as the live
+	// row (copy-on-write) so the update is visible in memory.
 	st.CopilotSpaces[space.ID] = space
 	st.persistCopilotSpaceLocked(space)
 }
 
-// cloneCopilotSpace deep-copies a space so a getter caller holds a snapshot
-// detached from the stored row: its Collaborators and Resources slices (and each
-// resource's Metadata map) are copied, so a reader can neither race SaveCopilotSpace's
-// in-place UpdatedAt bump nor mutate the stored space's members/resources.
+// cloneCopilotSpace deep-copies a space (Collaborators, Resources, and each
+// resource's Metadata) so a getter caller holds a snapshot detached from the
+// stored row (STORE-021).
 func cloneCopilotSpace(sp *CopilotSpace) *CopilotSpace {
 	if sp == nil {
 		return nil

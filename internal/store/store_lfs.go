@@ -5,28 +5,21 @@ import (
 	"time"
 )
 
-// Git LFS server state.
+// Git LFS server state. Object bytes live content-addressed in the S3-backed
+// ActionsByteStore, shared across repositories; this file keeps only the
+// metadata that bucket cannot derive:
 //
-// The object *bytes* never live here: they go to the S3-backed
-// ActionsByteStore under LFSObjectDataKey, which is content-addressed by the
-// object's oid and therefore shared by every repository that holds the same
-// content. What this file keeps is the two pieces of metadata an LFS server
-// cannot derive from a content-addressed bucket:
-//
-//   - LFSObjects: which oids each repository actually holds, and how large
-//     they are. Membership is per repository because the key is not: without
-//     it, anyone who learned an oid could pull a private repository's object
-//     through a repository of their own, and a batch response could not report
-//     a size for an object the client did not already describe.
+//   - LFSObjects: which oids each repository holds and their sizes. Membership
+//     is per repository so a leaked oid cannot pull a private object through
+//     another repository, and so a batch response can report sizes.
 //   - LFSLocks: the file locks of the LFS locking API.
 //
-// Registering an oid is also the *commit point* of an upload: the transfer
-// handler streams bytes to the byte store, verifies them against the advertised
-// oid and size, and only then registers. Bytes that fail verification are never
-// registered, so they are never served — see gh_repos_lfs.go.
+// Registering an oid is the commit point of an upload: bytes are verified
+// against the advertised oid and size before registration, so unverified bytes
+// are never served (see gh_repos_lfs.go).
 
-// LFSLock is one Git LFS file lock: an advisory claim on a path in a
-// repository, held by a user until they (or a pusher forcing it) release it.
+// LFSLock is one Git LFS file lock: an advisory claim on a path, held until the
+// owner or a forcing pusher releases it.
 type LFSLock struct {
 	ID        int       `json:"id"`
 	RepoKey   string    `json:"repo_key"`
@@ -38,8 +31,7 @@ type LFSLock struct {
 }
 
 // RegisterLFSObject records that a repository holds an LFS object of the given
-// size. It is idempotent: re-uploading or re-pushing the same object from a
-// second repository adds a membership row and shares the stored bytes.
+// size. Idempotent: a second repository adds a membership row and shares the bytes.
 func (st *Store) RegisterLFSObject(repoKey, oid string, size int64) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -53,8 +45,7 @@ func (st *Store) RegisterLFSObject(repoKey, oid string, size int64) {
 	}
 }
 
-// LFSObjectSize reports the stored size of an object held by this repository,
-// and whether the repository holds it at all.
+// LFSObjectSize reports an object's size and whether this repository holds it.
 func (st *Store) LFSObjectSize(repoKey, oid string) (int64, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -63,15 +54,10 @@ func (st *Store) LFSObjectSize(repoKey, oid string) (int64, bool) {
 	return size, ok
 }
 
-// LFSObjectStoredAnywhere reports whether any repository already holds this
-// oid, i.e. whether verified bytes for it are already in the byte store. The
-// upload path asks before writing: bytes under a content-addressed key that is
-// already registered were verified when they were written, and must not be
-// overwritten by a second upload claiming the same oid.
-//
-// It scans the per-repository membership rather than keeping a second index:
-// the map is one entry per (repository, object), and the alternative is a
-// refcount that has to stay correct across repository deletion and rename.
+// LFSObjectStoredAnywhere reports whether any repository holds this oid, i.e.
+// whether verified bytes are already in the byte store. The upload path checks
+// this before writing so a second upload claiming the same oid cannot overwrite
+// already-verified bytes.
 func (st *Store) LFSObjectStoredAnywhere(oid string) (int64, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -83,9 +69,8 @@ func (st *Store) LFSObjectStoredAnywhere(oid string) (int64, bool) {
 	return 0, false
 }
 
-// CreateLFSLock locks a path for a user. When the path is already locked it
-// returns the existing lock and false, which the locking API reports as a 409
-// naming the current holder.
+// CreateLFSLock locks a path for a user. An already-locked path returns the
+// existing lock and false (the locking API reports a 409 naming the holder).
 func (st *Store) CreateLFSLock(repoKey, path, ref string, ownerID int, ownerName string) (*LFSLock, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -117,8 +102,7 @@ func (st *Store) CreateLFSLock(repoKey, path, ref string, ownerID int, ownerName
 	return &snapshot, true
 }
 
-// ListLFSLocks returns a repository's locks ordered by id, as detached
-// snapshots (STORE-021).
+// ListLFSLocks returns a repository's locks by id, as detached snapshots (STORE-021).
 func (st *Store) ListLFSLocks(repoKey string) []*LFSLock {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -131,7 +115,7 @@ func (st *Store) ListLFSLocks(repoKey string) []*LFSLock {
 	return snapshotSlice(locks)
 }
 
-// GetLFSLock returns one lock as a detached snapshot, or nil.
+// GetLFSLock returns one lock as a detached snapshot (STORE-021), or nil.
 func (st *Store) GetLFSLock(repoKey string, id int) *LFSLock {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -144,8 +128,7 @@ func (st *Store) GetLFSLock(repoKey string, id int) *LFSLock {
 	return &snapshot
 }
 
-// DeleteLFSLock releases a lock, returning the released lock or nil when the
-// repository has no such lock.
+// DeleteLFSLock releases a lock, returning it or nil when no such lock exists.
 func (st *Store) DeleteLFSLock(repoKey string, id int) *LFSLock {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

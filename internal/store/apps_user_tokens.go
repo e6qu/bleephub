@@ -5,14 +5,10 @@ import (
 	"time"
 )
 
-// UserToServerToken is an OAuth-derived token bearing a user identity.
-//
-// Two prefix variants:
-//   - gho_  — classic OAuth-App user token, classic scopes (`repo`, `read:org`, …)
-//   - ghu_  — GitHub-App user-to-server token, scoped to the app's installation permissions
-//
-// Both carry the user identity through the request middleware. The difference is the
-// scope model and whether AppID is set (ghu_) vs OAuthAppClientID (gho_).
+// UserToServerToken is an OAuth-derived token bearing a user identity. Two
+// prefix variants: gho_ (classic OAuth-App user token) sets OAuthAppClientID
+// and classic Scopes; ghu_ (GitHub-App user-to-server) sets AppID and is scoped
+// to installation permissions.
 type UserToServerToken struct {
 	Token             string            `json:"token"`
 	UserID            int               `json:"user_id"`
@@ -30,8 +26,8 @@ type UserToServerToken struct {
 	Fingerprint       string            `json:"fingerprint,omitempty"`
 }
 
-// RefreshToken pairs with a UserToServerToken. Used to mint a fresh user token
-// past the user token's expiry without re-running the OAuth flow.
+// RefreshToken mints a fresh user token past its expiry without re-running the
+// OAuth flow.
 type RefreshToken struct {
 	Token            string
 	UserID           int
@@ -43,8 +39,7 @@ type RefreshToken struct {
 }
 
 // CreateUserToServerToken mints a gho_/ghu_ token (+ optional ghr_ pair).
-// Pass appID > 0 for ghu_ (GitHub-App user-to-server) or oauthClientID for gho_ (OAuth-App user).
-// If withRefresh is true, also mints a ghr_ refresh token.
+// appID > 0 yields ghu_; otherwise oauthClientID yields gho_.
 func (st *Store) CreateUserToServerToken(userID, appID int, oauthClientID, scopes string, ttl time.Duration, withRefresh bool) (*UserToServerToken, *RefreshToken) {
 	tok, rt, err := st.CreateUserToServerTokenE(userID, appID, oauthClientID, scopes, ttl, withRefresh)
 	if err != nil {
@@ -91,9 +86,8 @@ func (st *Store) CreateUserToServerTokenLocked(userID, appID int, oauthClientID,
 		CreatedAt:        now,
 	}
 
-	// One transaction: the access token and its refresh token commit together, so
-	// a crash cannot persist an access token whose refresh token was lost (or a
-	// refresh token orphaned from its access token) (STORE-001/002).
+	// Access token and refresh token commit in one transaction so a crash cannot
+	// orphan one from the other (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	var rt *RefreshToken
 	if withRefresh {
@@ -122,8 +116,7 @@ func (st *Store) CreateUserToServerTokenLocked(userID, appID int, oauthClientID,
 	return CloneUserToServerToken(tok), cloneRefreshToken(rt), nil
 }
 
-// SetUserToServerTokenInstallations binds the token to a set of installation
-// IDs (used when a token is scoped down to a specific installation target).
+// SetUserToServerTokenInstallations binds the token to a set of installation IDs.
 func (st *Store) SetUserToServerTokenInstallations(tokenStr string, installationIDs []int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -138,11 +131,9 @@ func (st *Store) SetUserToServerTokenInstallations(tokenStr string, installation
 	return true
 }
 
-// ScopeUserToServerToken atomically persists every capability constraint of a
-// scoped GitHub App user token. Nil permissions/repositoryIDs mean that
-// dimension was omitted and remains unrestricted; an explicit empty map/slice
-// means the caller intentionally scoped the token to no non-metadata
-// permission or no repository.
+// ScopeUserToServerToken persists a scoped GitHub App user token's capability
+// constraints. Nil permissions/repositoryIDs leave that dimension unrestricted;
+// an explicit empty map/slice scopes to none.
 func (st *Store) ScopeUserToServerToken(tokenStr string, installationIDs []int, permissions map[string]string, repositoryIDs []int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -170,7 +161,7 @@ func (st *Store) ScopeUserToServerToken(tokenStr string, installationIDs []int, 
 	return true
 }
 
-// LookupUserToServerToken returns the token + bearing user, or nil if not found/expired.
+// LookupUserToServerToken returns the token and bearing user, or nil if not found or expired.
 func (st *Store) LookupUserToServerToken(tokenStr string) (*UserToServerToken, *User) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -195,8 +186,8 @@ func (st *Store) RevokeUserToServerToken(tokenStr string) bool {
 	if tok == nil {
 		return false
 	}
-	// One transaction: the access token and its refresh token are revoked
-	// together, so a crash cannot leave one alive after the other (STORE-001/002).
+	// Access and refresh token revoked in one transaction so a crash cannot
+	// leave one alive after the other (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	delete(st.UserToServerTokens, tokenStr)
 	batch.Delete("user_to_server_tokens", tokenStr)
@@ -210,8 +201,8 @@ func (st *Store) RevokeUserToServerToken(tokenStr string) bool {
 	return true
 }
 
-// RotateUserToServerToken mints a fresh user-to-server token + refresh pair from a
-// valid refresh token. Old token + refresh are revoked. Returns nil if refresh is invalid.
+// RotateUserToServerToken mints a fresh token+refresh pair from a valid refresh
+// token, revoking the old pair. Returns nil if refresh is invalid.
 func (st *Store) RotateUserToServerToken(refreshTokenStr string) (*UserToServerToken, *RefreshToken) {
 	tok, rt, err := st.RotateUserToServerTokenE(refreshTokenStr)
 	if err != nil {
@@ -227,13 +218,10 @@ func (st *Store) RotateUserToServerTokenE(refreshTokenStr string) (*UserToServer
 	if rt == nil || st.CurrentTime().After(rt.ExpiresAt) {
 		return nil, nil, nil
 	}
-	// Revoke the matching user token (find by RefreshTokenValue). The deletes
-	// write through to disk so the rotated-out credentials stay dead after a
-	// restart instead of resurrecting from the persisted buckets, and commit in
-	// one transaction so a crash cannot leave the old access token alive without
-	// its refresh token (STORE-001/002). The replacement pair is then created in
-	// its own transaction; a crash between the two only forces re-authentication,
-	// never a live stale credential.
+	// Revoke the old pair in one write-through transaction so rotated-out
+	// credentials stay dead across a restart (STORE-001/002). The replacement is
+	// a separate transaction; a crash between the two only forces re-auth, never
+	// leaves a live stale credential.
 	batch := NewPersistBatch(st.Persist)
 	for k, v := range st.UserToServerTokens {
 		if v.RefreshTokenValue == refreshTokenStr {
@@ -250,14 +238,13 @@ func (st *Store) RotateUserToServerTokenE(refreshTokenStr string) (*UserToServer
 	return st.CreateUserToServerTokenLocked(rt.UserID, rt.AppID, rt.OAuthAppClientID, rt.Scopes, 8*time.Hour, true)
 }
 
-// RevokeUserGrant deletes every user-to-server + refresh token for (clientID, userID).
-// Mirrors GitHub's DELETE /applications/{client_id}/grant.
+// RevokeUserGrant deletes every user-to-server and refresh token for (clientID,
+// userID). Mirrors DELETE /applications/{client_id}/grant.
 func (st *Store) RevokeUserGrant(clientID string, userID int) int {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	// One transaction: every access token and its refresh token for this grant
-	// are revoked together, so a crash cannot leave part of a revoked grant alive
-	// (STORE-001/002).
+	// Whole grant revoked in one transaction so a crash cannot leave part of it
+	// alive (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	n := 0
 	for k, v := range st.UserToServerTokens {

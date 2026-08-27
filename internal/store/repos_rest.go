@@ -29,8 +29,8 @@ func NullableTimestamp(t time.Time) interface{} {
 	return t.UTC().Format(time.RFC3339)
 }
 
-// licenseNodeID returns the GitHub node ID for a license key, or a
-// deterministic fallback for keys outside the catalog.
+// licenseNodeID returns the node ID for a license key, or a deterministic
+// fallback for keys outside the catalog.
 func licenseNodeID(key string) string {
 	if tmpl, ok := LicenseTemplates[key]; ok {
 		return tmpl.NodeID

@@ -8,8 +8,7 @@ import (
 	"time"
 )
 
-// CreateRepoInvitation creates a pending invitation for a user to collaborate
-// on the repository. Used by tests and by future admin-facing create endpoints.
+// CreateRepoInvitation creates a pending collaborator invitation.
 func (st *Store) CreateRepoInvitation(repoKey, inviteeLogin, inviteeEmail string, inviterID int, permission string) *RepoInvitation {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -38,7 +37,7 @@ func (st *Store) CreateRepoInvitation(repoKey, inviteeLogin, inviteeEmail string
 	return inv
 }
 
-// ListPendingRepoInvitations returns pending invitations for a repository, sorted by ID.
+// ListPendingRepoInvitations returns a repository's pending invitations, sorted by ID.
 func (st *Store) ListPendingRepoInvitations(repoKey string) []*RepoInvitation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -66,8 +65,8 @@ func (st *Store) GetRepoInvitation(repoKey string, id int) *RepoInvitation {
 	return st.RepoInvitations[repoKey][id]
 }
 
-// UpdateRepoInvitation updates the permission on a pending invitation.
-// Returns the updated invitation, or nil if not found.
+// UpdateRepoInvitation changes the permission on a pending invitation, or
+// returns nil if not found.
 func (st *Store) UpdateRepoInvitation(repoKey string, id int, permission string) *RepoInvitation {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -87,7 +86,7 @@ func (st *Store) UpdateRepoInvitation(repoKey string, id int, permission string)
 	return inv
 }
 
-// DeleteRepoInvitation removes an invitation from a repository. Returns true if it existed.
+// DeleteRepoInvitation removes an invitation, returning true if it existed.
 func (st *Store) DeleteRepoInvitation(repoKey string, id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -126,11 +125,9 @@ func (st *Store) ListUserRepoInvitations(user *User) []*RepoInvitation {
 	return snapshotSlice(out)
 }
 
-// AcceptRepoInvitation accepts an invitation for the user, adding them as a
-// collaborator with the invitation's permission. Returns true on success.
 // AcceptRepoInvitation consumes a pending invitation and adds the user to the
-// repo's collaborators. It returns the repo's full name (so the caller can fire
-// the `member` webhook) and whether an invitation was accepted.
+// repo's collaborators. It returns the repo's full name (for the `member`
+// webhook) and whether an invitation was accepted.
 func (st *Store) AcceptRepoInvitation(id int, user *User) (string, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -162,10 +159,8 @@ func (st *Store) AcceptRepoInvitation(id int, user *User) (string, bool) {
 	st.RepoCollaborators[target.RepoKey][user.Login] = target.Permissions
 	repo.UpdatedAt = time.Now().UTC()
 	delete(st.RepoInvitations[target.RepoKey], id)
-	// One transaction: consuming the invitation, adding the collaborator and
-	// touching the repo commit together, so a crash cannot grant collaborator
-	// access while leaving the invitation live, or consume the invitation without
-	// granting access (STORE-001/002).
+	// One transaction, so a crash cannot grant access while leaving the
+	// invitation live, or consume it without granting access (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repo_invitations", target.RepoKey, st.RepoInvitations[target.RepoKey])
 	batch.Put("repo_collaborators", target.RepoKey, st.RepoCollaborators[target.RepoKey])
@@ -177,7 +172,6 @@ func (st *Store) AcceptRepoInvitation(id int, user *User) (string, bool) {
 }
 
 // DeclineRepoInvitation removes an invitation addressed to the user.
-// Returns true on success.
 func (st *Store) DeclineRepoInvitation(id int, user *User) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

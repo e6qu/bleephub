@@ -19,11 +19,8 @@ func (st *Store) PersistHostedRunnerCustomImageLocked(img *HostedRunnerCustomIma
 	}
 }
 
-// CreateHostedRunnerCustomImage registers a custom hosted-runner image
-// definition for an organization. On real GitHub, image definitions are
-// produced by the image-generation pipeline of a hosted runner created
-// with image_gen enabled; the REST v3 surface only lists, reads, and
-// deletes them, so this is the store-level creation entry point.
+// CreateHostedRunnerCustomImage registers a custom image for an org. The REST
+// v3 surface only lists/reads/deletes them, so creation lives here.
 func (st *Store) CreateHostedRunnerCustomImage(org, name, platform string) *HostedRunnerCustomImage {
 	return st.createHostedRunnerCustomImage(RunnerScope{Org: org}, name, platform)
 }
@@ -53,9 +50,8 @@ func (st *Store) createHostedRunnerCustomImage(target RunnerScope, name, platfor
 	return img
 }
 
-// AddHostedRunnerCustomImageVersion appends a version to a custom image
-// definition (the image-generation pipeline's output). Returns false
-// when the image doesn't exist or the version is already present.
+// AddHostedRunnerCustomImageVersion appends a version. Returns false when the
+// image doesn't exist or the version is already present.
 func (st *Store) AddHostedRunnerCustomImageVersion(imageID int, version string, sizeGB int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -79,8 +75,7 @@ func (st *Store) AddHostedRunnerCustomImageVersion(imageID int, version string, 
 	return true
 }
 
-// hostedRunnersLocked returns the target's hosted runners sorted by id.
-// Callers hold the store lock.
+// HostedRunnersLocked returns the target's hosted runners sorted by id. Callers hold the store lock.
 func (st *Store) HostedRunnersLocked(target RunnerScope) []*HostedRunner {
 	out := make([]*HostedRunner, 0)
 	for _, hr := range st.HostedRunners {
@@ -92,9 +87,8 @@ func (st *Store) HostedRunnersLocked(target RunnerScope) []*HostedRunner {
 	return out
 }
 
-// staticIPUsageLocked counts the static public IP addresses reserved by
-// the target's hosted runners: each static-IP runner reserves one address
-// per concurrent runner (maximum_runners). Callers hold the store lock.
+// StaticIPUsageLocked counts reserved static IPs: each static-IP runner
+// reserves one per concurrent runner (maximum_runners). Callers hold the lock.
 func (st *Store) StaticIPUsageLocked(target RunnerScope) int {
 	usage := 0
 	for _, hr := range st.HostedRunnersLocked(target) {
@@ -105,8 +99,7 @@ func (st *Store) StaticIPUsageLocked(target RunnerScope) int {
 	return usage
 }
 
-// customImagesLocked returns the target's custom image definitions sorted by
-// id. Callers hold the store lock.
+// CustomImagesLocked returns the target's custom images sorted by id. Callers hold the lock.
 func (st *Store) CustomImagesLocked(target RunnerScope) []*HostedRunnerCustomImage {
 	out := make([]*HostedRunnerCustomImage, 0)
 	for _, img := range st.HostedRunnerCustomImages {
@@ -129,7 +122,6 @@ func CustomImageMatchesTarget(image *HostedRunnerCustomImage, target RunnerScope
 	}
 }
 
-// HostedRunnerCustomImageVersion is one version of a custom image.
 type HostedRunnerCustomImageVersion struct {
 	Version      string    `json:"version"`
 	State        string    `json:"state"`

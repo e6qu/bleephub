@@ -38,7 +38,6 @@ func (st *Store) GetCodeQualitySetup(repoFullName string) *CodeQualitySetup {
 	return &CodeQualitySetup{RepoFullName: repoFullName, State: "not-configured", Languages: []string{}}
 }
 
-// SetCodeQualitySetup stores the repository's code quality setup.
 func (st *Store) SetCodeQualitySetup(setup *CodeQualitySetup) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -49,8 +48,7 @@ func (st *Store) SetCodeQualitySetup(setup *CodeQualitySetup) {
 	}
 }
 
-// PutCodeQualityFinding is the ingestion seam used by code-quality analysis.
-// Finding numbers are repository-scoped and stable across persistence reloads.
+// PutCodeQualityFinding ingests a finding. Numbers are repository-scoped.
 func (st *Store) PutCodeQualityFinding(finding *CodeQualityFinding) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

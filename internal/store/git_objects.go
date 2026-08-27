@@ -17,21 +17,16 @@ import (
 )
 
 // Git object-graph resolution shared by the REST handlers and the GraphQL
-// resolver layer, moved down from the server package on the ARCH-003
-// precedent that produced ResolveGitRef: these depend only on go-git storage,
-// and both API surfaces resolve the same revisions, trees and blobs.
+// resolver layer. These depend only on go-git storage.
 
 var (
-	// ErrGitTreeishNotFound reports a revision, ref or path that resolves to
-	// nothing in the repository.
 	ErrGitTreeishNotFound = errors.New("git treeish not found")
-	// ErrGitTreeishInvalidObject reports a revision that resolves to an object
-	// which cannot answer the request (a blob where a tree is required).
+	// ErrGitTreeishInvalidObject: a revision resolved to an object that cannot
+	// answer the request (a blob where a tree is required).
 	ErrGitTreeishInvalidObject = errors.New("git treeish must identify a commit or tree")
 )
 
-// ValidGitObjectID reports whether value is a full-length hexadecimal object
-// id.
+// ValidGitObjectID reports whether value is a full-length hex object id.
 func ValidGitObjectID(value string) bool {
 	if len(value) != len(plumbing.ZeroHash.String()) {
 		return false
@@ -41,10 +36,9 @@ func ValidGitObjectID(value string) bool {
 }
 
 // ResolveGitObjectReference resolves a ref name to the hash it records without
-// peeling annotated tags: `refs/...` verbatim, the literal HEAD symref, the
+// peeling annotated tags, trying `refs/...` verbatim, the HEAD symref, the
 // `heads/`/`tags/` shorthands, then branch and tag short names. found is false
-// when no reference carries the name (the caller may then read it as an object
-// id).
+// when no reference carries the name (the caller may then read it as an object id).
 func ResolveGitObjectReference(stor gitStorage.Storer, value string) (plumbing.Hash, bool, error) {
 	if stor == nil {
 		return plumbing.ZeroHash, false, nil
@@ -61,10 +55,8 @@ func ResolveGitObjectReference(stor gitStorage.Storer, value string) (plumbing.H
 	if strings.HasPrefix(value, "refs/") {
 		add(plumbing.ReferenceName(value))
 	} else {
-		// The literal HEAD is a ref github.com resolves: GET /git/trees/HEAD
-		// answers 200 from the default branch. It is tried first, the way git
-		// itself resolves the name, so a stray refs/heads/HEAD branch cannot
-		// shadow the symref.
+		// Try HEAD first, like git, so a stray refs/heads/HEAD cannot shadow the
+		// symref (github.com answers GET /git/trees/HEAD from the default branch).
 		if value == string(plumbing.HEAD) {
 			add(plumbing.HEAD)
 		}
@@ -85,8 +77,8 @@ func ResolveGitObjectReference(stor gitStorage.Storer, value string) (plumbing.H
 	return plumbing.ZeroHash, false, nil
 }
 
-// ResolvedReferenceHash follows a symbolic reference chain to the hash at its
-// end. seen breaks a symref cycle.
+// ResolvedReferenceHash follows a symref chain to the hash at its end. seen
+// breaks a cycle.
 func ResolvedReferenceHash(stor gitStorage.Storer, ref *plumbing.Reference, seen map[plumbing.ReferenceName]bool) (plumbing.Hash, error) {
 	if ref == nil || seen[ref.Name()] {
 		return plumbing.ZeroHash, ErrGitTreeishNotFound
@@ -105,8 +97,7 @@ func ResolvedReferenceHash(stor gitStorage.Storer, ref *plumbing.Reference, seen
 	return ResolvedReferenceHash(stor, target, seen)
 }
 
-// PeelGitTagObjects follows a chain of annotated tag objects to the first
-// non-tag object it points at.
+// PeelGitTagObjects follows annotated tag objects to the first non-tag object.
 func PeelGitTagObjects(stor gitStorage.Storer, hash plumbing.Hash) (plumbing.Hash, error) {
 	seen := map[plumbing.Hash]bool{}
 	for {
@@ -129,10 +120,9 @@ func PeelGitTagObjects(stor gitStorage.Storer, hash plumbing.Hash) (plumbing.Has
 	}
 }
 
-// ResolveGitTreeish implements GitHub's deliberately broader tree_sha
-// contract. A caller may supply a tree object SHA, a commit SHA, or a branch
-// or tag name. References are dereferenced (including annotated tags), while a
-// raw tag-object SHA is rejected just like github.com.
+// ResolveGitTreeish implements GitHub's broader tree_sha contract: a tree SHA,
+// commit SHA, or branch/tag name. References are dereferenced (including
+// annotated tags), while a raw tag-object SHA is rejected as on github.com.
 func ResolveGitTreeish(stor gitStorage.Storer, value string) (plumbing.Hash, *object.Tree, error) {
 	value = strings.Trim(value, "/")
 	if value == "" {
@@ -175,21 +165,16 @@ func ResolveGitTreeish(stor gitStorage.Storer, value string) (plumbing.Hash, *ob
 		if err != nil {
 			return plumbing.ZeroHash, nil, ErrGitTreeishNotFound
 		}
-		// GitHub identifies the response by the resolved commit SHA even
-		// though the entries come from that commit's root tree.
+		// GitHub identifies the response by the commit SHA, though the entries
+		// come from that commit's root tree.
 		return hash, tree, nil
 	default:
 		return plumbing.ZeroHash, nil, ErrGitTreeishInvalidObject
 	}
 }
 
-// ReadGitBlob returns a blob's full content.
-// OpenGitBlob streams a blob's contents and reports its size, for callers that
-// write those bytes straight out rather than inspecting them. Raw file serving
-// is the case that needs it: a repository may hold a blob far larger than the
-// per-request memory a server can afford, and ReadGitBlob would materialize
-// every byte of it before the first one reached the client.
-//
+// OpenGitBlob streams a blob's contents and reports its size, for raw file
+// serving where a blob may exceed the per-request memory ReadGitBlob would use.
 // The caller closes the reader.
 func OpenGitBlob(stor gitStorage.Storer, hash plumbing.Hash) (io.ReadCloser, int64, error) {
 	blob, err := object.GetBlob(stor, hash)
@@ -217,7 +202,7 @@ func ReadGitBlob(stor gitStorage.Storer, hash plumbing.Hash) ([]byte, error) {
 }
 
 // CommitTouchesPath reports whether a commit changed the file or directory at
-// requested relative to its first parent (or, for a root commit, contains it).
+// requested against its first parent (or, for a root commit, contains it).
 func CommitTouchesPath(commit *object.Commit, requested string) (bool, error) {
 	matches := func(candidate string) bool {
 		return candidate == requested || strings.HasPrefix(candidate, requested+"/")
@@ -263,10 +248,9 @@ func CommitTouchesPath(commit *object.Commit, requested string) (bool, error) {
 	return false, nil
 }
 
-// GitCommitDiffStats returns the line additions, line deletions and changed
-// file count a commit introduced against its first parent. A root commit is
-// measured against the empty tree, which is what `git show --stat` reports for
-// one.
+// GitCommitDiffStats returns the additions, deletions and changed-file count a
+// commit introduced against its first parent. A root commit is measured against
+// the empty tree, matching `git show --stat`.
 func GitCommitDiffStats(commit *object.Commit) (additions, deletions, changedFiles int, err error) {
 	tree, err := commit.Tree()
 	if err != nil {
@@ -309,7 +293,6 @@ func GitCommitDiffStats(commit *object.Commit) (additions, deletions, changedFil
 	return additions, deletions, changedFiles, nil
 }
 
-// GitObjectTypeOf reports the stored type of an object id.
 func GitObjectTypeOf(stor gitStorage.Storer, hash plumbing.Hash) (plumbing.ObjectType, error) {
 	if stor == nil {
 		return plumbing.InvalidObject, ErrGitTreeishNotFound
@@ -321,15 +304,14 @@ func GitObjectTypeOf(stor gitStorage.Storer, hash plumbing.Hash) (plumbing.Objec
 	return encoded.Type(), nil
 }
 
-// GitRevision is a resolved rev-parse result: the object a revision
-// expression names, and the type that object is stored as.
+// GitRevision is a resolved rev-parse result: the named object and its stored type.
 type GitRevision struct {
 	Hash plumbing.Hash
 	Type plumbing.ObjectType
 }
 
-// ResolveGitRevision resolves the revision expressions GitHub's
-// Repository.object(expression:) accepts, which is `git rev-parse` grammar:
+// ResolveGitRevision resolves the `git rev-parse` grammar GitHub's
+// Repository.object(expression:) accepts:
 //
 //	HEAD, @                     the repository's checked-out branch
 //	main, v1.0                  a branch or tag short name
@@ -343,14 +325,14 @@ type GitRevision struct {
 //	<rev>:<path>                the tree entry at path within <rev>'s tree
 //	<rev>:                      <rev>'s root tree
 //
-// A ref resolves to the object it records without peeling, so an annotated
-// tag's name resolves to the tag object exactly as it does on github.com.
+// A ref resolves without peeling, so an annotated tag's name resolves to the
+// tag object, as on github.com.
 func ResolveGitRevision(stor gitStorage.Storer, expression string) (GitRevision, error) {
 	if stor == nil || expression == "" {
 		return GitRevision{}, ErrGitTreeishNotFound
 	}
-	// A reference name can contain none of `:`, `~` or `^` (git-check-ref-format),
-	// so the first colon always separates the revision from the path.
+	// A ref name contains no `:`, `~` or `^` (git-check-ref-format), so the first
+	// colon separates the revision from the path.
 	rev, path, hasPath := strings.Cut(expression, ":")
 	base, err := resolveGitRevisionSpec(stor, rev)
 	if err != nil {
@@ -362,16 +344,16 @@ func ResolveGitRevision(stor gitStorage.Storer, expression string) (GitRevision,
 	return gitRevisionAtPath(stor, base, path)
 }
 
-// resolveGitRevisionSpec resolves the part of an expression before the path
-// separator: a base name plus any ancestry or peeling operators.
+// resolveGitRevisionSpec resolves the pre-path part of an expression: a base
+// name plus any ancestry or peeling operators.
 func resolveGitRevisionSpec(stor gitStorage.Storer, rev string) (GitRevision, error) {
 	if rev == "" {
 		return GitRevision{}, ErrGitTreeishNotFound
 	}
 	name, operators := rev, ""
 	if _, ok := resolveGitRevisionBase(stor, rev); !ok {
-		// The whole spelling names nothing; the operators start at the first
-		// character git forbids in a reference name.
+		// The whole spelling names nothing; operators start at the first char git
+		// forbids in a ref name.
 		index := strings.IndexAny(rev, "^~")
 		if index <= 0 {
 			return GitRevision{}, ErrGitTreeishNotFound
@@ -396,13 +378,13 @@ func resolveGitRevisionSpec(stor gitStorage.Storer, rev string) (GitRevision, er
 	return GitRevision{Hash: hash, Type: objectType}, nil
 }
 
-// resolveGitRevisionBase resolves a bare revision name — a reference, the HEAD
-// aliases, a full object id, or an unambiguous abbreviated one.
+// resolveGitRevisionBase resolves a bare revision name — a reference, a HEAD
+// alias, a full object id, or an unambiguous abbreviated one.
 func resolveGitRevisionBase(stor gitStorage.Storer, name string) (plumbing.Hash, bool) {
 	if name == "" {
 		return plumbing.ZeroHash, false
 	}
-	// `@` is git's alias for HEAD.
+	// `@` aliases HEAD.
 	if name == "@" {
 		name = string(plumbing.HEAD)
 	}
@@ -422,8 +404,8 @@ func resolveGitRevisionBase(stor gitStorage.Storer, name string) (plumbing.Hash,
 		}
 		return plumbing.ZeroHash, false
 	}
-	// git requires at least four characters of an abbreviated object id, and
-	// rejects a prefix that matches more than one object.
+	// git requires at least four chars of an abbreviated object id, and rejects
+	// a prefix matching more than one object.
 	if len(name) < 4 {
 		return plumbing.ZeroHash, false
 	}
@@ -468,8 +450,8 @@ func resolveAbbreviatedGitOID(stor gitStorage.Storer, prefix string) (plumbing.H
 	return found, true
 }
 
-// applyGitRevisionOperator consumes one `~`/`^` operator from the front of
-// operators and returns the object it selects plus the remaining operators.
+// applyGitRevisionOperator consumes one leading `~`/`^` operator and returns
+// the object it selects plus the remaining operators.
 func applyGitRevisionOperator(stor gitStorage.Storer, hash plumbing.Hash, operators string) (plumbing.Hash, string, error) {
 	switch operators[0] {
 	case '~':
@@ -514,7 +496,7 @@ func applyGitRevisionOperator(stor gitStorage.Storer, hash plumbing.Hash, operat
 }
 
 // gitRevisionOperatorCount reads the optional decimal count after `~` or `^`;
-// an absent count means one, matching git.
+// absent means one, matching git.
 func gitRevisionOperatorCount(operators string) (int, string) {
 	end := 0
 	for end < len(operators) && operators[end] >= '0' && operators[end] <= '9' {
@@ -670,9 +652,8 @@ func GitTreeEntryType(mode filemode.FileMode) string {
 	}
 }
 
-// GitBlobIsBinary applies git's own heuristic: content holding a NUL byte in
-// its leading bytes is binary, and is what GitHub reports Blob.text as null
-// for.
+// GitBlobIsBinary applies git's heuristic: a NUL byte in the leading bytes means
+// binary, which GitHub reports as Blob.text null.
 func GitBlobIsBinary(content []byte) bool {
 	const sniff = 8000
 	head := content
@@ -696,15 +677,12 @@ func AbbreviatedGitOID(oid string) string {
 	return oid[:7]
 }
 
-// Git object node ids carry the repository the object was reached through
-// alongside the object id, because a git object id alone is not globally
-// unique on a forge — the same blob exists in every fork. GitHub's ids encode
-// the same pair; these use the codec the rest of the store's node ids use
-// (a type prefix, then an opaque payload).
+// Git object node ids encode (repository, object id): a git object id alone is
+// not globally unique on a forge, since the same blob exists in every fork.
+// GitHub encodes the same pair.
 
 const (
-	// GitCommitNodeIDPrefix and friends are the type discriminators GitHub
-	// uses at the head of a git object's global id.
+	// Type discriminators GitHub puts at the head of a git object's global id.
 	GitCommitNodeIDPrefix = "C"
 	GitBlobNodeIDPrefix   = "B"
 	GitTreeNodeIDPrefix   = "T"
@@ -714,8 +692,7 @@ const (
 	gitNodeIDInfix = "_kwDO"
 )
 
-// GitObjectNodeID renders the global id of a git object reached through a
-// repository.
+// GitObjectNodeID renders a git object's global id.
 func GitObjectNodeID(prefix string, repoID int, oid string) string {
 	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%d:%s", repoID, oid)))
 	return prefix + gitNodeIDInfix + payload
@@ -743,8 +720,7 @@ func ParseGitObjectNodeID(nodeID string) (prefix string, repoID int, value strin
 	return prefix, repoID, value, true
 }
 
-// GitObjectNodeIDPrefixForType maps a stored object type to the node id prefix
-// its GraphQL type uses.
+// GitObjectNodeIDPrefixForType maps a stored object type to its node id prefix.
 func GitObjectNodeIDPrefixForType(objectType plumbing.ObjectType) string {
 	switch objectType {
 	case plumbing.CommitObject:
@@ -760,9 +736,8 @@ func GitObjectNodeIDPrefixForType(objectType plumbing.ObjectType) string {
 	}
 }
 
-// ListGitReferences returns the repository's references under prefix, sorted
-// alphabetically by full name. HEAD and other symrefs are excluded, matching
-// the refs GitHub's Repository.refs(refPrefix:) enumerates.
+// ListGitReferences returns references under prefix, sorted by full name.
+// Symrefs (HEAD) are excluded, matching Repository.refs(refPrefix:).
 func ListGitReferences(stor gitStorage.Storer, prefix string) ([]*plumbing.Reference, error) {
 	if stor == nil {
 		return nil, ErrGitTreeishNotFound

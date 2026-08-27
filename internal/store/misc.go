@@ -11,8 +11,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Responses go through userKeyToJSON; the json tags here shape the
-// persisted row, which must round-trip UserID to rebuild keysByUser.
+// UserKey json tags shape the persisted row (responses go through
+// userKeyToJSON); UserID must round-trip to rebuild KeysByUser.
 type UserKey struct {
 	ID        int       `json:"id"`
 	Key       string    `json:"key"`
@@ -20,16 +20,13 @@ type UserKey struct {
 	Verified  bool      `json:"verified"`
 	UserID    int       `json:"user_id"`
 	CreatedAt time.Time `json:"created_at"`
-	// parsed caches the parsed public key so SSH Git authentication compares
-	// wire encodings without re-parsing the authorized-key text on every
-	// attempt. Not persisted; rebuilt when the row is loaded.
+	// parsed caches the public key for SSH Git auth. Not persisted; rebuilt on load.
 	parsed ssh.PublicKey
 }
 
-// CacheParsedKey parses a user key's authorized-key text once, at
-// registration or load, so the SSH auth path never re-parses it. An
-// unparseable key stays registered — it is listed and deleted like any
-// other — but with no parsed form it can never authenticate.
+// CacheParsedKey parses a user key's authorized-key text into k.parsed. An
+// unparseable key stays registered (listed, deletable) but can never
+// authenticate.
 func CacheParsedKey(k *UserKey) error {
 	parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(k.Key))
 	if err != nil {
@@ -72,10 +69,8 @@ type GPGKey struct {
 }
 
 type PagesBuild struct {
-	// ID is the numeric build identifier used for path-based routing
-	// (GET .../pages/builds/{build_id}). GitHub's build object carries no
-	// top-level `id`; it is addressed via the trailing segment of `url`, so
-	// the field is not serialized.
+	// ID routes GET .../pages/builds/{build_id}. Not serialized: GitHub's build
+	// object has no top-level id, only the trailing segment of url.
 	ID        int64          `json:"-"`
 	URL       string         `json:"url"`
 	Status    string         `json:"status"`
@@ -109,15 +104,10 @@ type AuditEntry struct {
 	Version   string                 `json:"version"`
 }
 
-// ListOrgAuditEntries returns a newest-first, detached snapshot of the
-// audit-log entries an organization's audit log surfaces: entries scoped to
-// the organization, plus the instance-wide entries recorded with no org that
-// GitHub's org audit log also lists. It mirrors the filter the REST handler
-// (handleOrgAuditLog) applies, so the GraphQL Organization.auditLog connection
-// and GET /orgs/{org}/audit-log answer from the same rows.
-//
-// The returned slice and every entry (including its Data map) are copies, so a
-// caller may read them without holding the store lock (STORE-021).
+// ListOrgAuditEntries returns detached snapshots (STORE-021) of the audit
+// entries the org's log surfaces: org-scoped entries plus the org-less
+// instance-wide entries GitHub also lists. Mirrors handleOrgAuditLog's filter so
+// REST and GraphQL answer from the same rows.
 func (st *Store) ListOrgAuditEntries(org string) []*AuditEntry {
 	st.Misc.Mu.RLock()
 	defer st.Misc.Mu.RUnlock()
@@ -201,7 +191,7 @@ type MarketplacePurchase struct {
 	PlanName      string     `json:"plan_name"`
 	OnFreeTrial   bool       `json:"on_free_trial"`
 	FreeTrialEnds *time.Time `json:"free_trial_ends_on,omitempty"`
-	// user-marketplace-purchase members surfaced by GET /user/marketplace_purchases.
+	// Members surfaced by GET /user/marketplace_purchases.
 	UnitCount       *int                      `json:"unit_count,omitempty"`
 	NextBillingDate *time.Time                `json:"next_billing_date,omitempty"`
 	UpdatedAt       *time.Time                `json:"updated_at,omitempty"`
@@ -219,15 +209,12 @@ type MiscStore struct {
 	PagesByRepo      map[int]*PagesSite           `json:"-"`
 	PagesBuilds      map[string][]*PagesBuild     `json:"-"`
 	BranchProtection map[string]*BranchProtection `json:"-"`
-	// BranchProtectionPatterns holds the web-only fnmatch pattern rules per
-	// repository ID, consulted by the enforcement chokepoint when no
-	// exact-name rule matches (served under /ui-data).
+	// BranchProtectionPatterns holds web-only fnmatch pattern rules per repo ID,
+	// consulted when no exact-name rule matches (served under /ui-data).
 	BranchProtectionPatterns map[int][]*BranchProtectionPatternRule `json:"-"`
-	// BranchProtectionExtras holds the GraphQL-only members of a branch
-	// protection rule (deployment requirements, force-push bypass actors,
-	// the creator), keyed by the same BpKey as the rule they extend. They
-	// live beside rather than inside BranchProtection because that struct's
-	// JSON is GitHub's REST protection shape, which has no such members.
+	// BranchProtectionExtras holds a rule's GraphQL-only members (deployment
+	// requirements, force-push bypass actors, creator), keyed by BpKey. Kept
+	// outside BranchProtection, whose JSON is GitHub's REST protection shape.
 	BranchProtectionExtras    map[string]*BranchProtectionRuleExtras `json:"-"`
 	AuditLog                  []*AuditEntry                          `json:"-"`
 	AuditLogEvents            []*AuditLogEvent                       `json:"-"`
@@ -237,10 +224,9 @@ type MiscStore struct {
 	marketplaceDeliveries     map[string][]*WebhookDelivery
 	nextMarketplaceDeliveryID int
 	nextMarketplacePlanID     int
-	// oidcClaimKeys maps an OIDC-subject-customization scope ("repo:owner/name"
-	// or "org:login") to its include_claim_keys. A single shared slice let one
-	// repository's admin clobber every tenant's configuration and be read by an
-	// anonymous caller.
+	// OidcClaimKeys maps an OIDC-subject-customization scope ("repo:owner/name"
+	// or "org:login") to its include_claim_keys, per-scope to prevent cross-tenant
+	// clobbering.
 	OidcClaimKeys       map[string][]string  `json:"-"`
 	NextKeyID           int                  `json:"-"`
 	NextGPGKeyID        int                  `json:"-"`

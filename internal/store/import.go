@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// PutRepoImport stores (creating or replacing) the repo's import record.
+// PutRepoImport creates or replaces the repo's import record.
 func (st *Store) PutRepoImport(imp *RepoImport) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -16,9 +16,9 @@ func (st *Store) PutRepoImport(imp *RepoImport) {
 	}
 }
 
-// ReplaceRepoImportIfCurrent publishes the outcome of a fetch only while the
-// record it started from is still the one on file. A cancel or a restart
-// replaces that record, and a finishing fetch must not put it back.
+// ReplaceRepoImportIfCurrent publishes a fetch outcome only while the record it
+// started from is still on file, so a fetch finishing after a cancel or restart
+// cannot resurrect the superseded record.
 func (st *Store) ReplaceRepoImportIfCurrent(previous, next *RepoImport) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

@@ -9,12 +9,9 @@ import (
 	"time"
 )
 
-// Deployment / DeploymentStatus / Environment carry real json names on
-// their linkage + protection fields so persistence (which marshals the
-// structs as-is) round-trips them. Client responses never marshal these
-// structs — deploymentToJSON / deploymentStatusToJSON / environmentToJSON
-// emit explicit maps. Deployment.Statuses stays json:"-": statuses persist
-// in their own bucket and the loader relinks them via DeploymentID.
+// Deployment json tags shape the persisted row, not client responses (those go
+// through deploymentToJSON). Statuses stays json:"-": statuses persist in their
+// own bucket and the loader relinks them via DeploymentID.
 type Deployment struct {
 	ID            int                    `json:"id"`
 	NodeID        string                 `json:"node_id"`
@@ -52,7 +49,6 @@ type DeploymentStatus struct {
 	UpdatedAt      time.Time             `json:"updated_at"`
 }
 
-// Environment represents a deployment environment configured on a repo.
 type Environment struct {
 	ID        int                      `json:"id"`
 	NodeID    string                   `json:"node_id"`
@@ -62,8 +58,7 @@ type Environment struct {
 	RepoID    int                      `json:"repo_id"`
 	WaitTimer int                      `json:"wait_timer"`
 	Reviewers []map[string]interface{} `json:"reviewers"`
-	// PreventSelfReview refuses a deployment review submitted by the user
-	// who triggered the run being reviewed.
+	// PreventSelfReview refuses a review from the user who triggered the run.
 	PreventSelfReview      bool                     `json:"prevent_self_review"`
 	DeploymentBranchPolicy *DeploymentBranchPolicy  `json:"deployment_branch_policy"`
 	CreatedAt              time.Time                `json:"created_at"`
@@ -71,9 +66,8 @@ type Environment struct {
 	ProtectionRules        []map[string]interface{} `json:"protection_rules"`
 }
 
-// PinnedEnvironment is one environment pinned on its repository's
-// deployments view, at a 1-based position within the repository's pinned
-// list. Pins persist in their own bucket and reload with the store.
+// PinnedEnvironment pins an environment at a 1-based position in its
+// repository's pinned list.
 type PinnedEnvironment struct {
 	ID        int       `json:"id"`
 	NodeID    string    `json:"node_id"`
@@ -84,7 +78,6 @@ type PinnedEnvironment struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// DeploymentStore wraps deployment + status + environment CRUD with a mutex.
 type DeploymentStore struct {
 	Mu           sync.RWMutex `json:"-"`
 	deployments  map[int]*Deployment
@@ -160,9 +153,8 @@ func (ds *DeploymentStore) ListDeployments(repoID int) []*Deployment {
 	defer ds.Mu.RUnlock()
 	out := make([]*Deployment, len(ds.ByRepo[repoID]))
 	copy(out, ds.ByRepo[repoID])
-	// Deterministic, GitHub-faithful order: most-recent first (highest ID).
-	// The reload path repopulates byRepo in arbitrary map-iteration order, so
-	// without this sort pagination boundaries would shift across restarts.
+	// Most-recent first. Reload repopulates ByRepo in map order, so without this
+	// sort pagination boundaries shift across restarts.
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
 	return out
 }
@@ -179,9 +171,8 @@ func (ds *DeploymentStore) DeleteDeployment(id int) bool {
 }
 
 func (ds *DeploymentStore) deleteDeploymentLocked(d *Deployment) {
-	// Commit the deployment row and its statuses in one transaction so a crash
-	// can't drop the deployment while orphaning its statuses (STORE-001/002).
-	// The caller holds ds.Mu via defer, so a panic here unwinds and releases it.
+	// Deployment row and its statuses commit in one transaction so a crash can't
+	// orphan the statuses (STORE-001/002).
 	batch := NewPersistBatch(ds.Persist)
 	ds.deleteDeploymentBatchLocked(d, batch)
 	if err := batch.Commit(); err != nil {
@@ -353,8 +344,7 @@ func (ds *DeploymentStore) UpsertEnvironment(repoID int, name string) *Environme
 	return env
 }
 
-// SetEnvironmentProtection updates an environment's reviewer/wait-timer
-// protection config (the PUT environment body).
+// SetEnvironmentProtection updates an environment's reviewer and wait-timer config.
 func (ds *DeploymentStore) SetEnvironmentProtection(repoID int, name string, waitTimer *int, reviewers []map[string]interface{}) {
 	ds.Mu.Lock()
 	defer ds.Mu.Unlock()
@@ -376,9 +366,7 @@ func (ds *DeploymentStore) SetEnvironmentProtection(repoID int, name string, wai
 }
 
 // SetEnvironmentBranchPolicyConfig sets an environment's deployment branch
-// policy configuration. nil clears it (all branches may deploy) — the PUT
-// environment body treats an absent/null field as a reset, matching real
-// GitHub's full-replace semantics for this member.
+// policy. nil clears it (all branches may deploy), matching GitHub's full-replace.
 func (ds *DeploymentStore) SetEnvironmentBranchPolicyConfig(repoID int, name string, policy *DeploymentBranchPolicy) {
 	ds.Mu.Lock()
 	defer ds.Mu.Unlock()
@@ -394,8 +382,7 @@ func (ds *DeploymentStore) SetEnvironmentBranchPolicyConfig(repoID int, name str
 	}
 }
 
-// SetEnvironmentPreventSelfReview flips the environment's self-review
-// refusal (the PUT environment body's prevent_self_review member).
+// SetEnvironmentPreventSelfReview flips the environment's self-review refusal.
 func (ds *DeploymentStore) SetEnvironmentPreventSelfReview(repoID int, name string, prevent bool) {
 	ds.Mu.Lock()
 	defer ds.Mu.Unlock()
@@ -417,7 +404,6 @@ func (ds *DeploymentStore) GetEnvironment(repoID int, name string) *Environment 
 	return ds.environments[fmt.Sprintf("%d:%s", repoID, name)]
 }
 
-// GetEnvironmentByID returns an environment by its numeric id, or nil.
 func (ds *DeploymentStore) GetEnvironmentByID(id int) *Environment {
 	ds.Mu.RLock()
 	defer ds.Mu.RUnlock()
@@ -456,15 +442,13 @@ func (ds *DeploymentStore) DeleteEnvironment(repoID int, name string) bool {
 	if ds.Persist != nil {
 		ds.Persist.MustDelete("environments", key)
 	}
-	// A deleted environment cannot stay pinned.
 	ds.unpinEnvironmentLocked(repoID, env.ID, time.Now().UTC())
 	return true
 }
 
 // --- pinned environments -----------------------------------------------------
 
-// GetDeploymentByNodeID resolves a deployment's global id to a detached
-// snapshot, or nil.
+// GetDeploymentByNodeID returns a detached snapshot (STORE-021), or nil.
 func (ds *DeploymentStore) GetDeploymentByNodeID(nodeID string) *Deployment {
 	ds.Mu.RLock()
 	defer ds.Mu.RUnlock()
@@ -477,8 +461,7 @@ func (ds *DeploymentStore) GetDeploymentByNodeID(nodeID string) *Deployment {
 	return nil
 }
 
-// GetEnvironmentByNodeID resolves an environment's global id to a detached
-// snapshot, or nil.
+// GetEnvironmentByNodeID returns a detached snapshot (STORE-021), or nil.
 func (ds *DeploymentStore) GetEnvironmentByNodeID(nodeID string) *Environment {
 	ds.Mu.RLock()
 	defer ds.Mu.RUnlock()
@@ -491,10 +474,9 @@ func (ds *DeploymentStore) GetEnvironmentByNodeID(nodeID string) *Environment {
 	return nil
 }
 
-// PinEnvironment pins an environment at the end of its repository's pinned
-// list and answers the pin (a detached snapshot). Pinning an environment that
-// is already pinned answers the existing pin unchanged, matching
-// createEnvironment's "new or existing" idempotence.
+// PinEnvironment pins an environment at the end of its repository's pinned list
+// and returns a detached snapshot (STORE-021). Idempotent: an already-pinned
+// environment returns its existing pin unchanged.
 func (ds *DeploymentStore) PinEnvironment(repoID, envID int, now time.Time) *PinnedEnvironment {
 	ds.Mu.Lock()
 	defer ds.Mu.Unlock()
@@ -524,8 +506,8 @@ func (ds *DeploymentStore) PinEnvironment(repoID, envID int, now time.Time) *Pin
 	return &cp
 }
 
-// UnpinEnvironment removes an environment's pin and closes the position gap
-// it leaves. It reports whether a pin existed.
+// UnpinEnvironment removes an environment's pin and closes the position gap.
+// Reports whether a pin existed.
 func (ds *DeploymentStore) UnpinEnvironment(repoID, envID int, now time.Time) bool {
 	ds.Mu.Lock()
 	defer ds.Mu.Unlock()
@@ -554,8 +536,8 @@ func (ds *DeploymentStore) unpinEnvironmentLocked(repoID, envID int, now time.Ti
 	return true
 }
 
-// GetPinnedEnvironment answers the pin holding an environment (a detached
-// snapshot), or nil when the environment is not pinned.
+// GetPinnedEnvironment returns a detached snapshot (STORE-021) of the pin, or
+// nil when the environment is not pinned.
 func (ds *DeploymentStore) GetPinnedEnvironment(repoID, envID int) *PinnedEnvironment {
 	ds.Mu.RLock()
 	defer ds.Mu.RUnlock()
@@ -568,8 +550,8 @@ func (ds *DeploymentStore) GetPinnedEnvironment(repoID, envID int) *PinnedEnviro
 	return nil
 }
 
-// ListPinnedEnvironments answers the repository's pins as detached snapshots
-// in position order.
+// ListPinnedEnvironments returns the repository's pins as detached snapshots
+// (STORE-021) in position order.
 func (ds *DeploymentStore) ListPinnedEnvironments(repoID int) []*PinnedEnvironment {
 	ds.Mu.RLock()
 	defer ds.Mu.RUnlock()
@@ -582,9 +564,9 @@ func (ds *DeploymentStore) ListPinnedEnvironments(repoID int) []*PinnedEnvironme
 	return out
 }
 
-// ReorderPinnedEnvironment moves a pinned environment to the 1-based
-// position, shifting its neighbours; a position beyond either end clamps. It
-// reports whether the environment was pinned at all.
+// ReorderPinnedEnvironment moves a pinned environment to the 1-based position,
+// shifting neighbours; out-of-range positions clamp. Reports whether the
+// environment was pinned.
 func (ds *DeploymentStore) ReorderPinnedEnvironment(repoID, envID, position int, now time.Time) bool {
 	ds.Mu.Lock()
 	defer ds.Mu.Unlock()
@@ -614,8 +596,8 @@ func (ds *DeploymentStore) ReorderPinnedEnvironment(repoID, envID, position int,
 	return true
 }
 
-// renumberPinsLocked rewrites the repository's pin positions as the dense
-// 1..n sequence their slice order now holds, persisting every row that moved.
+// renumberPinsLocked rewrites pin positions to the dense 1..n sequence their
+// slice order holds, persisting every moved row.
 func (ds *DeploymentStore) renumberPinsLocked(repoID int, now time.Time) {
 	for i, pin := range ds.pinsByRepo[repoID] {
 		if pin.Position == i+1 {
@@ -678,9 +660,7 @@ type DeploymentBranchPolicy struct {
 	CustomBranchPolicies bool `json:"custom_branch_policies"`
 }
 
-// DeploymentStatusState is the state of a deployment status. GitHub emits only
-// these seven values; typing the field keeps the set in code. A typed string
-// marshals to JSON identically to a plain string.
+// DeploymentStatusState is one of the seven states GitHub emits.
 type DeploymentStatusState string
 
 func isCompletingDeploymentState(state string) bool {

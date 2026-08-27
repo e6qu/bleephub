@@ -6,12 +6,9 @@ import (
 	"time"
 )
 
-// Reaction represents a single user reaction on some parent entity.
-//
-// ParentType/ParentID/UserID carry real json names so persistence
-// round-trips the linkage (the reload path re-indexes byParent from them).
-// Client responses never marshal this struct — reactionToJSON emits an
-// explicit map.
+// Reaction is one user reaction on a parent entity. ParentType/ParentID/UserID
+// carry real json names so the reload path re-indexes byParent from them;
+// client responses go through reactionToJSON, not this struct.
 type Reaction struct {
 	ID         int       `json:"id"`
 	ParentType string    `json:"parent_type"`
@@ -44,7 +41,7 @@ func reactionParentKey(parentType string, parentID int) string {
 }
 
 // AddReaction creates or returns the existing (userID, content) reaction.
-// Real GitHub returns the same id on repeat POST (idempotent).
+// GitHub returns the same id on repeat POST (idempotent).
 func (rs *ReactionStore) AddReaction(parentType string, parentID int, userID int, content string) (*Reaction, bool, error) {
 	if !ValidReactionContent[content] {
 		return nil, false, fmt.Errorf("invalid reaction content: %s", content)
@@ -54,7 +51,7 @@ func (rs *ReactionStore) AddReaction(parentType string, parentID int, userID int
 	key := reactionParentKey(parentType, parentID)
 	for _, r := range rs.byParent[key] {
 		if r.UserID == userID && r.Content == content {
-			return r, true, nil // already exists
+			return r, true, nil
 		}
 	}
 	r := &Reaction{
@@ -93,9 +90,9 @@ func (rs *ReactionStore) ListReactions(parentType string, parentID int, contentF
 	return out
 }
 
-// DeleteReactionByUser removes a reaction only when it belongs to userID.
-// The ownership comparison and deletion happen under one lock so a request
-// cannot pass a stale authorization check and delete a replaced record.
+// DeleteReactionByUser removes a reaction only when it belongs to userID. The
+// ownership check and deletion happen under one lock so a stale authorization
+// check cannot delete a replaced record.
 func (rs *ReactionStore) DeleteReactionByUser(parentType string, parentID, reactionID, userID int) bool {
 	rs.Mu.Lock()
 	defer rs.Mu.Unlock()
@@ -122,10 +119,9 @@ func (rs *ReactionStore) DeleteReactionByUser(parentType string, parentID, react
 	return true
 }
 
-// DeleteParentsBatch removes every reaction attached to the given parent
-// entities. A non-nil batch stages the durable deletes into the caller's
-// transaction so they commit with the parent rows they belong to
-// (STORE-001/002); a nil batch commits each delete independently.
+// DeleteParentsBatch removes every reaction on the given parents. A non-nil
+// batch stages the deletes into the caller's transaction so they commit with
+// the parent rows (STORE-001/002); a nil batch commits each independently.
 func (rs *ReactionStore) DeleteParentsBatch(parentType string, parentIDs map[int]bool, batch *PersistBatch) {
 	if len(parentIDs) == 0 {
 		return
@@ -146,9 +142,8 @@ func (rs *ReactionStore) DeleteParentsBatch(parentType string, parentIDs map[int
 	}
 }
 
-// SummarizeReactions computes the per-content counts + total used by
-// real GitHub's reactions{url, total_count, +1, ...} block embedded in
-// issue / comment / release JSON.
+// SummarizeReactions computes the per-content counts and total for GitHub's
+// reactions{url, total_count, +1, ...} block.
 func (rs *ReactionStore) SummarizeReactions(parentType string, parentID int) map[string]interface{} {
 	rs.Mu.RLock()
 	defer rs.Mu.RUnlock()
@@ -162,7 +157,7 @@ func (rs *ReactionStore) SummarizeReactions(parentType string, parentID int) map
 		total++
 	}
 	return map[string]interface{}{
-		"url":         "", // caller fills in the absolute URL
+		"url":         "", // caller fills in
 		"total_count": total,
 		"+1":          counts["+1"],
 		"-1":          counts["-1"],
@@ -175,7 +170,7 @@ func (rs *ReactionStore) SummarizeReactions(parentType string, parentID int) map
 	}
 }
 
-// ValidReactionContent is the canonical set real GitHub accepts.
+// ValidReactionContent is the set GitHub accepts.
 var ValidReactionContent = map[string]bool{
 	"+1":       true,
 	"-1":       true,

@@ -11,14 +11,12 @@ func CloneCodespace(cs *Codespace) *Codespace {
 	return &view
 }
 
-// OrgCodespacesAccess records which organization users can create codespaces
-// billed to the organization.
+// OrgCodespacesAccess records which org users can create org-billed codespaces.
 type OrgCodespacesAccess struct {
 	Visibility        string   `json:"visibility"` // disabled | selected_members | all_members | all_members_and_outside_collaborators
 	SelectedUsernames []string `json:"selected_usernames,omitempty"`
 }
 
-// SetOrgCodespacesAccess replaces the org's codespaces access settings.
 func (st *Store) SetOrgCodespacesAccess(orgLogin, visibility string, selected []string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -32,8 +30,7 @@ func (st *Store) SetOrgCodespacesAccess(orgLogin, visibility string, selected []
 }
 
 // ModifyOrgCodespacesAccessUsers adds or removes usernames from the org's
-// selected-members codespaces access list. Returns false when the org's
-// access visibility is not selected_members.
+// selected-members list. Returns false when visibility is not selected_members.
 func (st *Store) ModifyOrgCodespacesAccessUsers(orgLogin string, add bool, usernames []string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -71,8 +68,8 @@ func (st *Store) ModifyOrgCodespacesAccessUsers(orgLogin string, add bool, usern
 	return true
 }
 
-// orgCodespacesInvalidUsers returns the usernames that are neither active
-// organization members nor collaborators on any of the org's repositories.
+// OrgCodespacesInvalidUsers returns usernames that are neither active org
+// members nor collaborators on any of the org's repositories.
 func (st *Store) OrgCodespacesInvalidUsers(org *Org, usernames []string) []string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

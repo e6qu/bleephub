@@ -8,10 +8,9 @@ import (
 	"time"
 )
 
-// DependabotAlertState is a Dependabot alert's lifecycle state. Transitions are
-// validated through validateDependabotTransition (open ⇄ dismissed); fixed and
-// auto_dismissed are produced by the platform. A typed string marshals to JSON
-// identically to a plain string.
+// DependabotAlertState is a Dependabot alert's lifecycle state. Only open ⇄
+// dismissed transitions are user-driven; fixed and auto_dismissed are
+// platform-produced.
 type DependabotAlertState string
 
 const (
@@ -21,7 +20,6 @@ const (
 	DependabotStateAutoDismissed DependabotAlertState = "auto_dismissed"
 )
 
-// DependabotAlert is a repo-scoped Dependabot security alert.
 type DependabotAlert struct {
 	ID                     int                  `json:"id"`
 	NodeID                 string               `json:"node_id"`
@@ -48,9 +46,8 @@ type DependabotAlert struct {
 	UpdatedAt              time.Time            `json:"updated_at"`
 }
 
-// DependabotSecret is a repository-level Dependabot secret. Value stores the
-// libsodium sealed-box ciphertext uploaded by the client; bleephub never needs
-// to decrypt it for the REST API.
+// DependabotSecret is a repository-level Dependabot secret. Value is the
+// client's libsodium sealed-box ciphertext, never decrypted here.
 type DependabotSecret struct {
 	Name      string    `json:"name"`
 	Value     string    `json:"value"` // encrypted (base64 sealed box)
@@ -59,8 +56,7 @@ type DependabotSecret struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// DependabotOrgSecret is an organization-level Dependabot secret with the
-// org-only visibility scoping (all|private|selected).
+// DependabotOrgSecret is an org-level Dependabot secret with visibility scoping.
 type DependabotOrgSecret struct {
 	DependabotSecret
 	Visibility      string `json:"visibility"`
@@ -125,9 +121,8 @@ func (st *Store) CreateDependabotAlertLocked(repoKey, pkgName, ecosystem, manife
 	return a
 }
 
-// cloneDependabotAlert returns a copy safe to hand outside the store lock
-// (STORE-021): DismissedAt, FixedAt and AutoDismissedAt are the only reference
-// fields. Mutations go through UpdateDependabotAlert against the live row.
+// cloneDependabotAlert returns a detached copy safe outside the store lock
+// (STORE-021); the three *time.Time fields are the only reference fields.
 func cloneDependabotAlert(a *DependabotAlert) *DependabotAlert {
 	if a == nil {
 		return nil
@@ -148,15 +143,13 @@ func cloneDependabotAlert(a *DependabotAlert) *DependabotAlert {
 	return &clone
 }
 
-// GetDependabotAlert returns an alert by repo + alert number.
 func (st *Store) GetDependabotAlert(repoKey string, number int) *DependabotAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return cloneDependabotAlert(st.DependabotAlertsByRepo[repoKey][number])
 }
 
-// ListDependabotAlerts returns repo alerts filtered/sorted per GitHub's list
-// endpoint.
+// ListDependabotAlerts returns repo alerts filtered and sorted per GitHub's list endpoint.
 func (st *Store) ListDependabotAlerts(repoKey, state, severity, packageName, ecosystem, manifest, sortField, direction string) []*DependabotAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -205,15 +198,13 @@ func (st *Store) ListDependabotAlerts(repoKey, state, severity, packageName, eco
 	return snapshotDependabotAlerts(out)
 }
 
-// UpdateDependabotAlert applies a state/dismissed_reason transition to a single
-// alert. Valid transitions mirror real GitHub: open → dismissed, dismissed → open.
+// UpdateDependabotAlert applies a state/dismissed_reason transition to one alert.
 func (st *Store) UpdateDependabotAlert(a *DependabotAlert, state, dismissedReason, dismissedComment string, dismissedBy *User) error {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	// `a` now comes from GetDependabotAlert, which returns a detached clone, so
-	// mutate the LIVE row (re-fetched by key) and write a fresh snapshot back
-	// into `a` for the caller to render.
+	// `a` is a detached clone from GetDependabotAlert; mutate the live row and
+	// write a fresh snapshot back into `a` for the caller (STORE-021).
 	live := st.DependabotAlertsByRepo[a.RepoKey][a.Number]
 	if live == nil {
 		return fmt.Errorf("dependabot alert %s#%d not found", a.RepoKey, a.Number)
@@ -280,7 +271,6 @@ func (st *Store) persistDependabotAlert(a *DependabotAlert) {
 	}
 }
 
-// UpsertDependabotSecret creates or updates a repository-level Dependabot secret.
 func (st *Store) UpsertDependabotSecret(repoKey, name, value, keyID string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -305,7 +295,6 @@ func (st *Store) UpsertDependabotSecret(repoKey, name, value, keyID string) bool
 	return existing == nil
 }
 
-// DeleteDependabotSecret removes a repository-level Dependabot secret.
 func (st *Store) DeleteDependabotSecret(repoKey, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -325,13 +314,12 @@ func (st *Store) DeleteDependabotSecret(repoKey, name string) bool {
 	return true
 }
 
-// UpsertDependabotOrgSecret creates or updates an organization-level Dependabot secret.
 func (st *Store) UpsertDependabotOrgSecret(orgLogin, name, value, keyID, visibility string, selectedRepoIDs []int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	// Clone rather than adopt the caller's slice by reference (both the create
-	// and update branches below store it on the secret).
+	// Clone: the slice is stored on the secret below, so don't adopt the
+	// caller's backing array.
 	selectedRepoIDs = append([]int(nil), selectedRepoIDs...)
 	now := st.CurrentTime()
 	m := st.DependabotOrgSecrets[orgLogin]
@@ -362,7 +350,6 @@ func (st *Store) UpsertDependabotOrgSecret(orgLogin, name, value, keyID, visibil
 	return existing == nil
 }
 
-// DeleteDependabotOrgSecret removes an organization-level Dependabot secret.
 func (st *Store) DeleteDependabotOrgSecret(orgLogin, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -382,8 +369,7 @@ func (st *Store) DeleteDependabotOrgSecret(orgLogin, name string) bool {
 	return true
 }
 
-// SetDependabotOrgSecretSelectedRepos replaces the selected repository IDs for
-// an org secret.
+// SetDependabotOrgSecretSelectedRepos replaces an org secret's selected repository IDs.
 func (st *Store) SetDependabotOrgSecretSelectedRepos(orgLogin, name string, ids []int) (*DependabotOrgSecret, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -403,12 +389,10 @@ func (st *Store) SetDependabotOrgSecretSelectedRepos(orgLogin, name string, ids 
 
 // --- user secrets ---
 
-// DependabotUserSecret is a user-level Dependabot secret.
 type DependabotUserSecret struct {
 	DependabotSecret
 }
 
-// UpsertDependabotUserSecret creates or updates a user-level Dependabot secret.
 func (st *Store) UpsertDependabotUserSecret(userLogin, name, value, keyID string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -433,7 +417,6 @@ func (st *Store) UpsertDependabotUserSecret(userLogin, name, value, keyID string
 	return existing == nil
 }
 
-// DeleteDependabotUserSecret removes a user-level Dependabot secret.
 func (st *Store) DeleteDependabotUserSecret(userLogin, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -453,13 +436,11 @@ func (st *Store) DeleteDependabotUserSecret(userLogin, name string) bool {
 	return true
 }
 
-// GetDependabotUserSecret returns a user-level Dependabot secret by name.
 func (st *Store) GetDependabotUserSecret(userLogin, name string) *DependabotUserSecret {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// Detach from the stored row so a reader cannot race the in-place update
-	// UpsertDependabotUserSecret applies to an existing secret. The struct has
-	// no reference fields, so a value copy is a full snapshot.
+	// Detach: the struct has no reference fields, so a value copy is a full
+	// snapshot (STORE-021).
 	s := st.DependabotUserSecrets[userLogin][name]
 	if s == nil {
 		return nil
@@ -468,7 +449,7 @@ func (st *Store) GetDependabotUserSecret(userLogin, name string) *DependabotUser
 	return &clone
 }
 
-// ListDependabotUserSecrets returns all user-level Dependabot secrets sorted by name.
+// ListDependabotUserSecrets returns a user's Dependabot secrets sorted by name.
 func (st *Store) ListDependabotUserSecrets(userLogin string) []*DependabotUserSecret {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -484,8 +465,8 @@ func (st *Store) ListDependabotUserSecrets(userLogin string) []*DependabotUserSe
 
 // --- org repository access ---
 
-// SetDependabotRepositoryAccess replaces the repository access list for an org.
-// Returns true when the list did not previously exist.
+// SetDependabotRepositoryAccess replaces an org's repository access list,
+// returning true when no list previously existed.
 func (st *Store) SetDependabotRepositoryAccess(orgLogin string, repoIDs []int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -502,7 +483,6 @@ func (st *Store) SetDependabotRepositoryAccess(orgLogin string, repoIDs []int) b
 	return !existed
 }
 
-// GetDependabotRepositoryAccess returns the repository access list for an org.
 func (st *Store) GetDependabotRepositoryAccess(orgLogin string) []int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -511,10 +491,9 @@ func (st *Store) GetDependabotRepositoryAccess(orgLogin string) []int {
 
 // --- org alerts ---
 
-// ListDependabotAlertsByOrg returns alerts for repos owned by the given
-// organization, filtered by state, ecosystem, and/or package-name prefix, then
-// sorted per GitHub's query parameters. Unknown filter values are accepted
-// but produce no matches rather than a 400.
+// ListDependabotAlertsByOrg returns alerts for an org's repos, filtered and
+// sorted per GitHub's query parameters. Unknown filter values match nothing
+// rather than 400.
 func (st *Store) ListDependabotAlertsByOrg(orgID int, state, ecosystem, packageName, sortField, direction string) []*DependabotAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

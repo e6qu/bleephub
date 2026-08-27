@@ -58,8 +58,8 @@ func (st *Store) GetNetworkConfiguration(orgLogin, id string) *NetworkConfigurat
 	return st.OrgNetworkConfigurations[orgLogin][id]
 }
 
-// relinkNetworkSettingsLocked points the settings resources the
-// configuration references back at it, and clears stale back-references.
+// relinkNetworkSettingsLocked points referenced settings resources back at the
+// configuration and clears stale back-references.
 func (st *Store) relinkNetworkSettingsLocked(orgLogin string, c *NetworkConfiguration) {
 	linked := map[string]bool{}
 	for _, id := range c.NetworkSettingsIDs {
@@ -161,9 +161,9 @@ func (st *Store) DeleteNetworkConfiguration(orgLogin, id string) bool {
 			res.NetworkConfigurationID = ""
 		}
 	}
-	// One transaction: dropping the configuration and detaching it from every
-	// settings resource commit together, so a crash cannot leave a settings
-	// resource pointing at a deleted configuration (STORE-001/002).
+	// Drop the configuration and detach it from every settings resource in one
+	// transaction, so a crash cannot leave a resource pointing at a deleted
+	// configuration (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("org_network_configurations", orgLogin, st.OrgNetworkConfigurations[orgLogin])
 	batch.Put("org_network_settings", orgLogin, st.OrgNetworkSettings[orgLogin])

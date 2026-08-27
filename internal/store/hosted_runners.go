@@ -2,8 +2,8 @@ package store
 
 import "time"
 
-// HostedRunner models one GitHub-hosted runner configured in an organization
-// or enterprise (the actions-hosted-runner resource).
+// HostedRunner is one GitHub-hosted runner (the actions-hosted-runner
+// resource) configured in an org or enterprise.
 type HostedRunner struct {
 	ID               int        `json:"id"`
 	Org              string     `json:"org"`
@@ -24,8 +24,8 @@ type HostedRunner struct {
 	CreatedAt        time.Time  `json:"created_at"`
 }
 
-// HostedRunnerCustomImage models one custom runner image definition
-// (the actions-hosted-runner-custom-image resource) with its versions.
+// HostedRunnerCustomImage is one custom runner image definition (the
+// actions-hosted-runner-custom-image resource) with its versions.
 type HostedRunnerCustomImage struct {
 	ID         int                               `json:"id"`
 	Org        string                            `json:"org"`

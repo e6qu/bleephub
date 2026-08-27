@@ -15,8 +15,7 @@ var (
 	ErrTeamSlugConflict = errors.New("team slug already exists")
 )
 
-// OrgRole is a user's role in an organization. The values are GitHub's
-// wire enum for org-membership role.
+// OrgRole is a user's role in an organization (GitHub's wire enum).
 type OrgRole string
 
 const (
@@ -24,8 +23,8 @@ const (
 	OrgRoleMember OrgRole = "member"
 )
 
-// MembershipState is the lifecycle state of an org membership: "pending"
-// while an invitation awaits acceptance, "active" once accepted.
+// MembershipState is the lifecycle state of an org membership: "pending" while
+// an invitation awaits acceptance, "active" once accepted.
 type MembershipState string
 
 const (
@@ -68,9 +67,8 @@ const (
 
 // Org represents a GitHub organization account.
 //
-// MembersCanCreateRepositories is a pointer because GitHub's default is
-// true: a nil value (including rows persisted before the field existed)
-// means "default", not false.
+// The *bool member-privilege fields are pointers because nil means "GitHub's
+// default for that field", not false.
 type Org struct {
 	ID                           int    `json:"id"`
 	NodeID                       string `json:"node_id"`
@@ -87,23 +85,19 @@ type Org struct {
 	BillingEmail                 string `json:"billing_email"`
 	DefaultRepositoryPermission  string `json:"default_repository_permission"` // "" = GitHub default "read"
 	MembersCanCreateRepositories *bool  `json:"members_can_create_repositories"`
-	// Granular member-privilege toggles. nil = GitHub's default for that field
-	// (true for repos/pages/teams, false for forking private repos).
+	// nil defaults: true for repos/pages/teams, false for forking private repos.
 	MembersCanCreatePublicRepositories  *bool `json:"members_can_create_public_repositories"`
 	MembersCanCreatePrivateRepositories *bool `json:"members_can_create_private_repositories"`
 	MembersCanCreatePages               *bool `json:"members_can_create_pages"`
 	MembersCanForkPrivateRepositories   *bool `json:"members_can_fork_private_repositories"`
 	MembersCanCreateTeams               *bool `json:"members_can_create_teams"`
 	WebCommitSignoffRequired            bool  `json:"web_commit_signoff_required"`
-	// NotificationDeliveryRestrictionEnabled restricts this organization's
-	// email notifications to addresses inside a verified domain. It layers
-	// under the enterprise policy of the same name rather than replacing it:
-	// either being on restricts delivery, which is how GitHub composes the
-	// enterprise-wide setting with the per-organization one.
+	// NotificationDeliveryRestrictionEnabled restricts the org's email
+	// notifications to verified-domain addresses. It layers under the enterprise
+	// policy of the same name: either being on restricts delivery.
 	NotificationDeliveryRestrictionEnabled bool `json:"notification_delivery_restriction_enabled"`
-	// PinnedRepos is the org profile's ordered pinned-repository full names
-	// (max MaxPinnedRepos, all owned by the org); a GraphQL/web-only feature,
-	// served under /ui-data like user pins.
+	// PinnedRepos is the org profile's ordered pinned-repo full names; a web-only
+	// feature served under /ui-data.
 	PinnedRepos []string  `json:"pinned_repos,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -134,10 +128,8 @@ type Team struct {
 	MaintainerIDs       []int                     `json:"maintainer_ids"`   // subset of MemberIDs with the maintainer role
 	RepoNames           []string                  `json:"repo_names"`       // "owner/name" entries
 	RepoPermissions     map[string]TeamPermission `json:"repo_permissions"` // per-repo override; nil/missing entry uses Permission
-	// ReviewAssignment is the team's code-review assignment configuration:
-	// when enabled, a review requested from the team is narrowed to a subset
-	// of its members chosen by the algorithm. Nil while the team has never
-	// configured it, which is GitHub's "not enabled".
+	// ReviewAssignment narrows a review requested from the team to a subset of
+	// members when enabled; nil means never configured ("not enabled").
 	ReviewAssignment *TeamReviewAssignment `json:"review_assignment,omitempty"`
 	CreatedAt        time.Time             `json:"created_at"`
 	UpdatedAt        time.Time             `json:"updated_at"`
@@ -178,9 +170,8 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	// Folded existence check: GitHub rejects an organization whose login
-	// differs from an existing one only by case, and the folded index
-	// (name_fold.go) relies on canonical logins never colliding under folding.
+	// Reject a login that collides with an existing one under case-folding; the
+	// folded index (name_fold.go) requires canonical logins never to collide.
 	if st.OrgByLoginLocked(login) != nil {
 		return nil
 	}
@@ -202,7 +193,6 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 	st.OrgsByLogin[login] = org
 	st.IndexOrgLoginLocked(login)
 
-	// Add creator as admin
 	key := MembershipKey(login, creator.ID)
 	m := &Membership{
 		OrgID:  org.ID,
@@ -213,7 +203,7 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 	st.Memberships[key] = m
 
 	// One transaction: an org must never persist without its creator's admin
-	// membership, which would leave it with no administrator.
+	// membership, or it would have no administrator.
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("orgs", strconv.Itoa(org.ID), org)
 	batch.Put("memberships", key, m)
@@ -224,10 +214,8 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 	return org
 }
 
-// GetOrg returns an organization by login, or nil if not found.
-// cloneOrg returns a copy safe to hand outside the store lock (STORE-021):
-// the member-privilege *bool flags are the reference fields. Org writes go
-// through the keyed UpdateOrg or mutate the live st.Orgs row directly.
+// cloneOrg returns a copy detached from the store lock (STORE-021); the
+// member-privilege *bool flags and PinnedRepos are the reference fields.
 func cloneOrg(o *Org) *Org {
 	if o == nil {
 		return nil
@@ -256,14 +244,13 @@ func (st *Store) GetOrg(login string) *Org {
 	return cloneOrg(st.OrgByLoginLocked(login))
 }
 
-// GetOrgByID returns an organization by its numeric ID, or nil.
 func (st *Store) GetOrgByID(id int) *Org {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return cloneOrg(st.Orgs[id])
 }
 
-// ListTeamsByUser returns every team across all orgs that the given user is a member of.
+// ListTeamsByUser returns every team across all orgs the user is a member of.
 func (st *Store) ListTeamsByUser(userID int) []*Team {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -280,7 +267,7 @@ func (st *Store) ListTeamsByUser(userID int) []*Team {
 	return snapshotTeams(teams)
 }
 
-// UpdateOrg applies a mutation function to an organization.
+// UpdateOrg applies a mutation to an organization.
 func (st *Store) UpdateOrg(login string, fn func(*Org)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -306,13 +293,12 @@ func (st *Store) DeleteOrg(login string) bool {
 	return deleted
 }
 
-// DeleteOrgWithError removes an organization, its memberships, its teams and
-// its repositories. The repositories are part of the cascade because an
-// organization row that goes away while its repositories stay behind leaves
-// every later start rejecting those rows as an unknown owner.
+// DeleteOrgWithError removes an organization, its memberships, its teams and its
+// repositories. Repos are part of the cascade: an org row that goes away while
+// its repos remain makes every later start reject them as an unknown owner.
 func (st *Store) DeleteOrgWithError(login string) (bool, error) {
-	// Canonicalize up front: the deletion intent recorded by
-	// deleteOrgMetadata and the intent cleared below must use one key.
+	// Canonicalize up front so the intent recorded by deleteOrgMetadata and the
+	// one cleared below use the same key.
 	if org := st.GetOrg(login); org != nil {
 		login = org.Login
 	}
@@ -325,8 +311,7 @@ func (st *Store) DeleteOrgWithError(login string) (bool, error) {
 			return true, fmt.Errorf("delete organization %s: %w", login, err)
 		}
 	}
-	// Reclaim the bytes of the org's directly-owned packages (kind-agnostic
-	// cleanup; runs without st.Mu like the repo intents above).
+	// Reclaim the org's directly-owned package bytes (runs without st.Mu).
 	if err := st.CleanupDeletedRepo(orgIntent); err != nil {
 		return true, fmt.Errorf("delete organization %s external data: %w", login, err)
 	}
@@ -336,9 +321,8 @@ func (st *Store) DeleteOrgWithError(login string) (bool, error) {
 	return true, nil
 }
 
-// deleteOrgMetadata purges the organization from memory and, in one
-// transaction, from the database. It returns the repositories whose bytes the
-// caller must still destroy.
+// deleteOrgMetadata purges the org from memory and, in one transaction, from the
+// database. It returns the repositories whose bytes the caller must still destroy.
 func (st *Store) deleteOrgMetadata(login string) ([]PendingDeletion, PendingDeletion, bool, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -349,10 +333,9 @@ func (st *Store) deleteOrgMetadata(login string) ([]PendingDeletion, PendingDele
 	}
 	login = org.Login
 
-	// Build the org's own deletion intent, scheduling the file bytes of packages
-	// owned directly by the organization (not via one of its repositories) for
-	// external cleanup — otherwise they orphan when the org row goes away
-	// (STORE-028). Package rows are dropped from st.Packages in the batch below.
+	// Schedule the file bytes of packages owned directly by the org (not via a
+	// repo) for external cleanup, else they orphan when the org row goes away
+	// (STORE-028). The package rows drop from st.Packages in the batch below.
 	orgIntent := PendingDeletion{Kind: "org", Name: login, StartedAt: st.CurrentTime()}
 	addPackageFile := func(path string) {
 		if path == "" {
@@ -424,9 +407,8 @@ func (st *Store) deleteOrgMetadata(login string) ([]PendingDeletion, PendingDele
 	}
 	delete(st.PackagesByOwnerKey, login)
 
-	// Cancel the org's Marketplace purchases so a deleted org keeps no live
-	// subscription (STORE-028). Store→Misc is the required lock order, and
-	// st.Mu is held here, so taking Misc.Mu is safe.
+	// Cancel the org's Marketplace purchases (STORE-028). Store→Misc is the
+	// required lock order, and st.Mu is held here, so taking Misc.Mu is safe.
 	st.Misc.Mu.Lock()
 	for k, purchase := range st.Misc.MarketplacePurchases {
 		if purchase.AccountType == "Organization" && purchase.AccountID == org.ID {
@@ -460,13 +442,11 @@ func (st *Store) deleteOrgMetadata(login string) ([]PendingDeletion, PendingDele
 	return repoIntents, orgIntent, true, nil
 }
 
-// deleteUserOwnedResourcesLocked cascades the resources a deleted user account
-// owns — repositories, directly-owned packages (with their file bytes) and
-// Marketplace purchases — plus its organization memberships, mirroring the
-// organization cascade so a user deletion leaves no orphaned rows or object
-// bytes (STORE-028). The caller holds st.Mu; it returns the repository intents
-// and the user's own package-byte intent for the caller to drain after
-// releasing the lock.
+// DeleteUserOwnedResourcesLocked cascades a deleted user's repositories,
+// directly-owned packages (with file bytes), Marketplace purchases and org
+// memberships, mirroring the org cascade so no orphaned rows or object bytes
+// remain (STORE-028). Caller holds st.Mu; returns the repo intents and the
+// user's package-byte intent to drain after releasing the lock.
 func (st *Store) DeleteUserOwnedResourcesLocked(u *User) ([]PendingDeletion, PendingDeletion, error) {
 	var repoNames []string
 	for fullName, repo := range st.ReposByName {
@@ -560,11 +540,9 @@ func (st *Store) DeleteUserOwnedResourcesLocked(u *User) ([]PendingDeletion, Pen
 	return repoIntents, userIntent, nil
 }
 
-// ListOrgsByUser returns all organizations the user belongs to, in
-// ascending id order like real GitHub. The memberships map iterates in
-// random order; the /user/orgs handlers paginate over this list, and
-// offset pagination over an unstable order would skip or duplicate orgs
-// across pages.
+// ListOrgsByUser returns the user's orgs in ascending id order. The order must
+// be stable: offset pagination in /user/orgs over the random-order memberships
+// map would otherwise skip or duplicate orgs across pages.
 func (st *Store) ListOrgsByUser(userID int) []*Org {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -572,10 +550,9 @@ func (st *Store) ListOrgsByUser(userID int) []*Org {
 	return snapshotOrgs(st.listOrgsByUserLocked(userID, false))
 }
 
-// ListPublicOrgsByUser returns only active organization memberships that the
-// user has explicitly publicized. This is the visibility contract behind
-// GET /users/{username}/orgs; the authenticated /user/orgs endpoint uses
-// ListOrgsByUser and therefore continues to include concealed memberships.
+// ListPublicOrgsByUser returns only active memberships the user has publicized,
+// the visibility contract behind GET /users/{username}/orgs (unlike /user/orgs,
+// which includes concealed memberships via ListOrgsByUser).
 func (st *Store) ListPublicOrgsByUser(userID int) []*Org {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -596,9 +573,9 @@ func (st *Store) listOrgsByUserLocked(userID int, publicOnly bool) []*Org {
 	return orgs
 }
 
-// SetMembership upserts a user's membership in an organization with the
-// given role and state. An existing membership keeps its Public flag.
-// Returns the stored membership, or nil if the org doesn't exist.
+// SetMembership upserts a user's org membership with the given role and state,
+// preserving an existing membership's Public flag. Returns nil if the org
+// doesn't exist.
 func (st *Store) SetMembership(orgLogin string, userID int, role OrgRole, state MembershipState) *Membership {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -621,17 +598,15 @@ func (st *Store) SetMembership(orgLogin string, userID int, role OrgRole, state 
 	if st.Persist != nil {
 		st.Persist.MustPut("memberships", key, m)
 	}
-	// An activated membership completes any organization invitation the
-	// user held: the invitee joins the invited teams and the invitation
-	// row is consumed.
+	// Activating a membership completes any pending org invitation: the invitee
+	// joins the invited teams and the invitation row is consumed.
 	if state == MembershipStateActive {
 		st.consumeOrgInvitationsForUserLocked(orgLogin, userID)
 	}
 	return m
 }
 
-// SetMembershipPublic flips the membership's public-member flag. Returns
-// false when no active membership exists.
+// SetMembershipPublic sets the membership's public-member flag; false when no active membership exists.
 func (st *Store) SetMembershipPublic(orgLogin string, userID int, public bool) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -688,8 +663,8 @@ func (st *Store) ListMembershipsByUser(userID int, state MembershipState) []*Mem
 	return snapshotSlice(out)
 }
 
-// ListOrgsAll returns every organization with ID greater than `since`,
-// ordered by ID ascending — the GET /organizations contract.
+// ListOrgsAll returns every org with ID greater than since, ordered by ID
+// ascending — the GET /organizations contract.
 func (st *Store) ListOrgsAll(since int) []*Org {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -708,9 +683,8 @@ func (st *Store) ListOrgsAll(since int) []*Org {
 func (st *Store) GetMembership(orgLogin string, userID int) *Membership {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// A copy so a reader can't mutate the stored membership through the getter
-	// (STORE-021); Membership is all-value, so a shallow copy detaches. Its 24
-	// callers only read State/Role, and writes go through keyed store methods.
+	// Return a detached copy (STORE-021); Membership is all-value, so a shallow
+	// copy suffices.
 	m := st.Memberships[MembershipKey(st.canonicalOrgLoginLocked(orgLogin), userID)]
 	if m == nil {
 		return nil
@@ -719,7 +693,7 @@ func (st *Store) GetMembership(orgLogin string, userID int) *Membership {
 	return &clone
 }
 
-// RemoveMembership removes a user's membership from an organization.
+// RemoveMembership removes a user's membership from an org.
 func (st *Store) RemoveMembership(orgLogin string, userID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -731,7 +705,7 @@ func (st *Store) RemoveMembership(orgLogin string, userID int) bool {
 	}
 	// One transaction: the membership removal and every team it drops the user
 	// from commit together, so a crash cannot leave the user out of the org yet
-	// still listed on its teams.
+	// still on its teams.
 	batch := NewPersistBatch(st.Persist)
 	delete(st.Memberships, key)
 	batch.Delete("memberships", key)
@@ -757,7 +731,7 @@ func (st *Store) RemoveMembership(orgLogin string, userID int) bool {
 	return true
 }
 
-// ListOrgMembers returns all users who are active members of an organization.
+// ListOrgMembers returns all active members of an org.
 func (st *Store) ListOrgMembers(orgLogin string) []*User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -787,8 +761,8 @@ type TeamOptions struct {
 	ParentID            int
 }
 
-// CreateTeam creates a team within an organization. A non-zero ParentID
-// must reference an existing team in the same org.
+// CreateTeam creates a team within an org. A non-zero ParentID must reference an
+// existing team in the same org.
 func (st *Store) CreateTeam(orgLogin, name string, opts TeamOptions) *Team {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -851,11 +825,9 @@ func (st *Store) CreateTeam(orgLogin, name string, opts TeamOptions) *Team {
 	return team
 }
 
-// GetTeam returns a team by org login and slug, or nil.
-// cloneTeam returns a deep copy safe to hand outside the store lock
-// (STORE-021): MemberIDs, MaintainerIDs, RepoNames and RepoPermissions are the
-// reference fields. Team writes go through the keyed UpdateTeam (or mutate the
-// live st.Teams row directly), never a getter result.
+// cloneTeam returns a deep copy detached from the store lock (STORE-021);
+// MemberIDs, MaintainerIDs, RepoNames, RepoPermissions and ReviewAssignment are
+// the reference fields.
 func cloneTeam(t *Team) *Team {
 	if t == nil {
 		return nil
@@ -890,24 +862,20 @@ func (st *Store) GetTeam(orgLogin, slug string) *Team {
 	return cloneTeam(st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)])
 }
 
-// GetTeamByID returns a team by its numeric ID, or nil.
 func (st *Store) GetTeamByID(id int) *Team {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return cloneTeam(st.Teams[id])
 }
 
-// UpdateTeam applies a mutation function to a team. When the mutation
-// changes the slug (team rename), the slug index is re-keyed so the old
-// slug stops resolving and the new one does.
+// UpdateTeam applies a mutation to a team, re-keying the slug index on rename.
 func (st *Store) UpdateTeam(orgLogin, slug string, fn func(*Team)) bool {
 	return st.UpdateTeamChecked(orgLogin, slug, fn) == nil
 }
 
-// UpdateTeamChecked applies a team mutation atomically and refuses a rename
-// whose derived slug is already occupied. The callback receives a detached
-// copy, so validation failure cannot partially mutate the live team or its
-// secondary slug index.
+// UpdateTeamChecked applies a team mutation atomically, refusing a rename whose
+// derived slug is occupied. The callback receives a detached copy, so a
+// validation failure cannot partially mutate the live team or its slug index.
 func (st *Store) UpdateTeamChecked(orgLogin, slug string, fn func(*Team)) error {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -943,8 +911,8 @@ func (st *Store) UpdateTeamChecked(orgLogin, slug string, fn func(*Team)) error 
 	return nil
 }
 
-// TeamParentWouldCycle reports whether re-parenting team `teamID` under
-// `parentID` would create a cycle in the team hierarchy.
+// TeamParentWouldCycle reports whether re-parenting teamID under parentID would
+// create a cycle in the team hierarchy.
 func (st *Store) TeamParentWouldCycle(teamID, parentID int) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -962,7 +930,7 @@ func (st *Store) TeamParentWouldCycle(teamID, parentID int) bool {
 	return false
 }
 
-// ListChildTeams returns the teams whose parent is the given team.
+// ListChildTeams returns the teams whose parent is parentID.
 func (st *Store) ListChildTeams(orgLogin string, parentID int) []*Team {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -996,13 +964,12 @@ func (st *Store) DeleteTeam(orgLogin, slug string) bool {
 	delete(st.Teams, team.ID)
 	delete(st.TeamsBySlug, key)
 
-	// One transaction: deleting the team and re-parenting its children must not
-	// disagree across a crash, or a surviving child would point at a team that
-	// no longer exists.
+	// One transaction: the delete and the children's re-parenting must not
+	// disagree across a crash, or a surviving child would point at a gone team.
 	batch := NewPersistBatch(st.Persist)
 	batch.Delete("teams", strconv.Itoa(team.ID))
-	// Children of a deleted team move up to the deleted team's parent
-	// (real GitHub re-parents rather than orphaning).
+	// Children move up to the deleted team's parent (GitHub re-parents rather
+	// than orphaning).
 	for _, t := range st.Teams {
 		if t.ParentID == team.ID {
 			t.ParentID = team.ParentID
@@ -1052,8 +1019,8 @@ func (st *Store) ListTeamMembers(orgLogin, slug string) []*User {
 	return snapshotUsers(members)
 }
 
-// GetTeamMembership returns a user's role in a team and whether they are a
-// member at all. The role is empty when the user is not a member.
+// GetTeamMembership returns a user's team role and whether they are a member;
+// the role is empty for a non-member.
 func (st *Store) GetTeamMembership(orgLogin, slug string, userID int) (TeamRole, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1137,9 +1104,8 @@ func (st *Store) ListTeamRepos(orgLogin, slug string) []*Repo {
 }
 
 // GetTeamRepoPermission returns the effective permission a team confers on a
-// repository. The second value is false when the repository is not linked to
-// the team. A nil/missing per-repo override falls back to the team's default
-// Permission.
+// repo; the second value is false when the repo is not linked. A missing
+// per-repo override falls back to the team's default Permission.
 func (st *Store) GetTeamRepoPermission(orgLogin, slug, fullName string) (TeamPermission, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -1162,8 +1128,8 @@ func (st *Store) GetTeamRepoPermission(orgLogin, slug, fullName string) (TeamPer
 	return team.Permission, true
 }
 
-// SetTeamRepoPermission links a repository to a team and records an explicit
-// permission override. An empty permission uses the team's default.
+// SetTeamRepoPermission links a repo to a team and records a permission
+// override; an empty permission uses the team's default.
 func (st *Store) SetTeamRepoPermission(orgLogin, slug, fullName string, perm TeamPermission) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -1172,7 +1138,7 @@ func (st *Store) SetTeamRepoPermission(orgLogin, slug, fullName string, perm Tea
 	if team == nil {
 		return false
 	}
-	// Store the canonical repo key: the permission lattice (rbac.go) compares
+	// Store the canonical repo key: the permission lattice (rbac.go) matches
 	// team.RepoNames against repo.FullName.
 	repo := st.RepoByNameLocked(fullName)
 	if repo == nil {
@@ -1203,7 +1169,7 @@ func (st *Store) SetTeamRepoPermission(orgLogin, slug, fullName string, perm Tea
 	return true
 }
 
-// roleOf returns the user's role in the team, and whether they're a member.
+// RoleOf returns the user's team role and whether they're a member.
 func (t *Team) RoleOf(userID int) (TeamRole, bool) {
 	if !slices.Contains(t.MemberIDs, userID) {
 		return "", false
@@ -1230,7 +1196,7 @@ func (st *Store) AddTeamRepo(orgLogin, slug, repoFullName string) bool {
 	if team == nil {
 		return false
 	}
-	// Store the canonical repo key: the permission lattice (rbac.go) compares
+	// Store the canonical repo key: the permission lattice (rbac.go) matches
 	// team.RepoNames against repo.FullName.
 	if repo := st.RepoByNameLocked(repoFullName); repo != nil {
 		repoFullName = repo.FullName
@@ -1238,7 +1204,7 @@ func (st *Store) AddTeamRepo(orgLogin, slug, repoFullName string) bool {
 
 	for _, rn := range team.RepoNames {
 		if rn == repoFullName {
-			return true // already added
+			return true
 		}
 	}
 
@@ -1282,7 +1248,7 @@ func (st *Store) RemoveTeamRepo(orgLogin, slug, repoFullName string) bool {
 	return false
 }
 
-// CreateOrgRepo creates a repository owned by an organization.
+// CreateOrgRepo creates a repository owned by an org.
 func (st *Store) CreateOrgRepo(org *Org, creator *User, name, description string, private bool) *Repo {
 	return st.createRepo(org.Login+"/"+name, name, description, private, org.ID, "Organization", nil)
 }

@@ -12,24 +12,12 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// WorkflowFile is the file-level workflow entity (the YAML on disk),
-// distinct from the run-level [Workflow]. introduces this so
-// `GET /api/v3/repos/{o}/{r}/actions/workflows` can return the
-// GitHub-shape file listing — and the new dispatch endpoint can
-// reconstruct the YAML to submit a fresh run.
-//
-// Source provenance:
-//   - "submitted"  — auto-registered by handleSubmitWorkflow when the
-//     YAML lands at /api/v3/bleephub/workflow.
-//   - "discovered" — auto-discovered from the repo's git storage by
-//     walking `.github/workflows/*.yml` at HEAD.
-//
-// Either source can register the same (repo, path) pair; the latter
-// registration wins (so a fresh git push refreshes the cached YAML).
-// The json tags shape the persisted row only — REST responses go
-// through workflowFileJSON / workflowFileView, never this struct.
-// Every field must round-trip: a restored row with an empty
-// RepoFullName or YAML is unusable (dispatch 422s on it).
+// WorkflowFile is the file-level workflow entity (the YAML on disk), distinct
+// from the run-level [Workflow]. Source is "submitted" (registered when YAML
+// lands at /api/v3/bleephub/workflow) or "discovered" (walked from git). The
+// latest registration of a (repo, path) pair wins, so a fresh push refreshes the
+// cached YAML. Every field must round-trip: a restored row with empty
+// RepoFullName or YAML is undispatchable (422).
 type WorkflowFile struct {
 	ID           int64     `json:"id"`
 	Name         string    `json:"name"`
@@ -44,20 +32,17 @@ type WorkflowFile struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// StableWorkflowFileID returns the GitHub-shape int64 ID derived from
-// (repo, path). FNV-1a 64-bit, JSON-safe-integer masked. Same shape as
-// stableJobID (gh_actions_rest.go) so the two ID schemes don't trip
-// over each other in tests.
+// StableWorkflowFileID returns the GitHub-shape int64 ID for (repo, path):
+// FNV-1a 64-bit, JSON-safe-integer masked.
 func StableWorkflowFileID(repoFullName, path string) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(repoFullName + "\x00" + path))
 	return JsonSafePositiveID(h.Sum64())
 }
 
-// RegisterWorkflowFile creates-or-updates the WorkflowFile row keyed
-// by (repo, path). Idempotent: the latest call wins on YAML/Name; the
-// CreatedAt timestamp is preserved across updates so the GitHub-shape
-// `created_at` field stays stable.
+// RegisterWorkflowFile creates or updates the WorkflowFile keyed by (repo,
+// path). The latest call wins on YAML/Name; CreatedAt is preserved across
+// updates.
 func (st *Store) RegisterWorkflowFile(repoFullName, path, name, yamlBody, source string) *WorkflowFile {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -123,10 +108,8 @@ func (st *Store) SetWorkflowFileState(repoFullName, path, state string) bool {
 	return true
 }
 
-// GetWorkflowFile returns the WorkflowFile keyed by (repo, id).
-// Returns nil if not present OR if the entry's repo doesn't match
-// (stable IDs are global; the repo check guards against ID-collision
-// across repos, which FNV makes unlikely but not impossible).
+// GetWorkflowFile returns the WorkflowFile keyed by (repo, id), or nil. The repo
+// check guards against a cross-repo FNV ID collision.
 func (st *Store) GetWorkflowFile(repoFullName string, id int64) *WorkflowFile {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -137,14 +120,14 @@ func (st *Store) GetWorkflowFile(repoFullName string, id int64) *WorkflowFile {
 	if wf.RepoFullName != repoFullName {
 		return nil
 	}
-	// Detach: WorkflowFile is all-value, so a shallow copy is a full snapshot;
-	// writes go through the keyed SetWorkflowFileState (STORE-021).
+	// Detach: WorkflowFile is all-value, so a shallow copy is a full snapshot
+	// (STORE-021).
 	clone := *wf
 	return &clone
 }
 
-// ListWorkflowFiles returns every WorkflowFile registered for the
-// given repo, ordered by ID so paginated clients see a stable list.
+// ListWorkflowFiles returns the repo's WorkflowFiles ordered by ID for stable
+// pagination.
 func (st *Store) ListWorkflowFiles(repoFullName string) []*WorkflowFile {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -159,12 +142,9 @@ func (st *Store) ListWorkflowFiles(repoFullName string) []*WorkflowFile {
 }
 
 // DiscoverWorkflowFilesFromGit walks the repo's default branch and registers
-// any `.github/workflows/*.{yml,yaml}` file as a WorkflowFile with
-// source="discovered". Idempotent — re-discovers on every call so a fresh push
-// picks up new YAMLs.
-//
-// No-ops for repos that have no git storage, no default branch ref, or an empty
-// tree; returns the count of files registered.
+// every `.github/workflows/*.{yml,yaml}` file with source="discovered",
+// re-discovering on every call. No-ops without git storage, a default-branch
+// ref, or a tree; returns the count registered.
 func (st *Store) DiscoverWorkflowFilesFromGit(repoFullName string) int {
 	st.Mu.RLock()
 	storer := st.GitStorages[repoFullName]
@@ -186,7 +166,7 @@ func (st *Store) DiscoverWorkflowFilesFromGit(repoFullName string) int {
 	}
 	commit, err := repo.CommitObject(headRef.Hash())
 	if err != nil {
-		// Try resolving the ref as a tag instead.
+		// The ref may resolve to a tag rather than a commit.
 		tag, terr := repo.TagObject(headRef.Hash())
 		if terr != nil {
 			return 0
@@ -207,11 +187,9 @@ func (st *Store) DiscoverWorkflowFilesFromGit(repoFullName string) int {
 		}
 		body, err := f.Contents()
 		if err != nil {
-			// A transient content read (e.g. a lazily-fetched blob from S3-backed
-			// storage) must not re-register the workflow with an empty Body:
-			// RegisterWorkflowFile re-persists on every discovery, and an empty
-			// workflow can never be dispatched (422 forever). Skip this file; the
-			// next discovery re-reads it.
+			// A transient content-read failure (e.g. a lazily-fetched S3 blob) must
+			// not re-register the workflow with an empty, undispatchable body. Skip
+			// it; the next discovery re-reads it.
 			return nil
 		}
 		name := workflowDisplayName(body, f.Name)
@@ -228,16 +206,14 @@ func IsWorkflowYAMLPath(p string) bool {
 	}
 	rest := p[len(".github/workflows/"):]
 	if strings.Contains(rest, "/") {
-		// Subdirectories under .github/workflows/ aren't workflow files
-		// in real GitHub either.
+		// GitHub ignores files in subdirectories under .github/workflows/.
 		return false
 	}
 	return strings.HasSuffix(p, ".yml") || strings.HasSuffix(p, ".yaml")
 }
 
-// workflowDisplayName extracts the workflow's `name:` field from the
-// YAML body (matches GitHub's display in the Actions UI). Falls back
-// to the file's basename when `name:` is absent.
+// workflowDisplayName returns the YAML's `name:` field, falling back to the
+// file's basename when absent.
 func workflowDisplayName(yamlBody, path string) string {
 	def, err := ParseWorkflow([]byte(yamlBody))
 	if err == nil && def.Name != "" {

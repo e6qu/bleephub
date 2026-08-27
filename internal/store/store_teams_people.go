@@ -9,18 +9,15 @@ import (
 	"time"
 )
 
-// Store state for the organization people surfaces: organization
-// invitations, user blocks, interaction limits, organization-role
-// assignments, and outside collaborators.
+// Store state for the org people surfaces: invitations, user blocks,
+// interaction limits, org-role assignments, and outside collaborators.
 
-// orgInvitationTTL is how long an organization invitation stays pending
-// before it fails as expired — GitHub org invitations expire after 7 days.
+// orgInvitationTTL matches GitHub's 7-day invitation expiry.
 const orgInvitationTTL = 7 * 24 * time.Hour
 
-// OrgInvitation is a pending (or failed) invitation to join an
-// organization, created via POST /orgs/{org}/invitations. The Role holds
-// GitHub's invitation-role wire value (direct_member | admin |
-// billing_manager), which is distinct from the membership role enum.
+// OrgInvitation is a pending or failed invitation to join an org. Role holds the
+// invitation-role wire value (direct_member | admin | billing_manager), distinct
+// from the membership role enum.
 type OrgInvitation struct {
 	ID           int        `json:"id"`
 	NodeID       string     `json:"node_id"`
@@ -37,18 +34,15 @@ type OrgInvitation struct {
 	FailedReason string     `json:"failed_reason,omitempty"`
 }
 
-// OrgInteractionLimit is an organization-wide interaction restriction
-// (PUT /orgs/{org}/interaction-limits). The limit auto-expires at
-// ExpiresAt, exactly like real GitHub's temporary restrictions.
+// OrgInteractionLimit is an org-wide interaction restriction that auto-expires
+// at ExpiresAt.
 type OrgInteractionLimit struct {
 	Limit     string    `json:"limit"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// invitationMembershipRole maps an invitation role to the org-membership
-// role the invitee holds once they accept. bleephub has no separate
-// billing-manager account class, so a billing_manager invitation confers
-// ordinary membership.
+// invitationMembershipRole maps an invitation role to the membership role held
+// on acceptance. billing_manager confers ordinary membership (no separate class).
 func invitationMembershipRole(role string) OrgRole {
 	if role == "admin" {
 		return OrgRoleAdmin
@@ -56,11 +50,9 @@ func invitationMembershipRole(role string) OrgRole {
 	return OrgRoleMember
 }
 
-// CreateOrgInvitation creates an organization invitation and, when the
-// invitee resolves to an account, the pending membership the invitee
-// accepts through PATCH /user/memberships/orgs/{org}. Returns nil and a
-// reason string when the invitation is invalid (already a member,
-// already invited).
+// CreateOrgInvitation creates an invitation and, when the invitee resolves to an
+// account, the pending membership they later accept. Returns nil and a reason
+// when the invitation is invalid (already a member or already invited).
 func (st *Store) CreateOrgInvitation(org *Org, inviter *User, invitee *User, email, role string, teamIDs []int) (*OrgInvitation, string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -103,9 +95,8 @@ func (st *Store) CreateOrgInvitation(org *Org, inviter *User, invitee *User, ema
 	}
 	st.OrgInvitations[inv.ID] = inv
 
-	// One transaction: the pending membership and its backing invitation commit
-	// together, so a crash cannot leave a pending membership with no invitation
-	// (or vice versa).
+	// Pending membership and its invitation commit in one transaction so a crash
+	// cannot leave one without the other.
 	batch := NewPersistBatch(st.Persist)
 	if invitee != nil {
 		key := MembershipKey(org.Login, invitee.ID)
@@ -120,12 +111,11 @@ func (st *Store) CreateOrgInvitation(org *Org, inviter *User, invitee *User, ema
 	return inv, ""
 }
 
-// reconcileOrgInvitationsLocked brings the org's invitations in line with
-// the authoritative membership state: invitations whose membership turned
-// active are consumed (the invitee joins the invited teams), invitations
-// whose pending membership disappeared are cancelled, and invitations
-// older than the 7-day TTL fail as expired (dropping the pending
-// membership). Callers must hold st.Mu for writing.
+// reconcileOrgInvitationsLocked reconciles the org's invitations against
+// membership state: active memberships consume their invitation (invitee joins
+// the invited teams), vanished pending memberships cancel it, and invitations
+// past the TTL fail as expired (dropping the pending membership). Callers hold
+// st.Mu for writing.
 func (st *Store) reconcileOrgInvitationsLocked(org *Org, now time.Time) {
 	for id, inv := range st.OrgInvitations {
 		if inv.OrgID != org.ID || inv.FailedAt != nil {
@@ -135,8 +125,7 @@ func (st *Store) reconcileOrgInvitationsLocked(org *Org, now time.Time) {
 			m := st.Memberships[MembershipKey(org.Login, inv.UserID)]
 			switch {
 			case m == nil:
-				// The pending membership was removed out-of-band; the
-				// invitation no longer has anything to accept.
+				// Pending membership removed out-of-band; nothing left to accept.
 				delete(st.OrgInvitations, id)
 				if st.Persist != nil {
 					st.Persist.MustDelete("org_invitations", strconv.Itoa(id))
@@ -151,10 +140,9 @@ func (st *Store) reconcileOrgInvitationsLocked(org *Org, now time.Time) {
 			failedAt := inv.CreatedAt.Add(orgInvitationTTL)
 			inv.FailedAt = &failedAt
 			inv.FailedReason = "Invitation expired."
-			// One transaction: dropping the abandoned pending membership and
-			// marking the invitation failed commit together, so a crash can never
-			// strand a pending membership whose invitation already expired, or an
-			// expired invitation whose membership still lingers (STORE-001/002).
+			// Dropping the pending membership and failing the invitation commit
+			// in one transaction so a crash cannot strand one without the other
+			// (STORE-001/002).
 			batch := NewPersistBatch(st.Persist)
 			if inv.UserID != 0 {
 				key := MembershipKey(org.Login, inv.UserID)
@@ -171,12 +159,9 @@ func (st *Store) reconcileOrgInvitationsLocked(org *Org, now time.Time) {
 	}
 }
 
-// ReconcileAllOrgInvitations applies the invitation state machine
-// (expire/consume/cancel, with the durable membership side effects) across every
-// organization. It runs on the background dispatcher tick so a GET never takes
-// the write lock or performs a durable delete on a read (STORE-034). Its Must*
-// persist writes panic on a durable failure; the dispatcher's caller recovers
-// that and reloads, matching the request path's recover behavior.
+// ReconcileAllOrgInvitations runs the invitation state machine across every org
+// on the background dispatcher tick, so a GET never takes the write lock or does
+// a durable delete on a read (STORE-034).
 func (st *Store) ReconcileAllOrgInvitations(now time.Time) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -185,13 +170,12 @@ func (st *Store) ReconcileAllOrgInvitations(now time.Time) {
 	}
 }
 
-// consumeOrgInvitationLocked completes an accepted invitation: the
-// invitee joins every team the invitation carried and the invitation
-// itself is removed. Callers must hold st.Mu for writing.
+// consumeOrgInvitationLocked completes an accepted invitation: the invitee joins
+// every carried team and the invitation is removed. Callers hold st.Mu for writing.
 func (st *Store) consumeOrgInvitationLocked(inv *OrgInvitation) {
-	// One transaction: the invited-team joins and the invitation removal commit
-	// together, so a crash can never leave the invitee half-joined with the
-	// invitation still live (which reload would then re-consume) (STORE-001/002).
+	// Team joins and invitation removal commit in one transaction so a crash
+	// cannot leave the invitee half-joined with the invitation still live (which
+	// reload would re-consume) (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	for _, teamID := range inv.TeamIDs {
 		team := st.Teams[teamID]
@@ -211,9 +195,8 @@ func (st *Store) consumeOrgInvitationLocked(inv *OrgInvitation) {
 	}
 }
 
-// consumeOrgInvitationsForUserLocked consumes every live invitation the
-// user holds in the org — invoked when a membership turns active so the
-// invited-team joins happen at acceptance time. Callers must hold st.Mu
+// consumeOrgInvitationsForUserLocked consumes every live invitation the user
+// holds in the org, invoked when a membership turns active. Callers hold st.Mu
 // for writing.
 func (st *Store) consumeOrgInvitationsForUserLocked(orgLogin string, userID int) {
 	org := st.OrgByLoginLocked(orgLogin)
@@ -227,8 +210,7 @@ func (st *Store) consumeOrgInvitationsForUserLocked(orgLogin string, userID int)
 	}
 }
 
-// ListPendingOrgInvitations returns the org's live invitations sorted by
-// ID, reconciling state first (expiry, out-of-band accepts/cancels).
+// ListPendingOrgInvitations returns the org's live invitations sorted by ID.
 func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -237,10 +219,8 @@ func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	// Reads are pure: the invitation state machine (expire/consume/cancel) is
-	// applied durably by the background reconciler (ReconcileAllOrgInvitations on
-	// the dispatcher tick), not on a GET. A GET must not take the write lock and
-	// perform durable deletes (STORE-034).
+	// Read stays pure: the state machine is applied durably by the background
+	// reconciler, not on a GET (STORE-034).
 	var out []*OrgInvitation
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.FailedAt == nil {
@@ -251,8 +231,7 @@ func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 	return snapshotOrgInvitations(out)
 }
 
-// ListFailedOrgInvitations returns the org's failed (expired)
-// invitations sorted by ID.
+// ListFailedOrgInvitations returns the org's failed invitations sorted by ID.
 func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -271,9 +250,7 @@ func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 	return snapshotOrgInvitations(out)
 }
 
-// GetOrgInvitation returns a live (non-failed) invitation by org and ID.
-// cloneOrgInvitation returns a copy safe to hand outside the store lock
-// (STORE-021): TeamIDs and FailedAt are the only reference fields.
+// cloneOrgInvitation returns a copy safe to hand outside the store lock (STORE-021).
 func cloneOrgInvitation(inv *OrgInvitation) *OrgInvitation {
 	if inv == nil {
 		return nil
@@ -304,8 +281,8 @@ func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
 	return cloneOrgInvitation(inv)
 }
 
-// CancelOrgInvitation removes a live invitation and its pending
-// membership. Returns false when no such invitation exists.
+// CancelOrgInvitation removes a live invitation and its pending membership.
+// Returns false when no such invitation exists.
 func (st *Store) CancelOrgInvitation(orgLogin string, id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -318,9 +295,8 @@ func (st *Store) CancelOrgInvitation(orgLogin string, id int) bool {
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return false
 	}
-	// One transaction: cancelling the invitation and dropping the pending
-	// membership it created must not disagree across a crash, or a stale pending
-	// membership would outlive the invitation that justified it.
+	// Cancel and pending-membership drop commit in one transaction so a stale
+	// membership cannot outlive its invitation.
 	batch := NewPersistBatch(st.Persist)
 	if inv.UserID != 0 {
 		key := MembershipKey(org.Login, inv.UserID)
@@ -337,8 +313,8 @@ func (st *Store) CancelOrgInvitation(orgLogin string, id int) bool {
 	return true
 }
 
-// ListPendingOrgInvitationsForTeam returns the org's live invitations
-// that carry the given team, sorted by ID.
+// ListPendingOrgInvitationsForTeam returns the org's live invitations carrying
+// the given team, sorted by ID.
 func (st *Store) ListPendingOrgInvitationsForTeam(orgLogin string, teamID int) []*OrgInvitation {
 	pending := st.ListPendingOrgInvitations(orgLogin)
 	var out []*OrgInvitation
@@ -414,9 +390,8 @@ func (st *Store) ListOrgBlockedUsers(orgLogin string) []*User {
 
 // --- organization interaction limits ---
 
-// GetOrgInteractionLimit returns the org's active interaction limit, or
-// nil when none is set. An expired limit is removed on read — real
-// GitHub interaction restrictions lapse automatically at their expiry.
+// GetOrgInteractionLimit returns the org's active interaction limit, or nil. An
+// expired limit is removed on read, matching GitHub's automatic lapse.
 func (st *Store) GetOrgInteractionLimit(orgLogin string) *OrgInteractionLimit {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -432,8 +407,7 @@ func (st *Store) GetOrgInteractionLimit(orgLogin string) *OrgInteractionLimit {
 		}
 		return nil
 	}
-	// A copy so a reader can't mutate the stored limit through the getter
-	// (STORE-021); OrgInteractionLimit is all-value, so a shallow copy detaches.
+	// All-value struct, so a shallow copy detaches (STORE-021).
 	clone := *lim
 	return &clone
 }
@@ -564,9 +538,8 @@ func (st *Store) UnassignAllOrgRolesFromUser(orgLogin string, userID int) {
 	}
 }
 
-// ListTeamsWithOrgRole returns the org's existing teams holding the
-// role, sorted by team ID. Assignments to since-deleted teams are
-// skipped — team existence is the source of truth.
+// ListTeamsWithOrgRole returns the org's existing teams holding the role, sorted
+// by team ID. Assignments to since-deleted teams are skipped.
 func (st *Store) ListTeamsWithOrgRole(orgLogin string, roleID int) []*Team {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -587,11 +560,9 @@ func (st *Store) ListTeamsWithOrgRole(orgLogin string, roleID int) []*Team {
 	return snapshotTeams(out)
 }
 
-// ListUsersWithOrgRole returns the users holding the role, mapping each
-// user ID to the GitHub assignment kind: "direct" (assigned to the
-// user), "indirect" (via a team holding the role), or "mixed" (both).
-// Users without an active org membership are skipped — membership is
-// the source of truth.
+// ListUsersWithOrgRole maps each user holding the role to its assignment kind:
+// "direct", "indirect" (via a team), or "mixed". Users without an active
+// membership are skipped.
 func (st *Store) ListUsersWithOrgRole(orgLogin string, roleID int) map[int]string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -633,10 +604,8 @@ func (st *Store) ListUsersWithOrgRole(orgLogin string, roleID int) map[int]strin
 
 // --- outside collaborators ---
 
-// ListOutsideCollaborators returns users who collaborate on at least one
-// of the organization's repositories without holding an active org
-// membership, sorted by user ID. Derived from the repo-collaborator
-// grants — the same state the repo collaborator endpoints serve.
+// ListOutsideCollaborators returns users who collaborate on at least one of the
+// org's repositories without an active org membership, sorted by user ID.
 func (st *Store) ListOutsideCollaborators(orgLogin string) []*User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -673,11 +642,9 @@ func (st *Store) ListOutsideCollaborators(orgLogin string) []*User {
 	return snapshotUsers(out)
 }
 
-// GrantTeamRepoAccessAsCollaborator materializes a member's team-derived
-// repository access as direct collaborator grants — the state a member
-// keeps when converted to an outside collaborator ("they'll only have
-// access to the repositories that their current team membership
-// allows"). Existing direct grants are kept when stronger.
+// GrantTeamRepoAccessAsCollaborator materializes a member's team-derived repo
+// access as direct collaborator grants — the access a member keeps when
+// converted to an outside collaborator. Stronger existing direct grants are kept.
 func (st *Store) GrantTeamRepoAccessAsCollaborator(orgLogin string, user *User) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -730,16 +697,14 @@ func (st *Store) GrantTeamRepoAccessAsCollaborator(orgLogin string, user *User) 
 	}
 }
 
-// RemoveOutsideCollaborator strips the user's collaborator grants and
-// pending repository invitations across every repository of the
-// organization.
+// RemoveOutsideCollaborator strips the user's collaborator grants and pending
+// invitations across every repository of the org.
 func (st *Store) RemoveOutsideCollaborator(orgLogin, login string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	// One transaction: an outside collaborator is removed from every repo in the
-	// org (and their pending invitations withdrawn) as a single logical act, so a
-	// crash cannot leave them a collaborator on some repos but not others.
+	// Removal across every repo commits in one transaction so a crash cannot
+	// leave them a collaborator on some repos but not others.
 	batch := NewPersistBatch(st.Persist)
 	prefix := orgLogin + "/"
 	for repoKey, collabs := range st.RepoCollaborators {

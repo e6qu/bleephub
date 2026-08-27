@@ -5,9 +5,9 @@ import (
 	"reflect"
 )
 
-// ReplicaLocalStoreFields are the deliberately process-local parts of Store.
-// Everything else exported by Store is durable metadata and is replaced from
-// a fresh database snapshot when another dqlite replica advances the revision.
+// ReplicaLocalStoreFields are the process-local parts of Store. Every other
+// exported field is durable metadata, replaced from a fresh snapshot when a
+// peer replica advances the revision.
 var ReplicaLocalStoreFields = map[string]struct{}{
 	"Agents":           {},
 	"AuthCodes":        {},
@@ -31,14 +31,10 @@ var ReplicaInfrastructureStoreFields = map[string]struct{}{
 	"PackageDataDir":  {},
 }
 
-// ReplicaServerAccessStoreFields are Store fields the ARCH-001 extraction
-// exported only so the server package can keep touching them across the new
-// package boundary: locks, clock overrides, injected callbacks, derived
-// runtime indexes and process-local caches. Before the extraction they were
-// unexported, which made the snapshot reconciler skip them; copying them now
-// would replace a locked mutex, drop a test clock, or hand this process
-// another replica's runtime indexes. They keep exactly their pre-extraction
-// semantics: never copied from a snapshot.
+// ReplicaServerAccessStoreFields are exported (for the server package, per
+// ARCH-001) but never copied from a snapshot: locks, clock overrides, injected
+// callbacks, derived runtime indexes and process-local caches. Copying them
+// would replace a locked mutex, drop a test clock, or import a peer's indexes.
 var ReplicaServerAccessStoreFields = map[string]struct{}{
 	"ActionsArtifacts":            {},
 	"ApiRequestRecordCap":         {},
@@ -63,9 +59,8 @@ var ReplicaServerAccessStoreFields = map[string]struct{}{
 	"WorkflowsByRunID":            {},
 }
 
-// RefreshFromPersistenceIfStale propagates writes made through another
-// dqlite connection. Local SQLite is exclusively owned, so it has no peer to
-// refresh from and avoids the revision query entirely.
+// RefreshFromPersistenceIfStale propagates writes made through another dqlite
+// connection. Exclusively-owned local SQLite has no peer and skips the query.
 func (st *Store) RefreshFromPersistenceIfStale() error {
 	st.Mu.RLock()
 	recoveryRequired := st.PersistenceRecoveryRequired
@@ -77,8 +72,7 @@ func (st *Store) RefreshFromPersistenceIfStale() error {
 }
 
 // ReloadFromPersistence discards durable in-memory mutations after a failed
-// write. Process-local runner state is preserved just as it is for peer
-// refreshes.
+// write, preserving process-local runner state as peer refreshes do.
 func (st *Store) ReloadFromPersistence() error {
 	err := st.refreshFromPersistence(true)
 	st.Mu.Lock()
@@ -107,8 +101,7 @@ func (st *Store) RefreshFromPersistenceBeforeApply(force bool, beforeApply func(
 		return nil
 	}
 	if !force && revision <= persist.LocalRevision() {
-		// This process performed every change since its loaded snapshot; the
-		// corresponding Store mutation already updated memory.
+		// This process made every change since its snapshot; memory is current.
 		st.Mu.Lock()
 		if st.persistenceRevision < revision {
 			st.persistenceRevision = revision
@@ -144,10 +137,9 @@ func (st *Store) RefreshFromPersistenceBeforeApply(force bool, beforeApply func(
 		candidate.PackageDataDir = packageDataDir
 		candidate.Releases.ByteStore = objectByteStore
 		candidate.ActionsArtifacts = actionsArtifacts
-		// A candidate is not yet the live in-memory snapshot. Do not advance
-		// Persistence.localRevision while loading it: concurrent request
-		// middleware uses that value to decide whether this process has
-		// already applied a revision.
+		// Don't advance localRevision while loading the candidate: request
+		// middleware reads it to tell whether this process applied a revision,
+		// and the candidate is not yet live.
 		if err := candidate.setPersistence(persist, false); err != nil {
 			persist.localRevision.Store(loadedRevision)
 			return fmt.Errorf("reload replica state at revision %d: %w", before, err)
@@ -156,11 +148,9 @@ func (st *Store) RefreshFromPersistenceBeforeApply(force bool, beforeApply func(
 			continue
 		}
 
-		// Closing only the database-side before/after window is insufficient:
-		// a local handler can commit after the candidate loads, then release
-		// Store.Mu immediately before this reconciler acquires it. Recheck the
-		// revision while holding Store.Mu so a successful local mutation can
-		// never be overwritten by an older snapshot.
+		// Recheck the revision while holding Store.Mu: a local handler can commit
+		// after the candidate loads and release Store.Mu just before this
+		// reconciler acquires it, and an older snapshot must not overwrite it.
 		if beforeApply != nil {
 			beforeApply()
 		}
@@ -183,7 +173,7 @@ func (st *Store) RefreshFromPersistenceBeforeApply(force bool, beforeApply func(
 		storeType := destination.Type()
 		for index := 0; index < destination.NumField(); index++ {
 			field := storeType.Field(index)
-			if field.PkgPath != "" { // unexported fields are handled explicitly.
+			if field.PkgPath != "" { // unexported: handled explicitly below.
 				continue
 			}
 			if _, local := ReplicaLocalStoreFields[field.Name]; local {
@@ -197,19 +187,16 @@ func (st *Store) RefreshFromPersistenceBeforeApply(force bool, beforeApply func(
 			}
 			destination.Field(index).Set(source.Field(index))
 		}
-		// A running local workflow is still owned by this process's runner job.
-		// Keep its object identity so completion goroutines do not update a
-		// detached pre-refresh pointer. Remote and completed workflows come
-		// from the durable snapshot.
+		// Keep the identity of workflows owned by a local runner job so
+		// completion goroutines don't update a detached pre-refresh pointer;
+		// remote and completed workflows come from the snapshot.
 		for id, workflow := range oldWorkflows {
 			if workflowHasLocalRuntimeJob(workflow, localJobs) {
 				st.Workflows[id] = workflow
 			}
 		}
-		// The Workflows map was just replaced (with local-runtime identities
-		// re-attached above); the derived run-id and concurrency-group indexes
-		// are unexported, so the reflect copy left the old ones in place —
-		// recompute them from the merged map.
+		// The reflect copy skipped the unexported run-id and concurrency-group
+		// indexes; recompute them from the merged Workflows map.
 		st.rebuildWorkflowIndexesLocked()
 		st.actionsKeyPair = candidate.actionsKeyPair
 		st.persistenceRevision = candidate.persistenceRevision

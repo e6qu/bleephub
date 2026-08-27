@@ -11,8 +11,7 @@ func SshGitURL(fullName string) string {
 	if host == "" {
 		return ""
 	}
-	// SCP-style Git URLs cannot encode a non-default SSH port. A configured
-	// host-and-port therefore uses the standard SSH URL form instead.
+	// SCP-style URLs can't encode a port, so a host:port uses the ssh:// form.
 	if _, _, err := net.SplitHostPort(host); err == nil {
 		return "ssh://git@" + host + "/" + fullName + ".git"
 	}

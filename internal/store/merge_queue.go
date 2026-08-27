@@ -5,17 +5,13 @@ import (
 	"strconv"
 )
 
-// The merge queue, and the per-reviewer "viewed" marks on a diff.
+// Merge queue and per-reviewer "viewed" diff marks.
 //
-// A merge queue belongs to a base branch of a repository: pull requests
-// targeting that branch join it in order and are merged in that order. The
-// queue is not a table of its own — a pull request's place in it is a property
-// of the pull request, so enqueuing and dequeuing are writes to the rows that
-// are already persisted, and a queue can never reference a pull request that
-// no longer exists.
+// A PR's queue position is a field on the PR, not a table of its own, so a
+// queue can never reference a PR that no longer exists.
 
-// MergeQueuePullRequests returns the pull requests queued against one base
-// branch of a repository, in queue order.
+// MergeQueuePullRequests returns the PRs queued against one base branch, in
+// queue order.
 func (st *Store) MergeQueuePullRequests(repoID int, baseRef string) []*PullRequest {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -42,9 +38,8 @@ func (st *Store) mergeQueuePullRequestsLocked(repoID int, baseRef string) []*Pul
 	return out
 }
 
-// EnqueuePullRequest puts an open pull request at the back of its base
-// branch's merge queue, or at the front when jump is set. It answers the
-// stored row, or nil when the pull request is not open or is already queued.
+// EnqueuePullRequest puts an open PR at the back of its base branch's queue, or
+// the front when jump is set. Returns nil when the PR is not open or is queued.
 func (st *Store) EnqueuePullRequest(prID int, jump bool) *PullRequest {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -56,8 +51,7 @@ func (st *Store) EnqueuePullRequest(prID int, jump bool) *PullRequest {
 	now := st.CurrentTime()
 	batch := NewPersistBatch(st.Persist)
 	if jump {
-		// Jumping the queue shifts everyone already in it back one place, so
-		// the positions stay a dense 1..n ordering.
+		// Shift everyone back one place to keep positions a dense 1..n.
 		for _, other := range queued {
 			other.MergeQueuePosition++
 			batch.Put("pull_requests", strconv.Itoa(other.ID), other)
@@ -75,9 +69,8 @@ func (st *Store) EnqueuePullRequest(prID int, jump bool) *PullRequest {
 	return clonePullRequest(pr)
 }
 
-// DequeuePullRequest takes a pull request out of its merge queue and closes
-// the gap it leaves. It answers the row as it was while queued, so a caller
-// can render the entry it removed, or nil when it was not queued.
+// DequeuePullRequest removes a PR from its queue and closes the gap. Returns
+// the row as it was while queued (for rendering), or nil when it was not queued.
 func (st *Store) DequeuePullRequest(prID int) *PullRequest {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -106,8 +99,8 @@ func (st *Store) DequeuePullRequest(prID int) *PullRequest {
 	return removed
 }
 
-// rawMergeQueueLocked returns the live queued rows in order; callers hold the
-// write lock and mutate them.
+// rawMergeQueueLocked returns the live queued rows in order for the caller,
+// holding the write lock, to mutate.
 func (st *Store) rawMergeQueueLocked(repoID int, baseRef string) []*PullRequest {
 	var queued []*PullRequest
 	for _, pr := range st.PullRequests {
@@ -126,9 +119,8 @@ func (st *Store) rawMergeQueueLocked(repoID int, baseRef string) []*PullRequest 
 
 // --- per-reviewer viewed files -------------------------------------------
 
-// SetPullRequestFileViewed records (or clears) one reviewer's "viewed" mark on
-// one file of a pull request's diff. It answers false when the pull request
-// does not exist.
+// SetPullRequestFileViewed sets or clears one reviewer's "viewed" mark on one
+// file of a PR diff. Returns false when the PR does not exist.
 func (st *Store) SetPullRequestFileViewed(prID, reviewerID int, path string, viewed bool) bool {
 	if path == "" {
 		return false
@@ -165,7 +157,7 @@ func (st *Store) SetPullRequestFileViewed(prID, reviewerID int, path string, vie
 	return true
 }
 
-// PullRequestViewedFiles returns the paths one reviewer has marked viewed.
+// PullRequestViewedFiles returns the paths a reviewer has marked viewed.
 func (st *Store) PullRequestViewedFiles(prID, reviewerID int) []string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

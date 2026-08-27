@@ -2,9 +2,8 @@ package store
 
 import "time"
 
-// OrgScopedItem abstracts the selected-repositories surface shared by
-// organization secrets and organization variables, so the per-repo
-// add/remove endpoints run through one core.
+// OrgScopedItem is the selected-repositories surface shared by org secrets and
+// variables, letting the per-repo add/remove endpoints run through one core.
 type OrgScopedItem interface {
 	ItemVisibility() string
 	SelectedIDs() []int

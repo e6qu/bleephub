@@ -14,25 +14,21 @@ const (
 	LoginSessionsBucket    = "login_sessions"
 	oidcLogoutClaimsBucket = "oidc_logout_claims"
 	loginSessionReapPeriod = time.Hour
-	// LoginSessionsByUserBucket is a durable secondary index: one row per
-	// session keyed by `<userID>\x00<sessionStorageKey>`, so every session a
-	// user holds is fetched by a bounded prefix scan (STORE-025) instead of
-	// listing and decoding the whole session bucket on a per-user logout. It is
-	// a superset of live sessions — PutLoginSession writes the index row in the
-	// same batch as the session, so revocation never misses a live session;
-	// harmless stale rows (a session dropped by the bespoke OIDC back-channel
-	// transaction) are reclaimed the next time that user's sessions are purged.
+	// LoginSessionsByUserBucket is a durable secondary index, one row per
+	// session keyed by `<userID>:<sessionStorageKey>`, so a user's sessions are
+	// fetched by a bounded prefix scan (STORE-025) rather than scanning the
+	// whole session bucket. PutLoginSession writes the index row in the same
+	// batch as the session, so it is a superset of live sessions and revocation
+	// never misses one; stale rows are reclaimed on the next per-user purge.
 	LoginSessionsByUserBucket = "login_sessions_by_user"
 	// loginSessionUserIndexSep separates the numeric user id from the session
-	// storage key. ':' is not a digit, so it cleanly bounds one user's prefix
-	// range (`1:` never overlaps `12:`), and — unlike a NUL byte — it carries no
-	// embedded-NUL-in-TEXT risk across SQLite/dqlite drivers. The session key
-	// suffix may itself contain ':' (it is `hmac:v1:…`); the FIRST separator is
-	// always the one after the all-digit user id.
+	// storage key. ':' is not a digit, so `1:` never overlaps `12:`, and unlike
+	// NUL it carries no embedded-NUL-in-TEXT risk across SQLite/dqlite. The key
+	// suffix may itself contain ':' (`hmac:v1:…`); the FIRST separator is the
+	// one after the all-digit user id.
 	loginSessionUserIndexSep = ":"
 )
 
-// loginSessionUserIndexKey composes the secondary-index row key.
 func loginSessionUserIndexKey(userID int, sessionStorageKey string) string {
 	return strconv.Itoa(userID) + loginSessionUserIndexSep + sessionStorageKey
 }
@@ -42,8 +38,8 @@ func LoginSessionUserIndexPrefix(userID int) string {
 }
 
 // sessionStorageKeyFromIndexKey recovers the session storage key an index row
-// points at (everything after the first separator; the user id is all digits so
-// the first ':' is unambiguously the separator).
+// points at (everything after the first ':', which is unambiguously the
+// separator since the user id is all digits).
 func sessionStorageKeyFromIndexKey(indexKey string) string {
 	if i := strings.Index(indexKey, loginSessionUserIndexSep); i >= 0 {
 		return indexKey[i+len(loginSessionUserIndexSep):]
@@ -77,8 +73,8 @@ func LoginSessionMapKey(persist *Persistence, id string) string {
 	if persist == nil {
 		return id
 	}
-	// Always digest — never honor a client-supplied "hmac:v1:" cookie value as a
-	// storage key, or a leaked session-row key could be presented as the cookie.
+	// Always digest — never honor a client-supplied "hmac:v1:" value as a
+	// storage key, or a leaked row key could be presented as the cookie.
 	return persist.opaqueLookupKey(LoginSessionsBucket, id)
 }
 
@@ -86,18 +82,16 @@ func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 	if id == "" || session == nil {
 		return fmt.Errorf("login session id and value are required")
 	}
-	// Hold st.Mu across both the durable Put and the in-memory map write so the
-	// two land as one critical section. Splitting them lets two concurrent
-	// writers for the same id interleave (A persists v1, B persists v2, B stores
-	// v2 in the map, A stores v1) and leave the durable row and the map
-	// disagreeing on which write won.
+	// Hold st.Mu across both the durable Put and the map write as one critical
+	// section, or two concurrent writers for the same id could leave the
+	// durable row and the map disagreeing on which write won.
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	persist := st.Persist
 	mapKey := LoginSessionMapKey(persist, id)
 	if persist != nil {
-		// The session row and its secondary-index row commit together so the
-		// index can never miss a session that exists (STORE-025).
+		// Session row and index row commit together so the index never misses
+		// an existing session (STORE-025).
 		batch := NewPersistBatch(persist)
 		batch.Put(LoginSessionsBucket, id, session)
 		batch.Put(LoginSessionsByUserBucket, loginSessionUserIndexKey(session.UserID, mapKey), struct{}{})
@@ -110,14 +104,10 @@ func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 	return nil
 }
 
-// MarkLoginSessionSudo records that the session behind the given cookie value
-// has just satisfied a proof-of-presence challenge. It reports whether such a
-// session existed; a session that expired between the challenge and the write
-// is not resurrected.
-//
-// The elevation is written through the same PutLoginSession the sign-in path
-// uses, so it lands in the durable row and survives a replica switch — a sudo
-// grant that evaporated on the next request would make the challenge a loop.
+// MarkLoginSessionSudo records that the session just satisfied a
+// proof-of-presence challenge, reporting whether such a session existed (an
+// expired one is not resurrected). It writes through PutLoginSession so the
+// grant is durable and survives a replica switch.
 func (st *Store) MarkLoginSessionSudo(id string, now time.Time, withSecondFactor bool) (bool, error) {
 	session, err := st.GetLoginSession(id)
 	if err != nil {
@@ -134,13 +124,10 @@ func (st *Store) MarkLoginSessionSudo(id string, now time.Time, withSecondFactor
 	return true, nil
 }
 
-// ReapExpiredLoginSessions bounds both the in-memory session index and its
-// durable bucket. It reaps two kinds of dead session: those past their expiry,
-// and those orphaned by user deletion — a deleted user is dropped from the
-// in-memory index on reload, but its durable rows otherwise linger until
-// natural expiry. It is safe across replicas: every deletion is idempotent and
-// the persistence batch commits all selected rows together. The caller supplies
-// time so tests and scheduler execution remain deterministic.
+// ReapExpiredLoginSessions bounds the in-memory index and durable bucket,
+// reaping sessions past expiry and those orphaned by user deletion (whose
+// durable rows would otherwise linger until natural expiry). Deletions are
+// idempotent, so it is replica-safe. The caller supplies time for determinism.
 func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 	now = now.UTC()
 	st.Mu.Lock()
@@ -150,11 +137,9 @@ func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 	}
 	st.nextLoginSessionReap = now.Add(loginSessionReapPeriod)
 	persist := st.Persist
-	// Snapshot the live user IDs under the same lock so orphaned sessions are
-	// reaped alongside expired ones. User IDs are monotonic and never reused, so
-	// a UserID absent from this snapshot belongs to a user that is gone for good;
-	// a concurrently created user can at worst make us retain its session one
-	// extra cycle, never drop a live one.
+	// Snapshot live user IDs under the same lock. IDs are monotonic and never
+	// reused, so a UserID absent here belongs to a gone user; a concurrently
+	// created user is at worst retained one extra cycle, never dropped live.
 	liveUsers := make(map[int]struct{}, len(st.Users))
 	for id := range st.Users {
 		liveUsers[id] = struct{}{}
@@ -188,8 +173,7 @@ func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 			}
 			reaped[id] = struct{}{}
 			entries = append(entries, PersistencePut{Bucket: LoginSessionsBucket, Key: id})
-			// Drop the session's secondary-index row in the same batch (id is the
-			// session's storage key, exactly what the index row embeds).
+			// Drop the index row in the same batch.
 			entries = append(entries, PersistencePut{Bucket: LoginSessionsByUserBucket, Key: loginSessionUserIndexKey(session.UserID, id)})
 		}
 		if err := persist.DeleteBatch(entries...); err != nil {
@@ -208,13 +192,10 @@ func (st *Store) ReapExpiredLoginSessions(now time.Time) error {
 	return nil
 }
 
-// backfillLoginSessionUserIndex upserts a secondary-index row for every session
-// currently loaded, so the per-user index is complete after startup regardless
-// of history: sessions written before the index existed (an upgrade) and any
-// drift are healed here. It runs once per process at SetPersistence, never on a
-// request-time refresh, and is idempotent — the rows are upserts. A dqlite peer
-// starting concurrently writes the same rows to the same keys, so replicas do
-// not clobber one another.
+// backfillLoginSessionUserIndex upserts an index row for every loaded session,
+// healing sessions written before the index existed and any drift. It runs
+// once per process at SetPersistence and is idempotent, so concurrent replicas
+// do not clobber one another.
 func (st *Store) backfillLoginSessionUserIndex() error {
 	st.Mu.RLock()
 	persist := st.Persist
@@ -255,8 +236,8 @@ func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 		copy := *local
 		return &copy, nil
 	}
-	// Read by the already-digested Key: passing the raw client value would let
-	// persist.Get honor a leaked "hmac:v1:" row key presented as the cookie.
+	// Read by the digested key: a raw client value would let persist.Get honor
+	// a leaked "hmac:v1:" row key presented as the cookie.
 	raw, err := persist.Get(LoginSessionsBucket, mapKey)
 	if err != nil {
 		return nil, fmt.Errorf("read login session: %w", err)
@@ -281,9 +262,8 @@ func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 	cached := session
 	st.LoginSessions[mapKey] = &cached
 	st.Mu.Unlock()
-	// Return a distinct copy, never the pointer now living in the map: a caller
-	// that mutates the result (e.g. rotating the CSRF token) must not race a
-	// concurrent locked reader of the map entry.
+	// Return a distinct copy, never the pointer in the map: a caller mutating
+	// the result (e.g. rotating the CSRF token) must not race a locked reader.
 	result := session
 	return &result, nil
 }
@@ -295,9 +275,8 @@ func (st *Store) DeleteLoginSession(id string) error {
 	st.Mu.RUnlock()
 	mapKey := LoginSessionMapKey(persist, id)
 	if persist != nil {
-		// Resolve the owner so the secondary-index row can be dropped too. Prefer
-		// the in-memory copy; fall back to a point read for a session this
-		// replica never cached.
+		// Resolve the owner to drop the index row too, falling back to a point
+		// read for a session this replica never cached.
 		userID := -1
 		if cached != nil {
 			userID = cached.UserID
@@ -308,7 +287,7 @@ func (st *Store) DeleteLoginSession(id string) error {
 			}
 		}
 		// Delete by the digested key so a client cannot delete an arbitrary
-		// session by presenting its stored "hmac:v1:" row key.
+		// session via its stored "hmac:v1:" row key.
 		batch := NewPersistBatch(persist)
 		batch.Delete(LoginSessionsBucket, mapKey)
 		if userID >= 0 {
@@ -329,10 +308,8 @@ func (st *Store) DeleteLoginSessionsForUser(userID int) error {
 	persist := st.Persist
 	st.Mu.RUnlock()
 	if persist != nil {
-		// The secondary index gives this user's session rows by a bounded prefix
-		// scan, so a per-user purge no longer lists and decodes the entire
-		// session bucket (STORE-025). It reads durable state, so it revokes
-		// sessions this replica never cached, including ones created elsewhere.
+		// Prefix-scan the index for this user's rows (STORE-025), reading
+		// durable state so sessions created on another replica are revoked too.
 		idxRows, err := persist.ListPrefix(LoginSessionsByUserBucket, LoginSessionUserIndexPrefix(userID))
 		if err != nil {
 			return fmt.Errorf("list login-session index for user %d: %w", userID, err)
@@ -362,17 +339,15 @@ func (st *Store) DeleteLoginSessionsForUser(userID int) error {
 }
 
 // LoginSessionSummary is one row of the account's "active sessions" list. It
-// carries no credential: the storage key, the CSRF token and the OpenID
-// Connect ID token all stay inside the store, and Handle — a value drawn
-// independently of the cookie — is what the UI revokes by.
+// carries no credential: the storage key, CSRF token and ID token stay in the
+// store, and the UI revokes by Handle, drawn independently of the cookie.
 type LoginSessionSummary struct {
 	Handle     string    `json:"handle"`
 	CreatedAt  time.Time `json:"created_at,omitzero"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	UserAgent  string    `json:"user_agent,omitempty"`
 	SignedInIP string    `json:"signed_in_ip,omitempty"`
-	// Provider names the identity provider that established the session, empty
-	// for a local sign-in.
+	// Provider names the establishing IdP, empty for a local sign-in.
 	Provider string `json:"provider,omitempty"`
 }
 
@@ -387,11 +362,10 @@ func loginSessionSummary(session *LoginSession) LoginSessionSummary {
 	}
 }
 
-// forEachLoginSessionOfUser visits every live session the user holds, newest
-// first is left to the caller. With persistence it reads through the durable
-// per-user index (a bounded prefix scan, STORE-025), so sessions established on
-// another replica are visited too; without it, the in-memory map is the whole
-// truth. Expired rows are skipped rather than reported as active.
+// forEachLoginSessionOfUser visits every live session the user holds. With
+// persistence it reads through the durable per-user index (STORE-025), so
+// sessions established on another replica are visited too; otherwise the
+// in-memory map is the whole truth. Expired rows are skipped.
 func (st *Store) forEachLoginSessionOfUser(userID int, now time.Time, visit func(storageKey string, session *LoginSession)) error {
 	st.Mu.RLock()
 	persist := st.Persist
@@ -423,7 +397,7 @@ func (st *Store) forEachLoginSessionOfUser(userID int, now time.Time, visit func
 			return fmt.Errorf("read login session: %w", err)
 		}
 		if raw == nil {
-			// A stale index row left by a session dropped elsewhere.
+			// Stale index row for a session dropped elsewhere.
 			continue
 		}
 		var session LoginSession
@@ -439,9 +413,8 @@ func (st *Store) forEachLoginSessionOfUser(userID int, now time.Time, visit func
 }
 
 // ListLoginSessionsForUser returns the user's live browser sessions, newest
-// first. Sessions predating the handle (there are none in a fresh deployment,
-// but a running process may hold one) are reported with an empty handle and are
-// simply not revocable by name.
+// first. Sessions predating the handle are reported with an empty handle and
+// are not revocable by name.
 func (st *Store) ListLoginSessionsForUser(userID int, now time.Time) ([]LoginSessionSummary, error) {
 	var summaries []LoginSessionSummary
 	err := st.forEachLoginSessionOfUser(userID, now, func(_ string, session *LoginSession) {
@@ -461,7 +434,7 @@ func (st *Store) ListLoginSessionsForUser(userID int, now time.Time) ([]LoginSes
 
 // DeleteLoginSessionByHandle revokes one of the user's sessions by its public
 // handle. The handle is scoped to the user, so one account cannot revoke
-// another's session by guessing a handle. Reports whether a session matched.
+// another's by guessing. Reports whether a session matched.
 func (st *Store) DeleteLoginSessionByHandle(userID int, handle string, now time.Time) (bool, error) {
 	if handle == "" {
 		return false, nil
@@ -501,9 +474,9 @@ func (st *Store) DeleteLoginSessionByHandle(userID int, handle string, now time.
 	return true, nil
 }
 
-// DeleteLoginSessionsForOIDC revokes the browser sessions selected by an
-// OpenID Connect Back-Channel Logout token. A sid selects one provider session;
-// without sid, sub selects every local session for that provider identity.
+// DeleteLoginSessionsForOIDC revokes the sessions selected by an OpenID Connect
+// Back-Channel Logout token: sid selects one provider session, otherwise sub
+// selects every session for that provider identity.
 func (st *Store) DeleteLoginSessionsForOIDC(provider, issuer, sid, subject string) error {
 	st.Mu.RLock()
 	persist := st.Persist
@@ -551,9 +524,8 @@ func (st *Store) DeleteLoginSessionsForOIDC(provider, issuer, sid, subject strin
 }
 
 // ClaimOIDCLogoutAndDeleteSessions atomically claims a Back-Channel Logout
-// token and revokes the sessions it selects. A persistent store performs both
-// operations in one database transaction; an ephemeral store performs both
-// while holding its map mutex.
+// token and revokes the sessions it selects — in one DB transaction with
+// persistence, otherwise under the map mutex.
 func (st *Store) ClaimOIDCLogoutAndDeleteSessions(provider, issuer, clientID, jti string, expiresAt, now time.Time, sid, subject string) (bool, error) {
 	if provider == "" || issuer == "" || clientID == "" || jti == "" || !expiresAt.After(now) {
 		return false, fmt.Errorf("complete OpenID Connect logout replay coordinates and a future expiry are required")

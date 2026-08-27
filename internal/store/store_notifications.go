@@ -23,8 +23,7 @@ type UserNotificationsState struct {
 	RepoLastReadAt     map[string]time.Time `json:"repo_last_read_at,omitempty"`
 	ReadThreadIDs      map[string]time.Time `json:"read_thread_ids,omitempty"`
 	DismissedThreadIDs map[string]bool      `json:"dismissed_thread_ids,omitempty"`
-	// SavedThreadIDs is the user's bookmark set backing the web inbox's Saved
-	// view (github.com-only; not part of the public REST surface).
+	// SavedThreadIDs backs the web inbox's Saved view (not part of REST).
 	SavedThreadIDs map[string]bool                `json:"saved_thread_ids,omitempty"`
 	Subscriptions  map[string]*ThreadSubscription `json:"subscriptions,omitempty"`
 }
@@ -40,15 +39,13 @@ type notificationThreadSource struct {
 	UpdatedAt   time.Time
 	AuthorID    int
 	AssigneeIDs []int
-	// RequestedReviewerIDs is set for pull requests: a user whose review is
-	// requested gets a thread with reason "review_requested" (github), even
-	// without watching the repo.
+	// RequestedReviewerIDs: a requested reviewer gets a thread with reason
+	// "review_requested" even without watching the repo.
 	RequestedReviewerIDs []int
 }
 
-// NotificationThreadRow is one accepted thread source gathered under the
-// read lock, carrying everything buildThread needs so rendering can happen
-// after the lock is released.
+// NotificationThreadRow is one accepted thread source gathered under the read
+// lock, carrying everything buildThread needs to render after the lock releases.
 type NotificationThreadRow struct {
 	src        notificationThreadSource
 	Repo       *Repo `json:"-"`
@@ -59,13 +56,11 @@ type NotificationThreadRow struct {
 	saved      bool
 }
 
-// Saved reports whether the thread is in the user's saved (bookmark) set.
 func (row NotificationThreadRow) Saved() bool { return row.saved }
 
-// BuildNotificationThreads renders a (typically already-paginated) slice of
-// rows into notification threads. buildThread is expensive per row (it embeds
-// RepoToJSON and scans comments for the latest-comment URL), so callers should
-// paginate the rows before calling this.
+// BuildNotificationThreads renders rows into notification threads. buildThread
+// is expensive per row (embeds RepoToJSON, scans comments), so paginate rows
+// before calling.
 func (st *Store) BuildNotificationThreads(rows []NotificationThreadRow, baseURL string) []*NotificationThread {
 	threads := make([]*NotificationThread, len(rows))
 	for i, row := range rows {
@@ -74,10 +69,9 @@ func (st *Store) BuildNotificationThreads(rows []NotificationThreadRow, baseURL 
 	return threads
 }
 
-// NotificationRowsFor applies a request-credential reach check after the
-// store's read lock has been released. A nil predicate exposes no rows, making
-// it impossible for an HTTP caller to accidentally request a
-// credential-blind human-principal view.
+// NotificationRowsFor applies a request-credential reach check after the read
+// lock releases. A nil predicate exposes no rows, so a caller cannot request a
+// credential-blind view.
 func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, canRead func(*Repo) bool) []NotificationThreadRow {
 	if canRead == nil {
 		return nil
@@ -88,14 +82,10 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 	preferences := notificationPreferencesLocked(st.Users[user.ID])
 	var rows []NotificationThreadRow
 
-	// Precompute the set of (parentType, parentID) the viewer commented on in
-	// a single pass over st.Comments, so notificationReason is an O(1) map
-	// lookup per thread instead of an O(all-comments) scan per thread (which
-	// made this handler O((issues+PRs) × comments)).
+	// One pass over st.Comments precomputes the (parentType, parentID) sets the
+	// viewer commented on and was @-mentioned in, keeping the per-thread reason
+	// O(1) instead of rescanning every comment per thread.
 	commentedOn := make(map[string]struct{})
-	// A comment body that @-mentions the viewer gives the thread reason
-	// "mention" even when the viewer never participated otherwise. Precompute
-	// per-viewer in one pass so the per-thread reason stays O(1).
 	mentionedInComment := make(map[string]struct{})
 	for _, c := range st.Comments {
 		key := strings.ToLower(c.ParentType) + "\x1f" + strconv.Itoa(c.IssueID)
@@ -117,9 +107,8 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 		}
 
 		threadID := NotificationThreadID(src.Type, src.ID)
-		// The default inbox hides done ("dismissed") threads; the web-only Done
-		// view lists exactly those, and the Saved view lists the bookmark set
-		// regardless of done/read state.
+		// The inbox hides done threads; the Done view lists exactly those; the
+		// Saved view lists the bookmark set regardless of done/read state.
 		switch opts.View {
 		case NotificationViewDone:
 			if !state.DismissedThreadIDs[threadID] {
@@ -136,12 +125,10 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 		}
 
 		reason := notificationReasonWithComments(user, src, commentedOn, mentionedInComment)
-		// Read access alone does not subscribe a user to every issue and pull
-		// request in a repository. A non-participant receives the thread only
-		// after explicitly subscribing to it or watching the repository.
-		// Membership in the saved/done sets is itself evidence the thread was in
-		// the user's inbox, so those views skip the subscription gate (the user
-		// may have unwatched the repository since).
+		// Read access alone does not subscribe a user to a repo's issues and PRs;
+		// a non-participant gets the thread only after subscribing or watching.
+		// Saved/done membership already proves the thread was in the inbox, so
+		// those views skip the subscription gate.
 		if reason == "subscribed" && opts.View == "" {
 			threadSubscription := state.Subscriptions[threadID]
 			repoSubscription := st.RepoSubscriptions[RepoSubscriptionKey(user.ID, repo.ID)]
@@ -150,13 +137,10 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 			if !explicitlySubscribed && !watchingRepo {
 				return
 			}
-			// Watching a repository notifies about activity from that point
-			// on: github.com does not backfill the inbox with every
-			// pre-existing issue and pull request (measured here as 4 → 30
-			// threads on a plain subscribe). An explicit per-thread subscribe
-			// still surfaces its own thread — the user picked exactly that
-			// one — and a zero CreatedAt (records predating the stamp) keeps
-			// the old inclusive behaviour rather than hiding a thread.
+			// Watching notifies about activity from that point on; GitHub does
+			// not backfill pre-existing issues/PRs. An explicit per-thread
+			// subscribe still surfaces its own thread, and a zero CreatedAt
+			// (records predating the stamp) stays inclusive.
 			if !explicitlySubscribed && watchingRepo &&
 				!repoSubscription.CreatedAt.IsZero() &&
 				src.UpdatedAt.Before(repoSubscription.CreatedAt) {
@@ -166,9 +150,8 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 		if opts.Participating && reason == "subscribed" {
 			return
 		}
-		// The account's notification preferences decide whether this class of
-		// thread reaches the web inbox at all (Settings → Notifications). A
-		// preference that nothing reads would be a lie on the settings page.
+		// Notification preferences decide whether this thread class reaches the
+		// web inbox (Settings → Notifications).
 		if !preferences.NotificationDeliversWeb(src.Type, reason) {
 			return
 		}
@@ -195,8 +178,8 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 				unread = false
 			}
 		}
-		// Saved and done threads have typically been read already; those views
-		// list their whole set, so the unread filter applies only to the inbox.
+		// The unread filter applies only to the inbox; saved/done views list
+		// their whole set.
 		if opts.View == "" && !opts.All && !unread {
 			return
 		}
@@ -250,9 +233,9 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 	return rows
 }
 
-// notificationReason derives the thread reason for a single thread. Callers
-// hold st.Mu (it reads st.Comments directly). Used for one-off thread lookups;
-// the list path uses notificationReasonWithComments with a precomputed set.
+// notificationReason derives the thread reason for a one-off lookup. Callers
+// hold st.Mu (it reads st.Comments directly); the list path uses
+// notificationReasonWithComments with a precomputed set.
 func notificationReason(st *Store, user *User, src notificationThreadSource) string {
 	if src.AuthorID == user.ID {
 		return "author"
@@ -306,10 +289,9 @@ func bodyMentions(body, login string) bool {
 	}
 }
 
-// notificationReasonWithComments derives the thread reason for the user using
-// a precomputed set of the (parentType, parentID) pairs the user commented on
-// (keyed "type\x1fid"). This keeps the per-thread cost O(1) rather than
-// rescanning every comment in the store.
+// notificationReasonWithComments derives the thread reason using precomputed
+// commented-on / mentioned sets (keyed "type\x1fid"), keeping the per-thread
+// cost O(1).
 func notificationReasonWithComments(user *User, src notificationThreadSource, commentedOn, mentionedInComment map[string]struct{}) string {
 	if src.AuthorID == user.ID {
 		return "author"
@@ -365,8 +347,7 @@ func parseNotificationThreadID(threadID string) (string, int, bool) {
 	}
 }
 
-// lastReadAtFor derives the thread's last-read timestamp from the user's
-// notification state. Callers hold st.Mu (state is store-owned).
+// lastReadAtFor derives the thread's last-read timestamp. Callers hold st.Mu.
 func lastReadAtFor(state *UserNotificationsState, threadID string) *time.Time {
 	if readAt, ok := state.ReadThreadIDs[threadID]; ok {
 		t := readAt
@@ -379,10 +360,8 @@ func lastReadAtFor(state *UserNotificationsState, threadID string) *time.Time {
 	return nil
 }
 
-// buildThread renders one gathered notification thread row. Must not be
-// called with st.Mu held: it scans comments under its own read lock and
-// embeds the repository via RepoToJSON, which derives counters under the
-// store lock itself.
+// buildThread renders one notification thread row. Must NOT be called with
+// st.Mu held: it scans comments and calls RepoToJSON, each under the store lock.
 func (st *Store) buildThread(row NotificationThreadRow, baseURL string) *NotificationThread {
 	src, repo, threadID := row.src, row.Repo, row.threadID
 	base := baseURL
@@ -398,7 +377,7 @@ func (st *Store) buildThread(row NotificationThreadRow, baseURL string) *Notific
 		htmlURL = fmt.Sprintf("%s/%s/pull/%d", base, repo.FullName, src.Number)
 	}
 
-	// Find the most recent comment to set latest_comment_url to a concrete comment when available.
+	// Point latest_comment_url at the most recent comment when one exists.
 	var latestCommentID int
 	var latestCommentAt time.Time
 	st.Mu.RLock()
@@ -433,8 +412,8 @@ func (st *Store) buildThread(row NotificationThreadRow, baseURL string) *Notific
 	}
 }
 
-// GetNotificationThreadFor is the credential-aware form used by HTTP
-// handlers. The callback runs only after st.Mu is released; nil denies access.
+// GetNotificationThreadFor is the credential-aware form for HTTP handlers. The
+// callback runs only after st.Mu is released; nil denies access.
 func (st *Store) GetNotificationThreadFor(user *User, baseURL, threadID string, canRead func(*Repo) bool) *NotificationThread {
 	if canRead == nil {
 		return nil
@@ -522,18 +501,16 @@ func (st *Store) MarkNotificationsRead(userID int, at time.Time, repoScope strin
 }
 
 // MaxReadThreadIDs bounds the per-user read-marker set; PruneReadThreadSlack is
-// how far past the cap it may grow before a prune, so the O(n log n) prune
-// amortises to O(log n) per mark instead of firing on every mark at the cap.
-// GitHub ages notifications out, so dropping the oldest read markers is faithful;
-// without this the map — re-serialised in full on every mark — grows without
-// limit as a user reads more threads (STORE-023).
+// the slack past the cap before a prune, amortising the O(n log n) prune to
+// O(log n) per mark. Without the bound the map — re-serialised in full on every
+// mark — grows unbounded (STORE-023).
 const (
 	MaxReadThreadIDs     = 50000
 	PruneReadThreadSlack = 5000
 )
 
-// boundReadThreadIDs prunes the oldest read markers (by read-at time) once the
-// set grows a slack beyond the cap. Caller holds st.Mu for writing.
+// boundReadThreadIDs prunes the oldest read markers once the set grows a slack
+// beyond the cap. Caller holds st.Mu for writing.
 func boundReadThreadIDs(state *UserNotificationsState) {
 	if len(state.ReadThreadIDs) <= MaxReadThreadIDs+PruneReadThreadSlack {
 		return
@@ -565,8 +542,8 @@ func (st *Store) MarkThreadRead(userID int, threadID string, at time.Time) {
 	st.persistNotificationsState(userID, state)
 }
 
-// MarkThreadDone dismisses a thread for the user. Done threads are retained
-// (not deleted) so the web-only Done view can list them for review.
+// MarkThreadDone dismisses a thread. Done threads are retained (not deleted) so
+// the Done view can list them.
 func (st *Store) MarkThreadDone(userID int, threadID string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -578,8 +555,7 @@ func (st *Store) MarkThreadDone(userID int, threadID string) {
 	st.persistNotificationsState(userID, state)
 }
 
-// SetThreadSaved adds or removes a thread from the user's saved (bookmark)
-// set, backing the web inbox's Saved view.
+// SetThreadSaved adds or removes a thread from the user's saved set.
 func (st *Store) SetThreadSaved(userID int, threadID string, saved bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -617,8 +593,8 @@ func (st *Store) SetThreadSubscription(userID int, threadID string, sub *ThreadS
 }
 
 // moveNotificationRepoKeyBatchLocked re-keys per-user notification read state
-// from oldFull to newFull on a repo rename/transfer, staging its durable writes
-// into batch so they commit with the rest of the re-key. Caller holds st.Mu.
+// from oldFull to newFull on a repo rename/transfer, staging into batch. Caller
+// holds st.Mu.
 func (st *Store) moveNotificationRepoKeyBatchLocked(batch *PersistBatch, oldFull, newFull string) {
 	for userID, state := range st.NotificationsState {
 		if state == nil || state.RepoLastReadAt == nil {
@@ -694,10 +670,8 @@ func (st *Store) deleteNotificationThreadStateBatchLocked(batch *PersistBatch, t
 }
 
 // notificationsStateViewLocked returns the user's notification state for
-// reading. Callers hold st.Mu (read or write). Unlike notificationsStateFor
-// it never mutates the store: a user with no recorded state gets a fresh
-// zero-value view that is not inserted into the map (nil inner maps are safe
-// to read).
+// reading without mutating the store: a user with no recorded state gets a
+// fresh zero-value view not inserted into the map. Callers hold st.Mu.
 func (st *Store) notificationsStateViewLocked(userID int) *UserNotificationsState {
 	if state, ok := st.NotificationsState[userID]; ok {
 		return state
@@ -705,9 +679,9 @@ func (st *Store) notificationsStateViewLocked(userID int) *UserNotificationsStat
 	return &UserNotificationsState{}
 }
 
-// notificationsStateFor returns the user's notification state, lazily
-// creating and normalizing it. Callers hold st.Mu for WRITING — it inserts
-// into st.NotificationsState and repairs nil inner maps.
+// notificationsStateFor returns the user's notification state, lazily creating
+// and normalizing it. Callers hold st.Mu for WRITING (it inserts and repairs
+// nil inner maps).
 func (st *Store) notificationsStateFor(userID int) *UserNotificationsState {
 	if st.NotificationsState == nil {
 		st.NotificationsState = map[int]*UserNotificationsState{}
@@ -723,7 +697,7 @@ func (st *Store) notificationsStateFor(userID int) *UserNotificationsState {
 		}
 		st.NotificationsState[userID] = state
 	}
-	// Ensure maps are non-nil after loading from persistence.
+	// Repair nil inner maps after loading from persistence.
 	if state.RepoLastReadAt == nil {
 		state.RepoLastReadAt = map[string]time.Time{}
 	}
@@ -765,8 +739,7 @@ type NotificationThread struct {
 	URL              string
 }
 
-// Web-only notification inbox views (/ui-data): the empty view is the normal
-// inbox, Saved is the bookmark set, Done is the reviewable dismissed set.
+// Web-only inbox views (/ui-data); the empty view is the normal inbox.
 const (
 	NotificationViewSaved = "saved"
 	NotificationViewDone  = "done"
@@ -779,7 +752,6 @@ type NotificationListOptions struct {
 	Since         time.Time
 	Before        time.Time
 	RepoScope     string
-	// View selects a web-only inbox view ("", NotificationViewSaved, or
-	// NotificationViewDone). The public REST listings always use "".
+	// View selects a web-only inbox view; REST listings always use "".
 	View string
 }

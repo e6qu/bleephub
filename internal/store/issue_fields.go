@@ -21,7 +21,7 @@ type IssueField struct {
 	UpdatedAt   time.Time           `json:"updated_at"`
 }
 
-// IssueFieldOption is one selectable option of a single/multi select field.
+// IssueFieldOption is one option of a single/multi select field.
 type IssueFieldOption struct {
 	ID          int       `json:"id"`
 	Name        string    `json:"name"`
@@ -53,7 +53,7 @@ func (st *Store) GetIssueField(orgLogin string, id int) *IssueField {
 }
 
 // buildIssueFieldOptionsLocked materializes option rows from a request,
-// preserving CreatedAt for options carrying an existing option's ID.
+// preserving CreatedAt for options carrying an existing ID.
 func (st *Store) buildIssueFieldOptionsLocked(existing []*IssueFieldOption, reqs []IssueFieldOptionRequest) []*IssueFieldOption {
 	now := time.Now().UTC()
 	byID := map[int]*IssueFieldOption{}
@@ -156,9 +156,9 @@ func (st *Store) DeleteIssueField(orgLogin string, id int) bool {
 	if st.OrgIssueFields[orgLogin][id] == nil {
 		return false
 	}
-	// One transaction: removing the field definition and clearing its value from
-	// every issue commit together, so a crash cannot leave an issue carrying a
-	// value for a field that no longer exists (STORE-001/002).
+	// Remove the definition and clear its value from every issue in one
+	// transaction, so a crash cannot leave a value for a deleted field
+	// (STORE-001/002).
 	batch := NewPersistBatch(st.Persist)
 	delete(st.OrgIssueFields[orgLogin], id)
 	for issueID, values := range st.IssueFieldValues {
@@ -244,10 +244,9 @@ type IssueFieldOptionRequest struct {
 	Priority    *int    `json:"priority"`
 }
 
-// issueFieldValueJSON renders one issue-field-value. For single_select the
-// value is the option name and single_select_option carries the option
-// details; for multi_select the option details ride multi_select_options and
-// value is null (the schema's value member does not admit arrays).
+// issueFieldValueJSON renders one issue-field-value. For multi_select the option
+// details ride multi_select_options and value is null (the schema's value member
+// does not admit arrays).
 func issueFieldValueJSON(field *IssueField, issueID int, value interface{}) map[string]interface{} {
 	out := map[string]interface{}{
 		"issue_field_id": field.ID,
@@ -288,8 +287,8 @@ func issueFieldValueJSON(field *IssueField, issueID int, value interface{}) map[
 	return out
 }
 
-// ToStringSlice coerces a stored multi-value ( []string in memory,
-// []interface{} after a persistence reload) into []string.
+// ToStringSlice coerces a stored multi-value ([]string in memory, []interface{}
+// after a persistence reload) into []string.
 func ToStringSlice(value interface{}) []string {
 	switch v := value.(type) {
 	case []string:

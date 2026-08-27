@@ -11,66 +11,51 @@ import (
 	"time"
 )
 
-// Account security state behind github.com's Settings → "Password and
-// authentication" page: TOTP enrolment, recovery codes, the account password,
-// and which credential source actually governs the account.
-//
-// The secret and the recovery codes live here and never leave: the only two
-// moments a plaintext value crosses the store boundary are enrolment (the
-// provisioning secret) and recovery-code generation, each exactly once. Every
-// read path returns TwoFactorStatus, which carries counts and timestamps but
-// no secret material.
+// Account security: TOTP enrolment, recovery codes, the account password, and
+// the credential source that governs the account. Plaintext secret material
+// crosses the store boundary only at enrolment and recovery-code generation,
+// each once; every read path returns secret-free TwoFactorStatus.
 
 const (
 	// recoveryCodeCount matches github.com's set size.
 	recoveryCodeCount = 16
-	// recoveryCodeGroup/recoveryCodeGroups give the xxxxx-xxxxx shape GitHub
-	// prints. Ten symbols from a 32-symbol alphabet is 50 bits — far beyond
-	// guessing, which is why a plain SHA-256 (not a password KDF) is the right
-	// digest for them.
+	// Ten symbols from a 32-symbol alphabet is 50 bits, so a plain SHA-256 (not
+	// a password KDF) suffices to digest them.
 	recoveryCodeGroup  = 5
 	recoveryCodeGroups = 2
-	// recoveryCodeAlphabet omits the characters people misread when copying a
-	// code off a printout: i, l, o, 0, 1.
+	// recoveryCodeAlphabet omits characters misread off a printout: i, l, o, 0, 1.
 	recoveryCodeAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
-	// enrollmentWindow bounds how long a provisioned-but-unconfirmed secret
-	// stays valid. An abandoned enrolment must not leave a live secret sitting
-	// on the account indefinitely.
+	// enrollmentWindow bounds how long a provisioned-but-unconfirmed secret stays
+	// enrollable.
 	enrollmentWindow = 15 * time.Minute
 )
 
-// RecoveryCode is one single-use fallback credential. Only its digest is
-// retained; UsedAt is the moment it was spent (zero while unused).
+// RecoveryCode is one single-use fallback credential; only its digest is
+// retained. UsedAt is zero while unused.
 type RecoveryCode struct {
 	Hash   string    `json:"hash"`
 	UsedAt time.Time `json:"used_at,omitempty"`
 }
 
-// Used reports whether the code has already been spent.
 func (c RecoveryCode) Used() bool { return !c.UsedAt.IsZero() }
 
 // TwoFactorConfig is the stored second-factor state for one account.
 type TwoFactorConfig struct {
-	// Secret is the base32 TOTP shared secret. It is set while an enrolment is
-	// pending and for as long as two-factor is enabled.
 	Secret string `json:"secret,omitempty"`
-	// Pending marks a secret that has been provisioned but not yet proved: the
-	// account is NOT protected until a real code confirms the authenticator
-	// actually holds it.
+	// Pending marks a provisioned-but-unproved secret: the account is NOT
+	// protected until a code confirms the authenticator holds it.
 	Pending      bool      `json:"pending,omitempty"`
 	PendingSince time.Time `json:"pending_since,omitempty"`
 	Enabled      bool      `json:"enabled,omitempty"`
 	EnrolledAt   time.Time `json:"enrolled_at,omitempty"`
-	// LastStep is the highest TOTP counter already spent. A code is single-use:
-	// replaying one inside its own validity window is refused.
+	// LastStep is the highest TOTP counter already spent; replaying one inside
+	// its validity window is refused.
 	LastStep                 int64          `json:"last_step,omitempty"`
 	RecoveryCodes            []RecoveryCode `json:"recovery_codes,omitempty"`
 	RecoveryCodesGeneratedAt time.Time      `json:"recovery_codes_generated_at,omitempty"`
 }
 
-// TwoFactorStatus is the complete second-factor view a read endpoint may
-// return: what is on, since when, and how much recovery capacity is left.
-// Nothing here can be replayed as a credential.
+// TwoFactorStatus is the secret-free second-factor view a read endpoint returns.
 type TwoFactorStatus struct {
 	Enabled                  bool      `json:"enabled"`
 	PendingEnrollment        bool      `json:"pending_enrollment"`
@@ -103,42 +88,32 @@ func enrollmentExpired(config *TwoFactorConfig, now time.Time) bool {
 	return config.PendingSince.IsZero() || now.After(config.PendingSince.Add(enrollmentWindow))
 }
 
-// AccountSecurityResult is the outcome of an enrolment or verification attempt.
-// Callers map it to a status code; the store never decides HTTP semantics.
+// AccountSecurityResult is the outcome of an enrolment or verification attempt;
+// callers map it to a status code.
 type AccountSecurityResult int
 
 const (
-	// SecurityOK means the operation succeeded.
 	SecurityOK AccountSecurityResult = iota
-	// SecurityUnknownUser means no such account.
 	SecurityUnknownUser
-	// SecurityInvalidCode means the code was wrong, expired, already spent,
-	// or not a code at all.
 	SecurityInvalidCode
-	// SecurityTwoFactorNotEnabled means the account has no confirmed second factor.
 	SecurityTwoFactorNotEnabled
-	// SecurityTwoFactorAlreadyEnabled means enrolment was attempted while a confirmed
-	// second factor is already in place.
 	SecurityTwoFactorAlreadyEnabled
-	// SecurityNoPendingEnrollment means there is no live provisioned secret to
-	// confirm (never started, or the enrolment window elapsed).
+	// SecurityNoPendingEnrollment: no live provisioned secret to confirm (never
+	// started, or the enrolment window elapsed).
 	SecurityNoPendingEnrollment
-	// SecurityExternalAccount means the account's credentials are governed
-	// elsewhere (an external identity provider), so this instance has no second
-	// factor to enrol.
+	// SecurityExternalAccount: credentials are governed by an external identity
+	// provider, so there is no second factor to enrol here.
 	SecurityExternalAccount
-	// SecurityInternalError means the operation could not be completed for a
-	// reason unrelated to the caller — the entropy source failed.
+	// SecurityInternalError: the entropy source failed.
 	SecurityInternalError
-	// SecurityMethodDisallowed means the code was genuine but arrived through a
-	// second-factor method an enterprise policy bans. It is distinct from
-	// SecurityInvalidCode because the remedy is different: use the other
-	// factor, not a corrected code.
+	// SecurityMethodDisallowed: a genuine code arrived through a method an
+	// enterprise policy bans; distinct from SecurityInvalidCode because the
+	// remedy is to use the other factor.
 	SecurityMethodDisallowed
 )
 
 // TwoFactorStatusFor returns a detached snapshot of the account's second-factor
-// state. The second result is false when the user does not exist.
+// state; the second result is false when the user does not exist.
 func (st *Store) TwoFactorStatusFor(userID int, now time.Time) (TwoFactorStatus, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -149,8 +124,7 @@ func (st *Store) TwoFactorStatusFor(userID int, now time.Time) (TwoFactorStatus,
 	return twoFactorStatusOf(user.TwoFactor, now), true
 }
 
-// TwoFactorEnabled reports whether the account has a confirmed second factor.
-// It is the predicate the sign-in path and the REST private-user view read;
+// TwoFactorEnabled reports whether the account has a confirmed second factor;
 // a pending (unconfirmed) enrolment is deliberately not "enabled".
 func (st *Store) TwoFactorEnabled(userID int) bool {
 	st.Mu.RLock()
@@ -159,19 +133,13 @@ func (st *Store) TwoFactorEnabled(userID int) bool {
 	return user != nil && user.TwoFactor != nil && user.TwoFactor.Enabled
 }
 
-// BeginTwoFactorEnrollment provisions a fresh TOTP secret for the account and
-// returns it — the one moment it is legible outside the store. The account is
-// NOT protected yet: the secret stays pending until ConfirmTwoFactorEnrollment
-// sees a code computed from it, so a user who never completes the pairing is
-// never told they have a second factor they cannot produce.
-//
-// Restarting enrolment replaces any previous pending secret, so a user who
-// closed the page mid-pairing simply scans a new code.
+// BeginTwoFactorEnrollment provisions a fresh TOTP secret and returns it — the
+// one moment it is legible outside the store. The secret stays pending until
+// ConfirmTwoFactorEnrollment sees a code computed from it. Restarting replaces
+// any previous pending secret.
 func (st *Store) BeginTwoFactorEnrollment(userID int, now time.Time) (string, AccountSecurityResult) {
 	secret, err := NewTOTPSecret()
 	if err != nil {
-		// Failing closed is the only safe option: a predictable secret is worse
-		// than no second factor.
 		return "", SecurityInternalError
 	}
 	st.Mu.Lock()
@@ -192,10 +160,9 @@ func (st *Store) BeginTwoFactorEnrollment(userID int, now time.Time) (string, Ac
 	return secret, SecurityOK
 }
 
-// ConfirmTwoFactorEnrollment completes enrolment when `code` is a valid TOTP
-// for the pending secret, and only then. It returns the generated recovery
-// codes in the clear — the single time they are legible — alongside the new
-// status.
+// ConfirmTwoFactorEnrollment completes enrolment when code is a valid TOTP for
+// the pending secret. It returns the generated recovery codes in the clear —
+// the single time they are legible.
 func (st *Store) ConfirmTwoFactorEnrollment(userID int, code string, now time.Time) ([]string, TwoFactorStatus, AccountSecurityResult) {
 	codes, hashes, err := newRecoveryCodes()
 	if err != nil {
@@ -212,7 +179,6 @@ func (st *Store) ConfirmTwoFactorEnrollment(userID int, code string, now time.Ti
 		return nil, twoFactorStatusOf(config, now), SecurityNoPendingEnrollment
 	}
 	if enrollmentExpired(config, now) {
-		// Drop the stale secret rather than leaving it enrollable forever.
 		user.TwoFactor = nil
 		user.UpdatedAt = now
 		st.persistUserLocked(user)
@@ -234,38 +200,29 @@ func (st *Store) ConfirmTwoFactorEnrollment(userID int, code string, now time.Ti
 	return codes, twoFactorStatusOf(config, now), SecurityOK
 }
 
-// ─── The second factors this instance implements ───────────────────────────
-
-// TwoFactorMethod names one second factor bleephub actually implements. The
-// set is deliberately closed and reported verbatim by the account's
-// authentication view, so nothing claims a factor the server cannot verify.
+// TwoFactorMethod names one second factor bleephub implements. The set is
+// closed and reported verbatim by the authentication view.
 type TwoFactorMethod string
 
 const (
-	// TwoFactorMethodTOTP is a time-based one-time password from an
-	// authenticator app: a per-30-second value derived from a secret the server
-	// and the app share, never transmitted between them.
 	TwoFactorMethodTOTP TwoFactorMethod = "totp"
-	// TwoFactorMethodRecoveryCode is one of the printed single-use codes. It is
-	// a static shared secret the user carries and retypes, so — unlike a TOTP —
-	// a phished or shoulder-surfed code stays valid until it is spent. That is
-	// the property GitHub's "insecure 2FA methods" policy is about, and it is
-	// what makes this the insecure method bleephub has.
+	// TwoFactorMethodRecoveryCode is a static single-use secret the user retypes,
+	// so — unlike a TOTP — a phished code stays valid until spent. This is the
+	// insecure method GitHub's "insecure 2FA methods" policy targets.
 	TwoFactorMethodRecoveryCode TwoFactorMethod = "recovery_code"
 )
 
-// TwoFactorMethodDescription is one entry in the catalogue of second factors
-// this instance implements: its name, whether it is classed insecure, and why.
+// TwoFactorMethodDescription is one catalogue entry: the method, whether it is
+// classed insecure, and why.
 type TwoFactorMethodDescription struct {
 	Method   TwoFactorMethod `json:"method"`
 	Insecure bool            `json:"insecure"`
 	Summary  string          `json:"summary"`
 }
 
-// SupportedTwoFactorMethods is the truthful catalogue of second factors
-// bleephub implements. GitHub's own insecure method is SMS; this instance has
-// no SMS or telephone factor at all, so it is absent from the catalogue rather
-// than listed and unenforced.
+// SupportedTwoFactorMethods is the truthful catalogue of second factors bleephub
+// implements. GitHub's insecure method is SMS; this instance has no telephone
+// factor, so it is absent rather than listed and unenforced.
 func SupportedTwoFactorMethods() []TwoFactorMethodDescription {
 	return []TwoFactorMethodDescription{
 		{
@@ -301,19 +258,17 @@ func methodDisallowed(method TwoFactorMethod, disallowed []TwoFactorMethod) bool
 	return false
 }
 
-// VerifySecondFactor spends one second factor: a TOTP code, or one unused
-// recovery code. Verification and consumption happen under the same lock, so
-// two concurrent requests cannot both spend the same code.
+// VerifySecondFactor spends one TOTP code or one unused recovery code.
+// Verification and consumption happen under the same lock.
 func (st *Store) VerifySecondFactor(userID int, code string, now time.Time) AccountSecurityResult {
 	result, _ := st.VerifySecondFactorExcluding(userID, code, now, nil)
 	return result
 }
 
-// VerifySecondFactorExcluding is VerifySecondFactor with a set of methods the
-// caller's policy bans. A code that would only verify through a banned method
-// is refused as SecurityMethodDisallowed and — crucially — is NOT spent, so a
-// policy change cannot silently burn a user's recovery codes. The method
-// actually used is returned so the caller can report which factor answered.
+// VerifySecondFactorExcluding is VerifySecondFactor with a set of policy-banned
+// methods. A code verifying only through a banned method is refused as
+// SecurityMethodDisallowed and NOT spent, so a policy change cannot burn a
+// user's recovery codes. Returns the method that answered.
 func (st *Store) VerifySecondFactorExcluding(userID int, code string, now time.Time, disallowed []TwoFactorMethod) (AccountSecurityResult, TwoFactorMethod) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -350,10 +305,7 @@ func (st *Store) verifySecondFactorLocked(userID int, code string, now time.Time
 	return SecurityInvalidCode, ""
 }
 
-// DisableTwoFactor turns the second factor off, and only on proof of
-// possession: switching protection off is exactly the operation an attacker
-// holding a stolen session wants, so it costs a code like every other
-// second-factor operation.
+// DisableTwoFactor turns the second factor off, only on proof of possession.
 func (st *Store) DisableTwoFactor(userID int, code string, now time.Time, disallowed []TwoFactorMethod) AccountSecurityResult {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -367,8 +319,8 @@ func (st *Store) DisableTwoFactor(userID int, code string, now time.Time, disall
 	return SecurityOK
 }
 
-// CancelTwoFactorEnrollment discards a pending (unconfirmed) secret. There is
-// nothing to prove — the account was never protected by it.
+// CancelTwoFactorEnrollment discards a pending (unconfirmed) secret; no proof
+// is required since the account was never protected by it.
 func (st *Store) CancelTwoFactorEnrollment(userID int, now time.Time) AccountSecurityResult {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -389,8 +341,7 @@ func (st *Store) CancelTwoFactorEnrollment(userID int, now time.Time) AccountSec
 }
 
 // RegenerateRecoveryCodes replaces the whole set, invalidating every previous
-// code including unused ones, and returns the new codes once. It costs a valid
-// second factor for the same reason disabling does.
+// code, and returns the new codes once. Costs a valid second factor.
 func (st *Store) RegenerateRecoveryCodes(userID int, code string, now time.Time, disallowed []TwoFactorMethod) ([]string, TwoFactorStatus, AccountSecurityResult) {
 	codes, hashes, err := newRecoveryCodes()
 	if err != nil {
@@ -447,8 +398,8 @@ func newRecoveryCode() (string, error) {
 	return builder.String(), nil
 }
 
-// normalizeRecoveryCode makes matching insensitive to the separators and case
-// a user may retype, without widening the alphabet.
+// normalizeRecoveryCode makes matching insensitive to separators and case,
+// without widening the alphabet.
 func normalizeRecoveryCode(code string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
@@ -467,9 +418,9 @@ func hashRecoveryCode(code string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// matchRecoveryCode finds an unused code matching the candidate. Every stored
-// digest is compared in constant time and the loop is not cut short, so the
-// time taken does not reveal which code matched.
+// matchRecoveryCode finds an unused code matching the candidate. Every digest is
+// compared in constant time and the loop is not cut short, so timing does not
+// reveal which code matched.
 func matchRecoveryCode(codes []RecoveryCode, candidate string) (int, bool) {
 	normalized := normalizeRecoveryCode(candidate)
 	if len(normalized) != recoveryCodeGroup*recoveryCodeGroups {
@@ -488,18 +439,13 @@ func matchRecoveryCode(codes []RecoveryCode, candidate string) (int, bool) {
 	return index, found
 }
 
-// ─── Which credential source governs the account ───────────────────────────
-
-// AccountAuthKind names where an account's credentials actually live.
+// AccountAuthKind names where an account's credentials live.
 type AccountAuthKind string
 
 const (
-	// AccountAuthLocal is an account this instance authenticates itself, so a
-	// password and a second factor are ours to manage.
 	AccountAuthLocal AccountAuthKind = "local"
-	// AccountAuthExternal is an account bound to a federated identity. Its
-	// password and second factor belong to the identity provider; offering
-	// controls for them here would be a lie.
+	// AccountAuthExternal is bound to a federated identity; its password and
+	// second factor belong to the identity provider.
 	AccountAuthExternal AccountAuthKind = "external"
 )
 
@@ -507,20 +453,19 @@ const (
 type AccountAuthentication struct {
 	Kind AccountAuthKind `json:"kind"`
 	// Providers lists the issuers bound to the account (external accounts only).
-	Providers []string `json:"providers,omitempty"`
-	// PasswordSet reports whether a local password exists to change.
-	PasswordSet bool `json:"password_set"`
+	Providers   []string `json:"providers,omitempty"`
+	PasswordSet bool     `json:"password_set"`
 }
 
-// localCredentialAccountLocked reports whether this instance — rather than an
-// identity provider — is the authority for the account's credentials. Callers
+// localCredentialAccountLocked reports whether this instance, rather than an
+// identity provider, is the authority for the account's credentials. Callers
 // hold st.Mu.
 func localCredentialAccountLocked(user *User) bool {
 	return len(user.ExternalIdentities) == 0
 }
 
 // AccountAuthenticationFor returns a detached description of the account's
-// credential source. The second result is false when the user does not exist.
+// credential source; the second result is false when the user does not exist.
 func (st *Store) AccountAuthenticationFor(userID int) (AccountAuthentication, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -538,8 +483,8 @@ func (st *Store) AccountAuthenticationFor(userID int) (AccountAuthentication, bo
 	return AccountAuthentication{Kind: AccountAuthExternal, Providers: providers, PasswordSet: user.PasswordHash != ""}, true
 }
 
-// UserPasswordHash returns the account's stored bcrypt hash (empty when the
-// account has no password). Strings are immutable, so the result is detached.
+// UserPasswordHash returns the account's stored bcrypt hash, empty when the
+// account has no password.
 func (st *Store) UserPasswordHash(userID int) (string, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -550,9 +495,9 @@ func (st *Store) UserPasswordHash(userID int) (string, bool) {
 	return user.PasswordHash, true
 }
 
-// SetUserPasswordHash replaces the account password. Only a local account has
-// one to replace: rewriting the hash on a federated account would create a
-// second, weaker way into it that the identity provider knows nothing about.
+// SetUserPasswordHash replaces the account password. Refused on a federated
+// account, which would otherwise gain a second credential path the identity
+// provider knows nothing about.
 func (st *Store) SetUserPasswordHash(userID int, hash string, now time.Time) AccountSecurityResult {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

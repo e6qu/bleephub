@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// CommitComment is a comment on a commit.
 type CommitComment struct {
 	ID        int       `json:"id"`
 	NodeID    string    `json:"node_id"`
@@ -48,7 +47,6 @@ func commitKey(repoID int, commitID string) string {
 	return strconv.Itoa(repoID) + ":" + commitID
 }
 
-// Create adds a new commit comment.
 func (s *CommitCommentStore) Create(repoID int, commitID string, authorID int, body, path string, position, line *int) *CommitComment {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -76,14 +74,13 @@ func (s *CommitCommentStore) Create(repoID int, commitID string, authorID int, b
 	return c
 }
 
-// Get returns a commit comment by id.
 func (s *CommitCommentStore) Get(id int) *CommitComment {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
 	return s.ByID[id]
 }
 
-// ListForRepo returns all commit comments for a repo sorted newest-first.
+// ListForRepo returns a repo's commit comments, newest first.
 func (s *CommitCommentStore) ListForRepo(repoID int) []*CommitComment {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
@@ -95,7 +92,7 @@ func (s *CommitCommentStore) ListForRepo(repoID int) []*CommitComment {
 	return out
 }
 
-// ListForCommit returns commit comments for a specific commit sorted newest-first.
+// ListForCommit returns one commit's comments, newest first.
 func (s *CommitCommentStore) ListForCommit(repoID int, commitID string) []*CommitComment {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
@@ -108,7 +105,6 @@ func (s *CommitCommentStore) ListForCommit(repoID int, commitID string) []*Commi
 	return out
 }
 
-// Update modifies the body of a commit comment.
 func (s *CommitCommentStore) Update(id int, body string) bool {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -122,10 +118,8 @@ func (s *CommitCommentStore) Update(id int, body string) bool {
 	return true
 }
 
-// Delete removes a commit comment.
-// Delete removes a commit comment. The comment row and its reactions delete
-// in one transaction, so a crash cannot durably drop the reactions while the
-// comment survives (STORE-001/002).
+// Delete removes a commit comment. The comment row and its reactions delete in
+// one transaction (STORE-001/002).
 func (s *CommitCommentStore) Delete(id int, reactions *ReactionStore) bool {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()

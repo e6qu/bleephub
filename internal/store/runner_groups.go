@@ -2,10 +2,9 @@ package store
 
 import "time"
 
-// RunnerGroup models an organization or enterprise runner group. Scope is
-// part of the persisted identity: runner-group ids are globally unique, but a
-// group must never become visible through a different owner merely because
-// both owners share the same backing store.
+// RunnerGroup models an organization or enterprise runner group. Scope is part
+// of the persisted identity: ids are globally unique, so a group must never
+// become visible through a different owner sharing the backing store.
 type RunnerGroup struct {
 	ID                       int         `json:"id"`
 	Name                     string      `json:"name"`

@@ -1,15 +1,8 @@
 package store
 
-// GitHub Copilot: the organization's subscription policy, per-seat activity,
-// and the usage ledger the Copilot metrics endpoints aggregate.
-//
-// store_copilot.go owns seat assignment, content exclusion and the coding
-// agent policy. This file owns the three things that made the REST surface
-// answer with constants: the plan and feature policy (previously hard-coded
-// in the billing handler), whether a seat has ever been used (previously
-// always null), and the usage the metrics endpoints report (previously
-// always an empty list). None of them is invented — each is written by a
-// real request and read back.
+// GitHub Copilot org subscription policy, per-seat activity, and the usage
+// ledger the metrics endpoints aggregate. Seat assignment lives in
+// store_copilot.go.
 //
 // STORE-021: every getter and List* here returns a detached snapshot.
 
@@ -47,9 +40,8 @@ const (
 	CopilotSuggestionsBlock    = "block"
 )
 
-// CopilotOrgPolicy is an organization's Copilot subscription: which plan it
-// is on, how seats are handed out, and which Copilot features its members
-// may use.
+// CopilotOrgPolicy is an organization's Copilot subscription: plan, seat
+// handout, and which features members may use.
 type CopilotOrgPolicy struct {
 	OrgLogin              string    `json:"org_login"`
 	PlanType              string    `json:"plan_type"`
@@ -61,8 +53,8 @@ type CopilotOrgPolicy struct {
 	UpdatedAt             time.Time `json:"updated_at"`
 }
 
-// DefaultCopilotOrgPolicy is the posture an organization is provisioned
-// with: Copilot Business, seats assigned individually, every feature on.
+// DefaultCopilotOrgPolicy is the provisioning posture: Business, seats assigned
+// individually, every feature on.
 func DefaultCopilotOrgPolicy(orgLogin string) *CopilotOrgPolicy {
 	return &CopilotOrgPolicy{
 		OrgLogin:              orgLogin,
@@ -75,9 +67,8 @@ func DefaultCopilotOrgPolicy(orgLogin string) *CopilotOrgPolicy {
 	}
 }
 
-// CopilotSeatActivity is when a seat was last used, and from where. It is
-// separate from the seat itself because it is written by usage rather than
-// by seat administration.
+// CopilotSeatActivity is when a seat was last used, and from where. Separate
+// from the seat because usage writes it, not seat administration.
 type CopilotSeatActivity struct {
 	OrgLogin       string    `json:"org_login"`
 	UserID         int       `json:"user_id"`
@@ -85,9 +76,8 @@ type CopilotSeatActivity struct {
 	LastEditor     string    `json:"last_activity_editor"`
 }
 
-// CopilotUsageRecord is one day's recorded Copilot usage for one member,
-// in one editor, one language and (optionally) one repository. The metrics
-// endpoints are pure aggregations of these rows.
+// CopilotUsageRecord is one member's Copilot usage for one day/editor/language.
+// The metrics endpoints are pure aggregations of these rows.
 type CopilotUsageRecord struct {
 	ID              int    `json:"id"`
 	OrgLogin        string `json:"org_login"`
@@ -107,7 +97,6 @@ type CopilotUsageRecord struct {
 	ChatAcceptances int    `json:"chat_acceptances"`
 }
 
-// CopilotPolicyStore holds the policy, activity and usage tables.
 type CopilotPolicyStore struct {
 	Mu      sync.RWMutex `json:"-"`
 	Persist *Persistence `json:"-"`
@@ -118,7 +107,6 @@ type CopilotPolicyStore struct {
 	nextUsage int
 }
 
-// NewCopilotPolicyStore builds an empty Copilot policy store.
 func NewCopilotPolicyStore() *CopilotPolicyStore {
 	return &CopilotPolicyStore{
 		policies:  map[string]*CopilotOrgPolicy{},
@@ -138,8 +126,7 @@ func copilotActivityKey(orgLogin string, userID int) string {
 	return orgLogin + "/" + strconv.Itoa(userID)
 }
 
-// loadCopilotPolicies repopulates the Copilot policy, activity and usage
-// tables from durable storage.
+// loadCopilotPolicies repopulates the policy, activity and usage tables from storage.
 func (st *Store) loadCopilotPolicies() error {
 	cs := st.CopilotPolicies
 	cs.Persist = st.Persist
@@ -179,9 +166,8 @@ func (st *Store) loadCopilotPolicies() error {
 	})
 }
 
-// GetCopilotOrgPolicy returns the organization's Copilot policy,
-// materializing nothing: an organization that has never been configured
-// reads as the default posture.
+// GetCopilotOrgPolicy returns the org's Copilot policy; an unconfigured org
+// reads as the default posture and nothing is materialized.
 func (cs *CopilotPolicyStore) GetCopilotOrgPolicy(orgLogin string) *CopilotOrgPolicy {
 	cs.Mu.RLock()
 	defer cs.Mu.RUnlock()
@@ -192,7 +178,7 @@ func (cs *CopilotPolicyStore) GetCopilotOrgPolicy(orgLogin string) *CopilotOrgPo
 	return DefaultCopilotOrgPolicy(orgLogin)
 }
 
-// CopilotOrgPolicyUpdate is a sparse patch over the policy.
+// CopilotOrgPolicyUpdate is a sparse patch; nil fields are left unchanged.
 type CopilotOrgPolicyUpdate struct {
 	PlanType              *string
 	SeatManagementSetting *string
@@ -202,8 +188,8 @@ type CopilotOrgPolicyUpdate struct {
 	CLI                   *string
 }
 
-// SetCopilotOrgPolicy applies a sparse patch, rejecting any value GitHub
-// does not define for the field.
+// SetCopilotOrgPolicy applies a sparse patch, rejecting any value GitHub does
+// not define for the field.
 func (cs *CopilotPolicyStore) SetCopilotOrgPolicy(orgLogin string, patch CopilotOrgPolicyUpdate, now time.Time) (*CopilotOrgPolicy, error) {
 	cs.Mu.Lock()
 	defer cs.Mu.Unlock()
@@ -253,8 +239,7 @@ func copilotPolicyValueAllowed(value string, allowed []string) bool {
 	return false
 }
 
-// GetCopilotSeatActivity returns when the member last used Copilot, or nil
-// when they never have.
+// GetCopilotSeatActivity returns when the member last used Copilot, or nil.
 func (cs *CopilotPolicyStore) GetCopilotSeatActivity(orgLogin string, userID int) *CopilotSeatActivity {
 	cs.Mu.RLock()
 	defer cs.Mu.RUnlock()
@@ -265,9 +250,8 @@ func (cs *CopilotPolicyStore) GetCopilotSeatActivity(orgLogin string, userID int
 	return nil
 }
 
-// RecordCopilotUsage files one day's usage for a member and moves their
-// seat's last-activity marker forward. The usage row and the activity
-// marker commit together, so metrics and seat details can never disagree
+// RecordCopilotUsage files one day's usage and advances the seat's last-activity
+// marker. Both commit together, so metrics and seat details can never disagree
 // about whether a member has used Copilot.
 func (cs *CopilotPolicyStore) RecordCopilotUsage(record *CopilotUsageRecord, at time.Time) (*CopilotUsageRecord, error) {
 	if record == nil || record.OrgLogin == "" || record.UserID <= 0 {
@@ -318,9 +302,8 @@ func (cs *CopilotPolicyStore) RecordCopilotUsage(record *CopilotUsageRecord, at 
 	return &clone, nil
 }
 
-// ListCopilotUsage returns the organization's usage rows in the window
-// [since, until] (inclusive day strings, either may be empty), optionally
-// narrowed to one team.
+// ListCopilotUsage returns usage rows in the inclusive day window [since, until]
+// (either bound may be empty), optionally narrowed to one team.
 func (cs *CopilotPolicyStore) ListCopilotUsage(orgLogin, teamSlug, since, until string) []*CopilotUsageRecord {
 	cs.Mu.RLock()
 	defer cs.Mu.RUnlock()
@@ -350,8 +333,7 @@ func (cs *CopilotPolicyStore) ListCopilotUsage(orgLogin, teamSlug, since, until 
 	return out
 }
 
-// CopilotDailyMetrics is one day of aggregated Copilot usage, shaped the
-// way GitHub's copilot metrics endpoints report it.
+// CopilotDailyMetrics is one day of aggregated usage, shaped as the metrics endpoints report it.
 type CopilotDailyMetrics struct {
 	Date              string
 	TotalActiveUsers  int
@@ -364,15 +346,13 @@ type CopilotDailyMetrics struct {
 	ChatTotal CopilotChatMetrics
 }
 
-// CopilotEditorMetrics is one editor's slice of a day, broken down by
-// model and language the way GitHub nests it.
+// CopilotEditorMetrics is one editor's slice of a day, broken down by model and language.
 type CopilotEditorMetrics struct {
 	Name         string
 	EngagedUsers int
 	Models       []CopilotModelMetrics
 }
 
-// CopilotModelMetrics is one model's languages within an editor.
 type CopilotModelMetrics struct {
 	Name         string
 	EngagedUsers int
@@ -389,17 +369,14 @@ type CopilotLanguageMetrics struct {
 	LinesAccepted   int
 }
 
-// CopilotChatMetrics is the chat half of a day.
 type CopilotChatMetrics struct {
 	EngagedUsers int
 	Chats        int
 	Insertions   int
 }
 
-// AggregateCopilotMetrics rolls usage rows into GitHub's daily metrics
-// shape. It is a pure function of the ledger: with no rows it returns no
-// days, which is the documented "no activity" response rather than a
-// fabricated one.
+// AggregateCopilotMetrics rolls usage rows into the daily metrics shape. Pure
+// function of the ledger: no rows yields no days (the "no activity" response).
 func AggregateCopilotMetrics(records []*CopilotUsageRecord) []CopilotDailyMetrics {
 	byDay := map[string][]*CopilotUsageRecord{}
 	days := make([]string, 0)
@@ -424,8 +401,8 @@ func aggregateCopilotDay(day string, records []*CopilotUsageRecord) CopilotDaily
 	completionUsers := map[int]bool{}
 	chatUsers := map[int]bool{}
 
-	// editor → model → language → leaf, plus the engaged-user sets at each
-	// level so a user active in two languages counts once per level.
+	// Track engaged-user sets at each level so a user active in two languages
+	// counts once per level.
 	type leafKey struct{ editor, model, language string }
 	leaves := map[leafKey]*CopilotLanguageMetrics{}
 	leafUsers := map[leafKey]map[int]bool{}

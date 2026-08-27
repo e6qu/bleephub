@@ -1,8 +1,6 @@
 package store
 
-// LookupAgentByClientID returns the agent whose Authorization.ClientID matches,
-// or nil if no agent has registered with that ClientID. Agent count is bounded
-// by the number of registered runners, so the linear scan is fine.
+// LookupAgentByClientID returns the agent whose Authorization.ClientID matches, or nil.
 func (st *Store) LookupAgentByClientID(clientID string) *Agent {
 	if clientID == "" {
 		return nil
@@ -17,9 +15,7 @@ func (st *Store) LookupAgentByClientID(clientID string) *Agent {
 	return nil
 }
 
-// SetLabels replaces all custom labels on an agent while preserving system
-// (read-only) labels. Names supplied that are system labels are treated as
-// system labels.
+// SetLabels replaces custom labels, preserving system (read-only) labels.
 func (a *Agent) SetLabels(names []string) {
 	custom := []Label{}
 	for _, l := range a.Labels {
