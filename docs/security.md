@@ -1,9 +1,9 @@
 # Security guidelines and how they are implemented
 
-This document describes the security controls bleephub implements, where each
-lives in the code, and how the static-analysis and dependency-scanning stack
-keeps them enforced. Code links use `github.com/e6qu/bleephub/blob/main/...`
-permalinks; the exact line may drift, but the named function is stable.
+The security controls bleephub implements, where each lives in the code, and how
+the static-analysis and dependency-scanning stack enforces them. Code links use
+`github.com/e6qu/bleephub/blob/main/...` permalinks; the line may drift, but the
+named function is stable.
 
 ## Threat model in one line
 
@@ -15,8 +15,8 @@ trust boundary in both directions.
 
 ## Server-Side Request Forgery (SSRF)
 
-Every server-initiated fetch is routed through one shared address gate so the
-policy cannot drift between call sites.
+One shared address gate routes every server-initiated fetch, so the policy
+cannot drift between call sites.
 
 - **Central gate** — [`internal/server/webhooks.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/webhooks.go):
   `nonPublicIP` / `webhookAddrBlocked` reject anything that is not a public,
@@ -24,12 +24,12 @@ policy cannot drift between call sites.
   `169.254.169.254` cloud-metadata endpoint), RFC1918, IPv6 ULA, and CGNAT
   `100.64.0.0/10`. `tunnelledIPv4` unwraps IPv4-in-IPv6 forms (`::ffff:`, NAT64
   `64:ff9b::/96`) and re-checks, closing the tunnel bypass.
-- **Dial-time enforcement** — `webhookDialControl` is installed as
+- **Dial-time enforcement** — `webhookDialControl` installs as
   `net.Dialer.Control`, so the check runs on the address the kernel is actually
   about to connect to, defeating DNS rebinding. Redirects return
   `http.ErrUseLastResponse`, so a 3xx can never reach a second unchecked host.
 - **Shared transport** — `newAddressCheckedHTTPTransport(allowPrivate, insecureTLS)`
-  is the single constructor for gated clients. It is used by:
+  is the single constructor for gated clients. It serves:
   - webhook delivery and source imports ([`gh_import.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/gh_import.go)),
   - OIDC discovery / JWKS / token / end-session (`(*Server).oidcClientContext` in
     [`identity.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/identity.go)),
@@ -37,21 +37,21 @@ policy cannot drift between call sites.
     [`gh_pages_deployments.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/gh_pages_deployments.go)).
 - **Fixed policy** — loopback is permitted (legitimate same-host delivery for an
   on-prem/dev instance); every other non-public address — the cloud metadata
-  endpoint, RFC1918, IPv6 unique-local space, carrier-grade NAT, link-local —
-  is refused unconditionally. There is no switch to turn the protection off.
+  endpoint, RFC1918, IPv6 unique-local space, carrier-grade NAT, link-local — is
+  refused unconditionally. No switch turns the protection off.
 
 CodeQL still reports `go/request-forgery` on the two operator/deployment-driven
 fetch sites; those are reviewed-safe and documented in
-`scripts/check-codeql-sarif.py` because CodeQL's taint analysis does not model
+`scripts/check-codeql-sarif.py`, because CodeQL's taint analysis does not model
 the dial-time gate as a sanitizer.
 
 ## Open redirects
 
 - Login/logout `return_to` is **relative-path-only** via `safeIdentityReturnTo`
   ([`identity.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/identity.go)):
-  absolute URLs, `//host`, and backslash forms fall back to `/ui/`. It is now
-  applied at the entry point (`handleLoginPage`) as well as on consume, so no
-  unsafe value propagates through the flow.
+  absolute URLs, `//host`, and backslash forms fall back to `/ui/`. It applies at
+  the entry point (`handleLoginPage`) as well as on consume, so no unsafe value
+  propagates through the flow.
 - OAuth authorize/callback redirects go **only** to the app's registered
   `redirect_uri`, enforced by `requireRegisteredRedirectURI` /
   `redirectURIMatchesRegistration` in
@@ -61,7 +61,7 @@ the dial-time gate as a sanitizer.
 
 ## Cross-Site Scripting (XSS) and output handling
 
-- **Markdown** is rendered with goldmark **without** `WithUnsafe`
+- **Markdown** renders with goldmark **without** `WithUnsafe`
   ([`gh_markdown.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/gh_markdown.go)),
   so embedded raw HTML is escaped.
 - **Server-rendered HTML** (login, OAuth consent, identity pages) escapes every
@@ -103,7 +103,7 @@ The two `exec.Command` sites — the Jekyll Pages build
 and the Docker CLI for codespaces
 ([`store_codespaces.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/store_codespaces.go)) —
 use argument-vector form (no shell), with fixed subcommands and server-created
-paths. There is no `sh -c` or shell interpolation anywhere in non-test code.
+paths. No `sh -c` or shell interpolation exists anywhere in non-test code.
 
 ## Static analysis and dependency scanning
 
@@ -121,20 +121,20 @@ All of the following are required CI gates (`.github/workflows/ci.yml`,
 | **zizmor** | workflows | GitHub Actions supply-chain audit |
 | **dependency-age** | all ecosystems | 24-hour quarantine (`scripts/check-dependency-age.py`) blocks freshly-published (supply-chain-risky) versions |
 
-**Snyk** (Open Source / dependency scanning) is run **locally** by maintainers as
-an additional check — `snyk test --all-projects` should report no vulnerable
-paths. It is intentionally not wired into CI.
+Maintainers run **Snyk** (Open Source / dependency scanning) **locally** as an
+additional check — `snyk test --all-projects` should report no vulnerable paths.
+It is intentionally not wired into CI.
 
 ### How suppressions work
 
-A finding is suppressed only with a written justification, in one of:
+Suppress a finding only with a written justification, in one of:
 `ACCEPTED_FINDINGS` (CodeQL, per rule+file), inline `#nosec <rule> -- reason`
 (gosec), or `nosemgrep: <rule>` (Semgrep). Trivy has no ignore file: the
-misconfig scan is scoped in the workflow to the published runtime image, and the
-never-published CI test-harness Dockerfiles are skipped there with a documented
-reason (e.g. the sockerless integration image runs as root to drive a mounted
-Docker socket). Each suppression records why the finding is non-exploitable or
-intentional (e.g. GitHub-compat behavior like the SHA-1 `X-Hub-Signature` HMAC).
+workflow scopes the misconfig scan to the published runtime image and skips the
+never-published CI test-harness Dockerfiles there with a documented reason (e.g.
+the sockerless integration image runs as root to drive a mounted Docker socket).
+Each suppression records why the finding is non-exploitable or intentional (e.g.
+GitHub-compat behavior like the SHA-1 `X-Hub-Signature` HMAC).
 
 ## Reporting
 

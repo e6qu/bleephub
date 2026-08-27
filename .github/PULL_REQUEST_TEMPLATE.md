@@ -1,6 +1,6 @@
 <!--
-Keep the "why" in the commit messages — this template is a checklist, not a
-substitute for them. See CONTRIBUTING.md for the full workflow.
+Keep the "why" in the commit messages — this is a checklist, not a substitute.
+See CONTRIBUTING.md for the full workflow.
 -->
 
 ## What this changes
@@ -11,7 +11,7 @@ substitute for them. See CONTRIBUTING.md for the full workflow.
 
 <!--
 If this closes or advances a BUGS.md finding, name the ID(s) here and update the
-row(s) in the same PR. IDs stay out of source/comments by convention.
+row(s) in the same PR. Keep IDs out of source/comments by convention.
 -->
 
 ## Checklist

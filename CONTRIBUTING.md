@@ -1,9 +1,8 @@
 # Contributing
 
 Bleephub reimplements GitHub's server-side REST + GraphQL surface. Most changes
-either move a parity finding in `BUGS.md` from `open` to `fixed` or add coverage
-for a surface that CI already gates. This document describes the workflow those
-changes go through.
+move a parity finding in `BUGS.md` from `open` to `fixed`, or add coverage for a
+surface CI already gates. This document describes their workflow.
 
 ## Building
 
@@ -21,12 +20,12 @@ Go tree without producing the binary — the fastest inner loop — use:
 GOWORK=off go build ./...
 ```
 
-`GOWORK=off` is deliberate: the repository contains several nested modules
-(`sdk-tests`, `terraform/wake`, `test/terraform-sockerless`) and building with a
-workspace active pulls them in unintentionally.
+`GOWORK=off` is deliberate: the repository holds several nested modules
+(`sdk-tests`, `terraform/wake`, `test/terraform-sockerless`), and an active
+workspace pulls them in unintentionally.
 
 For UI work, `cd web && bun run dev` serves Vite with HMR on `:5173`; rerun
-`make build` to refresh the embedded copy the server ships.
+`make build` to refresh the server's embedded copy.
 
 ## Running the tests
 
@@ -35,12 +34,12 @@ make test        # GOWORK=off go test -tags noui -count=1 ./... (root module)
 ```
 
 The nested modules are separate `go test` targets and do not run from the root
-module; CI builds and vets each of them, and runs the `sdk-tests` go-github
-conformance suite and the `terraform/wake` controller tests.
+module. CI builds and vets each, and runs the `sdk-tests` go-github conformance
+suite and the `terraform/wake` controller tests.
 
 ## CI gates a pull request must satisfy
 
-CI (`.github/workflows/ci.yml`) must be green before merge. The gates are:
+CI (`.github/workflows/ci.yml`) must be green before merge. The gates:
 
 - **Formatting** — `gofmt -l .` must report nothing (the `web/` tree is exempt).
 - **Vet** — `go vet ./...` and `go vet -tags noui ./...` (both build tags).
@@ -68,26 +67,25 @@ CI (`.github/workflows/ci.yml`) must be green before merge. The gates are:
   release images, and the Terraform module.
 
 Documentation-only changes (files under `docs/`, and `README.md`, `RELEASING.md`,
-`SECURITY.md`, `THIRD-PARTY-NOTICES.md`, `LICENSE`) skip the pipeline
-by design. Any change to code, config, specs, workflows, or `BUGS.md` runs
-everything.
+`SECURITY.md`, `THIRD-PARTY-NOTICES.md`, `LICENSE`) skip the pipeline by design.
+Any change to code, config, specs, workflows, or `BUGS.md` runs everything.
 
 ## The `BUGS.md` findings ledger
 
 `BUGS.md` is the human-editable defect ledger and the source of truth for parity
 findings. Each row carries an ID, a severity (`B` blocker, `M` major, `m`
 minor), a location, a one-sentence claim, and a status (`open`, `partial`,
-`fixed`, or `deferred`). Its totals and status vocabulary are checked by the
-same parser that regenerates the parity inventory, so a row that loses a column
-or reuses an ID fails CI.
+`fixed`, or `deferred`). The same parser that regenerates the parity inventory
+checks its totals and status vocabulary, so a row that loses a column or reuses
+an ID fails CI.
 
-By convention the ledger IDs never appear in source or comments — the reasoning
-behind a fix belongs in its commit message, not next to the code.
+By convention, ledger IDs never appear in source or comments — a fix's reasoning
+belongs in its commit message, not next to the code.
 
 ## Pull requests
 
-- Keep the commit message carrying the *why*: the reasoning behind a change is
-  recovered from history, not from a separate changelog.
+- Carry the *why* in the commit message: history recovers a change's reasoning,
+  not a separate changelog.
 - When a change closes a `BUGS.md` finding, update its row to `fixed` in the
   same pull request.
 - Do not grow a parity allowlist (for example the OpenAPI violation allowlist)
@@ -95,13 +93,13 @@ behind a fix belongs in its commit message, not next to the code.
 
 ## Documentation and terminology
 
-Prose in `docs/`, `README.md`, and this file favours plain language, but common
-technical acronyms are used as-is. Spelling them out in full is noise, not
-clarity — write "GitHub's REST API", never "GitHub's Representational State
-Transfer Application Programming Interface".
+Prose in `docs/`, `README.md`, and this file favours plain language but uses
+common technical acronyms as-is. Spelling them out is noise, not clarity —
+write "GitHub's REST API", never "GitHub's Representational State Transfer
+Application Programming Interface".
 
-The following are established terms and are **allowed acronyms**: they should
-never be expanded, and a docs review should not flag them.
+The following are established terms and **allowed acronyms**: never expand them,
+and a docs review should not flag them.
 
 > API, REST, GraphQL, gRPC, CLI, UI, SPA, SDK, CI, CD, SSO, OIDC, OAuth, JWT,
 > JWKS, PKCE, SAML, SCIM, PAT, RBAC, ACL, CSRF, XSS, SSRF, TLS, mTLS, HTTP,
@@ -109,8 +107,8 @@ never be expanded, and a docs review should not flag them.
 > ECR, IAM, AWS, GCP, OTEL, SHA, HMAC, KDF, ID, UUID, JSON, YAML, HCL, HTML,
 > CSS, TS, DOM, CRUD, TTL, TOCTOU, FD, GC, DTO, ORM, DB, SQL, gofmt, gh.
 
-When introducing a bleephub-specific or genuinely uncommon abbreviation, expand
-it on first use; everything above is common enough that expansion only hurts.
+Expand a bleephub-specific or genuinely uncommon abbreviation on first use;
+everything above is common enough that expansion only hurts.
 
 ## Security
 
