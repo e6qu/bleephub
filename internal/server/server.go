@@ -70,6 +70,9 @@ type Server struct {
 	identity              identityConfig
 	identityStateKey      []byte // random per-process HMAC key for OAuth state cookies
 	build                 BuildInfo
+	// monitoringTokenDigest authenticates the deployment-only observation
+	// endpoint. Only the SHA-256 digest survives startup configuration parsing.
+	monitoringTokenDigest *[sha256.Size]byte
 	// clockNow is injected by deterministic tests/simulators; production leaves
 	// it nil. clockMu keeps replacing a test clock safe while owned workers wind
 	// down.
@@ -410,6 +413,7 @@ func (s *Server) registerRoutes() {
 	// Health check
 	s.route("GET /health", s.handleHealth)
 	s.route("GET /ready", s.handleReady)
+	s.route("GET /monitoring/observation", s.handleMonitoringObservation)
 
 	// Auth + connection data (auth.go)
 	s.registerAuthRoutes()
