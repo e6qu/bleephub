@@ -422,6 +422,7 @@ Flags:
 
 Env vars:
 - `BLEEPHUB_ADMIN_TOKEN=<token>` — **required.** The seeded admin token. There is no default (a default would be a guessable credential, and the historical `ghp_...` value tripped secret scanners); the binary fails loudly at startup if unset. Set a non-personal-access-token-shaped value.
+- `BLEEPHUB_MONITORING_TOKEN=<token>` — optional deployment-only bearer credential (at least 32 non-whitespace characters) for `GET /monitoring/observation`. The endpoint publishes fixed-cardinality process, persistence, workflow, runner, and job evidence using `e6qu.monitoring/v2`; without a token it refuses every caller.
 - `BLEEPHUB_PERSIST=true` — enable SQLite persistence (off by default; see [Persistence](#persistence)).
 - `BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY` — **required when persistence is enabled.** A stable base64-encoded 32-byte key used for authenticated encryption of Actions, Codespaces, App/OAuth, token, and browser-session credentials at rest. Terraform generates and injects it through AWS Secrets Manager.
 - `BLEEPHUB_DATA_DIR=<dir>` — directory for the SQLite database (`bleephub.db`) and local non-persistent development metadata (default `.`).

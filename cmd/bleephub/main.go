@@ -82,9 +82,13 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	monitoring, err := bleephub.MonitoringTokenFromEnvironment()
+	if err != nil {
+		return err
+	}
 	srv := bleephub.NewServer(*addr, logger, bleephub.WithBuildInfo(bleephub.BuildInfo{
 		Version: version, Commit: commit, PublishedAt: publishedAt,
-	}))
+	}), monitoring)
 	if err := srv.ListenAndServe(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
