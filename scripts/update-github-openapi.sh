@@ -62,15 +62,17 @@ URL="https://raw.githubusercontent.com/github/rest-api-description/$PIN_COMMIT/$
 
 # The other official descriptions bleephub cites when a route it serves is
 # absent from the dotcom one: the Enterprise Cloud and Enterprise Server
-# surfaces, plus two older Enterprise Server releases that still describe
-# endpoints GitHub has since retired. Only their route lists are vendored
-# (github-openapi-routes.txt.gz), so gh_api_definition_test.go can check a
-# citation instead of trusting a comment. Each is pinned by SHA-256 at
-# PIN_COMMIT.
+# surfaces, plus older Enterprise Server releases that still describe
+# endpoints GitHub has since retired (e.g. ghes-3.7 documents the
+# repository-id environment-secret routes go-github still builds). Only their
+# route lists are vendored (github-openapi-routes.txt.gz), so
+# gh_api_definition_test.go can check a citation instead of trusting a comment.
+# Each is pinned by SHA-256 at PIN_COMMIT.
 EXTRA_DESCRIPTIONS=(
   "ghec:3e1f5bb781b43b2270ec257bb926f32f6c80aea1e2b8142c9db5e7517a53fd2a"
   "ghes-3.21:8a6c9c8346b3c39f0cb45811671fb9518440730bf75602d1aa8a504f843af1c5"
   "ghes-3.13:c7a706c67b51c7317bd02b17d83972cdfb269cfde6257cc09062d9c38a950bf8"
+  "ghes-3.7:15db3fa0759b86138c21a21dafe4f796bf07665c13eca455e5a7b574fe6eb8a0"
   "ghes-2.22:629f829cc1bbcba9785b2bcca4d0cec9119c963a20690fa550513cf209f777e6"
 )
 
