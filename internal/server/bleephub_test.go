@@ -259,7 +259,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	if s3ServerContainer != "" {
-		if output, err := boundedDockerCleanupOutput("rm", "--force", s3ServerContainer); err != nil {
+		if output, err := removeDockerTestContainer(s3ServerContainer); err != nil {
 			fmt.Fprintf(os.Stderr, "remove MinIO S3 test server: %v\n%s", err, output)
 			if code == 0 {
 				code = 1

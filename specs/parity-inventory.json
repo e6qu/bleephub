@@ -99,7 +99,7 @@
       },
       {
         "event": "issue_comment",
-        "line": 689,
+        "line": 688,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -111,7 +111,7 @@
       },
       {
         "event": "issues",
-        "line": 93,
+        "line": 90,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -123,13 +123,13 @@
       },
       {
         "event": "label",
-        "line": 221,
+        "line": 229,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 251,
+        "line": 259,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -141,19 +141,19 @@
       },
       {
         "event": "milestone",
-        "line": 303,
+        "line": 311,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 420,
+        "line": 428,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 457,
+        "line": 465,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -9086,6 +9086,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "the pinned GitHub REST description had drifted past its provenance guard, adding expiring user-scoped organization budgets and archived labels; simply refreshing the schema would have left both accepted-but-ignored, while archived labels could still be attached through REST, GraphQL, issue creation and delayed suggestions",
+        "id": "REST-205",
+        "location": "gh_org_billing.go, gh_labels_rest.go, store_issues.go, OrgSettingsPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 organization budgets now round-trip user scope and future expiration dates, validate membership and scope, clear expiration explicitly, and expose the complete journey in the browser; archived labels remain readable and removable but every assignment path shares the same refusal. Official-schema shape checks plus REST, GraphQL and UI regressions pin both contracts",
+        "status_kind": "fixed"
+      },
+      {
         "category": "AUTH",
         "finding": "a rule-level `DELETE` under `/protection` removed the entire branch protection whenever it cleared the last rule, so `DELETE .../enforce_admins` left the branch unprotected and `GET` answered `404 Branch not protected`. All five sub-resource deletes were affected",
         "id": "AUTH-121",
@@ -9401,6 +9410,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "CORE",
+        "finding": "Codespaces stopped containers with Docker's deprecated `--time` flag and gave start, stop and removal only 60 seconds; under ordinary concurrent lifecycle load Docker killed the commands at that boundary, returning 500 after the runtime operation had already begun",
+        "id": "CORE-038",
+        "location": "store_codespaces.go, gh_codespaces.go",
+        "severity": "M",
+        "status": "fixed \u2014 every Codespaces lifecycle operation shares a two-minute upper bound, stop uses the current `--timeout` flag, and a regression pins the exact CLI argument vector so the obsolete spelling cannot return",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "the typed-nil source class was found twice independently and neither instance failed a test, because the defect is invisible unless a query happens to select the absent child",
         "id": "TEST-092",
@@ -9465,9 +9483,9 @@
         },
         "CORE": {
           "status": {
-            "fixed": 37
+            "fixed": 38
           },
-          "total": 37
+          "total": 38
         },
         "GQL": {
           "status": {
@@ -9483,10 +9501,10 @@
         },
         "REST": {
           "status": {
-            "fixed": 203,
+            "fixed": 204,
             "open": 1
           },
-          "total": 204
+          "total": 205
         },
         "STORE": {
           "status": {
@@ -9511,15 +9529,15 @@
       },
       "severity": {
         "blocker": 183,
-        "major": 488,
+        "major": 490,
         "minor": 321
       },
       "status": {
         "deferred": 3,
-        "fixed": 988,
+        "fixed": 990,
         "open": 1
       },
-      "total": 992
+      "total": 994
     }
   },
   "rest": {
@@ -22093,7 +22111,7 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 36,
+        "line": 38,
         "method": "DELETE",
         "path": "/api/v3/organizations/{org}/settings/billing/budgets/{budget_id}",
         "source": "internal/server/gh_org_billing.go"
@@ -24367,37 +24385,37 @@
         "source": "internal/server/gh_enterprise_remainder.go"
       },
       {
-        "line": 41,
+        "line": 43,
         "method": "GET",
         "path": "/api/v3/organizations/{org}/settings/billing/ai_credit/usage",
         "source": "internal/server/gh_org_billing.go"
       },
       {
-        "line": 32,
+        "line": 34,
         "method": "GET",
         "path": "/api/v3/organizations/{org}/settings/billing/budgets",
         "source": "internal/server/gh_org_billing.go"
       },
       {
-        "line": 34,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/organizations/{org}/settings/billing/budgets/{budget_id}",
         "source": "internal/server/gh_org_billing.go"
       },
       {
-        "line": 40,
+        "line": 42,
         "method": "GET",
         "path": "/api/v3/organizations/{org}/settings/billing/premium_request/usage",
         "source": "internal/server/gh_org_billing.go"
       },
       {
-        "line": 38,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/organizations/{org}/settings/billing/usage",
         "source": "internal/server/gh_org_billing.go"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "GET",
         "path": "/api/v3/organizations/{org}/settings/billing/usage/summary",
         "source": "internal/server/gh_org_billing.go"
@@ -28147,7 +28165,7 @@
         "source": "internal/server/gh_enterprise_remainder.go"
       },
       {
-        "line": 35,
+        "line": 37,
         "method": "PATCH",
         "path": "/api/v3/organizations/{org}/settings/billing/budgets/{budget_id}",
         "source": "internal/server/gh_org_billing.go"
@@ -28987,7 +29005,7 @@
         "source": "internal/server/gh_markdown.go"
       },
       {
-        "line": 33,
+        "line": 35,
         "method": "POST",
         "path": "/api/v3/organizations/{org}/settings/billing/budgets",
         "source": "internal/server/gh_org_billing.go"
@@ -31099,7 +31117,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "c65c7a320859f885c9e46f617879aa02c4322310abe481396767be63ff52f810"
+    "vendored_openapi_sha256": "d8a31c89188b41d5a846129900283c2c6a1e71737003a7f927ce8802f544d8de"
   },
   "schema_version": 1,
   "sources": {
@@ -31116,367 +31134,367 @@
         "target": "/ui/"
       },
       {
-        "line": 501,
+        "line": 498,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 540,
+        "line": 537,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 575,
+        "line": 572,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 613,
+        "line": 610,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/${seeded.org}/org-parity/settings"
       },
       {
-        "line": 645,
+        "line": 642,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/search"
       },
       {
-        "line": 678,
+        "line": 675,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/orgs/${seeded.org}/governance?tab=code-security"
       },
       {
-        "line": 113,
+        "line": 109,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/"
       },
       {
-        "line": 126,
+        "line": 121,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/operations"
       },
       {
-        "line": 134,
+        "line": 129,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/operations"
       },
       {
-        "line": 146,
+        "line": 141,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 161,
+        "line": 156,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 205,
+        "line": 200,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 216,
+        "line": 211,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/search?q=${encodeURIComponent(marker)}&type=repositories"
       },
       {
-        "line": 236,
+        "line": 231,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 249,
+        "line": 244,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/admin/${name}"
       },
       {
-        "line": 260,
+        "line": 255,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/admin/${name}/commits"
       },
       {
-        "line": 273,
+        "line": 268,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/admin/${name}/branches"
       },
       {
-        "line": 283,
+        "line": 278,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 310,
+        "line": 303,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/packages"
       },
       {
-        "line": 329,
+        "line": 322,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 370,
+        "line": 362,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/account"
       },
       {
-        "line": 401,
+        "line": 390,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/account?tab=authentication"
       },
       {
-        "line": 435,
+        "line": 422,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/account?tab=notifications"
       },
       {
-        "line": 468,
+        "line": 455,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 474,
+        "line": 461,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/classrooms/${classroom.id}"
       },
       {
-        "line": 498,
+        "line": 485,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 512,
+        "line": 496,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 520,
+        "line": 504,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 543,
+        "line": 525,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 562,
+        "line": 544,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 573,
+        "line": 554,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/${owner}/detail-test"
       },
       {
-        "line": 587,
+        "line": 566,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 598,
+        "line": 577,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/${owner}/readme-test"
       },
       {
-        "line": 609,
+        "line": 588,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 623,
+        "line": 602,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/admin/${repo}"
       },
       {
-        "line": 636,
+        "line": 614,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 650,
+        "line": 628,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/${owner}/issues-test"
       },
       {
-        "line": 665,
+        "line": 642,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 680,
+        "line": 656,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/${owner}/issues-direct/issues"
       },
       {
-        "line": 702,
+        "line": 676,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 712,
+        "line": 686,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/${owner}/pulls-direct/pulls"
       },
       {
-        "line": 720,
+        "line": 694,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 744,
+        "line": 718,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/admin/${repo}/pulls/${pull.number}/files"
       },
       {
-        "line": 772,
+        "line": 746,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 780,
+        "line": 753,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 791,
+        "line": 764,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 801,
+        "line": 774,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/oauth"
       },
       {
-        "line": 812,
+        "line": 784,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 844,
+        "line": 813,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/workflows"
       },
       {
-        "line": 863,
+        "line": 831,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/metrics"
       },
       {
-        "line": 874,
+        "line": 842,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 880,
+        "line": 848,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/${owner}/${repo}/releases"
       },
       {
-        "line": 924,
+        "line": 892,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 931,
+        "line": 899,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/${owner}/${repo}/security/code-scanning"
       },
       {
-        "line": 989,
+        "line": 957,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 1023,
+        "line": 991,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/marketplace"
       },
       {
-        "line": 1078,
+        "line": 1038,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/sponsors"
       },
       {
-        "line": 1081,
+        "line": 1041,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/sponsors/${org}"
       },
       {
-        "line": 1085,
+        "line": 1045,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/sponsors/${org}/dashboard"
       },
       {
-        "line": 1098,
+        "line": 1056,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/sponsors/${org}"
       },
       {
-        "line": 1102,
+        "line": 1060,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/sponsors/${org}/dashboard"
       },
       {
-        "line": 1109,
+        "line": 1066,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/sponsors"
       },
       {
-        "line": 1127,
+        "line": 1083,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/operations"
       },
       {
-        "line": 1132,
+        "line": 1088,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 1144,
+        "line": 1100,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/${owner}/dark-theme-repo"
       },
       {
-        "line": 1157,
+        "line": 1113,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/health"
       },
       {
-        "line": 9,
+        "line": 8,
         "source": "web/e2e/command-palette.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 43,
+        "line": 38,
         "source": "web/e2e/command-palette.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 21,
+        "line": 15,
         "source": "web/e2e/errorPaths.spec.ts",
         "target": "/ui/admin/this-repo-does-not-exist-xyz/insights"
       },
       {
-        "line": 44,
+        "line": 36,
         "source": "web/e2e/errorPaths.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 64,
+        "line": 53,
         "source": "web/e2e/errorPaths.spec.ts",
         "target": "/ui/operations"
       },
       {
-        "line": 82,
+        "line": 70,
         "source": "web/e2e/errorPaths.spec.ts",
         "target": "/ui/operations"
       },
       {
-        "line": 65,
+        "line": 57,
         "source": "web/e2e/mobile-overflow.spec.ts",
         "target": "/ui/"
       },
@@ -31511,12 +31529,12 @@
         "target": "/ui/admin/${repo}"
       },
       {
-        "line": 27,
+        "line": 24,
         "source": "web/e2e/repo-webhooks.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 32,
+        "line": 29,
         "source": "web/e2e/repo-webhooks.spec.ts",
         "target": "/ui/admin/${repo}/settings"
       }
@@ -32698,10 +32716,12 @@
         "line": 240,
         "path": "/ui/orgs/:org/settings",
         "rendered_tests": [
+          "web/src/__tests__/OrgBudgetExpiration.test.tsx",
           "web/src/__tests__/OrgSettingsPage.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/OrgBudgetExpiration.test.tsx",
           "web/src/__tests__/OrgSettingsPage.test.tsx"
         ]
       },

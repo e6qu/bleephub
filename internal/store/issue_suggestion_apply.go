@@ -33,10 +33,14 @@ func (st *Store) PerformIssueSuggestion(repo *Repo, issue *Issue, suggestion *Is
 			item.ClosedAt = &now
 		})
 	case "add_label":
-		if suggestion.TargetID == nil || st.GetLabel(*suggestion.TargetID) == nil {
+		if suggestion.TargetID == nil {
 			return nil, invalidTarget
 		}
-		st.AddIssueLabels(repo.FullName, issue.Number, []int{*suggestion.TargetID})
+		label := st.GetLabel(*suggestion.TargetID)
+		if label == nil || label.Archived || label.RepoID != repo.ID ||
+			!st.AddIssueLabels(repo.FullName, issue.Number, []int{label.ID}) {
+			return nil, invalidTarget
+		}
 	case "add_assignee":
 		if suggestion.TargetID == nil || st.GetUserByID(*suggestion.TargetID) == nil {
 			return nil, invalidTarget

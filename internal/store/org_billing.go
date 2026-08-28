@@ -17,6 +17,7 @@ type OrgBudget struct {
 	BudgetProductSKU    string            `json:"budget_product_sku"`
 	BudgetType          string            `json:"budget_type"` // ProductPricing | SkuPricing
 	BudgetAlerting      OrgBudgetAlerting `json:"budget_alerting"`
+	ExpiresAt           *time.Time        `json:"expires_at,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`
 }
 
@@ -45,7 +46,7 @@ func (st *Store) CreateOrgBudget(orgLogin string, b *OrgBudget) {
 func (st *Store) GetOrgBudget(orgLogin, id string) *OrgBudget {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.OrgBudgets[orgLogin][id]
+	return CloneBudget(st.OrgBudgets[orgLogin][id])
 }
 
 // ListOrgBudgets returns the org's budgets ordered by creation time then ID.

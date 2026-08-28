@@ -1344,7 +1344,7 @@ func (s *Resolver) suggestionTargetID(idKey, nodeID string) (int, error) {
 		}
 		return 0, gqlMissingNode("Actor", nodeID)
 	case "labelId":
-		if label := store.FindLabelByNodeID(s.store, nodeID); label != nil {
+		if label := store.FindLabelByNodeID(s.store, nodeID); label != nil && !label.Archived {
 			return label.ID, nil
 		}
 		return 0, gqlMissingNode("Label", nodeID)

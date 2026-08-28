@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -24,6 +25,7 @@ var budgetScopes = map[string]bool{
 }
 
 var budgetTypes = map[string]bool{
+	"BundlePricing":  true,
 	"ProductPricing": true,
 	"SkuPricing":     true,
 }
@@ -42,13 +44,14 @@ func (s *Server) registerGHOrgBillingRoutes() {
 }
 
 type orgBudgetBody struct {
-	BudgetAmount        *int    `json:"budget_amount"`
-	PreventFurtherUsage *bool   `json:"prevent_further_usage"`
-	BudgetScope         *string `json:"budget_scope"`
-	BudgetEntityName    *string `json:"budget_entity_name"`
-	BudgetType          *string `json:"budget_type"`
-	BudgetProductSKU    *string `json:"budget_product_sku"`
-	User                *string `json:"user"`
+	BudgetAmount        *int            `json:"budget_amount"`
+	PreventFurtherUsage *bool           `json:"prevent_further_usage"`
+	BudgetScope         *string         `json:"budget_scope"`
+	BudgetEntityName    *string         `json:"budget_entity_name"`
+	BudgetType          *string         `json:"budget_type"`
+	BudgetProductSKU    *string         `json:"budget_product_sku"`
+	User                *string         `json:"user"`
+	ExpiresAt           json.RawMessage `json:"expires_at"`
 	BudgetAlerting      *struct {
 		WillAlert       *bool    `json:"will_alert"`
 		AlertRecipients []string `json:"alert_recipients"`
@@ -76,7 +79,88 @@ func budgetJSON(b *store.OrgBudget) map[string]interface{} {
 	if b.BudgetScope == "user" {
 		out["user"] = b.BudgetEntityName
 	}
+	if b.ExpiresAt != nil {
+		out["expires_at"] = b.ExpiresAt.UTC().Format(time.DateOnly)
+	}
 	return out
+}
+
+func (s *Server) parseOrgBudgetExpiration(w http.ResponseWriter, raw json.RawMessage, scope string, allowClear bool) (*time.Time, bool) {
+	if scope != "user" {
+		store.WriteGHValidationError(w, "Budget", "expires_at", "invalid")
+		return nil, false
+	}
+	encoded := strings.TrimSpace(string(raw))
+	if allowClear && (encoded == "null" || encoded == "0") {
+		return nil, true
+	}
+	var date string
+	if err := json.Unmarshal(raw, &date); err != nil {
+		store.WriteGHValidationError(w, "Budget", "expires_at", "invalid")
+		return nil, false
+	}
+	expiresAt, err := time.Parse(time.DateOnly, date)
+	if err != nil || !expiresAt.After(s.currentTime().UTC()) {
+		store.WriteGHValidationError(w, "Budget", "expires_at", "invalid")
+		return nil, false
+	}
+	return &expiresAt, true
+}
+
+func (s *Server) validateOrgBudget(w http.ResponseWriter, orgLogin string, budget *store.OrgBudget) bool {
+	if budget == nil || budget.BudgetAmount < 0 || !budgetScopes[budget.BudgetScope] ||
+		!budgetTypes[budget.BudgetType] || budget.BudgetProductSKU == "" {
+		store.WriteGHValidationError(w, "Budget", "budget", "invalid")
+		return false
+	}
+	isUserBudget := budget.BudgetScope == "user"
+	isMultiUserBudget := budget.BudgetScope == "multi_user_customer"
+	if (isUserBudget || isMultiUserBudget) &&
+		(budget.BudgetProductSKU != "ai_credits" && budget.BudgetProductSKU != "premium_requests") {
+		store.WriteGHValidationError(w, "Budget", "budget_product_sku", "invalid")
+		return false
+	}
+	if (isUserBudget || isMultiUserBudget) && !budget.PreventFurtherUsage {
+		store.WriteGHValidationError(w, "Budget", "prevent_further_usage", "invalid")
+		return false
+	}
+	if budget.BudgetType == "BundlePricing" && budget.BudgetProductSKU != "ai_credits" {
+		store.WriteGHValidationError(w, "Budget", "budget_product_sku", "invalid")
+		return false
+	}
+	if budget.ExpiresAt != nil && !isUserBudget {
+		store.WriteGHValidationError(w, "Budget", "expires_at", "invalid")
+		return false
+	}
+	switch budget.BudgetScope {
+	case "repository":
+		name := budget.BudgetEntityName
+		if !strings.Contains(name, "/") {
+			name = orgLogin + "/" + name
+		}
+		repo := s.store.GetRepoByFullName(name)
+		org := s.store.GetOrg(orgLogin)
+		if repo == nil || org == nil || repo.OwnerType != "Organization" || repo.OwnerID != org.ID {
+			store.WriteGHValidationError(w, "Budget", "budget_entity_name", "invalid")
+			return false
+		}
+	case "user":
+		user := s.store.LookupUserByLogin(budget.BudgetEntityName)
+		if user == nil {
+			store.WriteGHValidationError(w, "Budget", "user", "invalid")
+			return false
+		}
+		membership := s.store.GetMembership(orgLogin, user.ID)
+		if membership == nil || membership.State != store.MembershipStateActive {
+			store.WriteGHValidationError(w, "Budget", "user", "invalid")
+			return false
+		}
+		if budget.BudgetAlerting.WillAlert || len(budget.BudgetAlerting.AlertRecipients) != 0 {
+			store.WriteGHValidationError(w, "Budget", "budget_alerting", "invalid")
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) handleListOrgBudgets(w http.ResponseWriter, r *http.Request) {
@@ -155,22 +239,8 @@ func (s *Server) handleCreateOrgBudget(w http.ResponseWriter, r *http.Request) {
 	if req.BudgetEntityName != nil {
 		b.BudgetEntityName = *req.BudgetEntityName
 	}
-	switch b.BudgetScope {
-	case "repository":
-		name := b.BudgetEntityName
-		if !strings.Contains(name, "/") {
-			name = orgLogin + "/" + name
-		}
-		if s.store.GetRepoByFullName(name) == nil {
-			store.WriteGHValidationError(w, "Budget", "budget_entity_name", "invalid")
-			return
-		}
-	case "user", "multi_user_customer":
-		// Spec requires prevent_further_usage true for these scopes.
-		if !b.PreventFurtherUsage {
-			store.WriteGHValidationError(w, "Budget", "prevent_further_usage", "invalid")
-			return
-		}
+	if req.User != nil && b.BudgetScope == "user" {
+		b.BudgetEntityName = *req.User
 	}
 	if req.BudgetAlerting != nil {
 		if req.BudgetAlerting.WillAlert != nil {
@@ -178,11 +248,23 @@ func (s *Server) handleCreateOrgBudget(w http.ResponseWriter, r *http.Request) {
 		}
 		b.BudgetAlerting.AlertRecipients = req.BudgetAlerting.AlertRecipients
 	}
+	if req.ExpiresAt != nil {
+		expiresAt, ok := s.parseOrgBudgetExpiration(w, req.ExpiresAt, b.BudgetScope, false)
+		if !ok {
+			return
+		}
+		b.ExpiresAt = expiresAt
+	}
+	if !s.validateOrgBudget(w, orgLogin, b) {
+		return
+	}
 
 	s.store.CreateOrgBudget(orgLogin, b)
+	createdBudget := budgetJSON(b)
+	delete(createdBudget, "user")
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Budget created successfully",
-		"budget":  budgetJSON(b),
+		"budget":  createdBudget,
 	})
 }
 
@@ -202,19 +284,12 @@ func (s *Server) handleUpdateOrgBudget(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.BudgetScope != nil && !budgetScopes[*req.BudgetScope] {
-		store.WriteGHValidationError(w, "Budget", "budget_scope", "invalid")
+	b := s.store.GetOrgBudget(orgLogin, id)
+	if b == nil {
+		writeGHError(w, http.StatusNotFound, fmt.Sprintf("Budget with ID %s not found.", id))
 		return
 	}
-	if req.BudgetType != nil && !budgetTypes[*req.BudgetType] {
-		store.WriteGHValidationError(w, "Budget", "budget_type", "invalid")
-		return
-	}
-	if req.BudgetAmount != nil && *req.BudgetAmount < 0 {
-		store.WriteGHValidationError(w, "Budget", "budget_amount", "invalid")
-		return
-	}
-	b := s.store.UpdateOrgBudget(orgLogin, id, func(b *store.OrgBudget) {
+	apply := func(b *store.OrgBudget) {
 		if req.BudgetAmount != nil {
 			b.BudgetAmount = *req.BudgetAmount
 		}
@@ -226,6 +301,9 @@ func (s *Server) handleUpdateOrgBudget(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.BudgetEntityName != nil {
 			b.BudgetEntityName = *req.BudgetEntityName
+		}
+		if req.User != nil && b.BudgetScope == "user" {
+			b.BudgetEntityName = *req.User
 		}
 		if req.BudgetType != nil {
 			b.BudgetType = *req.BudgetType
@@ -241,11 +319,25 @@ func (s *Server) handleUpdateOrgBudget(w http.ResponseWriter, r *http.Request) {
 				b.BudgetAlerting.AlertRecipients = req.BudgetAlerting.AlertRecipients
 			}
 		}
-	})
-	if b == nil {
-		writeGHError(w, http.StatusNotFound, fmt.Sprintf("Budget with ID %s not found.", id))
+	}
+	apply(b)
+	if req.ExpiresAt != nil {
+		expiresAt, ok := s.parseOrgBudgetExpiration(w, req.ExpiresAt, b.BudgetScope, true)
+		if !ok {
+			return
+		}
+		b.ExpiresAt = expiresAt
+	}
+	// GitHub ignores alerting fields when a user budget is updated. Clearing
+	// existing alerting also makes an organization-to-user scope change obey
+	// the same invariant.
+	if b.BudgetScope == "user" {
+		b.BudgetAlerting = store.OrgBudgetAlerting{}
+	}
+	if !s.validateOrgBudget(w, orgLogin, b) {
 		return
 	}
+	b = s.store.UpdateOrgBudget(orgLogin, id, func(current *store.OrgBudget) { *current = *b })
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Budget updated successfully",
 		"budget":  budgetJSON(b),

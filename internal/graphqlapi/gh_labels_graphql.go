@@ -1,6 +1,7 @@
 package graphqlapi
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/graphql-go/graphql"
@@ -154,7 +155,9 @@ func (s *Resolver) resolveLabelChange(p graphql.ResolveParams, combine func(exis
 			return nil, err
 		}
 		next := combine(before.LabelIDs, derefLabelIDs(named))
-		s.store.SetIssueLabels(repo.ID, before.Number, next, user.ID)
+		if !s.store.SetIssueLabels(repo.ID, before.Number, next, user.ID) {
+			return nil, fmt.Errorf("one or more labels cannot be assigned")
+		}
 		updated := s.store.GetIssue(issue.ID)
 		if updated == nil {
 			return nil, gqlMissingNodeType("Issue")
@@ -180,7 +183,9 @@ func (s *Resolver) resolveLabelChange(p graphql.ResolveParams, combine func(exis
 			return nil, err
 		}
 		next := combine(before.LabelIDs, derefLabelIDs(named))
-		s.store.SetPullRequestLabels(repo.ID, before.Number, next, user.ID)
+		if !s.store.SetPullRequestLabels(repo.ID, before.Number, next, user.ID) {
+			return nil, fmt.Errorf("one or more labels cannot be assigned")
+		}
 		updated := s.store.GetPullRequest(pullRequest.ID)
 		if updated == nil {
 			return nil, gqlMissingNodeType("PullRequest")

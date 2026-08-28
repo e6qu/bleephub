@@ -199,20 +199,28 @@ func (s *Server) handleUpdateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req map[string]interface{}
+	var req struct {
+		NewName     *string `json:"new_name"`
+		Color       *string `json:"color"`
+		Description *string `json:"description"`
+		Archived    *bool   `json:"archived"`
+	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
 	s.store.UpdateLabel(label.ID, func(l *store.IssueLabel) {
-		if v, ok := req["new_name"].(string); ok {
-			l.Name = v
+		if req.NewName != nil {
+			l.Name = *req.NewName
 		}
-		if v, ok := req["color"].(string); ok {
-			l.Color = v
+		if req.Color != nil {
+			l.Color = *req.Color
 		}
-		if v, ok := req["description"].(string); ok {
-			l.Description = v
+		if req.Description != nil {
+			l.Description = *req.Description
+		}
+		if req.Archived != nil {
+			l.Archived = *req.Archived
 		}
 	})
 
@@ -526,6 +534,22 @@ func issueLabelToJSON(l *store.IssueLabel, baseURL, repoFullName string) map[str
 		"color":       l.Color,
 		"default":     l.Default,
 	}
+}
+
+func (s *Server) resolveAssignableLabelNames(w http.ResponseWriter, repoID int, names []string) ([]int, bool) {
+	ids := make([]int, 0, len(names))
+	for _, name := range names {
+		label := s.store.GetLabelByName(repoID, name)
+		if label == nil {
+			continue
+		}
+		if label.Archived {
+			store.WriteGHValidationError(w, "Label", "labels", "archived")
+			return nil, false
+		}
+		ids = append(ids, label.ID)
+	}
+	return ids, true
 }
 
 // milestoneToJSON renders the `milestone` shape, deriving open/closed issue

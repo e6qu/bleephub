@@ -333,6 +333,9 @@ func (st *Store) AddPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 	if pr == nil {
 		return false
 	}
+	if !st.newLabelsAssignableLocked(repoID, pr.LabelIDs, labelIDs) {
+		return false
+	}
 	batch := NewPersistBatch(st.Persist)
 	added := false
 	for _, lid := range labelIDs {
@@ -398,6 +401,9 @@ func (st *Store) SetPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 	defer st.Mu.Unlock()
 	pr := st.PullsByRepo[repoID][prNumber]
 	if pr == nil {
+		return false
+	}
+	if !st.newLabelsAssignableLocked(repoID, pr.LabelIDs, labelIDs) {
 		return false
 	}
 	old := make(map[int]bool, len(pr.LabelIDs))

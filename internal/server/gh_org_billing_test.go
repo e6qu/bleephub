@@ -174,8 +174,13 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
 	admin := srv.store.UsersByLogin["admin"]
-	if srv.store.CreateOrg(admin, "billing-budgets-val", "Billing Budgets Val", "") == nil {
+	org := srv.store.CreateOrg(admin, "billing-budgets-val", "Billing Budgets Val", "")
+	if org == nil {
 		t.Fatal("create org failed")
+	}
+	otherOrg := srv.store.CreateOrg(admin, "billing-budgets-other", "Billing Budgets Other", "")
+	if otherOrg == nil || srv.store.CreateOrgRepo(otherOrg, admin, "elsewhere", "", false) == nil {
+		t.Fatal("create other organization repository failed")
 	}
 
 	resp := srv.post(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
@@ -193,6 +198,26 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("missing sku: %d, want 422", resp.StatusCode)
+	}
+
+	resp = srv.post(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
+		"budget_scope":       "repository",
+		"budget_entity_name": otherOrg.Login + "/elsewhere",
+		"budget_product_sku": "actions",
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("repository from another organization: %d, want 422", resp.StatusCode)
+	}
+
+	resp = srv.post(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
+		"budget_scope":       "organization",
+		"budget_type":        "BundlePricing",
+		"budget_product_sku": "actions",
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("bundle pricing with a non-AI SKU: %d, want 422", resp.StatusCode)
 	}
 
 	// user scope must set prevent_further_usage.
@@ -228,6 +253,88 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown org: %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestOrgBillingUserBudgetExpiration(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	org := srv.store.CreateOrg(admin, "billing-expiration-org", "Billing Expiration Org", "")
+	if org == nil {
+		t.Fatal("create org failed")
+	}
+	future := srv.store.CurrentTime().UTC().Add(48 * time.Hour).Format(time.DateOnly)
+	past := srv.store.CurrentTime().UTC().Add(-24 * time.Hour).Format(time.DateOnly)
+
+	create := func(expiresAt interface{}, scope string) *http.Response {
+		body := map[string]interface{}{
+			"budget_amount":         100,
+			"prevent_further_usage": true,
+			"budget_scope":          scope,
+			"budget_type":           "ProductPricing",
+			"budget_product_sku":    "premium_requests",
+			"budget_alerting":       map[string]interface{}{"will_alert": false, "alert_recipients": []string{}},
+			"expires_at":            expiresAt,
+		}
+		if scope == "user" {
+			body["user"] = "admin"
+		}
+		return srv.post(t, "/api/v3/organizations/"+org.Login+"/settings/billing/budgets", defaultToken, body)
+	}
+
+	resp := create(future, "user")
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("create expiring user budget: %d", resp.StatusCode)
+	}
+	created := decodeJSON(t, resp)
+	budget := created["budget"].(map[string]interface{})
+	if budget["expires_at"] != future || budget["budget_entity_name"] != "admin" {
+		t.Fatalf("expiring user budget = %v", budget)
+	}
+	id := budget["id"].(string)
+
+	resp = srv.patch(t, "/api/v3/organizations/"+org.Login+"/settings/billing/budgets/"+id, defaultToken, map[string]interface{}{"expires_at": 0})
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("clear expiration with zero: %d", resp.StatusCode)
+	}
+	updated := decodeJSON(t, resp)["budget"].(map[string]interface{})
+	if _, present := updated["expires_at"]; present {
+		t.Fatalf("cleared budget retained expires_at: %v", updated)
+	}
+
+	resp = srv.patch(t, "/api/v3/organizations/"+org.Login+"/settings/billing/budgets/"+id, defaultToken, map[string]interface{}{
+		"budget_alerting": map[string]interface{}{
+			"will_alert":       true,
+			"alert_recipients": []string{"admin"},
+		},
+	})
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("ignore alerting on user-budget update: %d", resp.StatusCode)
+	}
+	updated = decodeJSON(t, resp)["budget"].(map[string]interface{})
+	alerting := updated["budget_alerting"].(map[string]interface{})
+	if alerting["will_alert"] != false || len(alerting["alert_recipients"].([]interface{})) != 0 {
+		t.Fatalf("user budget retained ignored alerting: %v", alerting)
+	}
+
+	for _, test := range []struct {
+		name      string
+		expiresAt interface{}
+		scope     string
+	}{
+		{name: "past", expiresAt: past, scope: "user"},
+		{name: "wrong scope", expiresAt: future, scope: "organization"},
+		{name: "invalid date", expiresAt: "tomorrow", scope: "user"},
+	} {
+		resp = create(test.expiresAt, test.scope)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("%s expiration status = %d, want 422", test.name, resp.StatusCode)
+		}
 	}
 }
 
