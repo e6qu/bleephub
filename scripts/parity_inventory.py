@@ -79,10 +79,10 @@ def read_ledger() -> tuple[dict[str, Any], list[dict[str, Any]]]:
                 f"BUGS.md:{line_number}: invalid severity {severity!r}"
             )
         status_kind = status.split(maxsplit=1)[0].rstrip(",").lower()
-        if status_kind not in {"open", "partial", "fixed", "deferred"}:
+        if status_kind not in {"open", "partial", "fixed", "deferred", "false-positive"}:
             raise InventoryError(
                 f"BUGS.md:{line_number}: status must begin with open, partial, "
-                f"fixed, or deferred; got {status_kind!r}"
+                f"fixed, deferred, or false-positive; got {status_kind!r}"
             )
         findings.append(
             {
