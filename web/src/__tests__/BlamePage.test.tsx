@@ -66,7 +66,6 @@ describe("BlamePage", () => {
     });
     renderAt("/ui/admin/demo/blame/main/src/app.ts");
 
-    // Commit gutters link to each commit; both summaries render.
     await waitFor(() =>
       expect(screen.getByRole("link", { name: "aaaaaaa" })).toHaveAttribute(
         "href",
@@ -75,10 +74,8 @@ describe("BlamePage", () => {
     );
     expect(screen.getByText("Initial import")).toBeInTheDocument();
     expect(screen.getByText("Add feature")).toBeInTheDocument();
-    // Every source line rendered.
     expect(screen.getByText("line one")).toBeInTheDocument();
     expect(screen.getByText("line three")).toBeInTheDocument();
-    // The "View file" link points back at the blob.
     expect(screen.getByRole("link", { name: "View file" })).toHaveAttribute(
       "href",
       "/ui/admin/demo/blob/main/src/app.ts",

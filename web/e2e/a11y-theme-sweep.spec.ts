@@ -224,7 +224,6 @@ test.beforeAll(async ({ browser }) => {
     }
   };
 
-  // repo with an initial commit
   ok("repo", await api(page, "POST", "/api/v3/user/repos", {
     name: seeded.repo,
     description: "GitHub-parity a11y baseline fixture",
@@ -244,7 +243,6 @@ test.beforeAll(async ({ browser }) => {
     repos: [`${seeded.owner}/${seeded.repo}`],
   }));
 
-  // labels + milestones
   ok("label-1", await api(page, "POST", `/api/v3/repos/${seeded.owner}/${seeded.repo}/labels`, {
     name: "parity-bug",
     color: "d73a4a",
@@ -291,7 +289,6 @@ test.beforeAll(async ({ browser }) => {
     }));
   }
 
-  // branch + file + pull request
   const mainRef = await api(page, "GET", `/api/v3/repos/${seeded.owner}/${seeded.repo}/git/ref/heads/main`);
   if (mainRef.ok && mainRef.json) {
     const sha = (mainRef.json as { object: { sha: string } }).object.sha;

@@ -91,7 +91,6 @@ describe("ReleasesPage", () => {
     render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases/1"]}><Routes><Route path="/ui/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     expect(await screen.findByRole("button", { name: "Delete artifact.txt" })).toBeVisible();
-    // The "author released this on date" line surfaces the release's author + published date.
     expect(screen.getByText(/released this/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Release title"), { target: { value: "Updated release" } });
@@ -148,7 +147,7 @@ describe("ReleasesPage", () => {
     // Markdown heading is rendered as a real <h2>, not literal "## Highlights".
     const heading = await screen.findByRole("heading", { name: "Highlights" });
     expect(heading.tagName).toBe("H2");
-    // The linked discussion resolves to the in-app discussion route by number.
+    // The external discussion_url maps to the in-app discussion route by number.
     const link = screen.getByRole("link", { name: "Join the release discussion" });
     expect(link.getAttribute("href")).toBe("/ui/admin/release/discussions/7");
   });
@@ -174,6 +173,7 @@ describe("ReleasesPage", () => {
     expect(screen.getByText("Latest")).toBeInTheDocument();
     expect(screen.getByText("Pre-release")).toBeInTheDocument();
     // Uploaded asset plus the automatic source archives for the tag.
+    // Uploaded asset plus the auto-generated source archives for the tag.
     expect(screen.getByRole("link", { name: "Linux artifact" })).toBeInTheDocument();
     const zips = screen.getAllByRole("link", { name: "Source code (zip)" });
     expect(zips[0]).toHaveAttribute("href", "/api/v3/repos/admin/release/zipball/v2.0.0-rc.1");
@@ -182,14 +182,12 @@ describe("ReleasesPage", () => {
       "href",
       "/api/v3/repos/admin/release/tarball/v1.0.0",
     );
-    // relative published date via <time>
     expect(document.querySelector("time")).not.toBeNull();
   });
 });
 
-// Moved here from RepoDetailPage.test.tsx when G9 removed the in-page Releases
-// sub-tab and its list: the routed page is now the only releases surface, so
-// the "a draft must not render as a 1970 epoch date" regression is pinned here.
+// Pins the "draft must not render as a 1970 epoch date" regression; moved from RepoDetailPage.test.tsx
+// (G9) when the routed page became the only releases surface.
 describe("ReleasesPage drafts", () => {
   it("renders a draft as 'Draft'/'drafted', never a 1970 date", async () => {
     const feed = [
@@ -252,7 +250,6 @@ describe("ReleasesPage read-only viewer gating", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases/1"]}><Routes><Route path="/ui/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
-    // Assets remain downloadable; every write control is gone.
     expect(await screen.findByRole("button", { name: "Download artifact.txt" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /delete$/i })).not.toBeInTheDocument();

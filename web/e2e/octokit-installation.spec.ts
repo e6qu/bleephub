@@ -76,9 +76,8 @@ test("Octokit app auth searches the private repositories selected by its install
   expect(installApp.status).toBe(201);
   const installation = await installApp.json() as { id: number };
 
-  // This is Octokit's documented GitHub App shape. createAppAuth signs a JWT,
-  // calls POST /app/installations/{id}/access_tokens, caches the returned ghs_
-  // token, then sends that installation token on search.repos.
+  // createAppAuth signs a JWT, calls POST /app/installations/{id}/access_tokens,
+  // caches the returned ghs_ token, then sends it on search.repos.
   const octokit = new Octokit({
     authStrategy: createAppAuth,
     auth: {

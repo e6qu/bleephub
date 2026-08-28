@@ -1,6 +1,5 @@
-// A state-changing control that fails must say so. These cover the shared
-// surface itself, then drive two real pages — one security-relevant, one
-// destructive — against a rejecting write and assert the failure is visible.
+// A failing state-changing control must surface the failure visibly; cover the
+// shared MutationError plus two real pages driven against a rejecting write.
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

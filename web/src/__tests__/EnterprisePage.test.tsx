@@ -30,8 +30,7 @@ function renderPage() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  // The page opens on the enterprise account; these cases are about the teams
-  // tab, so select it the way a reader would.
+  // The page opens on the account tab; these cases target Teams, so select it.
   fireEvent.click(screen.getByRole("tab", { name: "Teams" }));
   return rendered;
 }
@@ -353,8 +352,7 @@ const budget = {
 
 const BUDGETS_PATH = "/api/v3/enterprises/acme/settings/billing/budgets";
 
-// Base handler: enterprise slug + empty default (teams) tab + one budget on the
-// billing list. Callers pass overrides keyed by a URL substring.
+// Base handler: enterprise slug, empty teams tab, one budget. Callers pass overrides keyed by URL substring.
 function mockBilling(overrides: Array<[string, (init?: RequestInit) => Response]> = []) {
   mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
     const u = url.toString();
@@ -367,7 +365,6 @@ function mockBilling(overrides: Array<[string, (init?: RequestInit) => Response]
     if (u.includes(BUDGETS_PATH)) {
       return Promise.resolve(jsonResponse({ budgets: [budget], total_count: 1, has_next_page: false }));
     }
-    // Default (teams) tab list and anything else.
     return Promise.resolve(jsonResponse([]));
   });
 }

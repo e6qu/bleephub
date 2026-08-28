@@ -108,9 +108,7 @@ describe("OrgPeoplePage admin gate", () => {
     renderPage();
     await screen.findByText("bob");
 
-    // alice (in the ?role=admin result) is labeled Owner; bob's card shows
-    // plain "Member" (asserted via the exact card-label text, alice is self →
-    // the private-member suffix).
+    // alice (in the ?role=admin result) is Owner; being self, her card carries the private-member suffix.
     await waitFor(() => {
       expect(screen.getByText("Owner · private member")).toBeInTheDocument();
     });
@@ -157,7 +155,6 @@ describe("OrgPeoplePage convert to outside collaborator", () => {
     renderPage();
 
     fireEvent.click(await screen.findByLabelText("Convert bob to outside collaborator"));
-    // Confirm the action in the dialog.
     fireEvent.click(await screen.findByRole("button", { name: "Convert" }));
 
     await waitFor(() => {

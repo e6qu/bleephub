@@ -1,25 +1,17 @@
 import { test, expect, type Page } from "./fixtures.js";
 
-// ─── Mobile (iPhone-class) horizontal-overflow gate ──────────────────────────
-//
-// Regression gate for phone-width responsiveness: at 375×812 no page may
-// scroll horizontally at the PAGE level. Wide content (code, diffs, tables,
-// tab rows) must scroll inside its own overflow-x-auto container instead —
-// exactly github.com's behaviour. The historical failure modes this guards:
-//   - the global header refusing to shrink (search input min-content +
-//     non-collapsing quick links forced 664–764px on every route), and
-//   - auto grid tracks inheriting min-content from wide descendants (the
-//     profile contribution graph) because grid children lacked min-w-0.
-//
-// Deliberately lightweight: no axe, a handful of representative routes, one
-// layout assertion per route.
+// Regression gate: at 375×812 no page may scroll horizontally at the PAGE
+// level — wide content must scroll inside its own overflow-x-auto container.
+// Guards two historical breaks: the global header refusing to shrink, and
+// auto grid tracks inheriting min-content from wide descendants (grid
+// children lacked min-w-0).
 
 const ADMIN_TOKEN = "bleephub-admin-token-00000000000000000000";
 const BASE = "http://localhost:15555";
 
 test.use({ viewport: { width: 375, height: 812 } });
 
-// Concrete identifiers filled in by beforeAll so dynamic routes aren't empty.
+// beforeAll fills these so dynamic routes aren't empty.
 const seeded = {
   owner: "admin",
   repo: "mobile-overflow",
@@ -81,9 +73,8 @@ test.beforeAll(async ({ browser }) => {
   if (issueRes.ok && issueRes.json && typeof issueRes.json === "object") {
     seeded.issueNumber = (issueRes.json as { number: number }).number;
   }
-  // Hostile content: a 220-char unbroken title (title wrap), an unbroken body
-  // word (markdown wrap), and an extreme label name (sidebar select width) —
-  // each has broken page width before.
+  // Hostile content that has broken page width before: a 220-char unbroken
+  // title, an unbroken body word, and an extreme label name.
   const unbroken = "W".repeat(220);
   const stressRes = await api(page, "POST", `${repo}/issues`, {
     title: unbroken,
@@ -115,8 +106,7 @@ test.beforeAll(async ({ browser }) => {
       seeded.pullNumber = (pullRes.json as { number: number }).number;
     }
   }
-  // A Sponsors profile with a tier and a live sponsorship, so the dashboard
-  // renders populated money tables rather than empty states.
+  // Seed a Sponsors profile so the dashboard renders populated money tables.
   await api(page, "PUT", `/ui-data/sponsors/${seeded.owner}`, {
     name: seeded.owner,
     short_description: "Mobile overflow seed",
@@ -162,12 +152,9 @@ const ROUTES: { label: string; route: () => string }[] = [
   { label: "discussions", route: () => `/ui/${seeded.owner}/${seeded.repo}/discussions` },
   { label: "repo-settings", route: () => `/ui/${seeded.owner}/${seeded.repo}/settings` },
   { label: "account-settings", route: () => "/ui/account" },
-  // The advisory database carries a filter row and an affected-package table,
-  // both of which are the shapes that overflow a phone if they are not
-  // allowed to wrap and scroll inside themselves.
+  // Advisory database: filter row + affected-package table are overflow-prone.
   { label: "advisory-database", route: () => "/ui/advisories" },
-  // The Sponsors dashboard carries three wide money tables — the shape that
-  // overflows a phone unless each scrolls inside itself.
+  // Sponsors dashboard: three wide money tables are overflow-prone.
   { label: "sponsors-dashboard", route: () => `/ui/sponsors/${seeded.owner}/dashboard` },
 ];
 
@@ -177,8 +164,7 @@ for (const { label, route } of ROUTES) {
     const metrics = await page.evaluate(() => {
       const scrollWidth = document.scrollingElement?.scrollWidth ?? 0;
       const innerWidth = window.innerWidth;
-      // Name the widest unclipped leaf elements so a failure says WHAT
-      // overflowed, not just that something did.
+      // Name the widest unclipped leaf elements so a failure says WHAT overflowed.
       const offenders: string[] = [];
       if (scrollWidth > innerWidth + 2) {
         for (const el of Array.from(document.querySelectorAll("*"))) {

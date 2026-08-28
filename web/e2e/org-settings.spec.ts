@@ -4,8 +4,8 @@ import AxeBuilder from "@axe-core/playwright";
 const ADMIN_TOKEN = "bleephub-admin-token-00000000000000000000";
 const BASE = "http://localhost:15555";
 
-// Org Settings landing — real-browser proof it renders the profile form + the
-// settings-section links, saves via PATCH, and is accessible.
+// Real-browser proof the org settings landing renders the profile form and section links,
+// saves via PATCH, and stays axe-clean.
 
 async function api(page: Page, method: string, path: string, body?: Record<string, unknown>) {
   const bodyJson = body === undefined ? null : JSON.stringify(body);

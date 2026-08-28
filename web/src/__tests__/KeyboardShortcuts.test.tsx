@@ -14,10 +14,8 @@ describe("KeyboardShortcuts", () => {
     render(<KeyboardShortcuts open onClose={() => {}} />);
     const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
-    // A documented binding from each of two groups.
     expect(screen.getByText("Go to your notifications")).toBeInTheDocument();
     expect(screen.getByText("Open the command palette (Ctrl K on Windows/Linux)")).toBeInTheDocument();
-    // The keys are rendered as <kbd> elements.
     expect(screen.getAllByText("g").length).toBeGreaterThan(0);
   });
 

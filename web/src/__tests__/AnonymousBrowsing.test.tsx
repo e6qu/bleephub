@@ -10,8 +10,7 @@ import { IssuesPage } from "../pages/IssuesPage.js";
 import { SessionContext } from "../session.js";
 import { fetchBrowserSession, isLoggedIn } from "../api.js";
 
-// Signed-out App renders: the probe is mocked per test; everything else in
-// api.js stays real and goes through the fetch mock below.
+// Mock only the probe per test; the rest of api.js stays real and goes through the fetch mock.
 vi.mock("../api.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api.js")>();
   return { ...actual, isLoggedIn: vi.fn(() => false), fetchBrowserSession: vi.fn() };
@@ -49,7 +48,6 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-/** URLs of every request the page fired. */
 function requestedUrls(): string[] {
   return mockFetch.mock.calls.map((c) => String(c[0]));
 }
@@ -83,11 +81,9 @@ const publicRepo = {
   subscribers_count: 2,
   forks_count: 1,
   owner: { login: "admin", type: "User" },
-  // No `permissions` block: the server omits it for anonymous reads, and the
-  // role-gating hooks treat that as no-push/no-admin.
+  // Omit `permissions`: the server drops it for anonymous reads, so role-gating hooks see no-push/no-admin.
 };
 
-/** Anonymous-shaped fetch mock: public reads answer, nothing else exists. */
 function mockAnonymousRepoServer() {
   mockFetch.mockImplementation((url: RequestInfo | URL) => {
     const u = String(url);
@@ -118,22 +114,17 @@ describe("anonymous browsing (App-level)", () => {
       </QueryClientProvider>,
     );
 
-    // The shell renders with the anonymous header…
     const signIn = await screen.findByRole("link", { name: "Sign in" });
     expect(signIn.getAttribute("href")).toBe(
       `/ui/login?return_to=${encodeURIComponent("/ui/admin/test")}`,
     );
-    // …and none of the signed-in chrome.
     expect(screen.queryByLabelText(/notifications/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create new…" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open user menu" })).not.toBeInTheDocument();
 
-    // The repo page itself renders (lazy chunk + queries settle).
     await screen.findByText("a repo", undefined, { timeout: 10_000 });
 
-    // Star/Watch/Fork render as sign-in links, not mutation buttons. (The
-    // page body also links to the stargazers list, so match on the header
-    // action that points at sign-in.)
+    // Match the header action pointing at sign-in: the page body also links to the stargazers list.
     const starLinks = await screen.findAllByRole("link", { name: /star/i });
     expect(
       starLinks.some((l) => (l.getAttribute("href") ?? "").includes("/ui/login?return_to=")),
@@ -189,7 +180,7 @@ describe("anonymous AppHeader", () => {
     expect(screen.queryByRole("button", { name: "Open user menu" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open global navigation" })).not.toBeInTheDocument();
 
-    // Give any (wrongly) enabled query a tick to fire, then assert silence.
+    // Give any wrongly-enabled query a tick to fire, then assert silence.
     await new Promise((resolve) => setTimeout(resolve, 50));
     expectNoViewerScopedRequests();
   });
@@ -225,7 +216,7 @@ describe("anonymous RepoHeader", () => {
     expect(star.getAttribute("href")).toContain("/ui/login?return_to=");
     expect(screen.getByRole("link", { name: /watch/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /fork/i })).toBeInTheDocument();
-    // The counts still render from the public social counters.
+    // Counts still render from the public social counters.
     await screen.findByText("5");
 
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -283,7 +274,7 @@ describe("anonymous issue detail", () => {
     );
 
     await screen.findByText("A public issue");
-    // The composer is replaced by GitHub's signed-out box…
+    // The composer is replaced by GitHub's signed-out box.
     expect(await screen.findByText(/to comment/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Sign in" })).toBeInTheDocument();
     expect(screen.queryByLabelText(/comment/i)).not.toBeInTheDocument();

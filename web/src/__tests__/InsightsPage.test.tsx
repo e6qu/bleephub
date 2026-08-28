@@ -99,8 +99,7 @@ function mockInsightsEndpoints(overrides: Record<string, () => Response> = {}) {
   });
 }
 
-// A tiny DAG with a feature branch off A that merges back at C, exercising the
-// lane fork/merge path of computeCommitGraph.
+// A DAG with a feature branch off A merging back at C — exercises computeCommitGraph's fork/merge lanes.
 const commit = (sha: string, parents: string[], message: string) => ({
   sha,
   parents: parents.map((p) => ({ sha: p })),
@@ -119,13 +118,11 @@ describe("InsightsPage", () => {
     mockInsightsEndpoints();
     renderAt("/ui/admin/test/insights");
 
-    // Sidebar nav with every section entry.
     const nav = await screen.findByRole("navigation", { name: "Insights" });
     for (const label of ["Pulse", "Contributors", "Community", "Traffic", "Commits", "Code frequency", "Dependency graph", "Network", "Forks"]) {
       expect(nav).toHaveTextContent(label);
     }
-    // Pulse pane: exact totals come from search total_count (mocked as 3),
-    // never from first-page item lengths.
+    // Pulse totals come from search total_count (mocked 3), never first-page item lengths.
     await waitFor(() => {
       expect(screen.getByText("Merged pull requests")).toBeInTheDocument();
     });
@@ -140,8 +137,7 @@ describe("InsightsPage", () => {
   });
 
   it("renders Pulse from the insights bootstrap and re-queries it per period", async () => {
-    // The aggregate answers, so Pulse must render its exact counters and the
-    // search-count fallback must stay quiet.
+    // The aggregate answers, so Pulse renders exact counters and the search-count fallback stays quiet.
     mockInsightsEndpoints({
       "/ui-data/bootstrap/repos/admin/test/insights": () =>
         jsonResponse({
@@ -181,9 +177,7 @@ describe("InsightsPage", () => {
   });
 
   it("falls back to the search counts (nearer since per period) when the bootstrap fails", async () => {
-    // mockInsightsEndpoints serves no bootstrap route, so the aggregate call
-    // falls through to the [] fallback and errors — Pulse must degrade to the
-    // four standalone search-count queries.
+    // No bootstrap route is served, so the aggregate errors and Pulse degrades to the four search-count queries.
     mockInsightsEndpoints();
     renderAt("/ui/admin/test/insights");
     await waitFor(() => {
@@ -210,14 +204,13 @@ describe("InsightsPage", () => {
       expect(screen.getByText("@admin")).toBeInTheDocument();
     });
     expect(screen.getByText("12 commits")).toBeInTheDocument();
-    // anonymous contributor rendered by name/email
+    // Anonymous contributor renders by name/email.
     expect(screen.getByText(/Ghost <ghost@example.com>/)).toBeInTheDocument();
   });
 
   it("renders community health, commit activity, code frequency, and traffic panes", async () => {
     mockInsightsEndpoints();
     const { unmount } = renderAt("/ui/admin/test/insights?section=community");
-    // community health score
     await waitFor(() => expect(screen.getByText("43%")).toBeInTheDocument());
     unmount();
 
@@ -230,7 +223,7 @@ describe("InsightsPage", () => {
 
     mockInsightsEndpoints();
     const { unmount: unmount3 } = renderAt("/ui/admin/test/insights?section=code-frequency");
-    // code frequency: 40+7 additions and 12+3 deletions across 2 weeks
+    // 40+7 additions and 12+3 deletions across 2 weeks.
     await waitFor(() => expect(screen.getByText("+47")).toBeInTheDocument());
     expect(screen.getByText("−15")).toBeInTheDocument();
     expect(screen.getByText(/additions and/)).toBeInTheDocument();
@@ -238,10 +231,8 @@ describe("InsightsPage", () => {
 
     mockInsightsEndpoints();
     renderAt("/ui/admin/test/insights?section=traffic");
-    // clone traffic bucket list rendered, view traffic honestly empty
     await waitFor(() => expect(screen.getByText(/5 \(2 unique\)/)).toBeInTheDocument());
     expect(screen.getByText(/No views in the last 14 days/)).toBeInTheDocument();
-    // popular content empty states
     expect(screen.getByText(/No path traffic recorded/)).toBeInTheDocument();
     expect(screen.getByText(/No referrer traffic recorded/)).toBeInTheDocument();
   });
@@ -257,19 +248,16 @@ describe("InsightsPage", () => {
     });
     renderAt("/ui/admin/test/insights?section=network");
 
-    // The header reports the commit count and >1 lane (feature branch forks one).
+    // Header reports the commit count and >1 lane (feature branch forks one).
     await waitFor(() => {
       expect(screen.getByText(/Latest 4 commits across [2-9] lanes/)).toBeInTheDocument();
     });
-    // The SVG exposes an accessible label.
     expect(
       screen.getByRole("img", { name: /Commit network graph: 4 commits/ }),
     ).toBeInTheDocument();
-    // The off-screen commit list links each commit to its detail page.
     const merge = screen.getByRole("link", { name: /Merge feature/i });
     expect(merge).toHaveAttribute("href", "/ui/admin/test/commits/cccccccc");
     expect(screen.getByRole("link", { name: /Root commit/i })).toBeInTheDocument();
-    // Branch tips are labelled on the graph.
     expect(screen.getByText("feature")).toBeInTheDocument();
   });
 
@@ -293,7 +281,7 @@ describe("InsightsPage", () => {
     await waitFor(() => {
       expect(screen.getByText(/failed to load community profile/i)).toBeInTheDocument();
     });
-    // the sidebar remains navigable despite the pane error
+    // Sidebar stays navigable despite the pane error.
     expect(screen.getByRole("navigation", { name: "Insights" })).toBeInTheDocument();
   });
 });

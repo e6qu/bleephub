@@ -119,7 +119,7 @@ describe("OrgHooksPage write actions", () => {
       const body = JSON.parse((post![1] as RequestInit).body as string);
       expect(body.config.url).toBe("https://x.test/h");
       expect(body.events).toEqual(["push"]);
-      // SSL verification defaults to enabled.
+      // SSL verification defaults on (insecure_ssl "0").
       expect(body.config.insecure_ssl).toBe("0");
     });
   });
@@ -187,7 +187,7 @@ describe("OrgHooksPage write actions", () => {
     });
     fireEvent.change(screen.getByLabelText(/secret/i), { target: { value: "org-s3cret" } });
     fireEvent.click(screen.getByRole("radio", { name: "Let me select individual events" }));
-    // "push" is pre-selected (it seeds the individual list); add "organization".
+    // "push" seeds the individual-events list pre-checked; add "organization".
     expect(screen.getByRole("checkbox", { name: "push" })).toBeChecked();
     fireEvent.click(screen.getByRole("checkbox", { name: "organization" }));
     fireEvent.click(screen.getByRole("button", { name: /add webhook/i }));
@@ -215,7 +215,7 @@ describe("OrgHooksPage write actions", () => {
 
     const urlInput = await screen.findByLabelText(/payload url/i);
     expect(urlInput).toHaveValue("https://ci.example.test/org-hook");
-    // push+issues → individual-events mode, prechecked.
+    // A hook with push+issues opens in individual-events mode, prechecked.
     expect(screen.getByRole("radio", { name: "Let me select individual events" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "issues" })).toBeChecked();
 
@@ -233,7 +233,7 @@ describe("OrgHooksPage write actions", () => {
         events: ["issues", "push"],
         config: { url: "https://ci.example.test/v2", content_type: "json", insecure_ssl: "0" },
       });
-      // Blank secret is omitted so the server keeps the stored one.
+      // Omit a blank secret so the server keeps the stored one.
       expect(body.config.secret).toBeUndefined();
     });
   });

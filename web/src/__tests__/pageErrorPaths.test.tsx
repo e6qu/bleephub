@@ -1,10 +1,6 @@
-// Error-path hardening for the pages added across the recent feature PRs.
-// Each page is rendered against a fetch layer that fails (HTTP 500), rejects
-// (network error), or returns a malformed shape, and must degrade to a
-// visible InlineError/ErrorBanner — never a blank screen, never a thrown
-// render (which would blank the whole app), never fabricated data. A
-// render that throws makes render()/act() reject and fails the test; a
-// blank screen makes the findBy* time out and fails the test.
+// Error-path hardening: each page, given a fetch that 500s, rejects, or returns a
+// malformed shape, must degrade to a visible InlineError/ErrorBanner — never a blank
+// screen, never a thrown render, never fabricated data.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

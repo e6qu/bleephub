@@ -17,7 +17,6 @@ describe("CommentCard", () => {
     // The heading renders as an <h3>, not the literal "### Steps".
     const heading = screen.getByRole("heading", { level: 3, name: "Steps" });
     expect(heading).toBeInTheDocument();
-    // Inline code renders as a <code> element.
     expect(screen.getByText("inline code").tagName).toBe("CODE");
     // The raw markdown tokens are not shown verbatim.
     expect(screen.queryByText(/### Steps/)).toBeNull();

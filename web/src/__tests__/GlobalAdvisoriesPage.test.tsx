@@ -64,8 +64,8 @@ const requestsAdvisory = {
   ],
 };
 
-/** installList answers the listing endpoint, echoing back the filters so a
- *  test can assert the page actually sent them. */
+/** Answer the listing endpoint, echoing filters back so a test can assert
+ *  the page actually sent them. */
 function installList(onQuery?: (params: URLSearchParams) => void) {
   mockFetch.mockImplementation((input: RequestInfo | URL) => {
     const url = new URL(String(input), "https://example.test");
@@ -114,9 +114,8 @@ describe("GlobalAdvisoriesPage", () => {
     expect(screen.getByText("CVE-2026-0001")).toBeInTheDocument();
     expect(screen.getByText("npm/lodash")).toBeInTheDocument();
     expect(screen.getByText("pip/requests")).toBeInTheDocument();
-    // The severity word is rendered as text on the badge, so the badge is not
-    // carrying its meaning by colour alone. getAllBy is required because the
-    // severity <select> legitimately offers the same words as options.
+    // Assert the severity word is text on the badge, not colour alone (a11y);
+    // filter out OPTIONs since the severity <select> offers the same words.
     const highBadges = screen.getAllByText("high").filter((node) => node.tagName !== "OPTION");
     const lowBadges = screen.getAllByText("low").filter((node) => node.tagName !== "OPTION");
     expect(highBadges).toHaveLength(1);
@@ -129,9 +128,8 @@ describe("GlobalAdvisoriesPage", () => {
     renderList();
     await screen.findByText("Prototype pollution in lodash");
 
-    // Each filter change is a fresh query, so the list is replaced by its
-    // loading state before the narrowed result arrives — findByText waits for
-    // that, where getByText would read the spinner.
+    // Each filter change is a fresh query showing the loading state first, so
+    // use findByText — getByText would read the spinner.
     fireEvent.change(screen.getByLabelText("Ecosystem"), { target: { value: "pip" } });
     expect(await screen.findByText("Header injection in requests")).toBeInTheDocument();
     expect(screen.queryByText("Prototype pollution in lodash")).not.toBeInTheDocument();

@@ -101,10 +101,10 @@ describe("RepoSettingsPage", () => {
 
   it("submits PATCH /api/v3/repos/{owner}/{repo} on save", async () => {
     mockFetch
-      .mockResolvedValueOnce(jsonResponse(repo)) // fetchRepoDetail
-      .mockResolvedValueOnce(jsonResponse([])) // issues count
-      .mockResolvedValueOnce(jsonResponse([])) // prs count
-      .mockResolvedValueOnce(jsonResponse({ ...repo, description: "after" })); // PATCH
+      .mockResolvedValueOnce(jsonResponse(repo))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse({ ...repo, description: "after" }));
     renderPage();
     await waitFor(() => screen.getByDisplayValue("before"));
 
@@ -247,13 +247,11 @@ describe("RepoSettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Environments" }));
     fireEvent.click(await screen.findByRole("button", { name: "production" }));
 
-    // Pick a user reviewer.
     const userPicker = await screen.findByLabelText("Add user reviewer for production");
     await waitFor(() => expect(screen.getByRole("option", { name: "reviewer-user" })).toBeInTheDocument());
     fireEvent.change(userPicker, { target: { value: "42" } });
     fireEvent.click(screen.getByRole("button", { name: "Add user" }));
 
-    // Pick a team reviewer.
     const teamPicker = await screen.findByLabelText("Add team reviewer for production");
     fireEvent.change(teamPicker, { target: { value: "7" } });
     fireEvent.click(screen.getByRole("button", { name: "Add team" }));
@@ -313,9 +311,8 @@ describe("RepoSettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Environments" }));
     fireEvent.click(await screen.findByRole("button", { name: "production" }));
 
-    // Both saved reviewers render from the payload — the team with its
-    // name + slug, the user with its login — each removable. No
-    // "cannot be displayed" caveat anymore.
+    // Both saved reviewers render from the payload (team by name+slug, user by
+    // login), each removable, with no "cannot be displayed" caveat.
     expect(await screen.findByRole("button", { name: "Remove reviewer Platform" })).toBeInTheDocument();
     expect(screen.getByText("Team · platform")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove reviewer reviewer-user" })).toBeInTheDocument();
@@ -364,7 +361,6 @@ describe("RepoSettingsPage", () => {
     await waitFor(() => screen.getByDisplayValue("before"));
 
     fireEvent.click(screen.getByRole("button", { name: "Webhooks" }));
-    // Existing hook is listed (not a stub).
     expect(await screen.findByText(/old\.example\/hook/)).toBeInTheDocument();
 
     fireEvent.change(await screen.findByLabelText("Payload URL"), { target: { value: "https://new.example/hook" } });
@@ -392,10 +388,9 @@ describe("RepoSettingsPage", () => {
     renderPage();
     await waitFor(() => screen.getByDisplayValue("before"));
 
-    // Open the Danger zone (Transfer) tab, then trigger the delete card.
     fireEvent.click(screen.getByRole("button", { name: "Transfer" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete this repository" }));
-    // Type-to-confirm: the Delete button stays disabled until "{owner}/{repo}" is typed.
+    // Delete stays disabled until "{owner}/{repo}" is typed to confirm.
     const confirmDelete = await screen.findByRole("button", { name: "Delete" });
     expect(confirmDelete).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/type .* to confirm/i), {
@@ -423,7 +418,7 @@ describe("RepoSettingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Transfer" }));
     fireEvent.click(screen.getByRole("button", { name: "Archive this repository" }));
-    // Archiving is type-to-confirm on the repository name.
+    // Archive is type-to-confirm on the repository name.
     const confirmArchive = await screen.findByRole("button", { name: "Archive" });
     expect(confirmArchive).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/type .* to confirm/i), {
@@ -553,7 +548,6 @@ describe("RepoSettingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Actions" }));
 
-    // Allow GitHub Actions to create and approve pull requests
     const approve = await screen.findByRole("checkbox", { name: "Allow GitHub Actions to create and approve pull requests" });
     fireEvent.click(approve);
     await waitFor(() => {
@@ -564,7 +558,6 @@ describe("RepoSettingsPage", () => {
       expect(JSON.parse(String(put![1].body)).can_approve_pull_request_reviews).toBe(true);
     });
 
-    // Fork PR approval policy
     fireEvent.change(screen.getByLabelText("Fork pull request approval policy"), { target: { value: "all_external_contributors" } });
     await waitFor(() => {
       const put = mockFetch.mock.calls.find(
@@ -574,7 +567,6 @@ describe("RepoSettingsPage", () => {
       expect(JSON.parse(String(put![1].body))).toEqual({ approval_policy: "all_external_contributors" });
     });
 
-    // Artifact and log retention days
     const days = await screen.findByLabelText("Artifact and log retention days");
     await waitFor(() => expect(days).toHaveValue(90));
     fireEvent.change(days, { target: { value: "30" } });

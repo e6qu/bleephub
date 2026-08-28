@@ -90,11 +90,10 @@ describe("SecretScanningPage custom patterns", () => {
     });
     renderPage();
 
-    // The existing pattern is listed (not a stub).
     await screen.findByText("Acme API key");
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    // Confirm in the confirmAction modal (its confirm button is labelled "Delete").
+    // The modal's confirm button is also labelled "Delete"; take the last one.
     const confirmButtons = await screen.findAllByRole("button", { name: "Delete" });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]!);
 

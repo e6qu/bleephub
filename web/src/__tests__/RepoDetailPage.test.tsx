@@ -141,11 +141,8 @@ function routedFetch(url: RequestInfo | URL): Promise<Response> {
   return Promise.resolve(jsonResponse([]));
 }
 
-// G9 removed the in-page Releases sub-tab (and its list); the routed
-// ReleasesPage is the single releases surface, and RepoDetailPage's job is
-// only to lead there the way github.com does — from the About sidebar. The
-// draft-vs-1970 rendering this file used to assert now lives in
-// ReleasesPage.test.tsx.
+// G9 removed the in-page Releases sub-tab; RepoDetailPage now only leads to the
+// routed ReleasesPage from the About sidebar, the way github.com does.
 describe("RepoDetailPage releases entry point", () => {
   it("links the About sidebar's Releases heading at the routed releases page", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
@@ -179,8 +176,7 @@ describe("RepoDetailPage code", () => {
     // "nextra detail" is text unique to the rendered README markdown body.
     expect(await screen.findByText("nextra detail")).toBeInTheDocument();
 
-    // Navigate into a subdirectory. The readme query cache (keyed by branch,
-    // not path) is retained, so the panel must be gated on path === "".
+    // Readme cache is keyed by branch not path, so the panel must gate on path === "".
     fireEvent.click(screen.getByRole("link", { name: "src" }));
     await waitFor(() => {
       expect(screen.queryByText("nextra detail")).not.toBeInTheDocument();
@@ -218,7 +214,6 @@ describe("RepoDetailPage code", () => {
     await waitFor(() => {
       expect(screen.getByText(/Initial commit/)).toBeInTheDocument();
     });
-    // short sha + commit count
     expect(screen.getByText("abc123".slice(0, 7))).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /1 commit\b/ })).toHaveAttribute(
       "href",
@@ -235,8 +230,7 @@ describe("RepoDetailPage code", () => {
     renderPage();
     await screen.findAllByText("README.md");
 
-    // The repo sub-tab strip also has a "Code" button; the clone dropdown is
-    // the one carrying aria-expanded (matched via the `expanded` filter).
+    // Match the clone dropdown, not the sub-tab "Code" button, via aria-expanded.
     const codeButton = screen.getByRole("button", { name: "Code", expanded: false });
     fireEvent.click(codeButton);
 
@@ -259,8 +253,7 @@ describe("RepoDetailPage code", () => {
       "href",
       "/ui/admin/test/blob/main/README.md",
     );
-    // G9: the commit history is reached from the "N commits" link on the tree
-    // header's right, exactly as on github.com — there is no sub-tab row.
+    // G9: reach commit history from the tree header's "N commits" link, not a sub-tab.
     fireEvent.click(screen.getByRole("link", { name: /\d+\+? commits?$/ }));
     expect(await screen.findByRole("link", { name: "Initial commit" })).toHaveAttribute(
       "href",
@@ -344,16 +337,13 @@ describe("RepoDetailPage code", () => {
     expect(calls.some(({ url }) => url.startsWith("/internal/"))).toBe(false);
   });
 
-  // G9: github.com has exactly ONE repository tab row. The old second row
-  // (Code / Commits / Branches / Tags / Activity / Releases plus an admin
-  // "More" gear) is gone; this pins both halves of that — the row's absence
-  // and the github.com-shaped entry point that replaced each of its items.
+  // G9: pins the old second tab row's absence plus the github.com-shaped entry
+  // point that replaced each of its items.
   it("has no second repository tab row, and reaches every destination the way github.com does", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage();
     await screen.findAllByText("README.md");
 
-    // The extra row and its admin overflow are gone.
     expect(screen.queryByRole("navigation", { name: "Repository content" })).not.toBeInTheDocument();
     expect(screen.queryByText("Repository administration")).not.toBeInTheDocument();
     expect(screen.queryByText("All repository settings")).not.toBeInTheDocument();
@@ -364,14 +354,12 @@ describe("RepoDetailPage code", () => {
       "href",
       "/ui/admin/test",
     );
-    // Settings: still on that row for an admin (webhooks, secrets and
-    // environments all live behind it now).
+    // Settings: still on that row for an admin (webhooks/secrets/environments live behind it).
     expect(within(repoTabs).getByRole("link", { name: "Settings" })).toHaveAttribute(
       "href",
       "/ui/admin/test/settings",
     );
 
-    // Commits: the tree header's "N commits" link.
     expect(screen.getByRole("link", { name: /\d+\+? commits?$/ })).toHaveAttribute(
       "href",
       "/ui/admin/test/commits",
@@ -399,8 +387,7 @@ describe("RepoDetailPage code", () => {
       "href",
       "/ui/admin/test/releases",
     );
-    // Deployments hung off the removed row's admin overflow and would
-    // otherwise have no entry point at all.
+    // Deployments hung off the removed row's overflow; the sidebar is its only entry point now.
     expect(within(about).getByRole("link", { name: "Deployments" })).toHaveAttribute(
       "href",
       "/ui/admin/test/deployments",
@@ -414,17 +401,13 @@ describe("RepoDetailPage About sidebar", () => {
     renderPage();
     await screen.findAllByText("README.md");
 
-    // description + website live in the sidebar
     const about = screen.getByRole("complementary", { name: "About" });
     expect(within(about).getByText("a repo")).toBeInTheDocument();
     expect(within(about).getByText("example.com")).toBeInTheDocument();
-    // topics as pill chips
     expect(within(about).getByText("cli")).toBeInTheDocument();
     expect(within(about).getByText("tooling")).toBeInTheDocument();
-    // latest release + Latest badge
     expect(within(about).getByText("Latest")).toBeInTheDocument();
     expect(within(about).getByText("No packages published")).toBeInTheDocument();
-    // social counts moved into the sidebar
     expect(within(about).getByText(/5 stars/)).toBeInTheDocument();
     expect(within(about).getByText(/2 watchers/)).toBeInTheDocument();
     expect(within(about).getByText(/1 fork/)).toBeInTheDocument();
@@ -597,7 +580,6 @@ describe("repository detail journeys", () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage("/ui/admin/test/blob/main/README.md");
 
-    // Per-segment breadcrumbs: repo root link + the current file plain.
     const crumbs = await screen.findByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).getByRole("link", { name: "test" })).toHaveAttribute(
       "href",
@@ -605,7 +587,6 @@ describe("repository detail journeys", () => {
     );
     expect(within(crumbs).getByText("README.md")).toHaveAttribute("aria-current", "page");
     expect(await screen.findByText(/extra detail/)).toBeInTheDocument();
-    // github.com's per-file Raw and History affordances.
     expect(screen.getByRole("button", { name: "View raw file" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "History" })).toHaveAttribute(
       "href",
@@ -660,7 +641,6 @@ describe("RepoDetailPage activity", () => {
     });
     renderPage("/ui/admin/test/activity");
 
-    // the activity row: actor login, "pushed to" label, and short ref
     expect(await screen.findByText("octocat")).toBeInTheDocument();
     expect(screen.getByText("pushed to")).toBeInTheDocument();
     expect(screen.getByText("main")).toBeInTheDocument();
@@ -883,7 +863,6 @@ describe("RepoDetailPage file table metadata", () => {
       "href",
       "/ui/admin/filetab/commits/bbb2222",
     );
-    // and a relative age cell (a <time> element next to the message).
     await waitFor(() => {
       expect(readmeMsg.closest("div[class*='flex']")!.parentElement!.querySelector("time")).not.toBeNull();
     });
@@ -938,14 +917,13 @@ describe("RepoDetailPage ref switcher", () => {
     expect(trigger).toHaveTextContent("main");
     fireEvent.click(trigger);
 
-    // combobox filter + branches listbox
     const input = screen.getByRole("combobox", { name: /find a branch/i });
     fireEvent.change(input, { target: { value: "ma" } });
     expect(screen.getByRole("option", { name: /main/ })).toBeInTheDocument();
     // The filter carries across tabs (GitHub keeps it); clear it first.
     fireEvent.change(input, { target: { value: "" } });
 
-    // Tags tab loads the tag list lazily and navigates on selection.
+    // The Tags tab loads its list lazily and navigates on selection.
     fireEvent.click(screen.getByRole("tab", { name: "Tags" }));
     const tagOption = await screen.findByRole("option", { name: /v9\.9\.9/ });
     fireEvent.click(tagOption);
@@ -973,15 +951,12 @@ describe("RepoDetailPage commits grouping", () => {
     renderPage("/ui/admin/grouped/commits");
 
     await screen.findByRole("link", { name: "second" });
-    // Two distinct day groups.
     expect(screen.getAllByText(/^Commits on /)).toHaveLength(2);
-    // copy-SHA + browse-tree controls per row
     expect(screen.getByRole("button", { name: "Copy full SHA for sha1111" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Browse repository at sha1111" })).toHaveAttribute(
       "href",
       "/ui/admin/grouped/tree/sha1111111",
     );
-    // relative dates via <time>
     expect(screen.getByRole("link", { name: "second" }).closest("div")!.parentElement!.querySelector("time")).not.toBeNull();
   });
 });
@@ -992,9 +967,8 @@ describe("RepoDetailPage branches sections", () => {
   });
 
   it("buckets branches into Default/Active/Stale with ahead-behind and a New PR link", async () => {
-    // Pinned clock: the stale-branch bucketing compares against "now", so the
-    // fixture dates must be fixed relative to a fixed now (shouldAdvanceTime
-    // keeps waitFor's real timers working).
+    // Pin the clock: stale-branch bucketing compares against "now", so fixture dates
+    // must be fixed relative to it (shouldAdvanceTime keeps waitFor's real timers working).
     vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z"), shouldAdvanceTime: true });
     const now = new Date("2026-03-01T12:00:00Z").getTime();
     const recent = new Date(now - 5 * 24 * 3600 * 1000).toISOString();
@@ -1036,16 +1010,13 @@ describe("RepoDetailPage branches sections", () => {
     expect(screen.getByText("Active branches")).toBeInTheDocument();
     const stale = screen.getByRole("region", { name: "Stale branches" });
     expect(within(stale).getByText("old")).toBeInTheDocument();
-    // ahead/behind vs default, per row
     await waitFor(() => {
       expect(screen.getByText("3 ahead · 1 behind")).toBeInTheDocument();
     });
-    // per-row New pull request → compare route
     expect(screen.getAllByRole("link", { name: "New pull request" })[0]).toHaveAttribute(
       "href",
       "/ui/admin/brepo/compare/main...fresh",
     );
-    // author + relative time from the head commit
     expect(within(stale).getByText("bob")).toBeInTheDocument();
   });
 });
@@ -1073,7 +1044,7 @@ describe("RepoComparePage", () => {
     const createPr = await screen.findByRole("link", { name: "Create pull request" });
     // Contract for the pulls page create flow: ?compare={base}...{head}.
     expect(createPr).toHaveAttribute("href", "/ui/admin/ctest/pulls?compare=main...feature");
-    // colored diff rows instead of a monochrome <pre>
+    // Diff rows are colored (color-mix), not a monochrome <pre>.
     const hunkRow = screen.getByText("@@ -1 +1,2 @@").parentElement!;
     expect(hunkRow.getAttribute("style")).toMatch(/color-mix/);
     const addedRow = screen.getByText("+added line").parentElement!;
@@ -1102,12 +1073,10 @@ describe("RepoFilePage content types", () => {
     expect(line2).toHaveAttribute("href", "#L2");
     expect(container.querySelector("#L1")).not.toBeNull();
     expect(container.querySelector("#L3")).not.toBeNull();
-    // clicking a line number targets it (highlight + hash)
     fireEvent.click(line2);
     await waitFor(() => {
       expect((container.querySelector("#L2") as HTMLElement).getAttribute("style")).toMatch(/color-mix/);
     });
-    // breadcrumbs: intermediate segment links to its tree
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).getByRole("link", { name: "src" })).toHaveAttribute(
       "href",
@@ -1121,7 +1090,6 @@ describe("RepoFilePage content types", () => {
 
     // Preview is the default: markdown renders as HTML.
     expect(await screen.findByRole("heading", { name: "test" })).toBeInTheDocument();
-    // The Code tab switches to the numbered source view.
     fireEvent.click(screen.getByRole("tab", { name: "Code" }));
     expect(await screen.findByRole("link", { name: "Line 1" })).toBeInTheDocument();
   });
@@ -1241,10 +1209,9 @@ describe("RepoDetailPage bootstrap", () => {
     });
     renderPage();
     await screen.findByText("a repo");
-    // File-table columns come from tree-meta; the src row (latest: null)
-    // degrades to the per-path commits fallback, which is also mocked.
+    // File-table columns come from tree-meta; the src row (latest: null) degrades
+    // to the per-path commits fallback, also mocked.
     expect((await screen.findAllByText("Initial commit")).length).toBeGreaterThanOrEqual(1);
-    // Topics seeded off the repo payload.
     expect(await screen.findByText("tooling")).toBeInTheDocument();
 
     const gets = mockFetch.mock.calls.map((c) => c[0]!.toString());
@@ -1278,8 +1245,8 @@ describe("RepoDetailPage bootstrap", () => {
 });
 
 describe("RepoDetailPage read-only viewer gating", () => {
-  // A pull-only outsider: github.com hides every write affordance instead of
-  // rendering buttons that would 403.
+  // A pull-only outsider: github.com hides every write affordance rather than
+  // render buttons that would 403.
   const viewerRepo = { ...repoData, permissions: { admin: false, push: false, pull: true } };
   const viewerFetch = (url: RequestInfo | URL): Promise<Response> => {
     const u = url.toString();
@@ -1292,13 +1259,10 @@ describe("RepoDetailPage read-only viewer gating", () => {
     renderPage();
     await screen.findAllByText("README.md");
 
-    // Read affordances stay.
     expect(screen.getByRole("button", { name: "Go to file" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Code", expanded: false })).toBeInTheDocument();
-    // Write affordances are gone.
     expect(screen.queryByRole("button", { name: "Add file" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Upload files" })).not.toBeInTheDocument();
-    // Repo nav: no Settings tab; no administration overflow menu.
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
     expect(screen.queryByText("All repository settings")).not.toBeInTheDocument();
     expect(screen.queryByText("Repository administration")).not.toBeInTheDocument();
@@ -1321,7 +1285,6 @@ describe("RepoDetailPage read-only viewer gating", () => {
 
     expect(screen.queryByRole("button", { name: /new branch/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete branch feature/y" })).not.toBeInTheDocument();
-    // Compare / New pull request stay readable.
     expect(screen.getAllByRole("link", { name: "Compare" }).length).toBeGreaterThan(0);
     // The protected badge stays informational but is no longer a settings link.
     expect(screen.getByText("protected")).toBeInTheDocument();
@@ -1343,7 +1306,6 @@ describe("RepoDetailPage read-only viewer gating", () => {
 
     expect(screen.queryByRole("button", { name: /new tag/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete tag v1.0.0" })).not.toBeInTheDocument();
-    // Archives stay downloadable.
     expect(screen.getByRole("link", { name: "zip" })).toBeInTheDocument();
   });
 

@@ -61,7 +61,6 @@ describe("Query hooks", () => {
     try {
       renderHook(() => useStatus(), { wrapper: createWrapper() });
 
-      // Let the initial fetch on mount settle.
       await vi.advanceTimersByTimeAsync(0);
       expect(mockFetch).toHaveBeenCalledTimes(1);
 

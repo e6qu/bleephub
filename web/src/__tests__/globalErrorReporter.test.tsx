@@ -1,13 +1,11 @@
-// A rejected promise with no .catch escapes React entirely; the global reporter
-// is the only thing that surfaces it. Cover both that it reports and that
-// uninstalling stops it (no leak across the page lifetime).
+// A rejected promise with no .catch escapes React; the global reporter is the
+// only thing that surfaces it. Cover both reporting and that uninstall stops it.
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 import { installUnhandledRejectionReporter } from "../globalErrorReporter.js";
 
 function dispatchRejection(reason: unknown) {
-  // jsdom lacks a PromiseRejectionEvent constructor, so synthesize an event of
-  // the right type carrying a `reason`, matching the real event shape.
+  // jsdom lacks a PromiseRejectionEvent constructor; synthesize one carrying `reason`.
   const event = new Event("unhandledrejection") as Event & { reason: unknown };
   event.reason = reason;
   window.dispatchEvent(event);

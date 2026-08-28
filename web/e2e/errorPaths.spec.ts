@@ -1,13 +1,7 @@
 import { test, expect } from "./fixtures.js";
 
-// Graceful-degradation e2e: drive the real bleephub app against real error
-// responses (a 404 for a repo that does not exist) and against a fault
-// injected at the network layer (a fulfilled HTTP 500), and assert the app
-// degrades to a visible error surface — never a blank screen, never an
-// uncaught page exception that blanks the SPA. A fulfilled 500 (not an
-// aborted request) keeps the browser console clean, so the only failure
-// signal is a genuine app crash, which `pageerror` below turns into a
-// failing test.
+// Assert the app degrades to a visible error surface, never a blank SPA; a
+// fulfilled 500 keeps the console clean so `pageerror` is the only crash signal.
 test.beforeEach(({ page }, testInfo) => {
   page.on("pageerror", (err) => {
     throw new Error(`Uncaught page error in ${testInfo.title}: ${err.message}`);
@@ -21,8 +15,7 @@ test.describe("Error handling / fault injection", () => {
     await page.goto("/ui/admin/this-repo-does-not-exist-xyz/insights");
     await page.waitForLoadState("networkidle");
 
-    // The repo breadcrumb (param-driven, no fetch) still renders — the shell
-    // survives the failed data fetches.
+    // The param-driven breadcrumb renders with no fetch — the shell survives.
     await expect(
       page.getByRole("link", { name: "this-repo-does-not-exist-xyz" }),
     ).toBeVisible();
@@ -31,8 +24,7 @@ test.describe("Error handling / fault injection", () => {
   });
 
   test("an injected 500 on the repos list degrades to a visible error", async ({ page }) => {
-    // Fulfil (do not abort) so the browser sees a normal HTTP 500 — the app's
-    // own error handling must take it from there.
+    // Fulfil (do not abort) so the browser sees a normal HTTP 500.
     await page.route("**/api/v3/user/repos**", (route) =>
       route.fulfill({
         status: 500,
@@ -45,8 +37,6 @@ test.describe("Error handling / fault injection", () => {
     await page.waitForLoadState("networkidle");
 
     await expect(page.getByText(/Failed to load repositories/i)).toBeVisible();
-    // The app shell (the header brand) is still present — the whole app did not
-    // fall over.
     await expect(page.getByRole("link", { name: "bleephub" })).toBeVisible();
   });
 
@@ -60,12 +50,10 @@ test.describe("Error handling / fault injection", () => {
       }),
     );
 
-    // The "System status" console lives at /ui/operations.
     await page.goto("/ui/operations");
     await page.waitForLoadState("networkidle");
 
-    // A failed metrics fetch must degrade to a visible InlineError, never a
-    // blank console or an uncaught render. The app shell survives.
+    // A failed metrics fetch must degrade to a visible InlineError, not blank.
     await expect(page.getByText(/Failed to load overview/i)).toBeVisible();
     await expect(page.getByRole("link", { name: "bleephub" })).toBeVisible();
   });
@@ -82,8 +70,8 @@ test.describe("Error handling / fault injection", () => {
     await page.goto("/ui/operations");
     await page.waitForLoadState("networkidle");
 
-    // Only the recent-workflows table depends on the repository list now, so
-    // the counters must survive its failure and the table degrades on its own.
+    // Only the recent-workflows table depends on the repo list, so counters
+    // must survive its failure while the table degrades on its own.
     await expect(page.getByText(/Failed to load workflows/i)).toBeVisible();
     await expect(page.getByText("Connected runners")).toBeVisible();
   });

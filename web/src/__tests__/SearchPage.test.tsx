@@ -163,7 +163,6 @@ describe("SearchPage", () => {
     expect(probes.some((u) => u.includes("/api/v3/search/issues?"))).toBe(true);
     // Labels need a repository_id, so they are never probed blind.
     expect(probes.some((u) => u.includes("/api/v3/search/labels"))).toBe(false);
-    // Labels show the unknown placeholder.
     expect(screen.getByRole("button", { name: /Labels/ })).toHaveTextContent("—");
   });
 
@@ -196,7 +195,6 @@ describe("SearchPage", () => {
     renderPage("/ui/search?q=retry&type=code");
     const link = await screen.findByRole("link", { name: /admin\/tool/ });
     expect(link).toHaveAttribute("href", "/ui/admin/tool/blob/trunk/cmd/main.go");
-    // The matched span renders as <mark> inside the fragment.
     const mark = screen.getByText("retry", { selector: "mark" });
     expect(mark).toBeInTheDocument();
     // The request opted into the text-match media type.

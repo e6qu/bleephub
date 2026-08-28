@@ -16,8 +16,7 @@ function jsonResponse(data: unknown) {
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
-  // Viewed-file and review-summary state persist per PR in sessionStorage;
-  // keep tests independent.
+  // Viewed/review-summary state persists per PR in sessionStorage; isolate tests.
   sessionStorage.clear();
 });
 
@@ -31,8 +30,7 @@ const prFile = {
   patch: "@@ -1,1 +1,1 @@\n+hello",
 };
 
-// Viewer-role gating reads the repo payload's permissions; the admin fixture
-// carries full access so the write affordances render as they always did.
+// Viewer-role gating reads the repo payload's permissions; admin fixture has full access.
 const adminRepo = {
   id: 1,
   name: "test",
@@ -71,8 +69,7 @@ describe("PRFilesView review comment", () => {
   });
 
   it("drafts comments into a server-side PENDING review and submits via /events", async () => {
-    // Stateful mock: creating the pending review makes it (and its draft
-    // comment) visible to subsequent reads — the reload-safe persistence.
+    // Stateful mock: creating the pending review makes it and its draft visible to later reads.
     let pendingReview: Record<string, unknown> | null = null;
     let createBody: unknown = null;
     let submitBody: unknown = null;
@@ -123,8 +120,7 @@ describe("PRFilesView review comment", () => {
       </QueryClientProvider>,
     );
 
-    // Accumulate one pending line comment via "Start a review" — it must be
-    // created server-side as a PENDING review (POST with no `event`).
+    // "Start a review" must create a server-side PENDING review (POST with no `event`).
     fireEvent.click(await screen.findByRole("button", { name: "Comment on a.txt line 1" }));
     fireEvent.change(screen.getByLabelText("Review comment"), { target: { value: "please fix" } });
     fireEvent.click(screen.getByRole("button", { name: "Start a review" }));
@@ -136,13 +132,11 @@ describe("PRFilesView review comment", () => {
     });
     expect((createBody as Record<string, unknown>).event).toBeUndefined();
 
-    // The pending count surfaces on the review button, and the draft renders
-    // with its Pending badge under the diff.
     const finishBtn = await screen.findByRole("button", { name: "Finish your review (1)" });
     expect(await screen.findByText("Pending")).toBeInTheDocument();
     expect(screen.getByText("please fix")).toBeInTheDocument();
 
-    // Submit as Approve through the popover — POST /reviews/{id}/events.
+    // Submit as Approve — POST /reviews/{id}/events.
     fireEvent.click(finishBtn);
     fireEvent.change(await screen.findByLabelText("Review summary"), { target: { value: "LGTM overall" } });
     fireEvent.click(screen.getByRole("radio", { name: /^approve/i }));
@@ -246,8 +240,7 @@ describe("PRFilesView inline threads", () => {
     renderFiles();
 
     expect(await screen.findByText("existing thread")).toBeInTheDocument();
-    // The thread sits under its diff row with the resolve control (wired to
-    // the GraphQL thread id) and a reply composer.
+    // Thread renders under its diff row with a resolve control (GraphQL thread id) and reply box.
     expect(await screen.findByRole("button", { name: /^resolve$/i })).toBeInTheDocument();
     expect(screen.getByLabelText("reply to thread on a.txt")).toBeInTheDocument();
   });
@@ -270,7 +263,6 @@ describe("PRFilesView inline threads", () => {
     renderFiles();
 
     expect(await screen.findByText("Suggested change")).toBeInTheDocument();
-    // Suggested replacement inserted, original line struck through.
     expect(screen.getByText("hello world")).toBeInTheDocument();
     expect(document.querySelector("del")?.textContent).toBe("hello");
   });
@@ -299,7 +291,7 @@ describe("PRFilesView per-file controls", () => {
       "a.txt",
     ]);
 
-    // The chevron re-expands the diff while the file stays viewed.
+    // Chevron re-expands the diff while the file stays viewed.
     fireEvent.click(screen.getByRole("button", { name: "Toggle diff for a.txt" }));
     expect(screen.getByText("+hello")).toBeInTheDocument();
     expect((screen.getByLabelText("Viewed a.txt") as HTMLInputElement).checked).toBe(true);
@@ -336,7 +328,7 @@ describe("PRFilesView whitespace toggle", () => {
     renderFiles();
     expect(await screen.findByText("+hello")).toBeInTheDocument();
 
-    // Check → the list comes from the /ui-data variant.
+    // Checked → the list comes from the /ui-data variant.
     fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
     expect(await screen.findByText("+iw-only")).toBeInTheDocument();
     const iwCalls = mockFetch.mock.calls.filter((c) =>
@@ -344,7 +336,7 @@ describe("PRFilesView whitespace toggle", () => {
     );
     expect(iwCalls.length).toBe(1);
 
-    // Uncheck → back to the REST source (a fresh REST fetch fires).
+    // Unchecked → back to the REST source, firing a fresh REST fetch.
     const restCallsBefore = mockFetch.mock.calls.filter((c) => restFilesURL(c[0]!.toString())).length;
     fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
     expect(await screen.findByText("+hello")).toBeInTheDocument();
@@ -501,9 +493,9 @@ describe("PRFilesView viewer-role gating", () => {
     renderFiles();
 
     expect(await screen.findByText("existing thread")).toBeInTheDocument();
-    // Replying (reviewing) stays open to every reader…
+    // Replying stays open to every reader.
     expect(screen.getByLabelText("reply to thread on a.txt")).toBeInTheDocument();
-    // …but resolving needs write access or thread authorship.
+    // Resolving needs write access or thread authorship.
     expect(screen.queryByRole("button", { name: /^resolve$/i })).not.toBeInTheDocument();
   });
 });

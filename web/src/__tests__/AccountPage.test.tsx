@@ -70,7 +70,7 @@ function installFetchRoutes(overrides: Record<string, () => Response> = {}) {
           ],
         }),
       );
-    // Public profile tab (now the default) fetches the viewer + their profile.
+    // Public profile tab (the default) fetches the viewer then their profile.
     if (key === "GET /api/v3/user")
       return Promise.resolve(jsonResponse({ id: 1, login: "admin", type: "User", site_admin: true }));
     if (url.includes("/api/v3/users/admin") && method === "GET")
@@ -180,8 +180,7 @@ describe("AccountPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Password and authentication" }));
     await waitFor(() => expect(screen.getByText(/Two-factor authentication is/)).toBeInTheDocument());
 
-    // Starting enrolment must not claim the account is protected — it hands
-    // over a QR code and a setup key and then asks for proof.
+    // Starting enrollment must not claim protection — it returns a QR + setup key, then asks for proof.
     fireEvent.click(screen.getByRole("button", { name: /Enable two-factor/ }));
     await waitFor(() => expect(screen.getByText("Setup key")).toBeInTheDocument());
     expect(screen.getByRole("img", { name: /QR code enrolling admin/ })).toBeInTheDocument();
@@ -194,8 +193,7 @@ describe("AccountPage", () => {
       ),
     ).toBe(true);
 
-    // The code is what actually enables it, and the recovery codes are shown
-    // exactly once afterwards.
+    // The code enables it; recovery codes show exactly once afterward.
     fireEvent.change(screen.getByLabelText("Verification code"), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: /Verify and enable/ }));
     await waitFor(() => expect(screen.getByText("Save your recovery codes")).toBeInTheDocument());
@@ -307,11 +305,9 @@ describe("AccountPage", () => {
 
     const nav = screen.getByRole("navigation", { name: "Settings" });
     expect(nav).toBeInTheDocument();
-    // Section headings from the vertical sub-nav are present.
     expect(screen.getByText("Access")).toBeInTheDocument();
     expect(screen.getByText("Moderation")).toBeInTheDocument();
 
-    // The default SSH keys item is the current page; switching updates it.
     const sshItem = screen.getByRole("button", { name: "SSH keys" });
     expect(sshItem).toHaveAttribute("aria-current", "page");
 
@@ -642,7 +638,6 @@ describe("AccountPage", () => {
     renderPage("/ui/account?tab=emails");
     expect(screen.getByRole("button", { name: "Emails" })).toHaveAttribute("aria-current", "page");
     await waitFor(() => screen.getByText("admin@example.com"));
-    // Selecting another item rewrites the param and swaps the pane.
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
     expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute("aria-current", "page");
     expect(await screen.findByRole("radio", { name: /sync with system/i })).toBeInTheDocument();
@@ -724,8 +719,7 @@ describe("AccountPage", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /repo Full control of private repositories/ }));
     fireEvent.click(screen.getByRole("button", { name: "Generate classic token" }));
     expect(await screen.findByText("ghp_shown_once")).toBeInTheDocument();
-    // Creation goes through the browser-only /ui-data endpoint — the legacy
-    // /api/v3/authorizations API accepts no expiration field.
+    // Create via the browser-only /ui-data endpoint — legacy /api/v3/authorizations takes no expiration.
     const post = mockFetch.mock.calls.find(
       (c) => String(c[0]) === "/ui-data/user/tokens/classic" && (c[1] as RequestInit | undefined)?.method === "POST",
     );
@@ -748,8 +742,7 @@ describe("AccountPage", () => {
   it("computes the fine-grained expiration from the preset and warns on no expiration", async () => {
     installFetchRoutes();
     renderPage("/ui/account?tab=tokens");
-    // The tokens tab renders two expiration pickers: fine-grained first,
-    // classic second (wait for the classic form so both are mounted).
+    // Two expiration pickers render: fine-grained first, classic second; wait for the classic form.
     await screen.findByText("New classic token");
     const presets = await screen.findAllByLabelText("Expiration");
     expect(presets).toHaveLength(2);

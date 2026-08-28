@@ -138,7 +138,7 @@ describe("RepoSettingsPage Pages panel", () => {
     mockPagesRoutes();
     await openPagesTab();
 
-    // "built" appears both as the site status and the build row's pill.
+    // "built" shows as both the site status and the build row pill.
     await waitFor(() => expect(screen.getAllByText("built").length).toBeGreaterThan(0));
     expect(screen.getByText("https://admin.github.io/pages-repo")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/abcdef1/)).toBeInTheDocument());

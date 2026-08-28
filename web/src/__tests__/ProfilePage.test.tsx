@@ -63,9 +63,7 @@ const repo = {
   updated_at: "2026-02-01T00:00:00Z",
 };
 
-// The Overview tab (default) fetches the profile README and the events feed;
-// other tabs fetch starred/packages/projectsV2. Answer them all so whichever
-// tab a test lands on renders without an unmocked-fetch crash.
+// Answer every tab's fetches so any landing tab renders without an unmocked-fetch crash.
 function mockProfileEndpoints(achievements: unknown[] = []) {
   mockFetch.mockImplementation((url: RequestInfo | URL) => {
     const u = url.toString();
@@ -113,8 +111,7 @@ describe("ProfilePage", () => {
     await screen.findByText("The Octocat");
     expect(await screen.findByText("Starred repositories")).toBeInTheDocument();
     expect(await screen.findByText("api")).toBeInTheDocument();
-    // The Stars tab walks the starred list with explicit paging so >30 stars
-    // aren't silently truncated.
+    // Stars tab walks the starred list with explicit paging so >30 stars aren't truncated.
     const starredCall = mockFetch.mock.calls.find((c) =>
       c[0].toString().includes("/api/v3/users/octocat/starred?per_page="),
     );
@@ -157,11 +154,11 @@ describe("ProfilePage", () => {
       return Promise.resolve(jsonResponse(profile));
     });
     renderAt("/ui/octocat");
-    // The pinned repo shows on the Overview (not a stub).
+    // Pinned repo shows on the Overview, not a stub.
     expect(await screen.findByText("Pinned")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: /api/ })).toBeInTheDocument();
 
-    // Own profile → can customize; toggle editor, save → PUT.
+    // Own profile can customize its pins; saving PUTs.
     fireEvent.click(screen.getByRole("button", { name: /customize your pins/i }));
     fireEvent.click(await screen.findByRole("button", { name: /save pins/i }));
     await waitFor(() => {
@@ -189,8 +186,7 @@ describe("ProfilePage", () => {
     renderAt("/ui/octocat");
     await screen.findByText("The Octocat");
     expect(await screen.findByText("Achievements")).toBeInTheDocument();
-    // Tier > 1 gets GitHub's multiplier chip; the accessible name carries
-    // name, multiplier, and the raw count.
+    // Tier > 1 gets a multiplier chip; the accessible name carries name, multiplier, and raw count.
     expect(screen.getByRole("img", { name: "Pull Shark x2 — 16" })).toBeInTheDocument();
     expect(screen.getByText("x2")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "YOLO — 1" })).toBeInTheDocument();
@@ -213,8 +209,8 @@ describe("ProfilePage", () => {
   });
 
   it("surfaces a load error instead of a blank profile", async () => {
-    // 500, not 404: a missing profile now renders the dedicated 404 page
-    // (covered in notFoundPages.test.tsx); this keeps the generic banner path.
+    // 500 not 404: a missing profile renders the dedicated 404 page (notFoundPages.test.tsx);
+    // this keeps the generic banner path.
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
       if (u.includes("/repos")) return Promise.resolve(jsonResponse([], 200, { Link: "" }));

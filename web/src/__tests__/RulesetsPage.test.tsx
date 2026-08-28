@@ -105,10 +105,8 @@ describe("RulesetsPage", () => {
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "protect-main" } });
     // Targeting: default branch → conditions.ref_name.include ["~DEFAULT_BRANCH"]
     fireEvent.click(screen.getByLabelText("Include default branch"));
-    // pull_request with a non-default approval count
     fireEvent.click(screen.getByLabelText("pull_request"));
     fireEvent.change(screen.getByLabelText("Required approving review count"), { target: { value: "3" } });
-    // one bypass actor
     fireEvent.click(screen.getByRole("button", { name: "Add bypass actor" }));
     fireEvent.change(screen.getByLabelText("Bypass actor 1 id"), { target: { value: "7" } });
     fireEvent.click(screen.getByRole("button", { name: "Create ruleset" }));

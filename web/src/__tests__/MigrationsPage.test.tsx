@@ -56,8 +56,7 @@ const author = {
   name: "Octo Cat",
 };
 
-// The user-migrations list backs the initial page render; default any other GET
-// to an empty list so the import flow is what the assertions isolate.
+// Default any other GET to an empty list so the import flow is what the assertions isolate.
 function baseRouter(url: string) {
   const u = url.toString();
   if (u.includes("/import/authors")) return jsonResponse([author]);
@@ -106,7 +105,6 @@ describe("MigrationsPage import flow", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Start import" }));
 
-    // Status panel appears once the target is set and the GET resolves.
     fireEvent.click(await screen.findByRole("button", { name: "Cancel import" }));
 
     await waitFor(() => {
@@ -132,7 +130,6 @@ describe("MigrationsPage import flow", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Start import" }));
 
-    // The author row loads from GET .../import/authors once the import GET resolves.
     const emailInput = await screen.findByLabelText("Email");
     fireEvent.change(emailInput, { target: { value: "new@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -172,10 +169,8 @@ describe("MigrationsPage organization scope", () => {
   });
 });
 
-// The GitHub Enterprise Importer tab: an organization's repository-migration
-// history, the sources it migrates from, and its migrator grants. It is a
-// separate surface from the export migrations above because a migration into
-// this instance and a migration out of it answer different questions.
+// The GitHub Enterprise Importer tab: an org's repository-migration history,
+// sources, and migrator grants — a separate surface from the export migrations above.
 describe("MigrationsPage importer tab", () => {
   const geiMigration = {
     id: 7,

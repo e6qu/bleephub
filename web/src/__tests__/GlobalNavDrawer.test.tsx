@@ -25,7 +25,7 @@ describe("GlobalNavDrawer focus management", () => {
     trigger.focus();
     expect(document.activeElement).toBe(trigger);
 
-    fireEvent.click(trigger); // open
+    fireEvent.click(trigger);
     // Focus lands inside the drawer nav, not on the obscured page behind it.
     await waitFor(() => {
       const nav = screen.getByRole("navigation", { name: "Global" });

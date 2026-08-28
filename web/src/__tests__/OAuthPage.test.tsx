@@ -92,8 +92,7 @@ describe("OAuthPage", () => {
 
   it("opens the GitHub OAuth authorize endpoint for web flow", () => {
     mockFetch.mockImplementation(() => Promise.resolve(jsonResponse([])));
-    // window.open must be called WITHOUT the "noopener" feature string: passing
-    // it makes browsers return null, which the page would misread as "blocked".
+    // window.open must omit "noopener": it makes browsers return null, misread as "blocked".
     const openSpy = vi.spyOn(window, "open").mockReturnValue({} as Window);
     renderPage();
     fireEvent.change(screen.getByLabelText("Client identifier"), { target: { value: "Iv1.client" } });
@@ -103,7 +102,6 @@ describe("OAuthPage", () => {
       "/login/oauth/authorize?client_id=Iv1.client&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback&scope=repo%20read%3Aorg&state=STATE-1",
       "_blank",
     );
-    // The success path is reachable when a window handle is returned.
     expect(screen.getByText(/Opened .* in a new tab\./)).toBeInTheDocument();
     expect(screen.queryByText(/blocked the OAuth window/)).not.toBeInTheDocument();
   });

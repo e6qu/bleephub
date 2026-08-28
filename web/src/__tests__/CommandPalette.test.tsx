@@ -42,7 +42,6 @@ function renderPalette(onClose = vi.fn()) {
 describe("CommandPalette", () => {
   it("shows static jump-to targets and filters them by query", async () => {
     renderPalette();
-    // dialog + combobox present
     expect(screen.getByRole("dialog", { name: /command palette/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Dashboard/ })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Notifications/ })).toBeInTheDocument();
@@ -82,8 +81,7 @@ describe("CommandPalette", () => {
   it("navigates to the active static target on Enter", async () => {
     renderPalette();
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "notif" } });
-    // Wait for the debounced filter to settle so Notifications is the only
-    // (and therefore active) option before pressing Enter.
+    // Wait for the debounced filter so Notifications is the only (active) option before Enter.
     await waitFor(() =>
       expect(screen.queryByRole("option", { name: /Dashboard/ })).not.toBeInTheDocument(),
     );

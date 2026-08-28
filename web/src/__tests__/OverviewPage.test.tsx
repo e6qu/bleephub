@@ -121,7 +121,7 @@ describe("OverviewPage", () => {
       expect(screen.getAllByText("0").length).toBeGreaterThan(0);
       expect(screen.getByText(/connected runners/i)).toBeInTheDocument();
       expect(screen.getAllByText("1").length).toBeGreaterThan(0);
-      // The server counts submissions; it exposes no total of stored runs, so
+      // The server counts submissions but exposes no total of stored runs, so
       // the card must not claim to show one.
       expect(screen.getByText("Workflow submissions")).toBeInTheDocument();
       expect(screen.queryByText("Workflow runs")).not.toBeInTheDocument();
@@ -147,8 +147,8 @@ describe("OverviewPage", () => {
     const urls = mockFetch.mock.calls.map((call) => String(call[0]));
     expect(urls.filter((url) => url.includes("/internal/metrics"))).toHaveLength(1);
     expect(urls.filter((url) => url.includes("/internal/status"))).toHaveLength(1);
-    // The old client-side aggregate paged every repo's runs and then every
-    // run's jobs, and asked each repo for its runners.
+    // The old client-side aggregate paged every repo's runs/jobs and its runners;
+    // the counters now come from the server, so no runners endpoint is hit.
     expect(urls.some((url) => url.includes("/actions/runners"))).toBe(false);
   });
 
@@ -172,7 +172,7 @@ describe("OverviewPage", () => {
     // A refusal is an answer, not a failure: no alert, no error banner.
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByText(/Failed to load overview/i)).not.toBeInTheDocument();
-    // The cards keep their shape and the rest of the console still works.
+    // A refusal must not break the rest of the console.
     expect(screen.getByText("Connected runners")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /system status/i })).toBeInTheDocument();
     expect(screen.getByText("CI Build")).toBeInTheDocument();

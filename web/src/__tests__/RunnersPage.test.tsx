@@ -136,7 +136,6 @@ describe("RunnersPage scope selection", () => {
     });
     renderPage();
     await screen.findByText("gh-runner-7");
-    // Narrow the searchable picker, then select the match.
     fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "sec" } });
     fireEvent.change(screen.getByLabelText("Repository"), { target: { value: "admin/second" } });
     await waitFor(() => {

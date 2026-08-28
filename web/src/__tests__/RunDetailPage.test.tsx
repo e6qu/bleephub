@@ -256,8 +256,7 @@ describe("RunDetailPage", () => {
     ].join("\n");
     installMocks({ logs });
     renderPage();
-    // The step row becomes expandable (aria-expanded appears) once the
-    // log has loaded and its ##[group] segment matched the step name.
+    // The row gains aria-expanded once its ##[group] segment matches the step.
     const stepBtn = await screen.findByRole("button", { name: /run tests/i });
     await waitFor(() => expect(stepBtn).toHaveAttribute("aria-expanded", "false"));
     expect(screen.queryByText(/1 passed, 0 failed/)).not.toBeInTheDocument();
@@ -293,7 +292,6 @@ describe("RunDetailPage", () => {
     expect(screen.getByText("2.0 KB")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Download" });
     expect(link).toHaveAttribute("href", "/api/v3/repos/admin/test/actions/artifacts/7/zip");
-    // Run-level "Download log archive" links the logs zip endpoint.
     expect(screen.getByRole("link", { name: "Download log archive" })).toHaveAttribute(
       "href",
       "/api/v3/repos/admin/test/actions/runs/5/logs",
@@ -372,11 +370,9 @@ describe("RunDetailPage — log viewer", () => {
     await screen.findByText("Job log");
     fireEvent.change(screen.getByLabelText("Search logs"), { target: { value: "alpha" } });
     expect(await screen.findByText(/2 matching lines in this job’s log/)).toBeInTheDocument();
-    // Matches are wrapped in <mark>.
     await waitFor(() => {
       expect(document.querySelectorAll("mark").length).toBeGreaterThanOrEqual(2);
     });
-    // The sidebar job button shows its match-count badge.
     expect(screen.getByLabelText("2 matching log lines")).toBeInTheDocument();
   });
 
@@ -492,9 +488,8 @@ describe("RunDetailPage read-only viewer gating", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: /CI/ })).toBeInTheDocument());
     await screen.findByText("Set up job");
-    // Read affordances stay.
+    // Read affordances stay; every mutation control is hidden for a pull-only viewer.
     expect(screen.getByRole("link", { name: /download log archive/i })).toBeInTheDocument();
-    // Every mutation control is hidden for a pull-only viewer.
     expect(screen.queryByRole("button", { name: /re-run all jobs/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /re-run failed jobs/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /re-run job/i })).not.toBeInTheDocument();

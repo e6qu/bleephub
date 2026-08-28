@@ -169,14 +169,11 @@ describe("OrgProjectsV2Page", () => {
     });
     renderAt("/ui/orgs/acme/projects/3");
 
-    // Table view is active by default: a column header per field + a row per item.
     expect(await screen.findByRole("columnheader", { name: "Status" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Title" })).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: /Fix bug/ })).toBeInTheDocument();
-    // The Table toggle is pressed, Board is not.
     expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
 
-    // Switching to the board reveals the kanban move control instead.
     fireEvent.click(screen.getByRole("button", { name: "Board" }));
     expect(await screen.findByLabelText("Move item 10")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();

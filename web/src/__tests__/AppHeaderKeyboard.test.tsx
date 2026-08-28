@@ -102,7 +102,6 @@ describe("AppHeader menus", () => {
     expect(search).toHaveValue("/");
     expect(search).toHaveFocus();
 
-    // "/" from the page focuses search too.
     (document.activeElement as HTMLElement | null)?.blur();
     await user.keyboard("/");
     expect(search).toHaveFocus();
@@ -146,12 +145,9 @@ describe("AppHeader menus", () => {
     );
   });
 
-  // ─── G57: owner/repo breadcrumb in the global header row ──────────────────
-  //
-  // github.com's 2023+ chrome carries owner/repo in the header itself, next to
-  // the logo, instead of a page-level bar above the repository tabs. It is
-  // derived from the pathname, so these also pin the reserved-word
-  // disambiguation that keeps /ui/<app page> from parsing as a repository.
+  // G57: owner/repo breadcrumb lives in the header, derived from the pathname —
+  // these also pin the reserved-word disambiguation that keeps /ui/<app page>
+  // from parsing as a repository.
 
   it("shows the owner/repo breadcrumb next to the logo on a repository route", async () => {
     renderHeader("/ui/acme/api/pulls/7/files");
@@ -162,8 +158,7 @@ describe("AppHeader menus", () => {
 
   it("routes an organization owner in the breadcrumb to the organization page", async () => {
     renderHeader("/ui/acme/api", (client) => {
-      // The repo pages fill this key; the header only reads it (skipToken), so
-      // a cached organization payload is what redirects the owner link.
+      // The header only reads this key (skipToken); a cached org payload redirects the owner link.
       client.setQueryData(["repo", "acme", "api"], {
         full_name: "acme/api",
         owner: { login: "acme", type: "Organization" },

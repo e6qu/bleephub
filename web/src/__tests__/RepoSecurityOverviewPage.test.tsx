@@ -37,8 +37,7 @@ describe("RepoSecurityOverviewPage", () => {
     renderPage();
     expect(await screen.findByText(/No security policy found/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Set up a security policy" })).toBeInTheDocument();
-    // Each feature is linked from both the header security sub-nav and the
-    // overview cards, so assert at least one link exists per feature.
+    // Each feature links from both the security sub-nav and the overview cards, so assert at least one per feature.
     for (const name of ["Security advisories", "Secret scanning", "Code scanning", "Dependabot"]) {
       expect(screen.getAllByRole("link", { name }).length).toBeGreaterThan(0);
     }

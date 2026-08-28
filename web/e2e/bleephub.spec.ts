@@ -3,8 +3,7 @@ import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 
-// Fail e2e tests on browser console errors or uncaught page exceptions.
-// Warnings are logged to stdout for audit visibility but do not fail the test.
+// Fail on browser console errors or uncaught page exceptions; warnings only log.
 test.beforeEach(({ page }, testInfo) => {
   page.on("console", (msg) => {
     const text = msg.text();
@@ -22,7 +21,7 @@ test.beforeEach(({ page }, testInfo) => {
   });
 });
 
-// Screenshots stay with Playwright's other ignored test artifacts. Created lazily.
+// Keep screenshots under Playwright's ignored test-results dir.
 const SCREENSHOT_DIR = path.resolve(process.cwd(), "test-results/screenshots");
 
 function ensureScreenshotDir(): void {
@@ -88,10 +87,8 @@ async function apiGet(page: Page, path: string) {
   );
 }
 
-// Setup fixtures use fixed repo names reused across runs, so re-creating one
-// that already exists is expected (422). Tolerate ONLY that — rethrow any other
-// failure (auth, 5xx) instead of a blanket catch-and-null that masks a broken
-// setup and turns it into a confusing downstream assertion failure.
+// Fixtures reuse fixed repo names across runs, so tolerate ONLY the re-create
+// conflict (422/409) and rethrow any other failure rather than masking it.
 function ignoreAlreadyExists(e: unknown): null {
   const msg = String(e);
   if (msg.includes("422") || msg.includes("409") || /already exists/i.test(msg)) {
@@ -100,8 +97,7 @@ function ignoreAlreadyExists(e: unknown): null {
   throw e;
 }
 
-// Open the GitHub-style global-nav drawer (the hamburger). The drawer holds
-// both the GitHub destinations and the bleephub "Operations" section.
+// Open the global-nav drawer (hamburger) holding GitHub + Operations destinations.
 async function openDrawer(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Open global navigation" }).click();
 }
@@ -118,13 +114,12 @@ test.describe("Root redirect", () => {
 });
 
 // ─── Operations console (/ui/operations) ──────────────────────────────────────────
-// The server-operational "System status" console lives at /ui/operations; the root
-// /ui/ is the GitHub-style dashboard.
+// The "System status" console lives at /ui/operations; root /ui/ is the dashboard.
 
 test.describe("Operations console", () => {
   test("renders the System status heading", async ({ page }) => {
     await page.goto("/ui/operations");
-    // Brand is a link in the header; the page title is the h1.
+    // Brand is a header link; the page title is the h1.
     await expect(page.getByRole("link", { name: "bleephub" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 1 }).filter({ hasText: "System status" })).toBeVisible();
     await shot(page, "01-ops-console");
@@ -281,8 +276,7 @@ test.describe("Repository code and collaboration", () => {
 test.describe("User menu and packages", () => {
   test("labels personal destinations consistently and submits sign-out", async ({ page }) => {
     await page.goto("/ui/");
-    // Post-deployment qualification finds the signed-in user on the always
-    // visible trigger, opens this menu, and clicks the real sign-out control.
+    // Prove the signed-in identity and a real sign-out control, not a stub.
     const identity = page.locator("[data-shauth-user]");
     await expect(identity).toBeVisible();
     expect((await identity.getAttribute("data-shauth-user")) ?? "").not.toBe("");
@@ -300,9 +294,8 @@ test.describe("User menu and packages", () => {
   });
 
   test("loads each package tab via the /ui-data aggregation with its package type", async ({ page }) => {
-    // The web Packages tab reads the /ui-data user aggregation (which accepts an
-    // optional package_type) rather than GitHub's REST /user/packages, which 400s
-    // without a package_type. Each type tab still narrows via package_type.
+    // Read the /ui-data aggregation (optional package_type) not REST /user/packages,
+    // which 400s without a package_type; each tab still narrows via package_type.
     const containerResponse = page.waitForResponse((response) => {
       const requestURL = new URL(response.url());
       return requestURL.pathname.startsWith("/ui-data/users/") && requestURL.pathname.endsWith("/packages") && requestURL.searchParams.get("package_type") === "container";
@@ -344,13 +337,12 @@ test.describe("Theme toggle", () => {
     };
     const light = await page.evaluate(readChrome);
     expect(light).toMatchObject({ accent: "#0969da", blue: "#006eff", purple: "#8250df" });
-    // G10: github.com's chrome is a FLAT neutral fill in both themes — no
-    // gradient layer at all, light or dark. Asserting "none" (rather than
-    // "not a gradient") also catches a re-introduced radial wash.
+    // G10: chrome is a flat neutral fill in both themes; "none" also catches a
+    // re-introduced radial wash.
     expect(light.headerImage).toBe("none");
     expect(light.headerColor).toBe("rgb(246, 248, 250)");
 
-    // The theme toggle is an item in the avatar dropdown menu.
+    // The theme toggle lives in the avatar dropdown menu.
     await page.getByRole("button", { name: "Open user menu" }).click();
     const toggle = page.getByRole("menuitem", { name: /(light|dark) theme/i });
     await expect(toggle).toBeVisible();
@@ -390,30 +382,26 @@ test.describe("Fine-grained personal access token settings", () => {
 });
 
 test.describe("Password and authentication settings", () => {
-  // Enrolment is walked up to — but not through — the point where it would
-  // switch two-factor authentication on for the shared admin account: every
-  // journey in this suite mints its session through /auth/token, which a live
-  // second factor would gate. Cancelling discards the pending secret, so this
-  // proves the whole pairing surface is real without leaving state behind. The
-  // complete enrol → verify → recover → disable cycle is covered by the Go
-  // suite, which owns its own account.
+  // Walk up to but not through enrolment: switching 2FA on would gate the shared
+  // admin's /auth/token sessions. Cancelling discards the pending secret, proving
+  // the pairing surface is real without leaving state; the Go suite owns the full
+  // enrol → verify → recover → disable cycle on its own account.
   test("provisions a scannable authenticator pairing and lists active sessions", async ({ page }) => {
     await page.goto("/ui/account?tab=authentication");
 
-    // The seeded admin signs in with the bootstrap token and has no password
-    // yet, so the card offers to set one rather than to change one.
+    // The seeded admin has no password yet, so the card offers to set one, not change one.
     await expect(page.getByRole("heading", { name: "Set a password" })).toBeVisible();
     await expect(page.getByLabel("New password", { exact: true })).toBeVisible();
     await expect(page.getByText(/Two-factor authentication is/)).toBeVisible();
 
-    // The active-session list shows this browser's own session and offers to
-    // end it, without ever printing the session cookie.
+    // The session list shows this browser's own session and offers to end it,
+    // without ever printing the session cookie.
     await expect(page.getByRole("heading", { name: "Sessions" })).toBeVisible();
     await expect(page.getByText("· this session")).toBeVisible();
 
     await page.getByRole("button", { name: "Enable two-factor authentication" }).click();
 
-    // A real QR code and a real setup key, not a switch.
+    // Prove a real QR code and setup key, not a switch.
     const qr = page.getByRole("img", { name: /QR code enrolling admin/ });
     await expect(qr).toBeVisible();
     expect(await qr.locator("path").getAttribute("d")).toMatch(/^M\d/);
@@ -421,8 +409,7 @@ test.describe("Password and authentication settings", () => {
     await expect(page.getByLabel("Verification code")).toBeVisible();
     await shot(page, "11g-two-factor-enrollment");
 
-    // Nothing is protected until a code is proved, so the account is still
-    // unenrolled while the pairing is on screen.
+    // The account stays unenrolled until a code is proved, even while pairing shows.
     const settings = await page.request.get("/ui-data/user/authentication");
     const body = (await settings.json()) as { two_factor: { enabled: boolean; pending_enrollment: boolean } };
     expect(body.two_factor).toMatchObject({ enabled: false, pending_enrollment: true });
@@ -497,10 +484,8 @@ test.describe("Repos page", () => {
   test("renders the repositories page", async ({ page }) => {
     await page.goto("/ui/repos");
     await page.waitForLoadState("networkidle");
-    // Assert the page chrome renders rather than an empty list: other tests in
-    // this file create repos and the e2e server persists them across the run,
-    // so "empty" is not a stable, ordering-independent precondition. This test
-    // previously only screenshotted and asserted nothing.
+    // Assert page chrome, not an empty list: other tests persist repos across the
+    // run, so "empty" is not an ordering-independent precondition.
     await expect(
       page.getByRole("heading", { level: 1 }).filter({ hasText: "Repositories" }),
     ).toBeVisible();
@@ -508,7 +493,6 @@ test.describe("Repos page", () => {
   });
 
   test("shows repo after creation and links to detail", async ({ page }) => {
-    // Create user + repo via API
     await page.goto("/ui/");
 
     await apiPost(page, "/api/v3/user/repos", {
@@ -524,10 +508,8 @@ test.describe("Repos page", () => {
     await expect(link).toBeVisible();
     await shot(page, "13-repos-with-repo");
 
-    // Click through to detail page
     await link.click();
-    // Repositories are served at /ui/{owner}/{repo}, mirroring github.com's
-    // /{owner}/{repo} — the list page's cards must land on that shape.
+    // Cards must land on /ui/{owner}/{repo}, mirroring github.com's /{owner}/{repo}.
     await expect(page).toHaveURL(/\/ui\/[^/]+\/test-repo-playwright$/);
     await shot(page, "14-repo-detail");
 
@@ -563,7 +545,6 @@ test.describe("Repo detail page", () => {
     const user = await apiGet(page, "/api/v3/user");
     const owner = (user as { login: string }).login;
 
-    // Ensure repo exists
     await apiPost(page, "/api/v3/user/repos", {
       name: "detail-test",
       description: "Detail page test",
@@ -573,8 +554,6 @@ test.describe("Repo detail page", () => {
     await page.goto(`/ui/${owner}/detail-test`);
     await page.waitForLoadState("networkidle");
 
-    // Repo header renders owner / repo as separate links; the empty Code
-    // view shows the clone blankslate.
     await expect(page.getByRole("link", { name: "detail-test" })).toBeVisible();
     await expect(page.getByText(/this repository is empty/i)).toBeVisible();
     await expect(page.getByRole("button", { name: "HTTPS" })).toBeVisible();
@@ -621,8 +600,7 @@ test.describe("Repo detail page", () => {
     });
 
     await page.goto(`/ui/admin/${repo}`);
-    // G9: the branch listing is reached from the branch/tag switcher, exactly
-    // as on github.com — there is no second repository tab row.
+    // G9: reach the branch listing from the branch/tag switcher, not a second tab row.
     await page.getByRole("button", { name: "Switch branches or tags" }).click();
     await page.getByRole("link", { name: "View all branches" }).click();
     const protectedLink = page.getByRole("link", { name: "protected", exact: true });
@@ -649,8 +627,7 @@ test.describe("Repo detail page", () => {
 
     await page.goto(`/ui/${owner}/issues-test`);
     await page.waitForLoadState("networkidle");
-    // Issues is a repo tab (link) in the repo header. Scope to the repo nav so
-    // it doesn't collide with the global header's "Issues" quick-link.
+    // Scope to the repo nav so Issues doesn't collide with the global header's quick-link.
     await page.getByRole("navigation", { name: "Repository" }).getByRole("link", { name: /Issues/ }).click();
     await page.waitForLoadState("networkidle");
     await expect(page.getByText("First Playwright issue")).toBeVisible();
@@ -672,7 +649,6 @@ test.describe("Issues page", () => {
       private: false,
     }).catch(ignoreAlreadyExists);
 
-    // Create issue via API
     await apiPost(page, `/api/v3/repos/${owner}/issues-direct/issues`, {
       title: "Direct issues page test",
     });
@@ -682,12 +658,10 @@ test.describe("Issues page", () => {
     await expect(page.getByText("Direct issues page test")).toBeVisible();
     await shot(page, "17-issues-page");
 
-    // Open new issue modal
     await page.getByRole("button", { name: "New issue" }).click();
     await expect(page.getByPlaceholder("Issue title")).toBeVisible();
     await shot(page, "18-new-issue-modal");
 
-    // Fill and submit
     await page.getByPlaceholder("Issue title").fill("Created from UI");
     await page.getByRole("button", { name: "Create issue" }).click();
     await page.waitForURL(/\/ui\/[^/]+\/[^/]+\/issues\/\d+/);
@@ -771,7 +745,6 @@ test.describe("Apps page", () => {
   test("renders app tabs", async ({ page }) => {
     await page.goto("/ui/apps");
     await expect(page.getByRole("heading", { level: 1 }).filter({ hasText: "Apps" })).toBeVisible();
-    // Tabs: GitHub Apps, Installations, OAuth Apps
     await expect(page.getByRole("tab", { name: "GitHub Apps" })).toBeVisible();
     await shot(page, "21-apps-page");
   });
@@ -800,7 +773,6 @@ test.describe("OAuth page", () => {
   test("renders device flow and web flow sections", async ({ page }) => {
     await page.goto("/ui/oauth");
     await shot(page, "24-oauth-page");
-    // Should have some UI visible for OAuth flows
     await expect(page.url()).toContain("/ui/oauth");
   });
 });
@@ -814,9 +786,7 @@ test.describe("Actions UI", () => {
     const repoFullName = `admin/${repoName}`;
     await apiPost(page, "/api/v3/user/repos", { name: repoName, auto_init: true });
 
-    // Commit a real GitHub Actions workflow file and dispatch it through the
-    // public workflow-dispatch application programming interface. No runner is
-    // attached in this test, so logs stay empty; the detail page must still
+    // No runner is attached, so logs stay empty; the detail page must still
     // render the job table and logs view.
     const yaml = [
       "name: CI Pipeline",
@@ -839,15 +809,13 @@ test.describe("Actions UI", () => {
     });
     await apiPost(page, `/api/v3/repos/${repoFullName}/actions/workflows/ci.yml/dispatches`, { ref: "main", inputs: {} });
 
-    // Runs tab lists the run (the tab is a button; the page title also
-    // contains the word "runs", so target the button role explicitly).
+    // Target the Runs tab by button role: the page title also contains "runs".
     await page.goto("/ui/workflows");
     await page.waitForLoadState("networkidle");
     await page.getByRole("tab", { name: "Runs" }).click();
     await expect(page.getByText("CI Pipeline").first()).toBeVisible();
     await shot(page, "29-actions-runs");
 
-    // Click the run row → detail page with the job table + logs section.
     await page.getByText("CI Pipeline").first().click();
     await page.waitForURL(/\/ui\/workflows\/.+/);
     await page.waitForLoadState("networkidle");
@@ -959,8 +927,8 @@ test.describe("Code security", () => {
         icon: icon.backgroundImage,
       };
     });
-    // G10: the hero is flat neutral chrome — no blue→pink wash on the panel
-    // and no brand gradient on its icon, in either theme.
+    // G10: the hero is flat neutral chrome — no wash on the panel, no gradient on
+    // its icon, in either theme.
     expect(light.hero).toBe("none");
     expect(light.icon).toBe("none");
     expect(light.heroColor).toBe("rgb(255, 255, 255)");
@@ -1061,20 +1029,12 @@ test.describe("GitHub Marketplace", () => {
 // ─── GitHub Sponsors ─────────────────────────────────────────────────────────
 
 test.describe("GitHub Sponsors", () => {
-  // The whole vertical through the browser: a maintainer opens a Sponsors
-  // profile, publishes a tier and a goal, a viewer sponsors it, and the
-  // dashboard shows the invoice that was actually billed.
   test("opens a profile, publishes a tier, takes a sponsorship, and bills it", async ({ page }) => {
-    // The sponsorable is an organization so the viewer can actually fund it:
-    // an account may not sponsor itself.
-    // Named from the worker rather than the clock. The name only has to be
-    // unique across the workers sharing one server in a run; a timestamp makes
-    // it differ between runs too, which turns a failure into something that
-    // cannot be reproduced by re-running the same command, and the repo's
-    // clock-dependency gate forbids calendar-sensitive data in tests for
-    // exactly that reason.
+    // Sponsor an org, not self: an account may not sponsor itself. Name from the
+    // worker, not the clock — the clock-dependency gate forbids calendar-sensitive
+    // data, and a timestamp would make failures unreproducible on re-run.
     const org = `sponsors-e2e-w${test.info().parallelIndex}r${test.info().retry}`;
-    // apiPost runs inside the page, so the app origin has to be loaded first.
+    // apiPost runs inside the page, so load the app origin first.
     await page.goto("/ui/sponsors");
     await apiPost(page, "/api/v3/admin/organizations", { login: org, admin: "admin", profile_name: "Sponsors E2E" });
 
@@ -1093,8 +1053,6 @@ test.describe("GitHub Sponsors", () => {
     await page.getByRole("button", { name: "Set goal" }).click();
     await expect(page.getByRole("progressbar", { name: "Earn $70 per month" })).toBeVisible();
 
-    // Fund it from the profile page, then confirm the dashboard shows the
-    // sponsorship and the invoice that was actually billed for it.
     await page.goto(`/ui/sponsors/${org}`);
     await page.getByRole("button", { name: "Select" }).first().click();
     await expect(page.getByText(/You are sponsoring/)).toBeVisible();
@@ -1105,7 +1063,6 @@ test.describe("GitHub Sponsors", () => {
     await page.getByRole("button", { name: "Run payout" }).click();
     await expect(page.getByText("$0.00 is awaiting payout.")).toBeVisible();
 
-    // The directory lists the sponsorable and the viewer's own sponsorship.
     await page.goto("/ui/sponsors");
     await expect(page.getByRole("heading", { name: /GitHub Sponsors/ })).toBeVisible();
     await expect(page.getByRole("link", { name: org }).first()).toBeVisible();
@@ -1115,8 +1072,7 @@ test.describe("GitHub Sponsors", () => {
 // ─── Dark theme capture ──────────────────────────────────────────────────────
 
 test.describe("Dark theme", () => {
-  // Seed the persisted theme to "dark" before any script runs so the app
-  // boots in dark mode, then capture the key surfaces.
+  // Seed the persisted theme to "dark" before any script runs so the app boots dark.
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       window.localStorage.setItem("bleephub:theme", "dark");

@@ -1,9 +1,6 @@
-// Property/fuzz-style hardening for the api.ts envelope parsers and the
-// base64 content decoder. Every parser must either produce a correct value
-// or throw a clear Error — never silently return a wrong-but-plausible value,
-// and never throw a non-Error that a component could not catch as a query
-// failure. The malformed/adversarial payloads here stand in for a
-// contract-breaking or hostile server.
+// Every api.ts envelope parser and the base64 decoder must produce a correct
+// value or throw a clear Error — never a silent wrong-but-plausible value, and
+// never a non-Error a component cannot catch as a query failure.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   parseLinkNext,
@@ -42,7 +39,6 @@ function jsonResponse(data: unknown, status = 200, headers: Record<string, strin
   });
 }
 
-/** A Response whose body is not valid JSON (truncated / non-JSON). */
 function rawResponse(body: string, status = 200) {
   return new Response(body, {
     status,
@@ -68,11 +64,11 @@ describe("parseLinkNext / parseLinkLast — adversarial Link headers", () => {
       "   ",
       "not a link header at all",
       "<>; rel=",
-      '<>; rel="next"', // empty url between brackets — [^>]+ requires >=1 char
+      '<>; rel="next"', // [^>]+ requires a non-empty url between brackets
       "<no-rel-here>",
       '<u>; rel="prev", <v>; rel="first"',
-      '<u>; rel="nextish"', // must be exactly next
-      "<".repeat(5000), // long, unterminated — must not hang or throw
+      '<u>; rel="nextish"', // rel must match "next" exactly
+      "<".repeat(5000), // unterminated — must not hang or throw
       ">".repeat(5000),
       'page=2>; rel="last"'.repeat(200),
     ];
@@ -91,14 +87,13 @@ describe("parseLinkNext / parseLinkLast — adversarial Link headers", () => {
   it("parseLinkLast ignores a negative or non-numeric page and returns null", () => {
     expect(parseLinkLast('</x?page=-5>; rel="last"')).toBeNull();
     expect(parseLinkLast('</x?page=abc>; rel="last"')).toBeNull();
-    // rel=last present but no page param at all
     expect(parseLinkLast('</x?per_page=30>; rel="last"')).toBeNull();
   });
 
   it("parseLinkLast reads a very large page number as a finite number", () => {
     const n = parseLinkLast('</x?page=999999999>; rel="last"');
     expect(n).toBe(999999999);
-    // Huge (beyond Number range) still parses to a finite (non-NaN) number.
+    // Beyond Number range still parses to a finite (non-NaN) number.
     const big = parseLinkLast('</x?page=999999999999999999999999>; rel="last"');
     expect(typeof big).toBe("number");
     expect(Number.isNaN(big)).toBe(false);
@@ -153,7 +148,7 @@ describe("ghFetchEnvelope — malformed envelopes throw, valid ones parse", () =
   });
 
   it("throws an Error (catchable as a query failure) on truncated JSON", async () => {
-    mockFetch.mockResolvedValue(rawResponse('{"total_count": 1, "jobs": [')); // truncated
+    mockFetch.mockResolvedValue(rawResponse('{"total_count": 1, "jobs": ['));
     await expect(fetchRunJobs("a", "b", 1)).rejects.toBeInstanceOf(Error);
   });
 
@@ -298,7 +293,7 @@ describe("strict list unwrappers throw on a missing/mistyped array", () => {
 
 describe("decodeContentsBase64 — never silently returns wrong text", () => {
   it("decodes valid base64 (with GitHub's embedded newlines) to UTF-8", () => {
-    // "héllo 🌍" as UTF-8 base64, chunked with a newline like GitHub sends.
+    // Chunk the base64 with a newline the way GitHub's contents API does.
     const b64 = btoa(
       Array.from(new TextEncoder().encode("héllo 🌍"), (b) => String.fromCharCode(b)).join(""),
     );
@@ -311,7 +306,7 @@ describe("decodeContentsBase64 — never silently returns wrong text", () => {
   });
 
   it("throws on structurally invalid base64 rather than returning garbage", () => {
-    // A single stray '!' is not a base64 alphabet char → atob throws.
+    // A stray non-alphabet char makes atob throw rather than return garbage.
     expect(() => decodeContentsBase64("not_base64_!@#$")).toThrow();
   });
 
