@@ -21,7 +21,6 @@ func (s *Server) registerGHMarketplaceLifecycleRoutes() {
 	s.route("PUT /ui-data/marketplace/listings/{listing_slug}/profile", s.handlePutMarketplaceListingProfile)
 }
 
-// ---------------------------------------------------------------------------
 // pending-change webhooks
 
 // marketplacePendingPurchaseView renders the subscription as it will stand once
@@ -133,7 +132,6 @@ func (s *Server) handleRevokeMarketplacePendingChange(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, s.marketplaceBrowserSubscriptionJSON(purchase, plan, listing, account.Login, s.baseURL(r)))
 }
 
-// ---------------------------------------------------------------------------
 // categories and listing profiles
 
 func marketplaceCategoryJSON(category *store.MarketplaceCategory, primary, secondary int) map[string]interface{} {

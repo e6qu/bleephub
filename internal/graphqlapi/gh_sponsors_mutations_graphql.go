@@ -129,7 +129,6 @@ func init() {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // helpers
 
 func sponsorsClientMutationID(input map[string]interface{}) interface{} {
@@ -233,7 +232,6 @@ func (s *Resolver) sponsorsTierForSponsorable(input map[string]interface{}, spon
 	return best, amount, nil
 }
 
-// ---------------------------------------------------------------------------
 // mutations
 
 func (s *Resolver) addSponsorsMutations(mutationType *graphql.Object) {

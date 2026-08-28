@@ -36,9 +36,7 @@ func (k oidKey) positionWord() uint64 { return binary.LittleEndian.Uint64(k[0:8]
 // fingerprint independent.
 func (k oidKey) fingerprintWord() uint64 { return binary.LittleEndian.Uint64(k[8:16]) }
 
-// ---------------------------------------------------------------------------
 // Binary fuse filter, used for the immutable per-pack object sets.
-// ---------------------------------------------------------------------------
 
 // binaryFuseFilter is a binary fuse filter with 8-bit fingerprints, used only
 // for packs: it is static (the full key set must be known at construction, with
@@ -322,9 +320,7 @@ func decodeBinaryFuseFilter(raw []byte) (*binaryFuseFilter, error) {
 	return filter, nil
 }
 
-// ---------------------------------------------------------------------------
 // Cuckoo filter, used for the mutable loose-object sets.
-// ---------------------------------------------------------------------------
 
 const (
 	cuckooSlotsPerBucket = 4

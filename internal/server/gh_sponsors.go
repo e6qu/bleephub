@@ -36,7 +36,6 @@ func (s *Server) registerGHSponsorsRoutes() {
 	s.route("DELETE /ui-data/sponsors/{login}/sponsorship", s.handleCancelSponsorshipBrowser)
 }
 
-// ---------------------------------------------------------------------------
 // account resolution and authorization
 
 // SponsorableAccount is a user or organization as a party to a sponsorship;
@@ -98,7 +97,6 @@ func (s *Server) sponsorsAccountFromPath(w http.ResponseWriter, r *http.Request)
 	return account, true
 }
 
-// ---------------------------------------------------------------------------
 // billing-cycle reconciliation
 
 // ReconcileSponsorships applies every sponsorship whose next billing date has
@@ -118,7 +116,6 @@ func (s *Server) ReconcileSponsorships() {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // webhooks
 
 // sponsorsTierWebhookJSON renders a tier as GitHub's `sponsorship` payload does.
@@ -235,7 +232,6 @@ func appSubscribesToEvent(app *store.App, event string) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // rendering
 
 func sponsorsTierJSON(tier *store.SponsorsTier) map[string]interface{} {
@@ -398,7 +394,6 @@ func (s *Server) sponsorshipJSON(sponsorship *store.Sponsorship) map[string]inte
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // handlers — listings
 
 func (s *Server) handleListSponsorsListings(w http.ResponseWriter, r *http.Request) {
@@ -700,7 +695,6 @@ func (s *Server) handleUnfeatureSponsorsItem(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ---------------------------------------------------------------------------
 // handlers — newsletters
 
 func (s *Server) handleListSponsorshipNewsletters(w http.ResponseWriter, r *http.Request) {
@@ -793,7 +787,6 @@ func (s *Server) handlePublishSponsorshipNewsletter(w http.ResponseWriter, r *ht
 	})
 }
 
-// ---------------------------------------------------------------------------
 // handlers — the maintainer dashboard and payouts
 
 func (s *Server) handleSponsorsDashboard(w http.ResponseWriter, r *http.Request) {
@@ -866,7 +859,6 @@ func (s *Server) handleRunSponsorsPayout(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// ---------------------------------------------------------------------------
 // handlers — sponsoring
 
 func (s *Server) handleListViewerSponsoring(w http.ResponseWriter, r *http.Request) {

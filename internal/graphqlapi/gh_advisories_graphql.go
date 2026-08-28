@@ -363,9 +363,7 @@ func (s *Resolver) buildVulnerabilityAlertTypes(types *advisorySchema, userType,
 	types.alertConnection = advisoryConnectionType("RepositoryVulnerabilityAlert", types.alert, s.gqlPageInfoType())
 }
 
-// ---------------------------------------------------------------------------
 // Root fields
-// ---------------------------------------------------------------------------
 
 // addAdvisoryRootFields registers securityAdvisory, securityAdvisories and
 // securityVulnerabilities, all reading the public advisory database.
@@ -467,9 +465,7 @@ func (s *Resolver) securityVulnerabilityOrderInput() *graphql.InputObject {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Repository fields
-// ---------------------------------------------------------------------------
 
 func (s *Resolver) addRepositoryAdvisoryFields(repoType *graphql.Object, types *advisorySchema) {
 	repoType.AddFieldConfig("hasVulnerabilityAlertsEnabled", &graphql.Field{
@@ -554,9 +550,7 @@ func (s *Resolver) repoFromAdvisorySource(p graphql.ResolveParams) (*store.Repo,
 	return s.store.GetRepoByID(id), nil
 }
 
-// ---------------------------------------------------------------------------
 // Mutation
-// ---------------------------------------------------------------------------
 
 func (s *Resolver) addVulnerabilityAlertMutation(mutationType *graphql.Object, types *advisorySchema) {
 	dismissReasonEnum := s.graphQLEnum("DismissReason",
@@ -642,9 +636,7 @@ func (s *Resolver) emitDependabotAlertEvent(repo *store.Repo, alert *store.Depen
 	s.emitWebhookEvent(repo.FullName, "dependabot_alert", action, payload)
 }
 
-// ---------------------------------------------------------------------------
 // Renderers
-// ---------------------------------------------------------------------------
 
 // advisoryToGQL renders one advisory as its SecurityAdvisory source map. The
 // private "_cwes" and "_vulnerabilities" keys carry the connection members.
@@ -923,9 +915,7 @@ func dependencyToGQL(dependency store.ResolvedDependency) map[string]interface{}
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Argument and value helpers
-// ---------------------------------------------------------------------------
 
 // relayArgs merges the four Relay connection arguments with field-specific ones.
 func relayArgs(extra graphql.FieldConfigArgument) graphql.FieldConfigArgument {

@@ -95,7 +95,6 @@ func nullableString(value string) interface{} {
 	return value
 }
 
-// ---------------------------------------------------------------------------
 // Type enrichment
 
 // enrichProjectV2Types adds the ProjectV2 fields beyond the handful the issue
@@ -418,7 +417,6 @@ func (s *Resolver) gqlConnectionType(name string, nodeType graphql.Output) *grap
 	return connection
 }
 
-// ---------------------------------------------------------------------------
 // Status updates
 
 func (s *Resolver) addProjectV2StatusUpdates(projectType *graphql.Object, dateTime, date, bigInt *graphql.Scalar) {
@@ -499,7 +497,6 @@ func (s *Resolver) projectV2StatusUpdateToGQL(u *store.ProjectV2StatusUpdate) ma
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // Workflows
 
 func (s *Resolver) addProjectV2Workflows(projectType *graphql.Object, dateTime, bigInt *graphql.Scalar) {
@@ -589,7 +586,6 @@ func projectV2WorkflowToGQL(w *store.ProjectV2Workflow) map[string]interface{} {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Linked repositories and teams
 
 func (s *Resolver) addProjectV2LinkConnections(projectType *graphql.Object, repoType *graphql.Object) {
@@ -653,7 +649,6 @@ func (s *Resolver) addProjectV2LinkConnections(projectType *graphql.Object, repo
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Viewer permissions
 
 // addProjectV2ViewerPermissions wires the three viewerCan* booleans, answered
@@ -696,7 +691,6 @@ func sourceKeyResolver(key string) graphql.FieldResolveFn {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // ProjectV2Item
 
 // enrichProjectV2ItemType adds the project-item members beyond the id, project
@@ -775,7 +769,6 @@ func (s *Resolver) enrichProjectV2ItemType(dateTime, bigInt *graphql.Scalar, nod
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Owner entry points
 
 // addProjectV2OwnerFields wires the fields that reach a project from its owner.

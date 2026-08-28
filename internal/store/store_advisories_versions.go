@@ -196,9 +196,7 @@ func splitVersionConstraint(constraint string) (operator, operand string) {
 	return "=", strings.TrimSpace(constraint)
 }
 
-// ---------------------------------------------------------------------------
 // SemVer 2.0.0 — npm, Go, Cargo, Hex, pub, SwiftPM, Actions
-// ---------------------------------------------------------------------------
 
 // compareSemVer implements SemVer 2.0.0 §11 precedence: numeric release
 // triple, build metadata ignored, a prerelease below the same release, and
@@ -288,9 +286,7 @@ func comparePrereleaseIdentifiers(left, right []string) int {
 	return signOf(len(left) - len(right))
 }
 
-// ---------------------------------------------------------------------------
 // PEP 440 — pip
-// ---------------------------------------------------------------------------
 
 // pep440Version is a parsed PEP 440 version, with sentinel values chosen so a
 // plain field-by-field comparison reproduces PEP 440 ordering.
@@ -505,9 +501,7 @@ func parsePEP440Suffix(parsed *pep440Version, suffix string) bool {
 	return true
 }
 
-// ---------------------------------------------------------------------------
 // Maven ComparableVersion
-// ---------------------------------------------------------------------------
 
 // mavenQualifierOrder is Maven's ComparableVersion qualifier ranking. "" is
 // the release; anything below it is a prerelease, and "sp" alone outranks it.
@@ -649,9 +643,7 @@ func compareMavenToken(left, right mavenToken) int {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // RubyGems Gem::Version
-// ---------------------------------------------------------------------------
 
 // compareRubyGems orders two gem versions the way Gem::Version does: split on
 // "." and digit/letter transitions, numerics as integers, strings lexically
@@ -718,9 +710,7 @@ func rubyGemsSegments(version string) ([]string, bool) {
 	return segments, true
 }
 
-// ---------------------------------------------------------------------------
 // NuGet
-// ---------------------------------------------------------------------------
 
 // compareNuGet orders two NuGet versions: a four-part numeric version plus
 // case-insensitive SemVer 2.0 prerelease identifiers, build metadata ignored.
@@ -757,9 +747,7 @@ func parseNuGet(version string) (release []int, prerelease []string, ok bool) {
 	return release, prerelease, true
 }
 
-// ---------------------------------------------------------------------------
 // Composer / PHP version_compare
-// ---------------------------------------------------------------------------
 
 // composerStabilityRanks is PHP version_compare's stability-word ordering;
 // anything unrecognized sorts below "dev", as PHP does.
@@ -857,9 +845,7 @@ func composerParts(version string) ([]string, bool) {
 	return parts, true
 }
 
-// ---------------------------------------------------------------------------
 // Shared primitives
-// ---------------------------------------------------------------------------
 
 // compareNumericSegments orders two release-segment slices, a missing trailing
 // segment counting as zero ("1.2" == "1.2.0").

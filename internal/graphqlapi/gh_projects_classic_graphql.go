@@ -16,7 +16,6 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// ---------------------------------------------------------------------------
 // Enums
 
 func (s *Resolver) projectStateEnum() *graphql.Enum {
@@ -40,7 +39,6 @@ func (s *Resolver) projectColumnPurposeEnum() *graphql.Enum {
 	return s.graphQLEnum("ProjectColumnPurpose", "DONE", "IN_PROGRESS", "TODO")
 }
 
-// ---------------------------------------------------------------------------
 // Access predicates
 //
 // A repo-scoped board uses its repository's visibility and Projects permission,
@@ -84,7 +82,6 @@ func (s *Resolver) viewerBelongsToProjectClassicOwner(ctx context.Context, p *st
 	return viewer.Login == p.OwnerLogin
 }
 
-// ---------------------------------------------------------------------------
 // Renderers
 
 // projectClassicOwnerSource renders a project's ProjectOwner (Repository, Org or
@@ -217,7 +214,6 @@ func (s *Resolver) projectClassicCardToGQL(c *store.ProjectCard) map[string]inte
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Object types
 
 // projectClassicConnectionPair returns the memoized Edge and Connection objects
@@ -548,7 +544,6 @@ func (s *Resolver) projectClassicCardType() *graphql.Object {
 	return object
 }
 
-// ---------------------------------------------------------------------------
 // ProjectOwner
 
 // projectOwnerInterfaceType is the ProjectOwner interface — the account or
@@ -757,7 +752,6 @@ func (s *Resolver) addProjectClassicOwnerFields(userType, orgType, repoType *gra
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Node dispatch
 
 // projectClassicNodeByID resolves a classic project, column or card global id

@@ -32,7 +32,6 @@ func (s *Resolver) addProjectV2RemainingMutations(mutationType *graphql.Object) 
 	s.addProjectV2WorkflowMutations(mutationType, projectType)
 }
 
-// ---------------------------------------------------------------------------
 // Shared helpers
 
 // projectV2MutationProject resolves the project a mutation names. The policy row
@@ -118,7 +117,6 @@ func projectV2NodeIDs(input map[string]interface{}, key string) []string {
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // Project lifecycle
 
 func (s *Resolver) addProjectV2LifecycleMutations(mutationType *graphql.Object, projectType *graphql.Object) {
@@ -286,7 +284,6 @@ func (s *Resolver) addProjectV2LifecycleMutations(mutationType *graphql.Object, 
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Links to repositories and teams
 
 func (s *Resolver) addProjectV2LinkMutations(mutationType *graphql.Object) {
@@ -421,7 +418,6 @@ func projectV2InputName(mutation string) string {
 	return strings.ToUpper(mutation[:1]) + mutation[1:] + "Input"
 }
 
-// ---------------------------------------------------------------------------
 // Collaborators
 
 func (s *Resolver) addProjectV2CollaboratorMutations(mutationType *graphql.Object) {
@@ -548,7 +544,6 @@ func (s *Resolver) addProjectV2CollaboratorMutations(mutationType *graphql.Objec
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Fields
 
 func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fieldUnion *graphql.Union) {
@@ -841,7 +836,6 @@ func (s *Resolver) projectV2EmitProjectEdited(p graphql.ResolveParams, projectID
 	s.emitProjectV2Event(s.projectV2Event(p, store.ProjectV2EventProject, "edited", project))
 }
 
-// ---------------------------------------------------------------------------
 // Views
 
 func (s *Resolver) addProjectV2ViewMutations(mutationType *graphql.Object, viewType *graphql.Object) {
@@ -1010,7 +1004,6 @@ func (s *Resolver) projectV2MutationView(input map[string]interface{}, key strin
 	return view, nil
 }
 
-// ---------------------------------------------------------------------------
 // Items
 
 func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemType, draftIssueType *graphql.Object) {
@@ -1289,7 +1282,6 @@ func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemT
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Status updates
 
 func (s *Resolver) addProjectV2StatusUpdateMutations(mutationType, projectType, statusType *graphql.Object) {
@@ -1441,7 +1433,6 @@ func (s *Resolver) projectV2MutationStatusUpdate(input map[string]interface{}, k
 	return update, nil
 }
 
-// ---------------------------------------------------------------------------
 // Workflows
 
 func (s *Resolver) addProjectV2WorkflowMutations(mutationType, projectType *graphql.Object) {
