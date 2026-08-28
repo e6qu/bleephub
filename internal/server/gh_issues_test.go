@@ -112,6 +112,45 @@ func TestUpdateLabel(t *testing.T) {
 	}
 }
 
+func TestArchivedLabelCannotBeAssigned(t *testing.T) {
+	createTestIssueRepo(t, "label-archive")
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-archive/labels", defaultToken, map[string]interface{}{
+		"name": "retired", "color": "777777",
+	}))
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-archive/issues", defaultToken, map[string]interface{}{
+		"title": "Existing issue",
+	}))
+
+	resp := ghPatch(t, "/api/v3/repos/admin/label-archive/labels/retired", defaultToken, map[string]interface{}{"archived": true})
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("archive label: %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = ghPost(t, "/api/v3/repos/admin/label-archive/issues/1/labels", defaultToken, map[string]interface{}{"labels": []string{"retired"}})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("assign archived label: %d, want 422", resp.StatusCode)
+	}
+
+	resp = ghPost(t, "/api/v3/repos/admin/label-archive/issues", defaultToken, map[string]interface{}{
+		"title": "New issue", "labels": []string{"retired"},
+	})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("create with archived label: %d, want 422", resp.StatusCode)
+	}
+
+	resp = ghPatch(t, "/api/v3/repos/admin/label-archive/labels/retired", defaultToken, map[string]interface{}{"archived": false})
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("unarchive label: %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-archive/issues/1/labels", defaultToken, map[string]interface{}{"labels": []string{"retired"}}))
+}
+
 func TestDeleteLabel(t *testing.T) {
 	createTestIssueRepo(t, "label-delete")
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-delete/labels", defaultToken, map[string]interface{}{

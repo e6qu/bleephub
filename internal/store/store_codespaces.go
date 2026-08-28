@@ -407,7 +407,7 @@ func (st *Store) DeleteCodespace(id int) (bool, error) {
 
 func (st *Store) deleteCodespaceRuntime(cs *Codespace) error {
 	if cs.ContainerID != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), CodespaceDockerLifecycleTimeout)
 		err := DockerRemoveContainer(ctx, cs.ContainerID)
 		cancel()
 		if err != nil {
@@ -957,6 +957,10 @@ func exportGitRef(stor gitStorage.Storer, refName, dst string) error {
 
 // --- docker helpers ---
 
+// CodespaceDockerLifecycleTimeout bounds user-visible start, stop and remove
+// operations without mistaking a loaded Docker daemon for a failed runtime.
+const CodespaceDockerLifecycleTimeout = 2 * time.Minute
+
 func dockerRunCodespace(ctx context.Context, name, image, repoDir, repoName string) (string, error) {
 	if repoName == "" {
 		repoName = "workspace"
@@ -991,11 +995,15 @@ func DockerStartContainer(ctx context.Context, id string) error {
 }
 
 func DockerStopContainer(ctx context.Context, id string) error {
-	out, err := RunDockerCLI(ctx, "stop", "--time", "30", id)
+	out, err := RunDockerCLI(ctx, dockerStopArgs(id)...)
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, string(out))
 	}
 	return nil
+}
+
+func dockerStopArgs(id string) []string {
+	return []string{"stop", "--timeout", "30", id}
 }
 
 func DockerRemoveContainer(ctx context.Context, id string) error {

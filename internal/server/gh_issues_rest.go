@@ -44,12 +44,9 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var labelIDs []int
-	for _, name := range req.Labels {
-		l := s.store.GetLabelByName(repo.ID, name)
-		if l != nil {
-			labelIDs = append(labelIDs, l.ID)
-		}
+	labelIDs, ok := s.resolveAssignableLabelNames(w, repo.ID, req.Labels)
+	if !ok {
+		return
 	}
 
 	var assigneeIDs []int
@@ -454,7 +451,7 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 			store.WriteGHValidationError(w, "Issue", "labels", "invalid")
 			return
 		}
-		ids := make([]int, 0, len(entries))
+		names := make([]string, 0, len(entries))
 		for _, entry := range entries {
 			// The body allows bare strings or {"name": ...} objects; unknown
 			// label names are dropped, as the add-labels endpoint does.
@@ -470,9 +467,11 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			if l := s.store.GetLabelByName(repo.ID, name); l != nil {
-				ids = append(ids, l.ID)
-			}
+			names = append(names, name)
+		}
+		ids, ok := s.resolveAssignableLabelNames(w, repo.ID, names)
+		if !ok {
+			return
 		}
 		labelIDs = &ids
 	}
@@ -789,17 +788,17 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var newLabelIDs []int
-	for _, name := range labelNames {
-		l := s.store.GetLabelByName(repo.ID, name)
-		if l != nil {
-			newLabelIDs = append(newLabelIDs, l.ID)
-		}
+	newLabelIDs, ok := s.resolveAssignableLabelNames(w, repo.ID, labelNames)
+	if !ok {
+		return
 	}
 
 	base := s.baseURL(r)
 	if pr != nil {
-		s.store.AddPullRequestLabels(repo.ID, pr.Number, newLabelIDs, user.ID)
+		if !s.store.AddPullRequestLabels(repo.ID, pr.Number, newLabelIDs, user.ID) {
+			store.WriteGHValidationError(w, "Label", "labels", "archived")
+			return
+		}
 		updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
 		s.pullRequestEmitter(repo, updated, user).emitLabelDelta(pr.LabelIDs, updated.LabelIDs)
 		writeJSON(w, http.StatusOK, s.labelIDsToJSON(updated.LabelIDs, base, repo.FullName))
@@ -821,7 +820,10 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 			next = append(next, lid)
 		}
 	}
-	s.store.SetIssueLabels(repo.ID, issue.Number, next, user.ID)
+	if !s.store.SetIssueLabels(repo.ID, issue.Number, next, user.ID) {
+		store.WriteGHValidationError(w, "Label", "labels", "archived")
+		return
+	}
 
 	updated := s.store.GetIssue(issue.ID)
 	s.issueEmitter(repo, updated, user).emitLabelDelta(issue.LabelIDs, updated.LabelIDs)
@@ -990,23 +992,27 @@ func (s *Server) handleSetIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var labelIDs []int
-	for _, name := range labelNames {
-		if l := s.store.GetLabelByName(repo.ID, name); l != nil {
-			labelIDs = append(labelIDs, l.ID)
-		}
+	labelIDs, ok := s.resolveAssignableLabelNames(w, repo.ID, labelNames)
+	if !ok {
+		return
 	}
 
 	base := s.baseURL(r)
 	if pr != nil {
-		s.store.SetPullRequestLabels(repo.ID, pr.Number, labelIDs, user.ID)
+		if !s.store.SetPullRequestLabels(repo.ID, pr.Number, labelIDs, user.ID) {
+			store.WriteGHValidationError(w, "Label", "labels", "archived")
+			return
+		}
 		updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
 		s.pullRequestEmitter(repo, updated, user).emitLabelDelta(pr.LabelIDs, updated.LabelIDs)
 		writeJSON(w, http.StatusOK, s.labelIDsToJSON(updated.LabelIDs, base, repo.FullName))
 		return
 	}
 
-	s.store.SetIssueLabels(repo.ID, issue.Number, labelIDs, user.ID)
+	if !s.store.SetIssueLabels(repo.ID, issue.Number, labelIDs, user.ID) {
+		store.WriteGHValidationError(w, "Label", "labels", "archived")
+		return
+	}
 
 	updated := s.store.GetIssue(issue.ID)
 	s.issueEmitter(repo, updated, user).emitLabelDelta(issue.LabelIDs, updated.LabelIDs)

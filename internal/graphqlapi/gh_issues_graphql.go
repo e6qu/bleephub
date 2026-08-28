@@ -2767,6 +2767,9 @@ func resolveGQLLabelIDs(st *store.Store, repoID int, raw interface{}) (*[]int, e
 		if l == nil || l.RepoID != repoID {
 			return nil, gqlMissingNode("Label", nodeID)
 		}
+		if l.Archived {
+			return nil, fmt.Errorf("label %q is archived", l.Name)
+		}
 		ids = append(ids, l.ID)
 	}
 	return &ids, nil

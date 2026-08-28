@@ -488,6 +488,30 @@ func TestGraphQLAddLabelsRefusesALabelFromAnotherRepository(t *testing.T) {
 	}
 }
 
+func TestGraphQLAddLabelsRefusesAnArchivedLabel(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGHConformanceRepo(t, s)
+	archived := s.store.CreateLabel(f.repo.ID, "conformance-archived", "", "777777")
+	if archived == nil {
+		t.Fatal("the fixture label was refused")
+	}
+	s.store.UpdateLabel(archived.ID, func(label *store.IssueLabel) { label.Archived = true })
+
+	envelope := s.ghConformanceQuery(t, defaultToken,
+		`mutation($input:AddLabelsToLabelableInput!){addLabelsToLabelable(input:$input){labelable{__typename}}}`,
+		map[string]interface{}{"input": map[string]interface{}{
+			"labelableId": f.issue.NodeID,
+			"labelIds":    []interface{}{archived.NodeID},
+		}})
+	if envelope["errors"] == nil {
+		t.Fatalf("an archived label was attached: %v", envelope)
+	}
+	if got := issueLabelNames(t, s, f.issue.ID); len(got) != 0 {
+		t.Fatalf("labels after the refusal = %v, want none", got)
+	}
+}
+
 // labelableNames reads the label names off a label mutation's payload.
 func labelableNames(t *testing.T, data map[string]interface{}, mutation string) []string {
 	t.Helper()

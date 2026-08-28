@@ -8547,6 +8547,10 @@
                   "type": "string"
                 },
                 "budget_type": {},
+                "expires_at": {
+                  "format": "date",
+                  "type": "string"
+                },
                 "prevent_further_usage": {
                   "type": "boolean"
                 },
@@ -8741,6 +8745,7 @@
                   "type": "string"
                 },
                 "budget_type": {},
+                "expires_at": {},
                 "prevent_further_usage": {
                   "type": "boolean"
                 },
@@ -58482,6 +58487,9 @@
           "media_types": {
             "application/json": {
               "properties": {
+                "archived": {
+                  "type": "boolean"
+                },
                 "color": {
                   "type": "string"
                 },
@@ -79710,7 +79718,7 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "c65c7a320859f885c9e46f617879aa02c4322310abe481396767be63ff52f810",
+  "source_sha256": "d8a31c89188b41d5a846129900283c2c6a1e71737003a7f927ce8802f544d8de",
   "summary": {
     "operations": 1222,
     "state_changing": 584,

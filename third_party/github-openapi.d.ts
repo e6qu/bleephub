@@ -27344,6 +27344,15 @@ export interface components {
                  */
                 alert_recipients: string[];
             };
+            /**
+             * Format: date
+             * @description The date the budget will expire in `YYYY-MM-DD` format. Only dates in the future are accepted.
+             *     If not provided, the budget will not expire.
+             *
+             *     Only supported for budgets with `budget_scope` of `user`
+             * @example 2026-12-31
+             */
+            expires_at?: string;
         };
         get_all_budgets: {
             /** @description Array of budget objects for the enterprise */
@@ -27416,6 +27425,15 @@ export interface components {
                      */
                     alert_recipients?: string[];
                 };
+                /**
+                 * Format: date
+                 * @description The date the budget will expire in `YYYY-MM-DD` format. Only dates in the future are accepted.
+                 *     If not provided, the budget will not expire.
+                 *
+                 *     Only supported for budgets with `budget_scope` of `user`
+                 * @example 2026-12-31
+                 */
+                expires_at?: string;
             };
         };
         "get-budget": {
@@ -27532,6 +27550,15 @@ export interface components {
                      */
                     alert_recipients?: string[];
                 };
+                /**
+                 * Format: date
+                 * @description The date the budget will expire in `YYYY-MM-DD` format. Only dates in the future are accepted.
+                 *     If not provided, the budget will not expire.
+                 *
+                 *     Only supported for budgets with `budget_scope` of `user`
+                 * @example 2026-12-31
+                 */
+                expires_at?: string;
             };
         };
         "delete-budget": {
@@ -105216,6 +105243,14 @@ export interface operations {
                     budget_product_sku?: string;
                     /** @description The username of the user for `user` scope budgets. This field is required when `budget_scope` is `user`. */
                     user?: string;
+                    /**
+                     * Format: date
+                     * @description The date the budget will expire in `YYYY-MM-DD` format. Only dates in the future are accepted.
+                     *     If not provided, the budget will not expire.
+                     *
+                     *     Only supported for budgets with `budget_scope` of `user`
+                     */
+                    expires_at?: string;
                 };
             };
         };
@@ -105354,6 +105389,13 @@ export interface operations {
                     budget_product_sku?: string;
                     /** @description The username of the user for `user` scope budgets. */
                     user?: string;
+                    /**
+                     * @description The date the budget will expire in `YYYY-MM-DD` format. Only dates in the future are accepted.
+                     *     If not set, the budget will not expire. Setting to `null` or `0` will remove the expiration date from a budget if set.
+                     *
+                     *     Only supported for budgets with `budget_scope` of `user`
+                     */
+                    expires_at?: (string | null) | 0;
                 };
             };
         };
@@ -132745,6 +132787,8 @@ export interface operations {
                     color?: string;
                     /** @description A short description of the label. Must be 100 characters or fewer. */
                     description?: string;
+                    /** @description Whether to archive or unarchive the label. Archived labels cannot be added to issues or pull requests. For more information, see "[Archiving labels](https://docs.github.com/issues/organizing-your-work-with-labels/managing-labels)." */
+                    archived?: boolean;
                 };
             };
         };

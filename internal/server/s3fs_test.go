@@ -38,6 +38,11 @@ var (
 // out from under a concurrently running suite.
 const s3TestOwnerLabel = "bleephub-test-s3-owner"
 
+const (
+	dockerProbeTimeout  = 5 * time.Second
+	dockerRemoveTimeout = 30 * time.Second
+)
+
 // s3ServerRunArgs is the docker argument vector that starts the shared MinIO
 // server, split out so the reaper's owner label can be asserted without a
 // running container.
@@ -71,14 +76,20 @@ func reapAbandonedS3Servers() {
 		if err != nil || testBinaryAlive(pid) {
 			continue
 		}
-		_, _ = boundedDockerCleanupOutput("rm", "--force", id)
+		_, _ = removeDockerTestContainer(id)
 	}
 }
 
 func boundedDockerCleanupOutput(args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dockerProbeTimeout)
 	defer cancel()
 	return exec.CommandContext(ctx, "docker", args...).CombinedOutput()
+}
+
+func removeDockerTestContainer(container string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerRemoveTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "docker", "rm", "--force", container).CombinedOutput()
 }
 
 // testBinaryAlive reports whether a process with this id still exists. Signal 0

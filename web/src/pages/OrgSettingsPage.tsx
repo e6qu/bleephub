@@ -3,11 +3,25 @@ import { Link, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { OrgHeader } from "../components/PageHeader.js";
-import { PageTitle, Box, Button, FormLabel, ErrorBanner, SectionLabel, Blankslate } from "../components/ui.js";
+import {
+  PageTitle,
+  Box,
+  Button,
+  FormLabel,
+  ErrorBanner,
+  SectionLabel,
+  Blankslate,
+} from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { GraphIcon, TrashIcon } from "../components/octicons.js";
-import { fetchOrgProfile, updateOrg, ghFetch, ghPostJSON, ghSend } from "../api.js";
+import {
+  fetchOrgProfile,
+  updateOrg,
+  ghFetch,
+  ghPostJSON,
+  ghSend,
+} from "../api.js";
 import {
   GearIcon,
   PeopleIcon,
@@ -23,29 +37,78 @@ const enc = encodeURIComponent;
 export function OrgSettingsPage() {
   const { org = "" } = useParams<{ org: string }>();
   const qc = useQueryClient();
-  const profile = useQuery({ queryKey: ["org-profile", org], queryFn: () => fetchOrgProfile(org), enabled: !!org });
+  const profile = useQuery({
+    queryKey: ["org-profile", org],
+    queryFn: () => fetchOrgProfile(org),
+    enabled: !!org,
+  });
 
-  const [form, setForm] = useState<{ name: string; description: string; billing_email: string } | null>(null);
+  const [form, setForm] = useState<{
+    name: string;
+    description: string;
+    billing_email: string;
+  } | null>(null);
   const current = form ?? {
     name: profile.data?.name ?? "",
     description: profile.data?.description ?? "",
     billing_email: profile.data?.email ?? "",
   };
-  const set = (k: keyof typeof current, v: string) => setForm({ ...current, [k]: v });
+  const set = (k: keyof typeof current, v: string) =>
+    setForm({ ...current, [k]: v });
 
   const saveMut = useMutation({
-    mutationFn: () => updateOrg(org, { name: current.name, description: current.description, billing_email: current.billing_email }),
+    mutationFn: () =>
+      updateOrg(org, {
+        name: current.name,
+        description: current.description,
+        billing_email: current.billing_email,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["org-profile", org] }),
   });
 
   const base = `/ui/orgs/${org}`;
-  const sections: { to: string; icon: React.ReactNode; label: string; hint: string }[] = [
-    { to: `${base}/governance?tab=member-privileges`, icon: <PeopleIcon size={16} />, label: "Member privileges", hint: "Base permissions, repository creation, and governance" },
-    { to: `${base}/rulesets`, icon: <GearIcon size={16} />, label: "Repository rulesets", hint: "Branch and tag protection rules across repositories" },
-    { to: `${base}/hooks`, icon: <WebhookIcon size={16} />, label: "Webhooks", hint: "Organization webhooks and deliveries" },
-    { to: `${base}/copilot`, icon: <CommentIcon size={16} />, label: "Copilot", hint: "Copilot access and policies" },
-    { to: `${base}/people`, icon: <PeopleIcon size={16} />, label: "People", hint: "Members and outside collaborators" },
-    { to: `${base}/teams`, icon: <TeamIcon size={16} />, label: "Teams", hint: "Team structure and membership" },
+  const sections: {
+    to: string;
+    icon: React.ReactNode;
+    label: string;
+    hint: string;
+  }[] = [
+    {
+      to: `${base}/governance?tab=member-privileges`,
+      icon: <PeopleIcon size={16} />,
+      label: "Member privileges",
+      hint: "Base permissions, repository creation, and governance",
+    },
+    {
+      to: `${base}/rulesets`,
+      icon: <GearIcon size={16} />,
+      label: "Repository rulesets",
+      hint: "Branch and tag protection rules across repositories",
+    },
+    {
+      to: `${base}/hooks`,
+      icon: <WebhookIcon size={16} />,
+      label: "Webhooks",
+      hint: "Organization webhooks and deliveries",
+    },
+    {
+      to: `${base}/copilot`,
+      icon: <CommentIcon size={16} />,
+      label: "Copilot",
+      hint: "Copilot access and policies",
+    },
+    {
+      to: `${base}/people`,
+      icon: <PeopleIcon size={16} />,
+      label: "People",
+      hint: "Members and outside collaborators",
+    },
+    {
+      to: `${base}/teams`,
+      icon: <TeamIcon size={16} />,
+      label: "Teams",
+      hint: "Team structure and membership",
+    },
   ];
 
   return (
@@ -53,29 +116,91 @@ export function OrgSettingsPage() {
       <OrgHeader org={org} active="settings" />
       <PageTitle title="Settings" />
       {profile.isError ? (
-        <InlineError title="Failed to load organization" detail={String(profile.error)} />
+        <InlineError
+          title="Failed to load organization"
+          detail={String(profile.error)}
+        />
       ) : profile.isLoading ? (
         <Spinner label="loading organization" />
       ) : (
         <div className="flex flex-col gap-5" style={{ maxWidth: "48rem" }}>
-          <Box header={<span style={{ fontWeight: 600 }}>Organization profile</span>}>
-            <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {saveMut.error && <ErrorBanner>{String(saveMut.error)}</ErrorBanner>}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <Box
+            header={
+              <span style={{ fontWeight: 600 }}>Organization profile</span>
+            }
+          >
+            <div
+              style={{
+                padding: "1rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+              }}
+            >
+              {saveMut.error && (
+                <ErrorBanner>{String(saveMut.error)}</ErrorBanner>
+              )}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.25rem",
+                }}
+              >
                 <FormLabel id="org-name">Display name</FormLabel>
-                <input id="org-name" type="text" value={current.name} onChange={(e) => set("name", e.target.value)} className="w-full" />
+                <input
+                  id="org-name"
+                  type="text"
+                  value={current.name}
+                  onChange={(e) => set("name", e.target.value)}
+                  className="w-full"
+                />
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.25rem",
+                }}
+              >
                 <FormLabel id="org-description">Description</FormLabel>
-                <textarea id="org-description" value={current.description} rows={3} onChange={(e) => set("description", e.target.value)} className="w-full" />
+                <textarea
+                  id="org-description"
+                  value={current.description}
+                  rows={3}
+                  onChange={(e) => set("description", e.target.value)}
+                  className="w-full"
+                />
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.25rem",
+                }}
+              >
                 <FormLabel id="org-billing-email">Billing email</FormLabel>
-                <input id="org-billing-email" type="email" value={current.billing_email} onChange={(e) => set("billing_email", e.target.value)} className="w-full" />
+                <input
+                  id="org-billing-email"
+                  type="email"
+                  value={current.billing_email}
+                  onChange={(e) => set("billing_email", e.target.value)}
+                  className="w-full"
+                />
               </div>
               <div className="flex items-center justify-end gap-3">
-                {saveMut.isSuccess && <span style={{ fontSize: "0.82rem", color: "var(--gh-open)" }}>Saved.</span>}
-                <Button variant="primary" disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                {saveMut.isSuccess && (
+                  <span
+                    style={{ fontSize: "0.82rem", color: "var(--gh-open)" }}
+                  >
+                    Saved.
+                  </span>
+                )}
+                <Button
+                  variant="primary"
+                  disabled={saveMut.isPending}
+                  onClick={() => saveMut.mutate()}
+                >
                   {saveMut.isPending ? "Saving…" : "Save"}
                 </Button>
               </div>
@@ -94,15 +219,36 @@ export function OrgSettingsPage() {
                   className="flex items-center gap-3"
                   style={{
                     padding: "0.75rem 1rem",
-                    borderBottom: i < sections.length - 1 ? "1px solid var(--color-border)" : "none",
+                    borderBottom:
+                      i < sections.length - 1
+                        ? "1px solid var(--color-border)"
+                        : "none",
                     textDecoration: "none",
                     color: "var(--color-fg)",
                   }}
                 >
-                  <span style={{ color: "var(--color-fg-muted)" }}>{s.icon}</span>
+                  <span style={{ color: "var(--color-fg-muted)" }}>
+                    {s.icon}
+                  </span>
                   <span className="flex-1">
-                    <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--color-accent)" }}>{s.label}</span>
-                    <span style={{ display: "block", fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>{s.hint}</span>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        fontSize: "0.9rem",
+                        color: "var(--color-accent)",
+                      }}
+                    >
+                      {s.label}
+                    </span>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: "0.78rem",
+                        color: "var(--color-fg-muted)",
+                      }}
+                    >
+                      {s.hint}
+                    </span>
                   </span>
                 </Link>
               ))}
@@ -124,6 +270,8 @@ interface OrgBudget {
   prevent_further_usage: boolean;
   budget_product_sku: string;
   budget_type: string;
+  user?: string;
+  expires_at?: string;
 }
 
 interface BudgetsResponse {
@@ -146,7 +294,21 @@ interface UsageSummaryResponse {
   usageItems: UsageSummaryItem[];
 }
 
-const budgetScopes = ["organization", "repository", "multi_user_customer", "user"] as const;
+const budgetScopes = [
+  "organization",
+  "repository",
+  "multi_user_customer",
+  "user",
+] as const;
+
+const budgetScopeLabels: Record<(typeof budgetScopes)[number], string> = {
+  organization: "Entire organization",
+  repository: "One repository",
+  multi_user_customer: "Every user",
+  user: "One user",
+};
+
+const userBudgetSKUs = ["ai_credits", "premium_requests"] as const;
 
 function BillingSection({ org }: { org: string }) {
   const qc = useQueryClient();
@@ -154,20 +316,37 @@ function BillingSection({ org }: { org: string }) {
 
   const budgets = useQuery({
     queryKey: budgetsKey,
-    queryFn: () => ghFetch<BudgetsResponse>(`/api/v3/organizations/${enc(org)}/settings/billing/budgets`),
+    queryFn: () =>
+      ghFetch<BudgetsResponse>(
+        `/api/v3/organizations/${enc(org)}/settings/billing/budgets`,
+      ),
     enabled: !!org,
   });
   const usage = useQuery({
     queryKey: ["org-billing-usage", org],
-    queryFn: () => ghFetch<UsageSummaryResponse>(`/api/v3/organizations/${enc(org)}/settings/billing/usage/summary`),
+    queryFn: () =>
+      ghFetch<UsageSummaryResponse>(
+        `/api/v3/organizations/${enc(org)}/settings/billing/usage/summary`,
+      ),
     enabled: !!org,
   });
 
   const [sku, setSku] = useState("");
   const [amount, setAmount] = useState("");
-  const [scope, setScope] = useState<(typeof budgetScopes)[number]>("organization");
+  const [scope, setScope] =
+    useState<(typeof budgetScopes)[number]>("organization");
   const [entity, setEntity] = useState("");
   const [prevent, setPrevent] = useState(false);
+  const [expiresAt, setExpiresAt] = useState("");
+  const minimumExpiration = new Date(Date.now() + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const userScope = scope === "user";
+  const peopleScope = userScope || scope === "multi_user_customer";
+  const canCreate =
+    sku.trim() !== "" &&
+    (!userScope || entity.trim() !== "") &&
+    (expiresAt === "" || expiresAt >= minimumExpiration);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: budgetsKey });
 
@@ -176,23 +355,36 @@ function BillingSection({ org }: { org: string }) {
       const body: Record<string, unknown> = {
         budget_product_sku: sku.trim(),
         budget_scope: scope,
-        prevent_further_usage: prevent,
+        prevent_further_usage: peopleScope || prevent,
       };
       if (amount.trim() !== "") body.budget_amount = Number(amount);
-      if (entity.trim() !== "") body.budget_entity_name = entity.trim();
-      return ghPostJSON(`/api/v3/organizations/${enc(org)}/settings/billing/budgets`, body);
+      if (userScope) {
+        body.user = entity.trim();
+        if (expiresAt !== "") body.expires_at = expiresAt;
+      } else if (entity.trim() !== "") {
+        body.budget_entity_name = entity.trim();
+      }
+      return ghPostJSON(
+        `/api/v3/organizations/${enc(org)}/settings/billing/budgets`,
+        body,
+      );
     },
     onSuccess: () => {
       setSku("");
       setAmount("");
       setEntity("");
       setPrevent(false);
+      setExpiresAt("");
       invalidate();
     },
   });
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) => ghSend("DELETE", `/api/v3/organizations/${enc(org)}/settings/billing/budgets/${enc(id)}`),
+    mutationFn: (id: string) =>
+      ghSend(
+        "DELETE",
+        `/api/v3/organizations/${enc(org)}/settings/billing/budgets/${enc(id)}`,
+      ),
     onSuccess: invalidate,
   });
 
@@ -200,16 +392,32 @@ function BillingSection({ org }: { org: string }) {
     <section>
       <SectionLabel>Billing and plans</SectionLabel>
       <div className="flex flex-col gap-4">
-        <Box header={<span style={{ fontWeight: 600 }}>Usage this period</span>}>
+        <Box
+          header={<span style={{ fontWeight: 600 }}>Usage this period</span>}
+        >
           <div style={{ padding: "1rem" }}>
             {usage.isError ? (
-              <InlineError title="Failed to load usage" detail={String(usage.error)} />
+              <InlineError
+                title="Failed to load usage"
+                detail={String(usage.error)}
+              />
             ) : usage.isLoading ? (
               <Spinner label="loading usage" />
             ) : usage.data?.usageItems && usage.data.usageItems.length > 0 ? (
-              <table style={{ width: "100%", fontSize: "0.85rem", borderCollapse: "collapse" }}>
+              <table
+                style={{
+                  width: "100%",
+                  fontSize: "0.85rem",
+                  borderCollapse: "collapse",
+                }}
+              >
                 <thead>
-                  <tr style={{ textAlign: "left", color: "var(--color-fg-muted)" }}>
+                  <tr
+                    style={{
+                      textAlign: "left",
+                      color: "var(--color-fg-muted)",
+                    }}
+                  >
                     <th style={{ padding: "0.35rem 0" }}>Product</th>
                     <th style={{ padding: "0.35rem 0" }}>SKU</th>
                     <th style={{ padding: "0.35rem 0" }}>Quantity</th>
@@ -218,30 +426,47 @@ function BillingSection({ org }: { org: string }) {
                 </thead>
                 <tbody>
                   {usage.data.usageItems.map((u) => (
-                    <tr key={`${u.product}/${u.sku}`} style={{ borderTop: "1px solid var(--color-border)" }}>
+                    <tr
+                      key={`${u.product}/${u.sku}`}
+                      style={{ borderTop: "1px solid var(--color-border)" }}
+                    >
                       <td style={{ padding: "0.35rem 0" }}>{u.product}</td>
                       <td style={{ padding: "0.35rem 0" }}>{u.sku}</td>
-                      <td style={{ padding: "0.35rem 0" }}>{u.netQuantity} {u.unitType}</td>
-                      <td style={{ padding: "0.35rem 0" }}>${u.netAmount.toFixed(2)}</td>
+                      <td style={{ padding: "0.35rem 0" }}>
+                        {u.netQuantity} {u.unitType}
+                      </td>
+                      <td style={{ padding: "0.35rem 0" }}>
+                        ${u.netAmount.toFixed(2)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             ) : (
-              <Blankslate icon={<GraphIcon size={24} />} title="No billable usage this period" />
+              <Blankslate
+                icon={<GraphIcon size={24} />}
+                title="No billable usage this period"
+              />
             )}
           </div>
         </Box>
 
         <Box header={<span style={{ fontWeight: 600 }}>Spending budgets</span>}>
-          <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+          <div
+            style={{
+              padding: "1rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.9rem",
+            }}
+          >
             <MutationError of={[createMut, deleteMut]} />
 
             <form
               className="flex flex-col gap-3"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (sku.trim() !== "") createMut.mutate();
+                if (canCreate) createMut.mutate();
               }}
               style={{
                 border: "1px solid var(--color-border)",
@@ -249,50 +474,190 @@ function BillingSection({ org }: { org: string }) {
                 padding: "0.85rem",
               }}
             >
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.25rem",
+                }}
+              >
                 <FormLabel id="budget-sku">Product SKU</FormLabel>
-                <input id="budget-sku" type="text" value={sku} placeholder="actions_linux" onChange={(e) => setSku(e.target.value)} className="w-full" />
+                {peopleScope ? (
+                  <select
+                    id="budget-sku"
+                    value={sku}
+                    onChange={(e) => setSku(e.target.value)}
+                    className="w-full"
+                  >
+                    {userBudgetSKUs.map((value) => (
+                      <option key={value} value={value}>
+                        {value === "ai_credits"
+                          ? "AI credits"
+                          : "Premium requests"}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="budget-sku"
+                    type="text"
+                    value={sku}
+                    placeholder="actions_linux"
+                    onChange={(e) => setSku(e.target.value)}
+                    className="w-full"
+                  />
+                )}
               </div>
               <div className="flex gap-3">
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", flex: 1 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.25rem",
+                    flex: 1,
+                  }}
+                >
                   <FormLabel id="budget-amount">Amount (USD)</FormLabel>
-                  <input id="budget-amount" type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full" />
+                  <input
+                    id="budget-amount"
+                    type="number"
+                    min={0}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="w-full"
+                  />
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", flex: 1 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.25rem",
+                    flex: 1,
+                  }}
+                >
                   <FormLabel id="budget-scope">Scope</FormLabel>
                   <select
                     id="budget-scope"
                     value={scope}
-                    onChange={(e) => setScope(e.target.value as (typeof budgetScopes)[number])}
+                    onChange={(e) => {
+                      const next = e.target
+                        .value as (typeof budgetScopes)[number];
+                      setScope(next);
+                      if (next === "user" || next === "multi_user_customer") {
+                        setPrevent(true);
+                        if (!(userBudgetSKUs as readonly string[]).includes(sku)) {
+                          setSku("ai_credits");
+                        }
+                      }
+                      if (next !== "user") setExpiresAt("");
+                    }}
                     className="w-full"
                   >
                     {budgetScopes.map((s) => (
-                      <option key={s} value={s}>{s}</option>
+                      <option key={s} value={s}>
+                        {budgetScopeLabels[s]}
+                      </option>
                     ))}
                   </select>
                 </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <FormLabel id="budget-entity">Entity name (optional)</FormLabel>
-                <input id="budget-entity" type="text" value={entity} placeholder={scope === "repository" ? "owner/repo" : ""} onChange={(e) => setEntity(e.target.value)} className="w-full" />
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.25rem",
+                }}
+              >
+                <FormLabel id="budget-entity">
+                  {userScope ? "User" : "Entity name (optional)"}
+                </FormLabel>
+                <input
+                  id="budget-entity"
+                  type="text"
+                  required={userScope}
+                  value={entity}
+                  placeholder={
+                    scope === "repository"
+                      ? "owner/repo"
+                      : userScope
+                        ? "username"
+                        : ""
+                  }
+                  onChange={(e) => setEntity(e.target.value)}
+                  className="w-full"
+                />
               </div>
-              <label className="flex items-center gap-2" style={{ fontSize: "0.85rem", color: "var(--color-fg)" }}>
-                <input type="checkbox" checked={prevent} onChange={(e) => setPrevent(e.target.checked)} />
+              {userScope && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.25rem",
+                  }}
+                >
+                  <FormLabel id="budget-expires-at">
+                    Expiration date (optional)
+                  </FormLabel>
+                  <input
+                    id="budget-expires-at"
+                    type="date"
+                    min={minimumExpiration}
+                    value={expiresAt}
+                    onChange={(e) => setExpiresAt(e.target.value)}
+                    className="w-full"
+                  />
+                  <span
+                    style={{
+                      fontSize: "0.78rem",
+                      color: "var(--color-fg-muted)",
+                    }}
+                  >
+                    The budget remains active until this date. Leave blank for
+                    no expiration.
+                  </span>
+                </div>
+              )}
+              <label
+                className="flex items-center gap-2"
+                style={{ fontSize: "0.85rem", color: "var(--color-fg)" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={peopleScope || prevent}
+                  disabled={peopleScope}
+                  onChange={(e) => setPrevent(e.target.checked)}
+                />
                 Prevent further usage when the budget is exceeded
               </label>
               <div className="flex justify-end">
-                <Button type="submit" variant="primary" disabled={createMut.isPending || sku.trim() === ""}>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={createMut.isPending || !canCreate}
+                >
                   {createMut.isPending ? "Creating…" : "Create budget"}
                 </Button>
               </div>
             </form>
 
             {budgets.isError ? (
-              <InlineError title="Failed to load budgets" detail={String(budgets.error)} />
+              <InlineError
+                title="Failed to load budgets"
+                detail={String(budgets.error)}
+              />
             ) : budgets.isLoading ? (
               <Spinner label="loading budgets" />
             ) : budgets.data?.budgets && budgets.data.budgets.length > 0 ? (
-              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <ul
+                style={{
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.5rem",
+                }}
+              >
                 {budgets.data.budgets.map((b) => (
                   <BudgetRow
                     key={b.id}
@@ -300,7 +665,12 @@ function BillingSection({ org }: { org: string }) {
                     budget={b}
                     onChanged={invalidate}
                     onDelete={async () => {
-                      if (await confirmAction(`Delete the ${b.budget_product_sku} budget?`, { confirmLabel: "Delete" })) {
+                      if (
+                        await confirmAction(
+                          `Delete the ${b.budget_product_sku} budget?`,
+                          { confirmLabel: "Delete" },
+                        )
+                      ) {
                         deleteMut.mutate(b.id);
                       }
                     }}
@@ -331,13 +701,28 @@ function BudgetRow({
   const [editing, setEditing] = useState(false);
   const [amount, setAmount] = useState(String(budget.budget_amount));
   const [prevent, setPrevent] = useState(budget.prevent_further_usage);
+  const [expiresAt, setExpiresAt] = useState(budget.expires_at ?? "");
+  const minimumExpiration = new Date(Date.now() + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const peopleScope =
+    budget.budget_scope === "user" ||
+    budget.budget_scope === "multi_user_customer";
+  const canSave = expiresAt === "" || expiresAt >= minimumExpiration;
 
   const patchMut = useMutation({
     mutationFn: () =>
-      ghSend("PATCH", `/api/v3/organizations/${enc(org)}/settings/billing/budgets/${enc(budget.id)}`, {
-        budget_amount: Number(amount),
-        prevent_further_usage: prevent,
-      }),
+      ghSend(
+        "PATCH",
+        `/api/v3/organizations/${enc(org)}/settings/billing/budgets/${enc(budget.id)}`,
+        {
+          budget_amount: Number(amount),
+          prevent_further_usage: peopleScope || prevent,
+          ...(budget.budget_scope === "user"
+            ? { expires_at: expiresAt || null }
+            : {}),
+        },
+      ),
     onSuccess: () => {
       setEditing(false);
       onChanged();
@@ -354,16 +739,34 @@ function BudgetRow({
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{budget.budget_product_sku}</span>
-          <span style={{ display: "block", fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+          <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+            {budget.budget_product_sku}
+          </span>
+          <span
+            style={{
+              display: "block",
+              fontSize: "0.78rem",
+              color: "var(--color-fg-muted)",
+            }}
+          >
             {budget.budget_scope}
-            {budget.budget_entity_name ? ` · ${budget.budget_entity_name}` : ""} · ${budget.budget_amount}
+            {budget.budget_entity_name
+              ? ` · ${budget.budget_entity_name}`
+              : ""}{" "}
+            · ${budget.budget_amount}
             {budget.prevent_further_usage ? " · blocks usage" : ""}
+            {budget.expires_at ? ` · expires ${budget.expires_at}` : ""}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={() => setEditing((v) => !v)}>{editing ? "Cancel" : "Edit"}</Button>
-          <Button variant="ghost" aria-label={`Delete ${budget.budget_product_sku} budget`} onClick={onDelete}>
+          <Button variant="ghost" onClick={() => setEditing((v) => !v)}>
+            {editing ? "Cancel" : "Edit"}
+          </Button>
+          <Button
+            variant="ghost"
+            aria-label={`Delete ${budget.budget_product_sku} budget`}
+            onClick={onDelete}
+          >
             <TrashIcon size={15} />
           </Button>
         </div>
@@ -372,15 +775,65 @@ function BudgetRow({
         <div className="flex flex-col gap-2" style={{ marginTop: "0.7rem" }}>
           <MutationError of={patchMut} />
           <div className="flex items-end gap-3">
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-              <FormLabel id={`budget-amount-${budget.id}`}>Amount (USD)</FormLabel>
-              <input id={`budget-amount-${budget.id}`} type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.25rem",
+              }}
+            >
+              <FormLabel id={`budget-amount-${budget.id}`}>
+                Amount (USD)
+              </FormLabel>
+              <input
+                id={`budget-amount-${budget.id}`}
+                type="number"
+                min={0}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
             </div>
-            <label className="flex items-center gap-2" style={{ fontSize: "0.85rem", color: "var(--color-fg)", paddingBottom: "0.4rem" }}>
-              <input type="checkbox" checked={prevent} onChange={(e) => setPrevent(e.target.checked)} />
+            <label
+              className="flex items-center gap-2"
+              style={{
+                fontSize: "0.85rem",
+                color: "var(--color-fg)",
+                paddingBottom: "0.4rem",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={peopleScope || prevent}
+                disabled={peopleScope}
+                onChange={(e) => setPrevent(e.target.checked)}
+              />
               Prevent further usage
             </label>
-            <Button variant="primary" disabled={patchMut.isPending} onClick={() => patchMut.mutate()}>
+            {budget.budget_scope === "user" && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.25rem",
+                }}
+              >
+                <FormLabel id={`budget-expiration-${budget.id}`}>
+                  Expiration date
+                </FormLabel>
+                <input
+                  id={`budget-expiration-${budget.id}`}
+                  type="date"
+                  min={minimumExpiration}
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
+                />
+              </div>
+            )}
+            <Button
+              variant="primary"
+              disabled={patchMut.isPending || !canSave}
+              onClick={() => patchMut.mutate()}
+            >
               {patchMut.isPending ? "Saving…" : "Save"}
             </Button>
           </div>

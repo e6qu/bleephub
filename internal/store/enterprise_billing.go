@@ -34,6 +34,10 @@ func CloneBudget(b *OrgBudget) *OrgBudget {
 	}
 	copy := *b
 	copy.BudgetAlerting.AlertRecipients = append([]string(nil), b.BudgetAlerting.AlertRecipients...)
+	if b.ExpiresAt != nil {
+		expiresAt := *b.ExpiresAt
+		copy.ExpiresAt = &expiresAt
+	}
 	return &copy
 }
 

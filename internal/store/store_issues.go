@@ -16,6 +16,7 @@ type IssueLabel struct {
 	Description string
 	Color       string // hex without #, e.g. "d73a4a"
 	Default     bool
+	Archived    bool
 	CreatedAt   time.Time
 }
 
@@ -454,6 +455,31 @@ func (st *Store) GetLabelByName(repoID int, name string) *IssueLabel {
 	return nil
 }
 
+// NewLabelsAssignable reports whether every requested label not already on a
+// subject belongs to the repository and remains available for assignment.
+func (st *Store) NewLabelsAssignable(repoID int, current, requested []int) bool {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	return st.newLabelsAssignableLocked(repoID, current, requested)
+}
+
+func (st *Store) newLabelsAssignableLocked(repoID int, current, requested []int) bool {
+	existing := make(map[int]bool, len(current))
+	for _, id := range current {
+		existing[id] = true
+	}
+	for _, id := range requested {
+		if existing[id] {
+			continue
+		}
+		label := st.Labels[id]
+		if label == nil || label.RepoID != repoID || label.Archived {
+			return false
+		}
+	}
+	return true
+}
+
 // ListLabels returns a repository's labels in creation order.
 func (st *Store) ListLabels(repoID int) []*IssueLabel {
 	st.Mu.RLock()
@@ -648,7 +674,7 @@ func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs,
 	defer st.Mu.Unlock()
 
 	repo := st.Repos[repoID]
-	if repo == nil {
+	if repo == nil || !st.newLabelsAssignableLocked(repoID, nil, labelIDs) {
 		return nil
 	}
 
@@ -671,7 +697,7 @@ func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs,
 		State:       "OPEN",
 		AuthorID:    authorID,
 		AssigneeIDs: assigneeIDs,
-		LabelIDs:    labelIDs,
+		LabelIDs:    append([]int(nil), labelIDs...),
 		MilestoneID: milestoneID,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -915,6 +941,9 @@ func (st *Store) SetIssueLabels(repoID int, issueNumber int, labelIDs []int, act
 	if issue == nil {
 		return false
 	}
+	if !st.newLabelsAssignableLocked(repoID, issue.LabelIDs, labelIDs) {
+		return false
+	}
 	old := make(map[int]bool, len(issue.LabelIDs))
 	for _, lid := range issue.LabelIDs {
 		old[lid] = true
@@ -980,6 +1009,9 @@ func (st *Store) AddIssueLabels(repoKey string, issueNumber int, labelIDs []int)
 		return false
 	}
 	repo := st.ReposByName[repoKey]
+	if repo == nil || !st.newLabelsAssignableLocked(repo.ID, issue.LabelIDs, labelIDs) {
+		return false
+	}
 	batch := NewPersistBatch(st.Persist)
 	added := false
 	for _, lid := range labelIDs {

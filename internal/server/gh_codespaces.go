@@ -910,7 +910,7 @@ func (s *Server) startCodespace(cs *store.Codespace) error {
 		}
 		return fmt.Errorf("no container")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), store.CodespaceDockerLifecycleTimeout)
 	defer cancel()
 	if err := store.DockerStartContainer(ctx, cs.ContainerID); err != nil {
 		return err
@@ -927,7 +927,7 @@ func (s *Server) stopCodespace(cs *store.Codespace) error {
 		}
 		return fmt.Errorf("no container")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), store.CodespaceDockerLifecycleTimeout)
 	defer cancel()
 	if err := store.DockerStopContainer(ctx, cs.ContainerID); err != nil {
 		return err
