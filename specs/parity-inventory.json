@@ -9064,8 +9064,8 @@
         "id": "REST-202",
         "location": "secrets.go",
         "severity": "m",
-        "status": "open \u2014 the id-based form appears in none of the five vendored descriptions and go-github cites GHES 3.7 docs older than the oldest description carrying environment secrets, so serving it would fail the uncited-route gate. Closing it needs a vendored ghes-3.7 index or a shim carve-out",
-        "status_kind": "open"
+        "status": "fixed \u2014 GHES 3.7 officially documents the repository-id environment-secret routes go-github still builds, so its route list is now vendored as a sixth official description (update-github-openapi.sh + github-openapi-routes.txt.gz) and the five routes are cited against `ghes-3.7` in describedOutsideDotcom, a citation the route-allowlist gate verifies against the vendored index. bleephub serves them by rewriting the id-addressed path to the canonical owner/name handler, so an id-addressed request cannot acquire access the named form would refuse. The uncited-route `sdkCompatibilityRoutes` shim that previously carried them is removed",
+        "status_kind": "fixed"
       },
       {
         "category": "REST",
@@ -9501,8 +9501,7 @@
         },
         "REST": {
           "status": {
-            "fixed": 204,
-            "open": 1
+            "fixed": 205
           },
           "total": 205
         },
@@ -9534,8 +9533,7 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 990,
-        "open": 1
+        "fixed": 991
       },
       "total": 994
     }
@@ -21722,6 +21720,95 @@
             "POST /enterprise/live-migrations/{}/start"
           ],
           "represented_operations": 1092
+        },
+        "ghes-3.7": {
+          "documented_operations": 828,
+          "missing_operations": [
+            "DELETE /orgs/{}/teams/{}/discussions/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions/{}",
+            "DELETE /orgs/{}/teams/{}/discussions/{}/reactions/{}",
+            "DELETE /orgs/{}/teams/{}/projects/{}",
+            "DELETE /projects/columns/cards/{}",
+            "DELETE /projects/columns/{}",
+            "DELETE /projects/{}/collaborators/{}",
+            "DELETE /repos/{}/{}/tags/protection/{}",
+            "DELETE /scim/v2/Groups/{}",
+            "DELETE /scim/v2/Users/{}",
+            "DELETE /setup/api/settings/authorized-keys",
+            "DELETE /teams/{}/discussions/{}",
+            "DELETE /teams/{}/discussions/{}/comments/{}",
+            "DELETE /teams/{}/projects/{}",
+            "GET /orgs/{}/projects",
+            "GET /orgs/{}/teams/{}/discussions",
+            "GET /orgs/{}/teams/{}/discussions/{}",
+            "GET /orgs/{}/teams/{}/discussions/{}/comments",
+            "GET /orgs/{}/teams/{}/discussions/{}/comments/{}",
+            "GET /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions",
+            "GET /orgs/{}/teams/{}/discussions/{}/reactions",
+            "GET /orgs/{}/teams/{}/projects",
+            "GET /orgs/{}/teams/{}/projects/{}",
+            "GET /projects/columns/cards/{}",
+            "GET /projects/columns/{}",
+            "GET /projects/columns/{}/cards",
+            "GET /projects/{}/collaborators",
+            "GET /projects/{}/collaborators/{}/permission",
+            "GET /projects/{}/columns",
+            "GET /repos/{}/{}/tags/protection",
+            "GET /scim/v2/Groups",
+            "GET /scim/v2/Groups/{}",
+            "GET /scim/v2/Users",
+            "GET /scim/v2/Users/{}",
+            "GET /setup/api/configcheck",
+            "GET /setup/api/maintenance",
+            "GET /setup/api/settings",
+            "GET /setup/api/settings/authorized-keys",
+            "GET /teams/{}/discussions",
+            "GET /teams/{}/discussions/{}",
+            "GET /teams/{}/discussions/{}/comments",
+            "GET /teams/{}/discussions/{}/comments/{}",
+            "GET /teams/{}/discussions/{}/comments/{}/reactions",
+            "GET /teams/{}/discussions/{}/reactions",
+            "GET /teams/{}/projects",
+            "GET /teams/{}/projects/{}",
+            "GET /users/{}/projects",
+            "PATCH /orgs/{}/teams/{}/discussions/{}",
+            "PATCH /orgs/{}/teams/{}/discussions/{}/comments/{}",
+            "PATCH /projects/columns/cards/{}",
+            "PATCH /projects/columns/{}",
+            "PATCH /scim/v2/Groups/{}",
+            "PATCH /scim/v2/Users/{}",
+            "PATCH /teams/{}/discussions/{}",
+            "PATCH /teams/{}/discussions/{}/comments/{}",
+            "POST /orgs/{}/projects",
+            "POST /orgs/{}/teams/{}/discussions",
+            "POST /orgs/{}/teams/{}/discussions/{}/comments",
+            "POST /orgs/{}/teams/{}/discussions/{}/comments/{}/reactions",
+            "POST /orgs/{}/teams/{}/discussions/{}/reactions",
+            "POST /projects/columns/{}/cards",
+            "POST /projects/{}/columns",
+            "POST /repos/{}/{}/pages/deployment",
+            "POST /repos/{}/{}/tags/protection",
+            "POST /scim/v2/Groups",
+            "POST /scim/v2/Users",
+            "POST /setup/api/configure",
+            "POST /setup/api/maintenance",
+            "POST /setup/api/settings/authorized-keys",
+            "POST /setup/api/start",
+            "POST /setup/api/upgrade",
+            "POST /teams/{}/discussions",
+            "POST /teams/{}/discussions/{}/comments",
+            "POST /teams/{}/discussions/{}/comments/{}/reactions",
+            "POST /teams/{}/discussions/{}/reactions",
+            "POST /user/projects",
+            "PUT /orgs/{}/teams/{}/projects/{}",
+            "PUT /projects/{}/collaborators/{}",
+            "PUT /scim/v2/Groups/{}",
+            "PUT /scim/v2/Users/{}",
+            "PUT /setup/api/settings",
+            "PUT /teams/{}/projects/{}"
+          ],
+          "represented_operations": 745
         }
       },
       "dispatch_covered_operations": [

@@ -133,7 +133,7 @@ func loadGitHubOperations(t *testing.T) map[string]bool {
 // commit pinned in ../../third_party/github-openapi.VERSION. A route bleephub
 // serves that the dotcom description omits must be citable in one of
 // them; otherwise nothing establishes that GitHub has it at all.
-var officialDescriptions = []string{"ghec", "ghes-3.21", "ghes-3.13", "ghes-2.22", "api-2022"}
+var officialDescriptions = []string{"ghec", "ghes-3.21", "ghes-3.13", "ghes-3.7", "ghes-2.22", "api-2022"}
 
 const routeIndexFile = "../../third_party/github-openapi-routes.txt.gz"
 
@@ -526,6 +526,17 @@ var describedOutsideDotcom = map[string]string{
 	"DELETE /projects/{}":                                                              "ghes-3.13",
 	"POST /projects/columns/{}/moves":                                                  "ghes-3.13",
 	"POST /projects/columns/cards/{}/moves":                                            "ghes-3.13",
+
+	// Environment secrets addressed by repository id. GitHub keyed the
+	// environment-secret API by repo id through GHES 3.7, and go-github's only
+	// typed environment-secret methods still build these paths; the current
+	// dotcom description documents only the owner/name form. bleephub serves
+	// them by rewriting to the canonical owner/name handler (secrets.go).
+	"GET /repositories/{}/environments/{}/secrets":            "ghes-3.7",
+	"GET /repositories/{}/environments/{}/secrets/public-key": "ghes-3.7",
+	"GET /repositories/{}/environments/{}/secrets/{}":         "ghes-3.7",
+	"PUT /repositories/{}/environments/{}/secrets/{}":         "ghes-3.7",
+	"DELETE /repositories/{}/environments/{}/secrets/{}":      "ghes-3.7",
 }
 
 // uncitedRoutes must stay empty. A public /api/v3 operation without an
@@ -542,29 +553,6 @@ const maxUncitedRoutes = 0
 // suite rather than weakening the REST coverage gate.
 var runnerProtocolRoutes = map[string]string{
 	"POST /actions/runner-registration": "official actions/runner registration handshake",
-}
-
-// sdkCompatibilityRoutes are real GitHub operations that no vendored
-// description still documents, but which an official SDK builds — so omitting
-// them means an unmodified client cannot perform the operation at all.
-//
-// This is deliberately a narrower door than describedOutsideDotcom, which
-// requires a citation into a vendored description. Entry here requires
-// something stricter in a different way: a named official client that
-// constructs the path, and an operation in the SDK conformance matrix
-// (test/conformance) that fails without the route and passes with it. That
-// keeps the gate meaningful — a route cannot be added because someone thought
-// it looked plausible, only because a real client demonstrably needs it.
-//
-// Each entry states the client and the method, so a future reader can retire
-// it when the SDK moves on or a description starts carrying the operation
-// again.
-var sdkCompatibilityRoutes = map[string]string{
-	"GET /repositories/{}/environments/{}/secrets":            "go-github Actions.ListEnvSecrets",
-	"GET /repositories/{}/environments/{}/secrets/public-key": "go-github Actions.GetEnvPublicKey",
-	"GET /repositories/{}/environments/{}/secrets/{}":         "go-github Actions.GetEnvSecret",
-	"PUT /repositories/{}/environments/{}/secrets/{}":         "go-github Actions.CreateOrUpdateEnvSecret",
-	"DELETE /repositories/{}/environments/{}/secrets/{}":      "go-github Actions.DeleteEnvSecret",
 }
 
 // TestRouteAllowlistCitationsHold checks the two ledgers against the
@@ -680,9 +668,6 @@ func TestRegisteredAPIv3RoutesExistInGitHubSpec(t *testing.T) {
 			continue
 		}
 		if _, ok := runnerProtocolRoutes[norm]; ok {
-			continue
-		}
-		if _, ok := sdkCompatibilityRoutes[norm]; ok {
 			continue
 		}
 		if _, ok := dispatchRoutes[norm]; ok {
