@@ -9,20 +9,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// An app credential answers two questions, not one. "Is this installation on
-// this repository" is reachability; "was this app granted this kind of act" is
-// entitlement. A gate that asks only the first admits an app holding nothing
-// but the metadata:read every installation gets for free to everything the
-// installation can reach — repository deletion through the GraphQL lane, and a
-// clone or a push of a private repository over git.
+// An app credential answers reachability (is this installation on this repo) and entitlement (was the app granted this kind of act) separately; a gate that checks only reachability lets a metadata-only installation delete repos over GraphQL or clone/push a private repo over git.
 //
-// Every case below is paired. The refusal is the bug; the control beside it is
-// an app that *was* granted the permission and must still be served, because
-// over-blocking has been the other recurring regression on this surface.
+// Every case is paired: the refusal is the bug, and the entitled control beside it guards against over-blocking, the other recurring regression here.
 
-// entitlementFixture is one repository owned by one account, with an app
-// installed on that account. Each test mints its own tokens from it so a token
-// carries exactly the grant the case is about.
+// entitlementFixture is one repository and one account with an app installed on it; each test mints tokens carrying exactly the grant its case is about.
 type entitlementFixture struct {
 	store *store.Store
 	owner *store.User
@@ -31,9 +22,7 @@ type entitlementFixture struct {
 	inst  *store.Installation
 }
 
-// metadataOnly is the grant every GitHub App installation carries whether it
-// asked for it or not, and is therefore the floor an entitlement check has to
-// refuse at.
+// metadataOnly is the grant every GitHub App installation carries unasked, so it is the floor an entitlement check must refuse at.
 var metadataOnly = map[string]string{"metadata": "read"}
 
 func (s *isolatedServer) newEntitlementFixture(t *testing.T, tag string, private bool) *entitlementFixture {
@@ -62,9 +51,7 @@ func (s *isolatedServer) newEntitlementFixture(t *testing.T, tag string, private
 	if repo == nil {
 		t.Fatalf("fixture %s: could not create the repository", tag)
 	}
-	// The app is registered with every permission the cases draw on. What each
-	// case varies is the *token*, so a refusal is never an artefact of the app
-	// being unable to ask for the permission in the first place.
+	// The app holds every permission the cases draw on; each case varies only the token, so a refusal is never an artefact of the app being unable to request the grant.
 	granted := map[string]string{
 		"metadata":       "read",
 		"administration": "write",
@@ -82,8 +69,7 @@ func (s *isolatedServer) newEntitlementFixture(t *testing.T, tag string, private
 	return &entitlementFixture{store: s.store, owner: owner, repo: repo, app: app, inst: inst}
 }
 
-// installationToken mints a ghs_ carrying exactly perms, over every repository
-// the installation covers.
+// installationToken mints a ghs_ carrying exactly perms over every repository the installation covers.
 func (f *entitlementFixture) installationToken(t *testing.T, perms map[string]string) string {
 	t.Helper()
 	tok := f.store.CreateInstallationToken(f.inst.ID, f.app.ID, perms, nil)
@@ -99,9 +85,7 @@ func (s *isolatedServer) entitlementGQLErrors(t *testing.T, token, doc string, i
 	return gqlAuthzErrors(env)
 }
 
-// TestGraphQLAdminMutationNeedsTheAdministrationGrant is the proof case: a
-// metadata-only installation token deleted a repository outright, because the
-// admin arm asked only whether the installation reached it.
+// TestGraphQLAdminMutationNeedsTheAdministrationGrant is the proof case: a metadata-only token deleted a repository because the admin arm asked only whether the installation reached it.
 func TestGraphQLAdminMutationNeedsTheAdministrationGrant(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -126,9 +110,7 @@ func TestGraphQLAdminMutationNeedsTheAdministrationGrant(t *testing.T) {
 	}
 }
 
-// TestGraphQLPushMutationNeedsTheIssuesGrant is the same defect one level down,
-// and it is why the scope belongs on the policy row: an app entitled to issues
-// must be served even though it holds no contents grant at all.
+// TestGraphQLPushMutationNeedsTheIssuesGrant is the same defect one level down: an app entitled to issues must be served even though it holds no contents grant.
 func TestGraphQLPushMutationNeedsTheIssuesGrant(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -157,11 +139,7 @@ func TestGraphQLPushMutationNeedsTheIssuesGrant(t *testing.T) {
 	}
 }
 
-// TestAuthorExemptionDoesNotBypassTheCredential pins the ordering. Authorship
-// says something about the bearer and nothing about the app speaking for them,
-// so it may relax the standing the bearer needs on the repository and must not
-// relax the grant. Returning early above the credential check let the author of
-// an issue retitle it through an app installed nowhere.
+// TestAuthorExemptionDoesNotBypassTheCredential pins that authorship may relax the bearer's repository standing but not the app's grant; returning early above the credential check let an issue's author retitle it through an app installed nowhere.
 func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -190,8 +168,7 @@ func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 		t.Fatal("could not seed the authored issue")
 	}
 
-	// An app with no installation at all: the bearer wrote the issue and holds
-	// no push on the repository.
+	// An app with no installation at all; the bearer wrote the issue and holds no push on the repository.
 	strangerApp := st.CreateApp(author.ID, "Entitlement Author Probe", "", metadataOnly, nil)
 	if strangerApp == nil {
 		t.Fatal("could not register the uninstalled app")
@@ -207,8 +184,7 @@ func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 		t.Errorf("issue title = %q; the author exemption bypassed the credential", got.Title)
 	}
 
-	// The control: the same author acting as themselves, with no app in the
-	// way, still edits their own issue without holding push.
+	// The control: the same author acting as themselves still edits their own issue without holding push.
 	pat := st.CreateToken(author.ID, "repo")
 	if pat == nil {
 		t.Fatal("could not mint the author's token")
@@ -236,10 +212,7 @@ func (s *isolatedServer) entitlementGitStatus(t *testing.T, method, url, token s
 	return resp.StatusCode
 }
 
-// TestGitTransportsNeedTheContentsGrant covers the other proven consequence: a
-// metadata-only installation token cloned and pushed a private repository,
-// because the git routes sit outside the /api middleware and had nothing but
-// reachability to go on.
+// TestGitTransportsNeedTheContentsGrant covers the other proven consequence: a metadata-only token cloned and pushed a private repo because the git routes sit outside the /api middleware and had only reachability to go on.
 func TestGitTransportsNeedTheContentsGrant(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -271,10 +244,7 @@ func TestGitTransportsNeedTheContentsGrant(t *testing.T) {
 	}
 }
 
-// TestOrgMemberListingIntersectsTheCredential covers the self-entitlement
-// class: the handler read the bearer's own membership row directly, so a
-// user-to-server token of an app installed nowhere saw the private member list
-// its own installation token could not.
+// TestOrgMemberListingIntersectsTheCredential covers the self-entitlement class: the handler read the bearer's own membership row directly, so a user-to-server token of an app installed nowhere saw a private member list its installation token could not.
 func TestOrgMemberListingIntersectsTheCredential(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -320,8 +290,7 @@ func TestOrgMemberListingIntersectsTheCredential(t *testing.T) {
 		return false
 	}
 
-	// admin is an active member of the org, so the private list is theirs to
-	// see — as themselves.
+	// admin is an active member, so the private list is theirs to see as themselves.
 	if !contains(listing(defaultToken), member.Login) {
 		t.Fatal("an active member was refused the org's own member list")
 	}

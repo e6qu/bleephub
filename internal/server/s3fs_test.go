@@ -32,26 +32,15 @@ var (
 	s3ServerErr       error
 )
 
-// s3TestOwnerLabel marks the MinIO container with the process id of the test
-// binary that started it.
-//
-// The container is removed after m.Run() returns, which covers a suite that
-// finishes. It does not cover a suite that does not: the go test timeout panics
-// the binary, and an interrupt or a kill ends it outright, so the removal never
-// runs. The container is started with --detach --rm, which self-removes only
-// once the container stops — and nothing stops it — so an abandoned MinIO runs
-// until the host is rebooted, holding its port and its volume.
-//
-// Recording the owner lets a later run tell an abandoned container from one a
-// concurrently running suite is still using: several suites run at once on a
-// developer's machine, so "remove every container carrying this label" would
-// pull the server out from under a live run.
+// s3TestOwnerLabel stamps the MinIO container with its starting test binary's
+// pid. A killed or timed-out suite never runs the removal, so recording the
+// owner lets a later run reap an abandoned container without pulling the server
+// out from under a concurrently running suite.
 const s3TestOwnerLabel = "bleephub-test-s3-owner"
 
 // s3ServerRunArgs is the docker argument vector that starts the shared MinIO
-// server. It exists as its own function so the owner label the reaper selects
-// on can be asserted without depending on a running container: the shared
-// server's lifetime is not this test package's to guarantee.
+// server, split out so the reaper's owner label can be asserted without a
+// running container.
 func s3ServerRunArgs(addr string) []string {
 	return []string{
 		"run", "--detach", "--rm",
@@ -154,10 +143,8 @@ func newObjectByteStoreForTest(t *testing.T) (*gitstore.S3FS, store.ActionsByteS
 	return objectFS, &store.S3ActionsByteStore{Fs: objectFS}
 }
 
-// deriveS3FSForTest builds a sibling S3FS handle on the shared MinIO server.
-// The type's unexported fields moved to internal/gitstore, so tests derive a
-// fresh handle from the shared endpoint instead of copying fields into a
-// composite literal.
+// deriveS3FSForTest builds a sibling S3FS handle from the shared endpoint,
+// since S3FS's unexported fields (now in internal/gitstore) rule out a literal.
 func deriveS3FSForTest(t *testing.T, bucket, prefix string) *gitstore.S3FS {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

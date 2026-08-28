@@ -18,8 +18,6 @@ import (
 // two report the same history, so a test that seeded the store directly would
 // not prove the recording half.
 
-// timelineBody performs a request and returns its body, failing on an
-// unexpected status.
 func timelineBody(t *testing.T, resp *http.Response, want int) []byte {
 	t.Helper()
 	defer resp.Body.Close()
@@ -33,8 +31,6 @@ func timelineBody(t *testing.T, resp *http.Response, want int) []byte {
 	return raw
 }
 
-// timelineTypenames runs a timelineItems query and returns the __typename of
-// each node, in order.
 func timelineTypenames(t *testing.T, nodes []interface{}) []string {
 	t.Helper()
 	out := make([]string, 0, len(nodes))
@@ -46,8 +42,6 @@ func timelineTypenames(t *testing.T, nodes []interface{}) []string {
 	return out
 }
 
-// timelineNodes extracts data.repository.issueOrPullRequest.timelineItems.nodes
-// from a GraphQL envelope, failing on any errors[] entry.
 func timelineNodes(t *testing.T, env map[string]interface{}) (map[string]interface{}, []interface{}) {
 	t.Helper()
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {

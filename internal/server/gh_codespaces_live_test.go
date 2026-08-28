@@ -21,7 +21,6 @@ func TestLiveCodespaces_UserAndRepo(t *testing.T) {
 		t.Fatalf("init repo: %v", err)
 	}
 
-	// Create via user endpoint.
 	body, _ := json.Marshal(map[string]any{
 		"repository_id": repo.ID,
 		"machine":       "basicLinux32",
@@ -48,7 +47,6 @@ func TestLiveCodespaces_UserAndRepo(t *testing.T) {
 		s.cleanupCodespaceContainer(t, userName)
 	})
 
-	// List user codespaces.
 	resp = s.authedGet(t, "/api/v3/user/codespaces")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -58,7 +56,6 @@ func TestLiveCodespaces_UserAndRepo(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&map[string]any{})
 	resp.Body.Close()
 
-	// Get user codespace.
 	resp = s.authedGet(t, "/api/v3/user/codespaces/"+userName)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -67,7 +64,6 @@ func TestLiveCodespaces_UserAndRepo(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Create via repo endpoint.
 	body, _ = json.Marshal(map[string]any{"machine": "basicLinux32"})
 	resp, err = s.authedPost(fmt.Sprintf("/api/v3/repos/%s/codespaces", repo.FullName), "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -91,7 +87,6 @@ func TestLiveCodespaces_UserAndRepo(t *testing.T) {
 		s.cleanupCodespaceContainer(t, repoName)
 	})
 
-	// List repo codespaces.
 	resp = s.authedGet(t, fmt.Sprintf("/api/v3/repos/%s/codespaces", repo.FullName))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -101,7 +96,6 @@ func TestLiveCodespaces_UserAndRepo(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&map[string]any{})
 	resp.Body.Close()
 
-	// Machines list.
 	resp = s.authedGet(t, fmt.Sprintf("/api/v3/repos/%s/codespaces/machines", repo.FullName))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -121,7 +115,6 @@ func TestLiveCodespaces_Secrets(t *testing.T) {
 		t.Fatalf("init repo: %v", err)
 	}
 
-	// Public key.
 	resp := s.authedGet(t, "/api/v3/user/codespaces/secrets/public-key")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -139,7 +132,6 @@ func TestLiveCodespaces_Secrets(t *testing.T) {
 	enc, _, _ := s.store.SealSecretValue("live-secret")
 	body, _ := json.Marshal(map[string]any{"encrypted_value": enc, "key_id": pk.KeyID})
 
-	// User secret (PUT).
 	resp, err := s.authedPut("/api/v3/user/codespaces/secrets/LIVE_SECRET", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("put user secret: %v", err)
@@ -148,7 +140,6 @@ func TestLiveCodespaces_Secrets(t *testing.T) {
 	// with an empty object; 204 is the reply to a PUT that replaced one.
 	requireSecretCreated(t, resp, "put user secret")
 
-	// Repo secret (PUT).
 	resp, err = s.authedPut(fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets/LIVE_REPO_SECRET", repo.FullName), "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("put repo secret: %v", err)

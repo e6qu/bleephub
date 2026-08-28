@@ -10,11 +10,10 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
-// Everything in this file drives the real git binary at a running bleephub, so
-// the protocol claims made in git_protocol_test.go are checked against the
-// program that has to believe them. The same matrix runs over smart HTTP and
-// over SSH, because the two transports share one upload-pack implementation and
-// the point of these tests is that they cannot drift apart.
+// Drive the real git binary against a running bleephub, checking the protocol
+// claims of git_protocol_test.go against the program that must believe them.
+// The same matrix runs over smart HTTP and SSH so the two transports, which
+// share one upload-pack implementation, cannot drift apart.
 
 // gitProtocolTagName is the annotated tag seedGitProtocolRepo puts on the tip,
 // so include-tag has something to volunteer.

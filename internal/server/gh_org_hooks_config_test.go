@@ -68,7 +68,6 @@ func TestOrgWebhookConfig_GetAndPatch(t *testing.T) {
 		t.Fatalf("hook resource config not updated: %v", hook)
 	}
 
-	// Unknown hook.
 	resp = srv.get(t, "/api/v3/orgs/hook-config-org/hooks/999999/config", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {

@@ -455,7 +455,6 @@ func TestRepositorySecretWriteRefusesAStranger(t *testing.T) {
 	}
 	payload, _ := json.Marshal(map[string]string{"encrypted_value": enc, "key_id": keyID})
 
-	// Through the route, with the stranger's own credential.
 	req := httptest.NewRequest("PUT", "/api/v3/repos/"+repo.FullName+"/actions/secrets/PROD", strings.NewReader(string(payload)))
 	req.Header.Set("Authorization", "token "+strangerToken)
 	req.Header.Set("Content-Type", "application/json")

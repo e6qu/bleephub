@@ -7,8 +7,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// timelineEvents fetches an issue/PR timeline and returns the set of event
-// types present.
 func timelineEventTypes(t *testing.T, s *isolatedServer, repo string, number int) map[string]bool {
 	t.Helper()
 	resp := s.get(t, "/api/v3/repos/admin/"+repo+"/issues/"+itoa(number)+"/timeline", defaultToken)

@@ -1,10 +1,8 @@
 package bleephub
 
-// The enterprise policies that used to be stored and never consulted, each
-// exercised in BOTH directions: the governed operation succeeds while the
-// policy permits it and is refused once the policy forbids it. A refusal-only
-// test would pass against a permanently broken feature, so every case here
-// pins the permitted side too.
+// Each formerly-inert enterprise policy is exercised in BOTH directions: a
+// refusal-only test would pass against a permanently broken feature, so every
+// case pins the permitted side, not just the refused one.
 
 import (
 	"bytes"

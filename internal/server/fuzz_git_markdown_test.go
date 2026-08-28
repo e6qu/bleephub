@@ -36,11 +36,9 @@ func FuzzGitRefUpdate(f *testing.F) {
 	f.Add("heads/main", "0000000000000000000000000000000000000000", true, false)
 
 	f.Fuzz(func(t *testing.T, ref, sha string, force, useHead bool) {
-		// This target only exercises the Git Data REST surface. Building the
-		// GraphQL schema and every unrelated route for every mutation adds
-		// enough allocation pressure to leave workers in GC when a short fuzz
-		// burst ends. Keep the same auth middleware and production handler,
-		// but register only the route family under test.
+		// Register only the Git Data route family: building the whole GraphQL
+		// schema and every route per mutation leaves workers in GC when a short
+		// fuzz burst ends. Same auth middleware and production handler.
 		s := gitDataTestServer(t)
 		admin := s.store.UsersByLogin["admin"]
 		const name = "ref-fuzz"
@@ -104,11 +102,9 @@ func FuzzContentPut(f *testing.F) {
 	f.Add("/abs", b64("x"), "main", "msg")
 
 	f.Fuzz(func(t *testing.T, path, content, branch, message string) {
-		// This target exercises only repository contents writes. Building the
-		// GraphQL schema and every unrelated route for each mutation can leave
-		// all fuzz workers in setup when the campaign budget expires, which Go
-		// reports as a target failure with no reproducer. Keep the production
-		// repository routes and auth middleware while bounding per-input setup.
+		// Register only the repository-contents routes: building the whole
+		// GraphQL schema per mutation can leave workers in setup at budget
+		// expiry, which Go reports as a target failure with no reproducer.
 		s := gitDataTestServer(t)
 		admin := s.store.UsersByLogin["admin"]
 		const name = "content-fuzz"

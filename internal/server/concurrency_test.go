@@ -63,7 +63,6 @@ func TestConcurrencyCancelInProgress(t *testing.T) {
 	s := newTestServer()
 	s.metrics = NewMetrics()
 
-	// Submit first workflow with concurrency group
 	wf1 := &store.WorkflowDef{
 		Name:        "wf1",
 		Concurrency: &store.ConcurrencyDef{Group: "deploy", CancelInProgress: true},
@@ -79,7 +78,6 @@ func TestConcurrencyCancelInProgress(t *testing.T) {
 		t.Fatalf("wf1 status = %q, want running", workflow1.Status)
 	}
 
-	// Submit second workflow in same group with cancel-in-progress
 	wf2 := &store.WorkflowDef{
 		Name:        "wf2",
 		Concurrency: &store.ConcurrencyDef{Group: "deploy", CancelInProgress: true},
@@ -92,12 +90,10 @@ func TestConcurrencyCancelInProgress(t *testing.T) {
 		t.Fatalf("submit wf2: %v", err)
 	}
 
-	// First workflow should be cancelled
 	if workflow1.Status != "completed" || workflow1.Result != "cancelled" {
 		t.Errorf("wf1 = %s/%s, want completed/cancelled", workflow1.Status, workflow1.Result)
 	}
 
-	// Second workflow should be running
 	if workflow2.Status != "running" {
 		t.Errorf("wf2 status = %q, want running", workflow2.Status)
 	}
@@ -107,7 +103,6 @@ func TestConcurrencyGroupIsolation(t *testing.T) {
 	s := newTestServer()
 	s.metrics = NewMetrics()
 
-	// Submit workflow in group A
 	wf1 := &store.WorkflowDef{
 		Name:        "wf-a",
 		Concurrency: &store.ConcurrencyDef{Group: "group-a", CancelInProgress: true},
@@ -120,7 +115,7 @@ func TestConcurrencyGroupIsolation(t *testing.T) {
 		t.Fatalf("submit wf-a: %v", err)
 	}
 
-	// Submit workflow in group B — should NOT affect group A
+	// A workflow in group B must not affect group A.
 	wf2 := &store.WorkflowDef{
 		Name:        "wf-b",
 		Concurrency: &store.ConcurrencyDef{Group: "group-b", CancelInProgress: true},
@@ -133,7 +128,6 @@ func TestConcurrencyGroupIsolation(t *testing.T) {
 		t.Fatalf("submit wf-b: %v", err)
 	}
 
-	// First workflow should still be running
 	if workflow1.Status != "running" {
 		t.Errorf("wf-a status = %q, want running (different group)", workflow1.Status)
 	}
@@ -143,7 +137,6 @@ func TestConcurrencyQueueWhenNotCancel(t *testing.T) {
 	s := newTestServer()
 	s.metrics = NewMetrics()
 
-	// Submit first workflow
 	wf1 := &store.WorkflowDef{
 		Name:        "wf1",
 		Concurrency: &store.ConcurrencyDef{Group: "serial", CancelInProgress: false},
@@ -157,7 +150,6 @@ func TestConcurrencyQueueWhenNotCancel(t *testing.T) {
 	}
 	workflow1.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 
-	// Submit second workflow in same group (no cancel-in-progress)
 	wf2 := &store.WorkflowDef{
 		Name:        "wf2",
 		Concurrency: &store.ConcurrencyDef{Group: "serial", CancelInProgress: false},
@@ -171,21 +163,17 @@ func TestConcurrencyQueueWhenNotCancel(t *testing.T) {
 		t.Fatalf("submit wf2: %v", err)
 	}
 
-	// First workflow still running
 	if workflow1.Status != "running" {
 		t.Errorf("wf1 = %q, want running", workflow1.Status)
 	}
-	// Second workflow should be pending
 	if workflow2.Status != "pending_concurrency" {
 		t.Errorf("wf2 = %q, want pending_concurrency", workflow2.Status)
 	}
 
-	// Complete first workflow
 	for _, j := range workflow1.Jobs {
 		s.actions.OnJobCompleted(context.Background(), j.JobID, "Succeeded")
 	}
 
-	// Second workflow should now be running
 	if workflow2.Status != "running" {
 		t.Errorf("wf2 after wf1 done = %q, want running", workflow2.Status)
 	}

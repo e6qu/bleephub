@@ -20,8 +20,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
-// createReadsBranch creates a branch pointing at the current main head
-// through the git refs API and returns the main head SHA.
 func (s *isolatedServer) createReadsBranch(t *testing.T, repo, branch string) string {
 	t.Helper()
 	resp := s.get(t, "/api/v3/repos/admin/"+repo+"/git/ref/heads/main", defaultToken)
@@ -90,7 +88,6 @@ func TestGetSingleCommit(t *testing.T) {
 		t.Fatalf("expected commit author resolved to admin, got %v", out["author"])
 	}
 
-	// Lookup by full SHA works identically.
 	resp = s.get(t, "/api/v3/repos/admin/reads-commit/commits/"+sha, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -380,8 +377,8 @@ func TestRepoTarballAndZipball(t *testing.T) {
 	shortSHA := head["sha"].(string)[:7]
 	topDir := "admin-reads-archive-" + shortSHA + "/"
 
-	// tarball: 302 to the codeload-style legacy URL, which streams a real
-	// tar.gz with GitHub's top-level directory convention.
+	// tarball: 302 to the legacy codeload URL, which streams a real tar.gz with
+	// GitHub's top-level directory convention.
 	resp := s.noRedirectGet(t, "/api/v3/repos/admin/reads-archive/tarball/main")
 	resp.Body.Close()
 	if resp.StatusCode != 302 {
@@ -425,7 +422,6 @@ func TestRepoTarballAndZipball(t *testing.T) {
 		t.Fatalf("expected README.md in tarball, got %v", mapKeys(tarFiles))
 	}
 
-	// zipball, same contract.
 	resp = s.noRedirectGet(t, "/api/v3/repos/admin/reads-archive/zipball/main")
 	resp.Body.Close()
 	if resp.StatusCode != 302 {
@@ -484,8 +480,8 @@ func mapKeys(m map[string]string) []string {
 	return out
 }
 
-// pushReadsCommit pushes one root commit to the repo over git smart HTTP with
-// the real go-git client and returns the commit hash.
+// pushReadsCommit pushes one root commit over git smart HTTP with the real
+// go-git client, exercising the actual push path.
 func (s *isolatedServer) pushReadsCommit(t *testing.T, repoName string) plumbing.Hash {
 	t.Helper()
 	storage := memory.NewStorage()
@@ -553,7 +549,6 @@ func TestRepoActivityAndEvents(t *testing.T) {
 		t.Fatalf("expected pusher admin, got %v", act["actor"])
 	}
 
-	// Filters narrow the real records.
 	for query, want := range map[string]int{
 		"?activity_type=branch_creation": 1,
 		"?activity_type=force_push":      0,
@@ -869,8 +864,7 @@ func TestPullReviewCommentsAndReactionDelete(t *testing.T) {
 		t.Fatalf("comments of unknown review: expected 404, got %d", resp.StatusCode)
 	}
 
-	// React to the review comment, then delete the reaction through the
-	// four-segment path.
+	// Delete the reaction through the four-segment pulls/comments path.
 	resp = s.post(t, fmt.Sprintf("/api/v3/repos/admin/reads-prreview/pulls/comments/%d/reactions", commentID), defaultToken,
 		map[string]interface{}{"content": "+1"})
 	if resp.StatusCode != 201 {

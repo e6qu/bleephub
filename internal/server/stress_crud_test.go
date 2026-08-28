@@ -13,10 +13,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// stressDuration returns how long the storm harnesses run. The default keeps
-// a plain `go test` bounded while still exercising real concurrency every
-// run; BLEEPHUB_STRESS_DURATION (a Go duration) scales it up for the heavy
-// soak. There is no skip path — a meaningful storm always executes.
+// stressDuration bounds a plain `go test` run; BLEEPHUB_STRESS_DURATION scales
+// it up for the heavy soak. There is no skip path — a storm always executes.
 func stressDuration(def time.Duration) time.Duration {
 	if v := os.Getenv("BLEEPHUB_STRESS_DURATION"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
@@ -36,16 +34,12 @@ func stressWorkers(def int) int {
 	return def
 }
 
-// defaultStressSeed is used when BLEEPHUB_STRESS_SEED is unset. It is a fixed
-// constant, not the wall clock: the test-clock guard forbids reading the wall
-// clock in tests, and a fixed default makes every run reproducible by
-// construction. Override the env var to explore a different schedule.
+// defaultStressSeed is fixed, not the wall clock, because the test-clock guard
+// forbids reading the wall clock and a constant keeps every run reproducible.
 const defaultStressSeed = 0x5715c0de
 
-// stressSeed returns the base RNG seed for the storm and always logs it.
-// BLEEPHUB_STRESS_SEED pins the seed so a failing run can be replayed
-// deterministically. Per-worker streams are offset from this base, so logging
-// the base seed is enough to reproduce the whole run.
+// stressSeed returns the storm's base RNG seed and always logs it so a failing
+// run can be replayed; per-worker streams are offset from it. BLEEPHUB_STRESS_SEED pins it.
 func stressSeed(t *testing.T) int64 {
 	if v := os.Getenv("BLEEPHUB_STRESS_SEED"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
@@ -151,55 +145,55 @@ func TestStressCRUDStorm(t *testing.T) {
 				issueNo := pr.issues[rng.Intn(len(pr.issues))]
 				u := uniq.Add(1)
 				switch rng.Intn(18) {
-				case 0: // create a fresh repo (unique)
+				case 0:
 					do("POST", "/api/v3/user/repos", map[string]interface{}{"name": fmt.Sprintf("stress-r-%d", u)})
-				case 1: // read a pool repo
+				case 1:
 					do("GET", repoPath, nil)
-				case 2: // create issue on a pool repo
+				case 2:
 					do("POST", repoPath+"/issues", map[string]interface{}{"title": fmt.Sprintf("issue %d", u), "body": "storm"})
-				case 3: // list issues
+				case 3:
 					do("GET", repoPath+"/issues?state=all", nil)
-				case 4: // patch a seed issue
+				case 4:
 					state := "open"
 					if rng.Intn(2) == 0 {
 						state = "closed"
 					}
 					do("PATCH", fmt.Sprintf("%s/issues/%d", repoPath, issueNo),
 						map[string]interface{}{"title": fmt.Sprintf("patched %d", u), "state": state})
-				case 5: // create unique label
+				case 5:
 					do("POST", repoPath+"/labels", map[string]interface{}{"name": fmt.Sprintf("lbl-%d", u), "color": "ededed"})
-				case 6: // list labels
+				case 6:
 					do("GET", repoPath+"/labels", nil)
-				case 7: // create milestone
+				case 7:
 					do("POST", repoPath+"/milestones", map[string]interface{}{"title": fmt.Sprintf("ms-%d", u)})
-				case 8: // comment on a seed issue
+				case 8:
 					do("POST", fmt.Sprintf("%s/issues/%d/comments", repoPath, issueNo),
 						map[string]interface{}{"body": fmt.Sprintf("comment %d", u)})
-				case 9: // idempotent reaction on a seed issue
+				case 9:
 					do("POST", fmt.Sprintf("%s/issues/%d/reactions", repoPath, issueNo),
 						map[string]interface{}{"content": reactions[rng.Intn(len(reactions))]})
-				case 10: // search issues
+				case 10:
 					do("GET", "/api/v3/search/issues?q=storm", nil)
-				case 11: // notifications
+				case 11:
 					do("GET", "/api/v3/notifications?all=true", nil)
-				case 12: // create org (unique)
+				case 12:
 					do("POST", "/internal/orgs", map[string]interface{}{"login": fmt.Sprintf("stress-org-%d", u), "name": "S"})
-				case 13: // list repo collaborators
+				case 13:
 					do("GET", repoPath+"/collaborators", nil)
-				case 14: // add a custom-property-ish repo topic update
+				case 14:
 					do("PUT", repoPath+"/topics", map[string]interface{}{"names": []string{"a", fmt.Sprintf("t%d", u%5)}})
-				case 15: // create a projects-v2 draft item via GraphQL is heavy; use repo read via GraphQL
+				case 15: // a projects-v2 draft mutation is heavy; do a GraphQL repo read instead
 					do("POST", "/api/graphql", map[string]interface{}{
 						"query":     "query($o:String!,$n:String!){repository(owner:$o,name:$n){name issues(first:5){totalCount}}}",
 						"variables": map[string]interface{}{"o": pr.owner, "n": pr.name},
 					})
-				case 16: // lock/unlock a seed issue
+				case 16:
 					if rng.Intn(2) == 0 {
 						do("PUT", fmt.Sprintf("%s/issues/%d/lock", repoPath, issueNo), map[string]interface{}{"lock_reason": "resolved"})
 					} else {
 						do("DELETE", fmt.Sprintf("%s/issues/%d/lock", repoPath, issueNo), nil)
 					}
-				case 17: // milestone list + assignees read
+				case 17:
 					do("GET", repoPath+"/milestones?state=all", nil)
 				}
 			}

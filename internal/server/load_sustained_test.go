@@ -113,7 +113,6 @@ func TestLoadSustained(t *testing.T) {
 	baseHeap := base.HeapInuse
 	baseGoros := runtime.NumGoroutine()
 
-	// Sample HeapInuse + goroutines across the steady-state window.
 	type sample struct {
 		heap  uint64
 		goros int

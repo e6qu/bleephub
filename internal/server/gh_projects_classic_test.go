@@ -37,7 +37,6 @@ func TestProjectsClassic_ProjectCRUD(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	s.store.CreateRepo(admin, "proj-classic-crud", "", false)
 
-	// Create
 	resp := s.post(t, "/api/v3/repos/admin/proj-classic-crud/projects", defaultToken, map[string]any{"name": "Roadmap", "body": "Q3 plans"})
 	if resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
@@ -50,7 +49,6 @@ func TestProjectsClassic_ProjectCRUD(t *testing.T) {
 	}
 	projID := int(created["id"].(float64))
 
-	// List
 	resp = s.get(t, "/api/v3/repos/admin/proj-classic-crud/projects", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -66,7 +64,6 @@ func TestProjectsClassic_ProjectCRUD(t *testing.T) {
 		t.Fatalf("expected 1 project, got %d", len(list))
 	}
 
-	// Get
 	resp = s.get(t, "/api/v3/projects/"+itoa(projID), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -78,7 +75,6 @@ func TestProjectsClassic_ProjectCRUD(t *testing.T) {
 		t.Fatalf("expected body Q3 plans, got %v", got["body"])
 	}
 
-	// Update
 	resp = s.patch(t, "/api/v3/projects/"+itoa(projID), defaultToken, map[string]any{"name": "Roadmap 2", "state": "closed"})
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -90,7 +86,6 @@ func TestProjectsClassic_ProjectCRUD(t *testing.T) {
 		t.Fatalf("unexpected updated project: %v", updated)
 	}
 
-	// Delete
 	resp = s.delete(t, "/api/v3/projects/"+itoa(projID), defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -99,7 +94,6 @@ func TestProjectsClassic_ProjectCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Get 404
 	resp = s.get(t, "/api/v3/projects/"+itoa(projID), defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 after delete, got %d", resp.StatusCode)
@@ -114,11 +108,9 @@ func TestProjectsClassic_ColumnCRUDAndMove(t *testing.T) {
 	repo := s.store.CreateRepo(admin, "proj-classic-col", "", false)
 	proj := s.store.CreateProjectClassic(repo, admin.ID, "Board", "", "open")
 
-	// Create columns
 	c1 := s.createColumn(t, proj.ID, "Todo")
 	c2 := s.createColumn(t, proj.ID, "Done")
 
-	// List
 	resp := s.get(t, "/api/v3/projects/"+itoa(proj.ID)+"/columns", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -134,7 +126,6 @@ func TestProjectsClassic_ColumnCRUDAndMove(t *testing.T) {
 		t.Fatalf("expected 2 columns, got %d", len(cols))
 	}
 
-	// Get column
 	resp = s.get(t, "/api/v3/projects/columns/"+itoa(c1), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -146,7 +137,6 @@ func TestProjectsClassic_ColumnCRUDAndMove(t *testing.T) {
 		t.Fatalf("expected Todo, got %v", col["name"])
 	}
 
-	// Update
 	resp = s.patch(t, "/api/v3/projects/columns/"+itoa(c1), defaultToken, map[string]any{"name": "Backlog"})
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -158,7 +148,6 @@ func TestProjectsClassic_ColumnCRUDAndMove(t *testing.T) {
 		t.Fatalf("expected Backlog, got %v", updated["name"])
 	}
 
-	// Move c2 first
 	moveResp := s.moveColumn(t, c2, "first")
 	if moveResp["id"] == nil {
 		t.Fatalf("move column failed: %v", moveResp)
@@ -168,7 +157,6 @@ func TestProjectsClassic_ColumnCRUDAndMove(t *testing.T) {
 		t.Fatalf("expected c2 first after move, got %v", colsAfter)
 	}
 
-	// Move c2 after c1
 	moveResp = s.moveColumn(t, c2, "after:"+itoa(c1))
 	if moveResp["id"] == nil {
 		t.Fatalf("move column after failed: %v", moveResp)
@@ -178,7 +166,6 @@ func TestProjectsClassic_ColumnCRUDAndMove(t *testing.T) {
 		t.Fatalf("expected c2 second after after-move, got %v", colsAfter)
 	}
 
-	// Delete
 	resp = s.delete(t, "/api/v3/projects/columns/"+itoa(c2), defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -197,17 +184,15 @@ func TestProjectsClassic_CardNoteAndIssue(t *testing.T) {
 	col := s.store.CreateProjectColumn(proj.ID, "Col")
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "tracked issue", "body", nil, nil, 0)
 
-	// Note card
 	card1 := s.createCard(t, col.ID, map[string]any{"note": "remember this"})
 	if card1["note"] != "remember this" {
 		t.Fatalf("expected note, got %v", card1["note"])
 	}
-	// GitHub's card object always carries the archived flag (round-4).
+	// GitHub's card object always carries the archived flag.
 	if archived, ok := card1["archived"].(bool); !ok || archived {
 		t.Fatalf("expected archived=false present, got %v", card1["archived"])
 	}
 
-	// Issue card
 	card2 := s.createCard(t, col.ID, map[string]any{"content_id": issue.ID, "content_type": "Issue"})
 	if card2["content_url"] == nil {
 		t.Fatalf("expected content_url for issue card, got nil")
@@ -216,7 +201,6 @@ func TestProjectsClassic_CardNoteAndIssue(t *testing.T) {
 		t.Fatalf("expected note nil for issue card, got %v", card2["note"])
 	}
 
-	// List
 	resp := s.get(t, "/api/v3/projects/columns/"+itoa(col.ID)+"/cards", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -232,7 +216,6 @@ func TestProjectsClassic_CardNoteAndIssue(t *testing.T) {
 		t.Fatalf("expected 2 cards, got %d", len(cards))
 	}
 
-	// Get card
 	cardID := int(card1["id"].(float64))
 	resp = s.get(t, "/api/v3/projects/columns/cards/"+itoa(cardID), defaultToken)
 	if resp.StatusCode != http.StatusOK {
@@ -245,7 +228,6 @@ func TestProjectsClassic_CardNoteAndIssue(t *testing.T) {
 		t.Fatalf("expected note, got %v", got["note"])
 	}
 
-	// Update note
 	resp = s.patch(t, "/api/v3/projects/columns/cards/"+itoa(cardID), defaultToken, map[string]any{"note": "updated note"})
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -257,7 +239,6 @@ func TestProjectsClassic_CardNoteAndIssue(t *testing.T) {
 		t.Fatalf("expected updated note, got %v", updated["note"])
 	}
 
-	// Delete
 	resp = s.delete(t, "/api/v3/projects/columns/cards/"+itoa(cardID), defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -280,21 +261,18 @@ func TestProjectsClassic_CardMove(t *testing.T) {
 	cardC := s.store.CreateProjectCard(col1.ID, admin.ID, "C", 0, 0)
 	_ = cardA
 
-	// Move B to first
 	s.moveCard(t, cardB.ID, 0, "first")
 	cards := s.listCards(t, col1.ID)
 	if int(cards[0]["id"].(float64)) != cardB.ID {
 		t.Fatalf("expected B first, got %v", cards)
 	}
 
-	// Move B after C
 	s.moveCard(t, cardB.ID, 0, "after:"+itoa(cardC.ID))
 	cards = s.listCards(t, col1.ID)
 	if int(cards[2]["id"].(float64)) != cardB.ID {
 		t.Fatalf("expected B last, got %v", cards)
 	}
 
-	// Move B to col2 last
 	s.moveCard(t, cardB.ID, col2.ID, "last")
 	cards = s.listCards(t, col2.ID)
 	if len(cards) != 1 || int(cards[0]["id"].(float64)) != cardB.ID {
@@ -309,21 +287,18 @@ func TestProjectsClassic_CardMove(t *testing.T) {
 func TestProjectsClassic_404s(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Missing project
 	resp := s.get(t, "/api/v3/projects/999999", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing project, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Missing column
 	resp = s.get(t, "/api/v3/projects/columns/999999", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing column, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Missing card
 	resp = s.get(t, "/api/v3/projects/columns/cards/999999", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing card, got %d", resp.StatusCode)

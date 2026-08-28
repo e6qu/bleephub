@@ -369,18 +369,11 @@ func TestReplicaRefreshFieldClassificationsAreValid(t *testing.T) {
 }
 
 // TestReplicaRefreshClassificationsCoverDangerousKinds is the ratchet for
-// ARCH-004: the snapshot reconciler (store.RefreshFromPersistenceBeforeApply)
-// reflect-copies EVERY exported Store field that is not named in one of the
-// three classification sets, so an exported field of a dangerous kind — a
-// mutex it would overwrite while locked, an injected callback or channel it
-// would wipe with the candidate's nil, or the Persistence handle itself —
-// must be classified or the copy silently corrupts the live store. The test
-// enumerates every exported field (the copier skips unexported fields via
-// field.PkgPath, so only exported ones can be copied) and fails with an
-// actionable message when an unclassified field is of a dangerous kind.
-// Plain durable data (maps/slices/ints of entity state) is exactly what the
-// reconciler exists to copy and is deliberately NOT required to be
-// classified.
+// ARCH-004: the snapshot reconciler reflect-copies every exported Store field
+// not named in a classification set, so an unclassified field of a dangerous
+// kind (a mutex, an injected callback/channel, or the Persistence handle)
+// would silently corrupt the live store. Plain durable data is what the
+// reconciler exists to copy and is deliberately not required to be classified.
 func TestReplicaRefreshClassificationsCoverDangerousKinds(t *testing.T) {
 	storeType := reflect.TypeOf(store.Store{})
 	for i := 0; i < storeType.NumField(); i++ {

@@ -183,7 +183,6 @@ func TestRevokeInstallationToken_DeletesAndReturns204(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body = %s", w.Code, w.Body.String())
 	}
-	// Token must be gone.
 	if got, _ := s.store.LookupInstallationToken(tok.Token); got != nil {
 		t.Errorf("token still present after revoke")
 	}

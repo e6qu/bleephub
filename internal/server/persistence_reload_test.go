@@ -27,7 +27,6 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	// --- session 1: create state, then close ---
 	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -71,7 +70,6 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	// --- session 2: reload, assert everything came back coherently ---
 	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
@@ -86,14 +84,12 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	if got == nil {
 		t.Fatal("repo did not persist")
 	}
-	// Owner relinked.
 	if got.Owner == nil {
 		t.Fatal("repo Owner is nil after reload (BUG-1605)")
 	}
 	if got.Owner.Login != user.Login {
 		t.Errorf("repo Owner.Login = %q want %q", got.Owner.Login, user.Login)
 	}
-	// Next issue number resumes at 3, not 1.
 	i3 := st2.CreateIssue(got.ID, user.ID, "third", "", nil, nil, 0)
 	if i3.Number != 3 {
 		t.Errorf("post-reload issue number = %d want 3 (counter must not restart)", i3.Number)
@@ -101,12 +97,10 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	if st2.GetIssueByNumber(got.ID, 1) == nil || st2.GetIssueByNumber(got.ID, 2) == nil {
 		t.Error("persisted issues #1/#2 not retrievable after reload")
 	}
-	// Lock state survived.
 	if locked := st2.GetIssueByNumber(got.ID, 1); locked == nil || !locked.Locked {
 		t.Error("issue lock state did not persist (BUG-1611)")
 	}
 
-	// Workflow file restored with usable RepoFullName + YAML.
 	gotWF := st2.GetWorkflowFile(repo.FullName, wfFile.ID)
 	if gotWF == nil {
 		t.Fatal("workflow file did not persist (BUG-1595)")
@@ -115,14 +109,11 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 		t.Errorf("workflow file restored without RepoFullName/YAML: %+v", gotWF)
 	}
 
-	// Run-ID counter resumed (next reserved ID is strictly greater
-	// than the last one handed out before the restart).
 	nextRun := st2.ReserveRunID()
 	if nextRun <= lastRun {
 		t.Errorf("post-reload run ID = %d, want > %d (counter must not restart)", nextRun, lastRun)
 	}
 
-	// SSH key + branch protection survived.
 	if len(st2.Misc.KeysByUser[user.ID]) == 0 {
 		t.Error("user SSH key did not persist (BUG-1612)")
 	}
@@ -2095,7 +2086,6 @@ func TestPersistenceReload_OrgProfileMembershipFlagsAndOrgHooks(t *testing.T) {
 			t.Fatal("UpdateOrg failed")
 		}
 
-		// Pending membership + a publicized admin membership.
 		if st.SetMembership("persist-org", dev.ID, store.OrgRoleMember, store.MembershipStatePending) == nil {
 			t.Fatal("SetMembership failed")
 		}
@@ -2302,7 +2292,6 @@ func TestPersistedRowKeyIsNotACredential(t *testing.T) {
 		sessionRowKey = p.StorageKey(store.LoginSessionsBucket, sessionID)
 	})
 
-	// The real credentials still resolve after reload.
 	if tok, _ := st.LookupToken(tokenValue); tok == nil {
 		t.Fatal("real token did not survive reload")
 	}
@@ -2310,7 +2299,6 @@ func TestPersistedRowKeyIsNotACredential(t *testing.T) {
 		t.Fatal("real session did not survive reload")
 	}
 
-	// The persisted digest row keys must not be usable as credentials.
 	if !strings.HasPrefix(tokenRowKey, store.OpaquePersistenceKeyPrefix) || !strings.HasPrefix(sessionRowKey, store.OpaquePersistenceKeyPrefix) {
 		t.Fatalf("expected digested row keys, got token=%q session=%q", tokenRowKey, sessionRowKey)
 	}
@@ -2370,7 +2358,6 @@ func TestCommentIndexConsistencyAndReload(t *testing.T) {
 		scanMatchesIndex(t, st, "issue", issue.ID)
 	})
 
-	// After reload the index is rebuilt and still consistent.
 	if n := len(st.ListComments(issueID)); n != 2 {
 		t.Fatalf("after reload ListComments = %d, want 2", n)
 	}

@@ -32,7 +32,6 @@ func TestMergeMethodDisabledReturns405(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	s.createTestPRRepo(t, "merge-method")
-	// Disable squash + rebase; leave a normal merge commit allowed.
 	s.store.UpdateRepo("admin", "merge-method", func(r *store.Repo) {
 		r.AllowSquashMerge = false
 		r.AllowRebaseMerge = false

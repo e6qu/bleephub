@@ -79,9 +79,8 @@ func (s *isolatedServer) newGQLEnterpriseFixture(t *testing.T, tag string) *gqlE
 
 // gqlEnterpriseMutationCase is one row of the enterprise mutation surface.
 type gqlEnterpriseMutationCase struct {
-	name string
-	doc  string
-	// input builds the mutation input against the fixture.
+	name  string
+	doc   string
 	input func(f *gqlEnterpriseFixture) map[string]interface{}
 	// entitledToken selects the account allowed to perform the mutation. It
 	// defaults to the enterprise's owner; the two accept mutations are the
@@ -368,7 +367,6 @@ func enterprisePolicyMutationCases() []gqlEnterpriseMutationCase {
 	return cases
 }
 
-// allGQLEnterpriseMutationCases is the whole enterprise mutation surface.
 func allGQLEnterpriseMutationCases() []gqlEnterpriseMutationCase {
 	return append(append([]gqlEnterpriseMutationCase{}, gqlEnterpriseMutationCases...), enterprisePolicyMutationCases()...)
 }
@@ -545,7 +543,6 @@ func TestGraphQLEnterpriseMutationsAreAudited(t *testing.T) {
 	t.Error("the enterprise policy change left no audit entry")
 }
 
-// gqlEnterpriseNode digs the enterprise out of a query envelope.
 func gqlEnterpriseNode(t *testing.T, env map[string]interface{}) map[string]interface{} {
 	t.Helper()
 	data, _ := env["data"].(map[string]interface{})

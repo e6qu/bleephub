@@ -743,7 +743,6 @@ func TestGEIMigrationIngestsAnExportArchive(t *testing.T) {
 	}
 	s.store.CreateIssue(sourceRepo.ID, s.store.UsersByLogin["admin"].ID, "archived issue", "", nil, nil, 0)
 
-	// Export the source through the documented export migration.
 	resp := s.post(t, "/api/v3/user/migrations", defaultToken, map[string]interface{}{
 		"repositories": []string{sourceFull},
 	})

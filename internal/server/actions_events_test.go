@@ -195,7 +195,6 @@ jobs:
 	waitUntil(t, "workflow_run in_progress", func() bool { return rec.has("workflow_run/in_progress") })
 	waitUntil(t, "workflow_job in_progress", func() bool { return rec.has("workflow_job/in_progress") })
 
-	// Completion: check run success, suite completed, completed events.
 	s.actions.OnJobCompleted(context.Background(), wf.Jobs["build"].JobID, "Succeeded")
 	waitUntil(t, "check run success", func() bool {
 		cr := s.store.GetCheckRun(checkRun.ID)
@@ -274,7 +273,6 @@ func TestMergeGatingByRequiredChecks(t *testing.T) {
 	}
 	s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) { p.Mergeable = "MERGEABLE" })
 
-	// Protect the base branch with a required status check.
 	s.store.Mu.Lock()
 	s.store.Misc.BranchProtection[store.BpKey(repo.ID, "base")] = &store.BranchProtection{
 		RequiredStatusChecks: &store.BPStatusChecks{

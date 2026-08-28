@@ -10,9 +10,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestAgentRefreshMessageDelivery verifies that the sim-control endpoint
-// POST /internal/agents/{id}/refresh-message delivers a real
-// AgentRefreshMessage to every open session for the target agent.
+// TestAgentRefreshMessageDelivery verifies POST /internal/agents/{id}/refresh-message
+// delivers an AgentRefreshMessage to every open session for the target agent.
 func TestAgentRefreshMessageDelivery(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -81,8 +80,6 @@ func TestAgentRefreshMessageDelivery(t *testing.T) {
 	}
 }
 
-// TestAgentRefreshMessageAdminOnly verifies the refresh endpoint rejects
-// non-admin callers.
 func TestAgentRefreshMessageAdminOnly(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -96,7 +93,6 @@ func TestAgentRefreshMessageAdminOnly(t *testing.T) {
 		srv.store.Mu.Unlock()
 	}()
 
-	// Create a non-admin user + token.
 	nonAdmin := &store.User{ID: 9001, Login: "nobody", Type: "User"}
 	srv.store.Mu.Lock()
 	srv.store.Users[nonAdmin.ID] = nonAdmin
@@ -119,7 +115,6 @@ func TestAgentRefreshMessageAdminOnly(t *testing.T) {
 	}
 }
 
-// TestAgentRefreshMessageAgentNotFound verifies 404 for unknown agents.
 func TestAgentRefreshMessageAgentNotFound(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)

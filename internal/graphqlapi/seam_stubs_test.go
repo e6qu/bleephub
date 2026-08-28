@@ -7,12 +7,10 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Minimal no-op seam stubs for tests that construct a Resolver directly
-// (NewResolver panics on nil Authz/Events/Pulls — ARCH-005). They deny
-// every authorization question, drop every event, and refuse every merge:
-// resolver-package tests exercise schema assembly, converters, and
-// pagination, never seam behavior, which stays covered by the server
-// package's end-to-end tests.
+// No-op seam stubs for tests that construct a Resolver directly (NewResolver
+// panics on nil Authz/Events/Pulls — ARCH-005). Resolver-package tests exercise
+// schema assembly, converters, and pagination; the server package covers seam
+// behavior end to end.
 
 // stubAuthz denies everything.
 type stubAuthz struct{}
@@ -92,19 +90,14 @@ func (stubPulls) MaybeAutoMergeRepo(*store.Repo)                                
 func (stubPulls) AutoRequestCodeOwners(*store.Repo, *store.PullRequest, *store.User) {}
 func (stubPulls) MaybeAutoMergeHeadSHA(*store.Repo, string)                          {}
 
-// newStubbedResolver is the test-package analogue of the server's
-// newGraphQLResolver: a resolver over a seeded store with the no-op seams.
-// stubMigrations queues nothing: the resolver-package tests exercise schema
-// assembly rather than the workers, which the server package drives end to end.
+// stubMigrations queues nothing; the server package drives the real workers end to end.
 type stubMigrations struct{}
 
 func (stubMigrations) StartRepositoryMigration(int)                                {}
 func (stubMigrations) StartOrganizationMigration(int)                              {}
 func (stubMigrations) RepositoryMigrationLogURL(*store.RepositoryMigration) string { return "" }
 
-// stubRepos refuses every repository move: the resolver-package tests never
-// rename or instantiate a repository, which the server package drives end to
-// end against the real artifact store.
+// stubRepos refuses every repository move; the server package drives these against the real artifact store.
 type stubRepos struct{}
 
 func (stubRepos) RenameRepository(*store.Repo, string) error {

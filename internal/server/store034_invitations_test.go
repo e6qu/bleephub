@@ -352,7 +352,6 @@ func TestRepoGetIsDetached(t *testing.T) {
 	if _, ok := got.Stargazers[admin.ID]; got.Stargazers == nil || !ok {
 		t.Fatal("expected the star to be visible on the getter result")
 	}
-	// Mutate every mutable reference field on the returned snapshot.
 	got.Stargazers[999] = time.Unix(1, 0).UTC()
 	got.Topics = append(got.Topics, "tampered")
 	got.Description = "TAMPERED"

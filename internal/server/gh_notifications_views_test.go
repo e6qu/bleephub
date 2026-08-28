@@ -36,7 +36,6 @@ func TestNotificationsUI_SavedFlagAndSavedView(t *testing.T) {
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "bookmark me", "body", nil, nil, 0)
 	threadID := store.NotificationThreadID("Issue", issue.ID)
 
-	// Nothing saved yet.
 	w := doNotifReq(s, adminPAT, "GET", "/ui-data/notifications?view=saved", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("saved view status = %d, body = %s", w.Code, w.Body.String())
@@ -45,7 +44,6 @@ func TestNotificationsUI_SavedFlagAndSavedView(t *testing.T) {
 		t.Fatalf("saved view before saving = %v, want empty", threads)
 	}
 
-	// Save (bookmark) the thread.
 	w = doNotifReq(s, adminPAT, "PUT", "/ui-data/notifications/threads/"+threadID+"/saved", nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("save status = %d, body = %s", w.Code, w.Body.String())
@@ -60,7 +58,6 @@ func TestNotificationsUI_SavedFlagAndSavedView(t *testing.T) {
 		t.Fatalf("saved flag = %v, want true", threads[0]["saved"])
 	}
 
-	// Unsave: the view empties again.
 	w = doNotifReq(s, adminPAT, "DELETE", "/ui-data/notifications/threads/"+threadID+"/saved", nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("unsave status = %d", w.Code)
@@ -80,8 +77,7 @@ func TestNotificationsUI_DoneViewListsThreadsMarkedDone(t *testing.T) {
 	doneID := store.NotificationThreadID("Issue", done.ID)
 	keptID := store.NotificationThreadID("Issue", kept.ID)
 
-	// Mark one thread done through the public REST endpoint (unchanged
-	// semantics: it disappears from the inbox).
+	// Marking a thread done removes it from the inbox.
 	w := doNotifReq(s, adminPAT, "DELETE", "/api/v3/notifications/threads/"+doneID, nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("mark done status = %d, body = %s", w.Code, w.Body.String())
@@ -93,7 +89,6 @@ func TestNotificationsUI_DoneViewListsThreadsMarkedDone(t *testing.T) {
 		}
 	}
 
-	// The done view lists exactly the dismissed thread.
 	w = doNotifReq(s, adminPAT, "GET", "/ui-data/notifications?view=done", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("done view status = %d, body = %s", w.Code, w.Body.String())

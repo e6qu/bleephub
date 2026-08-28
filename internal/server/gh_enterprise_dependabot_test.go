@@ -39,7 +39,6 @@ func TestEnterpriseDependabotRepositoryAccess(t *testing.T) {
 		}
 	}
 
-	// Grant access.
 	resp = s.patch(t, access, defaultToken, map[string]interface{}{
 		"repository_ids_to_add": []int{repoID},
 	})
@@ -87,7 +86,6 @@ func TestEnterpriseDependabotRepositoryAccess(t *testing.T) {
 		t.Fatalf("default_level after put = %v, want internal", got)
 	}
 
-	// Revoke access.
 	resp = s.patch(t, access, defaultToken, map[string]interface{}{
 		"repository_ids_to_remove": []int{repoID},
 	})
@@ -184,9 +182,8 @@ func TestEnterpriseDependabotAlerts(t *testing.T) {
 		}
 	}
 
-	// Alerts only surface for organizations the caller owns: a plain
-	// enterprise member who owns no organization gets an authorization
-	// failure rather than a deceptively empty list.
+	// A member who owns no organization gets an authorization failure rather
+	// than a deceptively empty list.
 	memberTok := s.createEnterpriseTestUser(t, "ent-alerts-member")
 	resp = s.get(t, enterpriseAPI+"/dependabot/alerts", memberTok)
 	if resp.StatusCode != http.StatusForbidden {

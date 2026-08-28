@@ -2,25 +2,16 @@ package bleephub
 
 import "testing"
 
-// FuzzHTTPRequest drives a single fuzzed HTTP request through bleephub's full
-// wrapped handler chain (prefixStrip → internalAuth → ghHeaders → mux) against a
-// server seeded with a realistic fixture. The fuzz input is decoded into a
-// method, a real route template with its {placeholders} filled from a
-// vocabulary of fixture identifiers and adversarial values, an optional query
-// string and body, and an auth-header variant. Invariants (serveAndCheck): the
-// handler must never panic, never emit HTTP 500, and any application/json body
-// must parse as JSON. A 4xx for bad input is fine.
+// FuzzHTTPRequest drives one fuzzed HTTP request through the full wrapped
+// handler chain (prefixStrip → internalAuth → ghHeaders → mux) against a freshly
+// seeded fixture. Invariants (serveAndCheck): never panic, never emit HTTP 500,
+// and any application/json body must parse; a 4xx for bad input is fine.
 //
-// The fixture is built inside the fuzz closure, so every execution gets a
-// freshly seeded server. The route vocabulary reaches DELETE handlers for the
-// seed repo, org and team, so a fixture shared across executions would let one
-// input delete the data every later input depends on — after which the target
-// keeps reporting green while exercising nothing but 404 paths.
+// The fixture is rebuilt per execution: the route vocabulary reaches DELETE
+// handlers for the seed repo, org and team, so a shared fixture would let one
+// input delete the data every later input depends on.
 func FuzzHTTPRequest(f *testing.F) {
-	// Seeds spanning diverse route families. Each byte string decodes through
-	// decodeFuzzRequest; these were chosen to land on repos, issues, pulls,
-	// reactions, search, orgs, teams, actions, git-data, webhooks, projects,
-	// packages, code-scanning, custom-properties and enterprise handlers.
+	// Seeds spanning diverse route families, chosen to land on many handlers.
 	seeds := [][]byte{
 		{},
 		{0},

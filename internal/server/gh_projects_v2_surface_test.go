@@ -22,10 +22,9 @@ import (
 
 // --- Query entry points ----------------------------------------------------
 
-// TestProjectsV2GraphQL_OwnerEntryPoints covers the fields `gh project list`
-// and `gh project view` start from. Before these existed a project was
-// reachable only through an issue already on one, so neither command could
-// find a project at all.
+// TestProjectsV2GraphQL_OwnerEntryPoints covers the owner fields `gh project
+// list`/`gh project view` start from — before them a project was reachable
+// only through an issue already on one.
 func TestProjectsV2GraphQL_OwnerEntryPoints(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -380,7 +379,6 @@ func TestProjectsV2GraphQL_ItemLifecycleMutations(t *testing.T) {
 	}`, map[string]interface{}{"id": project.NodeID})
 	secondID := data["addProjectV2DraftIssue"].(map[string]interface{})["projectItem"].(map[string]interface{})["id"].(string)
 
-	// updateProjectV2DraftIssue edits the draft in place.
 	data = s.gqlData(t, `mutation($id:ID!){
 		updateProjectV2DraftIssue(input:{draftIssueId:$id,title:"draft one renamed",body:"new body"}){
 			draftIssue{ title body }
@@ -391,7 +389,7 @@ func TestProjectsV2GraphQL_ItemLifecycleMutations(t *testing.T) {
 		t.Fatalf("updateProjectV2DraftIssue = %v", draft)
 	}
 
-	// Reorder: moving the second draft to the head puts it first.
+	// Moving the second draft to the head reorders it first.
 	s.gqlData(t, `mutation($p:ID!,$item:ID!){
 		updateProjectV2ItemPosition(input:{projectId:$p,itemId:$item}){ items(first:10){ nodes{ id } } }
 	}`, map[string]interface{}{"p": project.NodeID, "item": secondID})
@@ -400,7 +398,6 @@ func TestProjectsV2GraphQL_ItemLifecycleMutations(t *testing.T) {
 		t.Fatalf("after the reorder the order is %v, want %s first", itemNodeIDs(ordered), secondID)
 	}
 
-	// Archive / unarchive.
 	data = s.gqlData(t, `mutation($p:ID!,$item:ID!){
 		archiveProjectV2Item(input:{projectId:$p,itemId:$item}){ item{ id isArchived } }
 	}`, map[string]interface{}{"p": project.NodeID, "item": firstID})
@@ -414,7 +411,6 @@ func TestProjectsV2GraphQL_ItemLifecycleMutations(t *testing.T) {
 		t.Error("unarchiveProjectV2Item did not restore the item")
 	}
 
-	// Set then clear a field value.
 	status := s.store.ProjectsV2.FieldByNameOnProject(project.ID, "Status")
 	s.gqlData(t, `mutation($p:ID!,$item:ID!,$f:ID!,$opt:String!){
 		updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$item,fieldId:$f,value:{singleSelectOptionId:$opt}}){
@@ -432,7 +428,6 @@ func TestProjectsV2GraphQL_ItemLifecycleMutations(t *testing.T) {
 		t.Error("clearProjectV2ItemFieldValue left the value in place")
 	}
 
-	// Convert the draft into a real issue in the repository.
 	repoRecord := s.store.GetRepoByID(repo.ID)
 	data = s.gqlData(t, `mutation($item:ID!,$repo:ID!){
 		convertProjectV2DraftIssueItemToIssue(input:{itemId:$item,repositoryId:$repo}){
@@ -489,7 +484,6 @@ func TestProjectsV2GraphQL_FieldViewStatusAndWorkflowMutations(t *testing.T) {
 		t.Errorf("the surviving option was re-minted: %v, want id %s", editedOptions[0], highID)
 	}
 
-	// Views.
 	data = s.gqlData(t, `mutation($p:ID!){
 		createProjectV2View(input:{projectId:$p,name:"Board",layout:BOARD_LAYOUT}){
 			projectV2View{ id name layout number }
@@ -514,7 +508,6 @@ func TestProjectsV2GraphQL_FieldViewStatusAndWorkflowMutations(t *testing.T) {
 		t.Error("deleteProjectV2View left the view in the store")
 	}
 
-	// Status updates.
 	data = s.gqlData(t, `mutation($p:ID!){
 		createProjectV2StatusUpdate(input:{projectId:$p,body:"going well",status:ON_TRACK,startDate:"2026-01-05",targetDate:"2026-02-05"}){
 			statusUpdate{ id body status startDate targetDate creator{ login } }
@@ -534,7 +527,6 @@ func TestProjectsV2GraphQL_FieldViewStatusAndWorkflowMutations(t *testing.T) {
 	if editedUpdate["status"] != "AT_RISK" || editedUpdate["body"] != "slipping" {
 		t.Fatalf("updateProjectV2StatusUpdate = %v", editedUpdate)
 	}
-	// The connection reads them back.
 	data = s.gqlData(t, `query($login:String!){
 		organization(login:$login){ projectV2(number:1){ statusUpdates(first:10){ totalCount nodes{ id status } } } }
 	}`, map[string]interface{}{"login": org.Login})
@@ -697,7 +689,6 @@ func TestProjectsV2Webhooks_DeliverTheEventFamily(t *testing.T) {
 		}
 	}
 
-	// projects_v2 — the project object, its owner and the sender.
 	projectPayload := byEvent[store.ProjectV2EventProject]
 	if projectPayload["action"] != "edited" {
 		t.Errorf("projects_v2 action = %v, want edited", projectPayload["action"])
@@ -722,7 +713,6 @@ func TestProjectsV2Webhooks_DeliverTheEventFamily(t *testing.T) {
 		t.Errorf("projects_v2 changes = %v, want a title from/to pair", changes)
 	}
 
-	// projects_v2_item — the item, naming its project by node id.
 	itemPayload := byEvent[store.ProjectV2EventItem]
 	if itemPayload["action"] != "created" {
 		t.Errorf("projects_v2_item action = %v, want created", itemPayload["action"])
@@ -738,7 +728,6 @@ func TestProjectsV2Webhooks_DeliverTheEventFamily(t *testing.T) {
 		t.Errorf("a fresh item reported archived_at = %v, want null", itemObject["archived_at"])
 	}
 
-	// projects_v2_status_update — the update, naming its project.
 	statusPayload := byEvent[store.ProjectV2EventStatusUpdate]
 	if statusPayload["action"] != "created" {
 		t.Errorf("projects_v2_status_update action = %v, want created", statusPayload["action"])
@@ -890,12 +879,10 @@ func (s *isolatedServer) gqlDataAs(t *testing.T, token, query string, variables 
 	return data
 }
 
-// TestProjectsV2GraphQL_ZeroPageSizeIsAnEmptyWindow pins the page-size
-// boundary `gh project create` depends on. gh selects the shared project
-// fragment with `items(first: 0)` and `fields(first: 0)` because it wants
-// neither, so a server that rejects zero — or that quietly serves a default
-// page instead — refuses or over-serves the command. GitHub answers with the
-// connection's metadata and no nodes.
+// TestProjectsV2GraphQL_ZeroPageSizeIsAnEmptyWindow pins the page-size boundary
+// `gh project create` depends on: it selects `items(first:0)`/`fields(first:0)`,
+// and GitHub answers with the connection's metadata and no nodes — so a server
+// that rejects zero or serves a default page refuses or over-serves the command.
 func TestProjectsV2GraphQL_ZeroPageSizeIsAnEmptyWindow(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1036,13 +1023,10 @@ func TestProjectsV2GraphQL_BuiltInFieldValuesReadTheContent(t *testing.T) {
 // TestProjectsV2GraphQL_GitHubCLIProjectFragmentValidates pins the document
 // `gh project` actually sends.
 //
-// gh builds one shared fragment naming every member of the
-// ProjectV2ItemFieldValue union and both content types, and a GraphQL document
-// is validated against the whole schema before any resolver runs — so a single
-// missing member or field failed *every* `gh project` subcommand, not just the
-// ones that read it. That is how the CLI harness reported twelve identical
-// failures for one absent field. Keeping the fragment here means the next
-// regression is caught by `go test` rather than only by the container harness.
+// gh validates one shared fragment naming every ProjectV2ItemFieldValue member
+// against the whole schema before any resolver runs, so a single missing member
+// failed *every* `gh project` subcommand; keeping the fragment here catches the
+// next regression in `go test` rather than only in the container harness.
 func TestProjectsV2GraphQL_GitHubCLIProjectFragmentValidates(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1262,7 +1246,6 @@ func TestGraphQLResourceResolvesAPastedURL(t *testing.T) {
 		t.Errorf("resourcePath = %v, want %q", resource["resourcePath"], want)
 	}
 
-	// A repository URL resolves to the repository.
 	data = s.gqlData(t, query, map[string]interface{}{"url": "https://bleephub.example/" + repo.FullName})
 	resource = data["resource"].(map[string]interface{})
 	if resource["__typename"] != "Repository" || resource["name"] != "resource-repo" {
@@ -1334,18 +1317,15 @@ func TestProjectsV2GraphQL_ItemsConnectionFiltersAndOrders(t *testing.T) {
 		t.Fatalf("default items = %v, want only the unarchived one", nodes)
 	}
 
-	// Asking for archived items returns the archived one only.
 	nodes = itemsQuery("first:10,archivedStates:[ARCHIVED]")
 	if len(nodes) != 1 || nodes[0].(map[string]interface{})["id"] != filed.NodeID {
 		t.Fatalf("archived items = %v, want only the archived one", nodes)
 	}
 
-	// Asking for both returns both.
 	if nodes = itemsQuery("first:10,archivedStates:[ARCHIVED,NOT_ARCHIVED]"); len(nodes) != 2 {
 		t.Fatalf("both states returned %d items, want 2", len(nodes))
 	}
 
-	// The free-text query matches the item's title.
 	nodes = itemsQuery(`first:10,query:"still"`)
 	if len(nodes) != 1 || nodes[0].(map[string]interface{})["id"] != kept.NodeID {
 		t.Fatalf("query items = %v, want the matching one", nodes)
@@ -1354,7 +1334,6 @@ func TestProjectsV2GraphQL_ItemsConnectionFiltersAndOrders(t *testing.T) {
 		t.Fatalf("a non-matching query returned %v", nodes)
 	}
 
-	// An ordered fields connection sorts by the named field.
 	data := s.gqlData(t, `query($login:String!){
 		organization(login:$login){ projectV2(number:1){
 			fields(first:50,orderBy:{field:NAME,direction:ASC}){ nodes{ ... on ProjectV2FieldCommon { name } } }

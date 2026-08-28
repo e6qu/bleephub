@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// createReadsRepo creates a repository owned by admin through the API.
 func createReadsRepo(t *testing.T, name string, extra map[string]interface{}) {
 	t.Helper()
 	body := map[string]interface{}{"name": name}
@@ -22,8 +21,6 @@ func createReadsRepo(t *testing.T, name string, extra map[string]interface{}) {
 	}
 }
 
-// putReadsFile commits one file through the contents API and returns the
-// commit SHA.
 func putReadsFile(t *testing.T, repo, path, content, message, branch string) string {
 	t.Helper()
 	body := map[string]interface{}{

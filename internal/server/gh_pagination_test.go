@@ -67,7 +67,6 @@ func TestPaginationDefaults(t *testing.T) {
 	repoName := "pg-defaults"
 	createTestIssueRepo(t, repoName)
 
-	// Create 3 issues
 	for i := 0; i < 3; i++ {
 		ghPost(t, "/api/v3/repos/admin/"+repoName+"/issues", defaultToken, map[string]interface{}{
 			"title": "Issue",
@@ -102,7 +101,6 @@ func TestPaginationCustomPerPage(t *testing.T) {
 		}).Body.Close()
 	}
 
-	// Page 1 with per_page=2
 	resp := s.get(t, "/api/v3/repos/admin/"+repoName+"/issues?per_page=2", "")
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -138,7 +136,6 @@ func TestPaginationSecondPage(t *testing.T) {
 		}).Body.Close()
 	}
 
-	// Page 2 with per_page=2
 	resp := ghGet(t, "/api/v3/repos/admin/"+repoName+"/issues?per_page=2&page=2", "")
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -168,7 +165,6 @@ func TestPaginationLastPage(t *testing.T) {
 		}).Body.Close()
 	}
 
-	// Last page (page 3, per_page=2): should have 1 item
 	resp := ghGet(t, "/api/v3/repos/admin/"+repoName+"/issues?per_page=2&page=3", "")
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -230,7 +226,6 @@ func TestPaginationBeyondRange(t *testing.T) {
 		"title": "Issue",
 	}).Body.Close()
 
-	// Page 99 should return empty
 	resp := ghGet(t, "/api/v3/repos/admin/"+repoName+"/issues?page=99", "")
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -246,7 +241,6 @@ func TestPaginationBeyondRange(t *testing.T) {
 }
 
 func TestPaginationRepoList(t *testing.T) {
-	// Create several repos
 	for i := 0; i < 3; i++ {
 		ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 			"name": "pg-repo-" + http.StatusText(200+i),

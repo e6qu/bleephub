@@ -7,7 +7,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// firstDiscussionCategory returns one of the repo's seeded default categories.
 func firstDiscussionCategory(t *testing.T, s *isolatedServer, repo repoRef) *store.DiscussionCategory {
 	t.Helper()
 	r := s.store.GetRepo(repo.owner, repo.name)
@@ -159,12 +158,10 @@ func TestUIPinnedDiscussions(t *testing.T) {
 	}
 	pinnedPath := "/ui-data/repos/" + repo.fullName() + "/discussions/pinned"
 
-	// Empty until someone pins.
 	if got := decodeJSONArrayWithStatus(t, s.get(t, pinnedPath, defaultToken), http.StatusOK); len(got) != 0 {
 		t.Fatalf("pinned list starts with %d entries, want 0", len(got))
 	}
 
-	// PUT stores order; GET returns it in that order.
 	want := []int{numbers[2], numbers[0], numbers[4]}
 	put := decodeJSONArrayWithStatus(t, s.put(t, pinnedPath, defaultToken,
 		map[string]interface{}{"numbers": want}), http.StatusOK)
@@ -204,8 +201,6 @@ func TestUIPinnedDiscussions(t *testing.T) {
 	}
 }
 
-// decodeJSONArrayWithStatus decodes a JSON array response after asserting its
-// status code.
 func decodeJSONArrayWithStatus(t *testing.T, resp *http.Response, want int) []map[string]interface{} {
 	t.Helper()
 	if resp.StatusCode != want {

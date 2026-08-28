@@ -91,8 +91,6 @@ func (s *isolatedServer) mintPagesOIDCTokenForAudience(t *testing.T, repo, sha, 
 	return token
 }
 
-// createRepoWriteRepo creates a repo owned by admin through the API,
-// optionally with an auto-init initial commit. Returns the repo name.
 func createRepoWriteRepo(t *testing.T, autoInit bool) string {
 	t.Helper()
 	name := fmt.Sprintf("rw-%d-%d", int64(testutil.NextTestID()), atomic.AddInt64(&repoWriteRepoSeq, 1))

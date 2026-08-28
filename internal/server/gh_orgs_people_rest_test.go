@@ -8,8 +8,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// expectStatus drains and closes the response, failing unless the status
-// matches.
 func expectStatus(t *testing.T, resp *http.Response, want int, context string) {
 	t.Helper()
 	resp.Body.Close()
@@ -109,7 +107,6 @@ func TestOrgInvitationsLifecycle(t *testing.T) {
 		t.Fatalf("invitee did not join the invited team: %v", members)
 	}
 
-	// Validation surface.
 	for name, body := range map[string]map[string]interface{}{
 		"already a member":  {"invitee_id": invitee.ID},
 		"neither id/email":  {"role": "direct_member"},
@@ -205,8 +202,8 @@ func TestOrgFailedInvitations(t *testing.T) {
 	srv.store.OrgInvitations[invID].CreatedAt = fixedTestTime.UTC().Add(-8 * 24 * time.Hour)
 	srv.store.Mu.Unlock()
 
-	// Expiry is applied by the background reconciler (dispatcher tick), not on a
-	// read. Drive it directly with the fixed clock.
+	// Expiry is applied by the background reconciler, not on a read; drive it
+	// directly with the fixed clock.
 	srv.store.ReconcileAllOrgInvitations(fixedTestTime.UTC())
 
 	if pending := decodeJSONArray(t, srv.get(t, "/api/v3/orgs/people-fail-org/invitations", defaultToken)); len(pending) != 0 {
@@ -445,7 +442,6 @@ func TestOrganizationRoles(t *testing.T) {
 	_, memberToken := srv.newUser(t, "people-roles-user")
 	srv.activateOrgMember(t, "people-roles-org", "people-roles-user", memberToken)
 
-	// Team assignment.
 	expectStatus(t, srv.put(t, "/api/v3/orgs/people-roles-org/organization-roles/teams/roles-team/140", defaultToken, nil),
 		http.StatusNoContent, "assign role to team")
 	teams := decodeJSONArray(t, srv.get(t, "/api/v3/orgs/people-roles-org/organization-roles/140/teams", defaultToken))
@@ -533,9 +529,8 @@ func TestOrgMemberCopilotSeat(t *testing.T) {
 	_, memberToken := srv.newUser(t, "people-cop-member")
 	srv.activateOrgMember(t, "people-cop-org", "people-cop-member", memberToken)
 
-	// A member without a GitHub Copilot seat assignment answers the
-	// documented 404; assigning a seat through the billing API makes the
-	// seat detail readable.
+	// A member without a Copilot seat answers the documented 404; assigning one
+	// through the billing API makes the seat detail readable.
 	expectStatus(t, srv.get(t, "/api/v3/orgs/people-cop-org/members/people-cop-member/copilot", defaultToken),
 		http.StatusNotFound, "copilot seat before assignment")
 	expectStatus(t, srv.get(t, "/api/v3/orgs/people-cop-org/members/nobody-here/copilot", defaultToken),

@@ -6,13 +6,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestGraphQLReactionsCoverNonDiscussionSubjects verifies addReaction and
-// removeReaction resolve issue, pull-request and review subjects. GitHub's
-// AddReactionInput.subjectId spans CommitComment/Discussion/DiscussionComment/
-// Issue/IssueComment/PullRequest/PullRequestReview/PullRequestReviewComment/
-// Release, and the store already backs these rows (the GraphQL read side renders
-// their reactionGroups), but the resolver formerly resolved only discussions —
-// so you could read a reaction count on an issue yet not add one over GraphQL.
+// addReaction/removeReaction must resolve issue, pull-request and review
+// subjects: the resolver formerly resolved only discussions, so you could read
+// a reaction count on an issue yet not add one over GraphQL.
 func TestGraphQLReactionsCoverNonDiscussionSubjects(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -53,9 +49,8 @@ func TestGraphQLReactionsCoverNonDiscussionSubjects(t *testing.T) {
 	}
 }
 
-// TestGraphQLAddReactionReturnsReactionGroups verifies the addReaction payload
-// exposes reactionGroups (GitHub's [ReactionGroup!]), reflecting the subject's
-// reaction state after the mutation without a separate refetch.
+// The addReaction payload exposes reactionGroups (GitHub's [ReactionGroup!]),
+// reflecting the subject's post-mutation state without a separate refetch.
 func TestGraphQLAddReactionReturnsReactionGroups(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -69,7 +64,6 @@ func TestGraphQLAddReactionReturnsReactionGroups(t *testing.T) {
 	}
 	data, _ := env["data"].(map[string]interface{})
 	add, _ := data["addReaction"].(map[string]interface{})
-	// The payload's reaction is the one just created.
 	reaction, _ := add["reaction"].(map[string]interface{})
 	if reaction == nil || reaction["content"] != "HEART" {
 		t.Errorf("addReaction.reaction = %v, want content HEART", add["reaction"])
@@ -93,10 +87,9 @@ func TestGraphQLAddReactionReturnsReactionGroups(t *testing.T) {
 	}
 }
 
-// TestGraphQLPermissionDenialCarriesForbiddenType verifies that a permission
-// denial (viewer can read the repo but lacks push standing) surfaces GitHub's
-// `"type": "FORBIDDEN"` errors[] member — the sibling of the NOT_FOUND channel
-// used when the resource cannot be read at all. Clients discriminate on it.
+// A permission denial (viewer can read the repo but lacks push standing) must
+// surface GitHub's `"type": "FORBIDDEN"` errors[] member, the sibling of the
+// NOT_FOUND channel; clients discriminate on it.
 func TestGraphQLPermissionDenialCarriesForbiddenType(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -121,9 +114,8 @@ func TestGraphQLPermissionDenialCarriesForbiddenType(t *testing.T) {
 	}
 }
 
-// TestGraphQLAddReactionExposesSubjectReactable verifies the addReaction payload's
-// subject: Reactable field resolves to the concrete reacted subject (GQL-068):
-// selecting a fragment on the subject's concrete type returns its fields.
+// The addReaction payload's subject: Reactable field resolves to the concrete
+// reacted subject (GQL-068): a fragment on the concrete type returns its fields.
 func TestGraphQLAddReactionExposesSubjectReactable(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

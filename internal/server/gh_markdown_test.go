@@ -35,8 +35,7 @@ func TestMarkdownRender(t *testing.T) {
 }
 
 func TestMarkdownSanitizesDangerousSchemes(t *testing.T) {
-	// goldmark escapes raw HTML but leaves link/image destinations alone, so the
-	// output sanitizer must strip executable URL schemes and inline handlers.
+	// goldmark leaves link/image destinations alone, so the output sanitizer must strip executable URL schemes and inline handlers.
 	status, html := postMarkdown(t, map[string]interface{}{
 		"text": "[click](javascript:alert(1)) and ![x](data:text/html;base64,PHNjcmlwdD4=) <img src=x onerror=alert(1)>",
 	})

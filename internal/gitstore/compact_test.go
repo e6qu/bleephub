@@ -23,8 +23,7 @@ func testPackedStorage(t *testing.T, fake *fakeS3) *atomicRefStorer {
 	return stor
 }
 
-// readObjects reads every hash back through the storer and returns the bytes,
-// which is the only thing a storage layer ultimately has to get right.
+// readObjects reads every hash back through the storer and returns the bytes.
 func readObjects(t *testing.T, stor *atomicRefStorer, hashes []plumbing.Hash) map[plumbing.Hash]string {
 	t.Helper()
 	out := make(map[plumbing.Hash]string, len(hashes))
@@ -49,10 +48,8 @@ func readObjects(t *testing.T, stor *atomicRefStorer, hashes []plumbing.Hash) ma
 	return out
 }
 
-// TestCompactionPreservesEveryObject is the base correctness bar: what comes
-// back out of the pack tier has to be byte for byte what went into the loose
-// tier, for every object and read through a storer that has never seen the
-// loose form.
+// TestCompactionPreservesEveryObject asserts the pack tier returns every object
+// byte-for-byte, read through a storer that has never seen the loose form.
 func TestCompactionPreservesEveryObject(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
@@ -79,8 +76,8 @@ func TestCompactionPreservesEveryObject(t *testing.T) {
 		}
 	}
 
-	// The reference the seeding wrote must still resolve, and every object
-	// must still answer the existence question the negotiation asks.
+	// The seeded reference must still resolve and every object must still
+	// answer HasEncodedObject, which negotiation depends on.
 	ref, err := fresh.Reference("refs/heads/main")
 	if err != nil {
 		t.Fatalf("reference after compaction: %v", err)
@@ -106,11 +103,9 @@ func looseKeyCount(fake *fakeS3) int {
 	return count
 }
 
-// TestCompactionCrashBeforeThePackIsPublishedLosesNothing reproduces the worst
-// moment to be interrupted: the index and the filter are already in the object
-// store and the packfile is not. The repository must still read entirely out of
-// its loose objects, because a pack with no .pack key is a pack no reader can
-// see, and a retry must then succeed.
+// TestCompactionCrashBeforeThePackIsPublishedLosesNothing interrupts compaction
+// with the index and filter stored but the .pack key absent; the repository must
+// still read entirely from loose objects and a retry must succeed.
 func TestCompactionCrashBeforeThePackIsPublishedLosesNothing(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
@@ -159,9 +154,9 @@ func TestCompactionCrashBeforeThePackIsPublishedLosesNothing(t *testing.T) {
 	}
 }
 
-// TestCompactionCrashDuringLooseDeletionLosesNothing reproduces the other
-// interruption: the pack is published and the loose keys are only partly gone.
-// Both copies are then readable and the objects must come back unchanged.
+// TestCompactionCrashDuringLooseDeletionLosesNothing interrupts after the pack
+// is published with the loose keys only partly deleted; both copies stay
+// readable and the objects must come back unchanged.
 func TestCompactionCrashDuringLooseDeletionLosesNothing(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
@@ -219,10 +214,9 @@ func TestCompactionDeletesOnlyWhatItPacked(t *testing.T) {
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
 
-	// A push lands between the listing and the deletion. Failing the delete
-	// once, writing the object, then compacting again reproduces the shape
-	// without needing to interleave two goroutines at an exact instant: the
-	// second compaction lists a superset and must still leave nothing behind.
+	// Reproduce a push landing between the listing and the deletion without
+	// interleaving goroutines: the second compaction lists a superset and must
+	// still leave nothing behind.
 	late := writeBlob(t, stor, "written after the compaction listing")
 	result, err := CompactRepository(context.Background(), stor)
 	if err != nil {
@@ -276,20 +270,17 @@ func writeBlob(t *testing.T, stor *atomicRefStorer, body string) plumbing.Hash {
 	return hash
 }
 
-// TestCompactionToleratesAnObjectAnotherReplicaAlreadyPacked reproduces the one
-// interleaving two concurrent compactions can produce: this replica listed a
-// loose key, and by the time it reads it the other replica has published it in
-// a pack of its own and deleted the loose copy. Compaction must complete, and
-// must not delete a key it did not pack.
+// TestCompactionToleratesAnObjectAnotherReplicaAlreadyPacked: this replica lists
+// a loose key that another replica packs and deletes before this one reads it;
+// compaction must complete and must not delete a key it did not pack.
 func TestCompactionToleratesAnObjectAnotherReplicaAlreadyPacked(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
 
-	// The other replica deletes the loose key after this one has listed it and
-	// while it is reading the objects into its pack, which is the interleaving
-	// that a probe before the build could never catch.
+	// The other replica deletes the loose key after this one listed it and while
+	// it reads objects into its pack — an interleaving a pre-build probe misses.
 	vanished := hashes[7]
 	vanishedKey := looseKeyOf(vanished)
 	var once sync.Once
@@ -363,10 +354,9 @@ func TestConcurrentCompactionAndWritesLoseNothing(t *testing.T) {
 	}
 }
 
-// TestCompactionMergesPacksOnceTheyAccumulate exercises the level above the
-// first: a repository that has been compacted many times must fold its packs
-// together rather than growing an index per push, and every object has to
-// survive the fold.
+// TestCompactionMergesPacksOnceTheyAccumulate: a repository compacted many times
+// must fold its packs together rather than grow an index per push, and every
+// object must survive the fold.
 func TestCompactionMergesPacksOnceTheyAccumulate(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
@@ -410,9 +400,8 @@ func TestCompactionMergesPacksOnceTheyAccumulate(t *testing.T) {
 	}
 }
 
-// TestCompactionSkipsRepositoriesWithLittleToGain pins that a repository with a
-// handful of loose objects is left alone; publishing a pack costs three uploads
-// and is not worth it for a repository that has barely been written to.
+// TestCompactionSkipsRepositoriesWithLittleToGain pins that a handful of loose
+// objects is left alone, since publishing a pack costs three uploads.
 func TestCompactionSkipsRepositoriesWithLittleToGain(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
@@ -477,13 +466,10 @@ func TestCompactionSurfacesAnObjectStoreOutage(t *testing.T) {
 	}
 }
 
-// TestConcurrentReadsWritesAndCompactionAreRaceFree drives the three things
-// that touch one repository's storage at once — a clone reading objects and
-// references, a push writing them, and a compaction moving them between tiers —
-// through the same handle, which is what the repository's storage lock and the
-// per-Next iterator locking exist to make safe. It is written to be run under
-// the race detector; the assertions are about not losing objects, and the
-// detector supplies the rest.
+// TestConcurrentReadsWritesAndCompactionAreRaceFree drives a clone, a push, and
+// a compaction through one handle at once — the case the storage lock and
+// per-Next iterator locking exist for; run under the race detector, its
+// assertions only check no object is lost.
 func TestConcurrentReadsWritesAndCompactionAreRaceFree(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	t.Setenv(compactionTriggerEnv, "0")
@@ -564,10 +550,9 @@ func TestConcurrentReadsWritesAndCompactionAreRaceFree(t *testing.T) {
 	}
 }
 
-// TestLargePacksAreUploadedInParts covers the path a monorepo's pack always
-// takes. A multi-gigabyte pack cannot be sent in one request, and the
-// completion of a multipart upload is what makes it appear — so the ordering
-// argument depends on this path publishing atomically too.
+// TestLargePacksAreUploadedInParts covers a monorepo's pack: too large for one
+// request, it appears only on multipart-upload completion, so this path must
+// publish atomically too.
 func TestLargePacksAreUploadedInParts(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	t.Setenv(compactionTriggerEnv, "0")
@@ -607,9 +592,9 @@ func TestLargePacksAreUploadedInParts(t *testing.T) {
 	}
 }
 
-// TestAnInterruptedMultipartUploadPublishesNothing pins the commit point for
-// the multipart path: a pack whose completion never happened must not be
-// visible, and the loose objects it was built from must be untouched.
+// TestAnInterruptedMultipartUploadPublishesNothing pins the multipart commit
+// point: a pack whose completion never ran must be invisible, and the loose
+// objects it was built from must be untouched.
 func TestAnInterruptedMultipartUploadPublishesNothing(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	t.Setenv(compactionTriggerEnv, "0")

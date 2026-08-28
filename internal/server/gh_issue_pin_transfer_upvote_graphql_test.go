@@ -5,14 +5,12 @@ import (
 	"testing"
 )
 
-// The pinIssue / unpinIssue / transferIssue / deleteIssue and addUpvote /
-// removeUpvote mutations mirror github.com's GraphQL surface. The authz table
-// tests cover who may call them; the tests here cover what they do — the
+// These tests cover what the pin/transfer/delete and upvote mutations do — the
 // three-pin cap, target-repo number allocation, the delete cascade, and the
-// idempotent upvote sets.
+// idempotent upvote sets — while the authz table covers who may call them.
 
-// gqlMutationData digs the named mutation's payload map out of a GraphQL
-// envelope, failing the test on any errors in the envelope.
+// gqlMutationData digs the named mutation's payload out of a GraphQL envelope,
+// failing the test on any envelope errors.
 func gqlMutationData(t *testing.T, env map[string]interface{}, mutation string) map[string]interface{} {
 	t.Helper()
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {

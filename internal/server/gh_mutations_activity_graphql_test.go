@@ -5,13 +5,11 @@ import (
 	"time"
 )
 
-// The refusal and entitled halves for the activity and account-policy family
-// (internal/graphqlapi/gh_mutations_activity_graphql.go), followed by
-// behavioural tests that read the store back — a mutation that authorizes
-// correctly and writes nothing is a stub.
+// Refusal and entitled halves for the activity and account-policy family, plus
+// behavioural tests that read the store back — a mutation that authorizes but
+// writes nothing is a stub.
 
-// gqlActivityMutationCases are the rows whose subject is a repository or the
-// viewer's own account, driven over the private-repository fixture.
+// gqlActivityMutationCases are the rows whose subject is a repository or the viewer's own account.
 var gqlActivityMutationCases = []gqlMutationCase{
 	{
 		name: "addStar",
@@ -46,10 +44,7 @@ var gqlActivityMutationCases = []gqlMutationCase{
 		},
 	},
 	{
-		// The subject is the caller's own account, so the refusing half names
-		// the repository owner's account with the stranger's credential: a
-		// mutation that let one account set another's limit would be an
-		// account takeover of the other's moderation settings.
+		// The subject is the caller's own account, so the refusing half aims the stranger's credential at the owner's account: letting one account set another's limit would be a takeover of its moderation settings.
 		name: "setUserInteractionLimit",
 		doc:  `mutation($input:SetUserInteractionLimitInput!){setUserInteractionLimit(input:$input){user{login}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
@@ -103,9 +98,7 @@ func TestGraphQLActivityMutationsStillServeTheirEntitledCaller(t *testing.T) {
 	}
 }
 
-// gqlActivityOrgMutationCases are the rows whose subject is an organization.
-// The refusing caller owns a different organization, so the refusal is
-// cross-tenant rather than a bare lack of standing anywhere.
+// gqlActivityOrgMutationCases are the org-subject rows; the refusing caller owns a different org, making the refusal cross-tenant rather than a bare lack of standing.
 var gqlActivityOrgMutationCases = []gqlIssueOrgCase{
 	{
 		name: "setOrganizationInteractionLimit",
@@ -206,8 +199,7 @@ func TestGraphQLStarMutationsWriteTheStarStore(t *testing.T) {
 	if !s.store.IsRepoStarredBy(f.owner.ID, f.owner.Login, f.repo.Name) {
 		t.Fatalf("addStar returned a payload but the store records no star")
 	}
-	// The payload re-reads the repository, so the count it reports is the one
-	// the star store now holds rather than the pre-mutation snapshot.
+	// The payload re-reads the repository, so its count is the star store's current one, not the pre-mutation snapshot.
 	if got := nestedInt(t, env, "data", "addStar", "starrable", "stargazerCount"); got != 1 {
 		t.Errorf("stargazerCount = %d, want 1", got)
 	}
@@ -280,15 +272,13 @@ func TestGraphQLInteractionLimitMutationsWriteTheSameRecordsREST(t *testing.T) {
 	case repo == nil:
 		t.Fatalf("the repository disappeared")
 	case repo.InteractionLimit != "collaborators_only":
-		// The stored spelling is the one GET /repos/{o}/{r}/interaction-limits
-		// reports, so a GraphQL write and a REST read cannot disagree.
+		// The stored spelling is the one GET /repos/{o}/{r}/interaction-limits reports, so a GraphQL write and a REST read cannot disagree.
 		t.Errorf("stored limit = %q, want collaborators_only", repo.InteractionLimit)
 	case repo.InteractionLimitExpiry == nil:
 		t.Errorf("the limit was stored with no expiry")
 	}
 
-	// NO_LIMIT is GitHub's spelling of the DELETE route, so it clears rather
-	// than storing a fourth group.
+	// NO_LIMIT is GitHub's spelling of the DELETE route, so it clears rather than storing a fourth group.
 	env = s.gqlAuthzPost(t, f.ownerToken,
 		`mutation($input:SetRepositoryInteractionLimitInput!){setRepositoryInteractionLimit(input:$input){repository{name}}}`,
 		map[string]interface{}{"input": map[string]interface{}{
@@ -373,15 +363,12 @@ func TestGraphQLOrganizationActivityMutationsWriteTheStore(t *testing.T) {
 	if collaborators := s.store.ListOutsideCollaborators(f.org.Login); len(collaborators) != 0 {
 		t.Errorf("the outside collaborator survived: %+v", collaborators)
 	}
-	// The removal goes through the same store primitive DELETE
-	// /orgs/{org}/outside_collaborators/{user} uses, so the collaborator row
-	// is gone from the repository as well as from the organization listing.
+	// The removal uses the same store primitive as DELETE /orgs/{org}/outside_collaborators/{user}, so the collaborator is gone from the repository too, not just the org listing.
 	if s.store.GetRepoCollaboratorPermission(f.org.Login, f.repo.Name, f.stranger.Login) != "" {
 		t.Errorf("the collaborator still holds push on the repository")
 	}
 }
 
-// nestedInt reads an Int member out of a GraphQL response envelope by path.
 func nestedInt(t *testing.T, env map[string]interface{}, path ...string) int {
 	t.Helper()
 	var cursor interface{} = env
@@ -407,8 +394,7 @@ func TestGraphQLStarredAtReportsTheRealStarInstant(t *testing.T) {
 	s := newIsolatedServer(t)
 	f := newGQLAuthzFixture(t, s.Server, "star-time", false)
 
-	// Freeze the clock to an instant distinct from the repo's creation, then
-	// star. The edges must report this instant.
+	// Freeze the clock to an instant distinct from the repo's creation; the edges must report this instant, not createdAt.
 	starInstant := time.Date(2021, 6, 15, 12, 0, 0, 0, time.UTC)
 	prev := s.replaceClockNow(func() time.Time { return starInstant })
 	t.Cleanup(func() { s.replaceClockNow(prev) })

@@ -20,7 +20,6 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	alert := s.seedCodeScanningAlert(t, "admin", "live-code-scanning", "live-rule", "error", "CodeQL")
 	alertNumber := int(alert["number"].(float64))
 
-	// List alerts
 	resp := s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/alerts")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -30,7 +29,6 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&[]map[string]any{})
 	resp.Body.Close()
 
-	// Get alert
 	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -39,7 +37,6 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// List instances
 	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber)+"/instances")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -48,7 +45,6 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Patch alert
 	patchBody, _ := json.Marshal(map[string]any{"state": "dismissed", "dismissed_reason": "used in tests"})
 	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/live-code-scanning/code-scanning/alerts/"+itoa(alertNumber), bytes.NewReader(patchBody))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
@@ -64,7 +60,6 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// SARIF upload
 	sarif := map[string]any{
 		"version": "2.1.0",
 		"runs": []map[string]any{
@@ -112,7 +107,6 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	resp.Body.Close()
 	uploadID := upload["id"].(string)
 
-	// Get SARIF upload
 	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/sarifs/"+uploadID)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -128,7 +122,6 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 		t.Fatalf("expected processing_status complete, got %v", gotUpload["processing_status"])
 	}
 
-	// List analyses
 	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/analyses")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -137,7 +130,6 @@ func TestLiveCodeScanning_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Default setup
 	resp = s.authedGet(t, "/api/v3/repos/admin/live-code-scanning/code-scanning/default-setup")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)

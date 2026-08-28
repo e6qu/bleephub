@@ -232,7 +232,6 @@ func TestCodespacesUserSecret_SelectedRepositories(t *testing.T) {
 	requireSecretCreated(t, s.putSealedSecret(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET", "sekrit"),
 		"put secret")
 
-	// Set the full selected list.
 	resp := s.put(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories", defaultToken, map[string]any{
 		"selected_repository_ids": []int{repoA.ID},
 	})
@@ -267,7 +266,6 @@ func TestCodespacesUserSecret_SelectedRepositories(t *testing.T) {
 		t.Fatalf("selected repos = %v", repos)
 	}
 
-	// Add one repository, then remove it.
 	resp = s.put(t, fmt.Sprintf("/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories/%d", repoB.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {

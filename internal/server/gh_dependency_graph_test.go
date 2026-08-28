@@ -106,7 +106,6 @@ func TestDependencyGraphSBOMReport_GenerateAndFetch(t *testing.T) {
 		t.Fatal("fetch-report missing Location")
 	}
 
-	// Following the redirect yields the SPDX document.
 	followResp := s.get(t, strings.TrimPrefix(location, s.baseURL), defaultToken)
 	doc := decodeJSONWithStatus(t, followResp, 200)
 	if doc["sbom"] == nil {

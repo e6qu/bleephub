@@ -17,10 +17,9 @@ var (
 )
 
 // TestFocusedRouteTestsUseTheProductionPipeline prevents the narrow
-// ghHeadersMiddleware-only fixture from returning. Such tests skipped prefix
-// routing, internal authentication, replica refresh, recovery, request limits,
-// response observation, logging and telemetry. The rate-limit test is the one
-// intentional unit test of ghHeadersMiddleware itself.
+// ghHeadersMiddleware-only fixture from returning, which skipped routing, auth,
+// replica refresh, recovery, limits, observation, logging and telemetry; the
+// rate-limit test is the one intentional exception.
 func TestFocusedRouteTestsUseTheProductionPipeline(t *testing.T) {
 	var offenders []string
 	err := filepath.WalkDir(".", func(path string, entry os.DirEntry, err error) error {
@@ -49,17 +48,15 @@ func TestFocusedRouteTestsUseTheProductionPipeline(t *testing.T) {
 	}
 }
 
-// TestReliabilityDebtOnlyShrinks turns the two remaining global migrations
-// into ratchets. Follow-up conversions lower these ceilings in the same commit;
-// adding another direct persistence write or another shared-fixture consumer
-// fails before review.
+// TestReliabilityDebtOnlyShrinks ratchets the two remaining global migrations:
+// adding another direct persistence write or shared-fixture consumer fails
+// before review.
 func TestReliabilityDebtOnlyShrinks(t *testing.T) {
 	const (
 		maxDirectPersistenceWrites = 568
 		minBatchedMutations        = 24
 		// Ratcheted down as the TEST-008 migration moves files off the shared
-		// `testServer` onto per-test isolated servers (newIsolatedServer). Lower
-		// these as more files are converted; they must only shrink.
+		// `testServer` onto newIsolatedServer; these must only shrink.
 		maxSharedHarnessFiles      = 7
 		maxSharedHarnessReferences = 34
 	)
@@ -81,11 +78,9 @@ func TestReliabilityDebtOnlyShrinks(t *testing.T) {
 				return err
 			}
 			if strings.HasSuffix(path, "_test.go") {
-				// The contract test names the shared-harness symbols to detect them,
-				// and isolated_server_test.go is the migration infrastructure that
-				// replaces the shared harness (TEST-008) — it references the shared
-				// symbols only to document what it supersedes. Neither is shared-
-				// harness *usage*, so exclude both from the count.
+				// The contract test and isolated_server_test.go name the shared-harness
+				// symbols only to detect or supersede them (TEST-008), not as usage, so
+				// exclude both from the count.
 				if entry.Name() == "reliability_architecture_contract_test.go" ||
 					entry.Name() == "isolated_server_test.go" {
 					return nil

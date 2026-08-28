@@ -117,11 +117,9 @@ func TestIssueGraphQL_SubIssueFields(t *testing.T) {
 		t.Fatalf("expected parent and child issue in response, got %v", data)
 	}
 
-	// issueType → null
 	if v, present := parentIssue["issueType"]; !present || v != nil {
 		t.Fatalf("expected issueType=null, got present=%v value=%v", present, v)
 	}
-	// parent → null for the top-level parent issue.
 	if v, present := parentIssue["parent"]; !present || v != nil {
 		t.Fatalf("expected parent=null, got present=%v value=%v", present, v)
 	}

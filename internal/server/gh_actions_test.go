@@ -19,14 +19,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// seedRun installs a Workflow + WorkflowJob in the store and returns
-// the full URL the GitHub-shape /actions/runs/{run_id} is keyed off.
-// All fields needed by workflowRunJSON / workflowJobJSON are populated.
-
-// ensureSeededRepo materializes the repository a fixture claims its seeded
-// runs, caches or artifacts belong to. Handlers refuse a repository that does
-// not exist, so a fixture that seeds against a bare "owner/name" string has to
-// create it rather than rely on the gate letting an unresolved path through.
+// ensureSeededRepo materializes the repository a fixture's seeded runs, caches
+// or artifacts belong to. Handlers refuse a repository that does not exist, so
+// a fixture seeding against a bare "owner/name" string must create it.
 func ensureSeededRepo(s *Server, fullName string) *store.Repo {
 	owner, name, ok := strings.Cut(fullName, "/")
 	if !ok {
@@ -89,8 +84,8 @@ func seedRun(t *testing.T, s *Server, repo string, status, result string) (*stor
 	return wf, wfJob
 }
 
-// runRequest exercises a route through the server's mux (so the path-
-// pattern + handler wiring is also covered). Returns the recorder.
+// runRequest exercises a route through the server's mux, so path-pattern and
+// handler wiring are covered too.
 func runRequest(s *Server, method, path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, nil)
 	w := httptest.NewRecorder()
@@ -219,8 +214,8 @@ func TestActionsRunJobs_List(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
 	}
-	// Decode into typed struct so int64 IDs survive round-trip without
-	// the float64 precision loss `map[string]any` would impose.
+	// Decode into a typed struct so int64 IDs survive the round-trip without
+	// the float64 precision loss map[string]any would impose.
 	var resp struct {
 		TotalCount int `json:"total_count"`
 		Jobs       []struct {
@@ -640,7 +635,7 @@ func TestActionsRunners_List(t *testing.T) {
 	}
 	s.store.Mu.Unlock()
 
-	// The runner list requires administration:read — authenticate.
+	// The runner list requires administration:read.
 	w := runAuthedRequest(s, "GET", "/api/v3/repos/octo/repo/actions/runners")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
@@ -653,7 +648,6 @@ func TestActionsRunners_List(t *testing.T) {
 	if resp.TotalCount != 2 {
 		t.Errorf("total_count = %d, want 2", resp.TotalCount)
 	}
-	// Validate one runner's full shape.
 	var found *map[string]any
 	for i := range resp.Runners {
 		if resp.Runners[i]["name"] == "runner-a" {
@@ -776,8 +770,8 @@ func TestActionsJob_StepsAndCompletedAt(t *testing.T) {
 	s.store.Mu.Unlock()
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
-	// Report the job + step records the way the runner does (job record
-	// plus one Task record per step, PATCHed through the timeline route).
+	// Report job + step records the way the runner does: one Job record plus
+	// one Task record per step, PATCHed through the timeline route.
 	jobRec := uuid.New().String()
 	patchTimelineRecords(t, s, planID, timelineID, true, []map[string]any{
 		{"id": jobRec, "type": "Job", "name": "Build", "order": 1,
@@ -909,7 +903,6 @@ func TestStableJobID_DeterministicPositiveAndJSONSafe(t *testing.T) {
 	}
 }
 
-// ghDo issues an arbitrary-method request against the shared test server.
 func ghDo(t *testing.T, method, path, token string, body interface{}) *http.Response {
 	t.Helper()
 	var bodyReader io.Reader
@@ -946,7 +939,7 @@ func TestActionsPendingDeploymentReviewFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Configure the environment with a required reviewer (admin = id 1).
+	// The required reviewer is admin (id 1).
 	resp = ghDo(t, "PUT", "/api/v3/repos/"+repo+"/environments/production", defaultToken,
 		map[string]interface{}{"reviewers": []map[string]interface{}{{"type": "User", "id": 1}}})
 	if resp.StatusCode != 200 {
@@ -981,7 +974,6 @@ jobs:
 	}
 	resp.Body.Close()
 
-	// Run a workflow with a job targeting the environment.
 	resp = ghPost(t, "/internal/exec/workflow", defaultToken, map[string]interface{}{
 		"repo":     repo,
 		"workflow": workflowYAML,
@@ -997,7 +989,6 @@ jobs:
 		t.Fatalf("submit status = %v, want waiting", submitData["status"])
 	}
 
-	// Resolve the run's numeric id from the runs list.
 	resp = ghGet(t, "/api/v3/repos/"+repo+"/actions/runs", defaultToken)
 	runsData := decodeJSON(t, resp)
 	runsList, _ := runsData["workflow_runs"].([]interface{})
@@ -1007,14 +998,12 @@ jobs:
 	runID := int(runsList[0].(map[string]interface{})["id"].(float64))
 	runPath := fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d", repo, runID)
 
-	// The run waits for review.
 	resp = ghGet(t, runPath, defaultToken)
 	runData := decodeJSON(t, resp)
 	if runData["status"] != "waiting" {
 		t.Fatalf("run status = %v, want waiting", runData["status"])
 	}
 
-	// Pending deployments lists the protected environment.
 	resp = ghGet(t, runPath+"/pending_deployments", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -1033,7 +1022,6 @@ jobs:
 		t.Fatalf("pending environment = %v", pendingEnv)
 	}
 
-	// Approve.
 	resp = ghPost(t, runPath+"/pending_deployments", defaultToken, map[string]interface{}{
 		"environment_ids": []int{envID},
 		"state":           "approved",
@@ -1053,7 +1041,6 @@ jobs:
 		t.Fatalf("approval deployments = %v", deployments)
 	}
 
-	// The run resumed (no longer waiting) and the approval is recorded.
 	resp = ghGet(t, runPath, defaultToken)
 	runData = decodeJSON(t, resp)
 	if runData["status"] == "waiting" {
@@ -1307,8 +1294,8 @@ func TestActionsPermissions_Org_CacheLimits(t *testing.T) {
 		t.Errorf("max_cache_retention_days = %v", data["max_cache_retention_days"])
 	}
 
-	// Gigabytes, as GitHub declares it — the old field name said bytes and the
-	// value was a byte count, so both the name and the unit were invented.
+	// Gigabytes, as GitHub declares it — an earlier bytes-named field invented
+	// both the name and the unit.
 	storResp := s.put(t, "/api/v3/organizations/"+orgID+"/actions/cache/storage-limit", defaultToken, map[string]interface{}{
 		"max_cache_size_gb": 10,
 	})
@@ -1387,9 +1374,8 @@ func TestActionsPermissions_Repo_WorkflowPermissions(t *testing.T) {
 func TestActionsPermissions_Repo_ForkPRSettings(t *testing.T) {
 	repo := createTestRepo(t)
 
-	// The default is a documented enum member. approval_policy names which
-	// contributors approval is demanded of; it has no member meaning "never",
-	// so "approval is not required" lives on the separate
+	// approval_policy names which contributors approval is demanded of; it has
+	// no "never" member, so "approval not required" lives on the separate
 	// require_approval_for_fork_pr_workflows switch asserted below.
 	data := decodeJSONWithStatus(t, ghGet(t, "/api/v3/repos/"+repo+"/actions/permissions/fork-pr-contributor-approval", defaultToken), 200)
 	if data["approval_policy"] != "first_time_contributors" {
@@ -1405,8 +1391,7 @@ func TestActionsPermissions_Repo_ForkPRSettings(t *testing.T) {
 		t.Errorf("approval_policy = %v", data["approval_policy"])
 	}
 
-	// A value outside the documented enum is refused rather than stored and
-	// echoed back.
+	// A value outside the documented enum is refused, not stored and echoed back.
 	rejected := ghPut(t, "/api/v3/repos/"+repo+"/actions/permissions/fork-pr-contributor-approval", defaultToken, map[string]interface{}{
 		"approval_policy": "none",
 	})
@@ -1529,10 +1514,8 @@ func requireStatus(t *testing.T, resp *http.Response, want int) {
 	resp.Body.Close()
 }
 
-// requireNoContent asserts a 204 with an empty body. GitHub answers the Actions
-// permissions writes that way, so a test that reads the response body is
-// asserting a shape GitHub does not have — the change is confirmed by reading
-// it back instead, which is the stronger check anyway.
+// requireNoContent asserts a 204 with an empty body: GitHub answers the Actions
+// permissions writes that way, so the change is confirmed by reading it back.
 func requireNoContent(t *testing.T, resp *http.Response) {
 	t.Helper()
 	defer resp.Body.Close()

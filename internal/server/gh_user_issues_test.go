@@ -40,7 +40,6 @@ func TestAuthenticatedUserIssues(t *testing.T) {
 		t.Fatalf("issue repository = %v", issues[0]["repository"])
 	}
 
-	// filter=created
 	resp = srv.get(t, "/api/v3/issues?filter=created", token)
 	issues = decodeJSONArray(t, resp)
 	if len(issues) != 1 || issues[0]["title"] != "created by target user" {

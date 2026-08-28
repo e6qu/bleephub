@@ -33,7 +33,6 @@ func TestWorkflowRunsListNewestFirst(t *testing.T) {
 		for i, r := range resp.WorkflowRuns {
 			ids[i] = r["id"].(float64)
 		}
-		// Newest-first: strictly descending.
 		for i := 1; i < len(ids); i++ {
 			if ids[i] >= ids[i-1] {
 				t.Errorf("runs not sorted newest-first: %v", ids)

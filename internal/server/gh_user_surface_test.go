@@ -39,19 +39,16 @@ func TestUserProfile_UpdateAuthenticatedUser(t *testing.T) {
 		t.Fatalf("PATCH /user response missing updated profile fields: %v", data)
 	}
 
-	// GET /user reflects the stored profile.
 	got := decodeJSON(t, s.get(t, "/api/v3/user", tok))
 	if got["company"] != "Example Corp" || got["hireable"] != true {
 		t.Fatalf("GET /user does not reflect PATCHed profile: %v", got)
 	}
 
-	// GET /user/{account_id} resolves the same account by numeric ID.
 	byID := decodeJSON(t, s.get(t, "/api/v3/user/"+strconv.Itoa(u.ID), tok))
 	if byID["login"] != "profileuser" || byID["location"] != "Berlin" {
 		t.Fatalf("GET /user/{account_id}: got %v", byID)
 	}
 
-	// Unknown account IDs are 404.
 	mustStatus(t, s.get(t, "/api/v3/user/99999999", tok), http.StatusNotFound, "GET /user/{account_id} unknown")
 	mustStatus(t, s.get(t, "/api/v3/user/not-a-number", tok), http.StatusNotFound, "GET /user/{account_id} non-numeric")
 }
@@ -63,13 +60,11 @@ func TestUserEmails_AddListDeleteVisibility(t *testing.T) {
 	s := newIsolatedServer(t)
 	_, tok := s.userSurfaceUser(t, "emailuser")
 
-	// The account starts with its primary email.
 	list := decodeJSONArray(t, s.get(t, "/api/v3/user/emails", tok))
 	if len(list) != 1 || list[0]["email"] != "emailuser@example.com" || list[0]["primary"] != true {
 		t.Fatalf("initial email list = %v", list)
 	}
 
-	// Add a secondary address.
 	resp := s.post(t, "/api/v3/user/emails", tok, map[string]interface{}{
 		"emails": []string{"second@example.com"},
 	})
@@ -90,18 +85,15 @@ func TestUserEmails_AddListDeleteVisibility(t *testing.T) {
 		t.Fatalf("email list after add = %v", list)
 	}
 
-	// Duplicates are rejected with a validation error.
 	mustStatus(t, s.post(t, "/api/v3/user/emails", tok, map[string]interface{}{
 		"emails": []string{"second@example.com"},
 	}), http.StatusUnprocessableEntity, "POST duplicate email")
 
-	// No public emails yet.
 	pub := decodeJSONArray(t, s.get(t, "/api/v3/user/public_emails", tok))
 	if len(pub) != 0 {
 		t.Fatalf("public emails before visibility change = %v", pub)
 	}
 
-	// Make the primary email public.
 	resp = s.patch(t, "/api/v3/user/email/visibility", tok, map[string]interface{}{"visibility": "public"})
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -116,11 +108,10 @@ func TestUserEmails_AddListDeleteVisibility(t *testing.T) {
 		t.Fatalf("public emails after visibility change = %v", pub)
 	}
 
-	// Invalid visibility value is a validation error.
 	mustStatus(t, s.patch(t, "/api/v3/user/email/visibility", tok, map[string]interface{}{"visibility": "internal"}),
 		http.StatusUnprocessableEntity, "PATCH visibility invalid")
 
-	// Deleting a secondary address works; the primary is protected.
+	// The primary email is protected from deletion; a secondary is not.
 	mustStatus(t, s.do(t, "DELETE", "/api/v3/user/emails", tok, map[string]interface{}{
 		"emails": []interface{}{"second@example.com"},
 	}), http.StatusNoContent, "DELETE secondary email")
@@ -173,15 +164,12 @@ func TestUserInteractionLimits_RoundTrip(t *testing.T) {
 	s := newIsolatedServer(t)
 	_, tok := s.userSurfaceUser(t, "limituser")
 
-	// No limit set: 204.
 	mustStatus(t, s.get(t, "/api/v3/user/interaction-limits", tok), http.StatusNoContent, "GET before set")
 
-	// Invalid group is a validation error.
 	mustStatus(t, s.put(t, "/api/v3/user/interaction-limits", tok, map[string]interface{}{
 		"limit": "everyone",
 	}), http.StatusUnprocessableEntity, "PUT invalid limit")
 
-	// Set a limit.
 	resp := s.put(t, "/api/v3/user/interaction-limits", tok, map[string]interface{}{
 		"limit":  "contributors_only",
 		"expiry": "one_week",
@@ -215,7 +203,6 @@ func TestUserMarketplacePurchases_ListWithRealPlan(t *testing.T) {
 	s := newIsolatedServer(t)
 	_, tok := s.userSurfaceUser(t, "marketuser")
 
-	// No purchases yet.
 	list := decodeJSONArray(t, s.get(t, "/api/v3/user/marketplace_purchases", tok))
 	if len(list) != 0 {
 		t.Fatalf("purchases before seeding = %v", list)
@@ -269,7 +256,7 @@ func TestUserHovercard_FromRealMembershipsAndRepos(t *testing.T) {
 		t.Fatalf("hovercard missing organization membership context: %v", card)
 	}
 
-	// Repository subject adds an ownership context for the repo owner.
+	// A repository subject adds an ownership context for the repo owner.
 	repo := s.store.CreateRepo(u, "hover-repo", "", false)
 	card = decodeJSON(t, s.get(t, fmt.Sprintf("/api/v3/users/hoveruser/hovercard?subject_type=repository&subject_id=%d", repo.ID), tok))
 	contexts, _ = card["contexts"].([]interface{})
@@ -284,7 +271,6 @@ func TestUserHovercard_FromRealMembershipsAndRepos(t *testing.T) {
 		t.Fatalf("hovercard missing repository ownership context: %v", card)
 	}
 
-	// subject_type without subject_id, and invalid subject types, are 422.
 	mustStatus(t, s.get(t, "/api/v3/users/hoveruser/hovercard?subject_type=repository", tok),
 		http.StatusUnprocessableEntity, "hovercard subject_type without subject_id")
 	mustStatus(t, s.get(t, "/api/v3/users/hoveruser/hovercard?subject_type=galaxy&subject_id=1", tok),
@@ -314,13 +300,12 @@ func TestUserIssues_FiltersAcrossRepos(t *testing.T) {
 	issue := decodeJSON(t, resp)
 	num := int(issue["number"].(float64))
 
-	// Default filter is "assigned": nothing assigned yet.
+	// The default filter is "assigned".
 	list := decodeJSONArray(t, s.get(t, "/api/v3/user/issues", tok))
 	if len(list) != 0 {
 		t.Fatalf("assigned issues before assignment = %v", list)
 	}
 
-	// filter=created finds the authored issue, with its repository attached.
 	list = decodeJSONArray(t, s.get(t, "/api/v3/user/issues?filter=created", tok))
 	if len(list) != 1 || list[0]["title"] != "created by me" {
 		t.Fatalf("created issues = %v", list)
@@ -338,7 +323,7 @@ func TestUserIssues_FiltersAcrossRepos(t *testing.T) {
 		t.Fatalf("assigned issues after assignment = %v", list)
 	}
 
-	// Closing the issue removes it from the default open-state listing.
+	// Closing removes it from the default open-state listing.
 	mustStatus(t, s.patch(t, fmt.Sprintf("/api/v3/repos/issueuser/issue-repo/issues/%d", num), tok,
 		map[string]interface{}{"state": "closed"}), http.StatusOK, "close issue")
 	list = decodeJSONArray(t, s.get(t, "/api/v3/user/issues?filter=created", tok))
@@ -436,7 +421,6 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 		t.Fatalf("date = %v", item["date"])
 	}
 
-	// The summary aggregates the same real usage.
 	summary := decodeJSON(t, s.get(t, "/api/v3/users/billuser/settings/billing/usage/summary", tok))
 	if summary["user"] != "billuser" {
 		t.Fatalf("summary user = %v", summary["user"])
@@ -469,8 +453,6 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 		}
 	}
 
-	// Filters: an unmatched repository filter empties the report; a bad
-	// year is a 400; another (non-admin) user is forbidden.
 	filtered := decodeJSON(t, s.get(t, "/api/v3/users/billuser/settings/billing/usage?repository=billuser/other", tok))
 	if items, _ := filtered["usageItems"].([]interface{}); len(items) != 0 {
 		t.Fatalf("filtered usageItems = %v", filtered)

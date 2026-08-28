@@ -9,7 +9,6 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 	s := newIsolatedServer(t)
 	org := s.createTestOrg(t)
 
-	// PUT a single_select definition.
 	resp := s.put(t, "/api/v3/orgs/"+org+"/properties/schema/environment", defaultToken, map[string]interface{}{
 		"value_type":     "single_select",
 		"required":       true,
@@ -34,7 +33,6 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 		t.Fatalf("values_editable_by default = %v", created["values_editable_by"])
 	}
 
-	// PATCH the schema in a batch.
 	resp = s.patch(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "service", "value_type": "string"},
@@ -48,7 +46,7 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 		t.Fatalf("batch = %v", batch)
 	}
 
-	// GET all definitions, sorted by name.
+	// Definitions come back sorted by name.
 	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get schema: %d", resp.StatusCode)
@@ -61,7 +59,6 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 		t.Fatalf("schema order = %v", all)
 	}
 
-	// GET one definition.
 	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get property: %d", resp.StatusCode)
@@ -81,7 +78,6 @@ func TestOrgCustomProperties_SchemaCRUD(t *testing.T) {
 		t.Fatalf("replaced property should drop description, got %v", got)
 	}
 
-	// DELETE.
 	resp = s.delete(t, "/api/v3/orgs/"+org+"/properties/schema/team", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -99,7 +95,6 @@ func TestOrgCustomProperties_SchemaValidation(t *testing.T) {
 	s := newIsolatedServer(t)
 	org := s.createTestOrg(t)
 
-	// Bad value type.
 	resp := s.put(t, "/api/v3/orgs/"+org+"/properties/schema/bad", defaultToken, map[string]interface{}{
 		"value_type": "integer",
 	})
@@ -108,7 +103,7 @@ func TestOrgCustomProperties_SchemaValidation(t *testing.T) {
 		t.Fatalf("bad value_type: %d", resp.StatusCode)
 	}
 
-	// Required without a default.
+	// Required without a default is rejected.
 	resp = s.put(t, "/api/v3/orgs/"+org+"/properties/schema/bad", defaultToken, map[string]interface{}{
 		"value_type": "string",
 		"required":   true,
@@ -118,7 +113,7 @@ func TestOrgCustomProperties_SchemaValidation(t *testing.T) {
 		t.Fatalf("required without default: %d", resp.StatusCode)
 	}
 
-	// allowed_values on a non-select type.
+	// allowed_values on a non-select type is rejected.
 	resp = s.put(t, "/api/v3/orgs/"+org+"/properties/schema/bad", defaultToken, map[string]interface{}{
 		"value_type":     "string",
 		"allowed_values": []string{"a"},
@@ -136,7 +131,6 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 	repoName, _ := s.createOrgRepoForGovernance(t, org)
 	repoPath := repoName.fullName()
 
-	// Definitions: one with a default, one select, one boolean.
 	resp := s.patch(t, "/api/v3/orgs/"+org+"/properties/schema", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "environment", "value_type": "single_select", "default_value": "production",
@@ -160,7 +154,6 @@ func TestRepoCustomPropertyValues_SetAndRead(t *testing.T) {
 		t.Fatalf("default values = %v", values)
 	}
 
-	// PATCH repo values.
 	resp = s.patch(t, "/api/v3/repos/"+repoPath+"/properties/values", defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{
 			{"property_name": "environment", "value": "development"},
@@ -245,7 +238,6 @@ func TestOrgCustomProperties_OrgValues(t *testing.T) {
 		t.Fatalf("schema: %d", resp.StatusCode)
 	}
 
-	// Batch-apply values to both repositories.
 	resp = s.patch(t, "/api/v3/orgs/"+org+"/properties/values", defaultToken, map[string]interface{}{
 		"repository_names": []string{repoA.name, repoB.name},
 		"properties": []map[string]interface{}{
@@ -257,7 +249,6 @@ func TestOrgCustomProperties_OrgValues(t *testing.T) {
 		t.Fatalf("patch org values: %d", resp.StatusCode)
 	}
 
-	// List org repo values.
 	resp = s.get(t, "/api/v3/orgs/"+org+"/properties/values", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list org values: %d", resp.StatusCode)

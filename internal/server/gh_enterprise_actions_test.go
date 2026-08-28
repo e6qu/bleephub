@@ -8,8 +8,7 @@ import (
 func TestEnterpriseActionsCacheLimits(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// GitHub Enterprise Server ships with a 14-day retention limit and a
-	// 10 GB storage limit.
+	// GHES ships with a 14-day retention limit and a 10 GB storage limit.
 	resp := s.get(t, enterpriseAPI+"/actions/cache/retention-limit", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -30,7 +29,6 @@ func TestEnterpriseActionsCacheLimits(t *testing.T) {
 		t.Fatalf("max_cache_size_gb = %v, want 10 (GHES default)", sto["max_cache_size_gb"])
 	}
 
-	// Set new limits → 204, and they round-trip.
 	resp = s.put(t, enterpriseAPI+"/actions/cache/retention-limit", defaultToken, map[string]interface{}{
 		"max_cache_retention_days": 30,
 	})
@@ -55,7 +53,6 @@ func TestEnterpriseActionsCacheLimits(t *testing.T) {
 		t.Fatalf("storage after put = %v, want 25", got)
 	}
 
-	// Invalid values → 400 (the documented bad-request status).
 	resp = s.put(t, enterpriseAPI+"/actions/cache/retention-limit", defaultToken, map[string]interface{}{
 		"max_cache_retention_days": 0,
 	})
@@ -69,7 +66,6 @@ func TestEnterpriseActionsCacheLimits(t *testing.T) {
 		t.Fatalf("put storage without member: got %d, want 400", resp.StatusCode)
 	}
 
-	// Non-owner → 403.
 	memberTok := s.createEnterpriseTestUser(t, "ent-cache-member")
 	resp = s.put(t, enterpriseAPI+"/actions/cache/retention-limit", memberTok, map[string]interface{}{
 		"max_cache_retention_days": 5,
@@ -79,7 +75,6 @@ func TestEnterpriseActionsCacheLimits(t *testing.T) {
 		t.Fatalf("non-owner put: got %d, want 403", resp.StatusCode)
 	}
 
-	// Restore the defaults for other tests.
 	resp = s.put(t, enterpriseAPI+"/actions/cache/retention-limit", defaultToken, map[string]interface{}{
 		"max_cache_retention_days": 14,
 	})
@@ -150,7 +145,6 @@ func TestEnterpriseAndRepositoryActionsCacheUsagePolicy(t *testing.T) {
 		t.Fatalf("enterprise default above maximum: got %d, want 400", resp.StatusCode)
 	}
 
-	// Restore global defaults for the shared API test server.
 	resp = s.patch(t, enterprisePolicy, defaultToken, map[string]interface{}{
 		"repo_cache_size_limit_in_gb":     10,
 		"max_repo_cache_size_limit_in_gb": 10,
@@ -166,7 +160,6 @@ func TestEnterpriseActionsOIDCCustomProperties(t *testing.T) {
 	s := newIsolatedServer(t)
 	base := enterpriseAPI + "/actions/oidc/customization/properties/repo"
 
-	// Create an inclusion.
 	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"custom_property_name": "environment_tier",
 	})
@@ -182,7 +175,6 @@ func TestEnterpriseActionsOIDCCustomProperties(t *testing.T) {
 		t.Fatalf("inclusion_source = %v, want enterprise", created["inclusion_source"])
 	}
 
-	// Duplicate → 422.
 	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"custom_property_name": "environment_tier",
 	})
@@ -191,14 +183,12 @@ func TestEnterpriseActionsOIDCCustomProperties(t *testing.T) {
 		t.Fatalf("duplicate inclusion: got %d, want 422", resp.StatusCode)
 	}
 
-	// Missing name → 422.
 	resp = s.post(t, base, defaultToken, map[string]interface{}{})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("missing name: got %d, want 422", resp.StatusCode)
 	}
 
-	// List contains it.
 	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -217,7 +207,6 @@ func TestEnterpriseActionsOIDCCustomProperties(t *testing.T) {
 		t.Fatal("inclusion list does not contain environment_tier")
 	}
 
-	// Delete → 204; deleting again → 404.
 	resp = s.delete(t, base+"/environment_tier", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {

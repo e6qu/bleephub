@@ -164,7 +164,6 @@ func TestRawRejectsUnreadableAndMissingTargets(t *testing.T) {
 	content := rawSeedFile(t, s, "rawpriv", "secret.txt", "classified\n")
 	downloadURL := content["download_url"].(string)
 
-	// The owner can read it.
 	owner := fetchAdvertisedRaw(t, s, downloadURL, defaultToken)
 	owner.Body.Close()
 	if owner.StatusCode != http.StatusOK {

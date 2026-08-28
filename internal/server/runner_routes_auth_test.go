@@ -11,11 +11,9 @@ import (
 )
 
 // seedDispatchedJob registers a job the broker has already handed to agentID,
-// exactly as pullPendingMessage leaves it: a job message naming the plan scope
-// and the repository, and the agent the message went to. It returns the job
-// together with the plan scope identifier its runtime token is minted for.
-// An empty repoFullName is the operator-submitted shape (/internal/exec/submit):
-// a real plan that names no repository.
+// exactly as pullPendingMessage leaves it, and returns it with the plan scope
+// its runtime token is minted for. An empty repoFullName is the
+// operator-submitted shape (/internal/exec/submit): a plan naming no repository.
 func seedDispatchedJob(t *testing.T, s *Server, repoFullName string, agentID int, requestID int64) (*store.Job, string) {
 	t.Helper()
 	if repoFullName != "" {

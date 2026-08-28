@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// createLegacyTestTeam creates an org + team through the slug surface
-// and returns the team's numeric ID for the legacy endpoints.
 func createLegacyTestTeam(t *testing.T, s *isolatedServer, orgLogin, teamName string) int {
 	t.Helper()
 	s.createOrg(t, orgLogin)
@@ -58,7 +56,6 @@ func TestLegacyTeamGetUpdateDelete(t *testing.T) {
 	expectStatus(t, s.patch(t, "/api/v3/teams/"+itoa(teamID), defaultToken,
 		map[string]interface{}{"privacy": "invisible"}), http.StatusUnprocessableEntity, "bad privacy enum")
 
-	// Child teams via the legacy list.
 	childResp := s.post(t, "/api/v3/orgs/legacy-crud-org/teams", defaultToken,
 		map[string]interface{}{"name": "Legacy Child", "parent_team_id": teamID})
 	if childResp.StatusCode != http.StatusCreated {
@@ -111,7 +108,6 @@ func TestLegacyTeamMembersAndMemberships(t *testing.T) {
 		t.Fatalf("legacy members list = %v", members)
 	}
 
-	// Membership read: active org member reads active.
 	ms := s.get(t, "/api/v3/teams/"+itoa(teamID)+"/memberships/legacy-member", defaultToken)
 	if ms.StatusCode != http.StatusOK {
 		ms.Body.Close()
@@ -147,7 +143,6 @@ func TestLegacyTeamMembersAndMemberships(t *testing.T) {
 	expectStatus(t, s.put(t, "/api/v3/teams/"+itoa(teamID)+"/memberships/legacy-member", defaultToken,
 		map[string]interface{}{"role": "overlord"}), http.StatusUnprocessableEntity, "bad membership role")
 
-	// Removal via both endpoint families.
 	expectStatus(t, s.delete(t, "/api/v3/teams/"+itoa(teamID)+"/memberships/legacy-nonmember", defaultToken),
 		http.StatusNoContent, "legacy delete membership")
 	expectStatus(t, s.get(t, "/api/v3/teams/"+itoa(teamID)+"/memberships/legacy-nonmember", defaultToken),

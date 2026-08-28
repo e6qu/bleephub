@@ -119,7 +119,6 @@ func TestWorkflowDispatchCreatesSpan(t *testing.T) {
 }
 
 func TestNoSpansWhenDisabled(t *testing.T) {
-	// Use default no-op provider — should not crash
 	otel.SetTracerProvider(noop.NewTracerProvider())
 
 	s := newTestServer()

@@ -9,16 +9,14 @@ import (
 	"testing"
 )
 
-// Live-server shape test for Projects classic (v1). Exercises every route
-// through the shared TestMain server so the OpenAPI response-shape validator
-// observes them.
+// Live-server shape test for Projects classic (v1): drive every route through
+// the shared TestMain server so the OpenAPI response-shape validator observes them.
 func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "live-projects-classic", "", false)
 
-	// Create project
 	createBody, _ := json.Marshal(map[string]any{"name": "Live Roadmap", "body": "live body"})
 	resp, err := s.authedPost("/api/v3/repos/admin/live-projects-classic/projects", "application/json", bytes.NewReader(createBody))
 	if err != nil {
@@ -36,7 +34,6 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	resp.Body.Close()
 	projID := int(created["id"].(float64))
 
-	// List projects
 	resp = s.authedGet(t, "/api/v3/repos/admin/live-projects-classic/projects")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -46,7 +43,6 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&[]map[string]any{})
 	resp.Body.Close()
 
-	// Get project
 	resp = s.authedGet(t, "/api/v3/projects/"+itoa(projID))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -55,7 +51,6 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Create column
 	colBody, _ := json.Marshal(map[string]any{"name": "Live Column"})
 	resp, err = s.authedPost("/api/v3/projects/"+itoa(projID)+"/columns", "application/json", bytes.NewReader(colBody))
 	if err != nil {
@@ -73,7 +68,6 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	resp.Body.Close()
 	colID := int(col["id"].(float64))
 
-	// Create issue and issue card
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "live issue", "body", nil, nil, 0)
 	cardBody, _ := json.Marshal(map[string]any{"content_id": issue.ID, "content_type": "Issue"})
 	resp, err = s.authedPost("/api/v3/projects/columns/"+itoa(colID)+"/cards", "application/json", bytes.NewReader(cardBody))
@@ -91,7 +85,6 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Create note card
 	noteBody, _ := json.Marshal(map[string]any{"note": "live note"})
 	resp, err = s.authedPost("/api/v3/projects/columns/"+itoa(colID)+"/cards", "application/json", bytes.NewReader(noteBody))
 	if err != nil {
@@ -108,7 +101,6 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// List cards
 	resp = s.authedGet(t, "/api/v3/projects/columns/"+itoa(colID)+"/cards")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -117,7 +109,6 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Move note card
 	cardID := int(noteCard["id"].(float64))
 	moveBody, _ := json.Marshal(map[string]any{"position": "first"})
 	req, _ := http.NewRequest("POST", s.baseURL+"/api/v3/projects/columns/cards/"+itoa(cardID)+"/moves", strings.NewReader(string(moveBody)))
@@ -134,7 +125,6 @@ func TestLiveProjectsClassic_FullFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Update project
 	patchBody, _ := json.Marshal(map[string]any{"state": "closed"})
 	req, _ = http.NewRequest("PATCH", s.baseURL+"/api/v3/projects/"+itoa(projID), strings.NewReader(string(patchBody)))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)

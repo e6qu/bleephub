@@ -47,7 +47,6 @@ func TestConformance404ErrorFormat(t *testing.T) {
 }
 
 func TestConformance422ValidationErrorFormat(t *testing.T) {
-	// Try to create repo with empty name
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "",
 	})
@@ -200,7 +199,6 @@ func TestConformanceContentTypeOnError(t *testing.T) {
 func TestConformanceAcceptHeader(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// application/vnd.github+json should be accepted
 	req, _ := newGHRequest("GET", s.baseURL+"/api/v3/user", defaultToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := doGHRequest(req)
@@ -251,9 +249,7 @@ func TestConformanceApiVersionSelectionAndRetirement(t *testing.T) {
 		t.Fatalf("retired API version status = %d, want 410", resp.StatusCode)
 	}
 
-	// The calendar header only versions REST. GraphQL remains a continuously
-	// evolving schema and must not be rejected because a client happens to
-	// carry a retired REST version header on all GitHub requests.
+	// The calendar header only versions REST; GraphQL must not be rejected for a retired REST version header the client carries on every request.
 	req, _ = newGHRequest("POST", s.baseURL+"/api/graphql", defaultToken)
 	req.Header.Set("X-GitHub-Api-Version", "2020-01-01")
 	req.Header.Set("Content-Type", "application/json")
@@ -358,7 +354,6 @@ func TestConformanceRateLimitEndpoint(t *testing.T) {
 // --- Cross-endpoint consistency (gh api tests) ---
 
 func TestGHApiRepoCreateThenGraphQL(t *testing.T) {
-	// Create via REST
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":        "cross-repo-1",
 		"description": "Cross-check",
@@ -369,7 +364,6 @@ func TestGHApiRepoCreateThenGraphQL(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Query via GraphQL
 	resp2 := ghPost(t, "/api/graphql", defaultToken, map[string]string{
 		"query": `{repository(owner:"admin",name:"cross-repo-1"){name,description}}`,
 	})
@@ -387,7 +381,6 @@ func TestGHApiRepoCreateThenGraphQL(t *testing.T) {
 func TestGHApiIssueCreateThenGraphQL(t *testing.T) {
 	createTestIssueRepo(t, "cross-issue-1")
 
-	// Create via REST
 	resp := ghPost(t, "/api/v3/repos/admin/cross-issue-1/issues", defaultToken, map[string]interface{}{
 		"title": "Cross issue",
 		"body":  "Created via REST",
@@ -398,7 +391,6 @@ func TestGHApiIssueCreateThenGraphQL(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Query via GraphQL
 	resp2 := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"cross-issue-1"){issue(number:1){title,body,state}}}`,
 	})

@@ -17,7 +17,6 @@ func tokenRequest(s *Server, method, path, token string) *httptest.ResponseRecor
 	return serveTestRequest(s, bearerHeader(token), method, path, nil)
 }
 
-// seedTestUser inserts a fresh user and returns it.
 func seedTestUser(s *Server, login string) *store.User {
 	s.store.Mu.Lock()
 	u := &store.User{ID: s.store.NextUser, Login: login, Type: "User"}
@@ -96,15 +95,12 @@ func TestOrgAuditLogRequiresOwner(t *testing.T) {
 	outsider := seedTestUser(s, "audit-outsider")
 	outTok := s.store.CreateToken(outsider.ID, "repo")
 
-	// Anonymous → 404.
 	if w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", ""); w.Code != http.StatusNotFound {
 		t.Errorf("anon audit-log = %d, want 404", w.Code)
 	}
-	// Non-owner (not a site admin) → 404.
 	if w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", outTok.Value); w.Code != http.StatusNotFound {
 		t.Errorf("non-owner audit-log = %d, want 404", w.Code)
 	}
-	// Owner (org owner PAT) → 200.
 	w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", ownerTok.Value)
 	if w.Code != http.StatusOK {
 		t.Fatalf("owner audit-log = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -136,8 +132,8 @@ func TestListOrgMembersNonMemberSeesOnlyPublic(t *testing.T) {
 	if org == nil {
 		t.Fatal("CreateOrg nil")
 	}
-	// admin is an admin member (private). Add a second private member and a
-	// publicized member.
+	// admin is a private admin member; add another private member and a
+	// publicized one so the two roster views differ.
 	priv := seedTestUser(s, "priv-member")
 	s.store.SetMembership("mem-org", priv.ID, store.OrgRoleMember, store.MembershipStateActive)
 	pub := seedTestUser(s, "pub-member")
@@ -147,7 +143,6 @@ func TestListOrgMembersNonMemberSeesOnlyPublic(t *testing.T) {
 	outsider := seedTestUser(s, "mem-outsider")
 	outTok := s.store.CreateToken(outsider.ID, "read:org")
 
-	// Non-member sees only the publicized member.
 	w := tokenRequest(s, "GET", "/api/v3/orgs/mem-org/members", outTok.Value)
 	if w.Code != http.StatusOK {
 		t.Fatalf("non-member members = %d, want 200", w.Code)
@@ -158,7 +153,6 @@ func TestListOrgMembersNonMemberSeesOnlyPublic(t *testing.T) {
 		t.Errorf("non-member view = %v, want only [pub-member]", got)
 	}
 
-	// A member (admin) sees everyone.
 	w = tokenRequest(s, "GET", "/api/v3/orgs/mem-org/members", store.AdminToken())
 	json.Unmarshal(w.Body.Bytes(), &got)
 	if len(got) != 3 {

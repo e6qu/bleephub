@@ -16,14 +16,11 @@ import (
 )
 
 // TestSeedPreRegisteredApp proves the coordinate-only consumer flow of issue
-// #559: an operator seeds an App at startup (caller-chosen id + slug +
-// caller-supplied private key + a pre-created installation), and a consumer
-// then drives the App exactly as it would real GitHub — holding ONLY
-// coordinates (base URL + app id + private key) and calling the standard
-// /api/v3/app surface, with zero bleephub-specific client configuration.
+// #559: after an operator seeds an App at startup, a consumer drives it holding
+// only base URL + app id + private key against the standard /api/v3/app surface,
+// with zero bleephub-specific client configuration.
 func TestSeedPreRegisteredApp(t *testing.T) {
-	// The private key the consumer "already holds" — as on real GitHub, where
-	// the App is registered out of band and the consumer keeps id + PEM.
+	// The private key the consumer "already holds", as on real GitHub where the App is registered out of band.
 	pemKey := testSeedPrivateKeyPEM(t)
 
 	const appID = 4242
@@ -44,14 +41,12 @@ func TestSeedPreRegisteredApp(t *testing.T) {
 			"target_type": "User",
 		}},
 	}})
-	// Operator-only config (the harness that brings bleephub up) — the
-	// consumer's client never sees this.
+	// Operator-only config; the consumer's client never sees this.
 	t.Setenv("BLEEPHUB_SEED_APPS", string(seed))
 
 	srv := NewServer("127.0.0.1:0", zerolog.Nop())
 	useFixedTestClock(srv)
-	// Mirror ListenAndServe's handler chain so /api/ auth (the app-JWT
-	// middleware) runs — httptest serves the bare mux otherwise.
+	// Mirror ListenAndServe's handler chain so the app-JWT auth middleware runs; httptest serves the bare mux otherwise.
 	handler := srv.requestHandler()
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
@@ -79,7 +74,6 @@ func TestSeedPreRegisteredApp(t *testing.T) {
 		return resp
 	}
 
-	// 1. The seeded key authenticates GET /app and returns the seeded identity.
 	appResp := bearer("GET", "/api/v3/app")
 	defer appResp.Body.Close()
 	if appResp.StatusCode != http.StatusOK {
@@ -94,7 +88,6 @@ func TestSeedPreRegisteredApp(t *testing.T) {
 		t.Errorf("GET /app slug = %v, want ci-bot", appObj["slug"])
 	}
 
-	// 2. The pre-created installation is discoverable via the standard surface.
 	instResp := bearer("GET", "/api/v3/app/installations")
 	body, _ := io.ReadAll(instResp.Body)
 	instResp.Body.Close()
@@ -111,7 +104,7 @@ func TestSeedPreRegisteredApp(t *testing.T) {
 		t.Errorf("installation account = %v, want %s", acct["login"], accountLogin)
 	}
 
-	// 3. The consumer mints an installation token by coordinates alone.
+	// The consumer mints an installation token by coordinates alone.
 	tokResp := bearer("POST", "/api/v3/app/installations/9001/access_tokens")
 	tokBody, _ := io.ReadAll(tokResp.Body)
 	tokResp.Body.Close()
@@ -175,9 +168,7 @@ func TestSeedPreRegisteredAppRejectsUnknownInstallationAccount(t *testing.T) {
 	}
 }
 
-// TestSeedAppIdempotentAndBadKey covers the two guards: a re-seed of the same
-// id is a no-op (created=false), and a non-RSA / malformed PEM is rejected
-// loud rather than producing an unusable App.
+// TestSeedAppIdempotentAndBadKey covers the two guards: re-seeding the same id is a no-op, and a malformed PEM is rejected loud rather than producing an unusable App.
 func TestSeedAppIdempotentAndBadKey(t *testing.T) {
 	st := store.NewStore()
 	st.SeedDefaultUser()

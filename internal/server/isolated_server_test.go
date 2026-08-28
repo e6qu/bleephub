@@ -21,30 +21,17 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TEST-008 migration scaffolding.
-//
-// The package-wide `testServer` is a single live server shared by every test,
-// so tests are coupled through its mutable store and cannot run in parallel.
-// newIsolatedServer builds a fully-routed server backed by its own httptest
-// listener and its own store, seeded exactly like the shared one (NewServer
-// registers every route and seeds the admin user; the clock is pinned to
-// fixedTestTime). A test that switches to it can call t.Parallel() because it
-// shares no request-visible state with any other test.
-//
-// The migration is incremental: this coexists with `testServer`, and files are
-// converted a group at a time.
+// TEST-008 migration scaffolding: newIsolatedServer builds a fully-routed
+// server on its own httptest listener and store (seeded like the shared
+// testServer), so a converted test can run under t.Parallel().
 type isolatedServer struct {
 	*Server
 	baseURL string
 }
 
-// repoRef identifies a repository by its owner and name. The isolated repo
-// helpers return one instead of a bare string so a converted test cannot make
-// the two mistakes that produced silent 404s and "admin/admin/<name>" during
-// the TEST-008 migration: hand-building a "/api/v3/repos/<owner>/<name>" path,
-// or passing a full "owner/name" where only the name (or only the owner) was
-// meant. Consumers use path()/fullName()/owner/name; the compiler rejects
-// concatenating a repoRef into a URL.
+// repoRef carries owner and name separately so the compiler rejects
+// concatenating it into a URL — the TEST-008 migration's silent 404s and
+// "admin/admin/<name>" bugs came from hand-built paths and misplaced full names.
 type repoRef struct {
 	owner, name string
 }
@@ -59,20 +46,14 @@ func newIsolatedServer(t *testing.T) *isolatedServer {
 	t.Helper()
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	useFixedTestClock(s)
-	// Package upload routes persist bytes under PackageDataDir; the shared
-	// harness sets one in TestMain, so give each isolated server its own
-	// per-test temp dir (auto-cleaned, so parallel-safe).
+	// Give each isolated server its own per-test package data dir (auto-cleaned).
 	s.store.PackageDataDir = t.TempDir()
-	// Feed the shared OpenAPI shape observer (PAR-011) so isolated-server
-	// tests contribute to the parity coverage instead of eroding it as the
-	// TEST-008 migration moves traffic off the shared harness. The observer is
-	// mutex-guarded, so concurrent isolated servers feed it safely.
+	// Feed the shared OpenAPI shape observer (PAR-011) so isolated-server traffic
+	// still counts toward parity coverage.
 	if apiShapeValidator != nil {
 		s.responseObserver = apiShapeValidator.Observe
 	}
-	// Typed-nil source ratchet (graphql_source_audit_test.go): isolated
-	// servers carry most of the GraphQL traffic converted off the shared
-	// harness, so they must feed the audit too.
+	// Feed the typed-nil source ratchet (graphql_source_audit_test.go) too.
 	instrumentGraphQLSourceAudit(s.graphql.Schema())
 	ts := httptest.NewServer(s.requestHandler())
 	t.Cleanup(ts.Close)
@@ -1193,13 +1174,12 @@ func TestIsolatedServersAreIndependentAndParallelSafe(t *testing.T) {
 		t.Fatalf("create repo on server A: got %d, want 201", resp.StatusCode)
 	}
 
-	// The repo exists on A...
 	onA := a.get(t, "/api/v3/repos/admin/iso-only-on-a", defaultToken)
 	onA.Body.Close()
 	if onA.StatusCode != http.StatusOK {
 		t.Fatalf("repo on its own server: got %d, want 200", onA.StatusCode)
 	}
-	// ...and not on the independent server B.
+	// The independent server B must not see the repo created on A.
 	onB := b.get(t, "/api/v3/repos/admin/iso-only-on-a", defaultToken)
 	onB.Body.Close()
 	if onB.StatusCode != http.StatusNotFound {

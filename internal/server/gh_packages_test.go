@@ -59,7 +59,7 @@ func TestPackages_UserCRUD(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	pkgID, versionID := s.publishContainerPackageVersion(t, admin.Login, "user-pkg", "1.0.0")
 
-	// List user packages (package_type is a required query parameter)
+	// package_type is a required query parameter.
 	resp := s.get(t, "/api/v3/users/"+admin.Login+"/packages?package_type=container", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -82,7 +82,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 		t.Fatalf("seeded user-pkg not in list: %v", list)
 	}
 
-	// Get package
 	resp = s.get(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -97,7 +96,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 		t.Fatalf("expected owner login %s, got %v", admin.Login, pkg["owner"])
 	}
 
-	// List versions
 	resp = s.get(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg/versions", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -116,7 +114,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 		t.Fatalf("expected version 1.0.0, got %v", versions[0]["name"])
 	}
 
-	// Get version
 	resp = s.get(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg/versions/"+strconv.Itoa(versionID), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -128,7 +125,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 		t.Fatalf("expected version name 1.0.0, got %v", version["name"])
 	}
 
-	// List files
 	resp = s.get(t, "/ui-data/users/"+admin.Login+"/packages/container/user-pkg/versions/"+strconv.Itoa(versionID)+"/files", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -159,7 +155,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 		t.Fatalf("expected registry manifest and layer files, got %v", files)
 	}
 
-	// Download file
 	resp = s.get(t, "/ui-data/users/"+admin.Login+"/packages/container/user-pkg/versions/"+strconv.Itoa(versionID)+"/files/"+strconv.Itoa(fileID), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -172,7 +167,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 		t.Fatal("expected package file bytes, got empty body")
 	}
 
-	// Delete version
 	resp = s.delete(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg/versions/"+strconv.Itoa(versionID), defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -181,7 +175,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// List versions after delete excludes deleted
 	resp = s.get(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg/versions", defaultToken)
 	versions = nil
 	if err := json.NewDecoder(resp.Body).Decode(&versions); err != nil {
@@ -192,7 +185,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 		t.Fatalf("expected 0 versions after delete, got %d", len(versions))
 	}
 
-	// Restore version
 	resp = s.post(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg/versions/"+strconv.Itoa(versionID)+"/restore", defaultToken, nil)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -211,7 +203,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 		t.Fatalf("expected 1 version after restore, got %d", len(versions))
 	}
 
-	// Delete package
 	resp = s.delete(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg", defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -220,7 +211,6 @@ func TestPackages_UserCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Get package after delete returns 404
 	resp = s.get(t, "/api/v3/users/"+admin.Login+"/packages/container/user-pkg", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 after package delete, got %d", resp.StatusCode)
@@ -466,42 +456,36 @@ func TestPackages_404s(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	_ = admin
 
-	// Missing user
 	resp := s.get(t, "/api/v3/users/nonexistent-user-xyz/packages", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing user, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Missing package
 	resp = s.get(t, "/api/v3/users/admin/packages/container/does-not-exist", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing package, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Missing version
 	resp = s.get(t, "/api/v3/users/admin/packages/container/does-not-exist/versions/999999", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing version, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Missing org
 	resp = s.get(t, "/api/v3/orgs/nonexistent-org-xyz/packages", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing org, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Missing repo
 	resp = s.get(t, "/ui-data/repos/nonexistent/repo/packages", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing repo, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Invalid package type
 	resp = s.get(t, "/api/v3/users/admin/packages/invalid/foo", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for invalid package type, got %d", resp.StatusCode)
@@ -524,7 +508,6 @@ func TestPackages_InternalUploadValidation(t *testing.T) {
 	s := newIsolatedServer(t)
 	admin := s.store.UsersByLogin["admin"]
 
-	// Missing version
 	resp, _ := s.authedPost("/internal/packages/user/"+admin.Login+"/npm/bad-pkg/versions", "application/json", bytes.NewReader([]byte(`{}`)))
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		b, _ := io.ReadAll(resp.Body)
@@ -543,7 +526,6 @@ func TestPackages_InternalUploadValidation(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Invalid package type
 	resp, _ = s.authedPost("/internal/packages/user/"+admin.Login+"/invalid/bad-pkg/versions", "application/json", bytes.NewReader([]byte(`{"version":"1.0.0"}`)))
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		b, _ := io.ReadAll(resp.Body)
@@ -552,7 +534,6 @@ func TestPackages_InternalUploadValidation(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Missing owner
 	resp, _ = s.authedPost("/internal/packages/user/no-such-user/npm/bad-pkg/versions", "application/json", bytes.NewReader([]byte(`{"version":"1.0.0"}`)))
 	if resp.StatusCode != http.StatusNotFound {
 		b, _ := io.ReadAll(resp.Body)

@@ -27,7 +27,6 @@ func TestContributionsCollectionAggregate(t *testing.T) {
 	// the default branch a commit, so a pull request can resolve its base SHA.
 	h.commitRepoFiles(repo, map[string]string{"README.md": "hello"})
 
-	// Two issues opened by the user.
 	if h.store.CreateIssue(repo.ID, user.ID, "first bug", "body", nil, nil, 0) == nil {
 		t.Fatal("CreateIssue returned nil")
 	}
@@ -65,7 +64,6 @@ func TestContributionsCollectionAggregate(t *testing.T) {
 		t.Fatal("hasAnyContributions = false, want true")
 	}
 
-	// Run a GraphQL document over the fully built type graph.
 	document := `{
 		cc {
 			totalCommitContributions

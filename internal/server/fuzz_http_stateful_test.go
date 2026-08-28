@@ -2,15 +2,7 @@ package bleephub
 
 import "testing"
 
-// FuzzHTTPSequence drives a sequence of 2..8 fuzzed requests against ONE server
-// instance, so create→mutate→read chains and cross-request state-machine bugs
-// (a create a later read 500s on, an ID reused across resource kinds, a delete
-// that corrupts a shared index) are exercised. Every request in the sequence
-// must satisfy the same invariants as FuzzHTTPRequest.
-//
-// A fresh fixture is built per fuzz execution so that a mutating sequence cannot
-// permanently poison the shared seed for later inputs (which would turn one real
-// bug into a flood of derived failures and destroy corpus determinism).
+// FuzzHTTPSequence drives 2..8 fuzzed requests against one server instance to exercise create→mutate→read chains and cross-request state-machine bugs, holding every request to the same invariants as FuzzHTTPRequest. A fresh fixture per execution stops a mutating sequence from poisoning the shared seed and destroying corpus determinism.
 func FuzzHTTPSequence(f *testing.F) {
 	seeds := [][]byte{
 		{2, 0, 1, 2, 3},

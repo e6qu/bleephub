@@ -34,10 +34,8 @@ func TestAgentsRepoSecrets_RoundTrip(t *testing.T) {
 		t.Fatalf("public-key = %v, want key_id=%s", body, kp.KeyID)
 	}
 
-	// Create.
 	mustStatus(t, s.putSealedSecret(t, base+"/AGENT_TOKEN", "plain-1"), 201, "create secret")
 
-	// List.
 	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list status %d, want 200", resp.StatusCode)
@@ -51,7 +49,6 @@ func TestAgentsRepoSecrets_RoundTrip(t *testing.T) {
 		t.Fatalf("secrets[0] = %v, want AGENT_TOKEN", secrets[0])
 	}
 
-	// Get.
 	resp = s.get(t, base+"/AGENT_TOKEN", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get status %d, want 200", resp.StatusCode)
@@ -61,10 +58,8 @@ func TestAgentsRepoSecrets_RoundTrip(t *testing.T) {
 		t.Fatalf("get name = %v, want AGENT_TOKEN", got["name"])
 	}
 
-	// Update.
 	mustStatus(t, s.putSealedSecret(t, base+"/AGENT_TOKEN", "plain-2"), 204, "update secret")
 
-	// Delete.
 	mustStatus(t, s.delete(t, base+"/AGENT_TOKEN", defaultToken), 204, "delete secret")
 	mustStatus(t, s.get(t, base+"/AGENT_TOKEN", defaultToken), 404, "get deleted secret")
 	mustStatus(t, s.delete(t, base+"/AGENT_TOKEN", defaultToken), 404, "delete deleted secret")
@@ -119,17 +114,14 @@ func TestAgentsRepoSecrets_Validation(t *testing.T) {
 	repo := s.seedRepo(t, "agents-sec-valid", false)
 	base := "/api/v3/repos/" + repo.FullName + "/agents/secrets"
 
-	// Invalid name (starts with a digit).
 	mustStatus(t, s.putSealedSecret(t, base+"/1BAD", "v"), 422, "invalid secret name")
 
-	// Wrong key_id.
 	resp := s.put(t, base+"/GOOD_NAME", defaultToken, map[string]interface{}{
 		"encrypted_value": "c2VjcmV0",
 		"key_id":          "not-the-key",
 	})
 	mustStatus(t, resp, 422, "wrong key_id")
 
-	// Unknown repository.
 	mustStatus(t, s.get(t, "/api/v3/repos/admin/no-such-repo/agents/secrets", defaultToken), 404, "unknown repo list")
 }
 
@@ -145,7 +137,6 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 
 	mustStatus(t, s.get(t, base+"/public-key", defaultToken), 200, "org public-key")
 
-	// Create with visibility selected.
 	enc, keyID := s.sealForServer(t, "org-plain")
 	resp := s.put(t, base+"/ORG_AGENT_SECRET", defaultToken, map[string]interface{}{
 		"encrypted_value":         enc,
@@ -155,7 +146,7 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 	})
 	mustStatus(t, resp, 201, "create org secret")
 
-	// Get carries visibility + the /agents/ selected_repositories_url.
+	// The GET carries the /agents/ (not /actions/) selected_repositories_url.
 	resp = s.get(t, base+"/ORG_AGENT_SECRET", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get org secret status %d, want 200", resp.StatusCode)
@@ -169,7 +160,6 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 		t.Fatalf("selected_repositories_url = %v, want suffix %s", got["selected_repositories_url"], wantURL)
 	}
 
-	// List selected repositories.
 	resp = s.get(t, base+"/ORG_AGENT_SECRET/repositories", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list selected repos status %d, want 200", resp.StatusCode)
@@ -179,17 +169,14 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 		t.Fatalf("selected total_count = %v, want 1", repos["total_count"])
 	}
 
-	// Set the full list.
 	resp = s.put(t, base+"/ORG_AGENT_SECRET/repositories", defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{repo1.ID, repo2.ID},
 	})
 	mustStatus(t, resp, 204, "set selected repos")
 
-	// Remove one, then add it back.
 	mustStatus(t, s.delete(t, fmt.Sprintf("%s/ORG_AGENT_SECRET/repositories/%d", base, repo2.ID), defaultToken), 204, "remove selected repo")
 	mustStatus(t, s.put(t, fmt.Sprintf("%s/ORG_AGENT_SECRET/repositories/%d", base, repo2.ID), defaultToken, nil), 204, "add selected repo")
 
-	// Repo-visible org secrets list.
 	resp = s.get(t, "/api/v3/repos/"+repo1.FullName+"/agents/organization-secrets", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("repo org-secrets status %d, want 200", resp.StatusCode)
@@ -199,7 +186,7 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 		t.Fatalf("repo-visible org secrets = %v, want 1", visible["total_count"])
 	}
 
-	// A repo outside the selection sees nothing.
+	// A repo outside the selection sees no org secrets.
 	repo3 := s.seedOrgRepo(t, org, "sel-three", true)
 	resp = s.get(t, "/api/v3/repos/"+repo3.FullName+"/agents/organization-secrets", defaultToken)
 	notVisible := decodeJSON(t, resp)
@@ -214,13 +201,11 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 	}), 201, "create all-visibility secret")
 	mustStatus(t, s.put(t, fmt.Sprintf("%s/ORG_ALL_SECRET/repositories/%d", base, repo1.ID), defaultToken, nil), 409, "add repo to all-visibility secret")
 
-	// Missing visibility is a 422.
 	enc, keyID = s.sealForServer(t, "no-vis")
 	mustStatus(t, s.put(t, base+"/ORG_NO_VIS", defaultToken, map[string]interface{}{
 		"encrypted_value": enc, "key_id": keyID,
 	}), 422, "create without visibility")
 
-	// Delete.
 	mustStatus(t, s.delete(t, base+"/ORG_AGENT_SECRET", defaultToken), 204, "delete org secret")
 	mustStatus(t, s.get(t, base+"/ORG_AGENT_SECRET", defaultToken), 404, "get deleted org secret")
 }
@@ -233,22 +218,18 @@ func TestAgentsRepoVariables_CRUD(t *testing.T) {
 	repo := s.seedRepo(t, "agents-var-repo", false)
 	base := "/api/v3/repos/" + repo.FullName + "/agents/variables"
 
-	// Create.
 	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "agent_mode", "value": "fast",
 	}), 201, "create variable")
 
-	// Duplicate create conflicts.
 	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "AGENT_MODE", "value": "again",
 	}), 409, "duplicate create")
 
-	// Invalid name.
 	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "GITHUB_RESERVED", "value": "x",
 	}), 422, "reserved name")
 
-	// List.
 	resp := s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list status %d, want 200", resp.StatusCode)
@@ -258,7 +239,7 @@ func TestAgentsRepoVariables_CRUD(t *testing.T) {
 		t.Fatalf("total_count = %v, want 1", list["total_count"])
 	}
 
-	// Get (names are upper-cased).
+	// Names are upper-cased.
 	resp = s.get(t, base+"/AGENT_MODE", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get status %d, want 200", resp.StatusCode)
@@ -268,7 +249,6 @@ func TestAgentsRepoVariables_CRUD(t *testing.T) {
 		t.Fatalf("value = %v, want fast", got["value"])
 	}
 
-	// Patch value + rename.
 	mustStatus(t, s.patch(t, base+"/AGENT_MODE", defaultToken, map[string]interface{}{
 		"name": "AGENT_SPEED", "value": "slow",
 	}), 204, "patch variable")
@@ -282,7 +262,6 @@ func TestAgentsRepoVariables_CRUD(t *testing.T) {
 	}
 	mustStatus(t, s.get(t, base+"/AGENT_MODE", defaultToken), 404, "old name gone")
 
-	// Delete.
 	mustStatus(t, s.delete(t, base+"/AGENT_SPEED", defaultToken), 204, "delete variable")
 	mustStatus(t, s.get(t, base+"/AGENT_SPEED", defaultToken), 404, "get deleted variable")
 }
@@ -297,19 +276,16 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 	repo2 := s.seedOrgRepo(t, org, "var-two", true)
 	base := "/api/v3/orgs/" + org.Login + "/agents/variables"
 
-	// Create with visibility selected.
 	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "ORG_AGENT_VAR", "value": "v1",
 		"visibility":              "selected",
 		"selected_repository_ids": []int{repo1.ID},
 	}), 201, "create org variable")
 
-	// Missing visibility is a 422.
 	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "NO_VIS", "value": "v",
 	}), 422, "create without visibility")
 
-	// Get.
 	resp := s.get(t, base+"/ORG_AGENT_VAR", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get org variable status %d, want 200", resp.StatusCode)
@@ -319,7 +295,6 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 		t.Fatalf("org variable = %v, want selected/v1", got)
 	}
 
-	// Selected repositories list + set + per-repo add/remove.
 	resp = s.get(t, base+"/ORG_AGENT_VAR/repositories", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list selected repos status %d, want 200", resp.StatusCode)
@@ -334,7 +309,7 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 	mustStatus(t, s.delete(t, fmt.Sprintf("%s/ORG_AGENT_VAR/repositories/%d", base, repo1.ID), defaultToken), 204, "remove selected repo")
 	mustStatus(t, s.put(t, fmt.Sprintf("%s/ORG_AGENT_VAR/repositories/%d", base, repo1.ID), defaultToken, nil), 204, "add selected repo")
 
-	// Patch visibility to all: selection endpoints now conflict.
+	// After visibility flips to all, the selection endpoints must conflict.
 	mustStatus(t, s.patch(t, base+"/ORG_AGENT_VAR", defaultToken, map[string]interface{}{
 		"visibility": "all",
 	}), 204, "patch visibility")
@@ -343,7 +318,7 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 		"selected_repository_ids": []int{repo1.ID},
 	}), 409, "set repos on all-visibility variable")
 
-	// Repo-visible org variables list (visibility all → visible everywhere).
+	// Visibility all means the variable is visible from every repo.
 	resp = s.get(t, "/api/v3/repos/"+repo2.FullName+"/agents/organization-variables", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("repo org-variables status %d, want 200", resp.StatusCode)
@@ -353,7 +328,6 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 		t.Fatalf("repo-visible org variables = %v, want 1", visible["total_count"])
 	}
 
-	// List org variables.
 	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list org variables status %d, want 200", resp.StatusCode)
@@ -363,14 +337,12 @@ func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 		t.Fatalf("org variables total_count = %v, want 1", list["total_count"])
 	}
 
-	// Delete.
 	mustStatus(t, s.delete(t, base+"/ORG_AGENT_VAR", defaultToken), 204, "delete org variable")
 	mustStatus(t, s.get(t, base+"/ORG_AGENT_VAR", defaultToken), 404, "get deleted org variable")
 }
 
-// TestAgentsSecrets_IsolatedFromActions verifies the /agents/ tables are
-// distinct from the Actions ones: an Actions secret does not appear on
-// the agents surface and vice versa.
+// TestAgentsSecrets_IsolatedFromActions: the /agents/ tables are distinct from
+// the Actions ones, neither surface showing the other's secrets.
 func TestAgentsSecrets_IsolatedFromActions(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -390,16 +362,15 @@ func TestAgentsSecrets_IsolatedFromActions(t *testing.T) {
 	mustStatus(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/agents/secrets/ACTIONS_ONLY", defaultToken), 404, "actions secret invisible to agents surface")
 }
 
-// TestAgentsCodeScanPersistenceReload verifies every new bucket —
-// Copilot coding agent secrets/variables/tasks, code scanning autofixes,
-// CodeQL databases, and CodeQL variant analyses — survives a persistence
-// reload with counters intact.
+// TestAgentsCodeScanPersistenceReload: every new bucket — Copilot agent
+// secrets/variables/tasks, code scanning autofixes, CodeQL databases, and
+// CodeQL variant analyses — survives a persistence reload with counters intact.
 func TestAgentsCodeScanPersistenceReload(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	// --- session 1: create state, then close ---
+	// session 1: create state, then close.
 	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -452,7 +423,7 @@ func TestAgentsCodeScanPersistenceReload(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	// --- session 2: reload, assert everything came back ---
+	// session 2: reload, assert everything came back.
 	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)

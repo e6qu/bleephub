@@ -7,15 +7,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestDeleteAppLeavesNoDanglingTokens covers the credential-safety fix (P2).
-// DeleteApp used to delete the parent apps row first and each credential
-// bucket in its own separate transaction, so a crash/reload mid-cascade could
-// leave valid ghu_/ghs_/ghr_ bearer tokens durable and still resolving for an
-// app that no longer existed. The cascade now stages every child credential
-// delete plus the parent apps row into ONE batch (parent last). This test
-// builds an app with an installation token, a user-to-server token and its
-// refresh token, deletes the app, then reloads from persistence: neither the
-// app nor any of its tokens may survive to the reloaded store.
+// TestDeleteAppLeavesNoDanglingTokens covers the credential-safety fix (P2):
+// DeleteApp used to delete the parent row and each credential bucket in
+// separate transactions, so a crash mid-cascade could leave valid ghu_/ghs_/
+// ghr_ tokens resolving for an app that no longer existed. The cascade now
+// stages every child delete plus the parent into ONE batch (parent last).
 func TestDeleteAppLeavesNoDanglingTokens(t *testing.T) {
 	var appID int
 	var instTok, userTok, refreshTok string

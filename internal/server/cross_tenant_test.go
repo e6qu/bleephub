@@ -10,18 +10,13 @@ import (
 
 func itoa64(i int64) string { return strconv.FormatInt(i, 10) }
 
-// Sub-resources addressed by their own global id — a check run, a check suite,
-// a deployment status, a review comment, an issue comment — are reachable only
-// through a repository path. Nothing about the id itself says which repository
-// it belongs to, so every by-id handler has to walk back to the repository and
-// compare it with the one in the URL. Where it does not, an id is a
-// cross-tenant handle: the caller supplies a repository they legitimately
-// control and a stranger's id, and the credential check passes because it was
-// asked about the wrong repository.
-//
-// Each case below is the same shape: the attacker addresses the victim's
-// sub-resource through the attacker's own repository. The answer must be 404 —
-// not 403, which would confirm the id exists.
+// Sub-resources addressed by their own global id (check run/suite, deployment
+// status, review/issue comment) are reachable only through a repository path, so
+// every by-id handler must walk back to the repository and compare it with the
+// URL's — where it does not, an id is a cross-tenant handle. Each case has the
+// attacker address the victim's sub-resource through the attacker's own
+// repository; the answer must be 404, not the 403 that would confirm the id
+// exists.
 
 type crossTenantFixture struct {
 	victim       *store.User

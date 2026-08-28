@@ -134,7 +134,6 @@ func TestOrgActionsPermissions_SelfHostedRunners(t *testing.T) {
 		t.Fatalf("invalid enum put = %d, want 422", resp.StatusCode)
 	}
 
-	// Selected repository management.
 	resp = srv.put(t, path+"/repositories", defaultToken, map[string][]int{"selected_repository_ids": {}})
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -222,8 +221,8 @@ func TestOrgCacheUsage_ComputedFromRealCacheStore(t *testing.T) {
 		t.Fatalf("empty-org usage = %v, want zeros", data)
 	}
 
-	// Store two finalized cache entries for one org repo and one for
-	// another, plus one for a foreign owner that must not count.
+	// Two finalized caches for one org repo, one for another, plus one for a
+	// foreign owner that must not count toward this org.
 	as := srv.artifactStore
 	seedCache := func(repo, key string, size int64) {
 		as.Mu.Lock()
@@ -273,8 +272,7 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 	repoResp.Body.Close()
 	repo := org + "/labels-repo"
 
-	// Register a runner with a system label through the real agent
-	// registration path.
+	// Seed a runner carrying a read-only system label.
 	srv.store.Mu.Lock()
 	agent := &store.Agent{
 		ID:     srv.store.NextAgent,
@@ -290,7 +288,6 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 	orgPath := fmt.Sprintf("/api/v3/orgs/%s/actions/runners/%d/labels", org, agent.ID)
 	repoPath := fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agent.ID)
 
-	// POST adds labels (org scope).
 	data := decodeJSONWithStatus(t, srv.post(t, orgPath, defaultToken, map[string][]string{
 		"labels": {"gpu", "x64"},
 	}), 200)
@@ -298,14 +295,12 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 		t.Fatalf("labels after add = %v, want 3 (system + 2 custom)", data)
 	}
 
-	// Empty labels array rejects.
 	resp := srv.post(t, orgPath, defaultToken, map[string][]string{"labels": {}})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("empty labels add = %d, want 422", resp.StatusCode)
 	}
 
-	// DELETE one custom label (repo scope) returns the remaining set.
 	data = decodeJSONWithStatus(t, srv.delete(t, repoPath+"/gpu", defaultToken), 200)
 	labels, _ := data["labels"].([]interface{})
 	if int(data["total_count"].(float64)) != 2 {
@@ -317,7 +312,6 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 		}
 	}
 
-	// Removing an absent label 404s; removing a read-only label 422s.
 	resp = srv.delete(t, repoPath+"/gpu", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
@@ -329,7 +323,6 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 		t.Fatalf("remove read-only label = %d, want 422", resp.StatusCode)
 	}
 
-	// Unknown runner 404s.
 	resp = srv.post(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runners/999999/labels", org),
 		defaultToken, map[string][]string{"labels": {"x"}})
 	resp.Body.Close()
@@ -337,7 +330,7 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 		t.Fatalf("add labels unknown runner = %d, want 404", resp.StatusCode)
 	}
 
-	// Cleanup so runner-list tests elsewhere see the shared pool unchanged.
+	// Delete so runner-list tests elsewhere see the shared pool unchanged.
 	srv.store.Mu.Lock()
 	delete(srv.store.Agents, agent.ID)
 	srv.store.Mu.Unlock()

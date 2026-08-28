@@ -222,7 +222,6 @@ func TestRepositoryCommunityFieldsRefuseAStranger(t *testing.T) {
 	}`
 	variables := map[string]interface{}{"owner": "admin", "name": "sealed"}
 
-	// The owner sees the content.
 	ownerView := h.query(owner, document, variables)
 	if at(t, ownerView, "repository", "contributingGuidelines", "body") == nil {
 		t.Fatal("owner cannot read the contributing guidelines of their own private repository")
@@ -244,9 +243,9 @@ func TestRepositoryCommunityFieldsRefuseAStranger(t *testing.T) {
 }
 
 // TestPrivateRepositoryContentFieldsRefuseAStrangerBehindTheSource covers the
-// field-level half of the same gate: the resolvers must refuse on their own,
-// not only because the root field did. It calls them with a source a stranger
-// could hold if any other path ever rendered one.
+// field-level half of the gate: the resolvers must refuse on their own, not only
+// because the root field did, called with a source a stranger could hold if
+// another path ever rendered one.
 func TestPrivateRepositoryContentFieldsRefuseAStrangerBehindTheSource(t *testing.T) {
 	h := newAccountHarness(t)
 	owner := h.store.UsersByLogin["admin"]

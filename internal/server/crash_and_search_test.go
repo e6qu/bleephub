@@ -14,10 +14,9 @@ import (
 
 // ─── helpers ─────────────────────────────────────────────────────────────
 
-// deleteOnRead runs fn the first time the request body is read. Handlers
-// resolve their target before decoding the body, so a hook here reproduces a
-// concurrent delete landing between resolve and mutate — deterministically,
-// without a racing goroutine.
+// deleteOnRead runs fn the first time the request body is read. Handlers resolve
+// their target before decoding the body, so this reproduces a concurrent delete
+// landing between resolve and mutate — deterministically, without a goroutine.
 type deleteOnRead struct {
 	body io.Reader
 	fn   func()
@@ -32,8 +31,7 @@ func (d *deleteOnRead) Read(p []byte) (int, error) {
 	return d.body.Read(p)
 }
 
-// serveWithConcurrentDelete drives one authenticated request whose body read
-// triggers fn.
+// serveWithConcurrentDelete drives one authed request whose body read triggers fn.
 func serveWithConcurrentDelete(s *Server, method, path string, body interface{}, fn func()) *httptest.ResponseRecorder {
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -168,8 +166,8 @@ func TestUpdateProjectCardLosingItsColumnIsNotFound(t *testing.T) {
 	s := fuzzRoutedServer(t)
 	card, col := seedProjectCard(t, s)
 
-	// The column is deleted after the card has been resolved, which is the
-	// only window in which a card outlives its column.
+	// Delete the column after the card is resolved — the only window in which a
+	// card outlives its column.
 	path := fmt.Sprintf("/api/v3/projects/columns/cards/%d", card.ID)
 	w := serveWithConcurrentDelete(s, http.MethodPatch, path,
 		map[string]interface{}{"note": "renamed"},
@@ -364,10 +362,9 @@ const searchOrderCorpus = 60
 const searchOrderPerPage = 10
 const searchOrderRepeats = 25
 
-// assertStablePagination requests every page of a search repeatedly. Map
-// iteration order is randomized per range statement, so an unordered result
-// set reliably yields a different page across repeats and pages that overlap
-// or drop entries.
+// assertStablePagination requests every page repeatedly. Map iteration order is
+// randomized per range statement, so an unordered result set yields a different
+// page across repeats, with pages that overlap or drop entries.
 func assertStablePagination(t *testing.T, s *Server, label, query string, wantTotal int) {
 	t.Helper()
 	rateRequest := httptest.NewRequest(http.MethodGet, query, nil)

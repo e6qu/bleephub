@@ -134,7 +134,6 @@ func TestReleaseAccountFieldsAreBackedByRealData(t *testing.T) {
 	}
 	_ = mentioned
 
-	// releaseAssets is backed by the real asset store.
 	if got := at(t, node, "releaseAssets", "totalCount"); got != float64(1) {
 		t.Errorf("releaseAssets.totalCount = %v, want 1", got)
 	}

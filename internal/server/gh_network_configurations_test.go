@@ -31,7 +31,6 @@ func TestOrgNetworkConfigurations_CRUD(t *testing.T) {
 	base := "/api/v3/orgs/" + org + "/settings/network-configurations"
 	settingsID := seedNetworkSettings(t, org, "primary-subnet")
 
-	// Create.
 	resp := ghPost(t, base, defaultToken, map[string]interface{}{
 		"name":                 "my-network-configuration",
 		"compute_service":      "actions",
@@ -50,7 +49,6 @@ func TestOrgNetworkConfigurations_CRUD(t *testing.T) {
 	}
 	configID := created["id"].(string)
 
-	// List.
 	resp = ghGet(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list network configurations: %d", resp.StatusCode)
@@ -60,7 +58,6 @@ func TestOrgNetworkConfigurations_CRUD(t *testing.T) {
 		t.Fatalf("list = %v", list)
 	}
 
-	// GET one.
 	resp = ghGet(t, base+"/"+configID, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get network configuration: %d", resp.StatusCode)
@@ -82,7 +79,6 @@ func TestOrgNetworkConfigurations_CRUD(t *testing.T) {
 		t.Fatalf("settings = %v", settings)
 	}
 
-	// PATCH: rename and swap the settings resource.
 	otherSettingsID := seedNetworkSettings(t, org, "secondary-subnet")
 	resp = ghPatch(t, base+"/"+configID, defaultToken, map[string]interface{}{
 		"name":                 "renamed-configuration",

@@ -30,9 +30,7 @@ func decodeJSON(t *testing.T, resp *http.Response) map[string]interface{} {
 	return data
 }
 
-// TestGHApiRoot verifies GET /api/v3/ with and without valid token.
 func TestGHApiRoot(t *testing.T) {
-	// With valid token
 	resp := ghGet(t, "/api/v3/", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -43,7 +41,6 @@ func TestGHApiRoot(t *testing.T) {
 		t.Fatal("missing current_user_url in API root")
 	}
 
-	// Without token — 401
 	resp2 := ghGet(t, "/api/v3/", "")
 	defer resp2.Body.Close()
 	if resp2.StatusCode != 401 {
@@ -51,7 +48,6 @@ func TestGHApiRoot(t *testing.T) {
 	}
 }
 
-// TestGHScopeHeaders verifies X-OAuth-Scopes header is present.
 func TestGHScopeHeaders(t *testing.T) {
 	resp := ghGet(t, "/api/v3/", defaultToken)
 	defer resp.Body.Close()
@@ -68,7 +64,6 @@ func TestGHScopeHeaders(t *testing.T) {
 	}
 }
 
-// TestGHRateLimitHeaders verifies X-RateLimit-* headers are present.
 func TestGHRateLimitHeaders(t *testing.T) {
 	resp := ghGet(t, "/api/v3/", defaultToken)
 	defer resp.Body.Close()
@@ -89,7 +84,6 @@ func TestGHRateLimitHeaders(t *testing.T) {
 	}
 }
 
-// TestGHRequestIdHeader verifies X-GitHub-Request-Id is present.
 func TestGHRequestIdHeader(t *testing.T) {
 	resp := ghGet(t, "/api/v3/", defaultToken)
 	defer resp.Body.Close()
@@ -118,7 +112,6 @@ func TestUnknownRoutesDoNotReturnSuccess(t *testing.T) {
 	}
 }
 
-// TestGHUser verifies GET /api/v3/user returns authenticated user.
 func TestGHUser(t *testing.T) {
 	resp := ghGet(t, "/api/v3/user", defaultToken)
 	if resp.StatusCode != 200 {
@@ -138,9 +131,7 @@ func TestGHUser(t *testing.T) {
 	}
 }
 
-// TestGHUserByLogin verifies GET /api/v3/users/{username}.
 func TestGHUserByLogin(t *testing.T) {
-	// Existing user
 	resp := ghGet(t, "/api/v3/users/admin", "")
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -151,7 +142,6 @@ func TestGHUserByLogin(t *testing.T) {
 		t.Fatalf("expected login=admin, got %v", data["login"])
 	}
 
-	// Nonexistent user
 	resp2 := ghGet(t, "/api/v3/users/nonexistent", "")
 	defer resp2.Body.Close()
 	if resp2.StatusCode != 404 {
@@ -159,7 +149,6 @@ func TestGHUserByLogin(t *testing.T) {
 	}
 }
 
-// TestGHGraphQLViewer verifies the viewer query returns the authenticated user.
 func TestGHGraphQLViewer(t *testing.T) {
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]string{
 		"query": "{viewer{login}}",
@@ -183,7 +172,6 @@ func TestGHGraphQLViewer(t *testing.T) {
 	}
 }
 
-// TestGHGraphQLIntrospection verifies built-in introspection works.
 func TestGHGraphQLIntrospection(t *testing.T) {
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]string{
 		"query": "{__schema{queryType{name}}}",
@@ -218,7 +206,6 @@ func TestGHGraphQLNoAuth(t *testing.T) {
 	}
 }
 
-// TestGHDeviceFlow verifies the full device authorization flow.
 func TestGHDeviceFlow(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -228,7 +215,6 @@ func TestGHDeviceFlow(t *testing.T) {
 	}
 	app := s.store.CreateOAuthApp(admin.ID, "device flow test", "", "https://example.test", "http://callback/")
 
-	// Step 1: Request device code
 	form := url.Values{"client_id": {app.ClientID}, "scope": {"repo"}}
 	resp, err := http.Post(s.baseURL+"/login/device/code", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
 	if err != nil {
@@ -249,7 +235,7 @@ func TestGHDeviceFlow(t *testing.T) {
 		t.Fatalf("expected non-empty formatted user_code, got %s", userCode)
 	}
 
-	// Step 2: Polling before browser approval returns authorization_pending.
+	// Polling before browser approval returns authorization_pending.
 	form2 := url.Values{
 		"client_id":   {app.ClientID},
 		"device_code": {deviceCode},
@@ -271,7 +257,7 @@ func TestGHDeviceFlow(t *testing.T) {
 		t.Fatalf("expected authorization_pending before approval, got %v", pendingData)
 	}
 
-	// Step 3: Sign in through the browser flow and approve the displayed user code.
+	// Sign in through the browser flow and approve the displayed user code.
 	jar := newPermissiveTestJar()
 	client := &http.Client{Jar: jar}
 	loginForm := url.Values{"login": {"admin"}, "password": {defaultToken}}
@@ -293,7 +279,6 @@ func TestGHDeviceFlow(t *testing.T) {
 		t.Fatalf("device approve status = %d", approveResp.StatusCode)
 	}
 
-	// Step 4: Exchange device code for token.
 	tokReq, _ = http.NewRequest("POST", s.baseURL+"/login/oauth/access_token", strings.NewReader(form2.Encode()))
 	tokReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	tokReq.Header.Set("Accept", "application/json")
@@ -315,7 +300,6 @@ func TestGHDeviceFlow(t *testing.T) {
 		t.Fatalf("expected ghp_ or gho_ prefix, got %s", accessToken)
 	}
 
-	// Step 5: Use the new token to hit /api/v3/
 	resp3 := s.get(t, "/api/v3/", accessToken)
 	defer resp3.Body.Close()
 	if resp3.StatusCode != 200 {
@@ -323,7 +307,6 @@ func TestGHDeviceFlow(t *testing.T) {
 	}
 }
 
-// TestGHErrorFormat verifies 401 error body format.
 func TestGHErrorFormat(t *testing.T) {
 	resp := ghGet(t, "/api/v3/", "")
 	data := decodeJSON(t, resp)
@@ -338,9 +321,7 @@ func TestGHErrorFormat(t *testing.T) {
 	}
 }
 
-// TestExistingRoutesUnaffected verifies runner protocol routes still work.
 func TestExistingRoutesUnaffected(t *testing.T) {
-	// /health
 	resp := ghGet(t, "/health", "")
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
@@ -356,7 +337,6 @@ func TestExistingRoutesUnaffected(t *testing.T) {
 		t.Fatalf("/health leaks enterprise_slug to anonymous callers")
 	}
 
-	// /_apis/connectionData
 	resp2 := ghGet(t, "/_apis/connectionData", "")
 	defer resp2.Body.Close()
 	if resp2.StatusCode != 200 {

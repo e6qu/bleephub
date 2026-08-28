@@ -21,7 +21,7 @@ func TestReactions_IssueLifecycle(t *testing.T) {
 	user := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(user, "rxn-repo", "", false)
 	_ = repo
-	// Create issue via store directly (skip route auth churn).
+	// Create the issue directly through the store to skip route auth churn.
 	issue := s.store.CreateIssue(repo.ID, user.ID, "test issue", "", nil, nil, 0)
 
 	addPath := func(content string) []byte {
@@ -41,7 +41,6 @@ func TestReactions_IssueLifecycle(t *testing.T) {
 		return w
 	}
 
-	// POST +1 → 201
 	w := do("POST", "/api/v3/repos/admin/rxn-repo/issues/"+itoa(issue.ID)+"/reactions", addPath("+1"))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("first POST +1: status %d body %s", w.Code, w.Body.String())
@@ -52,7 +51,7 @@ func TestReactions_IssueLifecycle(t *testing.T) {
 		t.Errorf("content = %v, want +1", first["content"])
 	}
 
-	// POST same again → 200 (idempotent, same id)
+	// Re-POST is idempotent: 200 with the same id.
 	w = do("POST", "/api/v3/repos/admin/rxn-repo/issues/"+itoa(issue.ID)+"/reactions", addPath("+1"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("second POST +1: status %d body %s", w.Code, w.Body.String())
@@ -63,19 +62,16 @@ func TestReactions_IssueLifecycle(t *testing.T) {
 		t.Errorf("second POST returned different id: %v vs %v", second["id"], first["id"])
 	}
 
-	// POST heart → another reaction, new id
 	w = do("POST", "/api/v3/repos/admin/rxn-repo/issues/"+itoa(issue.ID)+"/reactions", addPath("heart"))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("POST heart: status %d", w.Code)
 	}
 
-	// POST invalid → 422
 	w = do("POST", "/api/v3/repos/admin/rxn-repo/issues/"+itoa(issue.ID)+"/reactions", addPath("smile"))
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("invalid content: status %d, want 422", w.Code)
 	}
 
-	// GET list → 2 reactions
 	w = do("GET", "/api/v3/repos/admin/rxn-repo/issues/"+itoa(issue.ID)+"/reactions", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET list: status %d", w.Code)
@@ -86,7 +82,6 @@ func TestReactions_IssueLifecycle(t *testing.T) {
 		t.Errorf("list len = %d, want 2", len(list))
 	}
 
-	// GET filter by content=heart → 1
 	w = do("GET", "/api/v3/repos/admin/rxn-repo/issues/"+itoa(issue.ID)+"/reactions?content=heart", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET filter: %d", w.Code)
@@ -96,14 +91,13 @@ func TestReactions_IssueLifecycle(t *testing.T) {
 		t.Errorf("filtered list = %v", list)
 	}
 
-	// DELETE the +1 reaction → 204
 	firstID := int(first["id"].(float64))
 	w = do("DELETE", "/api/v3/repos/admin/rxn-repo/issues/"+itoa(issue.ID)+"/reactions/"+itoa(firstID), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("DELETE: status %d", w.Code)
 	}
 
-	// DELETE again → 404
+	// Deleting an already-gone reaction is a 404.
 	w = do("DELETE", "/api/v3/repos/admin/rxn-repo/issues/"+itoa(issue.ID)+"/reactions/"+itoa(firstID), nil)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("DELETE missing: status %d, want 404", w.Code)
@@ -140,11 +134,9 @@ func TestReactions_PullRequestLifecycle(t *testing.T) {
 	react, _ := json.Marshal(map[string]string{"content": "rocket"})
 
 	prPath := "/api/v3/repos/admin/rxn-pr/issues/" + itoa(pr.Number) + "/reactions"
-	// POST on the PR number → 201
 	if w := do("POST", prPath, react); w.Code != http.StatusCreated {
 		t.Fatalf("POST PR reaction: status %d body %s", w.Code, w.Body.String())
 	}
-	// GET on the PR number → the one reaction
 	w := do("GET", prPath, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET PR reactions: status %d body %s", w.Code, w.Body.String())
@@ -155,8 +147,7 @@ func TestReactions_PullRequestLifecycle(t *testing.T) {
 		t.Fatalf("PR reactions = %v, want one rocket", list)
 	}
 
-	// The same-numbered issue (issue.ID and pr.ID both come from independent
-	// counters) must not see the PR's reaction.
+	// The same-numbered issue must not see the PR's reaction: issue.ID and pr.ID come from independent counters.
 	if own := s.store.Reactions.ListReactions("issue", issue.ID, ""); len(own) != 0 {
 		t.Errorf("PR reaction leaked onto the issue keyspace: %d", len(own))
 	}
@@ -164,7 +155,6 @@ func TestReactions_PullRequestLifecycle(t *testing.T) {
 		t.Errorf("PR reaction not keyed under pull_request:%d — got %d", pr.ID, len(prRx))
 	}
 
-	// DELETE on the PR number → 204
 	reactionID := int(list[0]["id"].(float64))
 	if w := do("DELETE", prPath+"/"+itoa(reactionID), nil); w.Code != http.StatusNoContent {
 		t.Fatalf("DELETE PR reaction: status %d", w.Code)
@@ -210,7 +200,6 @@ func TestIssueLabels_PullRequestNumbers(t *testing.T) {
 		return b
 	}
 
-	// POST adds a label → 200 with the label list
 	w := do("POST", base, body("regression"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("POST PR label: status %d body %s", w.Code, w.Body.String())
@@ -221,7 +210,6 @@ func TestIssueLabels_PullRequestNumbers(t *testing.T) {
 		t.Fatalf("PR labels after add = %v, want [regression]", labels)
 	}
 
-	// PUT replaces the set → 200 with the new list
 	w = do("PUT", base, body("improvement"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("PUT PR labels: status %d", w.Code)
@@ -231,7 +219,6 @@ func TestIssueLabels_PullRequestNumbers(t *testing.T) {
 		t.Fatalf("PR labels after set = %v, want [improvement]", labels)
 	}
 
-	// DELETE one label by name → 204
 	if w := do("DELETE", base+"/improvement", nil); w.Code != http.StatusNoContent {
 		t.Fatalf("DELETE PR label: status %d", w.Code)
 	}
@@ -239,7 +226,6 @@ func TestIssueLabels_PullRequestNumbers(t *testing.T) {
 		t.Fatalf("PR labels after remove = %v, want empty", got.LabelIDs)
 	}
 
-	// Add two then clear all → 204
 	do("PUT", base, body("regression", "improvement"))
 	if w := do("DELETE", base, nil); w.Code != http.StatusNoContent {
 		t.Fatalf("DELETE all PR labels: status %d", w.Code)
@@ -260,16 +246,12 @@ func TestReactions_AllParentTypes(t *testing.T) {
 	s.registerGHReactionsRoutes()
 	s.registerGHReleasesRoutes() // release-reactions live under the release dispatcher
 
-	// Issue reactions resolve through the repository to a real issue; the
-	// other parent types are keyed by globally-unique comment/release ids.
+	// Issue reactions resolve through the repository; other parent types are keyed by globally-unique comment/release ids.
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "r", "", false)
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "reaction target", "", nil, nil, 0)
 
-	// Every non-issue parent must be a real object living in this repository:
-	// resolveReactionParent re-scopes each id back to its repo, so a fabricated
-	// id (as this test used to pass) is now a 404, which is exactly the
-	// cross-repo hole TestReactions_CrossRepoParentsAreNotReachable pins.
+	// Every non-issue parent must be a real object in this repo: resolveReactionParent re-scopes each id to its repo, so a fabricated id is a 404 (the cross-repo hole TestReactions_CrossRepoParentsAreNotReachable pins).
 	issueComment := s.store.CreateComment(issue.ID, admin.ID, "issue comment")
 	commitComment := s.store.CommitComments.Create(repo.ID, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", admin.ID, "commit comment", "", nil, nil)
 	seedStorePullRequestBranches(t, s.store, repo, "feat")
@@ -298,15 +280,13 @@ func TestReactions_AllParentTypes(t *testing.T) {
 		}
 	}
 
-	// A same-numbered issue in another repository shares no reactions with
-	// the one above, and reacting to a nonexistent issue is a 404.
+	// A same-numbered issue in another repository shares no reactions, and reacting to a nonexistent issue is a 404.
 	other := s.store.CreateRepo(admin, "r2", "", false)
 	otherIssue := s.store.CreateIssue(other.ID, admin.ID, "other target", "", nil, nil, 0)
 	if otherIssue.Number != issue.Number {
 		t.Fatalf("test premise: issue numbers differ (%d vs %d)", otherIssue.Number, issue.Number)
 	}
-	// The GET route lives on the issues two-segment dispatcher, which this
-	// minimal server does not mount; assert against the store directly.
+	// This minimal server does not mount the issues two-segment dispatcher the GET route needs, so assert against the store directly.
 	if leaked := s.store.Reactions.ListReactions("issue", otherIssue.ID, ""); len(leaked) != 0 {
 		t.Errorf("cross-repo issue reactions leaked: %d reactions", len(leaked))
 	}

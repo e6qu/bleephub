@@ -25,7 +25,6 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 	alertNumber := int(alert["number"].(float64))
 	endsAt := fixedCampaignTestTime.Add(30 * 24 * time.Hour).Format(time.RFC3339)
 
-	// Create.
 	resp := s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name":        "Q4 code scanning cleanup",
 		"description": "Fix the open CodeQL alerts before the freeze",
@@ -55,7 +54,6 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 	}
 	number := itoa(int(created["number"].(float64)))
 
-	// GET one.
 	resp = s.get(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get campaign: %d", resp.StatusCode)
@@ -64,7 +62,6 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 		t.Fatalf("get = %v", got)
 	}
 
-	// List.
 	resp = s.get(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list campaigns: %d", resp.StatusCode)
@@ -88,7 +85,6 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 		t.Fatalf("alert_stats after dismissal = %v", stats)
 	}
 
-	// PATCH: close the campaign.
 	resp = s.patch(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken, map[string]interface{}{
 		"state": "closed",
 	})
@@ -100,7 +96,6 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 		t.Fatalf("closed = %v", closed)
 	}
 
-	// State filter.
 	resp = s.get(t, "/api/v3/orgs/"+org+"/campaigns?state=open", defaultToken)
 	if got := decodeJSONArray(t, resp); len(got) != 0 {
 		t.Fatalf("open campaigns = %v", got)
@@ -110,7 +105,6 @@ func TestOrgCampaigns_CRUD(t *testing.T) {
 		t.Fatalf("closed campaigns = %v", got)
 	}
 
-	// DELETE.
 	resp = s.delete(t, "/api/v3/orgs/"+org+"/campaigns/"+number, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -137,7 +131,6 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 		{"repository_id": repoID, "alert_numbers": []int{alertNumber}},
 	}
 
-	// ends_at in the past.
 	resp := s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name":                 "past",
 		"description":          "d",
@@ -149,7 +142,6 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 		t.Fatalf("past ends_at: %d", resp.StatusCode)
 	}
 
-	// Missing alert linkage.
 	resp = s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name": "no alerts", "description": "d", "ends_at": future,
 	})
@@ -158,7 +150,6 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 		t.Fatalf("missing alerts: %d", resp.StatusCode)
 	}
 
-	// Unknown alert number.
 	resp = s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name": "bad alert", "description": "d", "ends_at": future,
 		"code_scanning_alerts": []map[string]interface{}{
@@ -170,7 +161,6 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 		t.Fatalf("unknown alert: %d", resp.StatusCode)
 	}
 
-	// A manager who is not an org member.
 	outsider := s.createTestUser(t, "campaign-outsider-"+org)
 	_ = outsider
 	resp = s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
@@ -183,7 +173,7 @@ func TestOrgCampaigns_Validation(t *testing.T) {
 		t.Fatalf("outsider manager: %d", resp.StatusCode)
 	}
 
-	// A name longer than 50 characters.
+	// A name over the 50-character limit is refused.
 	resp = s.post(t, "/api/v3/orgs/"+org+"/campaigns", defaultToken, map[string]interface{}{
 		"name":                 "0123456789012345678901234567890123456789012345678901",
 		"description":          "d",

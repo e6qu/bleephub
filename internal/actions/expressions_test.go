@@ -214,7 +214,6 @@ func TestEvalTemplate(t *testing.T) {
 		t.Errorf("EvalTemplate = %q, %v", got, err)
 	}
 
-	// Unterminated template is an error
 	if _, err := EvalTemplate("${{ github.ref", ctx); err == nil {
 		t.Error("unterminated template should error")
 	}

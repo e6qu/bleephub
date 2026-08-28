@@ -346,7 +346,6 @@ func TestSecureDeploymentIgnoresUnprefixedSessionCookie(t *testing.T) {
 		t.Fatal("a planted _gh_sess resolved to a session over HTTPS")
 	}
 
-	// The __Host- cookie is honored.
 	secureReq := httptest.NewRequest(http.MethodGet, "/", nil)
 	secureReq.AddCookie(&http.Cookie{Name: secureSessionCookieName, Value: "attacker-session"})
 	if s.sessionCookieFromRequest(secureReq) == nil {

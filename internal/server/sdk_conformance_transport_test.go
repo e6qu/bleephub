@@ -100,18 +100,15 @@ func TestDefaultLabelsOnEveryRepositoryCreationPath(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 
-	// A user repository.
 	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "labels-user"})
 	decodeJSONWithStatus(t, resp, http.StatusCreated)
 	assertDefaultLabelSet(t, s, "/api/v3/repos/admin/labels-user")
 
-	// An organization repository.
 	org := s.createTestOrg(t)
 	resp = s.post(t, "/api/v3/orgs/"+org+"/repos", defaultToken, map[string]interface{}{"name": "labels-org"})
 	decodeJSONWithStatus(t, resp, http.StatusCreated)
 	assertDefaultLabelSet(t, s, "/api/v3/repos/"+org+"/labels-org")
 
-	// A repository generated from a template.
 	resp = s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "labels-template", "auto_init": true,
 	})
@@ -125,7 +122,7 @@ func TestDefaultLabelsOnEveryRepositoryCreationPath(t *testing.T) {
 	decodeJSONWithStatus(t, resp, http.StatusCreated)
 	assertDefaultLabelSet(t, s, "/api/v3/repos/admin/labels-generated")
 
-	// A fork. The parent carries an extra custom label that must not ride along.
+	// The parent's extra custom label must not ride along onto the fork.
 	resp = s.post(t, "/api/v3/repos/admin/labels-user/labels", defaultToken,
 		map[string]interface{}{"name": "parent-only", "color": "112233"})
 	decodeJSONWithStatus(t, resp, http.StatusCreated)

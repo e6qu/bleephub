@@ -101,7 +101,6 @@ func collectPaginationSweep(t *testing.T) []string {
 					case *ast.Ident:
 						info.callees = append(info.callees, fun.Name)
 					}
-					// route registration?
 					if sel, ok := node.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "route" {
 						if len(node.Args) == 2 {
 							if lit, ok := node.Args[0].(*ast.BasicLit); ok {

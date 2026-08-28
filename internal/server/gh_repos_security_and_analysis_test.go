@@ -6,7 +6,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// saStatus digs security_and_analysis.<key>.status out of a repo payload.
 func saStatus(t *testing.T, repoJSON map[string]interface{}, key string) string {
 	t.Helper()
 	sa, ok := repoJSON["security_and_analysis"].(map[string]interface{})
@@ -47,8 +46,8 @@ func TestRepoSecurityAndAnalysis_DefaultsAndPatch(t *testing.T) {
 		}
 	}
 
-	// Flip each PATCH-documented toggle on, one per PATCH, so a partial-object
-	// update is exercised and other toggles must remain untouched.
+	// Flip each toggle on with its own PATCH, so a partial-object update is
+	// exercised and the other toggles must stay untouched.
 	patchToggles := []string{
 		"advanced_security",
 		"secret_scanning",
@@ -77,7 +76,6 @@ func TestRepoSecurityAndAnalysis_DefaultsAndPatch(t *testing.T) {
 		}
 	}
 
-	// Disabling flows through the same PATCH body.
 	s.patch(t, repoPath, defaultToken, map[string]interface{}{
 		"security_and_analysis": map[string]interface{}{
 			"secret_scanning": map[string]interface{}{"status": "disabled"},

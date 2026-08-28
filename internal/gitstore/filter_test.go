@@ -31,9 +31,9 @@ func absentOIDs(n int) []oidKey {
 	return keys
 }
 
-// TestBinaryFuseFilterHasNoFalseNegatives is the filter invariant for the pack
-// tier. Every inserted key must probe as present; a single miss would let an
-// object that exists become unreachable.
+// TestBinaryFuseFilterHasNoFalseNegatives pins the pack-tier invariant: every
+// inserted key must probe present, since a single miss makes an existing object
+// unreachable.
 func TestBinaryFuseFilterHasNoFalseNegatives(t *testing.T) {
 	for _, size := range []int{0, 1, 2, 3, 10, 1000, 100000} {
 		keys := deterministicOIDs(size)
@@ -129,10 +129,8 @@ func TestCuckooFilterHasNoFalseNegatives(t *testing.T) {
 	}
 }
 
-// cuckooResidentBits reports the memory a cuckoo table occupies. It is a
-// property of the table's shape rather than of what is in it — an empty slot
-// costs the same as a full one — so it belongs with the measurement rather than
-// with the structure.
+// cuckooResidentBits reports the memory a cuckoo table occupies — a property of
+// its shape, not its contents, since an empty slot costs the same as a full one.
 func cuckooResidentBits(c *cuckooFilter) int {
 	return len(c.buckets) * cuckooSlotsPerBucket * 16
 }
@@ -158,11 +156,9 @@ func TestCuckooFilterFalsePositiveRate(t *testing.T) {
 		rate, float64(cuckooResidentBits(filter))/float64(size), cuckooResidentBits(filter)/8, size)
 }
 
-// TestCuckooFilterSaturatesRatherThanLosingKeys drives a table far past its
-// capacity. A cuckoo table cannot be resized without the keys it was built
-// from, so the only two possible behaviours are dropping a key — which would
-// make an object that exists answer "absent" and break the filter invariant —
-// or refusing to answer negatively at all. This pins the second.
+// TestCuckooFilterSaturatesRatherThanLosingKeys drives a table far past
+// capacity: unable to resize, it must refuse to answer negatively rather than
+// drop a key (which would make an existing object answer "absent").
 func TestCuckooFilterSaturatesRatherThanLosingKeys(t *testing.T) {
 	filter := newCuckooFilter(8)
 	keys := deterministicOIDs(20000)

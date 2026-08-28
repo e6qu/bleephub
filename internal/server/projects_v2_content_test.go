@@ -11,13 +11,10 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Write on a project is not read on what goes into it. Adding an issue to a
-// project republishes its title and state to everyone who can see the project,
-// so a caller who cannot read the issue must not be able to pull it in.
-//
-// The GraphQL twin was fixed first and this handler still validated only that
-// the content resolved. Both lanes consult the same predicate now; a fix in one
-// lane that leaves the other open is how this existed in the first place.
+// Adding an issue to a project republishes its title and state to everyone who
+// can see the project, so a caller who cannot read the issue must not pull it
+// in. The GraphQL twin was fixed first while this handler still validated only
+// that the content resolved; both lanes now consult the same predicate.
 func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -44,8 +41,7 @@ func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 		t.Fatalf("could not create the private issue")
 	}
 
-	// The snooper owns a project of their own, so they genuinely hold project
-	// write — the point is that it buys them nothing on the victim's content.
+	// The snooper genuinely holds project write on their own board; the point is it buys them nothing on the victim's content.
 	project := st.ProjectsV2.CreateProject(snooper.ID, "User", "snooper board", snooper.ID)
 	if project == nil {
 		t.Fatalf("could not create the snooper's project")
@@ -68,9 +64,7 @@ func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 		return w
 	}
 
-	// Both addressing modes must be refused: the direct database id, and the
-	// owner/repo/number triple, which resolves the repository but never asked
-	// whether the caller may see it.
+	// Refuse both addressing modes: the direct database id and the owner/repo/number triple that resolves the repo without checking read access.
 	for name, body := range map[string]map[string]any{
 		"by database id": {"type": "Issue", "id": secret.ID},
 		"by coordinates": {"type": "Issue", "owner": victim.Login, "repo": private.Name, "number": secret.Number},
@@ -85,8 +79,7 @@ func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 		t.Errorf("the project holds %d items, want 0 — the private issue was indexed against it", len(items))
 	}
 
-	// Positive control: content the caller can genuinely read still goes in, or
-	// this would pass just as well against a handler that refuses everything.
+	// Positive control: readable content still goes in, or this would pass against a handler that refuses everything.
 	own := st.CreateRepo(snooper, "projcontent-own", "", false)
 	if own == nil {
 		t.Fatalf("could not create the snooper's own repository")

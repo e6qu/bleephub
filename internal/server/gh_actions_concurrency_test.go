@@ -11,9 +11,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// submitConcurrencyWorkflow submits a one-job workflow with a
-// concurrency group through the real workflow-submission surface and
-// returns the engine workflow id.
+// submitConcurrencyWorkflow submits a one-job workflow with a concurrency group
+// through the real submission surface and returns the engine workflow id.
 func (s *isolatedServer) submitConcurrencyWorkflow(t *testing.T, name, group, repo string) string {
 	t.Helper()
 	yaml := fmt.Sprintf("name: %s\nconcurrency: %s\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n", name, group)
@@ -88,7 +87,6 @@ func TestConcurrencyGroups_RepoAndRunEndpoints(t *testing.T) {
 	holderID := s.runIDByName(t, repo, "cg-holder")
 	waiterID := s.runIDByName(t, repo, "cg-waiter")
 
-	// Repo-level active group list: one group, lease acquired.
 	data := decodeJSONWithStatus(t, s.get(t, "/api/v3/repos/"+repo+"/actions/concurrency_groups", defaultToken), 200)
 	groups, _ := data["concurrency_groups"].([]interface{})
 	if int(data["total_count"].(float64)) != 1 || len(groups) != 1 {
@@ -102,7 +100,6 @@ func TestConcurrencyGroups_RepoAndRunEndpoints(t *testing.T) {
 		t.Fatalf("group_url = %v", entry["group_url"])
 	}
 
-	// Group by name: holder in_progress, waiter pending.
 	groupPath := "/api/v3/repos/" + repo + "/actions/concurrency_groups/" + url.PathEscape(group)
 	data = decodeJSONWithStatus(t, s.get(t, groupPath, defaultToken), 200)
 	members, _ := data["group_members"].([]interface{})

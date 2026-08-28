@@ -16,7 +16,7 @@ func TestRepoVariablesCRUD(t *testing.T) {
 	repo := s.seedRepo(t, "var-crud", false)
 	base := "/api/v3/repos/" + repo.FullName + "/actions/variables"
 
-	// Create (lowercase input → stored/returned uppercase, real-API rule).
+	// Lowercase input is stored and returned uppercase (real-API rule).
 	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "deploy_env", "value": "staging",
 	}), 201, "create")
@@ -27,7 +27,6 @@ func TestRepoVariablesCRUD(t *testing.T) {
 		"name": "DEPLOY_ENV", "value": "other",
 	}), 409, "duplicate create")
 
-	// Get.
 	v := decodeJSON(t, s.get(t, base+"/deploy_env", defaultToken))
 	if v["name"] != "DEPLOY_ENV" || v["value"] != "staging" {
 		t.Fatalf("get = %v", v)
@@ -36,13 +35,11 @@ func TestRepoVariablesCRUD(t *testing.T) {
 		t.Errorf("created_at not RFC3339: %v", v["created_at"])
 	}
 
-	// List.
 	list := decodeJSON(t, s.get(t, base, defaultToken))
 	if int(list["total_count"].(float64)) != 1 {
 		t.Fatalf("total_count = %v, want 1", list["total_count"])
 	}
 
-	// Patch value.
 	mustStatus(t, s.patch(t, base+"/DEPLOY_ENV", defaultToken, map[string]interface{}{
 		"value": "production",
 	}), 204, "patch value")
@@ -51,7 +48,6 @@ func TestRepoVariablesCRUD(t *testing.T) {
 		t.Fatalf("after patch value = %v", v["value"])
 	}
 
-	// Patch rename.
 	mustStatus(t, s.patch(t, base+"/DEPLOY_ENV", defaultToken, map[string]interface{}{
 		"name": "TARGET_ENV",
 	}), 204, "patch rename")
@@ -61,7 +57,6 @@ func TestRepoVariablesCRUD(t *testing.T) {
 		t.Fatalf("renamed variable lost value: %v", v)
 	}
 
-	// Rename collision.
 	mustStatus(t, s.post(t, base, defaultToken, map[string]interface{}{
 		"name": "OTHER_VAR", "value": "x",
 	}), 201, "create other")
@@ -69,7 +64,6 @@ func TestRepoVariablesCRUD(t *testing.T) {
 		"name": "TARGET_ENV",
 	}), 409, "rename collision")
 
-	// Delete.
 	mustStatus(t, s.delete(t, base+"/TARGET_ENV", defaultToken), 204, "delete")
 	mustStatus(t, s.get(t, base+"/TARGET_ENV", defaultToken), 404, "get after delete")
 	mustStatus(t, s.delete(t, base+"/TARGET_ENV", defaultToken), 404, "delete again")
@@ -170,7 +164,6 @@ func TestOrgVariablesLifecycle(t *testing.T) {
 	}
 	mustStatus(t, s.get(t, base+"/ORG_VAR_SEL/repositories", defaultToken), 409, "repos after visibility change")
 
-	// Delete.
 	mustStatus(t, s.delete(t, base+"/ORG_VAR_SEL", defaultToken), 204, "delete")
 	mustStatus(t, s.get(t, base+"/ORG_VAR_SEL", defaultToken), 404, "get after delete")
 

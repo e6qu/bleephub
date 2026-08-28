@@ -154,7 +154,6 @@ func TestBranchProtectionRequiredStatusChecksPatch(t *testing.T) {
 		t.Fatal("missing url/contexts_url")
 	}
 
-	// The merged rule reads back the same through GET.
 	resp = s.get(t, base+"/required_status_checks", defaultToken)
 	got := decodeJSONWithStatus(t, resp, 200)
 	if got["strict"] != false {

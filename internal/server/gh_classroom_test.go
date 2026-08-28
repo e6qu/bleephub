@@ -58,7 +58,6 @@ func TestGitHubClassroomSurface(t *testing.T) {
 	acceptance := decodeJSONWithStatus(t, srv.post(t, "/classroom-data/invitations/"+code+"/accept", studentToken, map[string]interface{}{}), http.StatusCreated)
 	studentRepo := acceptance["repository"].(map[string]interface{})["full_name"].(string)
 
-	// GET /classrooms
 	resp := srv.get(t, "/api/v3/classrooms", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -85,7 +84,6 @@ func TestGitHubClassroomSurface(t *testing.T) {
 		t.Fatalf("unauthenticated list status = %d, want 401", resp.StatusCode)
 	}
 
-	// GET /classrooms/{classroom_id}
 	resp = srv.get(t, "/api/v3/classrooms/"+classroomID, defaultToken)
 	full := decodeJSONWithStatus(t, resp, 200)
 	orgJSON, _ := full["organization"].(map[string]interface{})
@@ -93,7 +91,6 @@ func TestGitHubClassroomSurface(t *testing.T) {
 		t.Fatalf("classroom organization = %v", full["organization"])
 	}
 
-	// GET /classrooms/{classroom_id}/assignments
 	resp = srv.get(t, "/api/v3/classrooms/"+classroomID+"/assignments", defaultToken)
 	assignments := decodeJSONArray(t, resp)
 	if len(assignments) != 1 {
@@ -109,7 +106,6 @@ func TestGitHubClassroomSurface(t *testing.T) {
 			simple["accepted"], simple["submitted"], simple["passing"])
 	}
 
-	// GET /assignments/{assignment_id} (full shape with starter code repo)
 	resp = srv.get(t, "/api/v3/assignments/"+assignmentID, defaultToken)
 	fullAssignment := decodeJSONWithStatus(t, resp, 200)
 	starter, _ := fullAssignment["starter_code_repository"].(map[string]interface{})
@@ -121,7 +117,6 @@ func TestGitHubClassroomSurface(t *testing.T) {
 		t.Fatal("full assignment must nest the full classroom")
 	}
 
-	// GET /assignments/{assignment_id}/accepted_assignments
 	resp = srv.get(t, "/api/v3/assignments/"+assignmentID+"/accepted_assignments", defaultToken)
 	accepted := decodeJSONArray(t, resp)
 	if len(accepted) != 1 {
@@ -143,7 +138,6 @@ func TestGitHubClassroomSurface(t *testing.T) {
 		t.Fatalf("accepted shape: %v", accepted[0])
 	}
 
-	// GET /assignments/{assignment_id}/grades
 	resp = srv.get(t, "/api/v3/assignments/"+assignmentID+"/grades", defaultToken)
 	grades := decodeJSONArray(t, resp)
 	if len(grades) != 1 {

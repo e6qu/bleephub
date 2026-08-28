@@ -121,7 +121,6 @@ func FuzzMergePullRequestBody(f *testing.F) {
 			t.Fatalf("merge returned %d (want <500) for body %q: %s", w.Code, body, w.Body.String())
 		}
 
-		// Derive the expectation for well-formed JSON bodies.
 		var parsed map[string]interface{}
 		validJSON := json.Unmarshal([]byte(body), &parsed) == nil
 		if validJSON {

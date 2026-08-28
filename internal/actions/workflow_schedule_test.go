@@ -189,19 +189,15 @@ func TestParseCron(t *testing.T) {
 	}{
 		// every minute parses, but the dispatcher rejects its sub-five-minute interval
 		{expr: "* * * * *", t: time.Date(2026, 6, 12, 10, 30, 0, 0, time.UTC), want: true},
-		// specific minute/hour
 		{expr: "30 10 * * *", t: time.Date(2026, 6, 12, 10, 30, 0, 0, time.UTC), want: true},
 		{expr: "30 10 * * *", t: time.Date(2026, 6, 12, 10, 31, 0, 0, time.UTC), want: false},
-		// steps
 		{expr: "*/15 * * * *", t: time.Date(2026, 6, 12, 10, 45, 0, 0, time.UTC), want: true},
 		{expr: "*/15 * * * *", t: time.Date(2026, 6, 12, 10, 40, 0, 0, time.UTC), want: false},
-		// ranges with step
 		{expr: "0 9-17/2 * * *", t: time.Date(2026, 6, 12, 13, 0, 0, 0, time.UTC), want: true},
 		{expr: "0 9-17/2 * * *", t: time.Date(2026, 6, 12, 14, 0, 0, 0, time.UTC), want: false},
 		// weekday range (2026-06-12 is a Friday)
 		{expr: "0 4 * * 1-5", t: time.Date(2026, 6, 12, 4, 0, 0, 0, time.UTC), want: true},
 		{expr: "0 4 * * 1-5", t: time.Date(2026, 6, 14, 4, 0, 0, 0, time.UTC), want: false}, // Sunday
-		// names
 		{expr: "0 0 * JUN FRI", t: time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC), want: true},
 		{expr: "0 0 * JUL *", t: time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC), want: false},
 		// dow 7 == Sunday
@@ -213,9 +209,7 @@ func TestParseCron(t *testing.T) {
 		// dom restricted, dow star → dom decides
 		{expr: "0 0 13 * *", t: time.Date(2026, 6, 13, 0, 0, 0, 0, time.UTC), want: true},
 		{expr: "0 0 13 * *", t: time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC), want: false},
-		// lists
 		{expr: "0,30 0 * * *", t: time.Date(2026, 6, 12, 0, 30, 0, 0, time.UTC), want: true},
-		// errors
 		{expr: "* * * *", wantErr: true},     // 4 fields
 		{expr: "60 * * * *", wantErr: true},  // minute out of range
 		{expr: "* 24 * * *", wantErr: true},  // hour out of range

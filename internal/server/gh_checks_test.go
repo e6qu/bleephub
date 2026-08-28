@@ -47,7 +47,6 @@ func TestCheckRunLifecycle(t *testing.T) {
 		return w
 	}
 
-	// CREATE check run
 	body, _ := json.Marshal(map[string]any{
 		"name":        "go test",
 		"head_sha":    headSHA,
@@ -66,13 +65,11 @@ func TestCheckRunLifecycle(t *testing.T) {
 		t.Error("create did not associate a check_suite")
 	}
 
-	// GET check run
 	w = doReq("GET", fmt.Sprintf("/api/v3/repos/admin/checks-target/check-runs/%d", runID), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get status = %d body = %s", w.Code, w.Body.String())
 	}
 
-	// PATCH check run → completed
 	completedAt := fixedTestTime
 	body, _ = json.Marshal(map[string]any{
 		"status":       "completed",
@@ -93,7 +90,6 @@ func TestCheckRunLifecycle(t *testing.T) {
 		t.Errorf("patch did not update status/conclusion: %v / %v", patched["status"], patched["conclusion"])
 	}
 
-	// LIST by commit
 	w = doReq("GET", fmt.Sprintf("/api/v3/repos/admin/checks-target/commits/%s/check-runs", headSHA), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list by commit status = %d body = %s", w.Code, w.Body.String())
@@ -107,7 +103,6 @@ func TestCheckRunLifecycle(t *testing.T) {
 		t.Errorf("expected 1 check run, got %d", listResp.TotalCount)
 	}
 
-	// LIST suites by commit
 	w = doReq("GET", fmt.Sprintf("/api/v3/repos/admin/checks-target/commits/%s/check-suites", headSHA), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list suites status = %d body = %s", w.Code, w.Body.String())

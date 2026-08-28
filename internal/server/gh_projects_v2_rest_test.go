@@ -10,8 +10,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// seedProjectV2Org creates an org (admin as owner) and an org-owned
-// Projects v2 project through the shared store.
 func (s *isolatedServer) seedProjectV2Org(t *testing.T, orgLogin, title string) (*store.Org, *store.ProjectV2) {
 	t.Helper()
 	admin := s.store.UsersByLogin["admin"]
@@ -69,7 +67,6 @@ func TestOrgProjectsV2_ListGetAndVisibility(t *testing.T) {
 		t.Fatal("project missing from org list")
 	}
 
-	// GET by number.
 	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2/"+strconv.Itoa(p.Number), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -80,7 +77,6 @@ func TestOrgProjectsV2_ListGetAndVisibility(t *testing.T) {
 		t.Fatalf("number = %v, want %d", got["number"], p.Number)
 	}
 
-	// Unknown project number → 404. Unknown org → 404.
 	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/projectsV2/99999", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
@@ -158,7 +154,6 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 	seededFields := len(projectV2SeededFieldNames(t, s, p.ID))
 	base := "/api/v3/orgs/" + org.Login + "/projectsV2/" + strconv.Itoa(p.Number)
 
-	// text field
 	resp := s.post(t, base+"/fields", defaultToken, map[string]interface{}{
 		"name": "Notes", "data_type": "text",
 	})
@@ -171,7 +166,6 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 		t.Fatalf("data_type = %v, want text", textField["data_type"])
 	}
 
-	// single select field with rich options
 	resp = s.post(t, base+"/fields", defaultToken, map[string]interface{}{
 		"name": "Priority", "data_type": "single_select",
 		"single_select_options": []map[string]interface{}{
@@ -198,7 +192,6 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 		t.Fatalf("default option color = %v, want GRAY", second["color"])
 	}
 
-	// iteration field
 	resp = s.post(t, base+"/fields", defaultToken, map[string]interface{}{
 		"name": "Sprint", "data_type": "iteration",
 		"iteration_configuration": map[string]interface{}{
@@ -226,7 +219,6 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 		t.Fatalf("iterations = %v, want 2", cfg["iterations"])
 	}
 
-	// list fields
 	resp = s.get(t, base+"/fields", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -240,7 +232,6 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 		t.Fatalf("fields = %d, want %d", len(fields), wantFields)
 	}
 
-	// get single field
 	fieldID := int(ssField["id"].(float64))
 	resp = s.get(t, base+"/fields/"+strconv.Itoa(fieldID), defaultToken)
 	if resp.StatusCode != 200 {
@@ -257,7 +248,6 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 		t.Fatalf("unknown field = %d, want 404", resp.StatusCode)
 	}
 
-	// validation failures
 	for i, body := range []map[string]interface{}{
 		{"name": "Priority", "data_type": "text"},       // duplicate name
 		{"name": "Empty", "data_type": "single_select"}, // no options
@@ -288,7 +278,6 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "Fix the flux capacitor", "", nil, nil, 0)
 	base := "/api/v3/orgs/" + org.Login + "/projectsV2/" + strconv.Itoa(p.Number)
 
-	// Add by database ID.
 	resp := s.post(t, base+"/items", defaultToken, map[string]interface{}{
 		"type": "Issue", "id": issue.ID,
 	})
@@ -315,7 +304,6 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 		t.Fatalf("re-add produced a different item: %v vs %d", again["id"], itemID)
 	}
 
-	// Draft item.
 	resp = s.post(t, base+"/drafts", defaultToken, map[string]interface{}{
 		"title": "Draft: write docs", "body": "eventually",
 	})
@@ -329,7 +317,6 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	}
 	draftID := int(draft["id"].(float64))
 
-	// List items — both present, content populated.
 	resp = s.get(t, base+"/items", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -340,7 +327,6 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 		t.Fatalf("items = %d, want 2", len(items))
 	}
 
-	// Get single item with content.
 	resp = s.get(t, base+"/items/"+strconv.Itoa(itemID), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -352,7 +338,6 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 		t.Fatalf("item content = %v", gotItem["content"])
 	}
 
-	// Field values: text + single select set via PATCH, read back.
 	textField := s.store.ProjectsV2.CreateField(p.ID, "Notes", store.ProjectV2FieldText, nil, nil)
 	// Status is one of the fields every project is seeded with, so this reuses
 	// it rather than creating a second field of the same name.
@@ -409,7 +394,6 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 		t.Fatalf("selected fields = %v, want one null value", selected["fields"])
 	}
 
-	// PATCH validation: unknown field ID / wrong value type / empty list.
 	for i, body := range []map[string]interface{}{
 		{"fields": []map[string]interface{}{{"id": 999999, "value": "x"}}},
 		{"fields": []map[string]interface{}{{"id": numField.ID, "value": "not a number"}}},
@@ -444,7 +428,6 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 		t.Fatalf("q=Status:Done matched %v", done)
 	}
 
-	// Delete item.
 	resp = s.delete(t, base+"/items/"+strconv.Itoa(draftID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -456,7 +439,6 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 		t.Fatalf("deleted item get = %d, want 404", resp.StatusCode)
 	}
 
-	// Add-item validation.
 	for i, body := range []map[string]interface{}{
 		{"type": "Gist", "id": issue.ID},
 		{"type": "Issue"},
@@ -551,7 +533,6 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	p := s.store.ProjectsV2.CreateProject(admin.ID, "User", "Personal backlog", admin.ID)
 
-	// List + get by login.
 	resp := s.get(t, "/api/v3/users/admin/projectsV2", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -575,7 +556,6 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Field create/list/get through /users/{username}.
 	resp = s.post(t, base+"/fields", defaultToken, map[string]interface{}{
 		"name": "Effort", "data_type": "number",
 	})
@@ -608,7 +588,6 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 	draft := decodeJSON(t, resp)
 	draftID := int(draft["id"].(float64))
 
-	// Item PATCH + GET + DELETE via /users/{username}.
 	resp = s.patch(t, base+"/items/"+strconv.Itoa(draftID), defaultToken, map[string]interface{}{
 		"fields": []map[string]interface{}{{"id": fieldID, "value": 3}},
 	})
@@ -661,7 +640,6 @@ func TestUserProjectsV2_FlowIncludingUserIDRoutes(t *testing.T) {
 		t.Fatalf("other user get private project = %d, want 404", resp.StatusCode)
 	}
 
-	// Delete the item last.
 	resp = s.delete(t, base+"/items/"+strconv.Itoa(draftID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -712,7 +690,6 @@ func containsRel(link, rel string) bool {
 	return strings.Contains(link, `rel="`+rel+`"`)
 }
 
-// extractCursor pulls a cursor query parameter out of a Link header.
 func extractCursor(t *testing.T, link, param string) string {
 	t.Helper()
 	start := strings.Index(link, "<")

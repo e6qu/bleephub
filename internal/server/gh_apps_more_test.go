@@ -68,7 +68,6 @@ func TestSuspendUnsuspendInstallation(t *testing.T) {
 		return w
 	}
 
-	// Suspend
 	w := doRequest("PUT", fmt.Sprintf("/api/v3/app/installations/%d/suspended", inst.ID))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("suspend status = %d body = %s", w.Code, w.Body.String())
@@ -78,25 +77,21 @@ func TestSuspendUnsuspendInstallation(t *testing.T) {
 		t.Fatal("expected SuspendedAt set after suspend")
 	}
 
-	// Duplicate suspend → 409
 	w = doRequest("PUT", fmt.Sprintf("/api/v3/app/installations/%d/suspended", inst.ID))
 	if w.Code != http.StatusConflict {
 		t.Fatalf("dup suspend status = %d", w.Code)
 	}
 
-	// Token mint on suspended installation → 403
 	w = doRequest("POST", fmt.Sprintf("/api/v3/app/installations/%d/access_tokens", inst.ID))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("token-mint on suspended status = %d", w.Code)
 	}
 
-	// Unsuspend
 	w = doRequest("DELETE", fmt.Sprintf("/api/v3/app/installations/%d/suspended", inst.ID))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("unsuspend status = %d body = %s", w.Code, w.Body.String())
 	}
 
-	// Duplicate unsuspend → 409
 	w = doRequest("DELETE", fmt.Sprintf("/api/v3/app/installations/%d/suspended", inst.ID))
 	if w.Code != http.StatusConflict {
 		t.Fatalf("dup unsuspend status = %d", w.Code)
@@ -111,7 +106,6 @@ func TestGetOrgUserInstallation(t *testing.T) {
 	s.store.CreateInstallation(app.ID, "Organization", 100, "octo-org", nil, nil)
 	s.store.CreateInstallation(app.ID, "User", 200, "octocat", nil, nil)
 
-	// Org installation
 	req := httptest.NewRequest("GET", "/api/v3/orgs/octo-org/installation", nil)
 	req = req.WithContext(context.WithValue(req.Context(), ctxApp, app))
 	w := httptest.NewRecorder()
@@ -120,7 +114,6 @@ func TestGetOrgUserInstallation(t *testing.T) {
 		t.Fatalf("org installation status = %d body = %s", w.Code, w.Body.String())
 	}
 
-	// User installation
 	req = httptest.NewRequest("GET", "/api/v3/users/octocat/installation", nil)
 	req = req.WithContext(context.WithValue(req.Context(), ctxApp, app))
 	w = httptest.NewRecorder()
@@ -129,7 +122,6 @@ func TestGetOrgUserInstallation(t *testing.T) {
 		t.Fatalf("user installation status = %d", w.Code)
 	}
 
-	// Wrong target type
 	req = httptest.NewRequest("GET", "/api/v3/orgs/octocat/installation", nil)
 	req = req.WithContext(context.WithValue(req.Context(), ctxApp, app))
 	w = httptest.NewRecorder()
@@ -138,7 +130,6 @@ func TestGetOrgUserInstallation(t *testing.T) {
 		t.Errorf("wrong target type status = %d, want 404", w.Code)
 	}
 
-	// Anon → 401
 	req = httptest.NewRequest("GET", "/api/v3/orgs/octo-org/installation", nil)
 	w = httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)

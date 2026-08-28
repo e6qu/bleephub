@@ -119,9 +119,8 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	}
 	s.store.Mu.Lock()
 	s.store.Sessions["busy-sess"] = sess
-	// An assigned, unfinished job marks the agent busy. Mirror what
-	// recordJobAgentLocked writes on delivery: the job's AgentID and the
-	// agent's own assignment bookkeeping.
+	// An assigned, unfinished job marks the agent busy, mirroring
+	// recordJobAgentLocked: the job's AgentID and the agent's assignment bookkeeping.
 	s.store.Jobs["job-1"] = &store.Job{ID: "job-1", AgentID: 901, Status: "running"}
 	s.store.Jobs["job-2"] = &store.Job{ID: "job-2", Status: "queued"}
 	sess.Agent.AssignedJobID = "job-1"
@@ -135,7 +134,6 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 		t.Fatal("busy runner's poll pulled a job message")
 	}
 
-	// Job finishes → the next poll pulls the pending message.
 	s.store.Mu.Lock()
 	s.store.Jobs["job-1"].Status = "completed"
 	s.store.Mu.Unlock()
@@ -182,7 +180,6 @@ func TestLabelRoutingQueuesUntilMatch(t *testing.T) {
 		t.Fatal("job pulled by a runner without the required labels")
 	}
 
-	// A matching runner's poll pulls it.
 	gpu := mkSession("b-gpu", "self-hosted", "linux", "gpu")
 	got := s.actions.PullPendingMessage(gpu, store.RunnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 1 {
@@ -272,7 +269,6 @@ func TestRerunKeepsRunIDAndBumpsAttempt(t *testing.T) {
 	}
 	s.assertWorkflowJobsUseHostMode(t, attempt2)
 
-	// The first attempt is retrievable.
 	resp3, err := http.Get(fmt.Sprintf("%s/api/v3/repos/%s/actions/runs/%d/attempts/1", s.baseURL, repoKey, origRunID))
 	if err != nil {
 		t.Fatal(err)
@@ -429,7 +425,6 @@ func (s *isolatedServer) countRepoRuns(repoKey string) int {
 func TestOrgRunnerEndpoints(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Seed an org + an agent.
 	resp := s.post(t, "/api/v3/admin/organizations", defaultToken,
 		map[string]interface{}{"login": "runner-org", "admin": "admin"})
 	resp.Body.Close()

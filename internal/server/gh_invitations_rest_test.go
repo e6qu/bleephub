@@ -102,7 +102,6 @@ func TestInvitations_UserAcceptAndDecline(t *testing.T) {
 		t.Fatal("invitation still pending after accept")
 	}
 
-	// Decline: create a second invitation and decline it.
 	inv2 := s.store.CreateRepoInvitation(repo.FullName, other.Login, "", admin.ID, "pull")
 	w = doInvitationReq(s, otherToken, "DELETE", fmt.Sprintf("/api/v3/user/repository_invitations/%d", inv2.ID), nil)
 	if w.Code != http.StatusNoContent {

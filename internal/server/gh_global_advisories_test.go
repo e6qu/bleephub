@@ -98,7 +98,6 @@ func TestGlobalSecurityAdvisories_DraftExcludedAndFilters(t *testing.T) {
 		}
 	}
 
-	// severity filter
 	resp = s.get(t, "/api/v3/advisories?severity=critical", defaultToken)
 	list = decodeJSONArray(t, resp)
 	foundPublished := false
@@ -114,7 +113,6 @@ func TestGlobalSecurityAdvisories_DraftExcludedAndFilters(t *testing.T) {
 		t.Fatal("critical advisory missing from severity-filtered list")
 	}
 
-	// ghsa_id filter
 	resp = s.get(t, "/api/v3/advisories?ghsa_id="+published, defaultToken)
 	list = decodeJSONArray(t, resp)
 	if len(list) != 1 || list[0]["ghsa_id"] != published {
@@ -129,7 +127,6 @@ func TestGlobalSecurityAdvisories_DraftExcludedAndFilters(t *testing.T) {
 		t.Fatalf("type=malware returned %d rows, want 0", len(list))
 	}
 
-	// cwes filter
 	resp = s.get(t, "/api/v3/advisories?cwes=CWE-79&ghsa_id="+published, defaultToken)
 	list = decodeJSONArray(t, resp)
 	if len(list) != 1 {

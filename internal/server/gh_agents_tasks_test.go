@@ -10,7 +10,6 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 	repo := srv.seedRepo(t, "agent-tasks-repo", false)
 	repoBase := "/api/v3/agents/repos/" + repo.FullName + "/tasks"
 
-	// Create.
 	resp := srv.post(t, repoBase, defaultToken, map[string]interface{}{
 		"prompt":              "Fix the login button on the homepage\n\nIt renders off-screen on mobile.",
 		"model":               "claude-sonnet-4.6",
@@ -47,7 +46,7 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 		t.Fatalf("creator.id = %v, want %d", creator["id"], admin.ID)
 	}
 
-	// Get by global id — includes the sessions.
+	// Get by global id returns the sessions.
 	resp = srv.get(t, "/api/v3/agents/tasks/"+taskID, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get task status %d, want 200", resp.StatusCode)
@@ -68,7 +67,6 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 		t.Fatalf("session model = %v, want claude-sonnet-4.6", sess["model"])
 	}
 
-	// Get by repo + id.
 	resp = srv.get(t, repoBase+"/"+taskID, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get repo task status %d, want 200", resp.StatusCode)
@@ -78,7 +76,6 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 		t.Fatalf("repo task id = %v, want %s", got["id"], taskID)
 	}
 
-	// List for repo.
 	resp = srv.get(t, repoBase, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list repo tasks status %d, want 200", resp.StatusCode)
@@ -95,7 +92,6 @@ func TestAgentTasks_CreateAndReadBack(t *testing.T) {
 		t.Fatalf("total_archived_count = %v, want 0", list["total_archived_count"])
 	}
 
-	// List for the authenticated user contains the task too.
 	resp = srv.get(t, "/api/v3/agents/tasks", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list user tasks status %d, want 200", resp.StatusCode)
@@ -130,7 +126,6 @@ func TestAgentTasks_Filters(t *testing.T) {
 		t.Fatalf("completed filter matched %d tasks, want 0", n)
 	}
 
-	// The queued filter matches both.
 	resp = srv.get(t, repoBase+"?state=queued,failed", defaultToken)
 	list = decodeJSON(t, resp)
 	if n := len(list["tasks"].([]interface{})); n != 2 {
@@ -162,17 +157,13 @@ func TestAgentTasks_ValidationAndErrors(t *testing.T) {
 	repo := srv.seedRepo(t, "agent-tasks-errors", false)
 	repoBase := "/api/v3/agents/repos/" + repo.FullName + "/tasks"
 
-	// Missing prompt.
 	mustStatus(t, srv.post(t, repoBase, defaultToken, map[string]interface{}{}), 422, "create without prompt")
 
-	// Unauthenticated.
 	mustStatus(t, srv.get(t, "/api/v3/agents/tasks", ""), 401, "list without auth")
 	mustStatus(t, srv.post(t, repoBase, "", map[string]interface{}{"prompt": "p"}), 401, "create without auth")
 
-	// Unknown repository.
 	mustStatus(t, srv.get(t, "/api/v3/agents/repos/admin/no-such-repo/tasks", defaultToken), 404, "list unknown repo")
 
-	// Unknown task.
 	mustStatus(t, srv.get(t, "/api/v3/agents/tasks/00000000-0000-0000-0000-000000000000", defaultToken), 404, "get unknown task")
 	mustStatus(t, srv.get(t, repoBase+"/00000000-0000-0000-0000-000000000000", defaultToken), 404, "get unknown repo task")
 

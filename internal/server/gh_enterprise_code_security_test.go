@@ -21,7 +21,6 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 		t.Fatalf("create without description: got %d, want 400", resp.StatusCode)
 	}
 
-	// Create with defaults.
 	resp = s.post(t, base, defaultToken, map[string]interface{}{
 		"name":              "baseline",
 		"description":       "Enterprise baseline security posture",
@@ -47,7 +46,6 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 	id := int(cfg["id"].(float64))
 	one := fmt.Sprintf("%s/%d", base, id)
 
-	// Get.
 	resp = s.get(t, one, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -58,7 +56,6 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 		t.Fatalf("get name = %v", got["name"])
 	}
 
-	// List contains it.
 	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -74,7 +71,6 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 		t.Fatal("list does not contain the created configuration")
 	}
 
-	// Patch: change a feature + name.
 	resp = s.patch(t, one, defaultToken, map[string]interface{}{
 		"name":            "baseline-v2",
 		"secret_scanning": "enabled",
@@ -92,14 +88,12 @@ func TestEnterpriseCodeSecurityConfigurations_CRUD(t *testing.T) {
 		t.Fatalf("patch clobbered dependabot_alerts: %v", patched["dependabot_alerts"])
 	}
 
-	// Invalid enum → 422 on update.
 	resp = s.patch(t, one, defaultToken, map[string]interface{}{"secret_scanning": "sideways"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("patch invalid enum: got %d, want 422", resp.StatusCode)
 	}
 
-	// Delete.
 	resp = s.delete(t, one, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
@@ -181,14 +175,12 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 	id := int(cfg["id"].(float64))
 	one := fmt.Sprintf("%s/%d", base, id)
 
-	// Attach with an invalid scope → 422.
 	resp = s.post(t, one+"/attach", defaultToken, map[string]interface{}{"scope": "some"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("attach invalid scope: got %d, want 422", resp.StatusCode)
 	}
 
-	// Attach to all repositories → 202.
 	resp = s.post(t, one+"/attach", defaultToken, map[string]interface{}{"scope": "all"})
 	if resp.StatusCode != http.StatusAccepted {
 		resp.Body.Close()
@@ -196,9 +188,8 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Repositories list shows the attachment. Walk the pages like a real
-	// client: scope=all attaches every organization repository in the
-	// shared test server, so the one created here may sit past page 1.
+	// scope=all attaches every org repo in the shared test server, so the one
+	// created here may sit past page 1; walk the pages like a real client.
 	var sawRepo bool
 	for page := 1; !sawRepo; page++ {
 		resp = s.get(t, fmt.Sprintf("%s/repositories?per_page=100&page=%d", one, page), defaultToken)
@@ -235,7 +226,6 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 		t.Fatalf("repositories with status=failed = %d, want 0", got)
 	}
 
-	// Set as default for new repositories.
 	resp = s.put(t, one+"/defaults", defaultToken, map[string]interface{}{
 		"default_for_new_repos": "all",
 	})
@@ -251,7 +241,6 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 		t.Fatalf("set-default configuration member = %v", def["configuration"])
 	}
 
-	// The defaults listing includes it.
 	resp = s.get(t, base+"/defaults", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -278,7 +267,6 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 		t.Fatalf("delete default configuration: got %d, want 409", resp.StatusCode)
 	}
 
-	// Clear the default, then delete cleanly.
 	resp = s.put(t, one+"/defaults", defaultToken, map[string]interface{}{
 		"default_for_new_repos": "none",
 	})

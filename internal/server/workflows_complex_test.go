@@ -38,10 +38,8 @@ func TestContinueOnErrorDepStillRuns(t *testing.T) {
 	}
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 
-	// Build fails, but has continue-on-error
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["build"].JobID, "Failed")
 
-	// Test should still dispatch (not be skipped)
 	if workflow.Jobs["test"].Status != "queued" {
 		t.Errorf("test status = %q, want queued (continue-on-error should allow)", workflow.Jobs["test"].Status)
 	}
@@ -94,7 +92,6 @@ func TestContinueOnErrorNeedsContextShowsFailure(t *testing.T) {
 func TestMaxParallelLimitsDispatch(t *testing.T) {
 	s := newTestServer()
 
-	// Create a workflow with 4 matrix jobs but max-parallel=2
 	workflow := &store.Workflow{
 		ID:          "mp-test",
 		Name:        "matrix-parallel",
@@ -125,7 +122,6 @@ func TestMaxParallelLimitsDispatch(t *testing.T) {
 
 	s.actions.DispatchReadyJobs(context.Background(), workflow, "http://localhost", "alpine:latest")
 
-	// Only 2 should be dispatched
 	dispatched := 0
 	for _, j := range workflow.Jobs {
 		if j.Status == "queued" {
@@ -170,7 +166,6 @@ func TestMaxParallelZeroMeansUnlimited(t *testing.T) {
 
 	s.actions.DispatchReadyJobs(context.Background(), workflow, "http://localhost", "alpine:latest")
 
-	// All 4 should dispatch
 	dispatched := 0
 	for _, j := range workflow.Jobs {
 		if j.Status == "queued" {
@@ -198,7 +193,6 @@ func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 		CreatedAt: fixedTestTime,
 	}
 
-	// Job with 1-minute timeout, started 2 minutes ago
 	workflow.Jobs["slow"] = &store.WorkflowJob{
 		Key:       "slow",
 		JobID:     "j-slow",
@@ -264,7 +258,6 @@ func TestQueuedMessagePulledByFirstPollAfterConnect(t *testing.T) {
 	s := newTestServer()
 	s.metrics = NewMetrics()
 
-	// Queue a job with no sessions connected.
 	s.actions.QueueJobMessage(&store.TaskAgentMessage{MessageID: 42})
 
 	s.store.Mu.RLock()
@@ -274,7 +267,6 @@ func TestQueuedMessagePulledByFirstPollAfterConnect(t *testing.T) {
 		t.Fatalf("pending = %d, want 1", pendingCount)
 	}
 
-	// A session connects; its first poll pulls the queued message.
 	sess := &store.Session{SessionID: "new-sess", Agent: &store.Agent{ID: 31}, MsgCh: make(chan *store.TaskAgentMessage, 10)}
 	s.store.Mu.Lock()
 	s.store.Sessions["new-sess"] = sess
@@ -296,7 +288,6 @@ func TestConcurrentWorkflowLimit(t *testing.T) {
 	s := newTestServer()
 	s.maxConcurrentWorkflows = 1
 
-	// First workflow should succeed
 	wf1 := `{"workflow":"name: w1\njobs:\n  a:\n    runs-on: self-hosted\n    steps:\n      - run: echo 1","image":"alpine:latest"}`
 	resp1, err := authedPost("/internal/exec/workflow", "application/json", bytes.NewBufferString(wf1))
 	if err != nil {
@@ -313,14 +304,12 @@ func TestConcurrentWorkflowLimit(t *testing.T) {
 	s2 := newTestServer()
 	s2.maxConcurrentWorkflows = 1
 
-	// Submit one workflow directly
 	wfDef, _ := store.ParseWorkflow([]byte("name: w1\njobs:\n  a:\n    runs-on: self-hosted\n    steps:\n      - run: echo 1"))
 	_, err = s2.actions.SubmitWorkflow(context.Background(), "http://localhost", wfDef, "alpine:latest")
 	if err != nil {
 		t.Fatalf("first submit: %v", err)
 	}
 
-	// Count active workflows
 	s2.store.Mu.RLock()
 	active := 0
 	for _, wf := range s2.store.Workflows {
@@ -392,7 +381,6 @@ func TestThreeStagePipeline(t *testing.T) {
 	}
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 
-	// Only build is dispatched
 	if workflow.Jobs["build"].Status != "queued" {
 		t.Errorf("build = %q, want queued", workflow.Jobs["build"].Status)
 	}
@@ -403,7 +391,6 @@ func TestThreeStagePipeline(t *testing.T) {
 		t.Errorf("deploy = %q, want pending", workflow.Jobs["deploy"].Status)
 	}
 
-	// Complete build → test dispatches
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["build"].JobID, "Succeeded")
 	if workflow.Jobs["test"].Status != "queued" {
 		t.Errorf("test after build = %q, want queued", workflow.Jobs["test"].Status)
@@ -412,13 +399,11 @@ func TestThreeStagePipeline(t *testing.T) {
 		t.Errorf("deploy after build = %q, want pending", workflow.Jobs["deploy"].Status)
 	}
 
-	// Complete test → deploy dispatches
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["test"].JobID, "Succeeded")
 	if workflow.Jobs["deploy"].Status != "queued" {
 		t.Errorf("deploy after test = %q, want queued", workflow.Jobs["deploy"].Status)
 	}
 
-	// Complete deploy → workflow complete
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["deploy"].JobID, "Succeeded")
 	if workflow.Status != "completed" || workflow.Result != "success" {
 		t.Errorf("workflow = %s/%s, want completed/success", workflow.Status, workflow.Result)
@@ -497,22 +482,18 @@ func TestOutputPropagationEndToEnd(t *testing.T) {
 	}
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 
-	// Simulate build completion with outputs
 	buildJob := workflow.Jobs["build"]
 	buildJob.Outputs["version"] = "1.0"
 	s.actions.OnJobCompleted(context.Background(), buildJob.JobID, "Succeeded")
 
-	// Verify outputs were stored
 	if buildJob.Outputs["version"] != "1.0" {
 		t.Errorf("build outputs = %v, want version=1.0", buildJob.Outputs)
 	}
 
-	// Verify deploy was dispatched
 	if workflow.Jobs["deploy"].Status != "queued" {
 		t.Errorf("deploy = %q, want queued", workflow.Jobs["deploy"].Status)
 	}
 
-	// Verify needs context includes the output
 	ctx := actions.BuildNeedsContext(workflow, workflow.Jobs["deploy"])
 	dict := ctx.(map[string]interface{})
 	entries := dict["d"].([]map[string]interface{})
@@ -552,11 +533,9 @@ func TestDiamondDependencyWithOutputs(t *testing.T) {
 	}
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 
-	// Set root outputs and complete
 	workflow.Jobs["root"].Outputs["tag"] = "v1.0"
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["root"].JobID, "Succeeded")
 
-	// Both left and right should dispatch
 	if workflow.Jobs["left"].Status != "queued" {
 		t.Errorf("left = %q, want queued", workflow.Jobs["left"].Status)
 	}
@@ -564,12 +543,10 @@ func TestDiamondDependencyWithOutputs(t *testing.T) {
 		t.Errorf("right = %q, want queued", workflow.Jobs["right"].Status)
 	}
 
-	// Complete left and right
 	workflow.Jobs["left"].Outputs["l_result"] = "ok"
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["left"].JobID, "Succeeded")
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["right"].JobID, "Succeeded")
 
-	// Merge should dispatch
 	if workflow.Jobs["merge"].Status != "queued" {
 		t.Errorf("merge = %q, want queued", workflow.Jobs["merge"].Status)
 	}
@@ -598,15 +575,13 @@ func TestRootFailureCascadesSkipAll(t *testing.T) {
 	}
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 
-	// Root fails
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["root"].JobID, "Failed")
 
-	// Mid should be skipped
 	if workflow.Jobs["mid"].Status != "skipped" {
 		t.Errorf("mid = %q, want skipped", workflow.Jobs["mid"].Status)
 	}
 
-	// Leaf1 and leaf2 should also be skipped (cascaded through mid)
+	// Leaf jobs skip transitively through mid.
 	if workflow.Jobs["leaf1"].Status != "skipped" {
 		t.Errorf("leaf1 = %q, want skipped", workflow.Jobs["leaf1"].Status)
 	}
@@ -655,7 +630,6 @@ func TestFailFastCancelsSiblings(t *testing.T) {
 	s.store.Workflows[workflow.ID] = workflow
 	s.store.Mu.Unlock()
 
-	// First job fails → siblings should be cancelled
 	s.actions.OnJobCompleted(context.Background(), "j0", "Failed")
 
 	cancelled := 0
@@ -705,7 +679,6 @@ func TestFailFastFalseNoCancel(t *testing.T) {
 
 	s.actions.OnJobCompleted(context.Background(), "j0", "Failed")
 
-	// Siblings should NOT be cancelled
 	cancelled := 0
 	for _, j := range workflow.Jobs {
 		if j.Result == "cancelled" {
@@ -912,7 +885,6 @@ func TestCancelRunningWorkflow(t *testing.T) {
 		t.Errorf("workflow = %s/%s, want completed/cancelled", workflow.Status, workflow.Result)
 	}
 
-	// Pending job should be cancelled
 	if workflow.Jobs["test"].Result != "cancelled" {
 		t.Errorf("test result = %q, want cancelled", workflow.Jobs["test"].Result)
 	}
@@ -923,7 +895,6 @@ func TestCancelWorkflowHTTP(t *testing.T) {
 	s.metrics = NewMetrics()
 	s.registerRoutes()
 
-	// Submit a workflow
 	wf := &store.WorkflowDef{
 		Name: "http-cancel",
 		Jobs: map[string]*store.JobDef{
@@ -935,16 +906,14 @@ func TestCancelWorkflowHTTP(t *testing.T) {
 		t.Fatalf("submit: %v", err)
 	}
 
-	// Cancel via HTTP endpoint
 	resp, err := authedPost("/internal/exec/workflows/"+workflow.ID+"/cancel", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	// The workflow was submitted to the test-global server, not our local one.
-	// Just verify the endpoint exists
+	// The workflow lives on the test-global server, not this local one; just
+	// confirm the endpoint exists, and cancel the local copy directly.
 	if resp.StatusCode == 404 {
-		// Might be 404 if the global server doesn't have this workflow — check directly
 		s.actions.CancelWorkflow(workflow)
 		if workflow.Status != "completed" {
 			t.Error("cancelWorkflow didn't work")
@@ -964,7 +933,6 @@ func TestCancelNonexistentWorkflow404(t *testing.T) {
 }
 
 func TestCancelCompletedWorkflow409(t *testing.T) {
-	// Submit a workflow that will complete quickly (single echo job)
 	wfJSON := `{"workflow":"name: done\njobs:\n  a:\n    runs-on: self-hosted\n    steps:\n      - run: echo done","image":"alpine:latest"}`
 	resp, err := authedPost("/internal/exec/workflow", "application/json", bytes.NewBufferString(wfJSON))
 	if err != nil {
@@ -979,10 +947,6 @@ func TestCancelCompletedWorkflow409(t *testing.T) {
 		t.Fatal("workflow dispatch did not return an ID — upstream bug, not a skip condition (no fallback)")
 	}
 
-	// Force complete it
-	// We need to find the workflow and manually complete it
-	// Since it might be dispatched but not completed yet, just test the cancel path
-	// on an already-completed workflow by completing all jobs first
 	resp2, err := authedPost("/internal/exec/workflows/"+wfID+"/cancel", "", nil)
 	if err != nil {
 		t.Fatal(err)

@@ -9,11 +9,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestPutLoginSessionConcurrentSameIDStaysConsistent is a regression guard:
-// concurrent writes to the same session id must not leave the
-// durable row and the in-memory index disagreeing. Run under -race, it also
-// asserts the map write is serialized. With the durable Put and the map write
-// in one critical section the last writer sets both, so they always agree.
+// Concurrent writes to the same session id must not leave the durable row and
+// the in-memory index disagreeing; the durable Put and the map write share one
+// critical section so the last writer sets both. Run under -race.
 func TestPutLoginSessionConcurrentSameIDStaysConsistent(t *testing.T) {
 	dataDir := t.TempDir()
 	persistence := openTestPersistence(t, dataDir)
@@ -64,10 +62,9 @@ func TestPutLoginSessionConcurrentSameIDStaysConsistent(t *testing.T) {
 	}
 }
 
-// TestReapDropsLoginSessionsOfDeletedUsers is a regression guard: a login
-// session whose owner no longer resolves must be reaped from both memory and the
-// durable bucket, even though it has not yet expired. A session for a live user
-// must be left untouched.
+// A login session whose owner no longer resolves must be reaped from both memory
+// and the durable bucket even though it has not yet expired; a live user's
+// session must be left untouched.
 func TestReapDropsLoginSessionsOfDeletedUsers(t *testing.T) {
 	dataDir := t.TempDir()
 	persistence := openTestPersistence(t, dataDir)
@@ -80,8 +77,8 @@ func TestReapDropsLoginSessionsOfDeletedUsers(t *testing.T) {
 	st.SeedDefaultUser()
 	adminID := st.UsersByLogin["admin"].ID
 
-	// "live" belongs to the seeded admin; "orphan" references a user id that does
-	// not resolve, standing in for a user deleted after the session was minted.
+	// "orphan" references a user id that does not resolve, standing in for a user
+	// deleted after the session was minted.
 	const deletedUserID = 999999
 	live := &store.LoginSession{UserID: adminID, ExpiresAt: fixedTestTime.Add(time.Hour)}
 	orphan := &store.LoginSession{UserID: deletedUserID, ExpiresAt: fixedTestTime.Add(time.Hour)}

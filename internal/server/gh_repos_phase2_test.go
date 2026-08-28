@@ -14,7 +14,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
-// TestRepoTopicsREST verifies GET and PUT /repos/{owner}/{repo}/topics.
 func TestRepoTopicsREST(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -22,7 +21,6 @@ func TestRepoTopicsREST(t *testing.T) {
 		"name": "topics-rest",
 	})
 
-	// GET returns empty topics.
 	getResp := s.get(t, "/api/v3/repos/admin/topics-rest/topics", defaultToken)
 	defer getResp.Body.Close()
 	if getResp.StatusCode != 200 {
@@ -37,7 +35,6 @@ func TestRepoTopicsREST(t *testing.T) {
 		t.Fatalf("expected empty topics, got %v", names)
 	}
 
-	// PUT topics.
 	putResp := s.put(t, "/api/v3/repos/admin/topics-rest/topics", defaultToken, map[string]interface{}{
 		"names": []string{"go", "ci", "bleephub"},
 	})
@@ -55,7 +52,6 @@ func TestRepoTopicsREST(t *testing.T) {
 		t.Fatalf("expected 3 topics, got %v", putNames)
 	}
 
-	// GET reflects the update.
 	getResp2 := s.get(t, "/api/v3/repos/admin/topics-rest/topics", defaultToken)
 	defer getResp2.Body.Close()
 	var got2 map[string]interface{}
@@ -67,7 +63,6 @@ func TestRepoTopicsREST(t *testing.T) {
 		t.Fatalf("expected 3 topics after put, got %v", names2)
 	}
 
-	// Repo JSON also exposes topics.
 	repoResp := s.get(t, "/api/v3/repos/admin/topics-rest", defaultToken)
 	defer repoResp.Body.Close()
 	var repo map[string]interface{}
@@ -80,7 +75,6 @@ func TestRepoTopicsREST(t *testing.T) {
 	}
 }
 
-// TestRepoTopicsREST_Validation verifies topic name validation.
 func TestRepoTopicsREST_Validation(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -111,7 +105,6 @@ func TestRepoTopicsREST_Validation(t *testing.T) {
 	}
 }
 
-// TestRepoTopicsREST_PrivateRequiresRead verifies private repo access control.
 func TestRepoTopicsREST_PrivateRequiresRead(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -136,7 +129,6 @@ func TestRepoTopicsREST_PrivateRequiresRead(t *testing.T) {
 	}
 }
 
-// TestDeleteContentsFile verifies DELETE /repos/{owner}/{repo}/contents/{path}.
 func TestDeleteContentsFile(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -145,7 +137,6 @@ func TestDeleteContentsFile(t *testing.T) {
 		"auto_init": true,
 	})
 
-	// Create a file to delete.
 	encoded := base64.StdEncoding.EncodeToString([]byte("to be deleted"))
 	putResp := s.put(t, "/api/v3/repos/admin/delete-contents/contents/remove-me.txt", defaultToken, map[string]interface{}{
 		"message": "add file",
@@ -159,7 +150,6 @@ func TestDeleteContentsFile(t *testing.T) {
 	content, _ := putData["content"].(map[string]interface{})
 	sha := content["sha"].(string)
 
-	// Delete the file.
 	delResp := s.do(t, "DELETE", "/api/v3/repos/admin/delete-contents/contents/remove-me.txt", defaultToken, map[string]interface{}{
 		"message": "remove file",
 		"sha":     sha,
@@ -177,7 +167,6 @@ func TestDeleteContentsFile(t *testing.T) {
 		t.Fatalf("expected commit message 'remove file', got %v", commit["message"])
 	}
 
-	// File is gone.
 	getResp := s.get(t, "/api/v3/repos/admin/delete-contents/contents/remove-me.txt", defaultToken)
 	defer getResp.Body.Close()
 	if getResp.StatusCode != 404 {
@@ -185,7 +174,6 @@ func TestDeleteContentsFile(t *testing.T) {
 	}
 }
 
-// TestDeleteContentsFile_ShaMismatch verifies deletion is rejected when SHA does not match.
 func TestDeleteContentsFile_ShaMismatch(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -215,7 +203,6 @@ func TestDeleteContentsFile_ShaMismatch(t *testing.T) {
 	}
 }
 
-// TestDeleteContentsFile_NonExistentPath verifies deletion of a missing path returns 422.
 func TestDeleteContentsFile_NonExistentPath(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -234,7 +221,6 @@ func TestDeleteContentsFile_NonExistentPath(t *testing.T) {
 	}
 }
 
-// TestDeleteContentsFile_RequiresPush verifies write access is enforced.
 func TestDeleteContentsFile_RequiresPush(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -261,7 +247,6 @@ func TestDeleteContentsFile_RequiresPush(t *testing.T) {
 	}
 }
 
-// helper for DELETE with JSON body.
 func ghDeleteWithBody(t *testing.T, path, token string, body map[string]interface{}) *http.Response {
 	t.Helper()
 	if body == nil {
@@ -270,7 +255,6 @@ func ghDeleteWithBody(t *testing.T, path, token string, body map[string]interfac
 	return ghDo(t, "DELETE", path, token, body)
 }
 
-// TestRepoStargazersREST verifies star/unstar and listing endpoints.
 func TestRepoStargazersREST(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -278,7 +262,6 @@ func TestRepoStargazersREST(t *testing.T) {
 		"name": "stargazers-rest",
 	})
 
-	// Initially no stargazers.
 	listResp := s.get(t, "/api/v3/repos/admin/stargazers-rest/stargazers", defaultToken)
 	defer listResp.Body.Close()
 	if listResp.StatusCode != 200 {
@@ -292,7 +275,6 @@ func TestRepoStargazersREST(t *testing.T) {
 		t.Fatalf("expected 0 stargazers, got %d", len(stargazers))
 	}
 
-	// Star the repo.
 	starResp := s.put(t, "/api/v3/user/starred/admin/stargazers-rest", defaultToken, nil)
 	if starResp.StatusCode != 204 {
 		starResp.Body.Close()
@@ -300,7 +282,6 @@ func TestRepoStargazersREST(t *testing.T) {
 	}
 	starResp.Body.Close()
 
-	// Repo JSON reflects count.
 	repoResp := s.get(t, "/api/v3/repos/admin/stargazers-rest", defaultToken)
 	defer repoResp.Body.Close()
 	var repo map[string]interface{}
@@ -311,7 +292,6 @@ func TestRepoStargazersREST(t *testing.T) {
 		t.Fatalf("expected stargazers_count=1, got %v", repo["stargazers_count"])
 	}
 
-	// List shows the current user.
 	listResp2 := s.get(t, "/api/v3/repos/admin/stargazers-rest/stargazers", defaultToken)
 	defer listResp2.Body.Close()
 	var stargazers2 []map[string]interface{}
@@ -325,7 +305,7 @@ func TestRepoStargazersREST(t *testing.T) {
 		t.Fatalf("expected stargazer admin, got %v", stargazers2[0]["login"])
 	}
 
-	// List user's starred repos (may include repos starred by earlier tests).
+	// The starred-repos list may include repos from earlier tests.
 	starredResp := s.get(t, "/api/v3/user/starred", defaultToken)
 	defer starredResp.Body.Close()
 	if starredResp.StatusCode != 200 {
@@ -346,7 +326,6 @@ func TestRepoStargazersREST(t *testing.T) {
 		t.Fatalf("expected admin/stargazers-rest in starred repos, got %+v", starred)
 	}
 
-	// Unstar.
 	unstarResp := s.do(t, "DELETE", "/api/v3/user/starred/admin/stargazers-rest", defaultToken, nil)
 	defer unstarResp.Body.Close()
 	if unstarResp.StatusCode != 204 {
@@ -364,7 +343,6 @@ func TestRepoStargazersREST(t *testing.T) {
 	}
 }
 
-// TestRepoStargazersPagination verifies per_page/page slicing and Link headers.
 func TestRepoStargazersPagination(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
@@ -420,7 +398,6 @@ func TestRepoStargazersPagination(t *testing.T) {
 	}
 }
 
-// TestRepoCollaboratorsREST verifies collaborator add/list/remove and permission check.
 func TestRepoCollaboratorsREST(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -428,7 +405,6 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 		"name": "collab-rest",
 	})
 
-	// Create another user.
 	s.store.Mu.Lock()
 	other := &store.User{ID: s.store.NextUser, Login: "collab-user", Type: "User", StarredRepos: map[string]time.Time{}}
 	s.store.NextUser++
@@ -438,8 +414,7 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 	s.store.Tokens[otherTok.Value] = otherTok
 	s.store.Mu.Unlock()
 
-	// Inviting a new collaborator answers 201 with a pending repository
-	// invitation carrying the invitee, inviter, and requested role.
+	// Inviting a new collaborator answers 201 with a pending invitation.
 	addResp := s.put(t, "/api/v3/repos/admin/collab-rest/collaborators/collab-user", defaultToken, map[string]interface{}{
 		"permission": "push",
 	})
@@ -469,7 +444,6 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 		t.Fatalf("expected 1 pending invitation, got %d", len(pending))
 	}
 
-	// The invitee accepts, becoming a collaborator.
 	acceptResp := s.patch(t, fmt.Sprintf("/api/v3/user/repository_invitations/%d", int(invID)), otherTok.Value, nil)
 	acceptResp.Body.Close()
 	if acceptResp.StatusCode != 204 {
@@ -485,7 +459,6 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 		t.Fatalf("expected 204 for permission update on existing collaborator, got %d", updateResp.StatusCode)
 	}
 
-	// List collaborators includes the owner and the new collaborator.
 	listResp := s.get(t, "/api/v3/repos/admin/collab-rest/collaborators", defaultToken)
 	defer listResp.Body.Close()
 	if listResp.StatusCode != 200 {
@@ -499,7 +472,6 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 		t.Fatalf("expected 2 collaborators, got %d", len(collabs))
 	}
 
-	// Permission check.
 	permResp := s.get(t, "/api/v3/repos/admin/collab-rest/collaborators/collab-user/permission", defaultToken)
 	defer permResp.Body.Close()
 	if permResp.StatusCode != 200 {
@@ -513,21 +485,18 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 		t.Fatalf("expected push permission, got %v", perm["permission"])
 	}
 
-	// Collaborator can read the private repo's contents metadata.
 	metaResp := s.get(t, "/api/v3/repos/admin/collab-rest", otherTok.Value)
 	defer metaResp.Body.Close()
 	if metaResp.StatusCode != 200 {
 		t.Fatalf("expected 200 for collaborator repo read, got %d", metaResp.StatusCode)
 	}
 
-	// Remove collaborator.
 	delResp := s.do(t, "DELETE", "/api/v3/repos/admin/collab-rest/collaborators/collab-user", defaultToken, nil)
 	defer delResp.Body.Close()
 	if delResp.StatusCode != 204 {
 		t.Fatalf("expected 204 for remove collaborator, got %d", delResp.StatusCode)
 	}
 
-	// After removal, list shows only owner.
 	listResp2 := s.get(t, "/api/v3/repos/admin/collab-rest/collaborators", defaultToken)
 	defer listResp2.Body.Close()
 	var collabs2 []map[string]interface{}
@@ -539,7 +508,6 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 	}
 }
 
-// TestRepoCollaboratorsPagination verifies per_page/page slicing and Link headers.
 func TestRepoCollaboratorsPagination(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
@@ -606,8 +574,7 @@ func TestRepoCollaboratorsPagination(t *testing.T) {
 	}
 }
 
-// TestRepoLanguagesREST verifies GET /repos/{owner}/{repo}/languages returns
-// byte totals by language for the default branch.
+// TestRepoLanguagesREST verifies byte totals by language for the default branch.
 func TestRepoLanguagesREST(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -664,8 +631,7 @@ func TestRepoLanguagesREST(t *testing.T) {
 	}
 }
 
-// TestRepoMergeREST verifies POST /repos/{owner}/{repo}/merges performs a
-// three-way merge of head into base.
+// TestRepoMergeREST verifies POST /merges performs a three-way merge of head into base.
 func TestRepoMergeREST(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -719,7 +685,7 @@ func TestRepoMergeREST(t *testing.T) {
 		t.Fatalf("expected merge commit sha, got %v", got)
 	}
 
-	// main should now point at the merge commit (two parents).
+	// main now points at the merge commit (two parents).
 	mainRef2, err := stor.Reference(plumbing.NewBranchReferenceName("main"))
 	if err != nil {
 		t.Fatalf("resolve main after merge: %v", err)
@@ -729,7 +695,6 @@ func TestRepoMergeREST(t *testing.T) {
 	}
 }
 
-// TestRepoForksREST verifies POST and GET /repos/{owner}/{repo}/forks.
 func TestRepoForksREST(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -751,7 +716,6 @@ func TestRepoForksREST(t *testing.T) {
 		t.Fatalf("init source repo: %v", err)
 	}
 
-	// Create a second user to fork into.
 	s.store.Mu.Lock()
 	forker := &store.User{ID: s.store.NextUser, Login: "forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
@@ -777,7 +741,6 @@ func TestRepoForksREST(t *testing.T) {
 		t.Fatalf("expected parent field, got none")
 	}
 
-	// List forks as source owner.
 	listResp := s.get(t, "/api/v3/repos/admin/fork-source/forks", defaultToken)
 	defer listResp.Body.Close()
 	if listResp.StatusCode != 200 {
@@ -792,8 +755,6 @@ func TestRepoForksREST(t *testing.T) {
 	}
 }
 
-// TestRepoRenameREST verifies PATCH /repos/{owner}/{repo} can rename a repo
-// and that the new name is reachable afterwards.
 func TestRepoRenameREST(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -826,11 +787,9 @@ func TestRepoRenameREST(t *testing.T) {
 		t.Fatalf("unexpected rename response: %v", got)
 	}
 
-	// The old name redirects to the new one rather than 404ing, so a client
-	// holding the pre-rename address still reaches the repository.
+	// The old name redirects to the new one rather than 404ing.
 	requireMovedTo(t, s, "/api/v3/repos/admin/rename-me", "admin/renamed-repo")
 
-	// New name resolves and git storage still works.
 	newResp := s.get(t, "/api/v3/repos/admin/renamed-repo", defaultToken)
 	defer newResp.Body.Close()
 	if newResp.StatusCode != 200 {
@@ -844,7 +803,6 @@ func TestRepoRenameREST(t *testing.T) {
 	}
 }
 
-// TestRepoCompareREST verifies GET /repos/{owner}/{repo}/compare/{base}...{head}.
 func TestRepoCompareREST(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -865,12 +823,10 @@ func TestRepoCompareREST(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init repo: %v", err)
 	}
-	// Add a commit on main.
 	_, err = createFileCommit(stor, "main", "main.go", "package main\n", "add main", repoSignature("t", "t@t"))
 	if err != nil {
 		t.Fatalf("commit on main: %v", err)
 	}
-	// Create feature branch from current main HEAD.
 	mainRef, err := stor.Reference(plumbing.NewBranchReferenceName("main"))
 	if err != nil {
 		t.Fatalf("resolve main: %v", err)
@@ -878,7 +834,6 @@ func TestRepoCompareREST(t *testing.T) {
 	if err := stor.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("feature"), mainRef.Hash())); err != nil {
 		t.Fatalf("set feature ref: %v", err)
 	}
-	// Add a commit on feature branch.
 	_, err = createFileCommit(stor, "feature", "feature.go", "package feature\n", "add feature", repoSignature("t", "t@t"))
 	if err != nil {
 		t.Fatalf("commit on feature: %v", err)
@@ -912,8 +867,7 @@ func TestRepoCompareREST(t *testing.T) {
 		t.Fatalf("expected feature.go, got %v", f["filename"])
 	}
 
-	// The .patch media type serves a real git-format-patch mbox, one patch per
-	// commit in the range (round-4: not the same tree diff .diff serves).
+	// The .patch media type serves a real git-format-patch mbox, one patch per commit (not the tree diff .diff serves).
 	patchResp := s.semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/compare-rest/compare/main...feature", "application/vnd.github.patch")
 	patchBody, _ := io.ReadAll(patchResp.Body)
 	patchResp.Body.Close()

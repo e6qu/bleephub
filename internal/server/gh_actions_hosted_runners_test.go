@@ -109,7 +109,6 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 		t.Fatalf("unknown image status = %d, want 422", resp.StatusCode)
 	}
 
-	// Create.
 	created := decodeJSONWithStatus(t, srv.post(t, base, defaultToken, map[string]interface{}{
 		"name":  "my-hosted-runner",
 		"image": map[string]string{"id": "ubuntu-24.04", "source": "github"},
@@ -131,7 +130,6 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 		t.Fatalf("machine_size_details = %v", created["machine_size_details"])
 	}
 
-	// List + get round-trip.
 	data := decodeJSONWithStatus(t, srv.get(t, base, defaultToken), 200)
 	if int(data["total_count"].(float64)) != 1 {
 		t.Fatalf("list total_count = %v, want 1", data["total_count"])
@@ -141,7 +139,6 @@ func TestHostedRunners_CRUDLifecycle(t *testing.T) {
 		t.Fatalf("get name = %v", got["name"])
 	}
 
-	// Patch: rename, bump capacity, enable static IPs, change size.
 	patched := decodeJSONWithStatus(t, srv.patch(t, fmt.Sprintf("%s/%d", base, id), defaultToken,
 		map[string]interface{}{
 			"name": "renamed-runner", "maximum_runners": 5,
@@ -246,7 +243,7 @@ func TestHostedRunners_CustomImages(t *testing.T) {
 		t.Fatalf("version 1.0.0 = %v", ver)
 	}
 
-	// Create a hosted runner FROM the custom image (latest version).
+	// Create the runner from the custom image; it resolves to the latest version.
 	created := decodeJSONWithStatus(t, srv.post(t, base, defaultToken, map[string]interface{}{
 		"name":  "custom-image-runner",
 		"image": map[string]string{"id": fmt.Sprintf("%d", img.ID), "source": "custom"},
@@ -261,7 +258,6 @@ func TestHostedRunners_CustomImages(t *testing.T) {
 	resp := srv.delete(t, fmt.Sprintf("%s/%d", base, runnerID), defaultToken)
 	resp.Body.Close()
 
-	// Delete one version, then the definition.
 	resp = srv.delete(t, fmt.Sprintf("%s/images/custom/%d/versions/1.0.0", base, img.ID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {

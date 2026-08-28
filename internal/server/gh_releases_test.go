@@ -48,7 +48,6 @@ func TestReleases_FullLifecycle(t *testing.T) {
 		return w
 	}
 
-	// Create release (gh release create equivalent).
 	create, _ := json.Marshal(map[string]any{
 		"tag_name":   "v1.0.0",
 		"name":       "Release 1.0",
@@ -70,58 +69,50 @@ func TestReleases_FullLifecycle(t *testing.T) {
 		t.Errorf("missing HATEOAS urls")
 	}
 
-	// Missing tag_name → 422
 	bad, _ := json.Marshal(map[string]any{"name": "x"})
 	w = do("POST", "/api/v3/repos/admin/rel-repo/releases", bad)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("missing tag → %d", w.Code)
 	}
 
-	// Get by id
 	w = do("GET", "/api/v3/repos/admin/rel-repo/releases/"+itoa(relID), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get by id: %d", w.Code)
 	}
 
-	// Get by tag
 	w = do("GET", "/api/v3/repos/admin/rel-repo/releases/tags/v1.0.0", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get by tag: %d body=%s", w.Code, w.Body.String())
 	}
 
-	// Latest
 	w = do("GET", "/api/v3/repos/admin/rel-repo/releases/latest", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("latest: %d", w.Code)
 	}
 
-	// Update — flip to draft
 	patch, _ := json.Marshal(map[string]any{"draft": true, "body": "rewritten"})
 	w = do("PATCH", "/api/v3/repos/admin/rel-repo/releases/"+itoa(relID), patch)
 	if w.Code != http.StatusOK {
 		t.Fatalf("patch: %d", w.Code)
 	}
 
-	// /releases/latest should now return 404 (only non-draft is non-existent).
+	// latest now 404s: a draft is not the latest non-draft release.
 	w = do("GET", "/api/v3/repos/admin/rel-repo/releases/latest", nil)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("latest after draft: %d", w.Code)
 	}
 
-	// React to the release.
 	reactBody, _ := json.Marshal(map[string]string{"content": "rocket"})
 	w = do("POST", "/api/v3/repos/admin/rel-repo/releases/"+itoa(relID)+"/reactions", reactBody)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("release reaction: %d body=%s", w.Code, w.Body.String())
 	}
 
-	// Delete release
 	w = do("DELETE", "/api/v3/repos/admin/rel-repo/releases/"+itoa(relID), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d", w.Code)
 	}
 
-	// Subsequent GET → 404
 	w = do("GET", "/api/v3/repos/admin/rel-repo/releases/"+itoa(relID), nil)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("get after delete: %d", w.Code)
@@ -302,7 +293,6 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 	repo := s.store.CreateRepo(user, "asset-repo", "", false)
 	initializeReleaseTestRepo(t, s, repo, user)
 
-	// Create a release to attach assets to.
 	createBody, _ := json.Marshal(map[string]any{
 		"tag_name": "v1.0.0",
 		"name":     "Release 1.0",
@@ -347,8 +337,7 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 		t.Errorf("asset digest = %v, want %v", asset["digest"], wantDigest)
 	}
 
-	// A second upload of the same asset name is rejected (422), not silently
-	// duplicated.
+	// A second upload of the same asset name is rejected (422), not duplicated.
 	if dup := upload(); dup.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("duplicate-name upload: %d body=%s, want 422", dup.Code, dup.Body.String())
 	}
@@ -361,7 +350,6 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 		t.Fatalf("missing-name upload: %d body=%s", missingNameRec.Code, missingNameRec.Body.String())
 	}
 
-	// List assets for the release.
 	w = doAuthReq(s, "GET", "/api/v3/repos/admin/asset-repo/releases/"+itoa(relID)+"/assets", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list assets: %d body=%s", w.Code, w.Body.String())
@@ -372,13 +360,11 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 		t.Fatalf("asset list len = %d", len(list))
 	}
 
-	// Get asset metadata.
 	w = doAuthReq(s, "GET", "/api/v3/repos/admin/asset-repo/releases/assets/"+itoa(assetID), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get asset metadata: %d body=%s", w.Code, w.Body.String())
 	}
 
-	// Download asset bytes.
 	req := httptest.NewRequest("GET", "/api/v3/repos/admin/asset-repo/releases/assets/"+itoa(assetID), nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	req.Header.Set("Accept", "application/octet-stream")
@@ -394,7 +380,6 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 		t.Errorf("download body = %q", rec.Body.String())
 	}
 
-	// Update label/name.
 	patch, _ := json.Marshal(map[string]any{"name": "bar.tar.gz", "label": "updated"})
 	w = doAuthReq(s, "PATCH", "/api/v3/repos/admin/asset-repo/releases/assets/"+itoa(assetID), patch)
 	if w.Code != http.StatusOK {
@@ -406,7 +391,6 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 		t.Errorf("updated asset = %v", updated)
 	}
 
-	// Delete asset.
 	w = doAuthReq(s, "DELETE", "/api/v3/repos/admin/asset-repo/releases/assets/"+itoa(assetID), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("delete asset: %d", w.Code)
@@ -508,7 +492,6 @@ func TestReleases_ReleaseReactionsLifecycle(t *testing.T) {
 		t.Errorf("repeat returned different id: %v vs %v", second["id"], first["id"])
 	}
 
-	// List.
 	w = doAuthReq(s, "GET", "/api/v3/repos/admin/relrxn-repo/releases/"+itoa(relID)+"/reactions", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list reactions: %d", w.Code)
@@ -519,7 +502,6 @@ func TestReleases_ReleaseReactionsLifecycle(t *testing.T) {
 		t.Errorf("list len = %d", len(list))
 	}
 
-	// Delete.
 	rxnID := int(first["id"].(float64))
 	w = doAuthReq(s, "DELETE", "/api/v3/repos/admin/relrxn-repo/releases/"+itoa(relID)+"/reactions/"+itoa(rxnID), nil)
 	if w.Code != http.StatusNoContent {

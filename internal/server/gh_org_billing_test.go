@@ -79,7 +79,6 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 		t.Fatal("create org failed")
 	}
 
-	// Create.
 	resp := srv.post(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets", defaultToken, map[string]interface{}{
 		"budget_amount":         500,
 		"prevent_further_usage": true,
@@ -109,7 +108,6 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 		t.Fatalf("created budget fields wrong: %v", budget)
 	}
 
-	// List.
 	resp = srv.get(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -124,7 +122,6 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 		t.Fatalf("list pagination fields wrong: %v", list)
 	}
 
-	// Get.
 	resp = srv.get(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -139,7 +136,6 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 		t.Fatalf("budget_alerting not round-tripped: %v", got)
 	}
 
-	// Update.
 	resp = srv.patch(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken, map[string]interface{}{
 		"budget_amount":         10,
 		"prevent_further_usage": false,
@@ -157,7 +153,6 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 		t.Fatalf("update not applied: %v", updatedBudget)
 	}
 
-	// Delete.
 	resp = srv.do(t, "DELETE", "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken, nil)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -168,7 +163,6 @@ func TestOrgBillingBudgets_CRUDRoundTrip(t *testing.T) {
 		t.Fatalf("delete response wrong: %v", deleted)
 	}
 
-	// Gone after delete.
 	resp = srv.get(t, "/api/v3/organizations/billing-budgets-org/settings/billing/budgets/"+budgetID, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
@@ -184,7 +178,6 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 		t.Fatal("create org failed")
 	}
 
-	// Invalid scope.
 	resp := srv.post(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
 		"budget_scope":       "galaxy",
 		"budget_product_sku": "actions",
@@ -194,7 +187,6 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 		t.Fatalf("invalid scope: %d, want 422", resp.StatusCode)
 	}
 
-	// Missing SKU.
 	resp = srv.post(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", defaultToken, map[string]interface{}{
 		"budget_scope": "organization",
 	})
@@ -215,7 +207,6 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 		t.Fatalf("user scope without prevent_further_usage: %d, want 422", resp.StatusCode)
 	}
 
-	// PATCH unknown budget.
 	resp = srv.patch(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets/550e8400-e29b-41d4-a716-446655440000", defaultToken, map[string]interface{}{
 		"budget_amount": 1,
 	})
@@ -233,7 +224,6 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 		t.Fatalf("non-admin list budgets: %d, want 403", resp.StatusCode)
 	}
 
-	// Unknown org.
 	resp = srv.get(t, "/api/v3/organizations/billing-no-such-org/settings/billing/budgets", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {

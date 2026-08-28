@@ -7,12 +7,10 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestCancelledGatedJobWithNeedsStillRuns pins the documented rule that the
-// implicit `success()` a job carries is dropped as soon as its `if:` names ANY
-// status check function — success(), always(), cancelled() or failure().
-// Cancellation is where it bites: CancelWorkflow deliberately leaves a
-// cancelled()-gated job pending so it can run, and dependency handling then
-// has to not skip it for the very cancellation that made its condition true.
+// TestCancelledGatedJobWithNeedsStillRuns pins the rule that a job's implicit
+// `success()` drops as soon as its `if:` names any status function. On
+// cancellation, dependency handling must not skip a cancelled()-gated job for
+// the very cancellation that made its condition true.
 func TestCancelledGatedJobWithNeedsStillRuns(t *testing.T) {
 	s := newTestServer()
 	wf := &store.WorkflowDef{
@@ -39,9 +37,9 @@ func TestCancelledGatedJobWithNeedsStillRuns(t *testing.T) {
 	}
 }
 
-// TestFailedDependencyStillSkipsPlainConditionalJob is the other half of the
-// same rule: an `if:` with no status function keeps the implicit success(), so
-// a failed dependency still skips the job even when the expression is true.
+// TestFailedDependencyStillSkipsPlainConditionalJob is the other half: an `if:`
+// with no status function keeps the implicit success(), so a failed dependency
+// still skips the job even when the expression is true.
 func TestFailedDependencyStillSkipsPlainConditionalJob(t *testing.T) {
 	s := newTestServer()
 	wf := &store.WorkflowDef{

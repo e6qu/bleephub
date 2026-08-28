@@ -12,11 +12,11 @@ func authedReqScheme(s *Server, method, path, authHeader, body string) *httptest
 	return serveTestRequest(s, authHeader, method, path, jsonBodyBytes(body))
 }
 
-// TestAuthScheme_CaseInsensitive guards the fix for octokit-style lowercase
-// auth schemes: HTTP auth schemes are case-insensitive (RFC 7235) and GitHub
-// accepts them, so "bearer"/"TOKEN" must authenticate exactly like "Bearer"/
-// "token". The bug surfaced as `gh`/octokit GraphQL calls failing with
-// "authentication required" when the client sent `Authorization: bearer …`.
+// TestAuthScheme_CaseInsensitive guards octokit-style lowercase auth schemes:
+// HTTP auth schemes are case-insensitive (RFC 7235), so "bearer"/"TOKEN" must
+// authenticate exactly like "Bearer"/"token". The bug surfaced as `gh`/octokit
+// GraphQL calls failing with "authentication required" on `Authorization:
+// bearer …`.
 func TestAuthScheme_CaseInsensitive(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()

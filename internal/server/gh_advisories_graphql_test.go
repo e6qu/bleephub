@@ -9,9 +9,8 @@ import (
 )
 
 // End-to-end tests for the security-advisory vertical: the global advisory
-// database over GraphQL, a repository's Dependabot alerts and dependency
-// manifests, the dismissal mutation, and the alert lifecycle that derivation
-// and reconciliation drive between them.
+// database, a repository's Dependabot alerts and manifests, dismissal, and the
+// derivation lifecycle between them.
 
 // advisoryFixture is a repository that has submitted a dependency snapshot
 // and an advisory drafted against one of the packages in it.
@@ -25,9 +24,9 @@ type advisoryFixture struct {
 	ghsaID        string
 }
 
-// newAdvisoryFixture provisions the repository, its dependency snapshot and
-// the accounts the authorization cases need. The advisory itself is drafted
-// but NOT published, so a test can watch publication produce the alert.
+// newAdvisoryFixture provisions the repository, its snapshot and accounts; the
+// advisory is drafted but NOT published so a test can watch publication produce
+// the alert.
 func newAdvisoryFixture(t *testing.T, tag string, private bool) *advisoryFixture {
 	t.Helper()
 	s := newIsolatedServer(t)
@@ -50,9 +49,8 @@ func newAdvisoryFixture(t *testing.T, tag string, private bool) *advisoryFixture
 	return f
 }
 
-// submitSnapshot submits a dependency snapshot declaring lodash at the given
-// version plus one package no advisory concerns, through the real submission
-// endpoint, so the whole ingest path runs.
+// submitSnapshot submits a lodash-at-version snapshot through the real endpoint
+// so the whole ingest path runs.
 func (f *advisoryFixture) submitSnapshot(t *testing.T, lodashVersion string) {
 	t.Helper()
 	resp := f.server.post(t, "/api/v3/repos/"+f.repo.FullName+"/dependency-graph/snapshots", f.ownerToken,
@@ -124,8 +122,6 @@ func (f *advisoryFixture) publishAdvisory(t *testing.T) {
 	decodeJSONWithStatus(t, resp, http.StatusOK)
 }
 
-// TestSecurityAdvisoryQueriesReadTheGlobalDatabase covers the three public
-// root fields against a published advisory.
 func TestSecurityAdvisoryQueriesReadTheGlobalDatabase(t *testing.T) {
 	t.Parallel()
 	f := newAdvisoryFixture(t, "globaldb", false)
@@ -229,7 +225,6 @@ func TestSecurityAdvisoryQueriesReadTheGlobalDatabase(t *testing.T) {
 		t.Errorf("vulnerability.advisory = %v, want the parent advisory", back)
 	}
 
-	// securityAdvisories lists it, and securityVulnerabilities flattens it.
 	listData := f.server.gqlData(t, `{
 		securityAdvisories(first:10){ totalCount nodes{ ghsaId } }
 		securityVulnerabilities(first:10,ecosystem:NPM,package:"lodash"){
@@ -246,9 +241,9 @@ func TestSecurityAdvisoryQueriesReadTheGlobalDatabase(t *testing.T) {
 	}
 }
 
-// TestGlobalAdvisoryDatabaseIsPublicButDraftsAreNot is the visibility rule:
-// the published database answers an unrelated account, and a draft is absent
-// from it even for the owner, because a draft is not in the database at all.
+// TestGlobalAdvisoryDatabaseIsPublicButDraftsAreNot pins the visibility rule:
+// the published database answers any account, but a draft is absent from it
+// even for the owner because a draft is not in the database at all.
 func TestGlobalAdvisoryDatabaseIsPublicButDraftsAreNot(t *testing.T) {
 	t.Parallel()
 	f := newAdvisoryFixture(t, "publicdb", true)
@@ -293,9 +288,8 @@ func TestGlobalAdvisoryDatabaseIsPublicButDraftsAreNot(t *testing.T) {
 }
 
 // TestVulnerabilityAlertsAreDerivedFromManifestsAndAdvisories is the core
-// claim: an alert exists because a declared dependency's version falls inside
-// a published advisory's vulnerable range, and it stops existing as open when
-// the dependency moves out of that range.
+// claim: an alert exists because a declared dependency falls inside a published
+// advisory's vulnerable range, and clears when it moves out of that range.
 func TestVulnerabilityAlertsAreDerivedFromManifestsAndAdvisories(t *testing.T) {
 	t.Parallel()
 	f := newAdvisoryFixture(t, "derived", false)
@@ -448,7 +442,6 @@ func TestVulnerabilityAlertsAreNotVisibleWithoutSecurityAccess(t *testing.T) {
 			f.draftAdvisory(t)
 			f.publishAdvisory(t)
 
-			// The owner sees the alert.
 			if alerts := f.alertNodes(t, f.ownerToken); len(alerts) != 1 {
 				t.Fatalf("the repository owner sees %d alerts, want 1", len(alerts))
 			}
@@ -477,8 +470,6 @@ func TestVulnerabilityAlertsAreNotVisibleWithoutSecurityAccess(t *testing.T) {
 	}
 }
 
-// TestDismissRepositoryVulnerabilityAlertMutation covers the entitled path,
-// the store transition it produces and the webhook it delivers.
 func TestDismissRepositoryVulnerabilityAlertMutation(t *testing.T) {
 	t.Parallel()
 	f := newAdvisoryFixture(t, "dismiss", false)
@@ -524,7 +515,6 @@ func TestDismissRepositoryVulnerabilityAlertMutation(t *testing.T) {
 		t.Errorf("dismisser = %v, want the acting user", dismisser)
 	}
 
-	// The store agrees, and the REST surface reports the same dismissal.
 	stored := f.server.store.ListDependabotAlerts(f.repo.FullName, "", "", "", "", "", "created", "asc")
 	if len(stored) != 1 || stored[0].State != store.DependabotStateDismissed {
 		t.Fatalf("store state after the mutation = %+v", stored)
@@ -542,8 +532,6 @@ func TestDismissRepositoryVulnerabilityAlertMutation(t *testing.T) {
 	}
 }
 
-// TestDependencyGraphManifestsOverGraphQL covers the manifests connection and
-// the dependency members it carries.
 func TestDependencyGraphManifestsOverGraphQL(t *testing.T) {
 	t.Parallel()
 	f := newAdvisoryFixture(t, "manifests", false)
@@ -639,9 +627,9 @@ func TestDependencyGraphManifestsOverGraphQL(t *testing.T) {
 	}
 }
 
-// TestAdvisoryNodesResolveThroughQueryNode pins that every Node implementor
-// this family adds is reachable by its global id, and that the two
-// repository-scoped ones stay behind their access check.
+// TestAdvisoryNodesResolveThroughQueryNode pins that every Node this family
+// adds is reachable by global id, and the two repository-scoped ones stay
+// behind their access check.
 func TestAdvisoryNodesResolveThroughQueryNode(t *testing.T) {
 	t.Parallel()
 	f := newAdvisoryFixture(t, "nodes", false)
@@ -688,7 +676,6 @@ func TestAdvisoryNodesResolveThroughQueryNode(t *testing.T) {
 	if data["node"] != nil {
 		t.Errorf("a stranger resolved a vulnerability alert node: %v", env)
 	}
-	// The advisory node stays public.
 	env = f.server.gqlAuthzPost(t, f.strangerToken, `query($id:ID!){ node(id:$id){ __typename } }`,
 		map[string]interface{}{"id": advisoryID})
 	data, _ = env["data"].(map[string]interface{})
@@ -698,8 +685,6 @@ func TestAdvisoryNodesResolveThroughQueryNode(t *testing.T) {
 	}
 }
 
-// TestAdvisoryConnectionFiltersAndOrdering exercises the narrowing arguments
-// the connections accept.
 func TestAdvisoryConnectionFiltersAndOrdering(t *testing.T) {
 	t.Parallel()
 	f := newAdvisoryFixture(t, "filters", false)
@@ -722,7 +707,6 @@ func TestAdvisoryConnectionFiltersAndOrdering(t *testing.T) {
 		f.ownerToken, map[string]interface{}{"state": "published"})
 	decodeJSONWithStatus(t, resp, http.StatusOK)
 
-	// identifier: narrows to one advisory.
 	data := f.server.gqlData(t, `query($ghsa:String!){
 		securityAdvisories(first:10,identifier:{type:GHSA,value:$ghsa}){ totalCount nodes{ ghsaId } }
 	}`, map[string]interface{}{"ghsa": f.ghsaID})
@@ -731,7 +715,6 @@ func TestAdvisoryConnectionFiltersAndOrdering(t *testing.T) {
 		t.Errorf("identifier filter returned %v advisories, want 1", advisories["totalCount"])
 	}
 
-	// ecosystem/package narrow the vulnerability listing.
 	data = f.server.gqlData(t, `{
 		npm: securityVulnerabilities(first:10,ecosystem:NPM){ totalCount }
 		pip: securityVulnerabilities(first:10,ecosystem:PIP){ totalCount }
@@ -752,7 +735,6 @@ func TestAdvisoryConnectionFiltersAndOrdering(t *testing.T) {
 		t.Errorf("severities filter returned a %v vulnerability", node["severity"])
 	}
 
-	// Ordering is honored in both directions and is stable.
 	ascending := f.server.gqlData(t, `{
 		securityAdvisories(first:10,orderBy:{field:PUBLISHED_AT,direction:ASC}){ nodes{ ghsaId } }
 	}`, nil)
@@ -768,7 +750,6 @@ func TestAdvisoryConnectionFiltersAndOrdering(t *testing.T) {
 		t.Errorf("ASC %v and DESC %v are not reverses of one another", ascendingIDs, descendingIDs)
 	}
 
-	// Paging with first/after walks the whole set exactly once.
 	page := f.server.gqlData(t, `{
 		securityAdvisories(first:1){ nodes{ ghsaId } pageInfo{ hasNextPage endCursor } }
 	}`, nil)
@@ -788,10 +769,9 @@ func TestAdvisoryConnectionFiltersAndOrdering(t *testing.T) {
 	}
 }
 
-// TestWithdrawnAdvisoryLeavesTheListingButStaysAddressable pins the
-// withdrawal semantics: a withdrawn advisory is not offered for browsing, but
-// a client that asks for it by identifier is told it was withdrawn rather
-// than that it never existed.
+// TestWithdrawnAdvisoryLeavesTheListingButStaysAddressable pins that a
+// withdrawn advisory drops out of browsing but is still reported as withdrawn
+// (not absent) when asked for by identifier.
 func TestWithdrawnAdvisoryLeavesTheListingButStaysAddressable(t *testing.T) {
 	t.Parallel()
 	f := newAdvisoryFixture(t, "withdrawn", false)
@@ -824,7 +804,6 @@ func TestWithdrawnAdvisoryLeavesTheListingButStaysAddressable(t *testing.T) {
 
 // --- helpers ---------------------------------------------------------------
 
-// alertNodes reads the repository's vulnerability alerts over GraphQL.
 func (f *advisoryFixture) alertNodes(t *testing.T, token string) []map[string]interface{} {
 	t.Helper()
 	env := f.server.gqlAuthzPost(t, token, `query($owner:String!,$name:String!){
@@ -858,7 +837,6 @@ func (f *advisoryFixture) alertNodes(t *testing.T, token string) []map[string]in
 	return advisoryList(t, connection["nodes"])
 }
 
-// advisoryList coerces a GraphQL node list to typed maps.
 func advisoryList(t *testing.T, value interface{}) []map[string]interface{} {
 	t.Helper()
 	raw, ok := value.([]interface{})
@@ -876,8 +854,6 @@ func advisoryList(t *testing.T, value interface{}) []map[string]interface{} {
 	return out
 }
 
-// advisoryGHSAIDs reads the ghsaId of every node in a securityAdvisories
-// connection response.
 func advisoryGHSAIDs(t *testing.T, data map[string]interface{}) []string {
 	t.Helper()
 	connection, _ := data["securityAdvisories"].(map[string]interface{})
@@ -892,9 +868,9 @@ func advisoryGHSAIDs(t *testing.T, data map[string]interface{}) []string {
 	return ids
 }
 
-// TestGraphQLRepositoryVulnerabilityAlertByNumber pins GQL-097: the single
-// Repository.vulnerabilityAlert(number:) lookup returns the alert with that
-// number, and null (not an error) for an unknown number.
+// TestGraphQLRepositoryVulnerabilityAlertByNumber pins GQL-097: the
+// Repository.vulnerabilityAlert(number:) lookup returns that alert, and null
+// (not an error) for an unknown number.
 func TestGraphQLRepositoryVulnerabilityAlertByNumber(t *testing.T) {
 	t.Parallel()
 	f := newAdvisoryFixture(t, "alert-by-number", false)

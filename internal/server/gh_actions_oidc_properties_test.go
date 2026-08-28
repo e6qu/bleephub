@@ -11,7 +11,6 @@ func TestOIDCCustomPropertyInclusions_CRUD(t *testing.T) {
 	org := s.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/actions/oidc/customization/properties/repo"
 
-	// Empty to start.
 	resp := s.get(t, base, defaultToken)
 	var list []map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
@@ -22,7 +21,6 @@ func TestOIDCCustomPropertyInclusions_CRUD(t *testing.T) {
 		t.Fatalf("initial inclusions = %v, want empty", list)
 	}
 
-	// Create.
 	created := decodeJSONWithStatus(t, s.post(t, base, defaultToken, map[string]string{
 		"custom_property_name": "environment_tier",
 	}), 201)
@@ -30,21 +28,18 @@ func TestOIDCCustomPropertyInclusions_CRUD(t *testing.T) {
 		t.Fatalf("created inclusion = %v", created)
 	}
 
-	// Duplicate rejects.
 	resp = s.post(t, base, defaultToken, map[string]string{"custom_property_name": "environment_tier"})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("duplicate create = %d, want 422", resp.StatusCode)
 	}
 
-	// Missing name rejects.
 	resp = s.post(t, base, defaultToken, map[string]string{})
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("missing name create = %d, want 422", resp.StatusCode)
 	}
 
-	// Listed.
 	resp = s.get(t, base, defaultToken)
 	list = nil
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
@@ -55,7 +50,6 @@ func TestOIDCCustomPropertyInclusions_CRUD(t *testing.T) {
 		t.Fatalf("inclusions after create = %v", list)
 	}
 
-	// Delete, then a second delete 404s.
 	resp = s.delete(t, base+"/environment_tier", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {

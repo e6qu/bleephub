@@ -250,7 +250,6 @@ func TestOrgPRCreationCapAndMergeAsyncREST(t *testing.T) {
 		t.Fatalf("default org creation cap = %#v", cap)
 	}
 
-	// Update and read back.
 	resp = s.patch(t, orgCapBase, defaultToken, map[string]interface{}{"enabled": true, "max_open_pull_requests": 5})
 	requireHTTPStatus(t, resp, http.StatusOK)
 	if cap := decodeJSON(t, resp); cap["enabled"] != true || cap["max_open_pull_requests"].(float64) != 5 {
@@ -270,7 +269,6 @@ func TestOrgPRCreationCapAndMergeAsyncREST(t *testing.T) {
 	requireHTTPStatus(t, resp, http.StatusUnprocessableEntity)
 	resp.Body.Close()
 
-	// --- Async merge ---
 	owner := "asyncowner"
 	repoName := "async-repo"
 	repoKey := owner + "/" + repoName

@@ -43,7 +43,6 @@ func TestSecurityAdvisoryCredits(t *testing.T) {
 	}
 	assertCredits(created, "create response")
 
-	// The stored credits render on reads too.
 	ghsaID := created["ghsa_id"].(string)
 	fetched := decodeJSONWithStatus(t, s.get(t, repo.path()+"/security-advisories/"+ghsaID, defaultToken), http.StatusOK)
 	assertCredits(fetched, "get response")

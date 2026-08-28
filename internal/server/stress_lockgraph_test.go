@@ -36,7 +36,6 @@ func TestStressPRSerializerRace(t *testing.T) {
 	var stop atomic.Bool
 	var wg sync.WaitGroup
 
-	// Writer: churn the PR's mutable fields under the store write lock.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -52,7 +51,6 @@ func TestStressPRSerializerRace(t *testing.T) {
 		}
 	}()
 
-	// Readers: render the PR through both serializers for the whole window.
 	for r := 0; r < 8; r++ {
 		wg.Add(1)
 		go func() {

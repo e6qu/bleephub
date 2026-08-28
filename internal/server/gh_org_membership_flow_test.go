@@ -20,18 +20,13 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 	}
 }
 
-// Integration flows over the shared test server for the Organizations
-// surface: the invitation lifecycle (PUT membership → pending → user-side
-// accept → active), member/public-member endpoints, team hierarchy + roles
-// + repos, the global org list, org profile fields, and org webhooks.
-
 func TestOrgInvitationLifecycle(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
 	srv.createOrg(t, "invite-org")
 	_, inviteeToken := srv.newUser(t, "invitee")
 
-	// Admin PUTs a membership for a non-member → pending invitation.
+	// PUT for a non-member creates a pending invitation, not active membership.
 	put := srv.put(t, "/api/v3/orgs/invite-org/memberships/invitee", defaultToken,
 		map[string]interface{}{"role": "member"})
 	if put.StatusCode != http.StatusOK {
@@ -62,7 +57,6 @@ func TestOrgInvitationLifecycle(t *testing.T) {
 		t.Fatalf("member check while pending: got %d, want 404", check.StatusCode)
 	}
 
-	// The invitee sees the pending membership on the user side.
 	mine := srv.get(t, "/api/v3/user/memberships/orgs?state=pending", inviteeToken)
 	var myMemberships []map[string]interface{}
 	if err := json.NewDecoder(mine.Body).Decode(&myMemberships); err != nil {
@@ -99,7 +93,6 @@ func TestOrgInvitationLifecycle(t *testing.T) {
 		t.Fatalf("accepted state = %v, want active", got["state"])
 	}
 
-	// Now the member check answers 204 and removal works.
 	check2 := srv.get(t, "/api/v3/orgs/invite-org/members/invitee", defaultToken)
 	check2.Body.Close()
 	if check2.StatusCode != http.StatusNoContent {
@@ -147,7 +140,6 @@ func TestOrgPublicMembers(t *testing.T) {
 		t.Fatalf("publicize: got %d, want 204", pub.StatusCode)
 	}
 
-	// Listed (anonymously) + check 204.
 	list := srv.get(t, "/api/v3/orgs/pub-org/public_members", "")
 	var publicMembers []map[string]interface{}
 	if err := json.NewDecoder(list.Body).Decode(&publicMembers); err != nil {
@@ -158,7 +150,6 @@ func TestOrgPublicMembers(t *testing.T) {
 		t.Fatalf("public members = %v, want [pubmember]", publicMembers)
 	}
 
-	// Conceal again.
 	conceal := srv.delete(t, "/api/v3/orgs/pub-org/public_members/pubmember", memberToken)
 	conceal.Body.Close()
 	if conceal.StatusCode != http.StatusNoContent {
@@ -266,7 +257,6 @@ func TestOrgProfileFieldsPatch(t *testing.T) {
 		}
 	}
 
-	// Enum validation on default_repository_permission.
 	bad := srv.patch(t, "/api/v3/orgs/profile-org", defaultToken, map[string]interface{}{
 		"default_repository_permission": "superuser",
 	})
@@ -304,7 +294,6 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 	srv.createOrg(t, "team-org")
 	srv.post(t, "/api/v3/orgs/team-org/repos", defaultToken, map[string]interface{}{"name": "team-repo"}).Body.Close()
 
-	// Parent team, seeding a maintainer + a repo from the create body.
 	parentResp := srv.post(t, "/api/v3/orgs/team-org/teams", defaultToken, map[string]interface{}{
 		"name":        "Platform",
 		"privacy":     "closed",
@@ -322,7 +311,6 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 		t.Errorf("default notification_setting = %v", parent["notification_setting"])
 	}
 
-	// Child team referencing the parent.
 	childResp := srv.post(t, "/api/v3/orgs/team-org/teams", defaultToken, map[string]interface{}{
 		"name":                 "Platform Infra",
 		"parent_team_id":       parentID,
@@ -341,7 +329,6 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 		t.Errorf("notification_setting = %v", child["notification_setting"])
 	}
 
-	// Child teams listing.
 	kids := srv.get(t, "/api/v3/orgs/team-org/teams/platform/teams", defaultToken)
 	var childTeams []map[string]interface{}
 	if err := json.NewDecoder(kids.Body).Decode(&childTeams); err != nil {
@@ -361,7 +348,6 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 		t.Fatalf("cycle re-parent: got %d, want 422", cyc.StatusCode)
 	}
 
-	// Maintainer seeded at create reads back with role=maintainer.
 	tm := srv.get(t, "/api/v3/orgs/team-org/teams/platform/memberships/admin", defaultToken)
 	if tm.StatusCode != http.StatusOK {
 		tm.Body.Close()
@@ -371,7 +357,6 @@ func TestTeamHierarchyAndRoles(t *testing.T) {
 		t.Fatalf("team membership = %v, want maintainer/active", got)
 	}
 
-	// Role validation + role update via PUT.
 	badRole := srv.put(t, "/api/v3/orgs/team-org/teams/platform/memberships/admin", defaultToken,
 		map[string]interface{}{"role": "overlord"})
 	badRole.Body.Close()
@@ -470,7 +455,6 @@ func TestOrgWebhooks(t *testing.T) {
 	srv.createOrg(t, "hook-org")
 	srv.post(t, "/api/v3/orgs/hook-org/repos", defaultToken, map[string]interface{}{"name": "hooked-repo"}).Body.Close()
 
-	// Capture deliveries.
 	var mu sync.Mutex
 	var events []string
 	sink := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -505,7 +489,6 @@ func TestOrgWebhooks(t *testing.T) {
 		t.Errorf("hook type = %v, want Organization", hook["type"])
 	}
 
-	// CRUD: get, list, patch.
 	get := srv.get(t, jsonHookPath("hook-org", hookID), defaultToken)
 	get.Body.Close()
 	if get.StatusCode != http.StatusOK {
@@ -553,7 +536,6 @@ func TestOrgWebhooks(t *testing.T) {
 		return hasPing && hasIssues
 	}, "org hook did not receive ping + fanned-out issues event")
 
-	// Deliveries are introspectable.
 	var deliveryCount int
 	waitFor(t, func() bool {
 		dl := srv.get(t, jsonHookPath("hook-org", hookID)+"/deliveries", defaultToken)
@@ -581,7 +563,6 @@ func TestOrgWebhooks(t *testing.T) {
 		return false
 	}, "organization event for member_invited not delivered")
 
-	// Delete; the hook stops resolving.
 	del := srv.delete(t, jsonHookPath("hook-org", hookID), defaultToken)
 	del.Body.Close()
 	if del.StatusCode != http.StatusNoContent {
