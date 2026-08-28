@@ -36,7 +36,6 @@ func TestWiki_PutGetListUpdateDelete(t *testing.T) {
 	enableWiki(s, repo)
 	base := "/ui-data/repos/" + repo.FullName + "/wiki/pages"
 
-	// create
 	w := doWikiReq(s, adminPAT, "PUT", base+"/home", []byte(`{"title":"Home","body":"# Welcome"}`))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", w.Code, w.Body.String())
@@ -47,13 +46,11 @@ func TestWiki_PutGetListUpdateDelete(t *testing.T) {
 		t.Fatalf("created page = %v", created)
 	}
 
-	// get
 	w = doWikiReq(s, adminPAT, "GET", base+"/home", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get status = %d", w.Code)
 	}
 
-	// list
 	w = doWikiReq(s, adminPAT, "GET", base, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list status = %d", w.Code)
@@ -64,7 +61,7 @@ func TestWiki_PutGetListUpdateDelete(t *testing.T) {
 		t.Fatalf("list len = %d, want 1", len(list))
 	}
 
-	// update (same slug → 200, not 201)
+	// Re-PUT of the same slug is an update: 200, not 201.
 	w = doWikiReq(s, adminPAT, "PUT", base+"/home", []byte(`{"title":"Home","body":"# Updated"}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("update status = %d, want 200", w.Code)
@@ -76,7 +73,6 @@ func TestWiki_PutGetListUpdateDelete(t *testing.T) {
 		t.Fatalf("body after update = %v", got["body"])
 	}
 
-	// delete
 	w = doWikiReq(s, adminPAT, "DELETE", base+"/home", nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want 204", w.Code)

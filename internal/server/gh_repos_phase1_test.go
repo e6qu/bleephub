@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// TestListOrgRepos verifies GET /api/v3/orgs/{org}/repos returns org-owned repos.
 func TestListOrgRepos(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -41,7 +40,6 @@ func TestListOrgRepos(t *testing.T) {
 	}
 }
 
-// TestListOrgReposNotFound verifies GET for nonexistent org → 404.
 func TestListOrgReposNotFound(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -52,7 +50,6 @@ func TestListOrgReposNotFound(t *testing.T) {
 	}
 }
 
-// TestListAuthUserReposFilters verifies GET /api/v3/user/repos filtering.
 func TestListAuthUserReposFilters(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -90,7 +87,6 @@ func TestListAuthUserReposFilters(t *testing.T) {
 	}
 }
 
-// TestListAuthUserReposTypeConflict verifies type + visibility/affiliation → 422.
 func TestListAuthUserReposTypeConflict(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -107,7 +103,6 @@ func TestListAuthUserReposTypeConflict(t *testing.T) {
 	}
 }
 
-// TestListAuthUserReposSort verifies sort and direction query params.
 func TestListAuthUserReposSort(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -152,7 +147,6 @@ func TestListAuthUserReposSort(t *testing.T) {
 	}
 }
 
-// nextLinkURL extracts the rel="next" URL from a GitHub-style Link header.
 func nextLinkURL(link, base string) string {
 	if link == "" {
 		return ""
@@ -171,7 +165,6 @@ func nextLinkURL(link, base string) string {
 	return ""
 }
 
-// TestListUserReposByLogin verifies GET /api/v3/users/{username}/repos filters.
 func TestListUserReposByLogin(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -197,7 +190,6 @@ func TestListUserReposByLogin(t *testing.T) {
 	}
 }
 
-// TestRepoResponseShape verifies new fields are emitted in repo responses.
 func TestRepoResponseShape(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -238,7 +230,6 @@ func TestRepoResponseShape(t *testing.T) {
 	}
 }
 
-// TestUpdateRepoExtended verifies PATCH supports new settings fields.
 func TestUpdateRepoExtended(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -286,7 +277,6 @@ func TestUpdateRepoExtended(t *testing.T) {
 	assertField("use_squash_pr_title_as_default", true)
 }
 
-// TestUpdateRepoRename verifies PATCH with name renames the repo.
 func TestUpdateRepoRename(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -312,7 +302,6 @@ func TestUpdateRepoRename(t *testing.T) {
 	requireMovedTo(t, srv, "/api/v3/repos/admin/no-rename", "admin/renamed")
 }
 
-// TestCreateRepoWithLicenseTemplate verifies license object is emitted.
 func TestCreateRepoWithLicenseTemplate(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -339,7 +328,6 @@ func TestCreateRepoWithLicenseTemplate(t *testing.T) {
 	}
 }
 
-// TestRepoOrganizationField verifies org-owned repos include organization object.
 func TestRepoOrganizationField(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -367,7 +355,6 @@ func TestRepoOrganizationField(t *testing.T) {
 	}
 }
 
-// TestRepoListPaginationLinkHeader verifies Link header for repo list endpoints.
 func TestRepoListPaginationLinkHeader(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)

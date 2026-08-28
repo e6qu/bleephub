@@ -24,13 +24,10 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// packReuseCommits is how many commits the packed fixture carries. Each one
-// rewrites the same file and adds a new one, so the history is deep enough that
-// the stored pack holds delta chains rather than a handful of whole objects.
+// packReuseCommits keeps the fixture history deep enough that the stored pack holds delta chains rather than whole objects.
 const packReuseCommits = 24
 
-// packReuseSignature is a fixed identity and instant, so the fixture's object
-// ids — and therefore the stored pack — are the same on every run.
+// packReuseSignature fixes identity and instant so the fixture's object ids, and the stored pack, stay stable across runs.
 func packReuseSignature(index int) *object.Signature {
 	return &object.Signature{
 		Name:  "Pack Reuse Fixture",
@@ -39,14 +36,7 @@ func packReuseSignature(index int) *object.Signature {
 	}
 }
 
-// seedPackedGitRepo builds a repository directly on disk, packs it with the
-// real git binary, and only then registers it with the server — so the storer
-// the server opens sees a repository whose objects are all in one packfile,
-// which is the state compaction leaves behind.
-//
-// The pack is made by git rather than by this package so the bytes the reuse
-// path copies are a real packfile and not something written by the same code
-// that reads it.
+// seedPackedGitRepo packs with the real git binary before registering the repo, so the reuse path copies a genuine packfile it did not itself write — the state compaction leaves behind.
 func seedPackedGitRepo(t *testing.T, srv *isolatedServer, name string) (gitStorage.Storer, string) {
 	t.Helper()
 	fullName := "admin/" + name
@@ -80,8 +70,7 @@ func seedPackedGitRepo(t *testing.T, srv *isolatedServer, name string) (gitStora
 	if admin == nil {
 		t.Fatal("admin user is missing")
 	}
-	// CreateRepo opens the storage itself, so the storer the server serves
-	// from is one that was opened after the pack was published.
+	// CreateRepo opens the storage itself, so the served storer is one opened after the pack was published.
 	if srv.store.CreateRepo(admin, name, "pack reuse fixture", false) == nil {
 		t.Fatalf("create repo %s", name)
 	}
@@ -92,7 +81,6 @@ func seedPackedGitRepo(t *testing.T, srv *isolatedServer, name string) (gitStora
 	return served, repoDir
 }
 
-// storedPackNames lists the packfiles a repository directory holds.
 func storedPackNames(t *testing.T, repoDir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(filepath.Join(repoDir, "objects", "pack"))
@@ -108,8 +96,6 @@ func storedPackNames(t *testing.T, repoDir string) []string {
 	return names
 }
 
-// fullClonePack asks the fetch path for everything a branch reaches and returns
-// the packfile bytes it answered with.
 func fullClonePack(t *testing.T, stor storer.Storer, branch string) []byte {
 	t.Helper()
 	ref, err := stor.Reference(plumbing.NewBranchReferenceName(branch))
@@ -128,9 +114,7 @@ func fullClonePack(t *testing.T, stor storer.Storer, branch string) []byte {
 	return pack.Bytes()
 }
 
-// TestFullCloneOfAPackedRepositoryCopiesTheStoredPack is the reuse path's
-// central claim: the bytes a clone receives are the bytes storage holds, not a
-// re-encoding of them.
+// TestFullCloneOfAPackedRepositoryCopiesTheStoredPack asserts the reuse path's central claim: a clone receives the bytes storage holds, not a re-encoding.
 func TestFullCloneOfAPackedRepositoryCopiesTheStoredPack(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", t.TempDir())
 	srv := newIsolatedServer(t)
@@ -150,23 +134,19 @@ func TestFullCloneOfAPackedRepositoryCopiesTheStoredPack(t *testing.T) {
 	if !bytes.Contains(served, entries) {
 		t.Fatal("the served pack does not contain the stored pack's entries: the fetch re-encoded them")
 	}
-	// Reuse of the whole repository leaves nothing to append, so the answer is
-	// the stored entries between a header of this fetch's own and a checksum
-	// over what was actually written.
+	// Whole-repository reuse appends nothing, so the answer is the stored entries between this fetch's own header and checksum.
 	if got, want := len(served), gitPackHeaderSize+len(entries)+gitPackTrailerSize; got != want {
 		t.Fatalf("the served pack is %d bytes, want %d — it carries objects the stored pack already held", got, want)
 	}
 
-	// Without the pack directory attached the same request goes through the
-	// encoder, which is the fallthrough every request that cannot reuse takes.
+	// Without the pack directory attached the same request falls through to the encoder, the path every non-reusable request takes.
 	encoded := fullClonePack(t, stor, "main")
 	if bytes.Equal(encoded, served) {
 		t.Fatal("the encoder produced the reused pack byte for byte, so this test cannot tell the two paths apart")
 	}
 }
 
-// TestReusedPackIsAValidPackfile hands the served bytes to git itself, because
-// "byte-valid and complete" is git's judgement to make, not this package's.
+// TestReusedPackIsAValidPackfile hands the served bytes to git itself, because byte-validity and completeness are git's judgement to make.
 func TestReusedPackIsAValidPackfile(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", t.TempDir())
 	srv := newIsolatedServer(t)
@@ -186,9 +166,7 @@ func TestReusedPackIsAValidPackfile(t *testing.T) {
 	git.run(target, "--git-dir", target, "fsck", "--no-progress", "--strict")
 }
 
-// TestPackReuseRefusesPacksTheAnswerDoesNotOwe covers the safety condition
-// directly: a pack holding anything outside the plan is not reused, whatever
-// narrowed the plan.
+// TestPackReuseRefusesPacksTheAnswerDoesNotOwe pins the safety condition: a pack holding anything outside the plan is never reused.
 func TestPackReuseRefusesPacksTheAnswerDoesNotOwe(t *testing.T) {
 	t.Parallel()
 	objectID := func(b byte) plumbing.Hash {
@@ -248,10 +226,7 @@ func TestPackReuseRefusesPacksTheAnswerDoesNotOwe(t *testing.T) {
 	})
 }
 
-// TestPackedRepositoryServesEveryFetchShape drives the real git client against
-// a packed repository over the whole matrix of requests whose plan is not the
-// repository — each one must come back complete and consistent, which is what
-// proves reuse either applied correctly or correctly stood aside.
+// TestPackedRepositoryServesEveryFetchShape drives the real git client over every fetch shape whose plan is not the whole repository, proving reuse either applied correctly or correctly stood aside.
 func TestPackedRepositoryServesEveryFetchShape(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", t.TempDir())
 	srv := newIsolatedServer(t)
@@ -263,9 +238,7 @@ func TestPackedRepositoryServesEveryFetchShape(t *testing.T) {
 	full := filepath.Join(root, "full")
 	git.run(root, "clone", cloneURL, full)
 	requireCommitCount(t, git, full, "HEAD", packReuseCommits)
-	// The smart-HTTP transport reaches the reuse path too, which is visible in
-	// the clone: index-pack writes the stream it received, so the client's
-	// packfile carries the server's stored entries byte for byte.
+	// The smart-HTTP transport reaches the reuse path too: the client's packfile carries the server's stored entries byte for byte.
 	requireStoredEntriesReached(t, repoDir, full)
 	git.run(full, "fsck", "--no-progress", "--strict")
 	if got, want := len(strings.Split(strings.TrimSpace(readFixtureFile(t, full, "f.txt")), "\n")), packReuseCommits; got != want {
@@ -281,14 +254,12 @@ func TestPackedRepositoryServesEveryFetchShape(t *testing.T) {
 	git.run(root, "clone", "--filter=blob:none", "--no-checkout", cloneURL, partial)
 	requireCommitCount(t, git, partial, "HEAD", packReuseCommits)
 	git.run(partial, "fsck", "--no-progress")
-	// A blob:none clone that received the whole pack anyway would hold every
-	// blob already, and this count would be the repository's rather than zero.
+	// A blob:none clone that wrongly received the whole pack would hold blobs here rather than none.
 	if blobs := strings.TrimSpace(git.run(partial, "cat-file", "--batch-all-objects", "--batch-check=%(objecttype)")); strings.Contains(blobs, "blob") {
 		t.Fatal("a --filter=blob:none clone received blobs: the filtered plan was answered with a whole pack")
 	}
 
-	// An incremental fetch after a push: the client already holds everything
-	// the stored pack does, so the answer is the new objects alone.
+	// After a push the client already holds the stored pack, so an incremental fetch answers with the new objects alone.
 	git.run(full, "config", "user.name", "Pack Reuse")
 	git.run(full, "config", "user.email", "packs@bleephub.invalid")
 	if err := os.WriteFile(filepath.Join(full, "f.txt"), []byte("after the push\n"), 0o600); err != nil {
@@ -309,8 +280,6 @@ func TestPackedRepositoryServesEveryFetchShape(t *testing.T) {
 	git.run(behind, "fsck", "--no-progress", "--strict")
 }
 
-// requireStoredEntriesReached asserts that a clone's packfile holds the entry
-// region of the server's stored pack.
 func requireStoredEntriesReached(t *testing.T, repoDir, cloneDir string) {
 	t.Helper()
 	names := storedPackNames(t, repoDir)
@@ -344,14 +313,7 @@ func readFixtureFile(t *testing.T, dir, name string) string {
 	return string(raw)
 }
 
-// benchmarkPackedHistory builds a linear history directly out of plumbing
-// objects — a blob, a tree and a commit per revision — because the point of the
-// fixture is object count, and going through a worktree per commit would spend
-// the whole benchmark building it.
-//
-// Each revision rewrites one file of a wide tree, so consecutive blobs and
-// consecutive trees are near-identical: the shape a delta window is there to
-// exploit, and therefore the shape that makes re-encoding expensive.
+// benchmarkPackedHistory builds history straight from plumbing objects (a worktree per commit would dominate the benchmark) and rewrites one file of a wide tree per revision, the near-identical shape a delta window exploits and re-encoding pays for.
 func benchmarkPackedHistory(b *testing.B, stor gitStorage.Storer, commits, files int) {
 	b.Helper()
 	write := func(encode func(plumbing.EncodedObject) error) plumbing.Hash {
@@ -419,9 +381,7 @@ func benchmarkPackedHistory(b *testing.B, stor gitStorage.Storer, commits, files
 	}
 }
 
-// benchmarkPackedRepository seeds a repository, packs it with git, and returns
-// a freshly opened storer for it — one that sees the pack the way a server
-// process restarted after a compaction would.
+// benchmarkPackedRepository returns a freshly opened storer that sees the git-packed repo the way a server restarted after compaction would.
 func benchmarkPackedRepository(b *testing.B, commits, files int) gitStorage.Storer {
 	b.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -451,9 +411,7 @@ func benchmarkPackedRepository(b *testing.B, commits, files int) gitStorage.Stor
 	return reopened
 }
 
-// BenchmarkFullCloneOfAPackedRepository measures the two answers to the same
-// request: the packfile copied out of storage, and the packfile the encoder
-// derives by decoding every stored delta and searching for new ones.
+// BenchmarkFullCloneOfAPackedRepository compares the packfile copied out of storage against the one the encoder re-derives by decoding every delta.
 func BenchmarkFullCloneOfAPackedRepository(b *testing.B) {
 	const (
 		commits = 4000
@@ -495,9 +453,7 @@ func BenchmarkFullCloneOfAPackedRepository(b *testing.B) {
 	})
 }
 
-// countingWriter measures a packfile without keeping it, so the benchmark's
-// allocation profile is the pack path's rather than the buffer's. It keeps the
-// header, which is where the entry count is.
+// countingWriter measures a packfile without keeping it, so the benchmark's allocation profile is the pack path's; it retains the header for the entry count.
 type countingWriter struct {
 	bytes  int
 	header []byte
@@ -511,7 +467,6 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// objects reads the entry count out of the packfile header.
 func (w *countingWriter) objects() int {
 	if len(w.header) < gitPackHeaderSize {
 		return 0
@@ -519,10 +474,7 @@ func (w *countingWriter) objects() int {
 	return int(binary.BigEndian.Uint32(w.header[8:12]))
 }
 
-// processCPUNanoseconds is the CPU this process has burned in user and system
-// mode. The pack path runs the delta search across several goroutines, so wall
-// clock understates what a clone costs a server answering many at once; this is
-// the number that does not.
+// processCPUNanoseconds sums user and system CPU, because the pack path's multi-goroutine delta search makes wall clock understate a clone's cost.
 func processCPUNanoseconds(b *testing.B) int64 {
 	b.Helper()
 	var usage syscall.Rusage
@@ -535,18 +487,14 @@ func processCPUNanoseconds(b *testing.B) int64 {
 	return nanoseconds(usage.Utime) + nanoseconds(usage.Stime)
 }
 
-// TestReuseConcatenatesSeveralStoredPacks covers the multi-pack case, which is
-// what a repository looks like between compactions: the answer is built from
-// two stored entry regions laid end to end, and the offset deltas inside each
-// still resolve because each region keeps its own internal order and spacing.
+// TestReuseConcatenatesSeveralStoredPacks covers the between-compactions multi-pack case: two stored entry regions laid end to end, whose offset deltas still resolve because each keeps its own order and spacing.
 func TestReuseConcatenatesSeveralStoredPacks(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", t.TempDir())
 	srv := newIsolatedServer(t)
 	const name = "packed-pair"
 	stor, repoDir := seedPackedGitRepo(t, srv, name)
 
-	// A second batch of commits, packed on its own: `git repack` without -a
-	// packs the objects no existing pack holds, so the two packs are disjoint.
+	// Pack a second batch on its own: `git repack` without -a packs only objects no existing pack holds, keeping the two disjoint.
 	content := ""
 	for i := packReuseCommits; i < packReuseCommits*2; i++ {
 		content += "second batch line " + strconv.Itoa(i) + "\n"
@@ -561,8 +509,7 @@ func TestReuseConcatenatesSeveralStoredPacks(t *testing.T) {
 		t.Fatalf("the fixture has %d packs, want exactly 2: %v", len(names), names)
 	}
 
-	// The storer is reopened because the pack it must serve from was published
-	// after the one the server has been holding was opened.
+	// Reopen the storer because the pack it must serve was published after the held one was opened.
 	reopened, err := gitstore.OpenOrInitGitStorage(context.Background(), "admin/"+name)
 	if err != nil {
 		t.Fatalf("reopen git storage: %v", err)
@@ -595,9 +542,7 @@ func TestReuseConcatenatesSeveralStoredPacks(t *testing.T) {
 	git.run(target, "--git-dir", target, "fsck", "--no-progress", "--strict")
 }
 
-// TestPackIndexCountMatchesTheDecodedIndex: the cheap count read from a pack
-// index's fanout is what decides whether the expensive decode happens at all,
-// so it has to be the number the decode would produce.
+// TestPackIndexCountMatchesTheDecodedIndex: the cheap fanout count gates the expensive decode, so it must equal what the decode produces.
 func TestPackIndexCountMatchesTheDecodedIndex(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", t.TempDir())
 	srv := newIsolatedServer(t)

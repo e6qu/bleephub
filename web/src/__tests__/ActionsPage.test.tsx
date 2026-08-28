@@ -375,7 +375,6 @@ describe("ActionsPage workflow dispatch", () => {
     const runBtn = await screen.findByRole("button", { name: "Run workflow" });
     fireEvent.click(runBtn);
 
-    // Form fields from on.workflow_dispatch.inputs, defaults prefilled.
     const envInput = await screen.findByLabelText(/environment name \*/i);
     expect(envInput).toHaveValue("staging");
     const choice = screen.getByLabelText("log_level") as HTMLSelectElement;
@@ -410,7 +409,7 @@ describe("ActionsPage workflow dispatch", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("button", { name: "CI" })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "CI" }));
-    // Wait for the contents fetch to settle, then assert absence.
+    // Let the contents fetch settle before asserting the button's absence.
     await waitFor(() => {
       const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
       expect(calls.some((c) => c.includes("/contents/"))).toBe(true);

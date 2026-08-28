@@ -36,8 +36,7 @@ func TestOrgIssues_ListForAuthenticatedUser(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Default filter=assigned returns only the assigned issue, with its
-	// repository attached.
+	// The default filter=assigned returns only the assigned issue.
 	resp = srv.get(t, "/api/v3/orgs/orgissues-org/issues", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -52,14 +51,12 @@ func TestOrgIssues_ListForAuthenticatedUser(t *testing.T) {
 		t.Fatalf("issue repository missing: %v", assigned[0])
 	}
 
-	// filter=created returns both authored issues.
 	resp = srv.get(t, "/api/v3/orgs/orgissues-org/issues?filter=created", defaultToken)
 	created := decodeJSONArray(t, resp)
 	if len(created) != 2 {
 		t.Fatalf("created filter = %d issues, want 2", len(created))
 	}
 
-	// State filtering: close one issue, open only returns the other.
 	resp = srv.patch(t, "/api/v3/repos/orgissues-org/orgissues-repo/issues/2", defaultToken, map[string]interface{}{"state": "closed"})
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -77,7 +74,6 @@ func TestOrgIssues_ListForAuthenticatedUser(t *testing.T) {
 		t.Fatalf("closed filter wrong: %v", closed)
 	}
 
-	// Unknown org and unauthenticated caller.
 	resp = srv.get(t, "/api/v3/orgs/no-such-issues-org/issues", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {

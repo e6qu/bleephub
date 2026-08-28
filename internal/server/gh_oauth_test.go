@@ -12,12 +12,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// OAuth web flow — /login/oauth/authorize redirects + /login/oauth/access_token
-// code exchange + device-code polling against the GitHub-compatible OAuth
-// surface using registered OAuth App and GitHub App client credentials.
-
-// doLogin gives the fixture a local password and posts it to /login. PATs are
-// API credentials and must not be laundered into unscoped browser sessions.
+// doLogin gives the fixture a local password and posts /login; PATs are API
+// credentials and must not be laundered into unscoped browser sessions.
 func doLogin(t *testing.T, s *Server, login string) http.CookieJar {
 	t.Helper()
 	user := s.store.LookupUserByLogin(login)
@@ -48,7 +44,6 @@ func doLogin(t *testing.T, s *Server, login string) http.CookieJar {
 	return jar
 }
 
-// requestWithJar sends a request through s.mux carrying cookies from jar.
 func requestWithJar(s *Server, method, path string, body string, contentType string, jar http.CookieJar) *httptest.ResponseRecorder {
 	var bodyReader *strings.Reader
 	if body != "" {
@@ -74,7 +69,6 @@ func requestWithJar(s *Server, method, path string, body string, contentType str
 	return w
 }
 
-// extractCSRF reads the authenticity_token from a consent form body.
 func extractCSRF(t *testing.T, body string) string {
 	t.Helper()
 	const marker = `name="authenticity_token" value="`
@@ -357,7 +351,6 @@ func TestOAuth_AuthorizeRequiresClientIDAndRedirectURI(t *testing.T) {
 func TestOAuth_ConformantWebFlow_BindsCodeToSessionUser(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
-	// Seed a second non-admin user.
 	s.store.Mu.Lock()
 	alice := &store.User{ID: s.store.NextUser, Login: "alice", Type: "User", SiteAdmin: false}
 	s.store.NextUser++
@@ -367,10 +360,8 @@ func TestOAuth_ConformantWebFlow_BindsCodeToSessionUser(t *testing.T) {
 	app := createOAuthTestApp(t, s, "http://cb/")
 	s.registerGHOAuthRoutes()
 
-	// Step 1: login as alice.
 	jar := doLogin(t, s, "alice")
 
-	// Step 2: GET authorize → consent form with CSRF.
 	authorizeURL := "/login/oauth/authorize?client_id=" + url.QueryEscape(app.ClientID) + "&redirect_uri=http://cb/&scope=repo&state=S"
 	w := requestWithJar(s, "GET", authorizeURL, "", "", jar)
 	if w.Code != http.StatusOK {
@@ -378,7 +369,6 @@ func TestOAuth_ConformantWebFlow_BindsCodeToSessionUser(t *testing.T) {
 	}
 	csrf := extractCSRF(t, w.Body.String())
 
-	// Step 3: POST authorize with CSRF → 302 with code.
 	form := url.Values{}
 	form.Set("authenticity_token", csrf)
 	form.Set("client_id", app.ClientID)
@@ -398,7 +388,6 @@ func TestOAuth_ConformantWebFlow_BindsCodeToSessionUser(t *testing.T) {
 		t.Errorf("state lost in redirect: %v", loc)
 	}
 
-	// Step 4: exchange code for token.
 	exchForm := url.Values{}
 	exchForm.Set("code", code)
 	exchForm.Set("client_id", app.ClientID)
@@ -425,8 +414,8 @@ func TestOAuth_ConformantWebFlow_BindsCodeToSessionUser(t *testing.T) {
 		t.Errorf("access_token empty")
 	}
 
-	// Step 5: verify the web flow yields a user-to-server token (gho_ for an
-	// OAuth App client_id) belonging to alice, not admin.
+	// The web flow yields a user-to-server token (gho_ for an OAuth App
+	// client_id) belonging to alice, not admin.
 	if !strings.HasPrefix(tokResp.AccessToken, "gho_") {
 		t.Errorf("web flow token = %q, want gho_ prefix", tokResp.AccessToken)
 	}
@@ -498,7 +487,6 @@ func TestOAuth_WebFlow_AccessTokenExchange(t *testing.T) {
 	app := createOAuthTestApp(t, s, "http://cb/")
 	s.registerGHOAuthRoutes()
 
-	// Use the conformant flow: login → consent form → POST with CSRF → exchange.
 	jar := doLogin(t, s, "admin")
 	w := requestWithJar(s, "GET", "/login/oauth/authorize?client_id="+url.QueryEscape(app.ClientID)+"&redirect_uri=http://cb/&scope=repo&state=S", "", "", jar)
 	if w.Code != http.StatusOK {
@@ -588,7 +576,7 @@ func TestOAuth_WebFlow_CodeIsOneTimeUse(t *testing.T) {
 		t.Fatalf("first exchange status = %d", w3.Code)
 	}
 
-	// Second exchange with the SAME code — must fail.
+	// A second exchange with the SAME code must fail.
 	req2 := httptest.NewRequest("POST", "/login/oauth/access_token", strings.NewReader(exchForm.Encode()))
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req2.Header.Set("Accept", "application/json")

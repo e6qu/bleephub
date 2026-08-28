@@ -7,10 +7,8 @@ import (
 )
 
 // These tests exercise the STORE-001 conversions of multi-bucket mutations to a
-// single persistBatch commit. Each asserts that every bucket the mutation
-// touches survives a reload together — a batch that dropped one of its writes
-// (the failure the atomic commit prevents) would leave the reloaded store
-// inconsistent.
+// single persistBatch commit: every bucket a mutation touches must survive a
+// reload together, since a dropped write would leave the store inconsistent.
 
 func TestAddRepoCollaboratorPersistsCollaboratorAndRepoAcrossReload(t *testing.T) {
 	st := reloadedStore(t, func(p *store.Persistence, st *store.Store) {

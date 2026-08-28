@@ -170,7 +170,6 @@ func TestIssueGraphQL_CommentsConnectionPagination(t *testing.T) {
 	sweep := s.sweepRepo(t, "sweep-commentpaginate")
 	owner, name := sweep.owner, sweep.name
 
-	// Create an issue via REST.
 	resp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken,
 		map[string]interface{}{"title": "paginate comments"})
 	issueData := decodeJSON(t, resp)

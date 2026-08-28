@@ -14,7 +14,6 @@ func TestRepoCodeQualitySetup_DefaultAndRoundTrip(t *testing.T) {
 	repo := srv.store.CreateRepo(admin, "code-quality-repo", "", false)
 	path := "/api/v3/repos/" + repo.FullName + "/code-quality/setup"
 
-	// Unconfigured default.
 	setup := decodeJSONWithStatus(t, srv.get(t, path, defaultToken), 200)
 	if setup["state"] != "not-configured" {
 		t.Fatalf("default state = %v, want not-configured", setup["state"])
@@ -28,7 +27,6 @@ func TestRepoCodeQualitySetup_DefaultAndRoundTrip(t *testing.T) {
 		}
 	}
 
-	// Configure and read back.
 	body := decodeJSONWithStatus(t, srv.patch(t, path, defaultToken, map[string]interface{}{
 		"state": "configured", "languages": []string{"go", "python"}, "runner_type": "standard"}), 200)
 	if len(body) != 0 {
@@ -45,7 +43,6 @@ func TestRepoCodeQualitySetup_DefaultAndRoundTrip(t *testing.T) {
 		t.Fatalf("updated_at still null after update: %v", setup)
 	}
 
-	// A labeled runner keeps its label.
 	requireStatus(t, srv.patch(t, path, defaultToken, map[string]interface{}{
 		"runner_type": "labeled", "runner_label": "code-scanning"}), 200)
 	setup = decodeJSONWithStatus(t, srv.get(t, path, defaultToken), 200)
@@ -75,7 +72,6 @@ func TestRepoCodeQualitySetup_Validation(t *testing.T) {
 	requireStatus(t, srv.patch(t, path, defaultToken,
 		map[string]interface{}{"state": "configured", "query_suite": "default"}), 422)
 
-	// Enum violations.
 	requireStatus(t, srv.patch(t, path, defaultToken, map[string]interface{}{"state": "enabled"}), 422)
 	requireStatus(t, srv.patch(t, path, defaultToken, map[string]interface{}{"languages": []string{"cobol"}}), 422)
 
@@ -92,14 +88,12 @@ func TestRepoCodeQualitySetup_Validation(t *testing.T) {
 		t.Fatalf("rejected update mutated setup = %v", setup)
 	}
 
-	// Only repository admins may update; other users read a public
-	// repository but get 403 on writes.
+	// Only repository admins may update; others read a public repo but get 403 on writes.
 	outsider := seedTestUser(srv.Server, "code-quality-outsider")
 	outsiderTok := srv.store.CreateToken(outsider.ID, "repo").Value
 	requireStatus(t, srv.get(t, path, outsiderTok), 200)
 	requireStatus(t, srv.patch(t, path, outsiderTok, map[string]interface{}{"state": "configured"}), 403)
 
-	// Unknown repository → 404.
 	requireStatus(t, srv.get(t, "/api/v3/repos/admin/no-such-repo/code-quality/setup", defaultToken), 404)
 }
 

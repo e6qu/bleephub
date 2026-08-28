@@ -84,15 +84,11 @@ func TestOrganizationSCIMUserLifecycle(t *testing.T) {
 	}
 	expectStatus(t, srv.get(t, base+"/"+id, defaultToken), http.StatusNotFound, "deleted SCIM user")
 
-	// Keep the OpenAPI shape ratchet non-vacuous when this GHEC-only route
-	// family is selected in isolation.
+	// Keep the OpenAPI shape ratchet non-vacuous when this GHEC-only route family runs in isolation.
 	expectStatus(t, srv.get(t, "/api/v3/user", defaultToken), http.StatusOK, "shape-ratchet control")
 }
 
-// TestOrganizationSCIMCannotHijackExistingAccount pins the rule that an org's SCIM
-// may not bind to, force-enroll, or rewrite a global account it does not
-// manage. Provisioning a SCIM user whose userName collides with a pre-existing
-// account is a conflict, and the victim is neither renamed nor made a member.
+// TestOrganizationSCIMCannotHijackExistingAccount pins that an org's SCIM cannot bind to, force-enroll, or rewrite a global account it does not manage: a userName collision is a conflict and the victim is untouched.
 func TestOrganizationSCIMCannotHijackExistingAccount(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)

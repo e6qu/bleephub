@@ -119,7 +119,6 @@ func TestWebhookCRUD(t *testing.T) {
 	})
 	defer cleanup()
 
-	// Create
 	resp := s.post(t, "/api/v3/repos/admin/wh-crud/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
 			"url":    sink + "/hook",
@@ -145,7 +144,6 @@ func TestWebhookCRUD(t *testing.T) {
 		t.Fatalf("expected 2 events, got %d", len(events))
 	}
 
-	// List
 	resp2 := s.get(t, "/api/v3/repos/admin/wh-crud/hooks", defaultToken)
 	if resp2.StatusCode != 200 {
 		resp2.Body.Close()
@@ -158,7 +156,6 @@ func TestWebhookCRUD(t *testing.T) {
 		t.Fatal("expected at least 1 hook in list")
 	}
 
-	// Get
 	resp3 := s.get(t, fmt.Sprintf("/api/v3/repos/admin/wh-crud/hooks/%d", hookID), defaultToken)
 	if resp3.StatusCode != 200 {
 		resp3.Body.Close()
@@ -169,7 +166,6 @@ func TestWebhookCRUD(t *testing.T) {
 		t.Fatalf("expected id=%d, got %v", hookID, data3["id"])
 	}
 
-	// Update
 	resp4 := s.patch(t, fmt.Sprintf("/api/v3/repos/admin/wh-crud/hooks/%d", hookID), defaultToken, map[string]interface{}{
 		"active": false,
 		"events": []string{"push"},
@@ -187,14 +183,12 @@ func TestWebhookCRUD(t *testing.T) {
 		t.Fatalf("expected [push] events after update, got %v", updatedEvents)
 	}
 
-	// Delete
 	resp5 := s.delete(t, fmt.Sprintf("/api/v3/repos/admin/wh-crud/hooks/%d", hookID), defaultToken)
 	defer resp5.Body.Close()
 	if resp5.StatusCode != 204 {
 		t.Fatalf("delete: expected 204, got %d", resp5.StatusCode)
 	}
 
-	// Verify deleted
 	resp6 := s.get(t, fmt.Sprintf("/api/v3/repos/admin/wh-crud/hooks/%d", hookID), defaultToken)
 	defer resp6.Body.Close()
 	if resp6.StatusCode != 404 {
@@ -208,7 +202,6 @@ func TestWebhookHMACSignature(t *testing.T) {
 
 	sig := computeHMACSignature(secret, payload)
 
-	// Verify manually
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
 	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
@@ -217,7 +210,6 @@ func TestWebhookHMACSignature(t *testing.T) {
 		t.Fatalf("signature mismatch: got %s, want %s", sig, expected)
 	}
 
-	// Verify prefix
 	if len(sig) < 7 || sig[:7] != "sha256=" {
 		t.Fatalf("expected sha256= prefix, got %s", sig)
 	}
@@ -286,7 +278,6 @@ func TestWebhookDeliverySuccess(t *testing.T) {
 
 	s.createWebhookTestRepo(t, "wh-deliver")
 
-	// Create webhook pointing to our receiver
 	resp := s.post(t, "/api/v3/repos/admin/wh-deliver/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
 			"url":    url,
@@ -313,7 +304,6 @@ func TestWebhookDeliverySuccess(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Check headers
 	if lastHeaders.Get("X-GitHub-Event") != "ping" {
 		t.Fatalf("expected X-GitHub-Event=ping, got %s", lastHeaders.Get("X-GitHub-Event"))
 	}
@@ -331,7 +321,6 @@ func TestWebhookDeliverySuccess(t *testing.T) {
 		t.Error("repository hook must set X-GitHub-Hook-Installation-Target-ID to the repo id")
 	}
 
-	// Verify HMAC
 	sig := lastHeaders.Get("X-Hub-Signature-256")
 	expectedSig := computeHMACSignature("delivery-secret", lastBody)
 	if sig != expectedSig {
@@ -347,9 +336,9 @@ func TestWebhookDeliveryRetry(t *testing.T) {
 	url, cleanup := startWebhookReceiver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := attempts.Add(1)
 		if n < 3 {
-			w.WriteHeader(500) // fail first 2 attempts
+			w.WriteHeader(500)
 		} else {
-			w.WriteHeader(200) // succeed on 3rd
+			w.WriteHeader(200)
 		}
 	}))
 	defer cleanup()
@@ -365,7 +354,6 @@ func TestWebhookDeliveryRetry(t *testing.T) {
 	})
 	resp.Body.Close()
 
-	// Create an issue to trigger the webhook
 	resp2 := s.post(t, "/api/v3/repos/admin/wh-retry/issues", defaultToken, map[string]interface{}{
 		"title": "test issue for retry",
 	})
@@ -419,7 +407,6 @@ func TestWebhookPushEvent(t *testing.T) {
 
 	s.createWebhookTestRepo(t, "wh-push")
 
-	// Create webhook
 	resp := s.post(t, "/api/v3/repos/admin/wh-push/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": url},
 		"events": []string{"push"},
@@ -427,7 +414,6 @@ func TestWebhookPushEvent(t *testing.T) {
 	})
 	resp.Body.Close()
 
-	// Push via git (use go-git)
 	s.pushTestCommit(t, "admin", "wh-push")
 
 	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
@@ -558,7 +544,6 @@ func TestWebhookPREvent(t *testing.T) {
 	}
 	seedPullRequestBranches(t, s.Server, repo, "feature")
 
-	// Create webhook for pull_request events
 	resp := s.post(t, "/api/v3/repos/admin/wh-pr/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": url},
 		"events": []string{"pull_request"},
@@ -566,7 +551,6 @@ func TestWebhookPREvent(t *testing.T) {
 	})
 	resp.Body.Close()
 
-	// Create a PR
 	resp2 := s.post(t, "/api/v3/repos/admin/wh-pr/pulls", defaultToken, map[string]interface{}{
 		"title": "test PR",
 		"head":  "feature",
@@ -579,7 +563,6 @@ func TestWebhookPREvent(t *testing.T) {
 	prData := decodeJSON(t, resp2)
 	prNum := int(prData["number"].(float64))
 
-	// Merge the PR
 	resp3 := s.put(t, fmt.Sprintf("/api/v3/repos/admin/wh-pr/pulls/%d/merge", prNum), defaultToken, nil)
 	resp3.Body.Close()
 
@@ -630,7 +613,6 @@ func TestWebhookIssuesEvent(t *testing.T) {
 
 	s.createWebhookTestRepo(t, "wh-issues")
 
-	// Create webhook for issues events
 	resp := s.post(t, "/api/v3/repos/admin/wh-issues/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": url},
 		"events": []string{"issues"},
@@ -638,7 +620,6 @@ func TestWebhookIssuesEvent(t *testing.T) {
 	})
 	resp.Body.Close()
 
-	// Create issue
 	resp2 := s.post(t, "/api/v3/repos/admin/wh-issues/issues", defaultToken, map[string]interface{}{
 		"title": "webhook test issue",
 	})
@@ -649,7 +630,6 @@ func TestWebhookIssuesEvent(t *testing.T) {
 	issueData := decodeJSON(t, resp2)
 	issueNum := int(issueData["number"].(float64))
 
-	// Close issue
 	resp3 := s.patch(t, fmt.Sprintf("/api/v3/repos/admin/wh-issues/issues/%d", issueNum), defaultToken, map[string]interface{}{
 		"state": "closed",
 	})
@@ -664,7 +644,6 @@ func TestWebhookIssuesEvent(t *testing.T) {
 		t.Fatalf("expected at least 2 issue event deliveries, got %d", received.Load())
 	}
 
-	// Verify actions
 	actions := make([]string, 0, len(payloads))
 	for _, p := range payloads {
 		if a, ok := p["action"].(string); ok {
@@ -845,7 +824,6 @@ func TestWebhookMilestoneEvent(t *testing.T) {
 		t.Fatalf("create milestone status = %d", created.StatusCode)
 	}
 	created.Body.Close()
-	// Closing fires `closed`; deleting fires `deleted`.
 	s.patch(t, "/api/v3/repos/admin/wh-milestone/milestones/1", defaultToken, map[string]interface{}{"state": "closed"}).Body.Close()
 	s.delete(t, "/api/v3/repos/admin/wh-milestone/milestones/1", defaultToken).Body.Close()
 
@@ -1454,7 +1432,6 @@ func TestWebhookPing(t *testing.T) {
 
 	s.createWebhookTestRepo(t, "wh-ping")
 
-	// Create webhook
 	resp := s.post(t, "/api/v3/repos/admin/wh-ping/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": url},
 		"events": []string{"push"},
@@ -1467,7 +1444,6 @@ func TestWebhookPing(t *testing.T) {
 	hookData := decodeJSON(t, resp)
 	hookID := int(hookData["id"].(float64))
 
-	// Ping
 	pingResp := s.post(t, fmt.Sprintf("/api/v3/repos/admin/wh-ping/hooks/%d/pings", hookID), defaultToken, nil)
 	defer pingResp.Body.Close()
 	if pingResp.StatusCode != 204 {
@@ -1513,16 +1489,15 @@ func TestWebhookDeliveryLog(t *testing.T) {
 	hookData := decodeJSON(t, resp)
 	hookID := int(hookData["id"].(float64))
 
-	// Ping to create a delivery
 	pingResp := s.post(t, fmt.Sprintf("/api/v3/repos/admin/wh-log/hooks/%d/pings", hookID), defaultToken, nil)
 	pingResp.Body.Close()
 
 	waitForWebhookCount(t, &received, 1)
 
-	// List deliveries. The delivery is recorded (AddDelivery) by the background
-	// delivery goroutine AFTER the receiver's POST returns, so waitForWebhookCount
-	// (which only observes the receiver) can win the race with the store write —
-	// poll the endpoint until the log is populated rather than reading it once.
+	// The delivery is recorded (AddDelivery) by the background delivery goroutine
+	// AFTER the receiver's POST returns, so waitForWebhookCount (which only observes
+	// the receiver) can win the race with the store write — poll until the log is
+	// populated rather than reading it once.
 	var deliveries []map[string]interface{}
 	if !testutil.TestEventually(5*time.Second, 10*time.Millisecond, func() bool {
 		delResp := s.get(t, fmt.Sprintf("/api/v3/repos/admin/wh-log/hooks/%d/deliveries", hookID), defaultToken)
@@ -1568,7 +1543,6 @@ func TestWebhookInactiveSkipped(t *testing.T) {
 
 	s.createWebhookTestRepo(t, "wh-inactive")
 
-	// Create inactive webhook
 	active := false
 	resp := s.post(t, "/api/v3/repos/admin/wh-inactive/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{"url": url},
@@ -1577,7 +1551,7 @@ func TestWebhookInactiveSkipped(t *testing.T) {
 	})
 	resp.Body.Close()
 
-	// Create issue — should NOT trigger inactive webhook
+	// An inactive hook must not fire on a real event.
 	resp2 := s.post(t, "/api/v3/repos/admin/wh-inactive/issues", defaultToken, map[string]interface{}{
 		"title": "should not trigger",
 	})
@@ -1673,7 +1647,6 @@ func (s *isolatedServer) pushTestCommit(t *testing.T, owner, repoName string) {
 		t.Fatalf("git init: %v", err)
 	}
 
-	// Create a file and commit
 	f, err := fs.Create("test.txt")
 	if err != nil {
 		t.Fatalf("create file: %v", err)
@@ -1764,7 +1737,6 @@ func TestWebhookOrganizationBlock(t *testing.T) {
 	}))
 	defer cleanup()
 
-	// Org-owned repo: create the org, a repo in it, a hook, and an issue.
 	resp := s.post(t, "/api/v3/admin/organizations", defaultToken, map[string]interface{}{
 		"login": "wh-org", "admin": "admin",
 	})

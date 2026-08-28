@@ -594,8 +594,8 @@ func TestGitCommitSignatureIsStoredAndReported(t *testing.T) {
 		t.Fatalf("verified_at = %v, want null for an unverified signature", verification["verified_at"])
 	}
 
-	// The signature survives the write: re-reading the stored object reports it
-	// again, so the created commit really carries the gpgsig header.
+	// The signature survives the write: re-reading reports it, so the commit
+	// carries the gpgsig header.
 	sha := created["sha"].(string)
 	reread := decodeJSONWithStatus(t, s.get(t, base+"/git/commits/"+sha, defaultToken), http.StatusOK)
 	rereadVerification, _ := reread["verification"].(map[string]interface{})

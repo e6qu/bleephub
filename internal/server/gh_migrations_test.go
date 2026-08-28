@@ -44,7 +44,6 @@ func TestMigrations_UserCRUD(t *testing.T) {
 	r1 := s.store.CreateRepo(admin, "migration-repo-1", "first migration repo", false)
 	r2 := s.store.CreateRepo(admin, "migration-repo-2", "second migration repo", false)
 
-	// Start migration
 	resp := s.post(t, "/api/v3/user/migrations", defaultToken, map[string]any{
 		"repositories":      []string{r1.FullName, r2.FullName},
 		"lock_repositories": true,
@@ -66,7 +65,6 @@ func TestMigrations_UserCRUD(t *testing.T) {
 	migrationID := int(created["id"].(float64))
 	s.waitForMigrationExport(t, "/api/v3/user/migrations/"+itoa(migrationID))
 
-	// List
 	resp = s.get(t, "/api/v3/user/migrations", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -89,7 +87,6 @@ func TestMigrations_UserCRUD(t *testing.T) {
 		t.Fatalf("created migration %d not in list: %v", migrationID, list)
 	}
 
-	// Get
 	resp = s.get(t, "/api/v3/user/migrations/"+itoa(migrationID), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -101,7 +98,6 @@ func TestMigrations_UserCRUD(t *testing.T) {
 		t.Fatalf("expected lock_repositories true")
 	}
 
-	// Download archive
 	resp = s.get(t, "/api/v3/user/migrations/"+itoa(migrationID)+"/archive", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -143,7 +139,6 @@ func TestMigrations_UserCRUD(t *testing.T) {
 		t.Fatalf("archive is missing %s's records; it holds %v", r1.FullName, entries)
 	}
 
-	// Delete archive
 	resp = s.delete(t, "/api/v3/user/migrations/"+itoa(migrationID)+"/archive", defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -152,14 +147,12 @@ func TestMigrations_UserCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Download after delete returns 404
 	resp = s.get(t, "/api/v3/user/migrations/"+itoa(migrationID)+"/archive", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 after archive delete, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Unlock repo
 	resp = s.delete(t, "/api/v3/user/migrations/"+itoa(migrationID)+"/repos/"+r1.Name+"/lock", defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -168,7 +161,6 @@ func TestMigrations_UserCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Unlock non-locked repo returns 404
 	resp = s.delete(t, "/api/v3/user/migrations/"+itoa(migrationID)+"/repos/"+r1.Name+"/lock", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 re-unlock, got %d", resp.StatusCode)
@@ -183,7 +175,6 @@ func TestMigrations_OrgCRUD(t *testing.T) {
 	org := s.store.CreateOrg(admin, "migration-org", "Migration Org", "")
 	r1 := s.store.CreateOrgRepo(org, admin, "org-repo", "org migration repo", false)
 
-	// Start org migration
 	resp := s.post(t, "/api/v3/orgs/"+org.Login+"/migrations", defaultToken, map[string]any{
 		"repositories":      []string{r1.FullName},
 		"lock_repositories": true,
@@ -197,7 +188,6 @@ func TestMigrations_OrgCRUD(t *testing.T) {
 	migrationID := int(created["id"].(float64))
 	s.waitForMigrationExport(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(migrationID))
 
-	// List
 	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/migrations", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -220,7 +210,6 @@ func TestMigrations_OrgCRUD(t *testing.T) {
 		t.Fatalf("created org migration %d not in list: %v", migrationID, list)
 	}
 
-	// Get
 	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(migrationID), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -232,7 +221,6 @@ func TestMigrations_OrgCRUD(t *testing.T) {
 		t.Fatalf("expected exported, got %v", got["state"])
 	}
 
-	// Unlock
 	resp = s.delete(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(migrationID)+"/repos/"+r1.Name+"/lock", defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -351,28 +339,24 @@ func TestMigrations_OrgListPagination(t *testing.T) {
 func TestMigrations_404s(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Missing user migration
 	resp := s.get(t, "/api/v3/user/migrations/999999", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing user migration, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Missing org
 	resp = s.get(t, "/api/v3/orgs/nonexistent/migrations", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing org, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Missing org migration
 	resp = s.get(t, "/api/v3/orgs/nonexistent/migrations/999999", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing org migration, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// Unlock on missing migration
 	resp = s.delete(t, "/api/v3/user/migrations/999999/repos/foo/lock", defaultToken)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 unlock missing migration, got %d", resp.StatusCode)
@@ -395,7 +379,6 @@ func TestMigrations_StartRequiresAuth(t *testing.T) {
 func TestMigrations_StartValidation(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Missing repositories
 	resp := s.post(t, "/api/v3/user/migrations", defaultToken, map[string]any{})
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		b, _ := io.ReadAll(resp.Body)
@@ -404,7 +387,6 @@ func TestMigrations_StartValidation(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Invalid repository
 	resp = s.post(t, "/api/v3/user/migrations", defaultToken, map[string]any{
 		"repositories": []string{"does/not-exist"},
 	})
@@ -459,7 +441,6 @@ func TestMigrations_OrgMigrationRepositories(t *testing.T) {
 		t.Fatalf("migration repositories wrong: %v", names)
 	}
 
-	// Unknown migration.
 	resp = s.get(t, "/api/v3/orgs/migration-repos-org/migrations/999999/repositories", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {

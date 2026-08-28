@@ -14,8 +14,6 @@ import (
 
 // --- ACT-044: job-state GC + hot-path indexes ---
 
-// gcQueueTestJob queues one deliverable job for repo and returns the stored
-// engine job.
 func gcQueueTestJob(t *testing.T, s *Server, jobID, repo string) *store.Job {
 	t.Helper()
 	scopeID := "scope-" + jobID
@@ -206,7 +204,7 @@ func TestActionsJanitorSweepsRetiredJobState(t *testing.T) {
 	if s.store.JobsByPlanID[retired.PlanID] != nil {
 		t.Error("retired job's plan-id index entry survived the sweep")
 	}
-	// The live job's state is intact and still indexed.
+	// The live job survives intact and still indexed.
 	if s.store.Jobs[live.ID] == nil || s.store.JobsByPlanID[live.PlanID] != live {
 		t.Error("live job state was damaged by the sweep")
 	}

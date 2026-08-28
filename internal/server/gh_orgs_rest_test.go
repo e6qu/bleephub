@@ -8,13 +8,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestOrgUpdateDeleteAllowSiteAdmin guards the operator path on the org
-// edit/delete mutations. The /ui Operations → Organizations page lists every
-// org on the instance for a site admin and offers Edit/Delete on each row, but
-// the seeded site admin holds no personal org membership. handleUpdateOrg and
-// handleDeleteOrg must honor SiteAdmin (a GHES site admin administers any org
-// from stafftools) or those buttons 403 for every org the operator didn't
-// personally create.
+// Guard the operator path: a site admin holds no org membership, so
+// handleUpdateOrg/handleDeleteOrg must honor SiteAdmin (GHES stafftools
+// administers any org) or the /ui Edit/Delete buttons 403 on orgs it did not create.
 func TestOrgUpdateDeleteAllowSiteAdmin(t *testing.T) {
 	s := newTestServer()
 	s.registerGHOrgRoutes()
@@ -39,7 +35,6 @@ func TestOrgUpdateDeleteAllowSiteAdmin(t *testing.T) {
 		t.Errorf("outsider PATCH org = %d, want 403/404", w.Code)
 	}
 
-	// Site admin (non-owner) can edit the org.
 	w := serveTestRequest(s, bearerHeader(store.AdminToken()), "PATCH", "/api/v3/orgs/acme-corp",
 		[]byte(`{"description":"edited by operator"}`))
 	if w.Code != http.StatusOK {
@@ -51,8 +46,7 @@ func TestOrgUpdateDeleteAllowSiteAdmin(t *testing.T) {
 		t.Errorf("description = %v, want %q", got["description"], "edited by operator")
 	}
 
-	// Site admin (non-owner) can delete the org. GitHub deletes orgs
-	// asynchronously and answers 202 Accepted, not 204.
+	// GitHub deletes orgs asynchronously and answers 202 Accepted, not 204.
 	if w := serveTestRequest(s, bearerHeader(store.AdminToken()), "DELETE", "/api/v3/orgs/acme-corp", nil); w.Code != http.StatusAccepted {
 		t.Fatalf("site-admin DELETE org = %d, want 202; body=%s", w.Code, w.Body.String())
 	}

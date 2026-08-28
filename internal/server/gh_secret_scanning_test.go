@@ -279,8 +279,8 @@ func TestSecretScanning_GetAndLocations(t *testing.T) {
 	if got["state"] != "open" {
 		t.Fatalf("expected state open, got %v", got["state"])
 	}
-	// Round-4: the alert object carries github's full shape — the (synthetic)
-	// secret, validity, and push-protection-bypass members must all be present.
+	// The alert object carries GitHub's full shape: the (synthetic) secret,
+	// validity, and push-protection-bypass members are all present.
 	for _, field := range []string{"secret", "validity", "resolved_by", "resolution_comment", "push_protection_bypassed", "push_protection_bypassed_by", "push_protection_bypassed_at"} {
 		if _, ok := got[field]; !ok {
 			t.Errorf("alert missing %q field: %v", field, got)
@@ -314,9 +314,8 @@ func TestSecretScanning_GetAndLocations(t *testing.T) {
 }
 
 // TestSecretScanningAlertGetReturnsDetachedSnapshot pins STORE-021 for the
-// secret-scanning family: GetSecretScanningAlert must hand back a copy, so a
-// reader mutating the result (or racing a concurrent update) cannot corrupt the
-// stored alert, and UpdateSecretScanningAlert must still mutate the live row.
+// secret-scanning family: GetSecretScanningAlert hands back a copy while
+// UpdateSecretScanningAlert still mutates the live row.
 func TestSecretScanningAlertGetReturnsDetachedSnapshot(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.UsersByLogin["admin"]
@@ -682,7 +681,6 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 		t.Fatalf("fresh pattern_config_version = %v, want null", initial["pattern_config_version"])
 	}
 
-	// Update the aws pattern's push protection setting.
 	resp = s.patch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
 		"provider_pattern_settings": []map[string]any{
 			{"token_type": "aws", "push_protection_setting": "enabled"},
@@ -698,7 +696,6 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 		t.Fatalf("update did not return a pattern_config_version: %v", updated)
 	}
 
-	// The stored setting and version read back.
 	resp = s.get(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken)
 	after := decodeJSON(t, resp)
 	if after["pattern_config_version"] != version {
@@ -739,7 +736,6 @@ func TestSecretScanning_PatternConfigurationsUpdate(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Validation: unknown pattern, invalid setting.
 	resp = s.patch(t, "/api/v3/orgs/ss-pattern-org/secret-scanning/pattern-configurations", defaultToken, map[string]any{
 		"provider_pattern_settings": []map[string]any{
 			{"token_type": "made-up-pattern", "push_protection_setting": "enabled"},
@@ -768,7 +764,6 @@ func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
 	s.createSecretScanningOrgRepoViaPublicAPI(t, org, repo)
 	s.enableSecretScanningPushProtectionPattern(t, org, "aws")
 
-	// Unknown placeholder → 404.
 	resp := s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
 		"reason":         "false_positive",
 		"placeholder_id": "no-such-placeholder",
@@ -827,7 +822,6 @@ func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
 		t.Fatalf("re-bypass consumed placeholder: %d, want 404", resp.StatusCode)
 	}
 
-	// Invalid reason.
 	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
 		"reason":         "because",
 		"placeholder_id": placeholderID,
@@ -877,7 +871,6 @@ func TestSecretScanning_PushProtectionBlocksBlobCreate(t *testing.T) {
 	})
 	placeholderID := secretScanningRuleViolationPlaceholderAt(t, resp, http.StatusUnprocessableEntity)
 
-	// The placeholder drives the documented bypass endpoint.
 	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
 		"reason":         "used_in_tests",
 		"placeholder_id": placeholderID,
@@ -1021,7 +1014,6 @@ func TestSecretScanning_ScanHistory(t *testing.T) {
 		t.Fatalf("incremental scan missing completed_at: %v", first)
 	}
 
-	// Unknown repository.
 	resp = s.get(t, "/api/v3/repos/admin/no-such-history-repo/secret-scanning/scan-history", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {

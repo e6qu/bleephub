@@ -6,13 +6,12 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestGQLNodeFindersDecodeDBID covers the GQL-024 follow-up: every GraphQL
-// node finder that keys its collection by database id now decodes the id
-// embedded in the node ID for an O(1) lookup, guarded by an equality check so
-// a prefix collision or a foreign-shaped id can never mis-resolve, and falls
-// back to the full scan otherwise. Each finder is exercised for a real hit
-// (the fast path) and for an unknown same-prefix id (the guard + fallback
-// miss), so a wrong prefix or a dropped equality guard fails the test.
+// TestGQLNodeFindersDecodeDBID covers the GQL-024 follow-up: every node finder
+// that keys by database id decodes the id embedded in the node ID for an O(1)
+// lookup, guarded by an equality check so a prefix collision or foreign-shaped
+// id can't mis-resolve, falling back to a full scan otherwise. Each finder is
+// exercised for a real hit and an unknown same-prefix id, so a wrong prefix or a
+// dropped guard fails the test.
 func TestGQLNodeFindersDecodeDBID(t *testing.T) {
 	// pullsTestServer seeds a repo with a "feature" head branch and a "main"
 	// base so CreatePullRequest resolves real head/base SHAs.
@@ -33,8 +32,6 @@ func TestGQLNodeFindersDecodeDBID(t *testing.T) {
 	item := st.ProjectsV2.AddItem(project.ID, "Issue", issue.ID, admin.ID)
 	field := st.ProjectsV2.CreateField(project.ID, "Status", store.ProjectV2FieldText, nil, nil)
 
-	// Each case resolves a real record by its node id (fast path) and rejects an
-	// unknown id that shares the same prefix (equality guard + fallback miss).
 	t.Run("issue", func(t *testing.T) {
 		if got := store.FindIssueByNodeID(st, issue.NodeID); got == nil || got.ID != issue.ID {
 			t.Fatalf("findIssueByNodeID(%q) = %v, want issue %d", issue.NodeID, got, issue.ID)

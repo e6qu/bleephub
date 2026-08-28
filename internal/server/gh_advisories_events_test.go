@@ -39,7 +39,6 @@ func (r *advisoryEventRecorder) handler() http.HandlerFunc {
 	}
 }
 
-// find returns the first delivery of an event/action pair, or false.
 func (r *advisoryEventRecorder) find(event, action string) (advisoryDelivery, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -108,10 +107,7 @@ func TestDependabotAlertWebhookLifecycle(t *testing.T) {
 		t.Error("dependabot_alert delivery carried no repository")
 	}
 
-	// Publication of the advisory itself is announced too. Both this delivery
-	// and the security_advisory one below are dispatched asynchronously, so
-	// wait for them rather than reading the recorder synchronously (a bare read
-	// races the delivery goroutine when the suite runs under load).
+	// Publication is announced too; wait, since these deliveries dispatch asynchronously and a bare read races the delivery goroutine under load.
 	waitUntil(t, "repository_advisory published", func() bool {
 		return recorder.has("repository_advisory", "published")
 	})
@@ -119,7 +115,6 @@ func TestDependabotAlertWebhookLifecycle(t *testing.T) {
 		return recorder.has("security_advisory", "published")
 	})
 
-	// Dismissal through REST.
 	resp := f.server.patch(t, "/api/v3/repos/"+f.repo.FullName+"/dependabot/alerts/1", f.ownerToken,
 		map[string]interface{}{"state": "dismissed", "dismissed_reason": "tolerable_risk", "dismissed_comment": "acceptable"})
 	decodeJSONWithStatus(t, resp, http.StatusOK)
@@ -139,7 +134,6 @@ func TestDependabotAlertWebhookLifecycle(t *testing.T) {
 		t.Error("a user-driven dismissal carried no sender")
 	}
 
-	// Reopening.
 	resp = f.server.patch(t, "/api/v3/repos/"+f.repo.FullName+"/dependabot/alerts/1", f.ownerToken,
 		map[string]interface{}{"state": "open"})
 	decodeJSONWithStatus(t, resp, http.StatusOK)
@@ -324,7 +318,6 @@ func TestAdvisoryCollaboratorsAndPrivateFork(t *testing.T) {
 		t.Errorf("collaborating user = %v, want %q", collaborator["login"], helper.Login)
 	}
 
-	// start_private_fork produced the temporary fork.
 	if created["private_fork"] == nil {
 		t.Error("start_private_fork produced no private fork")
 	}

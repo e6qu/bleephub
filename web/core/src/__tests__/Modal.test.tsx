@@ -4,8 +4,7 @@ import { describe, expect, test, vi, beforeEach } from "vitest";
 import { Modal } from "../components/Modal.js";
 
 beforeEach(() => {
-  // jsdom <dialog> ships .open + .close + .showModal in modern versions,
-  // but the shim is recent — guarantee the surface we touch.
+  // jsdom's <dialog> shim is recent — guarantee the surface we touch.
   if (!HTMLDialogElement.prototype.showModal) {
     HTMLDialogElement.prototype.showModal = function () {
       this.open = true;
@@ -48,8 +47,7 @@ describe("Modal", () => {
         body
       </Modal>,
     );
-    // The dialog element exists but its `open` attribute should be false,
-    // so the body is hidden by the platform.
+    // The dialog exists but `open` is false, so the platform hides the body.
     const dialog = screen.getByText("hidden").closest("dialog");
     expect(dialog?.hasAttribute("open")).toBe(false);
   });

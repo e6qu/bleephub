@@ -6,10 +6,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestProfilePinnedItemsReportTheOwnersChoice pins the pinned-item family for
-// a user profile: the pins come back in the order the owner set them, the
-// pinnable set spans the account's repositories and gists, and the remaining
-// count counts down from GitHub's limit of six.
+// TestProfilePinnedItemsReportTheOwnersChoice: pins come back in the owner's
+// order, the pinnable set spans repos and gists, and the remaining count counts
+// down from GitHub's limit of six.
 func TestProfilePinnedItemsReportTheOwnersChoice(t *testing.T) {
 	h := newAccountHarness(t)
 	owner := h.store.UsersByLogin["admin"]
@@ -75,9 +74,9 @@ func TestProfilePinnedItemsReportTheOwnersChoice(t *testing.T) {
 	}
 }
 
-// TestPinnedItemsHidePrivateContentAndAdminRights is the authorization test:
-// a pinned private repository and a secret gist do not become visible through
-// a profile, and only the account itself may change its pins.
+// TestPinnedItemsHidePrivateContentAndAdminRights: a pinned private repository
+// and a secret gist stay hidden through a profile, and only the account itself
+// may change its pins.
 func TestPinnedItemsHidePrivateContentAndAdminRights(t *testing.T) {
 	h := newAccountHarness(t)
 	owner := h.store.UsersByLogin["admin"]
@@ -127,8 +126,8 @@ func TestPinnedItemsHidePrivateContentAndAdminRights(t *testing.T) {
 	}
 }
 
-// TestOrganizationPinnedItemsFollowOwnership pins the organization half: its
-// pins come from the organization row, and only an owner may change them.
+// TestOrganizationPinnedItemsFollowOwnership: an org's pins come from the
+// organization row, and only an owner may change them.
 func TestOrganizationPinnedItemsFollowOwnership(t *testing.T) {
 	h := newAccountHarness(t)
 	admin := h.store.UsersByLogin["admin"]

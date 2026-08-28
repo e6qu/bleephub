@@ -21,7 +21,6 @@ func TestArtifactCreateUploadFinalize(t *testing.T) {
 	s := newTestServer()
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
-	// Create artifact
 	body := `{"name":"test-artifact","version":4,"workflow_run_backend_id":"run-1"}`
 	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", bytes.NewBufferString(body))
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -42,7 +41,6 @@ func TestArtifactCreateUploadFinalize(t *testing.T) {
 		t.Fatal("create: empty upload URL")
 	}
 
-	// Upload data
 	uploadReq := httptest.NewRequest("PUT", "/_apis/v1/artifacts/1/upload", bytes.NewBufferString("hello world"))
 	uploadReq.SetPathValue("artifactId", "1")
 	uploadReq.Header.Set("Authorization", "Bearer "+token)
@@ -53,7 +51,6 @@ func TestArtifactCreateUploadFinalize(t *testing.T) {
 		t.Fatalf("upload status = %d, want 200; body=%s", uploadW.Code, uploadW.Body.String())
 	}
 
-	// Finalize
 	finBody := `{"name":"test-artifact","size":11,"workflow_run_backend_id":"run-1"}`
 	finReq := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact", bytes.NewBufferString(finBody))
 	finReq.Header.Set("Authorization", "Bearer "+token)
@@ -219,7 +216,6 @@ func TestArtifactListReturnsFinalized(t *testing.T) {
 	s := newTestServer()
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
-	// Create and finalize an artifact
 	s.artifactStore.Mu.Lock()
 	s.artifactStore.Artifacts[1] = &store.Artifact{ID: 1, Name: "my-artifact", Size: 100, Finalized: true, WorkflowRunBackendID: "run-1"}
 	s.artifactStore.Artifacts[2] = &store.Artifact{ID: 2, Name: "unfinished", Size: 50, Finalized: false, WorkflowRunBackendID: "run-1"}
@@ -329,7 +325,6 @@ func TestCacheUploadWritesObjectStore(t *testing.T) {
 func TestArtifactDownload(t *testing.T) {
 	s := newTestServer()
 
-	// Create finalized artifact with data
 	s.artifactStore.Mu.Lock()
 	s.artifactStore.Artifacts[1] = &store.Artifact{
 		ID:           1,
@@ -449,8 +444,6 @@ func cacheDownload(t *testing.T, s *Server, archiveLocation string) *httptest.Re
 	return w
 }
 
-// cacheArchiveLocation looks up a finalized cache and returns its
-// archiveLocation, fatal on miss.
 func cacheArchiveLocation(t *testing.T, s *Server, token, keys, version string) string {
 	t.Helper()
 	w := cacheLookup(t, s, token, keys, version)
@@ -529,7 +522,6 @@ func TestRepoCaches_ListAndUsage(t *testing.T) {
 		t.Errorf("cache[0] missing ref/last_accessed_at: %+v", list.ActionsCaches[0])
 	}
 
-	// key filter
 	wf := runRequest(s, "GET", "/api/v3/repos/octo/repo/actions/caches?key=linux-node")
 	var filtered struct {
 		TotalCount int `json:"total_count"`

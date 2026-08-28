@@ -15,19 +15,15 @@ import (
 	"github.com/e6qu/bleephub/internal/actions"
 )
 
-// Tests in this file replay the EXACT GraphQL shapes gh CLI (v2.96) sends —
-// copied from the gh source (api/query_builder.go, api/queries_repo.go,
-// pkg/cmd/pr/shared/{lister,finder}.go, pkg/cmd/pr/status/http.go,
-// pkg/cmd/issue/list/http.go, pkg/cmd/release/list/http.go,
-// pkg/cmd/release/shared/fetch.go, api/queries_pr_review.go) — so schema
-// drift against the real client fails here before it fails in the harness.
+// Replay the EXACT GraphQL shapes gh CLI (v2.96) sends, copied verbatim from
+// the gh source, so schema drift against the real client fails here before the
+// harness.
 
 func TestGHCLIIssueLookupAcceptsExclusiveStateEnums(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// gh v2.96 builds this exact polymorphic shape for `gh issue view`,
-	// `gh issue close`, and `gh issue reopen`. GitHub executes it even though
-	// Issue.state and PullRequest.state use different enum types.
+	// GitHub executes this polymorphic shape even though Issue.state and
+	// PullRequest.state use different enum types.
 	query := `
 query IssueByNumber($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
@@ -46,8 +42,8 @@ query IssueByNumber($owner: String!, $repo: String!, $number: Int!) {
 		t.Fatalf("official gh issue lookup validation errors: %v", validationErrors)
 	}
 
-	// The exception must not disable the overlap rule generally. These two
-	// selections can execute on the same Issue and name different fields.
+	// The exception must not disable the overlap rule generally: these two
+	// selections execute on the same Issue and name different fields.
 	conflicting := `
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
@@ -63,8 +59,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
 	}
 }
 
-// --- Finding 1: gh's GitHubRepo query (repo clone, pr create) ---
-
+// gh's GitHubRepo query, sent by repo clone and pr create.
 func TestRepoGraphQL_GitHubRepoQuery(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -210,9 +205,8 @@ func TestRepoGraphQLArchivedAtFollowsArchiveState(t *testing.T) {
 	}
 }
 
-// TestRepoGraphQL_RepositoryOwnerOrg verifies that repositoryOwner(login:)
-// returns real organization data (not a synthetic partial User-shaped payload)
-// when the login resolves to an organization.
+// repositoryOwner(login:) must return real organization data, not a synthetic
+// partial User-shaped payload, when the login resolves to an organization.
 func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -279,8 +273,7 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 	}
 }
 
-// --- Finding 1: the static --json field set gh repo view exposes ---
-
+// The static --json field set gh repo view exposes.
 func TestRepoGraphQL_ViewJSONStaticFields(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -467,8 +460,7 @@ func TestRepoGraphQL_ForkParentAndCount(t *testing.T) {
 	}
 }
 
-// --- Finding 2: gh pr list (lister query with literal enum orderBy) ---
-
+// gh pr list's lister query, sent with a literal enum orderBy.
 func TestPRGraphQL_ListQueryShape(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -536,9 +528,8 @@ func TestPRGraphQL_ListQueryShape(t *testing.T) {
 	}
 }
 
-// --- Finding 3: gh pr view's default field set, incl. the commits-aliased
-// statusCheckRollup backed by the real checks and commit-status stores ---
-
+// gh pr view's default field set, incl. the commits-aliased statusCheckRollup
+// backed by the real checks and commit-status stores.
 func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -554,7 +545,6 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 	}
 	reqResp.Body.Close()
 
-	// Submit a review so reviews{} carries data.
 	revResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/pulls/"+itoa(prNum)+"/reviews", defaultToken,
 		map[string]interface{}{"body": "ship it", "event": "APPROVE"})
 	if revResp.StatusCode != 200 {
@@ -563,9 +553,8 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 	}
 	revResp.Body.Close()
 
-	// Record a completed GitHub Actions workflow job against the PR's head sha
-	// so the checks store and GraphQL statusCheckRollup are fed by the same
-	// Actions event path as real runs.
+	// Feed the checks store and statusCheckRollup through the same Actions event
+	// path as real runs by recording a completed workflow job on the head sha.
 	headSHA := pullRequestHeadSHA(s.store.GetPullRequest(prID), s.store)
 	if headSHA == "" {
 		t.Fatal("PR head sha did not resolve")
@@ -743,8 +732,7 @@ func countForState(raw interface{}, state string) int {
 	return 0
 }
 
-// --- Finding 4: gh pr merge's finder fields + the merge mutation shape ---
-
+// gh pr merge's finder fields plus the merge mutation shape.
 func TestPRGraphQL_MergePath(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -777,8 +765,8 @@ func TestPRGraphQL_MergePath(t *testing.T) {
 	}
 	prNodeID, _ := pr["id"].(string)
 
-	// Mutation shape from pkg/cmd/pr/merge/http.go (shurcooL-generated):
-	// selects only clientMutationId.
+	// Mutation shape from pkg/cmd/pr/merge/http.go (shurcooL-generated, selects
+	// only clientMutationId).
 	mergeMutation := `mutation PullRequestMerge($input:MergePullRequestInput!){mergePullRequest(input:$input){clientMutationId}}`
 	md := s.gqlData(t, mergeMutation, map[string]interface{}{
 		"input": map[string]interface{}{
@@ -798,8 +786,7 @@ func TestPRGraphQL_MergePath(t *testing.T) {
 	}
 }
 
-// --- Finding 5: gh pr review → addPullRequestReview mutation ---
-
+// gh pr review's addPullRequestReview mutation.
 func TestPRGraphQL_AddPullRequestReview(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -815,8 +802,8 @@ func TestPRGraphQL_AddPullRequestReview(t *testing.T) {
 		t.Fatalf("no PR node id: %v", d)
 	}
 
-	// Mutation shape from api/queries_pr_review.go AddReview
-	// (shurcooL-generated, selects clientMutationId).
+	// Mutation shape from api/queries_pr_review.go AddReview (shurcooL-generated,
+	// selects clientMutationId).
 	mutation := `mutation PullRequestReviewAdd($input:AddPullRequestReviewInput!){addPullRequestReview(input:$input){clientMutationId}}`
 	s.gqlData(t, mutation, map[string]interface{}{
 		"input": map[string]interface{}{
@@ -901,8 +888,8 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 		t.Fatalf("resolve clientMutationId missing: %v", rd)
 	}
 
-	// resolvedBy reflects the actor who resolved the thread (GQL-045: it used to
-	// be an unconditional null).
+	// resolvedBy reflects the actor who resolved the thread (GQL-045: was an
+	// unconditional null).
 	resolvedByQuery := `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewThreads(first:10){nodes{isResolved,resolvedBy{login}}}}}}`
 	rbd := s.gqlData(t, resolvedByQuery, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
 	rbNode := rbd["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})["reviewThreads"].(map[string]interface{})["nodes"].([]interface{})[0].(map[string]interface{})
@@ -930,8 +917,7 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 	}
 }
 
-// --- Finding 6: gh release list → Repository.releases connection ---
-
+// gh release list's Repository.releases connection.
 func TestRepoGraphQL_ReleasesConnection(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1004,8 +990,7 @@ func TestRepoGraphQL_ReleasesConnection(t *testing.T) {
 	}
 }
 
-// --- Finding 7: gh release view/download/delete draft lookup ---
-
+// gh release view/download/delete draft lookup.
 func TestRepoGraphQL_ReleaseByTag(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1044,8 +1029,7 @@ func TestRepoGraphQL_ReleaseByTag(t *testing.T) {
 	}
 }
 
-// --- Finding 8: IssueComment.viewerDidAuthor ---
-
+// IssueComment.viewerDidAuthor.
 func TestIssueGraphQL_CommentViewerDidAuthor(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1076,8 +1060,7 @@ func TestIssueGraphQL_CommentViewerDidAuthor(t *testing.T) {
 	}
 }
 
-// --- Finding 9: Query.search — the gh pr status query shape ---
-
+// Query.search: the gh pr status query shape.
 func TestSearchGraphQL_PRStatusShape(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1152,8 +1135,7 @@ func TestSearchGraphQL_PRStatusShape(t *testing.T) {
 	}
 }
 
-// --- Finding 9 + 11: gh issue list --label goes through Query.search ---
-
+// gh issue list --label goes through Query.search.
 func TestSearchGraphQL_IssueLabelSearch(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1218,9 +1200,8 @@ func TestSearchGraphQL_IssueLabelSearch(t *testing.T) {
 	}
 }
 
-// --- gh label list / gh issue create --label: RepositoryLabelList sends
-// orderBy as literal enums (caught live by the docker harness) ---
-
+// gh label list / gh issue create --label: RepositoryLabelList sends orderBy as
+// literal enums (caught live by the docker harness).
 func TestRepoGraphQL_LabelListOrderByEnums(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1235,9 +1216,8 @@ func TestRepoGraphQL_LabelListOrderByEnums(t *testing.T) {
 	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "endCursor": nil})
 	labels, _ := d["repository"].(map[string]interface{})["labels"].(map[string]interface{})
 	nodes, _ := labels["nodes"].([]interface{})
-	// The repository was created with GitHub's default label set, so the list
-	// is those nine plus the one this test made, ordered by name ascending —
-	// which is what the orderBy argument under test asks for.
+	// GitHub's default label set (nine) plus the one this test made, ordered by
+	// name ascending as the orderBy argument under test asks for.
 	names := make([]string, 0, len(nodes))
 	for _, node := range nodes {
 		labelName, _ := node.(map[string]interface{})["name"].(string)
@@ -1249,10 +1229,9 @@ func TestRepoGraphQL_LabelListOrderByEnums(t *testing.T) {
 	}
 }
 
-// --- gh issue create serializes projectIds (null) in CreateIssueInput —
-// the input type must declare it or coercion rejects the whole mutation
-// (caught live by the docker harness) ---
-
+// gh issue create serializes projectIds (null) in CreateIssueInput; the input
+// type must declare it or coercion rejects the whole mutation (caught live by
+// the docker harness).
 func TestIssueGraphQL_CreateWithNullProjectIDs(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1288,8 +1267,7 @@ func TestIssueGraphQL_CreateWithNullProjectIDs(t *testing.T) {
 	}
 }
 
-// --- Finding 10: NOT_FOUND error fidelity ---
-
+// NOT_FOUND error fidelity.
 func TestGraphQL_NotFoundErrors(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1332,8 +1310,7 @@ func TestGraphQL_NotFoundErrors(t *testing.T) {
 	assertNotFound(t, env, "Could not resolve to an issue or pull request with the number of 9999")
 }
 
-// --- Finding 11: GET /api/v3/meta (GHES shape) ---
-
+// GET /api/v3/meta (GHES shape).
 func TestMetaEndpoint(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1351,9 +1328,8 @@ func TestMetaEndpoint(t *testing.T) {
 	}
 }
 
-// --- Finding 12: push-triggered workflows carry event metadata into
-// submitWorkflow, so workflow_id resolves ---
-
+// Push-triggered workflows carry event metadata into submitWorkflow, so
+// workflow_id resolves.
 func TestWebhookTrigger_WorkflowFileResolvable(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1362,7 +1338,6 @@ func TestWebhookTrigger_WorkflowFileResolvable(t *testing.T) {
 
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	// The workflow was submitted synchronously above; find it.
 	var wf *store.Workflow
 	s.store.Mu.RLock()
 	for _, w := range s.store.Workflows {
@@ -1385,8 +1360,7 @@ func TestWebhookTrigger_WorkflowFileResolvable(t *testing.T) {
 		t.Fatalf("workflow file = id %d path %q, want resolved .github/workflows/ci.yml", wf.WorkflowFileID, wf.WorkflowFilePath)
 	}
 
-	// The run's workflow_id must resolve: GET the run, then GET its workflow.
-	// workflow_id is an int64 beyond float64's exact range — decode with
+	// workflow_id is an int64 beyond float64's exact range, so decode with
 	// json.Number (the same trap jq 1.6 hits; the harness uses gh --jq).
 	runResp := s.get(t, "/api/v3/repos/"+repoKey+"/actions/runs/"+itoa(wf.RunID), defaultToken)
 	if runResp.StatusCode != 200 {

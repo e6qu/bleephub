@@ -45,8 +45,7 @@ function renderAt(path: string) {
   return { ...utils, queryClient };
 }
 
-// Viewer-role gating reads the repo payload's permissions; the admin fixture
-// carries full access so the write affordances render as they always did.
+// Admin fixture carries full access so write affordances render; viewer gating reads these permissions.
 const adminPerms = { admin: true, push: true, pull: true };
 const adminRepo = { id: 1, name: "test", full_name: "admin/test", owner: { login: "admin", type: "User" }, permissions: adminPerms };
 
@@ -153,7 +152,6 @@ describe("IssuesPage detail", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt("/ui/admin/test/issues/7");
-    // A labeled event, the comment, a cross-reference, and a closed event all render.
     expect(await screen.findByText(/added the/)).toBeInTheDocument();
     expect(screen.getByText("bug")).toBeInTheDocument();
     expect(screen.getByText("on it")).toBeInTheDocument();
@@ -287,7 +285,6 @@ describe("IssuesPage detail", () => {
       "half-typed thought",
     );
 
-    // Returning restores the text into the composer.
     mockFetch.mockImplementation(impl);
     renderAt("/ui/admin/test/issues/7");
     const restored = await screen.findByPlaceholderText(/leave a comment/i);
@@ -295,7 +292,6 @@ describe("IssuesPage detail", () => {
       expect((restored as HTMLTextAreaElement).value).toBe("half-typed thought");
     });
 
-    // Posting the comment clears the stored draft.
     fireEvent.click(screen.getByRole("button", { name: /^comment$/i }));
     await waitFor(() => {
       const posted = mockFetch.mock.calls.find(
@@ -577,7 +573,6 @@ describe("IssuesPage list filter bar", () => {
     renderAt("/ui/admin/test/issues");
 
     await waitFor(() => expect(screen.getByText("bug issue")).toBeInTheDocument());
-    // Count header renders Open and Closed toggles.
     expect(screen.getByText(/Open$/)).toBeInTheDocument();
     expect(screen.getByText(/Closed$/)).toBeInTheDocument();
     // The visible count is announced to screen readers as a live region.
@@ -591,7 +586,6 @@ describe("IssuesPage list filter bar", () => {
       expect(screen.queryByText("plain issue")).not.toBeInTheDocument();
     });
     expect(screen.getByText("bug issue")).toBeInTheDocument();
-    // …and the client-side narrowing updates the announced count.
     expect(hasStatus(/1 issue/)).toBe(true);
   });
 
@@ -671,11 +665,9 @@ describe("IssuesPage detail sidebar", () => {
     });
     renderAt("/ui/admin/test/issues/7");
     await waitFor(() => expect(screen.getByText("Sidebar issue")).toBeInTheDocument());
-    // Sidebar sections present (Assignees + Development are sidebar-only labels;
-    // Projects/Labels also name repo tabs, so assert the distinctive ones).
+    // Assignees + Development are sidebar-only; Projects/Labels also name tabs, so assert distinctive ones.
     expect(screen.getByText("Assignees")).toBeInTheDocument();
     expect(screen.getByText("Development")).toBeInTheDocument();
-    // The assignee login shows in the sidebar.
     expect(screen.getByText("carol")).toBeInTheDocument();
   });
 });
@@ -913,9 +905,7 @@ describe("IssuesPage PR filtering", () => {
     });
     renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText("a real issue")).toBeInTheDocument());
-    // The PR row is filtered out of the list…
     expect(screen.queryByText("actually a pull request")).not.toBeInTheDocument();
-    // …and out of the open count ("1 Open", not "2 Open").
     expect(screen.getByText(/1 Open/)).toBeInTheDocument();
   });
 });
@@ -984,13 +974,12 @@ describe("IssuesPage list rows", () => {
     await waitFor(() => expect(screen.getByText("discussed issue")).toBeInTheDocument());
     // Comment count badge with an accessible name.
     expect(screen.getByLabelText("4 comments")).toBeInTheDocument();
-    // Milestone chip renders inside the row (the facet dropdown also lists it).
+    // Scope to the row: the facet dropdown also lists this milestone.
     const row = screen.getByRole("link", { name: /discussed issue/ });
     expect(within(row).getByText("v1.0")).toBeInTheDocument();
     // Closed-as-not-planned gray skip icon vs completed purple check.
     expect(screen.getByLabelText("Closed as not planned")).toBeInTheDocument();
     expect(screen.getByLabelText("Closed as completed")).toBeInTheDocument();
-    // Relative time is a <time> element.
     expect(document.querySelector("time")).not.toBeNull();
   });
 });
@@ -1024,7 +1013,6 @@ describe("IssuesPage free-text search", () => {
 
     await waitFor(() => expect(screen.getByText("crash on save")).toBeInTheDocument());
     expect(screen.queryByText("unrelated issue")).not.toBeInTheDocument();
-    // The server search was queried with the free text.
     const calls = mockFetch.mock.calls.map((c) => decodeURIComponent(c[0].toString()));
     expect(calls.some((u) => u.includes("/search/issues") && u.includes("crash"))).toBe(true);
     // The free text stays visible in the box — never silently dropped.
@@ -1132,7 +1120,7 @@ describe("IssuesPage new-issue templates", () => {
     expect(await screen.findByText("bug_report")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Get started" }));
 
-    // Front-matter pre-fills the form.
+    // Title comes pre-filled from the template front-matter.
     const title = await screen.findByPlaceholderText("Issue title");
     expect((title as HTMLInputElement).value).toBe("[Bug]: ");
     fireEvent.change(title, { target: { value: "[Bug]: boom" } });
@@ -1352,7 +1340,6 @@ describe("IssuesPage overflow menu", () => {
       const vars = JSON.parse(String((mut![1] as RequestInit).body)).variables;
       expect(vars.input).toMatchObject({ issueId: issue(7, "x").node_id, repositoryId: "R_2" });
     });
-    // Navigated to the transferred issue's new home.
     await waitFor(() => {
       expect(screen.queryByText("A real issue")).not.toBeInTheDocument();
     });
@@ -1480,9 +1467,8 @@ describe("IssuesPage notifications section", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt("/ui/admin/test/issues/7");
-    // A thread exists, so the viewer is receiving notifications: the initial
-    // action is Unsubscribe (no state probe — a GET would 404 without an
-    // explicit subscription record and fail the console-error e2e gate).
+    // A thread means the viewer is subscribed, so start on Unsubscribe: probing state via GET would
+    // 404 without a subscription record and trip the console-error e2e gate.
     const unsub = await screen.findByRole("button", { name: "Unsubscribe" });
     fireEvent.click(unsub);
     await waitFor(() => {
@@ -1747,7 +1733,6 @@ describe("IssuesPage convert to discussion", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Convert to discussion" }));
 
-    // The dialog lists the repo's discussion categories.
     const select = await screen.findByLabelText("Category");
     await screen.findByRole("option", { name: /General/ });
     fireEvent.change(select, { target: { value: generalCategory.id } });
@@ -1762,7 +1747,6 @@ describe("IssuesPage convert to discussion", () => {
       expect(post).toBeTruthy();
       expect(JSON.parse(String(post![1]!.body))).toEqual({ category_id: 5 });
     });
-    // Navigated to the new discussion's detail route.
     expect(await screen.findByText("discussion detail route")).toBeInTheDocument();
   });
 
@@ -1847,8 +1831,7 @@ describe("IssuesPage viewer-role gating", () => {
     expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Issue actions" })).not.toBeInTheDocument();
 
-    // The sidebar renders read-only: values as plain text, no pickers, no
-    // gears, and no Lock conversation section.
+    // Sidebar is read-only: values as plain text, no pickers, gears, or Lock conversation section.
     expect(screen.getByText("carol")).toBeInTheDocument();
     expect(screen.queryByLabelText("Add assignee")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Unassign carol")).not.toBeInTheDocument();

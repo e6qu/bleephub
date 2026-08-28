@@ -29,7 +29,6 @@ func TestCommitStatuses_CreateListCombined(t *testing.T) {
 
 	sha := "deadbeef"
 
-	// First status: pending.
 	b1, _ := json.Marshal(map[string]string{
 		"state":       "pending",
 		"target_url":  "https://ci.example.com/1",

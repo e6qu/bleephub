@@ -26,7 +26,6 @@ func TestAuthFlowRateLimitBlocksBruteForcePerIP(t *testing.T) {
 		return rec
 	}
 
-	// The per-IP budget admits a human's attempts, then refuses the rest.
 	for i := 0; i < authFlowRateLimit; i++ {
 		if rec := call("203.0.113.5:44444"); rec.Code != http.StatusOK {
 			t.Fatalf("attempt %d within budget got %d, want 200", i+1, rec.Code)
@@ -40,21 +39,18 @@ func TestAuthFlowRateLimitBlocksBruteForcePerIP(t *testing.T) {
 		t.Fatal("over-budget refusal is missing a Retry-After header")
 	}
 
-	// The budget is per client IP: a different address is unaffected.
 	if rec := call("203.0.113.9:1"); rec.Code != http.StatusOK {
 		t.Fatalf("distinct IP got %d, want 200 (budget must be per-IP)", rec.Code)
 	}
 
-	// A direct loopback peer with no forwarded client (local binary / dev /
-	// e2e) is exempt: it never throttles however many attempts it makes.
+	// A direct loopback peer with no forwarded client (local binary/dev/e2e) is exempt and never throttles.
 	for i := 0; i < authFlowRateLimit+5; i++ {
 		if rec := call("127.0.0.1:9999"); rec.Code != http.StatusOK {
 			t.Fatalf("loopback attempt %d got %d, want 200 (must be exempt)", i+1, rec.Code)
 		}
 	}
 
-	// But a loopback peer that carries a forwarded client — the reverse proxy
-	// in production — is limited, keyed by that forwarded client.
+	// A loopback peer carrying a forwarded client (the production reverse proxy) is limited by that forwarded client.
 	proxied := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest("POST", "/auth/local", nil)
 		req.RemoteAddr = "127.0.0.1:1" // the proxy
@@ -181,9 +177,7 @@ func TestUnauthenticatedCoreRateLimitIsSixty(t *testing.T) {
 	}
 }
 
-// TestUnauthenticatedSearchRateLimitIsTen pins GitHub's anonymous Search budget
-// (10/minute) versus the authenticated 30 — the anonymous downgrade applies to
-// search, not just core. (code_search is already 10 for everyone.)
+// TestUnauthenticatedSearchRateLimitIsTen pins GitHub's anonymous Search budget of 10/minute versus the authenticated 30.
 func TestUnauthenticatedSearchRateLimitIsTen(t *testing.T) {
 	server := &Server{rateLimits: map[string]*apiRateWindow{}}
 	anon := httptest.NewRequest("GET", "/api/v3/search/repositories?q=x", nil)
@@ -226,12 +220,7 @@ func TestAnonymousRateBucketIgnoresForwardedHeaderFromPublicPeer(t *testing.T) {
 	}
 }
 
-// TestBrowserSessionDoesNotConsumeCoreBudget pins the first-party UI
-// exemption: a request authenticated by the browser session cookie (no
-// Authorization header, principal resolved from the session) observes the
-// authenticated core window read-only instead of spending from it — GitHub's
-// own web UI does not bill page loads against API quota, and the SPA fires
-// 16-23 calls per page.
+// TestBrowserSessionDoesNotConsumeCoreBudget pins the first-party UI exemption: a browser-session request observes the authenticated core window read-only instead of spending from it, matching GitHub not billing web page loads.
 func TestBrowserSessionDoesNotConsumeCoreBudget(t *testing.T) {
 	server := &Server{rateLimits: map[string]*apiRateWindow{}}
 	user := &store.User{ID: 42, Login: "browser-user"}
@@ -240,8 +229,6 @@ func TestBrowserSessionDoesNotConsumeCoreBudget(t *testing.T) {
 		return req.WithContext(contextWithUser(req.Context(), user))
 	}
 
-	// A whole page-crawl's worth of session calls leaves core untouched, with
-	// honest headers: the authenticated limit, remaining pinned.
 	for i := 0; i < 100; i++ {
 		got := server.rateLimitSnapshot(sessionRequest("/api/v3/user"), "core", true)
 		if got.Limit != 5000 || got.Used != 0 || got.Remaining != 5000 || got.Exceeded {
@@ -249,14 +236,12 @@ func TestBrowserSessionDoesNotConsumeCoreBudget(t *testing.T) {
 		}
 	}
 
-	// A 304 refund for a session request must not mint a unit that was never
-	// consumed.
+	// A 304 refund for a session request must not mint a unit that was never consumed.
 	refunded := server.refundRateLimit(sessionRequest("/api/v3/user"), "core")
 	if refunded.Used != 0 || refunded.Remaining != 5000 {
 		t.Fatalf("session core refund = %+v, want untouched window", refunded)
 	}
 
-	// /rate_limit for the session reflects the non-consumption.
 	recorder := httptest.NewRecorder()
 	server.handleGHRateLimit(recorder, sessionRequest("/api/v3/rate_limit"))
 	if recorder.Code != 200 {
@@ -276,8 +261,7 @@ func TestBrowserSessionDoesNotConsumeCoreBudget(t *testing.T) {
 		t.Fatalf("session /rate_limit core = %+v, want untouched 5000 window", rateLimitBody.Rate)
 	}
 
-	// Non-core session budgets guard expensive scans and still bill: search
-	// consumes down to its authenticated limit and then refuses.
+	// Non-core session budgets guard expensive scans and still bill: search consumes to its authenticated limit then refuses.
 	for i := 0; i < 30; i++ {
 		got := server.rateLimitSnapshot(sessionRequest("/api/v3/search/repositories?q=x"), "search", true)
 		if got.Limit != 30 || got.Used != i+1 || got.Exceeded {
@@ -289,16 +273,12 @@ func TestBrowserSessionDoesNotConsumeCoreBudget(t *testing.T) {
 	}
 }
 
-// TestBrowserSessionCoreExemptionDoesNotLeakToOtherCallers pins that the
-// exemption is scoped to the session-cookie branch: a PAT presented by the
-// same user and an anonymous caller both keep consuming core exactly as
-// before.
+// TestBrowserSessionCoreExemptionDoesNotLeakToOtherCallers pins that the exemption is scoped to the session-cookie branch: a PAT from the same user and an anonymous caller keep consuming core.
 func TestBrowserSessionCoreExemptionDoesNotLeakToOtherCallers(t *testing.T) {
 	server := &Server{rateLimits: map[string]*apiRateWindow{}}
 	user := &store.User{ID: 42, Login: "browser-user"}
 
-	// A token-authenticated request from the same principal still bills its
-	// credential's window — even with the session user in context.
+	// A token-authenticated request from the same principal still bills its credential's window, even with the session user in context.
 	pat := httptest.NewRequest(http.MethodGet, "/api/v3/user", nil)
 	pat.Header.Set("Authorization", "token some-pat")
 	pat = pat.WithContext(contextWithUser(pat.Context(), user))
@@ -306,7 +286,6 @@ func TestBrowserSessionCoreExemptionDoesNotLeakToOtherCallers(t *testing.T) {
 		t.Fatalf("PAT core snapshot = %+v, want consumed authenticated window", got)
 	}
 
-	// Anonymous callers keep the small IP-scoped consuming budget.
 	anon := httptest.NewRequest(http.MethodGet, "/api/v3/users/octocat", nil)
 	if got := server.rateLimitSnapshot(anon, "core", true); got.Limit != 60 || got.Used != 1 {
 		t.Fatalf("anonymous core snapshot = %+v, want consumed 60 window", got)

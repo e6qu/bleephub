@@ -54,9 +54,8 @@ describe("OrgSettingsPage", () => {
       return Promise.resolve(jsonResponse({}));
     });
     renderPage();
-    // Prefilled display name + a settings-section link.
     expect(await screen.findByDisplayValue("Acme Inc")).toBeInTheDocument();
-    // "Member privileges" is unique to the settings landing (the header tab is "Governance").
+    // "Member privileges" is unique to the settings landing (header tab is "Governance").
     expect(screen.getByRole("link", { name: /Member privileges/ })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Webhooks/ }).length).toBeGreaterThan(0);
   });

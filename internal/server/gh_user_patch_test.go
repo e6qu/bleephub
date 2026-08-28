@@ -49,7 +49,6 @@ func TestUserProfileUpdate(t *testing.T) {
 		t.Fatalf("partial patch: location=%v company=%v", updated["location"], updated["company"])
 	}
 
-	// Unauthenticated → 401.
 	resp = srv.patch(t, "/api/v3/user", "", map[string]interface{}{"name": "x"})
 	resp.Body.Close()
 	if resp.StatusCode != 401 {

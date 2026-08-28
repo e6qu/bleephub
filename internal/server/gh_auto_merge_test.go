@@ -102,7 +102,6 @@ func TestAutoMergeEnablePendingChecksThenGreenCheckMerges(t *testing.T) {
 	require.Contains(t, names, "merged")
 	require.Contains(t, names, "closed")
 
-	// And the REST payload reports the merged state with auto_merge null.
 	rest = decodeJSON(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/pulls/1", defaultToken))
 	require.Equal(t, true, rest["merged"])
 	require.Nil(t, rest["auto_merge"])

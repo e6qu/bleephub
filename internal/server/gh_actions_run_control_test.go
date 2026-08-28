@@ -80,13 +80,11 @@ func TestApproveWorkflowRun_ReleasesGatedRun(t *testing.T) {
 	wf := s.seedGatedRun(t, repo)
 	base := fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d", repo, wf.RunID)
 
-	// The gated run reports action_required.
 	data := decodeJSONWithStatus(t, s.get(t, base, defaultToken), 200)
 	if data["status"] != "action_required" {
 		t.Fatalf("gated run status = %v, want action_required", data["status"])
 	}
 
-	// Approval releases it: jobs dispatch and the run leaves the gate.
 	resp := s.post(t, base+"/approve", defaultToken, nil)
 	body := decodeJSONWithStatus(t, resp, 201)
 	if len(body) != 0 {
@@ -104,14 +102,12 @@ func TestApproveWorkflowRun_ReleasesGatedRun(t *testing.T) {
 		t.Fatalf("re-approve = %d, want 403", resp.StatusCode)
 	}
 
-	// Unknown run 404s.
 	resp = s.post(t, "/api/v3/repos/"+repo+"/actions/runs/999999/approve", defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("approve unknown run = %d, want 404", resp.StatusCode)
 	}
 
-	// Force-cancel terminates the queued job immediately.
 	resp = s.post(t, base+"/force-cancel", defaultToken, nil)
 	body = decodeJSONWithStatus(t, resp, 202)
 	if len(body) != 0 {
@@ -284,14 +280,12 @@ func TestRerunWorkflowJob_NewAttemptCarriesOtherJobs(t *testing.T) {
 		t.Fatalf("rerun of in-progress run = %d, want 403", resp.StatusCode)
 	}
 
-	// Unknown job 404s.
 	resp = s.post(t, base+"/jobs/123456789/rerun", defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {
 		t.Fatalf("rerun unknown job = %d, want 404", resp.StatusCode)
 	}
 
-	// Clean up the dispatched attempt.
 	resp = s.post(t, fmt.Sprintf("%s/runs/%d/force-cancel", base, runID), defaultToken, nil)
 	resp.Body.Close()
 }
@@ -364,7 +358,6 @@ func TestReviewCustomDeploymentProtectionRule(t *testing.T) {
 		t.Fatalf("run after comment-only review = %v, want still waiting", data["status"])
 	}
 
-	// Approval releases the waiting job.
 	resp = s.post(t, base+"/deployment_protection_rule", defaultToken,
 		map[string]string{"environment_name": "production", "state": "approved", "comment": "gate passed"})
 	resp.Body.Close()
@@ -376,7 +369,6 @@ func TestReviewCustomDeploymentProtectionRule(t *testing.T) {
 		t.Fatalf("run after approval = %v, want queued (job dispatched)", data["status"])
 	}
 
-	// Clean up the dispatched job.
 	resp = s.post(t, base+"/force-cancel", defaultToken, nil)
 	resp.Body.Close()
 }
@@ -427,7 +419,6 @@ func TestRunAttemptLogs_ServesAttemptArchive(t *testing.T) {
 		t.Fatalf("attempt log zip leaked console capture: %v", contents)
 	}
 
-	// Unknown attempt 404s.
 	resp2 := s.get(t, fmt.Sprintf("/api/v3/repos/logs-org/logs-repo/actions/runs/%d/attempts/9/logs", wf.RunID), defaultToken)
 	resp2.Body.Close()
 	if resp2.StatusCode != 404 {
@@ -459,7 +450,6 @@ func TestWorkflowFileTiming_ComputedFromRunHistory(t *testing.T) {
 		t.Fatalf("total_ms = %v, want the seeded ~3s job duration", ms)
 	}
 
-	// Unknown workflow file 404s.
 	resp := s.get(t, "/api/v3/repos/"+repo+"/actions/workflows/nope.yml/timing", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {

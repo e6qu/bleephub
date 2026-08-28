@@ -13,12 +13,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// installation / installation_repositories webhook events — emission +
-// X-GitHub-Hook-* headers + X-Hub-Signature SHA1 + SHA256 +
-// installation:{id} payload, matching the GitHub-spec wire shape.
+// installation webhook events assert emission, X-GitHub-Hook-* headers, SHA1+SHA256 signatures, and the installation:{id} payload against the GitHub wire shape.
 
 func TestInstallationCreatedFiresAppWebhook(t *testing.T) {
-	// Sink captures the incoming webhook.
 	type capture struct {
 		event       string
 		hookID      string
@@ -62,7 +59,6 @@ func TestInstallationCreatedFiresAppWebhook(t *testing.T) {
 
 	user := s.store.UsersByLogin["admin"]
 	app := s.store.CreateApp(user.ID, "Event Fire App", "", nil, nil)
-	// Configure app webhook.
 	s.store.UpdateAppHookConfig(app.ID, func(a *store.App) {
 		a.WebhookURL = sink.URL
 		a.WebhookActive = true
@@ -110,7 +106,7 @@ func TestInstallationCreatedFiresAppWebhook(t *testing.T) {
 	}
 }
 
-// helper to read body in test without pulling in io
+// bytesReadAll reads the body without pulling in io.
 func bytesReadAll(r *http.Request) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	_, err := buf.ReadFrom(r.Body)

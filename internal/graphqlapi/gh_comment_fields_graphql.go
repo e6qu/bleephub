@@ -237,9 +237,7 @@ func (s *Resolver) commentPathField(build func(interface{}) string, external boo
 	}
 }
 
-// ============================================================================
 // CommitComment
-// ============================================================================
 
 func (s *Resolver) commitCommentAuthz(source interface{}) commentAuthz {
 	c := store.FindCommitCommentByNodeID(s.store, commentSourceString(source, "nodeID"))
@@ -326,9 +324,7 @@ func (s *Resolver) enrichCommitCommentType() {
 	obj.AddFieldConfig("viewerCannotUpdateReasons", s.commentCannotUpdateReasonsField(extract))
 }
 
-// ============================================================================
 // IssueComment
-// ============================================================================
 
 func (s *Resolver) issueCommentContext(source interface{}) (*store.Comment, *store.Repo) {
 	c := store.FindIssueCommentByNodeID(s.store, commentSourceString(source, "nodeID"))
@@ -440,9 +436,7 @@ func (s *Resolver) enrichIssueCommentType() {
 	obj.AddFieldConfig("viewerCannotUpdateReasons", s.commentCannotUpdateReasonsField(extract))
 }
 
-// ============================================================================
 // PullRequestReviewComment
-// ============================================================================
 
 func (s *Resolver) prrcContext(source interface{}) (*store.PRReviewComment, *store.PullRequest, *store.Repo) {
 	c := store.FindPullRequestReviewCommentByNodeID(s.store, commentSourceString(source, "nodeID"))
@@ -624,9 +618,7 @@ func (s *Resolver) prrcCommitField(pick func(*store.PRReviewComment) string) *gr
 	}
 }
 
-// ============================================================================
 // GistComment
-// ============================================================================
 
 // addGistCommentFields adds GistComment's Comment-trait fields. Called from
 // gqlGistCommentType after the gist and repository families exist.

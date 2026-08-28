@@ -11,19 +11,11 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// The GraphQL mutation surface authenticated its callers and then acted. Every
-// mutation below reached the store on behalf of any account that held a token,
-// so the schema was a complete authorization bypass around the REST handlers
-// that guard the same records: a stranger closed issues, merged pull requests,
-// locked threads, moderated comments and deleted discussions on repositories
-// they could not even read.
-//
-// The cases are driven from a table so that a mutation added later is not
-// silently exempt, and the same table is replayed twice — once for a caller
-// with no relationship to the repository, who must be refused by all of them,
-// and once for the repository's owner, who must still be served. Over-blocking
-// has been the recurring regression here, so the positive half is not
-// optional.
+// Guards the authorization bypass where the GraphQL mutation surface
+// authenticated callers but never checked access, letting a stranger mutate
+// records they could not read. The table drives every mutation twice — a
+// stranger who must be refused, and the owner who must still be served, since
+// over-blocking is the recurring regression here.
 
 // gqlAuthzFixture is a private repository with one of everything the mutation
 // surface addresses, plus its owner and an unrelated account.
@@ -45,10 +37,8 @@ type gqlAuthzFixture struct {
 	threadNodeID  string
 	reviewNodeID  string
 	headSHA       string
-	// orgRepo, teamNodeID and packageVersionNodeID are seeded by the
-	// updateTeamsRepository and deletePackageVersion rows' setups: a team
-	// grant needs an organization-owned repository, and a version needs a
-	// package, neither of which the base fixture carries.
+	// Seeded by the updateTeamsRepository and deletePackageVersion setups: a
+	// team grant needs an org-owned repo and a version needs a package.
 	orgRepo              *store.Repo
 	teamNodeID           string
 	packageVersionNodeID string
@@ -56,39 +46,32 @@ type gqlAuthzFixture struct {
 	enterpriseNodeID     string
 	attributionOrgNodeID string
 	mannequinNodeID      string
-	// linkedBranchNodeID is seeded by the deleteLinkedBranch case's setup, for
-	// the same reason the Dependabot alert below is: an issue carries no linked
+	// Seeded by the deleteLinkedBranch setup: an issue carries no linked
 	// branch until something links one.
 	linkedBranchNodeID string
-	// dependabotAlert is minted by the dismissRepositoryVulnerabilityAlert
-	// case's setup rather than by the fixture: every other row addresses a
-	// record the fixture seeds, but an alert is derived state, and seeding one
-	// unconditionally would put a vulnerability on a fixture repository that
-	// the rest of the table has no reason to carry.
+	// Minted by the dismissRepositoryVulnerabilityAlert setup, not the fixture:
+	// seeding an alert unconditionally would put a vulnerability on every repo.
 	dependabotAlert *store.DependabotAlert
-	// subIssue is seeded by the cases that need a second issue in the same
-	// repository (the sub-issue, dependency and duplicate rows).
+	// Seeded by the sub-issue, dependency and duplicate rows, which need a
+	// second issue.
 	subIssue *store.Issue
-	// reviewCommentNodeID is the seeded review thread's root comment, which
-	// the pull-request comment mutations address.
+	// The seeded review thread's root comment, addressed by the PR comment
+	// mutations.
 	reviewCommentNodeID string
-	// propsOrg is the organization the custom-property and verifiable-domain
-	// rows create in their setups (those records belong to org or enterprise
-	// accounts, never to a user), along with the ruleset and domain the
+	// The org the custom-property and verifiable-domain rows create (those
+	// records never belong to a user), plus the ruleset and domain the
 	// update/delete rows address.
-	propsOrg      *store.Org
-	rulesetNodeID string
-	domainNodeID  string
-	// The checks and deployments/environments cases' seeded records.
+	propsOrg          *store.Org
+	rulesetNodeID     string
+	domainNodeID      string
 	checkSuiteNodeID  string
 	checkRunNodeID    string
 	deploymentNodeID  string
 	environmentNodeID string
 	workflowRunNodeID string
-	// The classic-projects subjects, seeded by the classic-project cases'
-	// setups rather than by the base fixture: a repo-scoped board with two
-	// columns and a note card, and a user-owned board for the repository-link
-	// mutations (which refuse repo-scoped boards by design).
+	// Classic-project subjects seeded by the classic-project setups: a
+	// repo-scoped board with two columns and a note card, and a user-owned
+	// board for the repository-link mutations (which refuse repo-scoped boards).
 	classicProject      *store.ProjectClassic
 	classicColumn       *store.ProjectColumn
 	classicColumn2      *store.ProjectColumn
@@ -225,11 +208,7 @@ var gqlMutationCases = []gqlMutationCase{
 		name: "accessUserNamespaceRepository",
 		doc:  `mutation($input:AccessUserNamespaceRepositoryInput!){accessUserNamespaceRepository(input:$input){expiresAt repository{name}}}`,
 		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
-			// The grant needs an enterprise that manages the repository's
-			// owner: the OWNER of the fixture repo is enrolled as a managed
-			// member, the fixture owner holds enterprise ownership, and an
-			// identity provider marks the accounts as IdP-provisioned. The
-			// stranger holds no enterprise role, so the refusal is about
+			// The stranger holds no enterprise role, so the refusal is about
 			// enterprise standing, not authentication.
 			e := s.store.CreateEnterprise("authz-emu-"+f.owner.Login, "EMU", "billing@bleephub.invalid")
 			if e == nil {
@@ -291,8 +270,7 @@ var gqlMutationCases = []gqlMutationCase{
 		name: "cloneTemplateRepository",
 		doc:  `mutation($input:CloneTemplateRepositoryInput!){cloneTemplateRepository(input:$input){repository{name}}}`,
 		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
-			// The template needs a commit to copy and the template bit set;
-			// the second fixture repo becomes it so the primary keeps its
+			// Make the second repo the template so the primary keeps its
 			// pristine invariants for the untouched-assertion.
 			seedPullRequestBranches(t, s.Server, f.repo2, "seed")
 			owner, _, _ := store.SplitRepoFullName(f.repo2.FullName)
@@ -323,9 +301,8 @@ var gqlMutationCases = []gqlMutationCase{
 		name: "updateTeamsRepository",
 		doc:  `mutation($input:UpdateTeamsRepositoryInput!){updateTeamsRepository(input:$input){teams{slug}}}`,
 		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
-			// The grant under test needs an organization-owned repository and a
-			// team in that organization; the fixture's user-owned repo cannot
-			// carry a team grant.
+			// A team grant needs an org-owned repo and a team; the fixture's
+			// user-owned repo cannot carry one.
 			org := s.store.CreateOrg(f.owner, "authz-teams-org-"+f.owner.Login, "", "")
 			if org == nil {
 				t.Fatal("fixture org could not be created")
@@ -376,8 +353,7 @@ var gqlMutationCases = []gqlMutationCase{
 		name: "reopenDiscussion",
 		doc:  `mutation($input:ReopenDiscussionInput!){reopenDiscussion(input:$input){discussion{closed stateReason}}}`,
 		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
-			// Only a closed discussion can be reopened; the fixture's is
-			// closed by the store here so the mutation under test is the
+			// Close the discussion first so the mutation under test is the
 			// reopen, not the close.
 			if !s.store.UpdateDiscussion(f.discussion.ID, func(d *store.Discussion) {
 				d.Closed = true
@@ -406,10 +382,9 @@ var gqlMutationCases = []gqlMutationCase{
 			return map[string]interface{}{
 				"refId": store.GitObjectNodeID(store.GitRefNodeIDPrefix, f.repo.ID, "refs/heads/spare"),
 				"oid":   f.headSHA,
-				// The fixture's branches share no ancestry ordering, so the
-				// move under test is the forced one; an unforced non-fast-
-				// forward refusal would make the entitled case read as an
-				// authorization failure.
+				// The branches share no ancestry, so force the move; an unforced
+				// non-fast-forward refusal would look like an authz failure in
+				// the entitled case.
 				"force": true,
 			}
 		},
@@ -451,10 +426,9 @@ var gqlMutationCases = []gqlMutationCase{
 		name: "revertPullRequest",
 		doc:  `mutation($input:RevertPullRequestInput!){revertPullRequest(input:$input){revertPullRequest{number}}}`,
 		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
-			// Only a merged pull request can be reverted, so the fixture's is
-			// merged here by its owner before either caller attempts the
-			// mutation: the stranger must be refused against the very state
-			// the owner succeeds against.
+			// Only a merged PR can be reverted; merge it as the owner first so
+			// the stranger is refused against the same state the owner
+			// succeeds against.
 			resp := s.put(t, "/api/v3/repos/"+f.repo.FullName+"/pulls/"+itoa(f.pr.Number)+"/merge", f.ownerToken, map[string]interface{}{})
 			defer resp.Body.Close()
 			if resp.StatusCode != 200 {
@@ -1143,9 +1117,8 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 	{
-		// The link mutations act on a private user-owned board: a repo-scoped
-		// board refuses links by design, so the entitled half needs the owner
-		// board while the stranger is refused by the account-scoped rule.
+		// A repo-scoped board refuses links by design, so the entitled half
+		// needs a user-owned board.
 		name:  "linkRepositoryToProject",
 		doc:   `mutation($input:LinkRepositoryToProjectInput!){linkRepositoryToProject(input:$input){project{id} repository{name}}}`,
 		setup: seedClassicOwnerProjectFixture,
@@ -1257,11 +1230,9 @@ var gqlMutationCases = []gqlMutationCase{
 
 	// --- repository custom properties ----------------------------------------
 	//
-	// The definitions belong to organization (or enterprise) accounts, so
-	// these rows seed an organization owned by the fixture owner and widen
-	// both tokens to admin:org — the stranger still holds no standing on the
-	// organization, so their refusal is about this organization rather than
-	// about the token's scopes.
+	// These records belong to org/enterprise accounts, so the rows seed an org
+	// owned by the fixture owner and widen both tokens to admin:org; the
+	// stranger's refusal is about org standing, not token scope.
 	{
 		name: "createRepositoryCustomProperty",
 		doc:  `mutation($input:CreateRepositoryCustomPropertyInput!){createRepositoryCustomProperty(input:$input){repositoryCustomProperty{propertyName valueType}}}`,
@@ -1300,9 +1271,8 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 	{
-		// Promotion writes into the enterprise schema, which is the
-		// enterprise owner's — on this instance, a site administrator's —
-		// call; the setup grants the fixture owner that standing.
+		// Promotion writes the enterprise schema — a site admin's call — so
+		// the setup grants the fixture owner that standing.
 		name: "promoteRepositoryCustomProperty",
 		doc:  `mutation($input:PromoteRepositoryCustomPropertyInput!){promoteRepositoryCustomProperty(input:$input){repositoryCustomProperty{propertyName}}}`,
 		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
@@ -1319,9 +1289,8 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 	{
-		// Values are per-repository administration; the definition lives
-		// under the repository owner's schema, which for the fixture's
-		// user-owned repository is the owner's own login.
+		// Values are per-repo admin; the definition lives under the repo
+		// owner's own login for a user-owned repo.
 		name: "setRepositoryCustomPropertyValues",
 		doc:  `mutation($input:SetRepositoryCustomPropertyValuesInput!){setRepositoryCustomPropertyValues(input:$input){repository{name}}}`,
 		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
@@ -1397,10 +1366,9 @@ var gqlMutationCases = []gqlMutationCase{
 	},
 }
 
-// seedAuthzPropsOrg creates the organization the custom-property and
-// verifiable-domain rows act on, owned by the fixture owner, and widens both
-// tokens to carry admin:org — the entitlement under test is standing on the
-// organization, not the token's scope ceiling.
+// seedAuthzPropsOrg creates the org the custom-property and verifiable-domain
+// rows act on and widens both tokens to admin:org, since the entitlement under
+// test is org standing, not token scope.
 func seedAuthzPropsOrg(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
 	t.Helper()
 	f.propsOrg = s.store.CreateOrg(f.owner, "authz-props-org-"+f.owner.Login, "", "")
@@ -1449,10 +1417,8 @@ func seedAuthzEnvironment(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) *
 }
 
 // seedPendingDeploymentRun seeds a reviewer-protected environment and a
-// workflow run waiting on it, answering the run's global id. The run carries
-// no jobs: the review path under test is the authorization and the pending
-// bookkeeping, which is exactly what the REST pending_deployments tests
-// drive the engine with.
+// workflow run waiting on it. The run carries no jobs: the path under test is
+// the authorization and pending bookkeeping.
 func seedPendingDeploymentRun(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) string {
 	t.Helper()
 	env := seedAuthzEnvironment(t, s, f)
@@ -1480,9 +1446,8 @@ func seedPendingDeploymentRun(t *testing.T, s *isolatedServer, f *gqlAuthzFixtur
 func TestGraphQLMutationsRefuseAnUnrelatedAuthenticatedUser(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// A fixture per case: several of these mutations destroy what the next one
-	// addresses, and a shared fixture would let the first success mask every
-	// refusal after it.
+	// A fixture per case: several mutations destroy what the next addresses, so
+	// a shared fixture would let one success mask later refusals.
 	for _, tc := range gqlMutationCases {
 		f := newGQLAuthzFixture(t, s.Server, "stranger-"+tc.name, true)
 		if tc.setup != nil {
@@ -1541,11 +1506,9 @@ func (s *isolatedServer) assertGQLFixtureUntouched(t *testing.T, what string, f 
 	if dc := st.GetDiscussionComment(f.discComment.ID); dc == nil || dc.IsAnswer || dc.Body != "fixture answer" {
 		t.Errorf("%s: the discussion comment was changed by a stranger: %+v", what, dc)
 	}
-	// The revertPullRequest row's own setup merges the fixture pull request —
-	// by its owner, before either caller attempts the mutation — because only
-	// a merged pull request can be reverted. MERGED is that row's seeded
-	// state, not a stranger's write; the stranger's refusal is instead proved
-	// by no revert pull request having been opened.
+	// The revertPullRequest setup merges the PR as its owner (only merged PRs
+	// revert), so MERGED is its seeded state, not a stranger's write; the
+	// refusal is proved by no revert PR having been opened.
 	wantPRState := "OPEN"
 	if what == "revertPullRequest" {
 		wantPRState = "MERGED"
@@ -1603,10 +1566,9 @@ func TestGraphQLMutationsStillServeTheirEntitledCaller(t *testing.T) {
 }
 
 // TestGraphQLReadLevelMutationsServeAnOutsideContributor guards the other
-// direction: filing an issue, commenting, proposing a pull request and
-// reviewing one are how outside contributors participate on a public
-// repository, and demanding push for them would wall off the contribution path
-// the REST surface deliberately keeps open.
+// direction: filing issues, commenting, proposing and reviewing PRs are how
+// outside contributors participate on a public repo, so demanding push would
+// wall off the path REST keeps open.
 func TestGraphQLReadLevelMutationsServeAnOutsideContributor(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1626,10 +1588,9 @@ func TestGraphQLReadLevelMutationsServeAnOutsideContributor(t *testing.T) {
 }
 
 // TestGraphQLDiscussionAnswerMutationsRequireAViewer covers the two mutations
-// that skipped authentication outright. The HTTP endpoint refuses an anonymous
-// request at the door, so the resolvers are driven through the schema directly
-// with a context carrying no viewer — which is the state an unauthenticated
-// path would hand them.
+// that skipped authentication. The resolvers are driven through the schema
+// directly with a viewerless context — the state an unauthenticated path hands
+// them.
 func TestGraphQLDiscussionAnswerMutationsRequireAViewer(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1702,12 +1663,10 @@ func TestGraphQLMergePullRequestHonoursExpectedHeadOid(t *testing.T) {
 	}
 }
 
-// TestGraphQLMergePullRequestEnforcesRequiredChecks covers the merge path a
-// branch-protection admin bypass opens. canMergePullRequest returns true for a
-// repository admin whenever enforce_admins is off, so a resolver that leans on
-// it alone merges a red pull request the REST endpoint refuses — GraphQL is
-// then still a way around REST, which is the whole point of closing this lane.
-// The caller here is the repository's owner, i.e. an admin.
+// TestGraphQLMergePullRequestEnforcesRequiredChecks covers the admin-bypass
+// merge path: with enforce_admins off, canMergePullRequest lets an admin merge
+// a red PR that REST refuses, so GraphQL would still route around REST. The
+// caller here is the owner, i.e. an admin.
 func TestGraphQLMergePullRequestEnforcesRequiredChecks(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -1858,14 +1817,11 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 	if len(fields) == 0 {
 		t.Fatalf("the schema exposes no mutations")
 	}
-	// Every mutation whose subject is an existing repository or project must
-	// be exercised by a refusal case in one of the two tables above, so a
-	// mutation cannot be authorized on paper and untested in practice.
-	// createRepository has no such subject — its entitlement is over an
-	// account — and is covered by the account-scoped cases instead. The
-	// graphqlapi-side TestMutationAuthzAccountScopedRowsArePinned pins that
-	// createRepository is the only account-scoped row, so this exemption
-	// list cannot drift silently.
+	// Every mutation whose subject is an existing repo or project must be
+	// exercised by a refusal case above. createRepository has no such subject
+	// (its entitlement is over an account) and is covered by the account-scoped
+	// cases; TestMutationAuthzAccountScopedRowsArePinned pins it as the only
+	// such row, so this exemption cannot drift silently.
 	inCases := map[string]bool{"createRepository": true}
 	for _, tc := range gqlMutationCases {
 		inCases[tc.name] = true
@@ -1873,15 +1829,12 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 	for _, tc := range gqlProjectMutationCases {
 		inCases[tc.name] = true
 	}
-	// The rest of GitHub's mutation surface (gh_mutations_*_graphql.go) is
-	// exercised by its own refusal and entitled tables, which are driven over
-	// the same fixture by the same two halves.
+	// The rest of the mutation surface has its own refusal/entitled tables.
 	for _, tc := range gqlSurfaceMutationCases {
 		inCases[tc.name] = true
 	}
-	// Its account-scoped half names an account rather than a repository, so
-	// its refusal table drives a credential without a grant over that account
-	// and a stranger against another account's records.
+	// Its account-scoped half drives a credential without a grant over the
+	// account.
 	for _, tc := range gqlAccountMutationCases {
 		inCases[tc.name] = true
 	}
@@ -1899,33 +1852,24 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 		inCases[tc.name] = true
 	}
 	inCases["updateTeamReviewAssignment"] = true
-	// The activity and account-policy family: a repository-scoped half over the
-	// private-repository fixture, and an organization-scoped half whose
-	// refusing caller owns a different organization.
+	// The activity and account-policy family: repo-scoped and org-scoped halves.
 	for _, tc := range gqlActivityMutationCases {
 		inCases[tc.name] = true
 	}
 	for _, tc := range gqlActivityOrgMutationCases {
 		inCases[tc.name] = true
 	}
-	// The enterprise mutations name an enterprise rather than a repository or
-	// a project; their refusal table is the cross-tenant one in
-	// gh_enterprise_graphql_test.go, where the refusing caller is the owner of
-	// a *different* enterprise.
+	// Enterprise mutations: cross-tenant refusal table in
+	// gh_enterprise_graphql_test.go (a different enterprise's owner refuses).
 	for _, tc := range allGQLEnterpriseMutationCases() {
 		inCases[tc.name] = true
 	}
-	// The Sponsors mutations name a sponsor or a sponsorable account rather
-	// than a repository or a project; their refusal table is the
-	// account-scoped one in gh_sponsors_test.go, where the refusing caller
-	// is a signed-in account with standing over neither party.
+	// Sponsors mutations: account-scoped refusal table in gh_sponsors_test.go.
 	for _, tc := range gqlSponsorsMutationCases() {
 		inCases[tc.name] = true
 	}
-	// The migration mutations name an organization or an enterprise rather
-	// than a repository or a project; their refusal table is the cross-tenant
-	// one in gh_migrations_gei_test.go, where the refusing caller owns another
-	// organization and holds the migrator role on it.
+	// Migration mutations: cross-tenant refusal table in
+	// gh_migrations_gei_test.go.
 	for _, tc := range gqlMigrationMutationCases() {
 		inCases[tc.name] = true
 	}
@@ -1939,12 +1883,10 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 
 // --- Projects v2 ---
 //
-// A project is owned by a user or an organization, so the repository predicates
-// say nothing about it. These four mutations authenticated and then acted: any
-// signed-in account created projects under anybody's name, added items to
-// anybody's project, and — because write access to a project was never read
-// access to what went into it — pulled a stranger's private issue into a
-// project as a way of reading its title.
+// A project is owned by a user or org, so repository predicates say nothing
+// about it. These mutations authenticated then acted: any signed-in account
+// created projects under anybody's name and pulled a stranger's private issue
+// into a project to read its title.
 
 type gqlProjectAuthzFixture struct {
 	owner         *store.User
@@ -1958,9 +1900,8 @@ type gqlProjectAuthzFixture struct {
 	spareIssue    *store.Issue
 	strangerIssue *store.Issue
 	org           *store.Org
-	// The subjects the rest of the Projects v2 mutation surface names. The
-	// team and repository links, and every mutation keyed on a view, status
-	// update or workflow id, each need one to act on.
+	// Subjects the rest of the Projects v2 surface names (links, views, status
+	// updates, workflows).
 	ownerRepo    *store.Repo
 	draftItem    *store.ProjectV2Item
 	view         *store.ProjectV2View
@@ -2005,9 +1946,8 @@ func (s *isolatedServer) newGQLProjectAuthzFixture(t *testing.T, tag string) *gq
 		t.Fatalf("fixture %s: could not create the repositories", tag)
 	}
 	f.issue = st.CreateIssue(ownerRepo.ID, f.owner.ID, "project fixture issue", "", nil, nil, 0)
-	// A second readable issue, because AddItem is idempotent per content: a
-	// case that re-adds the item the fixture already holds cannot tell a
-	// refusal from a duplicate.
+	// A second readable issue: AddItem is idempotent per content, so re-adding
+	// the existing item could not distinguish a refusal from a duplicate.
 	f.spareIssue = st.CreateIssue(ownerRepo.ID, f.owner.ID, "project spare issue", "", nil, nil, 0)
 	f.strangerIssue = st.CreateIssue(strangerRepo.ID, f.stranger.ID, "not yours", "", nil, nil, 0)
 
@@ -2358,8 +2298,7 @@ func TestGraphQLCreateProjectV2HonoursOrganizationMembership(t *testing.T) {
 	doc := `mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{id}}}`
 	input := map[string]interface{}{"ownerId": f.org.NodeID, "title": "org project"}
 
-	// The fixture already owns a project under this organization, so the
-	// assertions below are over the change this mutation makes, not a count.
+	// The fixture already owns an org project, so assert the delta, not a count.
 	before := len(s.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization"))
 
 	env := s.gqlAuthzPost(t, f.strangerToken, doc, map[string]interface{}{"input": input})
@@ -2433,7 +2372,6 @@ func TestGraphQLDeleteProjectV2ItemRemovesTheItem(t *testing.T) {
 		t.Errorf("the other project's item was deleted through the wrong project")
 	}
 
-	// The owner deletes their own item; the payload echoes its node id.
 	env = s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
 		"input": map[string]interface{}{"projectId": f.project.NodeID, "itemId": f.item.NodeID},
 	})
@@ -2467,7 +2405,6 @@ func TestGraphQLSubmitAndDismissPullRequestReview(t *testing.T) {
 		t.Fatal("could not seed pending review")
 	}
 
-	// Submit the pending review as an approval.
 	data := s.gqlData(t, `mutation($input:SubmitPullRequestReviewInput!){submitPullRequestReview(input:$input){pullRequestReview{state}}}`,
 		map[string]interface{}{"input": map[string]interface{}{"pullRequestReviewId": review.NodeID, "event": "APPROVE"}})
 	submitted, _ := data["submitPullRequestReview"].(map[string]interface{})["pullRequestReview"].(map[string]interface{})
@@ -2475,7 +2412,6 @@ func TestGraphQLSubmitAndDismissPullRequestReview(t *testing.T) {
 		t.Errorf("submitted review state = %v, want APPROVED", submitted["state"])
 	}
 
-	// Dismiss it.
 	data = s.gqlData(t, `mutation($input:DismissPullRequestReviewInput!){dismissPullRequestReview(input:$input){pullRequestReview{state}}}`,
 		map[string]interface{}{"input": map[string]interface{}{"pullRequestReviewId": review.NodeID, "message": "no longer relevant"}})
 	dismissed, _ := data["dismissPullRequestReview"].(map[string]interface{})["pullRequestReview"].(map[string]interface{})

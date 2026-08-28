@@ -31,7 +31,6 @@ func TestListWorkflowsEmpty(t *testing.T) {
 func TestListWorkflowsWithData(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
-	// Seed a workflow
 	srv.store.Mu.Lock()
 	srv.store.Workflows["test-wf-1"] = &store.Workflow{
 		ID:        "test-wf-1",
@@ -136,7 +135,6 @@ func TestGetWorkflowNotFound(t *testing.T) {
 func TestGetWorkflowLogs(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
-	// Seed a workflow with log lines
 	srv.store.Mu.Lock()
 	srv.store.Workflows["test-wf-logs"] = &store.Workflow{
 		ID:        "test-wf-logs",

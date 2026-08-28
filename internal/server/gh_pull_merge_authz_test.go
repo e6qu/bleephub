@@ -5,16 +5,13 @@ import (
 	"testing"
 )
 
-// TestMergePullRequestRequiresPushAccess pins REST-123: merging writes the base
-// branch, so GitHub requires push access. A read-only authenticated user (here,
-// a non-collaborator on a public repo with no branch protection) used to be able
-// to merge because the handler gated only on `user != nil`; it must now be
-// refused with 403 while a push-capable user still merges cleanly.
+// REST-123: merging writes the base branch, so it requires push access. A
+// read-only authenticated user (once allowed by a `user != nil`-only gate) must
+// be refused with 403 while a push-capable user still merges cleanly.
 func TestMergePullRequestRequiresPushAccess(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
 
-	// admin (owner) creates a public repo with an initial commit + a feature branch.
 	srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "merge-authz", "auto_init": true,
 	}).Body.Close()
@@ -28,7 +25,7 @@ func TestMergePullRequestRequiresPushAccess(t *testing.T) {
 		"title": "add feature", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	// A read-only authenticated user (no collaborator/push access) must not merge.
+	// A read-only user with no collaborator/push access must not merge.
 	_, readerToken := srv.newUser(t, "merge-authz-reader")
 	resp := srv.put(t, "/api/v3/repos/admin/merge-authz/pulls/1/merge", readerToken, map[string]interface{}{"merge_method": "merge"})
 	resp.Body.Close()
@@ -39,7 +36,6 @@ func TestMergePullRequestRequiresPushAccess(t *testing.T) {
 		t.Fatalf("the forbidden request still merged the PR: %#v", got)
 	}
 
-	// The owner (push access) still merges cleanly.
 	resp = srv.put(t, "/api/v3/repos/admin/merge-authz/pulls/1/merge", defaultToken, map[string]interface{}{"merge_method": "merge"})
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

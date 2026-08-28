@@ -23,7 +23,6 @@ func mustPost(t *testing.T, resp *http.Response) {
 	}
 }
 
-// helper: create a repo for issue tests, returns owner/name.
 func createTestIssueRepo(t *testing.T, name string) {
 	t.Helper()
 	// A failed repo create (e.g. a name collision) must fail here, not later as
@@ -378,7 +377,6 @@ func TestUpdateIssueMilestoneLabelsAssigneesREST(t *testing.T) {
 		"title": "Field update test",
 	}))
 
-	// PATCH sets milestone (by number), labels, and assignees.
 	resp := ghPatch(t, "/api/v3/repos/admin/issue-update-fields/issues/1", defaultToken, map[string]interface{}{
 		"milestone": 1,
 		"labels":    []string{"regression"},
@@ -830,7 +828,6 @@ func TestSubIssuesREST_EmptyList(t *testing.T) {
 // --- GraphQL tests ---
 
 func TestGraphQLCreateIssue(t *testing.T) {
-	// Create repo and get its node ID
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "gql-issue-create",
 	})
@@ -880,7 +877,6 @@ func TestGraphQLCloseIssue(t *testing.T) {
 	repoData := decodeJSON(t, resp)
 	repoNodeID := repoData["node_id"].(string)
 
-	// Create issue
 	resp2 := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: CreateIssueInput!) { createIssue(input: $input) { issue { id } } }`,
 		"variables": map[string]interface{}{
@@ -896,7 +892,6 @@ func TestGraphQLCloseIssue(t *testing.T) {
 	iss, _ := ci["issue"].(map[string]interface{})
 	issueID := iss["id"].(string)
 
-	// Close
 	resp3 := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: CloseIssueInput!) { closeIssue(input: $input) { issue { state stateReason } } }`,
 		"variables": map[string]interface{}{
@@ -932,7 +927,6 @@ func TestGraphQLReopenIssue(t *testing.T) {
 	repoData := decodeJSON(t, resp)
 	repoNodeID := repoData["node_id"].(string)
 
-	// Create and close
 	resp2 := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: CreateIssueInput!) { createIssue(input: $input) { issue { id } } }`,
 		"variables": map[string]interface{}{
@@ -955,7 +949,6 @@ func TestGraphQLReopenIssue(t *testing.T) {
 		},
 	}))
 
-	// Reopen
 	resp3 := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: ReopenIssueInput!) { reopenIssue(input: $input) { issue { state } } }`,
 		"variables": map[string]interface{}{

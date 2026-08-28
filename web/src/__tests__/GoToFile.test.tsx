@@ -54,7 +54,6 @@ function renderFinder(onClose = vi.fn()) {
 describe("GoToFile", () => {
   it("lists blobs (not trees) and fuzzy-filters by path", async () => {
     renderFinder();
-    // The dialog + combobox render, and blobs are listed (the tree entry is excluded).
     expect(await screen.findByRole("option", { name: "README.md" })).toBeInTheDocument();
     expect(await screen.findByRole("option", { name: "src/index.ts" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "src" })).not.toBeInTheDocument();

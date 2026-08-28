@@ -7,14 +7,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// The governance mutation families (branch protection, rulesets, custom
-// properties, verifiable domains) claim to write the same records their REST
-// surfaces serve. These tests drive each family over GraphQL and read the
-// result back over REST (or the store the REST surface reads), so "wired" is
-// proven to be "working" rather than assumed from the schema.
+// These tests drive each governance mutation family (branch protection, rulesets, custom properties, verifiable domains) over GraphQL and read the result back over REST, proving "wired" is "working" rather than assumed from the schema.
 
-// gqlData digs the data object out of a GraphQL envelope, failing the test on
-// any reported error.
+// gqlData digs the data object out of a GraphQL envelope, failing the test on any reported error.
 func gqlData(t *testing.T, env map[string]interface{}) map[string]interface{} {
 	t.Helper()
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {
@@ -89,8 +84,7 @@ func TestGraphQLBranchProtectionRuleWritesTheRESTProtectionStore(t *testing.T) {
 		t.Errorf("REST required_status_checks.contexts = %v, want [ci]", checks["contexts"])
 	}
 
-	// The rule renames to a wildcard pattern: it must leave the exact-name
-	// store (REST answers 404) and keep protecting through the pattern rules.
+	// Renaming to a wildcard pattern must leave the exact-name store (REST answers 404) and keep protecting through the pattern rules.
 	ruleID, _ := rule["id"].(string)
 	env = s.gqlAuthzPost(t, f.ownerToken,
 		`mutation($input:UpdateBranchProtectionRuleInput!){updateBranchProtectionRule(input:$input){branchProtectionRule{pattern allowsDeletions}}}`,
@@ -114,7 +108,6 @@ func TestGraphQLBranchProtectionRuleWritesTheRESTProtectionStore(t *testing.T) {
 		t.Fatalf("pattern rules after rename = %+v", patterns)
 	}
 
-	// Repository.branchProtectionRules lists the renamed rule.
 	env = s.gqlAuthzPost(t, f.ownerToken,
 		`query($owner:String!,$name:String!){repository(owner:$owner,name:$name){branchProtectionRules(first:10){totalCount nodes{pattern}}}}`,
 		map[string]interface{}{"owner": f.owner.Login, "name": f.repo.Name},
@@ -351,7 +344,6 @@ func TestGraphQLVerifiableDomainLifecycle(t *testing.T) {
 		t.Errorf("domain owner = %v, want the organization", owner)
 	}
 
-	// Adding the same domain twice is refused.
 	env = s.gqlAuthzPost(t, f.ownerToken,
 		`mutation($input:AddVerifiableDomainInput!){addVerifiableDomain(input:$input){domain{id}}}`,
 		map[string]interface{}{"input": map[string]interface{}{
@@ -393,9 +385,7 @@ func TestGraphQLVerifiableDomainLifecycle(t *testing.T) {
 	}
 }
 
-// TestGraphQLEnterpriseVerifiableDomainFeedsTheVerifiedDomainList proves the
-// enterprise half writes the same ledger the notification-delivery
-// restriction and the /ui-data verified-domains surface read.
+// TestGraphQLEnterpriseVerifiableDomainFeedsTheVerifiedDomainList proves the enterprise half writes the same ledger the notification-delivery restriction and the /ui-data verified-domains surface read.
 func TestGraphQLEnterpriseVerifiableDomainFeedsTheVerifiedDomainList(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

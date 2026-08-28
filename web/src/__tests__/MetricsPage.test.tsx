@@ -111,15 +111,13 @@ describe("MetricsPage", () => {
     await waitFor(() => {
       expect(screen.getByText(/job latency/i)).toBeInTheDocument();
     });
-    // Latency percentiles (p95 = 3.4s), formatted.
     expect(screen.getByText(/p95 duration/i)).toBeInTheDocument();
     expect(screen.getByText("3.40 s")).toBeInTheDocument();
-    // Runtime health: uptime 3661s -> "1h 1m", goroutines, heap.
+    // Uptime 3661s formats to "1h 1m".
     expect(screen.getByText(/runtime/i)).toBeInTheDocument();
     expect(screen.getByText("1h 1m")).toBeInTheDocument();
     expect(screen.getByText(/goroutines/i)).toBeInTheDocument();
     expect(screen.getByText("12.5 MB")).toBeInTheDocument();
-    // Still only the two internal requests.
     const urls = mockFetch.mock.calls.map((call) => String(call[0]));
     expect(urls.filter((url) => url.includes("/internal/"))).toHaveLength(2);
   });
@@ -155,7 +153,7 @@ describe("MetricsPage", () => {
     expect(note).toHaveTextContent(/instance diagnostics and require site admin/i);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByText(/Failed to load metrics/i)).not.toBeInTheDocument();
-    // The card titles stay so the page still explains what is unavailable.
+    // Card titles stay so the page still names what is unavailable.
     expect(screen.getByText("Connected runners")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: /actions throughput/i }),

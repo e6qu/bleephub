@@ -47,7 +47,6 @@ func newFuzzFixture(t *testing.T) *fuzzFixture {
 		return nil
 	}
 
-	// Org + team.
 	if s.store.CreateOrg(admin, "fuzz-org", "Fuzz Org", "") == nil {
 		t.Fatalf("seed: create org")
 		return nil
@@ -58,8 +57,7 @@ func newFuzzFixture(t *testing.T) *fuzzFixture {
 		return nil
 	}
 
-	// Repo + a couple of committed files so contents/git-data handlers see real
-	// objects, not an empty repository.
+	// Commit real files so contents/git-data handlers see objects, not an empty repo.
 	repo := s.store.CreateRepo(admin, "fuzz-repo", "Fuzz repo", false)
 	if repo == nil {
 		t.Fatalf("seed: create repo")
@@ -71,7 +69,6 @@ func newFuzzFixture(t *testing.T) *fuzzFixture {
 	})
 	seedPullRequestBranches(t, s, repo, "feature")
 
-	// Issue + PR.
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "Fuzz issue", "body", nil, nil, 0)
 	if issue == nil {
 		t.Fatalf("seed: create issue")
@@ -247,7 +244,6 @@ func (fx *fuzzFixture) decodeFuzzRequest(data []byte) *http.Request {
 		return v
 	})
 
-	// Assemble an optional query string.
 	var q strings.Builder
 	nq := r.pick(4)
 	for k := 0; k < nq; k++ {
@@ -274,7 +270,6 @@ func (fx *fuzzFixture) decodeFuzzRequest(data []byte) *http.Request {
 
 	req := fx.buildRequest(method, path, q.String(), body, jsonBody)
 
-	// Auth variant.
 	switch r.pick(6) {
 	case 0:
 		req.Header.Set("Authorization", "token "+fx.adminToken)

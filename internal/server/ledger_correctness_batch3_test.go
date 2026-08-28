@@ -74,7 +74,6 @@ func TestDiscussionNumberCounterSurvivesReload(t *testing.T) {
 	st1.DeleteDiscussion(d2.ID) // tombstone; the number stays reserved
 	_ = p1.Close()
 
-	// Reload into a fresh store.
 	p2, err := store.NewPersistence()
 	if err != nil || p2 == nil {
 		t.Fatalf("reopen persistence: %v", err)

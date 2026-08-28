@@ -17,8 +17,6 @@ func TestUIPackagesListAllTypesWithoutPackageType(t *testing.T) {
 	org := s.store.CreateOrg(admin, "pkg-org", "Pkg Org", "")
 	s.seedPackageVersion(t, "org", org.Login, "npm", "org-pkg", "2.0.0")
 
-	// The reported failure was the REST list 400-ing without package_type; these
-	// /ui-data aggregations are what the web tab reads, and must list every type.
 	for _, tc := range []struct{ path, want string }{
 		{"/ui-data/users/" + admin.Login + "/packages", "u-pkg"},
 		{"/ui-data/orgs/" + org.Login + "/packages", "org-pkg"},

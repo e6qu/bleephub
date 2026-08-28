@@ -7,10 +7,7 @@ import (
 	"testing"
 )
 
-// TestDraftReleaseHiddenFromReaders pins GitHub's draft-release visibility:
-// an unpublished release is readable only by users with push access. The list
-// endpoint already filtered it; fetching one directly by id or by tag did not,
-// so unpublished release notes were served to anyone who could read the repo.
+// TestDraftReleaseHiddenFromReaders pins that an unpublished release is readable only with push access — fetching a draft by id or tag once leaked notes the list endpoint already hid.
 func TestDraftReleaseHiddenFromReaders(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()

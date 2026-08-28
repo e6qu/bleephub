@@ -59,13 +59,11 @@ func TestNotifications_ListAndRead(t *testing.T) {
 
 	threadID := thread["id"].(string)
 
-	// Mark thread read returns 205.
 	w = do("PATCH", "/api/v3/notifications/threads/"+threadID, nil)
 	if w.Code != http.StatusResetContent {
 		t.Errorf("mark read: %d", w.Code)
 	}
 
-	// Re-fetch with all=true: thread is now read.
 	w = do("GET", "/api/v3/notifications?all=true", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list after read: %d", w.Code)
@@ -79,7 +77,6 @@ func TestNotifications_ListAndRead(t *testing.T) {
 		t.Errorf("expected unread false, got %v", threads[0]["unread"])
 	}
 
-	// Mark all notifications read.
 	w = do("PUT", "/api/v3/notifications", nil)
 	if w.Code != http.StatusAccepted {
 		t.Errorf("mark all read: %d", w.Code)
@@ -306,7 +303,6 @@ func TestNotifications_RepoScoped(t *testing.T) {
 		t.Errorf("expected 1 repo thread, got %d", len(threads))
 	}
 
-	// Mark repo notifications read.
 	w = do("PUT", "/api/v3/repos/admin/repo-notif/notifications", nil)
 	if w.Code != http.StatusAccepted {
 		t.Errorf("mark repo read: %d", w.Code)
@@ -343,7 +339,6 @@ func TestNotifications_ThreadSubscription(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &threads)
 	threadID := threads[0]["id"].(string)
 
-	// No subscription yet → 404.
 	w = do("GET", "/api/v3/notifications/threads/"+threadID+"/subscription", nil)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("get missing subscription: %d", w.Code)

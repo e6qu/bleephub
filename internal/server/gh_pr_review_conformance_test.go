@@ -27,7 +27,6 @@ func TestPRReviewBodyRequiredForCommentAndChanges(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	// APPROVE with no body is accepted.
 	resp := s.post(t, path, defaultToken, map[string]interface{}{"event": "APPROVE"})
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -36,8 +35,7 @@ func TestPRReviewBodyRequiredForCommentAndChanges(t *testing.T) {
 	resp.Body.Close()
 }
 
-// TestPRReviewDismissRequiresMessage covers github's required `message` on the
-// dismiss endpoint.
+// GitHub requires a `message` on the dismiss endpoint.
 func TestPRReviewDismissRequiresMessage(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -50,7 +48,6 @@ func TestPRReviewDismissRequiresMessage(t *testing.T) {
 	}), 200)
 	reviewID := int(review["id"].(float64))
 
-	// Missing message → 422.
 	resp := s.put(t, "/api/v3/repos/admin/pr-review-dismiss/pulls/1/reviews/"+itoa(reviewID)+"/dismissals", defaultToken, map[string]interface{}{})
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		resp.Body.Close()
@@ -58,7 +55,6 @@ func TestPRReviewDismissRequiresMessage(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// With a message → 200.
 	requireStatus(t, s.put(t, "/api/v3/repos/admin/pr-review-dismiss/pulls/1/reviews/"+itoa(reviewID)+"/dismissals", defaultToken, map[string]interface{}{
 		"message": "stale",
 	}), 200)

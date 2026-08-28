@@ -24,23 +24,19 @@ func TestFeatureStatePersistsAcrossRestart(t *testing.T) {
 		adminID = admin.ID
 		repo := st.CreateRepo(admin, "persist-features", "", false)
 
-		// Wiki revisions.
 		st.UpsertWikiPage(repoKey, "home", "Home", "v1", "admin", "first")
 		st.UpsertWikiPage(repoKey, "home", "Home", "v2", "admin", "second")
 
-		// Notification saved set.
 		issue := st.CreateIssue(repo.ID, admin.ID, "bookmark", "", nil, nil, 0)
 		threadID = store.NotificationThreadID("Issue", issue.ID)
 		st.SetThreadSaved(admin.ID, threadID, true)
 
-		// Org pins.
 		org := st.CreateOrg(admin, "persist-pin-org", "", "")
 		st.CreateOrgRepo(org, admin, "pinme", "", false)
 		if _, ok := st.SetOrgPinnedRepos("persist-pin-org", []string{"persist-pin-org/pinme"}); !ok {
 			t.Fatal("SetOrgPinnedRepos failed")
 		}
 
-		// Primary email promotion.
 		if _, ok := st.AddUserEmails(admin.ID, []string{"promoted@bleephub.local"}); !ok {
 			t.Fatal("AddUserEmails failed")
 		}

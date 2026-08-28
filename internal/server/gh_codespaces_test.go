@@ -76,7 +76,6 @@ func TestCodespaces_UserCreateListGetDelete(t *testing.T) {
 	s := newIsolatedServer(t)
 	repo := s.createTestCodespaceRepo(t, "cs-user-repo")
 
-	// Create via user endpoint.
 	resp := s.post(t, "/api/v3/user/codespaces", defaultToken, map[string]any{
 		"repository_id": repo.ID,
 		"machine":       "basicLinux32",
@@ -102,7 +101,6 @@ func TestCodespaces_UserCreateListGetDelete(t *testing.T) {
 		t.Fatalf("unexpected display_name: %v", created["display_name"])
 	}
 
-	// List user codespaces.
 	resp = s.get(t, "/api/v3/user/codespaces", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -128,7 +126,6 @@ func TestCodespaces_UserCreateListGetDelete(t *testing.T) {
 		t.Fatalf("created codespace not in list: %v", listResp.Codespaces)
 	}
 
-	// Get user codespace.
 	resp = s.get(t, "/api/v3/user/codespaces/"+name, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -140,7 +137,6 @@ func TestCodespaces_UserCreateListGetDelete(t *testing.T) {
 		t.Fatalf("unexpected name: %v", got["name"])
 	}
 
-	// Patch.
 	resp = s.patch(t, "/api/v3/user/codespaces/"+name, defaultToken, map[string]any{
 		"display_name": "Renamed",
 	})
@@ -154,7 +150,6 @@ func TestCodespaces_UserCreateListGetDelete(t *testing.T) {
 		t.Fatalf("patch did not update display_name: %v", patched["display_name"])
 	}
 
-	// Delete.
 	resp = s.delete(t, "/api/v3/user/codespaces/"+name, defaultToken)
 	if resp.StatusCode != http.StatusAccepted {
 		b, _ := io.ReadAll(resp.Body)
@@ -163,7 +158,6 @@ func TestCodespaces_UserCreateListGetDelete(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Ensure container removed.
 	ctx, cancel := contextWithTimeout(10 * time.Second)
 	defer cancel()
 	if out, _ := store.RunDockerCLI(ctx, "ps", "-a", "--filter", "name="+store.CodespaceContainerName(name), "--format", "{{.Names}}"); strings.TrimSpace(string(out)) != "" {
@@ -194,8 +188,7 @@ func TestCodespaces_RepoCreateStartStopDelete(t *testing.T) {
 		s.cleanupCodespaceContainer(t, name)
 	})
 
-	// Individual codespaces are addressed through the user-scoped operations,
-	// including when they were created from a repository.
+	// Repo-created codespaces are still addressed through the user-scoped operations.
 	resp = s.post(t, fmt.Sprintf("/api/v3/user/codespaces/%s/start", name), defaultToken, nil)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -220,7 +213,6 @@ func TestCodespaces_RepoCreateStartStopDelete(t *testing.T) {
 		t.Fatalf("stop state = %v, want Shutdown", stopped["state"])
 	}
 
-	// Delete.
 	resp = s.delete(t, fmt.Sprintf("/api/v3/user/codespaces/%s", name), defaultToken)
 	if resp.StatusCode != http.StatusAccepted {
 		b, _ := io.ReadAll(resp.Body)
@@ -256,7 +248,6 @@ func TestCodespaces_MachinesList(t *testing.T) {
 func TestCodespaces_UserSecretsCRUD(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Fetch public key.
 	resp := s.get(t, "/api/v3/user/codespaces/secrets/public-key", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -266,14 +257,12 @@ func TestCodespaces_UserSecretsCRUD(t *testing.T) {
 	pk := decodeJSON(t, resp)
 	keyID := pk["key_id"].(string)
 
-	// Encrypt a dummy value.
 	plain := "secret-value"
 	enc, _, err := s.store.SealSecretValue(plain)
 	if err != nil {
 		t.Fatalf("seal secret: %v", err)
 	}
 
-	// Put secret.
 	putUserSecret := func() *http.Response {
 		return s.put(t, "/api/v3/user/codespaces/secrets/MY_SECRET", defaultToken, map[string]any{
 			"encrypted_value": enc,
@@ -284,7 +273,6 @@ func TestCodespaces_UserSecretsCRUD(t *testing.T) {
 	// The same PUT again replaces rather than creates.
 	requireSecretReplaced(t, putUserSecret(), "re-put user secret")
 
-	// List.
 	resp = s.get(t, "/api/v3/user/codespaces/secrets", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -310,7 +298,6 @@ func TestCodespaces_UserSecretsCRUD(t *testing.T) {
 		t.Fatalf("secret not in list")
 	}
 
-	// Get.
 	resp = s.get(t, "/api/v3/user/codespaces/secrets/MY_SECRET", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -319,7 +306,6 @@ func TestCodespaces_UserSecretsCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Delete.
 	resp = s.delete(t, "/api/v3/user/codespaces/secrets/MY_SECRET", defaultToken)
 	if resp.StatusCode != http.StatusNoContent {
 		b, _ := io.ReadAll(resp.Body)
@@ -434,9 +420,8 @@ func TestCodespaces_404Cases(t *testing.T) {
 
 // runDockerCLI is already defined in store_codespaces.go.
 
-// TestCodespaces_OrgMemberAdministration exercises the org-owner view of
-// a member's codespaces on the organization's repositories:
-// list → stop (200 with the codespace body) → delete (202).
+// Exercise the org-owner view of a member's codespaces: list, stop (200 with
+// the codespace body), delete (202).
 func TestCodespaces_OrgMemberAdministration(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -539,9 +524,8 @@ func TestCodespaces_OrgList(t *testing.T) {
 		t.Fatal("create org failed")
 	}
 
-	// Honest empty list before any member codespace exists... except that
-	// the admin may own codespaces created by earlier tests, so assert
-	// against membership: every returned codespace belongs to an org member.
+	// The admin may own codespaces from earlier tests, so assert against
+	// membership rather than an empty list: every returned codespace belongs to a member.
 	repo := s.createTestCodespaceRepo(t, "cs-org-list-repo")
 	resp := s.post(t, "/api/v3/user/codespaces", defaultToken, map[string]any{
 		"repository_id": repo.ID,
@@ -582,7 +566,6 @@ func TestCodespaces_OrgList(t *testing.T) {
 		t.Fatalf("member codespace %s missing from org list", name)
 	}
 
-	// Non-admin callers are forbidden.
 	outsider := s.createTestUser(t, "cs-outsider")
 	s.store.Tokens["ghp_cs_outsider"] = &store.Token{Value: "ghp_cs_outsider", UserID: outsider.ID}
 	resp = s.get(t, "/api/v3/orgs/cs-list-org/codespaces", "ghp_cs_outsider")
@@ -621,7 +604,6 @@ func TestCodespaces_OrgAccessControls(t *testing.T) {
 	member2 := s.createTestUser(t, "cs-access-member2")
 	s.store.SetMembership(org.Login, member2.ID, store.OrgRoleMember, store.MembershipStateActive)
 
-	// Invalid visibility.
 	resp := s.put(t, "/api/v3/orgs/cs-access-org/codespaces/access", defaultToken, map[string]any{
 		"visibility": "everyone-on-earth",
 	})
@@ -630,7 +612,6 @@ func TestCodespaces_OrgAccessControls(t *testing.T) {
 		t.Fatalf("invalid visibility: %d, want 422", resp.StatusCode)
 	}
 
-	// Usernames that are neither members nor collaborators are rejected.
 	resp = s.put(t, "/api/v3/orgs/cs-access-org/codespaces/access", defaultToken, map[string]any{
 		"visibility":         "selected_members",
 		"selected_usernames": []string{"total-stranger"},
@@ -640,7 +621,6 @@ func TestCodespaces_OrgAccessControls(t *testing.T) {
 		t.Fatalf("stranger username: %d, want 400", resp.StatusCode)
 	}
 
-	// Set selected_members with one member.
 	resp = s.put(t, "/api/v3/orgs/cs-access-org/codespaces/access", defaultToken, map[string]any{
 		"visibility":         "selected_members",
 		"selected_usernames": []string{"cs-access-member"},
@@ -650,7 +630,6 @@ func TestCodespaces_OrgAccessControls(t *testing.T) {
 		t.Fatalf("set access: %d, want 204", resp.StatusCode)
 	}
 
-	// Add and remove selected users.
 	resp = s.post(t, "/api/v3/orgs/cs-access-org/codespaces/access/selected_users", defaultToken, map[string]any{
 		"selected_usernames": []string{"cs-access-member2"},
 	})
@@ -712,10 +691,8 @@ func TestCodespaces_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		"visibility":              "selected",
 		"selected_repository_ids": []int{r1.ID},
 	})
-	// A secret that did not exist is created, which is a 201.
 	requireSecretCreated(t, resp, "put org codespace secret")
 
-	// Add the second repository.
 	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/cs-secret-repo-org/codespaces/secrets/CS_SELECTED/repositories/%d", r2.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
@@ -727,7 +704,6 @@ func TestCodespaces_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		t.Fatalf("selected repos after add = %v, want 2", repos["total_count"])
 	}
 
-	// Remove the first repository.
 	resp = s.delete(t, fmt.Sprintf("/api/v3/orgs/cs-secret-repo-org/codespaces/secrets/CS_SELECTED/repositories/%d", r1.ID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
@@ -739,7 +715,7 @@ func TestCodespaces_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		t.Fatalf("selected repos after remove = %v, want 1", repos["total_count"])
 	}
 
-	// A secret with visibility all conflicts.
+	// Adding a repo to an all-visibility secret conflicts.
 	enc, keyID = s.sealForServer(t, "all visibility value")
 	resp = s.put(t, "/api/v3/orgs/cs-secret-repo-org/codespaces/secrets/CS_ALL", defaultToken, map[string]any{
 		"encrypted_value": enc,
@@ -753,7 +729,6 @@ func TestCodespaces_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		t.Fatalf("add repo to all-visibility secret: %d, want 409", resp.StatusCode)
 	}
 
-	// Unknown secret.
 	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/cs-secret-repo-org/codespaces/secrets/NO_SUCH/repositories/%d", r1.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
@@ -959,12 +934,9 @@ func TestCodespaces_RepoDevcontainersPagination(t *testing.T) {
 	assertCodespaceWrapperPage(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces/devcontainers?per_page=1", repo.FullName), "devcontainers", 0, 0, false)
 }
 
-// requireSecretCreated asserts the documented response of a secret PUT that
-// created the secret: 201 carrying an empty object. Both 201 (created) and 204
-// (replaced) are declared on every ".../secrets/{secret_name}" PUT, and which
-// one comes back is how a client tells the two apart — so a 201 with a
-// zero-length body would not satisfy the schema, and a blanket 204 would tell
-// every caller its first write replaced something that was not there.
+// requireSecretCreated asserts a secret-creating PUT answers 201 with an empty
+// object; 201 (created) vs 204 (replaced) is how a client tells create from
+// replace, so a zero-length 201 body or a blanket 204 would break callers.
 func requireSecretCreated(t *testing.T, resp *http.Response, what string) {
 	t.Helper()
 	defer resp.Body.Close()
@@ -981,8 +953,7 @@ func requireSecretCreated(t *testing.T, resp *http.Response, what string) {
 	}
 }
 
-// requireSecretReplaced asserts the other half of that pair: a PUT over a
-// secret that already exists answers 204, with no body.
+// requireSecretReplaced asserts the other half: a PUT over an existing secret answers 204 with no body.
 func requireSecretReplaced(t *testing.T, resp *http.Response, what string) {
 	t.Helper()
 	defer resp.Body.Close()

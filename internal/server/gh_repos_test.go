@@ -31,7 +31,6 @@ func ghDelete(t *testing.T, path string, token string) *http.Response {
 	return ghDo(t, "DELETE", path, token, nil)
 }
 
-// TestCreateRepo verifies POST /api/v3/user/repos → 201.
 func TestCreateRepo(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":        "test-create",
@@ -64,9 +63,8 @@ func TestCreateRepo(t *testing.T) {
 	}
 }
 
-// TestCreateRepoRejectsAmbiguousNames pins that a name carrying a path
-// separator or a trailing ".git" would make the storage key ambiguous and feed
-// the git-transport double-suffix confusion, so it is refused at creation.
+// Refuse names with a path separator or trailing ".git": they make the storage
+// key ambiguous and feed git-transport double-suffix confusion.
 func TestCreateRepoRejectsAmbiguousNames(t *testing.T) {
 	for _, name := range []string{"app.git", "a/b", "with space", "back\\slash"} {
 		resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": name})
@@ -78,7 +76,6 @@ func TestCreateRepoRejectsAmbiguousNames(t *testing.T) {
 	}
 }
 
-// TestCreateRepoNoAuth verifies POST /api/v3/user/repos without token → 401.
 func TestCreateRepoNoAuth(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", "", map[string]interface{}{
 		"name": "should-fail",
@@ -89,9 +86,7 @@ func TestCreateRepoNoAuth(t *testing.T) {
 	}
 }
 
-// TestGetRepo verifies GET /api/v3/repos/admin/test-create → 200.
 func TestGetRepo(t *testing.T) {
-	// Ensure repo exists
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "test-get",
 	})
@@ -111,7 +106,6 @@ func TestGetRepo(t *testing.T) {
 	}
 }
 
-// TestGetRepoNotFound verifies GET for nonexistent repo → 404.
 func TestGetRepoNotFound(t *testing.T) {
 	resp := ghGet(t, "/api/v3/repos/admin/nonexistent", "")
 	defer resp.Body.Close()
@@ -120,7 +114,6 @@ func TestGetRepoNotFound(t *testing.T) {
 	}
 }
 
-// TestUpdateRepo verifies PATCH → description changed.
 func TestUpdateRepo(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "test-update",
@@ -140,7 +133,6 @@ func TestUpdateRepo(t *testing.T) {
 	}
 }
 
-// TestDeleteRepo verifies DELETE → 204, subsequent GET → 404.
 func TestDeleteRepo(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "test-delete",
@@ -159,7 +151,6 @@ func TestDeleteRepo(t *testing.T) {
 	}
 }
 
-// TestListUserRepos verifies GET /api/v3/user/repos → array.
 func TestListUserRepos(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "test-list",
@@ -181,7 +172,6 @@ func TestListUserRepos(t *testing.T) {
 	}
 }
 
-// TestListBranches verifies GET branches → list (empty for new repo).
 func TestListBranches(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "test-branches",
@@ -198,13 +188,11 @@ func TestListBranches(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&branches); err != nil {
 		t.Fatalf("failed to decode: %v", err)
 	}
-	// Empty repo has no branches
 	if len(branches) != 0 {
 		t.Fatalf("expected 0 branches for empty repo, got %d", len(branches))
 	}
 }
 
-// TestGraphQLRepository verifies the repository query.
 func TestGraphQLRepository(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":    "test-gql",
@@ -236,7 +224,6 @@ func TestGraphQLRepository(t *testing.T) {
 	}
 }
 
-// TestGraphQLViewerRepos verifies viewer { repositories } query.
 func TestGraphQLViewerRepos(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "test-viewer-repos",
@@ -274,7 +261,6 @@ func TestGraphQLViewerRepos(t *testing.T) {
 	}
 }
 
-// TestGraphQLCreateRepo verifies the createRepository mutation.
 func TestGraphQLCreateRepo(t *testing.T) {
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]string{
 		"query": `mutation{createRepository(input:{name:"gql-created",visibility:PUBLIC,hasIssuesEnabled:false,hasWikiEnabled:true}){repository{name,owner{login},isPrivate,hasIssuesEnabled,hasWikiEnabled}}}`,
@@ -360,7 +346,6 @@ func TestGraphQLCreateRepoAcceptsActiveOrganizationOwnerID(t *testing.T) {
 	}
 }
 
-// TestGraphQLRepoNotFound verifies null result for nonexistent repo.
 func TestGraphQLRepoNotFound(t *testing.T) {
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]string{
 		"query": `{repository(owner:"admin",name:"nonexistent"){name}}`,
@@ -377,7 +362,6 @@ func TestGraphQLRepoNotFound(t *testing.T) {
 	}
 }
 
-// TestGitInfoRefs verifies correct content-type and pkt-line response.
 func TestGitInfoRefs(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -406,24 +390,21 @@ func TestGitInfoRefs(t *testing.T) {
 	}
 }
 
-// TestGitClonePush verifies creating a repo, pushing a commit via go-git, and verifying content.
 func TestGitClonePush(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Create repo via API
 	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "test-git-push",
 	})
 	resp.Body.Close()
 
-	// Init locally and push (empty repo can't be cloned)
+	// Empty repo can't be cloned, so init locally and push.
 	cloneStorage := memory.NewStorage()
 	repo, err := git.Init(cloneStorage, nil)
 	if err != nil {
 		t.Fatalf("failed to init: %v", err)
 	}
 
-	// Create remote
 	_, err = repo.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{s.baseURL + "/admin/test-git-push.git"},
@@ -432,8 +413,7 @@ func TestGitClonePush(t *testing.T) {
 		t.Fatalf("failed to create remote: %v", err)
 	}
 
-	// Create a commit using the go-git worktree-free approach
-	// We need to create objects directly in memory storage
+	// Build the commit worktree-free, writing objects straight to memory storage.
 	blobHash, err := storeBlob(cloneStorage, []byte("Hello, bleephub!\n"))
 	if err != nil {
 		t.Fatalf("failed to store blob: %v", err)
@@ -451,7 +431,6 @@ func TestGitClonePush(t *testing.T) {
 		t.Fatalf("failed to store commit: %v", err)
 	}
 
-	// Update refs/heads/main
 	ref := plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), commitHash)
 	if err := cloneStorage.SetReference(ref); err != nil {
 		t.Fatalf("failed to set ref: %v", err)
@@ -461,7 +440,6 @@ func TestGitClonePush(t *testing.T) {
 		t.Fatalf("failed to set HEAD: %v", err)
 	}
 
-	// Push to bleephub
 	err = repo.Push(&git.PushOptions{
 		RemoteName: "origin",
 		Auth:       &githttp.BasicAuth{Username: "x", Password: defaultToken},
@@ -470,7 +448,6 @@ func TestGitClonePush(t *testing.T) {
 		t.Fatalf("failed to push: %v", err)
 	}
 
-	// Verify: list branches should now show main
 	resp2 := s.get(t, "/api/v3/repos/admin/test-git-push/branches", "")
 	if resp2.StatusCode != 200 {
 		resp2.Body.Close()
@@ -492,7 +469,6 @@ func TestGitClonePush(t *testing.T) {
 		t.Fatalf("expected 'main' branch after push, got %v", branches)
 	}
 
-	// Verify: README endpoint should work
 	resp3 := s.get(t, "/api/v3/repos/admin/test-git-push/readme", "")
 	if resp3.StatusCode != 200 {
 		resp3.Body.Close()
@@ -503,8 +479,6 @@ func TestGitClonePush(t *testing.T) {
 		t.Fatalf("expected readme name=README.md, got %v", readmeData["name"])
 	}
 }
-
-// Helper functions for creating git objects in memory storage.
 
 func storeBlob(s gitStorage.Storer, content []byte) (plumbing.Hash, error) {
 	obj := s.NewEncodedObject()
@@ -628,10 +602,9 @@ func TestDeleteRepoReportsS3GitCleanupFailure(t *testing.T) {
 	if !deleted {
 		t.Fatal("DeleteRepo returned false for an existing repo")
 	}
-	// The metadata delete commits before the bytes are purged, so an
-	// unreachable object store reports a failure without making the repository
-	// permanently undeletable. The recorded deletion intent is what finishes
-	// the purge on the next start.
+	// Metadata delete commits before the bytes are purged, so an unreachable
+	// object store reports failure without making the repo permanently
+	// undeletable; the recorded deletion intent finishes the purge on next start.
 	if st.ReposByName[repo.FullName] != nil {
 		t.Fatal("repo metadata survived a delete that already committed")
 	}
@@ -758,7 +731,6 @@ func TestGitFetchPrivateRepoWithAuth(t *testing.T) {
 	}
 }
 
-// TestCreateRepoAutoInit verifies auto_init creates a README commit.
 func TestCreateRepoAutoInit(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":        "auto-init",
@@ -774,7 +746,6 @@ func TestCreateRepoAutoInit(t *testing.T) {
 		t.Fatalf("expected default_branch=main, got %v", data["default_branch"])
 	}
 
-	// README should be reachable
 	readmeResp := ghGet(t, "/api/v3/repos/admin/auto-init/readme", defaultToken)
 	if readmeResp.StatusCode != 200 {
 		readmeResp.Body.Close()
@@ -792,7 +763,6 @@ func TestCreateRepoAutoInit(t *testing.T) {
 		t.Fatalf("expected description in readme, got: %s", string(content))
 	}
 
-	// Branch should exist now
 	branchesResp := ghGet(t, "/api/v3/repos/admin/auto-init/branches", defaultToken)
 	defer branchesResp.Body.Close()
 	if branchesResp.StatusCode != 200 {
@@ -807,7 +777,6 @@ func TestCreateRepoAutoInit(t *testing.T) {
 	}
 }
 
-// TestCreateRepoWithTemplates verifies gitignore and license templates are committed.
 func TestCreateRepoWithTemplates(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":               "templated",
@@ -830,7 +799,6 @@ func TestCreateRepoWithTemplates(t *testing.T) {
 	}
 }
 
-// TestCreateRepoVisibility verifies visibility field overrides private.
 func TestCreateRepoVisibility(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":       "vis-public",
@@ -863,7 +831,6 @@ func TestCreateRepoVisibility(t *testing.T) {
 	}
 }
 
-// TestCreateRepoDefaultBranch verifies a non-main default branch is honored.
 func TestCreateRepoDefaultBranch(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":           "custom-branch",
@@ -897,7 +864,6 @@ func TestCreateRepoDefaultBranch(t *testing.T) {
 	}
 }
 
-// TestCreateOrgRepoExtended verifies org repo creation supports the new fields.
 func TestCreateOrgRepoExtended(t *testing.T) {
 	createOrgViaAdminAPI(t, "create-org", "Create Org")
 
@@ -933,7 +899,6 @@ func TestCreateOrgRepoExtended(t *testing.T) {
 	}
 }
 
-// TestPutContentsCreateFile verifies PUT contents creates a new file and commit.
 func TestPutContentsCreateFile(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "put-create",
@@ -959,7 +924,6 @@ func TestPutContentsCreateFile(t *testing.T) {
 		t.Fatalf("expected commit message 'add file', got %v", commit["message"])
 	}
 
-	// Verify file is readable
 	getResp := ghGet(t, "/api/v3/repos/admin/put-create/contents/foo/bar.txt", defaultToken)
 	defer getResp.Body.Close()
 	if getResp.StatusCode != 200 {
@@ -967,7 +931,6 @@ func TestPutContentsCreateFile(t *testing.T) {
 	}
 }
 
-// TestPutContentsUpdateFile verifies PUT contents updates an existing file.
 func TestPutContentsUpdateFile(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "put-update",
@@ -1005,7 +968,6 @@ func TestPutContentsUpdateFile(t *testing.T) {
 	}
 }
 
-// TestGetContentsRootListing verifies GET contents with an empty path lists root files.
 func TestGetContentsRootListing(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name":      "root-listing",
@@ -1098,7 +1060,6 @@ func TestRepositoryReadsResolveBranchTagAndCommitRefs(t *testing.T) {
 	}
 }
 
-// TestGitignoreTemplates verifies the gitignore template endpoints.
 func TestGitignoreTemplates(t *testing.T) {
 	listResp := ghGet(t, "/api/v3/gitignore/templates", defaultToken)
 	if listResp.StatusCode != 200 {
@@ -1131,7 +1092,6 @@ func TestGitignoreTemplates(t *testing.T) {
 	}
 }
 
-// TestLicenseTemplates verifies the license template endpoints.
 func TestLicenseTemplates(t *testing.T) {
 	listResp := ghGet(t, "/api/v3/licenses", defaultToken)
 	if listResp.StatusCode != 200 {
@@ -1164,7 +1124,6 @@ func TestLicenseTemplates(t *testing.T) {
 	}
 }
 
-// TestLicenseTemplatesPagination verifies /licenses honors per_page/page.
 func TestLicenseTemplatesPagination(t *testing.T) {
 	resp := ghGet(t, "/api/v3/licenses?per_page=1", defaultToken)
 	if resp.StatusCode != 200 {
@@ -1202,12 +1161,9 @@ func TestLicenseTemplatesPagination(t *testing.T) {
 	}
 }
 
-// TestLicenseNodeIDsAreValid verifies that every license endpoint emits a
-// valid GitHub node ID: a proper base64-encoded `06:License{number}` string,
-// not the key appended to a base64 prefix. This regresses the previously
-// broken `"MDc6TGljZW5zZ" + key` and `"MDc6TGljZW5zZQ==" + key` forms.
+// Every license endpoint must emit a valid base64 node ID (07:License{number});
+// regresses the broken `"MDc6TGljZW5zZ" + key` concatenation forms.
 func TestLicenseNodeIDsAreValid(t *testing.T) {
-	// List endpoint: every license carries a valid node_id.
 	listResp := ghGet(t, "/api/v3/licenses", defaultToken)
 	if listResp.StatusCode != 200 {
 		listResp.Body.Close()
@@ -1232,7 +1188,6 @@ func TestLicenseNodeIDsAreValid(t *testing.T) {
 		}
 	}
 
-	// Single-license endpoint.
 	getResp := ghGet(t, "/api/v3/licenses/mit", defaultToken)
 	if getResp.StatusCode != 200 {
 		getResp.Body.Close()
@@ -1243,7 +1198,6 @@ func TestLicenseNodeIDsAreValid(t *testing.T) {
 		t.Errorf("get mit license node_id = %q, want valid base64", data["node_id"])
 	}
 
-	// Repo license endpoint (via detected license).
 	createReadsRepo(t, "reads-license-nodeid", map[string]interface{}{
 		"auto_init": true, "license_template": "mit",
 	})
@@ -1271,7 +1225,6 @@ func isValidLicenseNodeID(s string) bool {
 	return strings.HasPrefix(string(decoded), "07:License")
 }
 
-// TestRepoDeployKeys exercises deploy key CRUD.
 func TestRepoDeployKeys(t *testing.T) {
 	repoName := "deploy-keys-repo"
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repoName})
@@ -1328,7 +1281,6 @@ func TestRepoDeployKeys(t *testing.T) {
 	}
 }
 
-// TestRepoDeployKeysPagination verifies per_page/page slicing and Link headers.
 func TestRepoDeployKeysPagination(t *testing.T) {
 	repoName := "deploy-keys-pg"
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repoName}).Body.Close()
@@ -1372,7 +1324,6 @@ func TestRepoDeployKeysPagination(t *testing.T) {
 	}
 }
 
-// TestRepoTransfer verifies transferring a repo to another user.
 func TestRepoTransfer(t *testing.T) {
 	repoName := "transfer-repo"
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repoName})
@@ -1399,11 +1350,8 @@ func TestRepoTransfer(t *testing.T) {
 		t.Fatalf("expected full_name=alice/%s, got %v", repoName, data["full_name"])
 	}
 
-	// A transfer leaves the old owner/name redirecting to the new one, the same
-	// as a rename: the repository moved, it was not deleted, so a client
-	// holding the pre-transfer address still reaches it. Followed to the end,
-	// the request lands on the new owner's address — which is both that the
-	// redirect happened and that it pointed somewhere real.
+	// A transfer redirects the old owner/name to the new one like a rename;
+	// following it must land on the new owner's address.
 	getOld := ghGet(t, "/api/v3/repos/admin/"+repoName, defaultToken)
 	defer getOld.Body.Close()
 	if getOld.StatusCode != 200 {
@@ -1421,7 +1369,6 @@ func TestRepoTransfer(t *testing.T) {
 	}
 }
 
-// TestRepoRenameBranch verifies branch rename.
 func TestRepoRenameBranch(t *testing.T) {
 	repoName := "rename-branch-repo"
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
@@ -1467,7 +1414,6 @@ func TestRepoRenameBranch(t *testing.T) {
 	}
 }
 
-// TestRepoSubscription verifies subscribe/unsubscribe endpoints.
 func TestRepoSubscription(t *testing.T) {
 	repoName := "subscription-repo"
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": repoName})
@@ -1494,7 +1440,6 @@ func TestRepoSubscription(t *testing.T) {
 	}
 }
 
-// TestRepoVulnerabilityAlerts verifies enabling/disabling vulnerability alerts.
 func TestRepoVulnerabilityAlerts(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

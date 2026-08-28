@@ -291,14 +291,11 @@ func TestNamedButAbsentTargetsAreNeverServed(t *testing.T) {
 	missing := "/api/v3/repos/ghu-no-such-owner/ghu-no-such-repo"
 
 	repoRoutes := []ghuRoute{
-		// Read.
 		{http.MethodGet, missing + "/hooks", ""},
 		{http.MethodGet, missing + "/dependabot/secrets/public-key", ""},
 		{http.MethodGet, missing + "/actions/secrets", ""},
 		{http.MethodGet, missing + "/actions/variables", ""},
-		// Write.
 		{http.MethodPut, missing + "/topics", `{"names":["x"]}`},
-		// Admin.
 		{http.MethodPost, missing + "/hooks", `{"name":"web","config":{"url":"https://127.0.0.1:9/x"}}`},
 		{http.MethodPatch, missing, `{"description":"x"}`},
 	}

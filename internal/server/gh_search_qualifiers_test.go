@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// searchIssueTitles runs GET /search/issues?q=<query> and returns the sorted
-// titles of the results (or fails on a non-200).
 func searchIssueTitles(t *testing.T, s *isolatedServer, query string) []string {
 	t.Helper()
 	resp := s.authedGet(t, "/api/v3/search/issues?q="+url.QueryEscape(query))

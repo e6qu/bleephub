@@ -10,21 +10,14 @@ import (
 // Resolver-layer converter and connection tests, moved from the server
 // package with the resolver layer (ARCH-003).
 
-// newSeededTestStore is a store with the default admin user and no HTTP
-// server around it — the moved tests only exercise store-pure resolver
-// helpers.
+// newSeededTestStore returns a default-admin store with no HTTP server, enough for the store-pure resolver helpers these tests exercise.
 func newSeededTestStore() *store.Store {
 	st := store.NewStore()
 	st.SeedDefaultUser()
 	return st
 }
 
-// TestIssueFieldValuesConnectionCountsBeyond100 covers GQL-022: the
-// issueFieldValues sub-connection pre-paginated with paginateGQL, whose page
-// size is clamped to 100, and the field resolver then re-paginated that
-// already-truncated slice — so an issue with more than 100 field values
-// reported totalCount 100 and hid the remainder. The connection now returns the
-// full node set and lets the resolver apply the single, correct page window.
+// TestIssueFieldValuesConnectionCountsBeyond100 covers GQL-022: double pagination clamped the page to 100, so an issue with more than 100 field values reported totalCount 100 and hid the rest; the connection now returns the full node set for one correct page window.
 func TestIssueFieldValuesConnectionCountsBeyond100(t *testing.T) {
 	st := newSeededTestStore()
 	admin := st.UsersByLogin["admin"]
@@ -47,9 +40,7 @@ func TestIssueFieldValuesConnectionCountsBeyond100(t *testing.T) {
 	conn := issueFieldValuesConnectionLocked(st, issue)
 	st.Mu.RUnlock()
 
-	// The Issue.issueFieldValues resolver hands the built connection to
-	// repaginateConnection with the client's page args; totalCount must be the
-	// true count, not the clamped page size.
+	// totalCount must be the true count, not the clamped page size.
 	repaged, ok := repaginateConnection(conn, map[string]interface{}{}).(map[string]interface{})
 	if !ok {
 		t.Fatalf("repaginateConnection returned %T, want map", repaged)

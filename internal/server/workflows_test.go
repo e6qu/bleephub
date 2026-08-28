@@ -125,7 +125,6 @@ func TestWorkflowTwoJobsWithNeeds(t *testing.T) {
 		t.Fatalf("submit: %v", err)
 	}
 
-	// build should be dispatched, test should be pending
 	buildJob := workflow.Jobs["build"]
 	testJob := workflow.Jobs["test"]
 
@@ -136,7 +135,7 @@ func TestWorkflowTwoJobsWithNeeds(t *testing.T) {
 		t.Errorf("test status = %q, want pending", testJob.Status)
 	}
 
-	// Simulate build completion — store serverURL in env for re-dispatch
+	// Job completion re-dispatches dependents; the wiring is carried in Env.
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 	s.actions.OnJobCompleted(context.Background(), buildJob.JobID, "Succeeded")
 
@@ -164,7 +163,6 @@ func TestWorkflowDiamondDependency(t *testing.T) {
 
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 
-	// Only A should be dispatched
 	if workflow.Jobs["a"].Status != "queued" {
 		t.Errorf("a = %q, want queued", workflow.Jobs["a"].Status)
 	}
@@ -175,7 +173,6 @@ func TestWorkflowDiamondDependency(t *testing.T) {
 		t.Errorf("d = %q, want pending", workflow.Jobs["d"].Status)
 	}
 
-	// Complete A → B and C should dispatch
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["a"].JobID, "Succeeded")
 	if workflow.Jobs["b"].Status != "queued" {
 		t.Errorf("b after a = %q, want queued", workflow.Jobs["b"].Status)
@@ -187,13 +184,12 @@ func TestWorkflowDiamondDependency(t *testing.T) {
 		t.Errorf("d after a = %q, want pending", workflow.Jobs["d"].Status)
 	}
 
-	// Complete B → D still pending (C not done)
+	// Complete B; D still waits on C.
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["b"].JobID, "Succeeded")
 	if workflow.Jobs["d"].Status != "pending" {
 		t.Errorf("d after b = %q, want pending", workflow.Jobs["d"].Status)
 	}
 
-	// Complete C → D dispatches, workflow complete
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["c"].JobID, "Succeeded")
 	if workflow.Jobs["d"].Status != "queued" {
 		t.Errorf("d after c = %q, want queued", workflow.Jobs["d"].Status)
@@ -217,7 +213,6 @@ func TestWorkflowFailedJobSkipsDependents(t *testing.T) {
 
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 
-	// Build fails
 	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["build"].JobID, "Failed")
 
 	if workflow.Jobs["test"].Status != "skipped" {
@@ -289,7 +284,6 @@ func TestWorkflowUsesStepReference(t *testing.T) {
 		t.Fatalf("submit: %v", err)
 	}
 
-	// Verify the job message contains a repository reference
 	s.store.Mu.RLock()
 	job := s.store.Jobs[workflow.Jobs["build"].JobID]
 	s.store.Mu.RUnlock()
@@ -301,7 +295,6 @@ func TestWorkflowUsesStepReference(t *testing.T) {
 		t.Fatal("job message is empty")
 	}
 
-	// Parse the message and check the first step's reference
 	var msg map[string]interface{}
 	if err := jsonUnmarshal([]byte(job.Message), &msg); err != nil {
 		t.Fatalf("parse message: %v", err)
@@ -635,7 +628,6 @@ func pipelineContextMap(t *testing.T, ctx interface{}) map[string]string {
 	return out
 }
 
-// jsonUnmarshal is a test helper.
 func jsonUnmarshal(data []byte, v interface{}) error {
 	return json.Unmarshal(data, v)
 }

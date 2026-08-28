@@ -265,7 +265,6 @@ func TestUserSSHKeyIsOwnerScoped(t *testing.T) {
 	s.store.Tokens["ghp_other"] = &store.Token{Value: "ghp_other", UserID: other.ID}
 	s.store.Mu.Unlock()
 
-	// admin creates a key.
 	w := doMiscReq(s, "POST", "/api/v3/user/keys", `{"title":"laptop","key":"ssh-ed25519 AAAAKEYADMIN admin@host"}`)
 	if w.Code != 201 {
 		t.Fatalf("admin create key = %d %s", w.Code, w.Body.String())
@@ -276,7 +275,6 @@ func TestUserSSHKeyIsOwnerScoped(t *testing.T) {
 	}
 	keyID := strconv.Itoa(int(created["id"].(float64)))
 
-	// A stranger cannot read it.
 	getReq := httptest.NewRequest("GET", "/api/v3/user/keys/"+keyID, nil)
 	getReq.Header.Set("Authorization", "token ghp_other")
 	getRec := httptest.NewRecorder()
@@ -285,14 +283,12 @@ func TestUserSSHKeyIsOwnerScoped(t *testing.T) {
 		t.Fatalf("stranger GET key = %d, want 404", getRec.Code)
 	}
 
-	// An anonymous caller cannot read it.
 	anonRec := httptest.NewRecorder()
 	s.requestHandler().ServeHTTP(anonRec, httptest.NewRequest("GET", "/api/v3/user/keys/"+keyID, nil))
 	if anonRec.Code == 200 {
 		t.Fatalf("anonymous GET key = 200, want auth error")
 	}
 
-	// A stranger cannot delete it.
 	delReq := httptest.NewRequest("DELETE", "/api/v3/user/keys/"+keyID, nil)
 	delReq.Header.Set("Authorization", "token ghp_other")
 	delRec := httptest.NewRecorder()

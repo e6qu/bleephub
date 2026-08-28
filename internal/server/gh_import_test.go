@@ -13,7 +13,6 @@ func TestRepositoryImport_GitSourceLifecycle(t *testing.T) {
 	target := s.createRepoWriteRepo(t, false)
 	base := "/api/v3/repos/admin/" + target + "/import"
 
-	// No import yet.
 	resp := s.get(t, base, defaultToken)
 	requireStatus(t, resp, 404)
 
@@ -50,7 +49,6 @@ func TestRepositoryImport_GitSourceLifecycle(t *testing.T) {
 	resp = s.get(t, "/api/v3/repos/admin/"+target+"/contents/README.md", defaultToken)
 	requireStatus(t, resp, 200)
 
-	// Status reads back.
 	resp = s.get(t, base, defaultToken)
 	got := decodeJSONWithStatus(t, resp, 200)
 	if got["status"] != "complete" {
@@ -79,7 +77,6 @@ func TestRepositoryImport_GitSourceLifecycle(t *testing.T) {
 	resp = s.patch(t, base+"/authors/424242", defaultToken, map[string]interface{}{"name": "x"})
 	requireStatus(t, resp, 404)
 
-	// Git LFS preference round-trips.
 	resp = s.patch(t, base+"/lfs", defaultToken, map[string]interface{}{"use_lfs": "opt_in"})
 	lfs := decodeJSONWithStatus(t, resp, 200)
 	if lfs["use_lfs"] != true {

@@ -141,8 +141,7 @@ describe("WorkflowsPage", () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText(".github/workflows/ci.yml")).toBeInTheDocument();
-      // Per-row dispatch button — at least one Run button must render.
-      // ("Runners" tab button also matches /run/i so use a count check.)
+      // Count-check: the "Runners" tab button also matches /run/i.
       expect(screen.getAllByRole("button", { name: /run/i }).length).toBeGreaterThan(0);
     });
   });
@@ -151,7 +150,6 @@ describe("WorkflowsPage", () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage();
     await waitFor(() => {
-      // Default tab is Workflows (files); switch to Runs.
       fireEvent.click(screen.getByText("Runs"));
     });
     await waitFor(() => {
@@ -175,21 +173,16 @@ describe("WorkflowsPage", () => {
   it("opens the dispatch dialog when Run workflow is clicked", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage();
-    // Take the LAST /run/i button — the per-row dispatch action — to
-    // skip the heading-level "Run" mentions if any exist.
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: /run/i }).length).toBeGreaterThan(0);
     });
-    // Wait for the row to render (the file path appears once data arrives).
     await screen.findByText(".github/workflows/ci.yml");
-    // Click the per-row dispatch button. The button label starts with
-    // "Run " — anchor on it to skip the "Runs" tab.
+    // Anchor on the "Run " prefix to hit the per-row dispatch button, not the "Runs" tab.
     const buttons = screen.getAllByRole("button");
     const runBtn = buttons.find((b) => /^run\b/i.test(b.textContent ?? ""));
     expect(runBtn, `Found ${buttons.length} buttons: ${buttons.map((b) => b.textContent).join(" | ")}`).toBeDefined();
     fireEvent.click(runBtn!);
-    // The workflow file is unreadable in this mock (contents 404s to []),
-    // so the dialog falls back to the raw JSON inputs field.
+    // Contents 404s to [] here, so the dialog falls back to the raw JSON inputs field.
     await waitFor(() => {
       expect(screen.getByLabelText(/inputs \(json\)/i)).toBeInTheDocument();
     });
@@ -237,7 +230,7 @@ describe("WorkflowsPage", () => {
     const buttons = screen.getAllByRole("button");
     fireEvent.click(buttons.find((b) => /^run\b/i.test(b.textContent ?? ""))!);
 
-    // Typed field replaces the raw JSON textarea, default prefilled.
+    // Typed field replaces the raw JSON textarea, YAML default prefilled.
     const envInput = await screen.findByLabelText(/environment name \*/i);
     expect(envInput).toHaveValue("staging");
     expect(screen.queryByLabelText(/inputs \(json\)/i)).not.toBeInTheDocument();

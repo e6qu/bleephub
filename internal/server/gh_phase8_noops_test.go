@@ -56,7 +56,6 @@ func TestSecretScanning_OrgAlertFilters(t *testing.T) {
 	token := adminTokenFor(s)
 	base := "/api/v3/orgs/ss-filter-org/secret-scanning/alerts"
 
-	// No filter: both alerts.
 	w := pagedJSONRequest(t, s, "GET", base, token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list all = %d", w.Code)
@@ -66,14 +65,13 @@ func TestSecretScanning_OrgAlertFilters(t *testing.T) {
 		t.Fatalf("list all = %d alerts, want 2", len(list))
 	}
 
-	// state=open filter (both are open by default): 2 alerts.
+	// Both alerts are open by default, so state=open matches both.
 	w = pagedJSONRequest(t, s, "GET", base+"?state=open", token, nil)
 	list = mustDecodeJSONList(t, w.Body.Bytes())
 	if len(list) != 2 {
 		t.Fatalf("state=open = %d alerts, want 2", len(list))
 	}
 
-	// secret_type=aws_access_key_id filter: one alert.
 	w = pagedJSONRequest(t, s, "GET", base+"?secret_type=aws_access_key_id", token, nil)
 	list = mustDecodeJSONList(t, w.Body.Bytes())
 	if len(list) != 1 {
@@ -83,7 +81,6 @@ func TestSecretScanning_OrgAlertFilters(t *testing.T) {
 		t.Errorf("secret_type=aws returned secret_type=%v", list[0]["secret_type"])
 	}
 
-	// Resolve one alert and filter by resolution.
 	_ = s.store.UpdateSecretScanningAlert(a2, "resolved", "used_in_tests", "")
 
 	w = pagedJSONRequest(t, s, "GET", base+"?resolution=used_in_tests", token, nil)
@@ -92,7 +89,7 @@ func TestSecretScanning_OrgAlertFilters(t *testing.T) {
 		t.Fatalf("resolution=used_in_tests = %d alerts, want 1", len(list))
 	}
 
-	// Unknown state: accepted, 200, zero matches.
+	// An unknown filter value is accepted (200) and matches nothing, per GitHub.
 	w = pagedJSONRequest(t, s, "GET", base+"?state=does-not-exist", token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("unknown state = %d, want 200", w.Code)
@@ -128,7 +125,6 @@ func TestDependabot_OrgAlertFilters(t *testing.T) {
 	token := adminTokenFor(s)
 	base := "/api/v3/orgs/db-filter-org/dependabot/alerts"
 
-	// No filter: both alerts.
 	w := pagedJSONRequest(t, s, "GET", base, token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list all = %d", w.Code)
@@ -138,21 +134,18 @@ func TestDependabot_OrgAlertFilters(t *testing.T) {
 		t.Fatalf("list all = %d alerts, want 2", len(list))
 	}
 
-	// state filter.
 	w = pagedJSONRequest(t, s, "GET", base+"?state=open", token, nil)
 	list = mustDecodeJSONList(t, w.Body.Bytes())
 	if len(list) != 1 {
 		t.Fatalf("state=open = %d alerts, want 1", len(list))
 	}
 
-	// package filter.
 	w = pagedJSONRequest(t, s, "GET", base+"?package=pkg-b", token, nil)
 	list = mustDecodeJSONList(t, w.Body.Bytes())
 	if len(list) != 1 {
 		t.Fatalf("package=pkg-b = %d alerts, want 1", len(list))
 	}
 
-	// ecosystem filter.
 	w = pagedJSONRequest(t, s, "GET", base+"?ecosystem=npm", token, nil)
 	list = mustDecodeJSONList(t, w.Body.Bytes())
 	if len(list) != 2 {
@@ -286,7 +279,6 @@ func TestCodeScanning_OrgAlertFilters(t *testing.T) {
 	token := adminTokenFor(s)
 	base := "/api/v3/orgs/cs-org-filters/code-scanning/alerts"
 
-	// No filter: both alerts.
 	w := pagedJSONRequest(t, s, "GET", base, token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list all = %d", w.Code)
@@ -296,21 +288,19 @@ func TestCodeScanning_OrgAlertFilters(t *testing.T) {
 		t.Fatalf("list all = %d, want 2", len(list))
 	}
 
-	// Severity filter.
 	w = pagedJSONRequest(t, s, "GET", base+"?severity=error", token, nil)
 	list = mustDecodeJSONList(t, w.Body.Bytes())
 	if len(list) != 1 {
 		t.Fatalf("severity=error = %d, want 1", len(list))
 	}
 
-	// Tool name filter.
 	w = pagedJSONRequest(t, s, "GET", base+"?tool_name=CodeQL", token, nil)
 	list = mustDecodeJSONList(t, w.Body.Bytes())
 	if len(list) != 1 {
 		t.Fatalf("tool_name=CodeQL = %d, want 1", len(list))
 	}
 
-	// Unknown state filter: accepted, 200, zero matches.
+	// An unknown filter value is accepted (200) and matches nothing, per GitHub.
 	w = pagedJSONRequest(t, s, "GET", base+"?state=nonexistent", token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("unknown state = %d, want 200", w.Code)

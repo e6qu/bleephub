@@ -43,7 +43,6 @@ func TestOAuthAppCreate_AndCheckTokenWithBasicAuth(t *testing.T) {
 	if got["token"] != tok.Token {
 		t.Errorf("inspection echoed wrong token: %v", got["token"])
 	}
-	// token_last_eight + hashed_token reflect the real token.
 	if got["token_last_eight"] != tok.Token[len(tok.Token)-8:] {
 		t.Errorf("token_last_eight = %v, want %s", got["token_last_eight"], tok.Token[len(tok.Token)-8:])
 	}
@@ -51,11 +50,10 @@ func TestOAuthAppCreate_AndCheckTokenWithBasicAuth(t *testing.T) {
 	if got["hashed_token"] != hex.EncodeToString(sum[:]) {
 		t.Errorf("hashed_token = %v, want %s", got["hashed_token"], hex.EncodeToString(sum[:]))
 	}
-	// OAuth-App token → installation is null.
+	// An OAuth-App token has no installation, so this field is null.
 	if v, present := got["installation"]; !present || v != nil {
 		t.Errorf("installation = %v (present=%v), want null for OAuth-App token", v, present)
 	}
-	// app object carries the real OAuth App name + client_id.
 	appObj, _ := got["app"].(map[string]any)
 	if appObj == nil {
 		t.Fatalf("missing app object in inspection response")
@@ -79,7 +77,6 @@ func TestOAuthCheckToken_BadCreds(t *testing.T) {
 	tok, _ := s.store.CreateUserToServerToken(user.ID, 0, oapp.ClientID, "repo", 8*time.Hour, false)
 	body, _ := json.Marshal(map[string]string{"access_token": tok.Token})
 
-	// Wrong secret → 401
 	req := httptest.NewRequest("POST", "/api/v3/applications/"+oapp.ClientID+"/token", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Basic "+basicHeader(oapp.ClientID, "wrong"))
 	w := httptest.NewRecorder()
@@ -88,7 +85,6 @@ func TestOAuthCheckToken_BadCreds(t *testing.T) {
 		t.Errorf("wrong-secret status = %d, want 401", w.Code)
 	}
 
-	// No Authorization header → 401
 	req = httptest.NewRequest("POST", "/api/v3/applications/"+oapp.ClientID+"/token", bytes.NewReader(body))
 	w = httptest.NewRecorder()
 	s.requestHandler().ServeHTTP(w, req)
@@ -122,7 +118,6 @@ func TestOAuthResetToken_RotatesAndRevokesOld(t *testing.T) {
 	if newToken == "" || newToken == oldToken {
 		t.Errorf("reset returned same/empty token: old=%q new=%q", oldToken, newToken)
 	}
-	// Old token is revoked.
 	if got, _ := s.store.LookupUserToServerToken(oldToken); got != nil {
 		t.Error("old token still valid after reset")
 	}
@@ -170,7 +165,7 @@ func TestOAuthRevokeGrant_KillsAllUserToServerTokensForClient(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
 	}
-	// Both A and B revoked (entire grant for clientID/userID).
+	// Revoking the grant kills the whole clientID/userID grant, so both A and B go.
 	if got, _ := s.store.LookupUserToServerToken(a.Token); got != nil {
 		t.Error("A still valid after grant revoke")
 	}
@@ -218,7 +213,6 @@ func TestOAuthScopeToken_MintsFreshNarrowedToken(t *testing.T) {
 	if !strings.HasPrefix(newToken, "ghu_") {
 		t.Errorf("scoped token = %q, want ghu_ prefix", newToken)
 	}
-	// The fresh token resolves to a valid user-to-server token.
 	fresh, u := s.store.LookupUserToServerToken(newToken)
 	if fresh == nil || u == nil {
 		t.Error("scoped token not valid in store")
@@ -233,11 +227,11 @@ func TestOAuthScopeToken_MintsFreshNarrowedToken(t *testing.T) {
 			t.Errorf("permission scope = %v, want contents:read", fresh.Permissions)
 		}
 	}
-	// Original token is NOT revoked (GitHub leaves it intact).
+	// GitHub leaves the original token intact after scoping.
 	if orig, _ := s.store.LookupUserToServerToken(tok.Token); orig == nil {
 		t.Error("original token was revoked; scope must leave it intact")
 	}
-	// GitHub-App token → installation object present.
+	// A GitHub-App token carries an installation object, unlike the OAuth case above.
 	if got["installation"] == nil {
 		t.Error("expected installation object for GitHub-App scoped token")
 	}

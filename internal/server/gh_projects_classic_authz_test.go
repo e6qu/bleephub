@@ -31,7 +31,6 @@ func TestMoveProjectCardRefusesCrossProjectColumn(t *testing.T) {
 	victimProject := st.CreateProjectClassic(victimRepo, admin.ID, "victim board", "", "open")
 	victimColumn := st.CreateProjectColumn(victimProject.ID, "victim column")
 
-	// Move the attacker's card into the victim project's column.
 	resp := srv.post(t, "/api/v3/projects/columns/cards/"+itoa(card.ID)+"/moves", defaultToken,
 		map[string]interface{}{"column_id": victimColumn.ID, "position": "last"})
 	resp.Body.Close()

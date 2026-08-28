@@ -34,9 +34,8 @@ func mustJSON(v any) []byte {
 	return b
 }
 
-// TestDependabotAlertReadsReturnDetachedSnapshots pins STORE-021 for the
-// dependabot family: GetDependabotAlert returns a copy, UpdateDependabotAlert
-// still reaches the live row.
+// TestDependabotAlertReadsReturnDetachedSnapshots pins STORE-021 for dependabot:
+// GetDependabotAlert returns a copy, UpdateDependabotAlert still reaches the live row.
 func TestDependabotAlertReadsReturnDetachedSnapshots(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.UsersByLogin["admin"]
@@ -241,7 +240,6 @@ func TestDependabot_GetAndPatch(t *testing.T) {
 		t.Fatalf("unexpected patched alert: %+v", updated)
 	}
 
-	// Reopen
 	patch, _ = json.Marshal(map[string]any{"state": "open"})
 	req, _ = http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/dependabot-patch/dependabot/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
@@ -466,7 +464,6 @@ func TestDependabot_OrgSecretsCRUD(t *testing.T) {
 		t.Fatalf("expected 1 selected repo, got %v", repos["total_count"])
 	}
 
-	// Replace selected repos
 	setBody := map[string]any{"selected_repository_ids": []int{}}
 	req, _ = http.NewRequest("PUT", s.baseURL+"/api/v3/orgs/dependabot-org/dependabot/secrets/ORG_SECRET/repositories", bytes.NewReader(mustJSON(setBody)))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
@@ -658,7 +655,6 @@ func TestDependabot_RepositoryAccessDefaultLevel(t *testing.T) {
 		t.Fatal("create org failed")
 	}
 
-	// Invalid level.
 	resp := s.put(t, "/api/v3/orgs/dependabot-default-level/dependabot/repository-access/default-level", defaultToken, map[string]any{
 		"default_level": "top-secret",
 	})
@@ -667,7 +663,6 @@ func TestDependabot_RepositoryAccessDefaultLevel(t *testing.T) {
 		t.Fatalf("invalid default level: %d, want 422", resp.StatusCode)
 	}
 
-	// Set to internal and read it back through the repository-access GET.
 	resp = s.put(t, "/api/v3/orgs/dependabot-default-level/dependabot/repository-access/default-level", defaultToken, map[string]any{
 		"default_level": "internal",
 	})
@@ -689,7 +684,6 @@ func TestDependabot_RepositoryAccessDefaultLevel(t *testing.T) {
 		t.Fatalf("default_level = %v, want internal", got["default_level"])
 	}
 
-	// Unknown org.
 	resp = s.put(t, "/api/v3/orgs/no-such-dependabot-org/dependabot/repository-access/default-level", defaultToken, map[string]any{
 		"default_level": "public",
 	})
@@ -732,7 +726,6 @@ func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		t.Fatalf("put org secret: %d, want 201", resp.StatusCode)
 	}
 
-	// Add the second repository.
 	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories/%d", r2.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
@@ -748,7 +741,6 @@ func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		t.Fatalf("selected repos after add = %v, want 2", repos["total_count"])
 	}
 
-	// Remove the first repository.
 	resp = s.delete(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/SELECTED_SECRET/repositories/%d", r1.ID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
@@ -779,7 +771,6 @@ func TestDependabot_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		t.Fatalf("add repo to all-visibility secret: %d, want 409", resp.StatusCode)
 	}
 
-	// Unknown secret.
 	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/dependabot-repo-sel/dependabot/secrets/NO_SUCH/repositories/%d", r1.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {

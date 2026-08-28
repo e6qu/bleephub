@@ -115,9 +115,8 @@ func TestCodespaceWorkspacePreparationDoesNotHoldStoreLock(t *testing.T) {
 }
 
 // TestCodespaceSecretStoresValue covers STORE-031: CreateCodespaceSecret must
-// retain the decrypted value it is handed, both when creating and when
-// updating an existing secret. The value is never returned through the API,
-// so it is only observable at the store boundary.
+// retain the decrypted value on create and update; it never returns through the
+// API, so it is only observable at the store boundary.
 func TestCodespaceSecretStoresValue(t *testing.T) {
 	st := store.NewStore()
 	st.SeedDefaultUser()

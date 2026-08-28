@@ -14,10 +14,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// actionDownloadInfoRequest makes the call the worker makes. The handler mints
-// the archive download credential from the caller's own job runtime token, so
-// there is no such thing as an uncredentialed resolve — a request without one
-// is a state the route cannot produce.
+// actionDownloadInfoRequest makes the call the worker makes; the handler mints the download credential from the caller's own job runtime token, so an uncredentialed resolve is a state the route cannot produce.
 func actionDownloadInfoRequest(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	token, _ := testJobToken(t, s, "actions/job-repo")
@@ -207,8 +204,7 @@ func TestActionTarballFailsLoudForExternalAction(t *testing.T) {
 
 func TestActionTarballServesFromCache(t *testing.T) {
 	s := newTestServer()
-	// The tarball route resolves the action repository's visibility before it
-	// serves anything, cache hit included.
+	// The tarball route resolves the action repository's visibility before serving anything, cache hit included.
 	commitFilesToStorage(t, s, "actions/checkout", map[string]string{
 		"action.yml": "name: checkout\nruns:\n  using: composite\n  steps: []\n",
 	})
@@ -307,10 +303,7 @@ func testActionTarball(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-// newTestServer creates a route-free server for focused unit tests through the
-// same complete state constructor production uses. Tests register only the
-// surface they exercise, but every production dependency field is initialized
-// with its deterministic in-memory counterpart.
+// newTestServer builds a route-free server through the same state constructor production uses, with every dependency field initialized to its deterministic in-memory counterpart; tests register only the surface they exercise.
 func newTestServer() *Server {
 	logger := zerolog.Nop()
 	s := newServerState("127.0.0.1:0", logger, serverConstruction{

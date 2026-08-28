@@ -35,14 +35,11 @@ func postOAuthJSON(t *testing.T, s *Server, path string, body map[string]interfa
 }
 
 // TestOAuth_DeviceFlow_AcceptsJSONRequestBody pins that the device-flow
-// endpoints read their parameters from a JSON body as well as a form-encoded
-// one, across the whole grant.
-//
-// The official octokit device-flow strategy sends JSON. Reading only the form
-// encoding did not degrade the grant, it made it unreachable: every parameter
-// came back empty, so the request looked like one carrying no client_id and was
-// refused as bad client credentials — a wrong answer, not a missing feature,
-// and one that reads to the client as "your app is not registered".
+// endpoints read parameters from a JSON body as well as a form-encoded one,
+// across the whole grant. octokit sends JSON; reading only the form encoding
+// made the grant unreachable — every parameter came back empty, so the request
+// was refused as bad client credentials, a wrong answer rather than a missing
+// feature.
 func TestOAuth_DeviceFlow_AcceptsJSONRequestBody(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -55,7 +52,6 @@ func TestOAuth_DeviceFlow_AcceptsJSONRequestBody(t *testing.T) {
 	app := createOAuthTestApp(t, s, "http://json-device-callback/")
 	s.registerGHOAuthRoutes()
 
-	// Step 1: the device code request, as JSON.
 	device := postOAuthJSON(t, s, "/login/device/code", map[string]interface{}{
 		"client_id": app.ClientID,
 		"scope":     "repo",
@@ -69,8 +65,7 @@ func TestOAuth_DeviceFlow_AcceptsJSONRequestBody(t *testing.T) {
 		t.Fatalf("device code response = %v, want device_code and user_code", device)
 	}
 
-	// Step 2: polling before approval, as JSON — the pending answer, not a
-	// credentials error.
+	// Polling before approval must be the pending answer, not a credentials error.
 	pending := postOAuthJSON(t, s, "/login/oauth/access_token", map[string]interface{}{
 		"client_id":   app.ClientID,
 		"device_code": deviceCode,
@@ -80,7 +75,6 @@ func TestOAuth_DeviceFlow_AcceptsJSONRequestBody(t *testing.T) {
 		t.Fatalf("polling before approval = %v, want authorization_pending", pending)
 	}
 
-	// Step 3: approval happens in the browser, then the JSON poll completes.
 	approveDeviceCode(t, s, alice.Login, userCode)
 	granted := postOAuthJSON(t, s, "/login/oauth/access_token", map[string]interface{}{
 		"client_id":   app.ClientID,

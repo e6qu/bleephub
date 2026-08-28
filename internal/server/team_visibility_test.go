@@ -8,10 +8,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestTeamVisibilityNonMember asserts that an org's teams (and their members /
-// repo grants) are hidden from a non-member authenticated caller — real GitHub
-// returns 404 for these to anyone outside the org, never exposing the team
-// structure. A member sees them.
+// TestTeamVisibilityNonMember: an org's teams (and their members/repo grants)
+// 404 for a non-member caller, as on real GitHub, but a member sees them.
 func TestTeamVisibilityNonMember(t *testing.T) {
 	s := newTestServer()
 	s.registerGHTeamRoutes()
@@ -47,7 +45,6 @@ func TestTeamVisibilityNonMember(t *testing.T) {
 		}
 	}
 
-	// The team list, for a member, includes the team.
 	w := tokenRequest(s, "GET", "/api/v3/orgs/team-org/teams", store.AdminToken())
 	var teams []map[string]any
 	json.Unmarshal(w.Body.Bytes(), &teams)

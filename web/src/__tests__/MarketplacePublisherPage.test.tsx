@@ -121,7 +121,7 @@ describe("MarketplacePublisherPage", () => {
     await waitFor(() => expect(screen.getByText("Pro")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    // Confirm inside the confirmAction modal (its confirm button is labelled "Delete").
+    // Scope to the dialog — the modal's confirm button is also labelled "Delete".
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 

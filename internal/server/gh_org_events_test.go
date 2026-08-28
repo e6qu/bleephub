@@ -28,7 +28,6 @@ func TestOrgEvents_FeedFromRecordedActivity(t *testing.T) {
 		t.Fatalf("expected empty event feed, got %v", events)
 	}
 
-	// Real activity: an issue and a comment on it.
 	resp = srv.post(t, "/api/v3/repos/events-org/events-repo/issues", defaultToken, map[string]interface{}{
 		"title": "events feed issue",
 	})
@@ -137,7 +136,6 @@ func TestOrgEvents_FeedFromRecordedActivity(t *testing.T) {
 		t.Fatalf("closed IssuesEvent missing: %v", closedFeed)
 	}
 
-	// Unknown org.
 	resp = srv.get(t, "/api/v3/orgs/no-such-events-org/events", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {

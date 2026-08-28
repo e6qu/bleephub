@@ -27,7 +27,7 @@ describe("Markdown task lists", () => {
     fireEvent.click(boxes[1]!);
     expect(onToggle).toHaveBeenCalledWith(1, false);
 
-    // Without the handler the checkboxes stay disabled (read-only).
+    // No handler keeps the checkboxes disabled (read-only).
     rerender(
       <MemoryRouter>
         <div className="markdown-body">
@@ -79,8 +79,7 @@ describe("Markdown autolinks", () => {
     const { container } = renderMd(
       <Markdown linkContext={ctx}>{"`#123` and mail me@example.com"}</Markdown>,
     );
-    // The code-span #123 is not turned into an issue link, and the email's
-    // `@example` is not turned into an @mention — i.e. no in-app /ui/ links fire.
+    // Neither the code-span #123 nor the email's `@example` fires an in-app /ui/ link.
     // (remark-gfm may still linkify the email to mailto:, which is fine.)
     const internal = [...container.querySelectorAll("a")].filter((a) =>
       (a.getAttribute("href") ?? "").startsWith("/ui/"),
@@ -98,10 +97,9 @@ describe("Markdown", () => {
     );
     const alert = container.querySelector(".markdown-alert.markdown-alert-warning");
     expect(alert).not.toBeNull();
-    // Title line derived from the marker; blockquote is gone.
     expect(alert?.querySelector(".markdown-alert-title")?.textContent).toBe("Warning");
     expect(container.querySelector("blockquote")).toBeNull();
-    // The marker text itself is stripped from the body.
+    // The marker text is stripped from the body.
     expect(screen.getByText("Be careful here.")).toBeInTheDocument();
     expect(alert?.textContent).not.toContain("[!WARNING]");
   });

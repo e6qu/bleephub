@@ -36,7 +36,6 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 	keyID := privateRegistriesKeyID(s, t, org)
 	base := "/api/v3/orgs/" + org + "/private-registries"
 
-	// Create a token-authenticated Maven repository registry.
 	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"registry_type":   "maven_repository",
 		"url":             "https://maven.pkg.example.com/org/",
@@ -78,7 +77,6 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 		t.Fatalf("second name = %v", second["name"])
 	}
 
-	// List.
 	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list registries: %d", resp.StatusCode)
@@ -91,7 +89,6 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 		t.Fatalf("configurations = %v", configs)
 	}
 
-	// GET one.
 	resp = s.get(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get registry: %d", resp.StatusCode)
@@ -100,7 +97,6 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 		t.Fatalf("get = %v", got)
 	}
 
-	// PATCH updates in place.
 	resp = s.patch(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken, map[string]interface{}{
 		"url":        "https://maven-new.pkg.example.com/org/",
 		"visibility": "all",
@@ -124,7 +120,6 @@ func TestOrgPrivateRegistries_CRUD(t *testing.T) {
 		t.Fatalf("auth_type change: %d", resp.StatusCode)
 	}
 
-	// DELETE.
 	resp = s.delete(t, base+"/MAVEN_REPOSITORY_SECRET", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {

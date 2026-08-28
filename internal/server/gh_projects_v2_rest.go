@@ -49,7 +49,6 @@ func (s *Server) registerGHProjectsV2Routes() {
 	s.route("POST /api/v3/user/{user_id}/projectsV2/{project_number}/drafts", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleAuthenticatedUserProjectV2CreateDraft))
 }
 
-// ---------------------------------------------------------------------------
 // Owner resolution + access control
 
 func (s *Server) projectV2OrgOwner(w http.ResponseWriter, r *http.Request) (*store.ProjectV2Owner, bool) {
@@ -147,7 +146,6 @@ func (s *Server) requireProjectV2Write(w http.ResponseWriter, r *http.Request, o
 	return user, true
 }
 
-// ---------------------------------------------------------------------------
 // Cursor pagination (per_page + after/before)
 
 type cursorPageInfo struct {
@@ -240,7 +238,6 @@ func setCursorLinkHeader(w http.ResponseWriter, r *http.Request, pi cursorPageIn
 	}
 }
 
-// ---------------------------------------------------------------------------
 // JSON rendering
 
 // projectV2APIURL is the project's REST URL, anchoring project_url and item_url.
@@ -508,7 +505,6 @@ func (s *Server) projectV2ViewJSON(r *http.Request, v *store.ProjectV2View, owne
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Filter queries. The grammar is a token stream of `is:` state qualifiers,
 // `field:value` qualifiers, and free text matching the title.
 
@@ -658,7 +654,6 @@ func parseProjectV2FieldsParam(w http.ResponseWriter, r *http.Request) ([]int, b
 	return out, true
 }
 
-// ---------------------------------------------------------------------------
 // Shared handler cores
 
 func (s *Server) serveProjectsV2List(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
@@ -1207,7 +1202,6 @@ func (s *Server) serveProjectV2ListViewItems(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, out)
 }
 
-// ---------------------------------------------------------------------------
 // Route-facing wrappers
 
 func (s *Server) handleOrgProjectsV2List(w http.ResponseWriter, r *http.Request) {

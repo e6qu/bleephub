@@ -49,7 +49,6 @@ func TestOrgCopilotSpaces_CRUD(t *testing.T) {
 	}
 	requireStatus(t, s.get(t, strings.TrimPrefix(apiURL, s.baseURL), defaultToken), 200)
 
-	// List and get.
 	listed := decodeJSONWithStatus(t, s.get(t, base, defaultToken), 200)
 	if spaces := listed["spaces"].([]interface{}); len(spaces) != 1 {
 		t.Fatalf("listed %d spaces, want 1", len(spaces))
@@ -59,18 +58,15 @@ func TestOrgCopilotSpaces_CRUD(t *testing.T) {
 		t.Fatalf("get space = %v", got)
 	}
 
-	// Update round-trips.
 	updated := decodeJSONWithStatus(t, s.put(t, base+"/1", defaultToken,
 		map[string]interface{}{"name": "Updated Space", "base_role": "writer"}), 200)
 	if updated["name"] != "Updated Space" || updated["base_role"] != "writer" {
 		t.Fatalf("updated space = %v", updated)
 	}
 
-	// Delete, then the space is gone.
 	requireStatus(t, s.delete(t, base+"/1", defaultToken), 204)
 	requireStatus(t, s.get(t, base+"/1", defaultToken), 404)
 
-	// Unknown org → 404.
 	requireStatus(t, s.get(t, "/api/v3/orgs/no-such-org/copilot-spaces", defaultToken), 404)
 }
 
@@ -175,7 +171,6 @@ func TestOrgCopilotSpaceCollaborators(t *testing.T) {
 	requireStatus(t, s.post(t, spaceBase+"/collaborators", defaultToken,
 		map[string]interface{}{"actor_type": "User", "actor_identifier": "no-such-user", "role": "reader"}), 422)
 
-	// Add bob as a writer.
 	collab := decodeJSONWithStatus(t, s.post(t, spaceBase+"/collaborators", defaultToken,
 		map[string]interface{}{"actor_type": "User", "actor_identifier": bob.Login, "role": "writer"}), 201)
 	if collab["actor_type"] != "User" || collab["role"] != "writer" || collab["login"] != bob.Login {
@@ -200,7 +195,6 @@ func TestOrgCopilotSpaceCollaborators(t *testing.T) {
 		t.Fatalf("listed %d collaborators, want 2", len(collabs))
 	}
 
-	// Update bob's role via the path-addressed PUT.
 	updated := decodeJSONWithStatus(t, s.put(t, spaceBase+"/collaborators/User/"+bob.Login, defaultToken,
 		map[string]interface{}{"role": "admin"}), 200)
 	if updated["role"] != "admin" {
@@ -252,7 +246,6 @@ func TestCopilotSpaceResources_CRUD(t *testing.T) {
 	requireStatus(t, s.post(t, resBase, defaultToken, map[string]interface{}{
 		"resource_type": "repository", "metadata": map[string]interface{}{"repository_id": 999999}}), 422)
 
-	// Attach a repository resource.
 	repoMeta := map[string]interface{}{"repository_id": repo.ID}
 	repoRes := decodeJSONWithStatus(t, s.post(t, resBase, defaultToken, map[string]interface{}{
 		"resource_type": "repository", "metadata": repoMeta}), 201)
@@ -276,7 +269,6 @@ func TestCopilotSpaceResources_CRUD(t *testing.T) {
 	textRes := decodeJSONWithStatus(t, s.post(t, resBase, defaultToken, map[string]interface{}{
 		"resource_type": "free_text", "metadata": map[string]interface{}{"name": "notes", "text": "Remember the milk"}}), 201)
 
-	// List, get, update, delete.
 	listed := decodeJSONWithStatus(t, s.get(t, resBase, defaultToken), 200)
 	if resources := listed["resources"].([]interface{}); len(resources) != 2 {
 		t.Fatalf("listed %d resources, want 2", len(resources))

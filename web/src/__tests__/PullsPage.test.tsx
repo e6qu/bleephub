@@ -17,8 +17,7 @@ function jsonResponse(data: unknown, status = 200, headers: Record<string, strin
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
-  // Viewed-file and review-summary state persist per PR in sessionStorage;
-  // keep tests independent.
+  // Viewed-file / review-summary state persists per PR in sessionStorage; isolate tests.
   sessionStorage.clear();
 });
 
@@ -65,8 +64,7 @@ const noChecks = { total_count: 0, check_runs: [] };
 const emptyStatus = { state: "pending", sha: "abc", total_count: 0, statuses: [] };
 const emptyReviewers = { users: [], teams: [] };
 const viewer = { id: 1, login: "admin", avatar_url: "", type: "User", site_admin: true };
-// Viewer-role gating reads the repo payload's permissions; the admin fixture
-// carries full access so the write affordances render as they always did.
+// Viewer-role gating reads the repo payload's permissions; this admin fixture grants full access.
 const adminPerms = { admin: true, push: true, pull: true };
 const adminRepo = {
   id: 1,
@@ -77,10 +75,7 @@ const adminRepo = {
   permissions: adminPerms,
 };
 
-/**
- * Detail-view mock: overrides() is consulted first; everything else gets an
- * honest empty response of the right shape for PR #9 on admin/test.
- */
+// Detail-view mock: overrides() wins; else an empty response of the right shape for PR #9.
 function mockPRApis(overrides: (u: string, init?: RequestInit) => Response | undefined = () => undefined) {
   mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
     const u = url.toString();
@@ -245,10 +240,7 @@ describe("PullsPage checks section", () => {
       check_runs: [checkRun(1, "build"), checkRun(2, "lint")],
     });
     renderAt("/ui/admin/test/pulls/9");
-    // The Conversation merge box shows the aggregate summary…
     expect(await screen.findByText(/all checks have passed/i)).toBeInTheDocument();
-    // …and the Checks tab (labeled with the reported-check count) lists the
-    // per-check rows.
     fireEvent.click(screen.getByRole("tab", { name: /^Checks/ }));
     expect(await screen.findByText("build")).toBeInTheDocument();
     expect(screen.getByText("lint")).toBeInTheDocument();
@@ -384,7 +376,6 @@ describe("PullsPage reviews", () => {
     renderAt("/ui/admin/test/pulls/9/files");
     await screen.findByText("main.go");
 
-    // The review popover lives behind the "Review changes" button.
     fireEvent.click(screen.getByRole("button", { name: /review changes/i }));
     const summary = await screen.findByLabelText("Review summary");
 
@@ -536,12 +527,9 @@ describe("PullsPage review comment threads", () => {
     });
     renderAt("/ui/admin/test/pulls/9");
 
-    // The page has several ReactionBars (PR body + each review comment); the
-    // review comment's is the last to render.
+    // Several ReactionBars render; the review comment's is last.
     expect(await screen.findByText("comment 11")).toBeInTheDocument();
-    // The review comment's ReactionBar renders only after its reactions query
-    // resolves (ReactionBar returns null while loading), so wait for both the
-    // PR-body bar and the review-comment bar, then use the review comment's.
+    // ReactionBar returns null while loading; wait for both bars before using the last.
     await waitFor(() =>
       expect(screen.getAllByRole("button", { name: "add reaction" }).length).toBeGreaterThanOrEqual(2),
     );
@@ -572,8 +560,7 @@ describe("PullsPage requested reviewers", () => {
       if (u.endsWith("/pulls/9/requested_reviewers") && init?.method === "DELETE") {
         return jsonResponse(pr(9, "Feature PR"));
       }
-      // Reviewers are chosen from the assignable users; carol is already
-      // requested (filtered out), dave is offered.
+      // carol is already requested (filtered out); dave is offered.
       if (u.endsWith("/assignees")) {
         return jsonResponse([{ login: "carol" }, { login: "dave" }]);
       }
@@ -581,8 +568,7 @@ describe("PullsPage requested reviewers", () => {
     });
     renderAt("/ui/admin/test/pulls/9");
 
-    // The requested-reviewer chip (carol also appears as an assignable option,
-    // so target the chip's remove control to disambiguate).
+    // carol also appears as an assignable option; target the chip's remove control.
     expect(await screen.findByLabelText("remove reviewer carol")).toBeInTheDocument();
 
     const reviewerSelect = await screen.findByLabelText("reviewer login");
@@ -603,8 +589,7 @@ describe("PullsPage requested reviewers", () => {
 
   it("requests and removes a team reviewer", async () => {
     mockPRApis((u, init) => {
-      // Team reviewers exist only on org-owned repos; the picker gates on the
-      // repo detail's owner type, so serve an Organization owner here.
+      // Team reviewers need an org-owned repo; the picker gates on owner type.
       if (u.endsWith("/repos/admin/test") && init?.method === undefined) {
         return jsonResponse({
           id: 1,
@@ -635,8 +620,6 @@ describe("PullsPage requested reviewers", () => {
     });
     renderAt("/ui/admin/test/pulls/9");
 
-    // The requested team chip is removable, and only the not-yet-requested team
-    // is offered in the picker.
     expect(await screen.findByLabelText("remove team platform")).toBeInTheDocument();
     const teamSelect = await screen.findByLabelText("reviewer team");
     fireEvent.change(teamSelect, { target: { value: "security" } });
@@ -675,9 +658,7 @@ describe("PullsPage combined status merge box", () => {
     });
     renderAt("/ui/admin/test/pulls/9");
 
-    // The merge box shows the shared failure summary on Conversation…
     expect(await screen.findByText(/some checks were not successful/i)).toBeInTheDocument();
-    // …and the Checks tab lists the commit-status contexts + check runs.
     fireEvent.click(screen.getByRole("tab", { name: /^Checks/ }));
     expect(await screen.findByText(/ci\/lint/)).toBeInTheDocument();
     expect(screen.getByText(/lint failed/)).toBeInTheDocument();
@@ -785,7 +766,6 @@ describe("PullsPage detail sub-tabs", () => {
     expect(screen.getByRole("tab", { name: "Commits" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Files changed" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Checks" })).toBeInTheDocument();
-    // The Reviewers section lives in the sidebar on the Conversation tab.
     expect(screen.getByText("Reviewers")).toBeInTheDocument();
   });
 
@@ -867,8 +847,7 @@ describe("PullsPage merge box", () => {
     renderAt("/ui/admin/test/pulls/9");
     await screen.findByRole("heading", { name: /Feature PR/ });
 
-    // GitHub's two-step flow: the merge button opens a confirmation panel
-    // with the method-specific default commit title, then Confirm merges.
+    // GitHub's two-step flow: merge button opens a confirm panel with the default commit title.
     fireEvent.change(screen.getByLabelText("Merge method"), { target: { value: "squash" } });
     fireEvent.click(screen.getByRole("button", { name: /^squash and merge$/i }));
     expect(screen.getByLabelText("Commit title")).toHaveValue("Feature PR (#9)");
@@ -911,7 +890,6 @@ describe("PullsPage merge box", () => {
     expect(await screen.findByText(/successfully merged and closed/i)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Feature PR/ })).toBeInTheDocument();
 
-    // The merged box offers deleting the (still existing) head branch.
     fireEvent.click(await screen.findByRole("button", { name: /^delete branch$/i }));
     await waitFor(() => {
       expect(findCall("/git/refs/heads/feature", "DELETE")).toBeDefined();
@@ -990,8 +968,7 @@ describe("PullsPage conversation timeline", () => {
     expect(screen.getByText(/assigned/)).toBeInTheDocument();
     expect(screen.getByText("bob")).toBeInTheDocument();
     expect(screen.getByText(/approved these changes/)).toBeInTheDocument();
-    // alice appears in the review row and again in the sidebar participants
-    // (reviewers count as participants).
+    // alice appears in the review row and as a sidebar participant.
     expect(screen.getAllByText("alice").length).toBeGreaterThanOrEqual(1);
   });
 });
@@ -1010,8 +987,7 @@ describe("PullsPage create", () => {
     });
     renderAt("/ui/admin/test/pulls");
     fireEvent.click(await screen.findByRole("button", { name: /new pull request/i }));
-    // Wait for the branch options to load before selecting them (a controlled
-    // <select> in jsdom drops a value with no matching option).
+    // Wait for branch options: jsdom's controlled <select> drops a value with no matching option.
     await screen.findAllByRole("option", { name: "feature" });
     fireEvent.change(screen.getByLabelText(/^base$/i), { target: { value: "main" } });
     fireEvent.change(screen.getByLabelText(/^compare$/i), { target: { value: "feature" } });
@@ -1104,9 +1080,7 @@ describe("PullsPage write actions", () => {
     renderAt("/ui/admin/test/pulls/9");
     const box = await screen.findByPlaceholderText(/leave a comment/i);
     fireEvent.change(box, { target: { value: "nice" } });
-    // The composer is now a MarkdownComposer (Write/Preview + toolbar), so the
-    // textarea's nearest div is an inner tabpanel — find the submit button by
-    // its exact accessible name instead.
+    // MarkdownComposer nests the textarea in a tabpanel; match the submit button by exact name.
     fireEvent.click(screen.getByRole("button", { name: /^comment$/i }));
     await waitFor(() => expect(findCall("/issues/9/comments", "POST")).toBeDefined());
     expect(JSON.parse(String(findCall("/issues/9/comments", "POST")?.body))).toEqual({ body: "nice" });
@@ -1132,14 +1106,10 @@ describe("PullsPage detail field completeness", () => {
     });
     renderAt("/ui/admin/test/pulls/9");
 
-    // Assignee login surfaces in the sidebar.
     expect(await screen.findByText("octocat")).toBeInTheDocument();
-    // Milestone title surfaces in the sidebar.
     expect(screen.getByText("v1.0")).toBeInTheDocument();
-    // Counts surface in the tab labels.
     expect(screen.getByRole("tab", { name: /Commits 3/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Files changed 5/ })).toBeInTheDocument();
-    // Diffstat summary near the header.
     expect(screen.getByText(/5 changed files/)).toBeInTheDocument();
     expect(screen.getByText("+42")).toBeInTheDocument();
     expect(screen.getByText("−7")).toBeInTheDocument();
@@ -1257,11 +1227,9 @@ describe("PullsPage unified conversation stream", () => {
     renderAt("/ui/admin/test/pulls/9");
 
     expect(await screen.findByText("ship it")).toBeInTheDocument();
-    // The timeline "reviewed" row and the reviews-endpoint copy dedupe into
-    // exactly one review card…
+    // Timeline "reviewed" row and reviews-endpoint copy dedupe into one card.
     expect(screen.getAllByText("Approved").length).toBe(1);
-    // …with the review's inline thread nested inside it — no separate stacked
-    // "Review comments" / "Reviews" sections anymore.
+    // Its inline thread nests inside — no separate "Review comments" / "Reviews" sections.
     expect(screen.getByText("inline note")).toBeInTheDocument();
     expect(screen.queryByText("Review comments")).not.toBeInTheDocument();
     expect(screen.queryByText(/^Reviews$/)).not.toBeInTheDocument();
@@ -1336,8 +1304,7 @@ describe("PullsPage compare deep-link", () => {
     });
     renderAt("/ui/admin/test/pulls?compare=main...feature");
 
-    // The modal opens on its own with base/head prefilled once the branch
-    // options load.
+    // The modal opens on its own with base/head prefilled once branch options load.
     await screen.findAllByRole("option", { name: "feature" });
     expect(screen.getByLabelText(/^base$/i)).toHaveValue("main");
     expect(screen.getByLabelText(/^compare$/i)).toHaveValue("feature");
@@ -1391,8 +1358,7 @@ describe("PullsPage detail bootstrap", () => {
     renderAt("/ui/admin/test/pulls/9");
     expect(await screen.findByText("Bootstrapped PR")).toBeInTheDocument();
 
-    // Every sub-payload the bootstrap carried must be a cache hit — none of
-    // the standalone endpoints those hooks call may have been fetched.
+    // Every bootstrap sub-payload must be a cache hit — no standalone endpoint refetched.
     const gets = mockFetch.mock.calls
       .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
       .map((c) => c[0]!.toString());
@@ -1438,15 +1404,9 @@ describe("PullsPage detail bootstrap", () => {
     renderAt("/ui/admin/test/pulls/9");
     expect(await screen.findByText("Bootstrapped PR")).toBeInTheDocument();
 
-    // The sidebar consumes the seeded entries: the assignee picker offers the
-    // bootstrap logins and the label picker the bootstrap labels (the PR
-    // milestone field is read-only, so its seed is only assertable via the
-    // absence of the standalone fetch below).
-    // (carol appears in both the assignee picker and the reviewers picker —
-    // both read the seeded ["assignable-users"] key.)
+    // Sidebar consumes seeded entries; carol appears in both assignee and reviewer pickers (shared ["assignable-users"] key).
     expect((await screen.findAllByRole("option", { name: "carol" })).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("option", { name: "bug" })).toBeInTheDocument();
-    // …without any standalone sidebar fetches.
     const gets = mockFetch.mock.calls
       .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
       .map((c) => c[0]!.toString());
@@ -1524,8 +1484,7 @@ describe("PullsPage merge-box live polling", () => {
   it("stops polling once the refetched PR reports merged", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      // Bootstrap says open; the standalone detail (what the poll fetches)
-      // answers merged — the interval must shut itself off on that response.
+      // Bootstrap says open, poll's detail answers merged — the interval must shut itself off.
       const merged = pr(9, "Feature PR", {
         state: "closed",
         merged: true,
@@ -1546,8 +1505,7 @@ describe("PullsPage merge-box live polling", () => {
       await waitFor(() => {
         expect(detailGets()).toBe(1);
       });
-      // The refetched merged state must render (which recomputes the interval
-      // options to `false`) before the next would-be tick.
+      // The merged state must render (recomputing the interval to false) before the next tick.
       expect((await screen.findAllByText(/Merged/)).length).toBeGreaterThanOrEqual(1);
       const statusAfterFirstTick = statusGets();
 
@@ -1639,8 +1597,7 @@ describe("PullsPage auto-merge", () => {
       target: { value: "squash" },
     });
     fireEvent.click(await screen.findByRole("button", { name: /^enable auto-merge$/i }));
-    // The confirmation panel reuses the merge box's commit title/message
-    // fields, prefilled with the method-specific defaults.
+    // The confirm panel reuses the merge box's title/message fields with method defaults.
     expect(screen.getByLabelText("Commit title")).toHaveValue("Blocked PR (#9)");
     fireEvent.click(screen.getByRole("button", { name: /^confirm auto-merge$/i }));
 
@@ -1727,7 +1684,7 @@ describe("PullsPage auto-merge", () => {
   });
 });
 
-// ─── Viewer-role gating (pull-only outsider vs PR author) ─────────────────
+// Viewer-role gating: pull-only outsider vs PR author.
 
 describe("PullsPage viewer-role gating", () => {
   const readerRepo = { ...adminRepo, permissions: { admin: false, push: false, pull: true } };
@@ -1750,14 +1707,12 @@ describe("PullsPage viewer-role gating", () => {
     });
     renderAt("/ui/admin/test/pulls/9");
 
-    // github.com's exact read-only merge-box notice…
+    // github.com's exact read-only merge-box notice.
     expect(
       await screen.findByText("Only those with write access to this repository can merge pull requests."),
     ).toBeInTheDocument();
-    // …while the conflict/checks status display stays visible.
     expect(screen.getByText(/no conflicts with the base branch/i)).toBeInTheDocument();
 
-    // The merge action row is gone.
     expect(screen.queryByRole("button", { name: /merge pull request/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Merge method")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Update branch" })).not.toBeInTheDocument();

@@ -6,10 +6,9 @@ import { ToastProvider } from "@bleephub/ui-core/components";
 import { AppHeader } from "../components/AppHeader.js";
 import { PageTitle } from "../components/ui.js";
 
-// jsdom performs no real layout, so the 375px behaviour itself is enforced by
-// the Playwright gate (e2e/mobile-overflow.spec.ts). These unit tests pin the
-// specific class/style decisions that gate depends on, so a refactor that
-// drops one fails fast with a precise message instead of a CI-only overflow.
+// jsdom does no layout, so 375px behaviour is enforced by the Playwright gate
+// (e2e/mobile-overflow.spec.ts); these unit tests pin the class/style decisions it
+// depends on so a refactor that drops one fails fast, not as a CI-only overflow.
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -50,8 +49,7 @@ describe("AppHeader phone-width collapse", () => {
   it("lets the search box shrink instead of forcing page overflow", () => {
     renderHeader();
     const input = screen.getByPlaceholderText("Search or jump to…");
-    // min-width:0 overrides the input's ~170px intrinsic minimum — without it
-    // the header's flex row can never fit a 375px viewport.
+    // min-width:0 overrides the input's ~170px intrinsic minimum; without it the flex row never fits 375px.
     expect(input.style.minWidth).toBe("0px");
     const form = input.closest("form");
     expect(form?.className).toContain("min-w-0");
@@ -73,8 +71,7 @@ describe("AppHeader phone-width collapse", () => {
 
   it("collapses the Issues / Pull requests quick links below md without inline display", async () => {
     renderHeader();
-    // The labels read "Your issues" / "Your pull requests" once the viewer
-    // query resolves; findByLabelText waits that microtask out.
+    // Labels become "Your issues" / "Your pull requests" once the viewer query resolves; findByLabelText waits it out.
     for (const name of ["Your issues", "Your pull requests"]) {
       const link = await screen.findByLabelText(name);
       expect(link.className).toContain("hidden");

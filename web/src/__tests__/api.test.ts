@@ -142,8 +142,7 @@ describe("rate-limit throttle detection", () => {
 });
 
 describe("api wire-shape normalization", () => {
-  // The server emits snake_case (client_id/callback_url/created_at), while the
-  // user interface reads camelCase. fetchOAuthApps bridges that boundary.
+  // Bridge the server's snake_case wire fields to the UI's camelCase.
   it("fetchOAuthApps maps snake_case wire fields to camelCase", async () => {
     mockFetch.mockResolvedValue(
       jsonResponse([
@@ -406,9 +405,8 @@ describe("security advisory API helpers", () => {
 });
 
 describe("package API helpers", () => {
-  // The Packages tab lists every type at once, but GitHub's REST list endpoints
-  // require a single package_type (400 otherwise) — so all three scopes read the
-  // /ui-data aggregations, which accept an optional package_type.
+  // GitHub's REST list endpoints 400 without a single package_type, so all
+  // scopes read the /ui-data aggregations, which accept an optional one.
   it("reads the /ui-data user aggregation for the named user", () => {
     expect(packageListPath({ kind: "user", username: "octocat" }, "container")).toBe(
       "/ui-data/users/octocat/packages?package_type=container",
@@ -842,8 +840,7 @@ describe("GitHub Enterprise Server organization audit log application programmin
     const orgs = await fetchAuditLogOrgs();
 
     expect(orgs.map((o) => o.login)).toEqual(["acme", "zeta"]);
-    // Site admins viewing the audit log hold no personal membership, so this
-    // must list all orgs, not just the viewer's.
+    // Site admins hold no personal membership, so list all orgs, not the viewer's.
     expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/organizations?per_page=100");
   });
 
@@ -1012,9 +1009,8 @@ describe("fetchBrowserSession", () => {
 });
 
 describe("per-request cancellation", () => {
-  // Reject the moment fetch's signal aborts, mirroring how the browser fails an
-  // aborted request. The read helpers hand apiFetch a combined signal, so this
-  // exercises the whole plumbing rather than a stubbed-out shortcut.
+  // Reject the moment fetch's signal aborts, exercising the real combined-signal
+  // plumbing the read helpers pass to apiFetch rather than a stubbed shortcut.
   function rejectOnAbort() {
     mockFetch.mockImplementation(
       (_url: RequestInfo | URL, init?: RequestInit) =>
@@ -1026,8 +1022,8 @@ describe("per-request cancellation", () => {
 
   it("forwards a real AbortSignal to fetch even without a caller signal", async () => {
     rejectOnAbort();
-    // Swallow the eventual rejection: this request stays in flight and a later
-    // test's global sign-out will abort the shared controller behind it.
+    // Swallow the eventual rejection: a later test's sign-out aborts the shared
+    // controller behind this still-in-flight request.
     fetchCurrentUser().catch(() => {});
     const [, init] = mockFetch.mock.calls[0] as [unknown, RequestInit];
     expect(init.signal).toBeInstanceOf(AbortSignal);
@@ -1177,8 +1173,8 @@ describe("fetchWorkflows", () => {
     expect(runs).toHaveLength(10);
 
     const jobCalls = mockFetch.mock.calls.filter((c) => String(c[0]).includes("/jobs?"));
-    // 5 repos x 20 runs = 100 runs available; only the 10 returned cost a
-    // jobs request. The old shape issued one per run.
+    // Of 100 available runs only the 10 returned cost a jobs request; the old
+    // shape issued one per run.
     expect(jobCalls).toHaveLength(10);
 
     const runsCalls = mockFetch.mock.calls.filter((c) => /\/actions\/runs\?/.test(String(c[0])));

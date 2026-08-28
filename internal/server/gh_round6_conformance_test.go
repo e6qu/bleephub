@@ -108,7 +108,6 @@ func TestGetGPGKeyRequiresAuthAndOwnership(t *testing.T) {
 	}), 201)
 	id := itoa(int(created["id"].(float64)))
 
-	// Anonymous → 401.
 	if resp := s.get(t, "/api/v3/user/gpg_keys/"+id, ""); resp.StatusCode != http.StatusUnauthorized {
 		resp.Body.Close()
 		t.Errorf("anonymous get = %d, want 401", resp.StatusCode)

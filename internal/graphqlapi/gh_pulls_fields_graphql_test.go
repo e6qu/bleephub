@@ -3,10 +3,8 @@ package graphqlapi
 import "testing"
 
 // TestPullRequestSurfaceFieldsAuthorization proves the pull-request surface
-// fields (gh_pulls_fields_graphql.go) neither leak a private PR to a stranger
-// nor grant a viewer more standing than they hold: the private repository
-// refuses at its boundary, and on a public PR the viewerCan* family answers
-// from the viewer's real permissions rather than a blanket true.
+// fields neither leak a private PR to a stranger nor let viewerCan* answer a
+// blanket true instead of the viewer's real permissions.
 func TestPullRequestSurfaceFieldsAuthorization(t *testing.T) {
 	h := newAccountHarness(t)
 	owner := h.store.UsersByLogin["admin"]
@@ -55,10 +53,8 @@ func TestPullRequestSurfaceFieldsAuthorization(t *testing.T) {
 	if pub == nil {
 		t.Fatal("public repo not created")
 	}
-	// The PR's head and base branches have to exist before the store will
-	// open it — the private case above seeded its branch through
-	// commitRepoFiles and used it for both ends; do the same here rather than
-	// naming branches that were never created.
+	// The store won't open a PR whose head and base branches don't exist, so
+	// seed a branch via commitRepoFiles and use it for both ends.
 	h.commitRepoFiles(pub, map[string]string{"README.md": "open"})
 	pubPR := h.store.CreatePullRequest(pub.ID, owner.ID, "Open work", "public body", pub.DefaultBranch, pub.DefaultBranch, false, nil, nil, 0)
 	if pubPR == nil {

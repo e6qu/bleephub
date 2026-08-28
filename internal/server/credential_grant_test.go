@@ -12,30 +12,17 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Two credential shapes reached the self-gating surfaces — /api/graphql, which
-// carries no {repo} in its route pattern, and the git smart-HTTP transports,
-// which are not /api routes at all — carrying a selection of their own that
-// nothing read.
-//
-// A gho_ OAuth-App user token carries classic scopes. The grant arm was guarded
-// on the token having an installation behind it, and a gho_ has none, so a
-// token holding no scopes at all deleted a repository, cloned and pushed a
-// private one, and planted an organization webhook.
-//
-// A fine-grained token carries a repository selection and a permission map. The
-// routed gate reads both; nothing on the self-gating surfaces did, so a token
-// selecting one repository acted on every repository its bearer could reach.
-//
-// The two halves are asked asymmetrically of a gho_ and every case here depends
-// on that: its scopes are checked, and which installation it reaches is not,
-// because it reaches none. A reach test would refuse every OAuth app outright —
-// so each refusal below is paired with the same shape genuinely holding the
-// grant, asserted by the effect it had rather than by the status it got.
+// Guard the self-gating surfaces — /api/graphql (no {repo} in its route) and
+// the git smart-HTTP transports (not /api routes) — that never read a token's
+// scopes or selection. A scopeless gho_ once deleted repos, cloned/pushed
+// private ones, and planted org webhooks; a fine-grained PAT acted on repos
+// outside its selection. Each refusal is paired with the same shape genuinely
+// holding the grant, asserted by effect rather than status, since a reach test
+// would refuse every OAuth app outright.
 
-// credGrantCaller is one way of presenting a caller: a token in the
-// Authorization header, or a browser session cookie. Sessions are here because
-// over-blocking is the other half of what these cases pin, and a session is the
-// shape that legitimately carries no selection at all.
+// credGrantCaller presents a caller as a token or a browser session cookie.
+// Sessions are the shape that legitimately carries no selection at all, so they
+// pin the over-blocking half.
 type credGrantCaller struct {
 	srv    *isolatedServer
 	name   string
@@ -75,17 +62,17 @@ func (c credGrantCaller) do(t *testing.T, method, path, body string) (int, strin
 	return resp.StatusCode, string(raw)
 }
 
-// gitStatus advertises refs for one service, which is where both transports
-// make their access decision.
+// gitStatus advertises refs for one service, where both transports make their
+// access decision.
 func (c credGrantCaller) gitStatus(t *testing.T, repo *store.Repo, service string) int {
 	t.Helper()
 	status, _ := c.do(t, http.MethodGet, "/"+repo.FullName+".git/info/refs?service="+service, "")
 	return status
 }
 
-// mutates runs a GraphQL mutation and reports whether the server accepted it.
-// The caller checks the effect separately: a mutation that answers without
-// errors and changes nothing is the failure mode this whole file exists for.
+// mutates reports whether the server accepted a GraphQL mutation; the caller
+// checks the effect separately, since a mutation that answers without errors
+// and changes nothing is the failure mode this file exists for.
 func (c credGrantCaller) mutates(t *testing.T, doc string, input map[string]interface{}) bool {
 	t.Helper()
 	payload, err := json.Marshal(map[string]interface{}{
@@ -113,9 +100,8 @@ const (
 	credGrantDeleteRepo  = `mutation($input:DeleteRepositoryInput!){deleteRepository(input:$input){clientMutationId}}`
 )
 
-// credGrantFixture is one owner with an organization they administer. Each case
-// takes the repositories it needs from it, so a destructive probe never decides
-// the outcome of the next one.
+// credGrantFixture is one owner with an organization they administer; each case
+// takes fresh repositories so a destructive probe never decides the next case.
 type credGrantFixture struct {
 	srv   *isolatedServer
 	owner *store.User
@@ -142,8 +128,8 @@ func (s *isolatedServer) newCredGrantFixture(t *testing.T, tag string) *credGran
 	st.NextUser++
 	st.Mu.Unlock()
 
-	// CreateOrg makes the creator an active admin, which is what leaves the
-	// credential as the only thing standing on the organization routes.
+	// CreateOrg makes the creator an active admin, leaving the credential as the
+	// only thing standing on the organization routes.
 	org := st.CreateOrg(owner, "credgrant-org-"+tag, "credential grant fixture", "")
 	if org == nil {
 		t.Fatalf("%s: could not create the organization", tag)
@@ -151,9 +137,8 @@ func (s *isolatedServer) newCredGrantFixture(t *testing.T, tag string) *credGran
 	return &credGrantFixture{srv: s, owner: owner, org: org}
 }
 
-// repo creates a private repository owned by the fixture's account. Private,
-// because a public one is readable by every credential ahead of the grant and
-// the case would pass with the gate removed entirely.
+// repo creates a private repository: a public one is readable by every
+// credential ahead of the grant, so the case would pass with the gate removed.
 func (f *credGrantFixture) repo(t *testing.T, name string) *store.Repo {
 	t.Helper()
 	f.seq++
@@ -176,8 +161,8 @@ func (f *credGrantFixture) issue(t *testing.T, repo *store.Repo) *store.Issue {
 	return issue
 }
 
-// oauthToken mints a gho_ carrying exactly scopes. An empty string is a real
-// credential shape: an OAuth app the user authorized for nothing.
+// oauthToken mints a gho_ carrying exactly scopes; an empty string is a real
+// shape: an OAuth app the user authorized for nothing.
 func (f *credGrantFixture) oauthToken(t *testing.T, scopes string) credGrantCaller {
 	t.Helper()
 	f.seq++
@@ -192,8 +177,6 @@ func (f *credGrantFixture) oauthToken(t *testing.T, scopes string) credGrantCall
 	return credGrantCaller{srv: f.srv, name: "gho_ scopes=" + fmt.Sprintf("%q", scopes), token: tok.Token}
 }
 
-// fineGrainedToken mints a fine-grained PAT over the owner's account, selecting
-// exactly selected and holding perms over them.
 func (f *credGrantFixture) fineGrainedToken(t *testing.T, perms map[string]string, selected ...*store.Repo) credGrantCaller {
 	t.Helper()
 	st := f.srv.store
@@ -242,7 +225,7 @@ func (f *credGrantFixture) session(t *testing.T) credGrantCaller {
 }
 
 // credGrantServedRepo asserts the caller reaches the repository on both
-// transports and through the mutation lane, and that the mutation landed.
+// transports and through the mutation lane, and that the mutation landed in the store.
 func (s *isolatedServer) credGrantServedRepo(t *testing.T, c credGrantCaller, repo *store.Repo, issue *store.Issue) {
 	t.Helper()
 	if got := c.gitStatus(t, repo, "git-upload-pack"); got != http.StatusOK {
@@ -260,8 +243,8 @@ func (s *isolatedServer) credGrantServedRepo(t *testing.T, c credGrantCaller, re
 	}
 }
 
-// credGrantRefusedRepo is its mirror: both transports refuse, and the mutation
-// leaves the issue alone.
+// credGrantRefusedRepo is its mirror: both transports refuse and the mutation
+// leaves the issue untouched.
 func (s *isolatedServer) credGrantRefusedRepo(t *testing.T, c credGrantCaller, repo *store.Repo, issue *store.Issue) {
 	t.Helper()
 	if got := c.gitStatus(t, repo, "git-upload-pack"); got == http.StatusOK {
@@ -279,9 +262,8 @@ func (s *isolatedServer) credGrantRefusedRepo(t *testing.T, c credGrantCaller, r
 	}
 }
 
-// TestOAuthUserTokenScopesGateGitAndGraphQL is the gho_ half. A token holding no
-// scopes at all belongs to the repository's own owner, so the principal half
-// admits it and the grant is the only thing left.
+// TestOAuthUserTokenScopesGateGitAndGraphQL: a scopeless gho_ belongs to the
+// repo's own owner, so the principal half admits it and the grant is all that's left.
 func TestOAuthUserTokenScopesGateGitAndGraphQL(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -290,13 +272,12 @@ func TestOAuthUserTokenScopesGateGitAndGraphQL(t *testing.T) {
 	refused := f.repo(t, "victim")
 	s.credGrantRefusedRepo(t, f.oauthToken(t, ""), refused, f.issue(t, refused))
 
-	// The control: the same shape holding the scope GitHub grants a clone, a
-	// push and an issue edit under.
+	// Control: the same shape holding the scope GitHub grants a clone, push and
+	// issue edit under.
 	served := f.repo(t, "entitled")
 	s.credGrantServedRepo(t, f.oauthToken(t, "repo"), served, f.issue(t, served))
 
-	// And the two shapes that carry no app selection of their own, which must be
-	// exactly as unaffected as they were before.
+	// The two shapes carrying no app selection of their own must stay unaffected.
 	unaffected := f.repo(t, "classic")
 	s.credGrantServedRepo(t, f.classicToken(t, "repo"), unaffected, f.issue(t, unaffected))
 
@@ -305,8 +286,7 @@ func TestOAuthUserTokenScopesGateGitAndGraphQL(t *testing.T) {
 }
 
 // TestOAuthUserTokenScopesGateRepositoryDeletion covers the admin level
-// separately, because deleting the repository is what the case proves and a
-// deleted repository cannot then serve the control.
+// separately, since a deleted repository cannot then serve the control.
 func TestOAuthUserTokenScopesGateRepositoryDeletion(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -322,8 +302,8 @@ func TestOAuthUserTokenScopesGateRepositoryDeletion(t *testing.T) {
 		t.Errorf("%s: the repository was deleted", scopeless.name)
 	}
 
-	// delete_repo is the classic scope GitHub requires for this, and `repo`
-	// carries repository administration at admin; either must still be served.
+	// delete_repo is the classic scope GitHub requires here, and `repo` carries
+	// repository administration; either must still be served.
 	for _, scopes := range []string{"repo", "delete_repo"} {
 		target := f.repo(t, "entitled-target")
 		entitled := f.oauthToken(t, scopes)
@@ -345,10 +325,9 @@ func TestOAuthUserTokenScopesGateRepositoryDeletion(t *testing.T) {
 	}
 }
 
-// TestOAuthUserTokenScopesGateOrganizationWebhooks is the account half of the
-// same defect: an organization webhook is persistent exfiltration of every
-// event the organization emits, and the handler gates itself on the caller's
-// admin role alone.
+// TestOAuthUserTokenScopesGateOrganizationWebhooks: an org webhook is persistent
+// exfiltration of every event the org emits, and the handler once gated itself
+// on the caller's admin role alone.
 func TestOAuthUserTokenScopesGateOrganizationWebhooks(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -402,9 +381,8 @@ func TestOAuthUserTokenScopesGateOrganizationWebhooks(t *testing.T) {
 	}
 }
 
-// TestFineGrainedTokenSelectionGatesGitAndGraphQL is the second half: the
-// selection is the whole point of a fine-grained token, and the surfaces that
-// never reach requirePerm were not reading it.
+// TestFineGrainedTokenSelectionGatesGitAndGraphQL: the surfaces that never reach
+// requirePerm were not reading the token's repository selection.
 func TestFineGrainedTokenSelectionGatesGitAndGraphQL(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -418,9 +396,8 @@ func TestFineGrainedTokenSelectionGatesGitAndGraphQL(t *testing.T) {
 	}
 	token := f.fineGrainedToken(t, full, selected)
 
-	// The token holds every permission it could ask for. Only the selection
-	// separates the two repositories, and they have the same owner, so nothing
-	// but the selection can be doing the work.
+	// The token holds every permission and both repos share an owner, so only the
+	// selection can separate them.
 	s.credGrantRefusedRepo(t, token, unselected, f.issue(t, unselected))
 	s.credGrantServedRepo(t, token, selected, f.issue(t, selected))
 
@@ -441,8 +418,8 @@ func TestFineGrainedTokenSelectionGatesGitAndGraphQL(t *testing.T) {
 		t.Errorf("%s: deleteRepository reported success but the repository is still there", selecting.name)
 	}
 
-	// The over-block guard: the credentials that carry no repository selection
-	// still reach the repository the fine-grained token was refused.
+	// Over-block guard: credentials carrying no repository selection still reach
+	// the repository the fine-grained token was refused.
 	unaffected := f.repo(t, "classic")
 	s.credGrantServedRepo(t, f.classicToken(t, "repo"), unaffected, f.issue(t, unaffected))
 
@@ -450,11 +427,9 @@ func TestFineGrainedTokenSelectionGatesGitAndGraphQL(t *testing.T) {
 	s.credGrantServedRepo(t, f.session(t), viaSession, f.issue(t, viaSession))
 }
 
-// TestUserToServerGrantIsNotDecidedByMapOrder pins the other half of the grant
-// arm. An app installed in two places was checked against whichever
-// installation Go's map iteration reached first, so the same token and the same
-// scope answered differently from one request to the next — an authorization
-// decision taken by coin flip, and one that no single-run test can catch.
+// TestUserToServerGrantIsNotDecidedByMapOrder: an app installed in two places
+// was checked against whichever installation Go's map iteration reached first,
+// so the same token answered differently from one request to the next.
 func TestUserToServerGrantIsNotDecidedByMapOrder(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -462,8 +437,8 @@ func TestUserToServerGrantIsNotDecidedByMapOrder(t *testing.T) {
 	st := s.store
 	repo := f.repo(t, "target")
 
-	// One installation grants contents, the other does not. Only the first
-	// covers the repository, so the entitled answer is unambiguous.
+	// One installation grants contents, the other does not; only the first covers
+	// the repository, so the entitled answer is unambiguous.
 	app := st.CreateApp(f.owner.ID, "Credential Grant Map Order", "",
 		map[string]string{"metadata": "read", "contents": "write", "members": "read"}, nil)
 	if app == nil {
@@ -484,9 +459,8 @@ func TestUserToServerGrantIsNotDecidedByMapOrder(t *testing.T) {
 	caller := credGrantCaller{srv: s, name: "ghu_ of an app installed twice", token: uts.Token}
 
 	seen := map[int]int{}
-	// Enough attempts that a coin-flip gate cannot land the same way through
-	// all of them: the pre-fix draw favoured one installation about nine times
-	// in ten, which over this many requests is a vanishing chance of agreement.
+	// Enough attempts that a coin-flip gate cannot land the same way through all
+	// of them (the pre-fix draw favoured one installation about nine times in ten).
 	const attempts = 100
 	for i := 0; i < attempts; i++ {
 		seen[caller.gitStatus(t, repo, "git-upload-pack")]++

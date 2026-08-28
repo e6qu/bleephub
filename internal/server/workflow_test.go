@@ -122,13 +122,11 @@ jobs:
 		t.Fatalf("jobs = %d, want 3", len(wf.Jobs))
 	}
 
-	// needs as string
 	testJob := wf.Jobs["test"]
 	if len(testJob.Needs) != 1 || testJob.Needs[0] != "build" {
 		t.Errorf("test.needs = %v, want [build]", testJob.Needs)
 	}
 
-	// needs as list
 	deployJob := wf.Jobs["deploy"]
 	if len(deployJob.Needs) != 2 {
 		t.Errorf("deploy.needs = %v, want [build, test]", deployJob.Needs)

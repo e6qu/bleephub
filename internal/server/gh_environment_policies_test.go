@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// jsonBody marshals a request body for a hand-built http.Request.
 func jsonBody(t *testing.T, v interface{}) io.Reader {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -37,7 +36,6 @@ func TestEnvironmentDeploymentBranchPolicies_CRUD(t *testing.T) {
 		t.Fatalf("deployment_branch_policy = %v, want custom_branch_policies true", env["deployment_branch_policy"])
 	}
 
-	// Create a branch policy and a tag policy.
 	resp = s.post(t, base+"/deployment-branch-policies", defaultToken, map[string]interface{}{"name": "release/*"})
 	created := decodeJSONWithStatus(t, resp, 200)
 	if created["name"] != "release/*" || created["type"] != "branch" {
@@ -177,7 +175,6 @@ func TestEnvironmentDeploymentProtectionRules_CRUD(t *testing.T) {
 	}
 }
 
-// envIDForTest resolves an environment's numeric ID through the store.
 func envIDForTest(t *testing.T, s *isolatedServer, repoName, envName string) int {
 	t.Helper()
 	repo := s.store.GetRepo("admin", repoName)

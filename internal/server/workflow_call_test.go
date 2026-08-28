@@ -14,8 +14,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// commitFilesToStorage commits a set of files in ONE commit at HEAD of
-// the repo's git storage, creating owner + repo when missing.
+// commitFilesToStorage commits files in one commit at HEAD of the repo's git storage, creating owner and repo when missing.
 func commitFilesToStorage(t *testing.T, s *Server, repoFullName string, files map[string]string) {
 	t.Helper()
 	parts := strings.Split(repoFullName, "/")
@@ -75,11 +74,7 @@ func commitFilesToStorage(t *testing.T, s *Server, repoFullName string, files ma
 	if err := storer.SetReference(plumbing.NewHashReference(mainRef, commitHash)); err != nil {
 		t.Fatalf("set main ref: %v", err)
 	}
-	// Action fixtures are pinned by callers at @master as well as @main. That
-	// ref used to appear implicitly: git.Init succeeded on a fresh storer and
-	// left HEAD on go-git's default "master", so the commit above landed there
-	// too. Repository creation now points HEAD at the repository's default
-	// branch, so Init no longer runs and the alias has to be written here.
+	// Callers pin fixtures at @master too; repo creation now points HEAD at the default branch so git.Init no longer runs, so write the master alias explicitly.
 	masterRef := plumbing.NewBranchReferenceName("master")
 	if err := storer.SetReference(plumbing.NewHashReference(masterRef, commitHash)); err != nil {
 		t.Fatalf("set master ref: %v", err)
@@ -173,7 +168,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 		t.Errorf("called job display name = %q, want 'deploy / publish'", got)
 	}
 
-	// Complete setup with an output; the gate must resolve `with:`.
+	// Completing setup resolves the gate's `with:`.
 	s.store.Mu.Lock()
 	wf.Jobs["setup"].Outputs["version"] = "1.2.3"
 	setupID := wf.Jobs["setup"].JobID
@@ -202,8 +197,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 		t.Errorf("resolved input replicas = %v (%T), want default 2", resolved["replicas"], resolved["replicas"])
 	}
 
-	// The called job's runner message carries the call inputs and the
-	// caller-view needs context (no gate, unprefixed keys).
+	// The called job's runner message carries the call inputs and the caller-view needs context (no gate, unprefixed keys).
 	msg, err := s.actions.BuildJobMessageFromDef("http://localhost", wf, publish, "p", "t", 1, "alpine:latest")
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +207,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 		t.Error("called job message missing inputs context")
 	}
 
-	// Complete publish with the url output; the collector must map it.
+	// Completing publish makes the collector map its url output.
 	s.store.Mu.Lock()
 	publish.Outputs["url"] = "https://prod.example"
 	publishID := publish.JobID
@@ -238,7 +232,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 		t.Fatalf("notify status = %q, want queued (needs.deploy satisfied)", notifyStatus)
 	}
 
-	// notify's needs context exposes the caller key with the mapped outputs.
+	// notify's needs context must expose the caller key with the mapped outputs.
 	nmsg, err := s.actions.BuildJobMessageFromDef("http://localhost", wf, notify, "p2", "t2", 2, "alpine:latest")
 	if err != nil {
 		t.Fatal(err)

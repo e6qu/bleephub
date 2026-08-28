@@ -170,7 +170,6 @@ func TestMain(m *testing.M) {
 	// otherwise bury the actual failing assertion in hundreds of kilobytes.
 	logger := zerolog.Nop()
 
-	// Find free port
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to find free port: %v\n", err)
@@ -586,7 +585,6 @@ func TestAgentLifecycle(t *testing.T) {
 	// exchange returns.
 	sessionToken := makeJWT(agent.Authorization.ClientID, runnerAudSession)
 
-	// List agents
 	resp2 := runnerDo(t, "GET", s.baseURL+"/_apis/v1/Agent/1", sessionToken, "")
 	defer resp2.Body.Close()
 
@@ -598,14 +596,12 @@ func TestAgentLifecycle(t *testing.T) {
 		t.Fatal("expected at least 1 agent")
 	}
 
-	// Get agent
 	resp3 := runnerDo(t, "GET", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", s.baseURL, agentID), sessionToken, "")
 	defer resp3.Body.Close()
 	if resp3.StatusCode != 200 {
 		t.Fatalf("get agent: expected 200, got %d", resp3.StatusCode)
 	}
 
-	// Delete agent
 	resp4 := runnerDo(t, "DELETE", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", s.baseURL, agentID), sessionToken, "")
 	defer resp4.Body.Close()
 	if resp4.StatusCode != 200 {
@@ -626,7 +622,6 @@ func TestAgentLifecycle(t *testing.T) {
 func TestSessionAndMessage(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Create session as a registered runner.
 	sessionToken, agent := testAgentSession(t, s.Server, store.RunnerScope{Repo: "sess-owner/sess-repo"})
 	sessionBody := fmt.Sprintf(`{"ownerName":"RUNNER","agent":{"id":%d,"name":"test"}}`, agent.ID)
 	resp := runnerDo(t, "POST", s.baseURL+"/_apis/v1/AgentSession/1", sessionToken, sessionBody)
@@ -640,7 +635,6 @@ func TestSessionAndMessage(t *testing.T) {
 		t.Fatal("missing sessionId")
 	}
 
-	// Submit a job
 	jobBody := `{"image":"alpine:latest","steps":[{"run":"echo hello"}]}`
 	resp2, err := s.authedPost("/internal/exec/submit", "application/json", bytes.NewBufferString(jobBody))
 	if err != nil {
@@ -648,7 +642,7 @@ func TestSessionAndMessage(t *testing.T) {
 	}
 	resp2.Body.Close()
 
-	// Poll for message (should get it immediately since job was just submitted)
+	// Poll for the message — just submitted, so it arrives immediately.
 	resp3 := runnerDo(t, "GET", s.baseURL+"/_apis/v1/Message/1?sessionId="+sessionID, sessionToken, "")
 	defer resp3.Body.Close()
 
@@ -666,6 +660,5 @@ func TestSessionAndMessage(t *testing.T) {
 		t.Fatalf("unexpected message type: %s", msg.MessageType)
 	}
 
-	// Delete session
 	runnerDo(t, "DELETE", s.baseURL+"/_apis/v1/AgentSession/1/"+sessionID, sessionToken, "").Body.Close()
 }

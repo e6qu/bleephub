@@ -188,9 +188,8 @@ func TestUserExtras_SocialAccounts(t *testing.T) {
 	}
 }
 
-// TestUserExtras_SocialAccountsAccountUrls covers the GitHub-documented request
-// body {"account_urls": [...]} for creating social accounts, which the create
-// handler must accept alongside the bare-array and [{url}] object forms.
+// TestUserExtras_SocialAccountsAccountUrls: the create handler must accept the
+// documented {"account_urls": [...]} body alongside the bare-array and [{url}] forms.
 func TestUserExtras_SocialAccountsAccountUrls(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/social_accounts", defaultToken, map[string]interface{}{
 		"account_urls": []string{"https://example.com/canonical"},
@@ -456,9 +455,8 @@ func TestUserExtras_Events(t *testing.T) {
 	first := fetchIssueEvent()
 	second := fetchIssueEvent()
 
-	// The event derives from the stored issue: its ID and timestamp are
-	// stable across requests, and created_at is the issue's recorded
-	// creation time — not the render time.
+	// The event derives from the stored issue: ID and timestamp are stable across
+	// requests, and created_at is the issue's recorded creation time, not render time.
 	if id, _ := first["id"].(string); id == "" {
 		t.Fatalf("event id missing: %v", first)
 	}

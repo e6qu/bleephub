@@ -17,7 +17,6 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 	name, _ := repoData["name"].(string)
 	repoNodeID, _ := repoData["node_id"].(string)
 
-	// 1. Default categories exist.
 	catQuery := `query($owner:String!,$name:String!){
 		repository(owner:$owner,name:$name){
 			discussionCategories(first:10){nodes{id,name,isAnswerable},totalCount}
@@ -41,7 +40,6 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 		t.Fatalf("expected Q&A category, got %v", catNodes)
 	}
 
-	// 2. Create discussion.
 	create := `mutation($repo:ID!,$cat:ID!){createDiscussion(input:{repositoryId:$repo,categoryId:$cat,title:"Hello",body:"World\n\nDetails"}){discussion{number,id,title,bodyHTML,bodyText,category{name},viewerCanUpdate,viewerCanDelete}}}`
 	createRes := runDiscussionGQL(t, create, map[string]interface{}{"repo": repoNodeID, "cat": qaCatID})
 	createPayload, _ := createRes["createDiscussion"].(map[string]interface{})
@@ -68,7 +66,6 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 		t.Fatalf("expected viewerCanDelete=true for author")
 	}
 
-	// 3. List discussions.
 	listQuery := `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussions(first:10){nodes{number,title},totalCount}}}`
 	listRes := runDiscussionGQL(t, listQuery, map[string]interface{}{"owner": login, "name": name})
 	listRepo, _ := listRes["repository"].(map[string]interface{})
@@ -77,7 +74,6 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 		t.Fatalf("expected 1 discussion, got %v", listConn["totalCount"])
 	}
 
-	// 4. Query by number.
 	getQuery := `query($owner:String!,$name:String!,$num:Int!){
 		repository(owner:$owner,name:$name){discussion(number:$num){number,title,comments(first:10){totalCount}}}
 	}`
@@ -88,7 +84,6 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 		t.Fatalf("expected discussion title Hello, got %v", getDisc["title"])
 	}
 
-	// 5. Add top-level comment.
 	addComment := `mutation($did:ID!){addDiscussionComment(input:{discussionId:$did,body:"First comment"}){comment{id,body,discussion{number},replies(first:10){totalCount}}}}`
 	addRes := runDiscussionGQL(t, addComment, map[string]interface{}{"did": discNodeID})
 	addPayload, _ := addRes["addDiscussionComment"].(map[string]interface{})
@@ -98,7 +93,6 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 		t.Fatalf("expected comment body, got %v", comment["body"])
 	}
 
-	// 6. Add reply.
 	addReply := `mutation($did:ID!,$pid:ID!){addDiscussionComment(input:{discussionId:$did,body:"A reply",replyToId:$pid}){comment{id,body,replies(first:10){nodes{body},totalCount}}}}`
 	replyRes := runDiscussionGQL(t, addReply, map[string]interface{}{"did": discNodeID, "pid": commentNodeID})
 	replyPayload, _ := replyRes["addDiscussionComment"].(map[string]interface{})
@@ -109,7 +103,6 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 		t.Fatalf("expected no nested replies, got %v", tc)
 	}
 
-	// 7. Query comments with replies.
 	commentsQuery := `query($owner:String!,$name:String!,$num:Int!){
 		repository(owner:$owner,name:$name){discussion(number:$num){comments(first:10){nodes{id,body,replies(first:10){nodes{id,body},totalCount}},totalCount}}}
 	}`
@@ -127,21 +120,18 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 		t.Fatalf("expected 1 reply, got %v", childReplies["totalCount"])
 	}
 
-	// 8. Mark reply as answer.
 	markQuery := `mutation($cid:ID!){markDiscussionCommentAsAnswer(input:{id:$cid}){discussion{number}}}`
 	markRes := runDiscussionGQL(t, markQuery, map[string]interface{}{"cid": replyNodeID})
 	if _, ok := markRes["markDiscussionCommentAsAnswer"]; !ok {
 		t.Fatalf("expected mark answer payload, got %v", markRes)
 	}
 
-	// 9. Unmark answer.
 	unmarkQuery := `mutation($cid:ID!){unmarkDiscussionCommentAsAnswer(input:{id:$cid}){discussion{number}}}`
 	unmarkRes := runDiscussionGQL(t, unmarkQuery, map[string]interface{}{"cid": replyNodeID})
 	if _, ok := unmarkRes["unmarkDiscussionCommentAsAnswer"]; !ok {
 		t.Fatalf("expected unmark answer payload, got %v", unmarkRes)
 	}
 
-	// 10. Update comment.
 	upComment := `mutation($cid:ID!){updateDiscussionComment(input:{commentId:$cid,body:"Updated comment"}){comment{body}}}`
 	upRes := runDiscussionGQL(t, upComment, map[string]interface{}{"cid": commentNodeID})
 	upPayload, _ := upRes["updateDiscussionComment"].(map[string]interface{})
@@ -150,14 +140,12 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 		t.Fatalf("expected updated comment body, got %v", upCommentMap["body"])
 	}
 
-	// 11. Delete comment.
 	delComment := `mutation($cid:ID!){deleteDiscussionComment(input:{id:$cid}){clientMutationId}}`
 	delCommentRes := runDiscussionGQL(t, delComment, map[string]interface{}{"cid": commentNodeID})
 	if _, ok := delCommentRes["deleteDiscussionComment"]; !ok {
 		t.Fatalf("expected delete comment payload, got %v", delCommentRes)
 	}
 
-	// 12. Update discussion.
 	upDisc := `mutation($did:ID!){updateDiscussion(input:{discussionId:$did,title:"Updated",body:"New body"}){discussion{title,body}}}`
 	upDiscRes := runDiscussionGQL(t, upDisc, map[string]interface{}{"did": discNodeID})
 	upDiscPayload, _ := upDiscRes["updateDiscussion"].(map[string]interface{})
@@ -166,14 +154,12 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 		t.Fatalf("expected updated title, got %v", upDiscMap["title"])
 	}
 
-	// 13. Delete discussion.
 	delDisc := `mutation($did:ID!){deleteDiscussion(input:{id:$did}){clientMutationId}}`
 	delDiscRes := runDiscussionGQL(t, delDisc, map[string]interface{}{"did": discNodeID})
 	if _, ok := delDiscRes["deleteDiscussion"]; !ok {
 		t.Fatalf("expected delete discussion payload, got %v", delDiscRes)
 	}
 
-	// 14. List now empty.
 	finalRes := runDiscussionGQL(t, listQuery, map[string]interface{}{"owner": login, "name": name})
 	finalRepo, _ := finalRes["repository"].(map[string]interface{})
 	finalConn, _ := finalRepo["discussions"].(map[string]interface{})

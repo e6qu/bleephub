@@ -30,11 +30,9 @@ func TestRequirePerm_GhsToken_PermsGate(t *testing.T) {
 	// Mint a ghs_ token carrying the installation's perms (contents:read, issues:read only).
 	tok := s.store.CreateInstallationToken(inst.ID, app.ID, app.Permissions, nil)
 
-	// Prep a target repo (created by the admin PAT path so we have something to mutate).
 	repo := s.store.CreateRepo(user, "perms-target", "", false)
 	_ = repo
 
-	// Try to CREATE an issue via ghs_ token without issues:write → 403.
 	body, _ := json.Marshal(map[string]string{"title": "test"})
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/perms-target/issues", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+tok.Token)
@@ -44,9 +42,8 @@ func TestRequirePerm_GhsToken_PermsGate(t *testing.T) {
 		t.Fatalf("expected 403 (issues:read can't create issues), got %d body=%s", w.Code, w.Body.String())
 	}
 
-	// Upgrade installation to issues:write; the ghs_ token's snapshot still
-	// has the OLD perms (real GH behaviour — minted tokens are immutable).
-	// Verify by minting a fresh ghs_ token after the upgrade.
+	// A minted ghs_ token's perms are immutable (real GitHub behaviour), so an
+	// installation upgrade to issues:write only takes effect on a fresh token.
 	s.store.Mu.Lock()
 	inst.Permissions["issues"] = "write"
 	s.store.Mu.Unlock()
@@ -92,7 +89,6 @@ func TestRequirePerm_GhuToken_AppInstallationPerms(t *testing.T) {
 	s.store.CreateInstallation(app.ID, "User", user.ID, user.Login, map[string]string{"issues": "write"}, nil)
 	s.store.CreateRepo(user, "ghu-target", "", false)
 
-	// Mint a ghu_ token for this app + user.
 	tok, _ := s.store.CreateUserToServerToken(user.ID, app.ID, "", "", 8*time.Hour, false)
 
 	body, _ := json.Marshal(map[string]string{"title": "test"})

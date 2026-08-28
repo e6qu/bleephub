@@ -10,7 +10,6 @@ import (
 // Projects v2 — the administrative half of the store. Core create/read paths
 // live in store_projects_v2.go.
 
-// ---------------------------------------------------------------------------
 // Snapshots
 //
 // STORE-021: every getter and List* below hands back a detached copy. The row
@@ -127,7 +126,6 @@ func cloneProjectV2View(v *ProjectV2View) *ProjectV2View {
 	return &out
 }
 
-// ---------------------------------------------------------------------------
 // Project metadata
 
 // ProjectV2Update is the patch updateProjectV2 applies. A nil member leaves the
@@ -462,7 +460,6 @@ func (s *ProjectV2Store) itemsForProjectLocked(projectID int) []*ProjectV2Item {
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // Item lifecycle
 
 // ArchiveItem archives or unarchives a project item, returning the updated
@@ -637,7 +634,6 @@ func (s *ProjectV2Store) SetMultiSelectValue(itemID, fieldID int, optionIDs []st
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Status updates
 
 // CreateStatusUpdate posts a status update on a project.
@@ -767,7 +763,6 @@ func (s *ProjectV2Store) StatusUpdatesForProject(projectID int) []*ProjectV2Stat
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // Workflows
 
 // CreateWorkflow records an automation rule on a project. GitHub has no
@@ -880,7 +875,6 @@ func (s *ProjectV2Store) GetWorkflowByNumber(projectID, number int) *ProjectV2Wo
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Views
 
 // ProjectV2ViewUpdate is the patch updateProjectV2View applies.
@@ -969,7 +963,6 @@ func (s *ProjectV2Store) LookupViewByNodeID(nodeID string) *ProjectV2View {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Fields
 
 // ProjectV2FieldUpdate is the patch updateProjectV2Field applies.
@@ -1055,7 +1048,6 @@ func (s *ProjectV2Store) UpdateFieldDetails(id int, patch ProjectV2FieldUpdate) 
 	return cloneProjectV2Field(f)
 }
 
-// ---------------------------------------------------------------------------
 // Seeded defaults
 //
 // A project created on github.com arrives with built-in fields, a default

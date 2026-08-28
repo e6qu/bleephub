@@ -28,7 +28,6 @@ func (s *Resolver) marketplaceTypes() *marketplaceTypeRegistry {
 	return s.graphqlTypes.marketplace
 }
 
-// ---------------------------------------------------------------------------
 // rendering
 
 // marketplaceProfileFor returns the listing's stored profile, or the
@@ -161,7 +160,6 @@ func marketplaceURLOrDefault(value, fallback string) string {
 	return externalURL(fallback)
 }
 
-// ---------------------------------------------------------------------------
 // viewer-scoped facts
 
 // viewerAdminsMarketplaceListing reports whether the viewer publishes the app
@@ -246,7 +244,6 @@ func (s *Resolver) marketplaceListingInstalledForViewer(ctx context.Context, slu
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // types
 
 func (s *Resolver) marketplaceCategoryType() *graphql.Object {
@@ -412,7 +409,6 @@ func (s *Resolver) marketplaceListingConnectionType() *graphql.Object {
 	return types.connection
 }
 
-// ---------------------------------------------------------------------------
 // root fields
 
 // addMarketplaceFieldsToSchema installs the four Marketplace root fields and

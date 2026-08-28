@@ -18,10 +18,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestWebhookFormContentTypeSigning verifies that a content_type=form hook
-// (GitHub's default) delivers an x-www-form-urlencoded body with the JSON
-// under `payload`, and that X-Hub-Signature-256 is computed over the FORM
-// body — not the raw JSON.
+// TestWebhookFormContentTypeSigning: a content_type=form hook (GitHub's default)
+// delivers an x-www-form-urlencoded body with the JSON under `payload`, and
+// X-Hub-Signature-256 is computed over the form body, not the raw JSON.
 func TestWebhookFormContentTypeSigning(t *testing.T) {
 	const secret = "s3cr3t"
 	var mu sync.Mutex
@@ -84,8 +83,7 @@ func TestWebhookFormContentTypeSigning(t *testing.T) {
 	}
 }
 
-// TestWebhookJSONContentTypeSigning verifies content_type=json still sends
-// the raw JSON and signs it.
+// TestWebhookJSONContentTypeSigning: content_type=json sends the raw JSON and signs it.
 func TestWebhookJSONContentTypeSigning(t *testing.T) {
 	const secret = "abc"
 	var mu sync.Mutex
@@ -124,8 +122,7 @@ func TestWebhookJSONContentTypeSigning(t *testing.T) {
 	}
 }
 
-// TestJobStatusWaiting verifies a waiting (environment-gated) job reports
-// "waiting", not "queued".
+// TestJobStatusWaiting: an environment-gated job reports "waiting", not "queued".
 func TestJobStatusWaiting(t *testing.T) {
 	if got := jobStatus("waiting"); got != "waiting" {
 		t.Errorf("jobStatus(waiting) = %q, want waiting", got)
@@ -135,8 +132,8 @@ func TestJobStatusWaiting(t *testing.T) {
 	}
 }
 
-// TestJobRunAttemptReflectsRun verifies workflowJobJSON emits the run's
-// attempt number rather than a hardcoded 1.
+// TestJobRunAttemptReflectsRun: workflowJobJSON emits the run's attempt number,
+// not a hardcoded 1.
 func TestJobRunAttemptReflectsRun(t *testing.T) {
 	s := newTestServer()
 	wf, wfJob := seedRun(t, s, "octo/repo", "running", "")
@@ -148,9 +145,8 @@ func TestJobRunAttemptReflectsRun(t *testing.T) {
 	}
 }
 
-// TestListArtifactsScopedToRun verifies the v4 ListArtifacts Twirp call
-// filters by workflow_run_backend_id so concurrent runs don't see each
-// other's artifacts.
+// TestListArtifactsScopedToRun: the v4 ListArtifacts Twirp call filters by
+// workflow_run_backend_id so concurrent runs don't see each other's artifacts.
 func TestListArtifactsScopedToRun(t *testing.T) {
 	s := newTestServer()
 	s.registerArtifactRoutes()

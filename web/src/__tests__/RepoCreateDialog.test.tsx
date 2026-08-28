@@ -32,7 +32,7 @@ describe("RepoCreateDialog template source", () => {
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.startsWith("/api/v3/user/repos") && (!init || init.method === undefined || init.method === "GET")) {
-        // The viewer's accessible repos; only the template is is_template.
+        // Only the template repo is is_template.
         return Promise.resolve(
           jsonResponse([
             { id: 1, full_name: "admin/starter", is_template: true },
@@ -43,7 +43,6 @@ describe("RepoCreateDialog template source", () => {
       if (url === "/api/v3/repos/admin/starter/generate" && init?.method === "POST") {
         return Promise.resolve(jsonResponse({ id: 3, full_name: "admin/from-template" }, 201));
       }
-      // gitignore/license template lists
       return Promise.resolve(jsonResponse([]));
     });
 

@@ -10,9 +10,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// PR review comments — root + reply CRUD against
-// /repos/{}/pulls/{}/comments + thread navigation (in_reply_to_id).
-
 func TestPRReviewComments_RootAndReply(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -31,7 +28,6 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 		return w
 	}
 
-	// Root inline comment on a specific line.
 	rootBody, _ := json.Marshal(map[string]any{
 		"body":      "consider refactoring this",
 		"path":      "src/foo.go",
@@ -50,7 +46,6 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 		t.Errorf("root shape: %v", root)
 	}
 
-	// Reply via /comments/{id}/replies endpoint.
 	replyBody, _ := json.Marshal(map[string]string{"body": "I agree"})
 	w = create("/api/v3/repos/admin/rc-repo/pulls/"+itoa(pr.Number)+"/comments/"+itoa(rootID)+"/replies", replyBody)
 	if w.Code != http.StatusCreated {
@@ -65,14 +60,12 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 		t.Errorf("reply path: %v", reply["path"])
 	}
 
-	// Reply via POST /pulls/{n}/comments with in_reply_to.
 	inlineReply, _ := json.Marshal(map[string]any{"body": "another reply", "in_reply_to": rootID})
 	w = create("/api/v3/repos/admin/rc-repo/pulls/"+itoa(pr.Number)+"/comments", inlineReply)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("inline reply: %d body=%s", w.Code, w.Body.String())
 	}
 
-	// List comments → 3 (root + 2 replies).
 	req := httptest.NewRequest("GET", "/api/v3/repos/admin/rc-repo/pulls/"+itoa(pr.Number)+"/comments", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
@@ -83,7 +76,6 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 		t.Errorf("list len = %d, want 3", len(list))
 	}
 
-	// Get single comment by id via /pulls/comments/{id}.
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/rc-repo/pulls/comments/"+itoa(rootID), nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
@@ -92,7 +84,6 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 		t.Fatalf("get by id: %d body=%s", w.Code, w.Body.String())
 	}
 
-	// PATCH body
 	patch, _ := json.Marshal(map[string]string{"body": "EDITED"})
 	req = httptest.NewRequest("PATCH", "/api/v3/repos/admin/rc-repo/pulls/comments/"+itoa(rootID), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
@@ -107,8 +98,7 @@ func TestPRReviewComments_RootAndReply(t *testing.T) {
 		t.Errorf("body after patch: %v", patched["body"])
 	}
 
-	// Review threads — 1 thread with 3 comments (root + 2 replies share a thread).
-	// Public clients read and mutate this state through GitHub GraphQL.
+	// Root and both replies share one thread; public clients read and mutate it through GitHub GraphQL.
 	threads := s.store.PRReviewComments.ListThreads(pr.ID)
 	if len(threads) != 1 {
 		t.Fatalf("threads len = %d", len(threads))

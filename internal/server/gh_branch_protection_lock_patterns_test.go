@@ -177,7 +177,6 @@ func TestBranchProtectionPatternRules(t *testing.T) {
 	refusal = s.protectedRefWriteRefusal(ctx, repo, stor, plumbing.NewBranchReferenceName("release/v1"), refFastForward, plumbing.ZeroHash)
 	require.Contains(t, refusal, "locked branch", "the exact rule must win over the pattern rule")
 
-	// DELETE clears the whole list.
 	resp = s.delete(t, "/ui-data/repos/admin/bp-patterns/branch-protection-patterns", defaultToken)
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 	resp.Body.Close()

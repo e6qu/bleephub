@@ -19,7 +19,6 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	org := s.store.CreateOrg(admin, "live-migration-org", "Live Org", "")
 	orgRepo := s.store.CreateOrgRepo(org, admin, "live-org-repo", "live org", false)
 
-	// Start user migration
 	body, _ := json.Marshal(map[string]any{
 		"repositories":      []string{repo.FullName},
 		"lock_repositories": true,
@@ -40,7 +39,6 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	resp.Body.Close()
 	userID := int(userMig["id"].(float64))
 
-	// List user migrations
 	resp = s.authedGet(t, "/api/v3/user/migrations")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -50,7 +48,6 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&[]map[string]any{})
 	resp.Body.Close()
 
-	// Get user migration
 	resp = s.authedGet(t, "/api/v3/user/migrations/"+itoa(userID))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -59,7 +56,6 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Start org migration
 	body, _ = json.Marshal(map[string]any{
 		"repositories":      []string{orgRepo.FullName},
 		"lock_repositories": true,
@@ -80,7 +76,6 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	resp.Body.Close()
 	orgMigID := int(orgMig["id"].(float64))
 
-	// List org migrations
 	resp = s.authedGet(t, "/api/v3/orgs/"+org.Login+"/migrations")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -90,7 +85,6 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&[]map[string]any{})
 	resp.Body.Close()
 
-	// Get org migration
 	resp = s.authedGet(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(orgMigID))
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -99,7 +93,6 @@ func TestLiveMigrations_UserAndOrg(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Unlock the migrated repository through GitHub's documented operation.
 	req, _ := http.NewRequest(http.MethodDelete, s.baseURL+"/api/v3/orgs/"+org.Login+"/migrations/"+itoa(orgMigID)+"/repos/"+orgRepo.Name+"/lock", nil)
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
 	resp, err = http.DefaultClient.Do(req)

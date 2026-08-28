@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// putTestFile creates or updates a file through the real contents API,
-// producing a real git commit with the given message.
+// putTestFile writes a file through the real contents API, producing a real
+// git commit with the given message.
 func putTestFile(s *isolatedServer, t *testing.T, repoKey repoRef, path, message, content string) {
 	t.Helper()
 	resp := s.put(t, repoKey.path()+"/contents/"+path, defaultToken, map[string]interface{}{
@@ -66,7 +66,6 @@ func TestSearchCommits(t *testing.T) {
 		t.Fatalf("hash search total_count = %v", env["total_count"])
 	}
 
-	// Empty query → 422.
 	resp = s.get(t, "/api/v3/search/commits", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
@@ -74,9 +73,8 @@ func TestSearchCommits(t *testing.T) {
 	}
 }
 
-// TestSearchCommitsQualifiers covers the commit-search identity/date/merge
-// qualifiers GitHub documents but bleephub used to 422 on (REST-180): a query
-// like `committer-date:>… merge:false author-name:…` must filter, not reject.
+// REST-180: the commit-search identity/date/merge qualifiers GitHub documents
+// (e.g. `committer-date:>… merge:false author-name:…`) must filter, not 422.
 func TestSearchCommitsQualifiers(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -158,7 +156,6 @@ func TestSearchLabels(t *testing.T) {
 		t.Fatalf("label description = %v", label["description"])
 	}
 
-	// Missing repository_id → 422; unknown repository → 404.
 	resp = s.get(t, "/api/v3/search/labels?q=x", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
@@ -198,7 +195,6 @@ func TestSearchTopics(t *testing.T) {
 		t.Fatalf("topic aggregation = %v", topic)
 	}
 
-	// Missing q → 422.
 	resp = s.get(t, "/api/v3/search/topics", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 422 {

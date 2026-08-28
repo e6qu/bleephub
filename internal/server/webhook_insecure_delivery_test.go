@@ -17,9 +17,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// newUntrustedTLSServer starts a loopback TLS receiver whose self-signed
-// certificate is deliberately NOT in webhookDeliveryTestRoots, so the
-// verifying webhook client must refuse it and only insecure_ssl=1 delivers.
+// newUntrustedTLSServer starts a loopback TLS receiver whose self-signed cert is deliberately not in webhookDeliveryTestRoots, so a verifying client refuses it and only insecure_ssl=1 delivers.
 func newUntrustedTLSServer(t *testing.T, handler http.Handler) *httptest.Server {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -29,8 +27,7 @@ func newUntrustedTLSServer(t *testing.T, handler http.Handler) *httptest.Server 
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: "insecure-hook-test"},
-		// Fixed window covering any realistic run date: TLS validation uses
-		// the real clock, and the wall-clock gate forbids time.Now in tests.
+		// Fixed window covering any realistic run date: TLS validation uses the real clock, but the wall-clock gate forbids time.Now in tests.
 		NotBefore:   time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 		NotAfter:    time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
 		IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
@@ -48,9 +45,7 @@ func newUntrustedTLSServer(t *testing.T, handler http.Handler) *httptest.Server 
 	return ts
 }
 
-// TestWebhookDeliveryHonorsInsecureSSL pins that config.insecure_ssl selects
-// the delivery client: "1" delivers to a self-signed receiver the verifying
-// client must refuse, "0" fails against the same receiver.
+// TestWebhookDeliveryHonorsInsecureSSL pins that config.insecure_ssl picks the delivery client: "1" delivers to a self-signed receiver a verifying client would refuse, "0" fails against it.
 func TestWebhookDeliveryHonorsInsecureSSL(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

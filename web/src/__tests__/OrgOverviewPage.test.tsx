@@ -61,9 +61,8 @@ const repo = {
   updated_at: "2026-02-01T00:00:00Z",
 };
 
-// The overview also probes the org profile README ({org}/.github), the pinned
-// list (/ui-data) and the viewer's own membership; answer them all so a test
-// exercising one facet doesn't crash on the others.
+// Answer every facet the overview probes (profile README, pinned list,
+// membership) so a test exercising one doesn't crash on the others.
 function mockOverview(overrides: (u: string) => Response | null = () => null) {
   mockFetch.mockImplementation((url: RequestInfo | URL) => {
     const u = url.toString();
@@ -92,7 +91,6 @@ describe("OrgOverviewPage", () => {
     expect(screen.getByText("api")).toBeInTheDocument();
     // Without pins the repo grid keeps its plain label.
     expect(screen.queryByText("Recently updated")).not.toBeInTheDocument();
-    // OrgHeader is present (uniform org chrome).
     expect(screen.getByRole("navigation", { name: /organization/i })).toBeInTheDocument();
   });
 
@@ -116,11 +114,10 @@ describe("OrgOverviewPage", () => {
 
     expect(await screen.findByText("Pinned repositories")).toBeInTheDocument();
     expect(screen.getByText("flagship")).toBeInTheDocument();
-    // Language dot + counts render on the pinned card.
     expect(screen.getByText("Go")).toBeInTheDocument();
     // With pins present the recent grid is relabeled.
     expect(screen.getByText("Recently updated")).toBeInTheDocument();
-    // Not an org admin → no edit-pins control.
+    // Not an org admin, so no edit-pins control.
     expect(screen.queryByRole("button", { name: /edit pins/i })).not.toBeInTheDocument();
   });
 
@@ -134,7 +131,6 @@ describe("OrgOverviewPage", () => {
     renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: /edit pins/i }));
-    // Pick the org repo in the dialog and save.
     fireEvent.click(await screen.findByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: /save pins/i }));
 
@@ -148,8 +144,8 @@ describe("OrgOverviewPage", () => {
   });
 
   it("surfaces an org load error", async () => {
-    // 500, not 404: a missing org now renders the dedicated 404 page
-    // (covered in notFoundPages.test.tsx); this keeps the generic banner path.
+    // Use 500, not 404: a missing org renders the dedicated 404 page, so this
+    // keeps the generic banner path.
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
       if (u.includes("/repos")) return Promise.resolve(jsonResponse([], 200, { Link: "" }));

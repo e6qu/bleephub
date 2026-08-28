@@ -69,8 +69,7 @@ func TestCreatePullRequestREST(t *testing.T) {
 		t.Fatal("missing user")
 	}
 
-	// head.user and base.user must be the REST simple-user shape
-	// (snake_case), not the GraphQL camelCase map.
+	// head.user/base.user must be the REST snake_case simple-user, not the GraphQL camelCase map.
 	headUser, _ := head["user"].(map[string]interface{})
 	if headUser == nil {
 		t.Fatal("missing head.user")
@@ -547,7 +546,6 @@ func TestPRReviewCRUDREST(t *testing.T) {
 		"title": "Review CRUD", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	// Create a pending review (no event)
 	resp := s.post(t, "/api/v3/repos/admin/pr-review-crud/pulls/1/reviews", defaultToken, map[string]interface{}{
 		"body": "Pending feedback",
 	})
@@ -564,7 +562,6 @@ func TestPRReviewCRUDREST(t *testing.T) {
 	}
 	reviewID := int(data["id"].(float64))
 
-	// Get review
 	resp = s.get(t, fmt.Sprintf("/api/v3/repos/admin/pr-review-crud/pulls/1/reviews/%d", reviewID), defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -575,7 +572,6 @@ func TestPRReviewCRUDREST(t *testing.T) {
 		t.Fatalf("expected body='Pending feedback', got %v", data["body"])
 	}
 
-	// Update review body
 	resp = s.put(t, fmt.Sprintf("/api/v3/repos/admin/pr-review-crud/pulls/1/reviews/%d", reviewID), defaultToken, map[string]interface{}{
 		"body": "Updated feedback",
 	})
@@ -588,7 +584,6 @@ func TestPRReviewCRUDREST(t *testing.T) {
 		t.Fatalf("expected body='Updated feedback', got %v", data["body"])
 	}
 
-	// Submit review as APPROVED
 	resp = s.post(t, fmt.Sprintf("/api/v3/repos/admin/pr-review-crud/pulls/1/reviews/%d/events", reviewID), defaultToken, map[string]interface{}{
 		"event": "APPROVE",
 	})
@@ -604,7 +599,6 @@ func TestPRReviewCRUDREST(t *testing.T) {
 		t.Fatal("expected submitted_at to be set after submit")
 	}
 
-	// Dismiss review
 	resp = s.put(t, fmt.Sprintf("/api/v3/repos/admin/pr-review-crud/pulls/1/reviews/%d/dismissals", reviewID), defaultToken, map[string]interface{}{
 		"message": "Dismissed via test",
 	})
@@ -639,7 +633,6 @@ func TestPRReviewDeletePendingREST(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Verify deleted
 	resp = s.get(t, fmt.Sprintf("/api/v3/repos/admin/pr-review-delete/pulls/1/reviews/%d", reviewID), defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
@@ -655,12 +648,10 @@ func TestPRReviewRequestReviewersREST(t *testing.T) {
 		"title": "Reviewers", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	// Create a second user to request as reviewer
 	s.post(t, "/internal/users", defaultToken, map[string]interface{}{
 		"login": "reviewer1", "name": "Reviewer One", "email": "r1@example.com",
 	}).Body.Close()
 
-	// Request reviewer by login
 	resp := s.post(t, "/api/v3/repos/admin/pr-reviewers/pulls/1/requested_reviewers", defaultToken, map[string]interface{}{
 		"reviewers": []string{"reviewer1"},
 	})
@@ -678,7 +669,6 @@ func TestPRReviewRequestReviewersREST(t *testing.T) {
 		t.Fatalf("expected login=reviewer1, got %v", reviewer["login"])
 	}
 
-	// Remove requested reviewer
 	body, _ := json.Marshal(map[string]interface{}{
 		"reviewers": []string{"reviewer1"},
 	})
@@ -818,7 +808,6 @@ func TestSharedNumbering(t *testing.T) {
 		t.Fatalf("expected PR number=2, got %v", d2["number"])
 	}
 
-	// Issue #3
 	r3 := s.post(t, "/api/v3/repos/admin/shared-num/issues", defaultToken, map[string]interface{}{
 		"title": "Issue 3",
 	})
@@ -1028,7 +1017,6 @@ func TestGraphQLPullRequestDraftMutations(t *testing.T) {
 	s := newIsolatedServer(t)
 	repoNodeID := s.createGraphQLPRRepo(t, "gql-pr-draft", "feat")
 
-	// Create a draft PR.
 	respCreate := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { id isDraft } } }`,
 		"variables": map[string]interface{}{
@@ -1048,7 +1036,6 @@ func TestGraphQLPullRequestDraftMutations(t *testing.T) {
 		t.Fatalf("expected created PR isDraft=true, got %v", prData["isDraft"])
 	}
 
-	// Mark ready for review → isDraft false.
 	respReady := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query":     `mutation($input: MarkPullRequestReadyForReviewInput!) { markPullRequestReadyForReview(input: $input) { pullRequest { isDraft } } }`,
 		"variables": map[string]interface{}{"input": map[string]interface{}{"pullRequestId": prID}},
@@ -1062,7 +1049,6 @@ func TestGraphQLPullRequestDraftMutations(t *testing.T) {
 		t.Fatalf("expected isDraft=false after markReady, got %v", ready["isDraft"])
 	}
 
-	// Convert back to draft → isDraft true.
 	respDraft := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query":     `mutation($input: ConvertPullRequestToDraftInput!) { convertPullRequestToDraft(input: $input) { pullRequest { isDraft } } }`,
 		"variables": map[string]interface{}{"input": map[string]interface{}{"pullRequestId": prID}},
@@ -1257,19 +1243,16 @@ func TestGraphQLPullRequestWithLabels(t *testing.T) {
 		"name": "regression", "color": "d73a4a",
 	}).Body.Close()
 
-	// Create PR and add label via REST
 	r1 := s.post(t, "/api/v3/repos/admin/gql-pr-labels/pulls", defaultToken, map[string]interface{}{
 		"title": "Labeled PR", "head": "feat", "base": "main",
 	})
 	prData := decodeJSON(t, r1)
 	prNodeID := prData["node_id"].(string)
 
-	// Get label node ID
 	r2 := s.get(t, "/api/v3/repos/admin/gql-pr-labels/labels/regression", "")
 	labelData := decodeJSON(t, r2)
 	labelNodeID := labelData["node_id"].(string)
 
-	// Update PR with labels via GraphQL
 	s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: UpdatePullRequestInput!) { updatePullRequest(input: $input) { pullRequest { title } } }`,
 		"variables": map[string]interface{}{
@@ -1280,7 +1263,6 @@ func TestGraphQLPullRequestWithLabels(t *testing.T) {
 		},
 	}).Body.Close()
 
-	// Query labels
 	resp := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"gql-pr-labels"){pullRequest(number:1){labels(first:10){nodes{name},totalCount}}}}`,
 	})
@@ -1360,13 +1342,11 @@ func TestGraphQLFilterByState(t *testing.T) {
 	s := newIsolatedServer(t)
 	s.createTestPRRepo(t, "gql-pr-statefilter")
 
-	// Create and merge a PR
 	s.post(t, "/api/v3/repos/admin/gql-pr-statefilter/pulls", defaultToken, map[string]interface{}{
 		"title": "Merged PR", "head": "feat", "base": "main",
 	}).Body.Close()
 	s.put(t, "/api/v3/repos/admin/gql-pr-statefilter/pulls/1/merge", defaultToken, map[string]interface{}{}).Body.Close()
 
-	// Create an open PR
 	s.post(t, "/api/v3/repos/admin/gql-pr-statefilter/pulls", defaultToken, map[string]interface{}{
 		"title": "Open PR", "head": "feat2", "base": "main",
 	}).Body.Close()
@@ -1420,7 +1400,6 @@ func TestGraphQLCannotMergeClosed(t *testing.T) {
 	s := newIsolatedServer(t)
 	repoNodeID := s.createGraphQLPRRepo(t, "gql-pr-merge-closed", "feat")
 
-	// Create and close
 	resp2 := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { id } } }`,
 		"variables": map[string]interface{}{
@@ -1438,7 +1417,6 @@ func TestGraphQLCannotMergeClosed(t *testing.T) {
 	prData, _ := cp["pullRequest"].(map[string]interface{})
 	prID := prData["id"].(string)
 
-	// Close
 	s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: ClosePullRequestInput!) { closePullRequest(input: $input) { pullRequest { state } } }`,
 		"variables": map[string]interface{}{
@@ -1446,7 +1424,6 @@ func TestGraphQLCannotMergeClosed(t *testing.T) {
 		},
 	}).Body.Close()
 
-	// Try to merge
 	resp3 := s.post(t, "/api/graphql", defaultToken, map[string]interface{}{
 		"query": `mutation($input: MergePullRequestInput!) { mergePullRequest(input: $input) { pullRequest { state } } }`,
 		"variables": map[string]interface{}{
@@ -1468,7 +1445,6 @@ func TestListRequestedReviewersREST(t *testing.T) {
 		"title": "Reviewer request PR", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	// Empty before any request.
 	resp := s.get(t, "/api/v3/repos/admin/pr-req-reviewers-get/pulls/1/requested_reviewers", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -1486,7 +1462,6 @@ func TestListRequestedReviewersREST(t *testing.T) {
 		t.Fatalf("expected teams array, got %T", data["teams"])
 	}
 
-	// Request the admin user, read it back.
 	s.post(t, "/api/v3/repos/admin/pr-req-reviewers-get/pulls/1/requested_reviewers", defaultToken, map[string]interface{}{
 		"reviewers": []string{"admin"},
 	}).Body.Close()
@@ -1501,7 +1476,6 @@ func TestListRequestedReviewersREST(t *testing.T) {
 		t.Fatalf("expected requested reviewer admin, got %v", u["login"])
 	}
 
-	// Remove it again.
 	s.do(t, "DELETE", "/api/v3/repos/admin/pr-req-reviewers-get/pulls/1/requested_reviewers", defaultToken, map[string]interface{}{
 		"reviewers": []string{"admin"},
 	}).Body.Close()
@@ -1587,7 +1561,6 @@ func TestPullRequestTimelineFullFlowREST(t *testing.T) {
 	}).Body.Close()
 	s.createTestUser(t, "flow-reviewer")
 
-	// Branch feat off main and add two real commits via the contents API.
 	refResp := s.get(t, repoPath+"/git/refs/heads/main", defaultToken)
 	refData := decodeJSON(t, refResp)
 	mainObj, _ := refData["object"].(map[string]interface{})
@@ -1856,7 +1829,6 @@ func TestPullRequestFilesREST(t *testing.T) {
 		"ref": "refs/heads/feat", "sha": mainSha,
 	}).Body.Close()
 
-	// Modify greeting.txt and add a new file on feat.
 	s.put(t, repoPath+"/contents/greeting.txt", defaultToken, map[string]interface{}{
 		"message": "change greeting",
 		"content": base64.StdEncoding.EncodeToString([]byte("hello world\n")),

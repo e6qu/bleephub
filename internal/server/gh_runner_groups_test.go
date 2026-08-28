@@ -25,14 +25,12 @@ func TestRunnerLabels_Repo_ListSetDelete(t *testing.T) {
 	repo := s.createTestRepo(t).fullName()
 	agentID := s.registerRunnerForLabels(t, store.RunnerScope{Repo: repo})
 
-	// List labels: should include the two system labels.
 	listResp := s.get(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken)
 	listData := decodeJSONWithStatus(t, listResp, 200)
 	if listData["total_count"].(float64) != 2 {
 		t.Fatalf("initial labels count = %v, want 2", listData["total_count"])
 	}
 
-	// Set custom labels.
 	setResp := s.put(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken, map[string]interface{}{
 		"labels": []string{"gpu", "arm64"},
 	})

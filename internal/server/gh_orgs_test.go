@@ -105,7 +105,6 @@ func TestPublicFeatureTestsProvisionOrganizationsThroughAdminAPI(t *testing.T) {
 	}
 }
 
-// TestCreateOrg verifies the operator organization provisioning route.
 func TestCreateOrg(t *testing.T) {
 	resp := ghPost(t, "/internal/orgs", defaultToken, map[string]interface{}{
 		"login":       "testorg-create",
@@ -132,7 +131,6 @@ func TestCreateOrg(t *testing.T) {
 	}
 }
 
-// TestCreateOrgNoAuth verifies the operator organization provisioning route without token → 401.
 func TestCreateOrgNoAuth(t *testing.T) {
 	resp := ghPost(t, "/internal/orgs", "", map[string]interface{}{
 		"login": "should-fail",
@@ -143,10 +141,8 @@ func TestCreateOrgNoAuth(t *testing.T) {
 	}
 }
 
-// TestAdminCreateOrg verifies POST /api/v3/admin/organizations → 201.
-// This is the standard GHES admin endpoint for org provisioning, where the
-// caller specifies the admin user explicitly rather than using the
-// authenticated user as the creator.
+// The GHES admin endpoint names the admin user explicitly rather than making
+// the authenticated caller the creator.
 func TestAdminCreateOrg(t *testing.T) {
 	resp := ghPost(t, "/api/v3/admin/organizations", defaultToken, map[string]interface{}{
 		"login":        "admin-org-create",
@@ -170,7 +166,6 @@ func TestAdminCreateOrg(t *testing.T) {
 	}
 }
 
-// TestAdminCreateOrgUnknownAdmin verifies that specifying a non-existent admin user → 422.
 func TestAdminCreateOrgUnknownAdmin(t *testing.T) {
 	resp := ghPost(t, "/api/v3/admin/organizations", defaultToken, map[string]interface{}{
 		"login": "admin-org-bad-admin",
@@ -182,7 +177,6 @@ func TestAdminCreateOrgUnknownAdmin(t *testing.T) {
 	}
 }
 
-// TestAdminCreateOrgDefaultsProfileName verifies that profile_name defaults to login.
 func TestAdminCreateOrgDefaultsProfileName(t *testing.T) {
 	resp := ghPost(t, "/api/v3/admin/organizations", defaultToken, map[string]interface{}{
 		"login": "admin-org-no-name",
@@ -198,7 +192,6 @@ func TestAdminCreateOrgDefaultsProfileName(t *testing.T) {
 	}
 }
 
-// TestGetOrg verifies GET /api/v3/orgs/{org} → 200.
 func TestGetOrg(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-get", "Get Org")
 
@@ -217,7 +210,6 @@ func TestGetOrg(t *testing.T) {
 	}
 }
 
-// TestGetOrgNotFound verifies GET for nonexistent org → 404.
 func TestGetOrgNotFound(t *testing.T) {
 	resp := ghGet(t, "/api/v3/orgs/nonexistent-org", "")
 	defer resp.Body.Close()
@@ -226,7 +218,6 @@ func TestGetOrgNotFound(t *testing.T) {
 	}
 }
 
-// TestUpdateOrg verifies PATCH → description changed.
 func TestUpdateOrg(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-update")
 
@@ -244,7 +235,6 @@ func TestUpdateOrg(t *testing.T) {
 	}
 }
 
-// TestDeleteOrg verifies DELETE → 202 (async), subsequent GET → 404.
 func TestDeleteOrg(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-delete")
 
@@ -262,7 +252,6 @@ func TestDeleteOrg(t *testing.T) {
 	}
 }
 
-// TestListUserOrgs verifies GET /api/v3/user/orgs → array with created org.
 func TestListAuthUserOrgs(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-list")
 
@@ -292,7 +281,6 @@ func TestListAuthUserOrgs(t *testing.T) {
 	}
 }
 
-// TestCreateTeam verifies POST /api/v3/orgs/{org}/teams → 201.
 func TestCreateTeam(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-team")
 
@@ -318,7 +306,6 @@ func TestCreateTeam(t *testing.T) {
 	}
 }
 
-// TestListTeams verifies GET /api/v3/orgs/{org}/teams → array.
 func TestListTeams(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-listteams")
 	ghPost(t, "/api/v3/orgs/testorg-listteams/teams", defaultToken, map[string]interface{}{
@@ -337,7 +324,6 @@ func TestListTeams(t *testing.T) {
 	}
 }
 
-// TestGetTeam verifies GET /api/v3/orgs/{org}/teams/{slug} → 200.
 func TestGetTeam(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-getteam")
 	ghPost(t, "/api/v3/orgs/testorg-getteam/teams", defaultToken, map[string]interface{}{
@@ -359,7 +345,6 @@ func TestGetTeam(t *testing.T) {
 	}
 }
 
-// TestDeleteTeam verifies DELETE → 204.
 func TestDeleteTeam(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-delteam")
 	ghPost(t, "/api/v3/orgs/testorg-delteam/teams", defaultToken, map[string]interface{}{
@@ -379,11 +364,9 @@ func TestDeleteTeam(t *testing.T) {
 	}
 }
 
-// TestOrgMembership verifies PUT/GET membership → role correct.
 func TestOrgMembership(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-membership")
 
-	// Get the auto-created admin membership
 	resp := ghGet(t, "/api/v3/orgs/testorg-membership/memberships/admin", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -399,11 +382,9 @@ func TestOrgMembership(t *testing.T) {
 	}
 }
 
-// TestRemoveMembership verifies DELETE → 204.
 func TestRemoveMembership(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-rmmember")
 
-	// Set membership (admin is already a member, but set again as member role)
 	ghPut(t, "/api/v3/orgs/testorg-rmmember/memberships/admin", defaultToken, map[string]interface{}{
 		"role": "admin",
 	})
@@ -415,7 +396,6 @@ func TestRemoveMembership(t *testing.T) {
 	}
 }
 
-// TestTeamRepoPermission verifies team repo access.
 func TestTeamRepoPermission(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-teamrepo")
 	ghPost(t, "/api/v3/orgs/testorg-teamrepo/teams", defaultToken, map[string]interface{}{
@@ -423,20 +403,17 @@ func TestTeamRepoPermission(t *testing.T) {
 		"permission": "push",
 	})
 
-	// Create a repo under the org
 	ghPost(t, "/api/v3/orgs/testorg-teamrepo/repos", defaultToken, map[string]interface{}{
 		"name":    "team-repo",
 		"private": true,
 	})
 
-	// Add repo to team
 	resp := ghPut(t, "/api/v3/orgs/testorg-teamrepo/teams/devs/repos/testorg-teamrepo/team-repo", defaultToken, nil)
 	defer resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("expected 204 for add team repo, got %d", resp.StatusCode)
 	}
 
-	// Remove repo from team
 	resp2 := ghDelete(t, "/api/v3/orgs/testorg-teamrepo/teams/devs/repos/testorg-teamrepo/team-repo", defaultToken)
 	defer resp2.Body.Close()
 	if resp2.StatusCode != 204 {
@@ -444,25 +421,21 @@ func TestTeamRepoPermission(t *testing.T) {
 	}
 }
 
-// TestListUserTeams verifies GET /api/v3/user/teams returns teams the authenticated
-// user belongs to, with the embedded organization object real OIDC relying parties
-// require for team → role mapping.
+// GET /api/v3/user/teams must embed the organization object — OIDC relying
+// parties read it for team → role mapping.
 func TestListUserTeams(t *testing.T) {
-	// Create org and team under admin.
 	createOrgViaAdminAPI(t, "testorg-userteams")
 	ghPost(t, "/api/v3/orgs/testorg-userteams/teams", defaultToken, map[string]interface{}{
 		"name":    "platform-admins",
 		"privacy": "closed",
 	})
 
-	// admin is the token owner — add them to the team.
 	resp := ghPut(t, "/api/v3/orgs/testorg-userteams/teams/platform-admins/memberships/admin", defaultToken, map[string]interface{}{})
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200 for add team member, got %d", resp.StatusCode)
 	}
 
-	// GET /api/v3/user/teams must return the team.
 	teamsResp := ghGet(t, "/api/v3/user/teams", defaultToken)
 	if teamsResp.StatusCode != 200 {
 		teamsResp.Body.Close()
@@ -487,7 +460,6 @@ func TestListUserTeams(t *testing.T) {
 	}
 }
 
-// TestGraphQLViewerOrgs verifies viewer { organizations } query.
 func TestGraphQLViewerOrgs(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-gql", "GQL Org")
 
@@ -529,7 +501,6 @@ func TestGraphQLViewerOrgs(t *testing.T) {
 	}
 }
 
-// TestGraphQLOrganization verifies the organization query.
 func TestGraphQLOrganization(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-gqlquery", "Query Org")
 
@@ -555,7 +526,6 @@ func TestGraphQLOrganization(t *testing.T) {
 	}
 }
 
-// TestGraphQLOrgNotFound verifies null result for nonexistent org.
 func TestGraphQLOrgNotFound(t *testing.T) {
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]string{
 		"query": `{organization(login:"no-such-org"){login}}`,
@@ -572,7 +542,6 @@ func TestGraphQLOrgNotFound(t *testing.T) {
 	}
 }
 
-// TestCreateOrgRepo verifies POST /api/v3/orgs/{org}/repos → 201.
 func TestCreateOrgRepo(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-repo")
 
@@ -595,13 +564,11 @@ func TestCreateOrgRepo(t *testing.T) {
 	}
 }
 
-// TestAdminCreateOrg_RequiresSiteAdmin verifies that POST /admin/organizations
-// returns 403 for unauthenticated callers and non-site-admin users — matching
-// real GHES behaviour.
+// POST /admin/organizations returns 403 for unauthenticated and non-site-admin
+// callers, matching GHES.
 func TestAdminCreateOrg_RequiresSiteAdmin(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// No token — unauthenticated → 403.
 	resp := s.post(t, "/api/v3/admin/organizations", "", map[string]interface{}{
 		"login": "org-no-auth",
 		"admin": "admin",
@@ -611,7 +578,6 @@ func TestAdminCreateOrg_RequiresSiteAdmin(t *testing.T) {
 		t.Fatalf("unauthenticated: got %d, want 403", resp.StatusCode)
 	}
 
-	// Token for a non-site-admin user → 403.
 	s.store.Mu.Lock()
 	regularUser := &store.User{ID: s.store.NextUser, Login: "regular", Type: "User", SiteAdmin: false}
 	s.store.NextUser++

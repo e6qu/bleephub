@@ -57,17 +57,16 @@ describe("MarketplacePage", () => {
     expect(await screen.findByRole("link", { name: /Spark App/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /OAuth Only App/ })).toBeInTheDocument();
 
-    // "Free plan" keeps only the listing with a FREE-priced plan.
     fireEvent.click(screen.getByRole("button", { name: "Free plan" }));
     expect(screen.getByRole("link", { name: /Spark App/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /OAuth Only App/ })).not.toBeInTheDocument();
 
-    // "OAuth Apps" keeps only the listing without a GitHub App id.
+    // "OAuth Apps" maps to listings without a GitHub App id.
     fireEvent.click(screen.getByRole("button", { name: "OAuth Apps" }));
     expect(screen.getByRole("link", { name: /OAuth Only App/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Spark App/ })).not.toBeInTheDocument();
 
-    // "All apps" restores the full directory; no dead category anchors remain.
+    // "All apps" restores the directory and leaves no dead category anchors.
     fireEvent.click(screen.getByRole("button", { name: "All apps" }));
     expect(screen.getByRole("link", { name: /Spark App/ })).toBeInTheDocument();
     expect(document.querySelector('a[href^="#"]')).toBeNull();
@@ -112,7 +111,6 @@ describe("MarketplacePage categories and pending changes", () => {
     expect(await screen.findByRole("button", { name: "Continuous integration (1)" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Spark App/ })).toBeInTheDocument();
 
-    // A category the listing is not in empties the grid.
     fireEvent.click(screen.getByRole("button", { name: "Security (0)" }));
     await waitFor(() => expect(screen.queryByRole("link", { name: /Spark App/ })).not.toBeInTheDocument());
 

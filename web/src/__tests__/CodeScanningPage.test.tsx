@@ -56,9 +56,7 @@ const openAlert = {
   most_recent_instance: null,
 };
 
-// Route every request the page issues by URL + method so the ordering of the
-// many background GETs (repo, branch, alerts, instances, analyses, databases,
-// default-setup, autofix, open-counts) never matters.
+// Route by URL + method so the ordering of the many background GETs never matters.
 function routeBase(url: string): Response | null {
   const u = url.toString();
   if (u.startsWith("/api/v3/repos/admin/csrepo/branches/main")) return jsonResponse(branch);
@@ -95,7 +93,7 @@ describe("CodeScanningPage alert rows", () => {
     });
     renderPage();
 
-    // Alert #2 carries an instance → path + short branch chips; #1 (null instance) renders none.
+    // Alert #2 has an instance → path + branch chips; #1 (null instance) renders none.
     const pathChip = await screen.findByText("internal/server/db.go");
     expect(pathChip).toBeInTheDocument();
     // "main" also appears in the filter bar's <code>; assert on the chip specifically.

@@ -321,7 +321,6 @@ func parseSponsorsNodeID(prefix, nodeID string) (int, bool) {
 	return id, true
 }
 
-// ---------------------------------------------------------------------------
 // clones — every getter hands back a detached snapshot (STORE-021)
 
 func cloneSponsorsListing(l *SponsorsListing) *SponsorsListing {
@@ -356,7 +355,6 @@ func cloneSponsorship(s *Sponsorship) *Sponsorship {
 	return &c
 }
 
-// ---------------------------------------------------------------------------
 // persistence
 
 const (
@@ -487,7 +485,6 @@ func (st *Store) loadSponsors() error {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // listings
 
 // SponsorsListingInput is the maintainer-supplied half of a listing.
@@ -672,7 +669,6 @@ func (ss *SponsorsStore) UpdateSponsorsListing(id int, patch SponsorsListingUpda
 	return cloneSponsorsListing(&updated)
 }
 
-// ---------------------------------------------------------------------------
 // tiers
 
 // SponsorsTierInput is the maintainer-supplied half of a tier.
@@ -825,7 +821,6 @@ func (ss *SponsorsStore) setTierState(id int, apply func(*SponsorsTier) error) (
 	return &c, nil
 }
 
-// ---------------------------------------------------------------------------
 // featured items
 
 // FeatureSponsorsListingItem promotes a repository or user on a listing,
@@ -936,7 +931,6 @@ func (ss *SponsorsStore) FindSponsorsFeaturedItemByNodeID(nodeID string) *Sponso
 	return ss.featuredItems[id]
 }
 
-// ---------------------------------------------------------------------------
 // newsletters
 
 // CreateSponsorshipNewsletter drafts (or publishes) an update to sponsors.
@@ -1022,7 +1016,6 @@ func (ss *SponsorsStore) FindSponsorshipNewsletterByNodeID(nodeID string) *Spons
 	return ss.newsletters[id]
 }
 
-// ---------------------------------------------------------------------------
 // sponsorships — the billing state machine
 
 // SponsorshipInput opens a sponsorship.
@@ -1639,7 +1632,6 @@ func (ss *SponsorsStore) ListSponsorsActivities(login string, includeAsSponsor b
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // money — every figure derived from the invoice ledger, in integer cents
 
 // ListSponsorsInvoices returns the invoices billed for a listing, newest

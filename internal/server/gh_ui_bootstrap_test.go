@@ -10,9 +10,8 @@ import (
 	"time"
 )
 
-// fetchTrimmedBody GETs a path and returns (status, body without the trailing
-// newline writeJSON appends), so standalone endpoint bodies compare literally
-// against the raw sub-payloads embedded in a bootstrap aggregate.
+// fetchTrimmedBody drops the trailing newline writeJSON appends, so standalone
+// bodies compare literally against the raw sub-payloads in a bootstrap aggregate.
 func fetchTrimmedBody(t *testing.T, s *isolatedServer, path, token string) (int, []byte) {
 	t.Helper()
 	resp := s.get(t, path, token)
@@ -24,7 +23,6 @@ func fetchTrimmedBody(t *testing.T, s *isolatedServer, path, token string) (int,
 	return resp.StatusCode, bytes.TrimSuffix(body, []byte("\n"))
 }
 
-// decodeBootstrap decodes an aggregate body into raw per-key sub-payloads.
 func decodeBootstrap(t *testing.T, s *isolatedServer, path string) map[string]json.RawMessage {
 	t.Helper()
 	status, body := fetchTrimmedBody(t, s, path, defaultToken)
@@ -38,8 +36,8 @@ func decodeBootstrap(t *testing.T, s *isolatedServer, path string) map[string]js
 	return out
 }
 
-// assertSubEqualsStandalone asserts a bootstrap sub-payload is byte-identical
-// to the standalone endpoint's body for the same viewer.
+// assertSubEqualsStandalone asserts a bootstrap sub-payload is byte-identical to
+// the standalone endpoint's body for the same viewer.
 func assertSubEqualsStandalone(t *testing.T, s *isolatedServer, agg map[string]json.RawMessage, key, standalonePath string) {
 	t.Helper()
 	status, want := fetchTrimmedBody(t, s, standalonePath, defaultToken)
@@ -80,8 +78,7 @@ func TestUIBootstrapRepoSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 	if err := json.Unmarshal(agg["branches"], &branches); err != nil {
 		t.Fatalf("decode branches: %v", err)
 	}
-	// first_page is the standalone endpoint's per_page=100 page — the query
-	// the UI's branch/tag hooks issue.
+	// first_page is the per_page=100 page the UI's branch/tag hooks issue.
 	_, wantBranches := fetchTrimmedBody(t, s, repo.path()+"/branches?per_page=100", defaultToken)
 	if !bytes.Equal(bytes.TrimSpace(branches.FirstPage), wantBranches) {
 		t.Errorf("branches.first_page != standalone /branches?per_page=100:\n got: %.300s\nwant: %.300s", branches.FirstPage, wantBranches)
@@ -101,7 +98,7 @@ func TestUIBootstrapRepoSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 		t.Errorf("tags = {%s, %d}, want {[], 0}", tags.FirstPage, tags.TotalCount)
 	}
 
-	// No release exists: the nullable sub-resource is null exactly where the
+	// With no release, the nullable sub-resource is null exactly where the
 	// standalone endpoint 404s.
 	if status, _ := fetchTrimmedBody(t, s, repo.path()+"/releases/latest", defaultToken); status != http.StatusNotFound {
 		t.Fatalf("standalone /releases/latest = %d, want 404", status)
@@ -129,8 +126,8 @@ func TestUIBootstrapRepoSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 		t.Fatalf("decode discussions_enabled: %v", err)
 	}
 
-	// The aggregate flows through the standard ETag layer like any writeJSON
-	// endpoint: a strong validator on 200, and a 304 on If-None-Match.
+	// The aggregate flows through the standard ETag layer: strong validator on
+	// 200, 304 on If-None-Match.
 	first := s.get(t, "/ui-data/bootstrap"+trimAPIPrefix(repo.path()), defaultToken)
 	first.Body.Close()
 	etag := first.Header.Get("ETag")
@@ -152,9 +149,8 @@ func TestUIBootstrapRepoSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 		t.Errorf("conditional aggregate GET = %d, want 304", conditional.StatusCode)
 	}
 
-	// And through the standard /ui-data compression layer: an explicit
-	// Accept-Encoding (which disables the client's transparent decoding)
-	// yields a gzipped representation.
+	// And through the /ui-data compression layer: an explicit Accept-Encoding
+	// (which disables transparent decoding) yields a gzipped representation.
 	gzReq, err := http.NewRequest(http.MethodGet, s.baseURL+"/ui-data/bootstrap"+trimAPIPrefix(repo.path()), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +179,7 @@ func TestUIBootstrapIssueSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 		map[string]interface{}{"name": "regression", "color": "ff0000"}))
 	mustPost(t, s.post(t, repo.path()+"/milestones", defaultToken,
 		map[string]interface{}{"title": "v1"}))
-	// A closed milestone makes state=all observably different from state=open,
+	// A closed milestone makes state=all observably differ from state=open,
 	// pinning the aggregate's milestones source as ?state=all.
 	closedMilestone := decodeJSONWithStatus(t, s.post(t, repo.path()+"/milestones", defaultToken,
 		map[string]interface{}{"title": "v0-closed"}), http.StatusCreated)
@@ -208,7 +204,7 @@ func TestUIBootstrapIssueSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 		t.Errorf("milestones embeds %d rows, want 2 (state=all includes the closed one)", len(milestones))
 	}
 
-	// A number the issue endpoint refuses is refused identically here.
+	// A number the issue endpoint refuses is refused identically by the bootstrap.
 	status, body := fetchTrimmedBody(t, s, "/ui-data/bootstrap"+trimAPIPrefix(repo.path())+"/issues/999999", defaultToken)
 	wantStatus, wantBody := fetchTrimmedBody(t, s, repo.path()+"/issues/999999", defaultToken)
 	if status != wantStatus || status != http.StatusNotFound {
@@ -272,7 +268,7 @@ func TestUIBootstrapPullSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 	}
 
 	// An issue number is refused by the pulls bootstrap exactly like the
-	// standalone pull endpoint refuses it.
+	// standalone pull endpoint.
 	_, issueNumber := s.createIssueForTest(t, repo, "not a pr")
 	status, body := fetchTrimmedBody(t, s, "/ui-data/bootstrap"+trimAPIPrefix(repo.path())+"/pulls/"+itoa(issueNumber), defaultToken)
 	wantStatus, wantBody := fetchTrimmedBody(t, s, repo.path()+"/pulls/"+itoa(issueNumber), defaultToken)
@@ -284,8 +280,8 @@ func TestUIBootstrapPullSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 	}
 }
 
-// putTreeMetaUpdate updates an existing file (contents PUT requires the blob
-// sha for updates) and returns the new commit sha.
+// putTreeMetaUpdate updates an existing file (contents PUT requires the blob sha
+// for updates) and returns the new commit sha.
 func putTreeMetaUpdate(t *testing.T, s *isolatedServer, repo repoRef, path, content, message string) string {
 	t.Helper()
 	current := decodeJSON(t, s.get(t, repo.path()+"/contents/"+path, defaultToken))
@@ -379,7 +375,7 @@ func TestUITreeMetaAttributesEntriesInOneLogWalk(t *testing.T) {
 	}
 
 	// Scoped to docs/: entries are attributed within the subtree, and
-	// latest_commit is the newest commit touching docs/ (c4), not the tip.
+	// latest_commit is the newest commit touching docs/ (c4), not the tip (c5).
 	var docs struct {
 		LatestCommit json.RawMessage `json:"latest_commit"`
 		Entries      []entry         `json:"entries"`
@@ -408,7 +404,6 @@ func TestUITreeMetaAttributesEntriesInOneLogWalk(t *testing.T) {
 	}
 	_ = c1 // creation commit of a.txt is superseded by the c5 edit
 
-	// Unknown ref and non-directory path 404.
 	if status, _ := fetchTrimmedBody(t, s, "/ui-data"+trimAPIPrefix(repo.path())+"/tree-meta?ref=no-such-branch", defaultToken); status != http.StatusNotFound {
 		t.Errorf("tree-meta bad ref = %d, want 404", status)
 	}
@@ -422,8 +417,8 @@ func TestUIBootstrapInsightsCountsExactly(t *testing.T) {
 	s := newIsolatedServer(t)
 	repo := s.sweepRepo(t, "ui-bootstrap-insights")
 	// Fixture commits are stamped by the git layer, not the injectable server
-	// clock, so anchor "now" to the tip commit's own timestamp: every fixture
-	// then falls inside the 1w window without the test reading the wall clock.
+	// clock; anchor "now" to the tip commit's timestamp so every fixture falls
+	// inside the 1w window without reading the wall clock.
 	var tip []struct {
 		Commit struct {
 			Committer struct {
@@ -545,7 +540,7 @@ func TestUIBootstrapEndpointsHidePrivateReposLikeTheRepoEndpoint(t *testing.T) {
 		}
 	}
 
-	// The owner still gets the aggregate for the private repo.
+	// The owner still gets the private repo's aggregate.
 	if status, _ := fetchTrimmedBody(t, s, "/ui-data/bootstrap"+base, defaultToken); status != http.StatusOK {
 		t.Errorf("owner GET private bootstrap = %d, want 200", status)
 	}

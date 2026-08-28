@@ -25,20 +25,16 @@ jobs:
       - run: echo hi
 `
 
-// commitWorkflowYAMLToStorage commits a single workflow YAML at HEAD
-// of the given repo's git storage. Mirrors the pattern in
-// webhooks_test.go's pushTestCommit but skips the HTTP push — we only
-// need the commit visible to the discovery walk.
+// commitWorkflowYAMLToStorage commits a workflow YAML at HEAD without the HTTP
+// push, since the discovery walk only needs the commit visible.
 func commitWorkflowYAMLToStorage(t *testing.T, s *Server, repoFullName, path, body string) string {
 	t.Helper()
 	parts := strings.Split(repoFullName, "/")
 	if len(parts) != 2 {
 		t.Fatalf("expected owner/repo, got %q", repoFullName)
 	}
-	// CreateRepo derives the repo's full name from owner.Login + name.
-	// To make GetGitStorage(parts[0], parts[1]) hit, create a user whose
-	// Login matches the test-fixture owner instead of using the default
-	// admin user.
+	// GetGitStorage keys on owner.Login, so create a user whose Login matches
+	// the fixture owner rather than reusing the default admin.
 	s.store.Mu.Lock()
 	user := &store.User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
@@ -176,17 +172,14 @@ func TestWorkflows_GetByID_AndByFilename(t *testing.T) {
 	s.registerGHWorkflowsRoutes()
 	wf := s.store.RegisterWorkflowFile("octo/repo", ".github/workflows/ci.yml", "ci", sampleWorkflowYAML, "submitted")
 
-	// Numeric ID lookup.
 	w := runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/workflows/%d", wf.ID))
 	if w.Code != http.StatusOK {
 		t.Fatalf("by-id status = %d", w.Code)
 	}
-	// Filename lookup.
 	w2 := runRequest(s, "GET", "/api/v3/repos/octo/repo/actions/workflows/ci.yml")
 	if w2.Code != http.StatusOK {
 		t.Fatalf("by-filename status = %d", w2.Code)
 	}
-	// Full path lookup.
 	w3 := runRequest(s, "GET", "/api/v3/repos/octo/repo/actions/workflows/.github%2Fworkflows%2Fci.yml")
 	if w3.Code != http.StatusOK {
 		t.Errorf("by-full-path status = %d", w3.Code)
@@ -278,7 +271,6 @@ jobs:
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
 
-	// Dispatch must have created a run.
 	s.store.Mu.RLock()
 	count := 0
 	for _, run := range s.store.Workflows {
@@ -428,8 +420,8 @@ func TestWorkflows_Dispatch_NoYAMLCached(t *testing.T) {
 	s := newTestServer()
 	s.registerGHWorkflowsRoutes()
 	ensureSeededRepo(s, "octo/repo")
-	// Register a WorkflowFile with empty YAML (mimics a discovery
-	// edge case where the file was indexed without contents).
+	// Empty YAML mimics a discovery edge case where the file was indexed
+	// without contents.
 	wf := s.store.RegisterWorkflowFile("octo/repo", ".github/workflows/ci.yml", "ci", "", "discovered")
 
 	w := runAuthedRequest(s, "POST",
@@ -440,9 +432,8 @@ func TestWorkflows_Dispatch_NoYAMLCached(t *testing.T) {
 }
 
 func TestWorkflows_Rerun_ViaCachedYAML(t *testing.T) {
-	// The rerun handler dispatches through the WorkflowFile cache: register
-	// a file matching the run's name, then POST rerun, expect 201 Created
-	// instead of the fail-loud no-cached-yaml 422.
+	// The rerun handler dispatches through the WorkflowFile cache, so a file
+	// matching the run's name yields 201 rather than the no-cached-yaml 422.
 	s := newTestServer()
 	s.registerGHActionsRoutes()
 	s.registerGHWorkflowsRoutes()

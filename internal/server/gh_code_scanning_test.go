@@ -338,7 +338,6 @@ func TestCodeScanning_PatchDismiss(t *testing.T) {
 		t.Fatalf("expected false_positive, got %v", updated["dismissed_reason"])
 	}
 
-	// Reopen
 	patch, _ = json.Marshal(map[string]any{"state": "open"})
 	req, _ = http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/cs-patch/code-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer "+defaultToken)
@@ -390,9 +389,8 @@ func TestCodeScanning_InvalidDismissedReason(t *testing.T) {
 	resp.Body.Close()
 }
 
-// TestCodeScanning_PatchRejectsClientFixed covers that a client cannot PATCH an
-// alert to state "fixed" — only the scanner marks an alert fixed; github accepts
-// only open/dismissed from the alert-update endpoint.
+// A client cannot PATCH an alert to state "fixed"; only the scanner marks an
+// alert fixed, so the alert-update endpoint accepts only open/dismissed.
 func TestCodeScanning_PatchRejectsClientFixed(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -486,7 +484,6 @@ func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 		t.Fatalf("expected upload id and url, got %+v", upload)
 	}
 
-	// List alerts
 	resp = s.authedGet(t, "/api/v3/repos/admin/cs-sarif/code-scanning/alerts")
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -502,7 +499,6 @@ func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 		t.Fatalf("expected 2 alerts from SARIF, got %d", len(alerts))
 	}
 
-	// Get upload
 	uploadID := upload["id"].(string)
 	resp = s.authedGet(t, "/api/v3/repos/admin/cs-sarif/code-scanning/sarifs/"+uploadID)
 	if resp.StatusCode != http.StatusOK {
@@ -538,9 +534,8 @@ func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 	}
 }
 
-// TestCodeScanning_SARIFSecuritySeverityLevel covers the rule.security_severity_level
-// field: a security rule's numeric SARIF `security-severity` score is bucketed
-// into GitHub's low/medium/high/critical level on the alert's rule object.
+// A rule's numeric SARIF `security-severity` score buckets into GitHub's
+// low/medium/high/critical rule.security_severity_level on the alert.
 func TestCodeScanning_SARIFSecuritySeverityLevel(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -814,9 +809,9 @@ func TestCodeScanning_Analyses(t *testing.T) {
 	resp.Body.Close()
 }
 
-// TestCodeScanning_DeleteAnalysisChain covers the deletion body when the set
-// still has analyses: next_analysis_url points to the next deletable analysis
-// and confirm_delete_url carries ?confirm_delete, per code-scanning-analysis-deletion.
+// When the set still has analyses, the deletion body's next_analysis_url points
+// to the next deletable analysis and confirm_delete_url carries ?confirm_delete,
+// per code-scanning-analysis-deletion.
 func TestCodeScanning_DeleteAnalysisChain(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -857,7 +852,6 @@ func TestCodeScanning_DeleteAnalysisChain(t *testing.T) {
 	}
 }
 
-// patchDefaultSetup PATCHes a repo's default setup and returns the response.
 func (s *isolatedServer) patchDefaultSetup(t *testing.T, repoKey string, body map[string]any) *http.Response {
 	t.Helper()
 	payload, _ := json.Marshal(body)
@@ -905,7 +899,6 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 		t.Fatalf("init repo files: %v", err)
 	}
 
-	// Before any configuration the repo reports not-configured.
 	got := s.getDefaultSetup(t, "admin/cs-default")
 	if got["state"] != "not-configured" {
 		t.Fatalf("expected not-configured before enabling, got %v", got["state"])
@@ -941,8 +934,6 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 		t.Fatalf("expected empty object body, got %v", patchBody)
 	}
 
-	// GET reads back the persisted configuration with the languages
-	// derived from the repository's real content.
 	got = s.getDefaultSetup(t, "admin/cs-default")
 	if got["state"] != "configured" {
 		t.Fatalf("expected configured, got %v", got["state"])
@@ -980,14 +971,12 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 		t.Fatalf("expected query_suite extended after partial update, got %v", got["query_suite"])
 	}
 
-	// A language outside the documented enum is rejected.
 	resp = s.patchDefaultSetup(t, "admin/cs-default", map[string]any{"languages": []string{"cobol"}})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid language: %d want 422", resp.StatusCode)
 	}
 
-	// Disable; GET reads back not-configured with the update timestamp.
 	resp = s.patchDefaultSetup(t, "admin/cs-default", map[string]any{"state": "not-configured"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -998,7 +987,6 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 		t.Fatalf("expected not-configured after disable, got %v", got["state"])
 	}
 
-	// Disabling again is a state conflict.
 	resp = s.patchDefaultSetup(t, "admin/cs-default", map[string]any{"state": "not-configured"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
@@ -1006,8 +994,7 @@ func TestCodeScanning_DefaultSetup(t *testing.T) {
 	}
 }
 
-// TestCodeScanning_DefaultSetupNoLanguages verifies enabling fails when
-// the repository has no CodeQL-supported languages to analyze.
+// Enabling fails when the repository has no CodeQL-supported languages to analyze.
 func TestCodeScanning_DefaultSetupNoLanguages(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

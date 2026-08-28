@@ -144,15 +144,14 @@ func TestCredentialsRevoke(t *testing.T) {
 	user := srv.createTestUser(t, "revoke-target")
 	token := srv.store.CreateToken(user.ID, "repo").Value
 
-	// The token works before revocation.
 	resp := srv.get(t, "/api/v3/user", token)
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("pre-revocation GET /user = %d", resp.StatusCode)
 	}
 
-	// Revoke it (the endpoint itself needs no authentication, matching
-	// GitHub) along with an unknown credential, which is silently accepted.
+	// The revoke endpoint needs no authentication (matching GitHub); an unknown
+	// credential is silently accepted.
 	resp = srv.post(t, "/api/v3/credentials/revoke", "", map[string]interface{}{
 		"credentials": []string{token, "ghp_doesnotexist000000000000000000000000"},
 	})

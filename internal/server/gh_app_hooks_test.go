@@ -47,7 +47,7 @@ func TestAppHookConfig_GetPatch(t *testing.T) {
 		return w
 	}
 
-	// GET initial config — secret is rendered as **** (redacted).
+	// The secret is rendered redacted.
 	w := doReq("GET", "/api/v3/app/hook/config", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET status = %d body = %s", w.Code, w.Body.String())
@@ -58,7 +58,6 @@ func TestAppHookConfig_GetPatch(t *testing.T) {
 		t.Errorf("expected redacted secret, got %v", got["secret"])
 	}
 
-	// PATCH webhook URL.
 	body, _ := json.Marshal(map[string]string{"url": "https://example.test/webhook", "secret": "new-secret"})
 	w = doReq("PATCH", "/api/v3/app/hook/config", body)
 	if w.Code != http.StatusOK {
@@ -70,8 +69,7 @@ func TestAppHookConfig_GetPatch(t *testing.T) {
 }
 
 func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
-	// Spin up a sink to receive the redelivery. The handler runs on the
-	// httptest server's goroutine while the test body polls below, so the
+	// The sink handler runs on another goroutine while the body polls, so the
 	// capture must be synchronized.
 	var gotMu sync.Mutex
 	var got []byte
@@ -96,7 +94,7 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 		a.WebhookActive = true
 	})
 
-	// Record an original delivery as if it had fired earlier.
+	// A prior delivery, as if it fired earlier.
 	original := &store.WebhookDelivery{
 		HookID:      -app.ID,
 		AppID:       app.ID,
@@ -123,7 +121,6 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 		return w
 	}
 
-	// LIST
 	w := doReq("GET", "/api/v3/app/hook/deliveries")
 	if w.Code != http.StatusOK {
 		t.Fatalf("LIST status = %d body = %s", w.Code, w.Body.String())
@@ -141,7 +138,7 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 		t.Error("delivery summary must NOT contain url")
 	}
 
-	// GET single delivery — full request/response payload + url visible.
+	// Single delivery carries the full request/response payload and url.
 	w = doReq("GET", fmt.Sprintf("/api/v3/app/hook/deliveries/%d", original.ID))
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET status = %d body = %s", w.Code, w.Body.String())
@@ -155,7 +152,7 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 		t.Error("full delivery object must include url")
 	}
 
-	// REDELIVER — 202 with no synthetic JSON body (GitHub returns empty body).
+	// Redeliver: 202 with an empty body (GitHub returns none).
 	w = doReq("POST", fmt.Sprintf("/api/v3/app/hook/deliveries/%d/attempts", original.ID))
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("REDELIVER status = %d body = %s", w.Code, w.Body.String())
@@ -163,10 +160,8 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 	if strings.TrimSpace(w.Body.String()) != "" {
 		t.Errorf("REDELIVER body = %q, want empty", w.Body.String())
 	}
-	// Sink fires async — quick poll.
 	testutil.TestEventually(2*time.Second, 20*time.Millisecond, func() bool { return gotLen() > 0 })
 
-	// Store now has 2 deliveries (the original + the redelivery).
 	deliveries := s.store.ListAppDeliveries(app.ID)
 	if len(deliveries) != 2 {
 		t.Errorf("expected 2 deliveries after redeliver, got %d", len(deliveries))

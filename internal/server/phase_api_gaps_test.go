@@ -89,7 +89,6 @@ func TestReleaseMakeLatestControlsLatest(t *testing.T) {
 		t.Fatalf("latest = %v, want v1.0.0 (v2 marked make_latest:false)", latest["tag_name"])
 	}
 
-	// Promote v2 back to latest via update.
 	upd := srv.patch(t, "/api/v3/repos/admin/"+repo+"/releases/"+itoa(v2ID), defaultToken, map[string]interface{}{
 		"make_latest": "true",
 	})

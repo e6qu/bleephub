@@ -75,8 +75,6 @@ func (m *lfsMemoryByteStore) Delete(_ context.Context, key string) error {
 
 // ─── Harness helpers ────────────────────────────────────────────────────
 
-// newLFSServer is an isolated server with an object byte store attached, plus
-// a repository to hold LFS objects.
 func newLFSServer(t *testing.T, private bool) (*isolatedServer, *lfsMemoryByteStore, repoRef) {
 	t.Helper()
 	srv := newIsolatedServer(t)
@@ -96,8 +94,6 @@ func lfsEndpoint(repo repoRef) string {
 	return "/" + repo.fullName() + ".git/info/lfs"
 }
 
-// lfsDo issues a request against the LFS surface with the LFS media type and
-// an optional credential. body is sent verbatim.
 func (s *isolatedServer) lfsDo(t *testing.T, method, path, token string, body io.Reader) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(method, s.baseURL+path, body)
@@ -118,8 +114,6 @@ func (s *isolatedServer) lfsDo(t *testing.T, method, path, token string, body io
 	return resp
 }
 
-// lfsBatch posts a batch request and returns the decoded response together
-// with the HTTP status.
 func (s *isolatedServer) lfsBatch(t *testing.T, repo repoRef, token string, request map[string]interface{}) (int, lfsBatchResponse, string) {
 	t.Helper()
 	encoded, err := json.Marshal(request)
@@ -158,8 +152,6 @@ func lfsBatchBody(operation string, content []byte) map[string]interface{} {
 	}
 }
 
-// lfsUpload performs the transfer half: PUT the bytes to the href the batch
-// response handed out.
 func (s *isolatedServer) lfsUpload(t *testing.T, href, token string, content []byte) *http.Response {
 	t.Helper()
 	path := strings.TrimPrefix(href, s.baseURL)
@@ -196,10 +188,8 @@ func decodeLFSError(t *testing.T, resp *http.Response) lfsErrorBody {
 
 // ─── Batch negotiation ──────────────────────────────────────────────────
 
-// TestLFSBatchUploadDownloadRoundTrip walks the whole basic-transfer flow the
-// git-lfs client walks: batch(upload) hands out a PUT href, the transfer
-// stores the bytes, batch(download) hands out a GET href, and the GET returns
-// the object rather than a pointer.
+// TestLFSBatchUploadDownloadRoundTrip walks the whole basic-transfer flow: a
+// GET after upload must return the object, not a pointer.
 func TestLFSBatchUploadDownloadRoundTrip(t *testing.T) {
 	t.Parallel()
 	srv, byteStore, repo := newLFSServer(t, false)
@@ -279,7 +269,6 @@ func TestLFSBatchUploadDownloadRoundTrip(t *testing.T) {
 		t.Fatalf("downloaded %d bytes, want the %d uploaded bytes", len(got), len(content))
 	}
 
-	// The verify action reports the object as present at its stored size.
 	verifyBody, err := json.Marshal(map[string]interface{}{"oid": oid, "size": len(content)})
 	if err != nil {
 		t.Fatal(err)
@@ -291,9 +280,8 @@ func TestLFSBatchUploadDownloadRoundTrip(t *testing.T) {
 	}
 }
 
-// TestLFSBatchDownloadOfMissingObjectIsPerObject404 pins the shape that lets a
-// client fetch what exists: the batch call itself succeeds and the individual
-// object carries the 404.
+// TestLFSBatchDownloadOfMissingObjectIsPerObject404 pins that the batch call
+// itself succeeds and the individual object carries the 404.
 func TestLFSBatchDownloadOfMissingObjectIsPerObject404(t *testing.T) {
 	t.Parallel()
 	srv, _, repo := newLFSServer(t, false)
@@ -359,9 +347,9 @@ func TestLFSBatchRefusesDisabledRepository(t *testing.T) {
 
 // ─── Upload verification ────────────────────────────────────────────────
 
-// TestLFSUploadRejectsContentThatDoesNotMatchItsOID is the integrity gate: an
-// LFS pointer names its object only by oid, so storing bytes that hash to
-// something else corrupts every future checkout of that pointer.
+// TestLFSUploadRejectsContentThatDoesNotMatchItsOID is the integrity gate:
+// storing bytes that hash to something other than the pointer's oid corrupts
+// every future checkout of that pointer.
 func TestLFSUploadRejectsContentThatDoesNotMatchItsOID(t *testing.T) {
 	t.Parallel()
 	srv, byteStore, repo := newLFSServer(t, false)
@@ -415,8 +403,8 @@ func TestLFSUploadRejectsSizeMismatch(t *testing.T) {
 }
 
 // TestLFSUploadDoesNotOverwriteStoredObjectBytes pins the content-addressed
-// invariant: a second repository claiming an oid that is already stored cannot
-// replace the bytes every other repository's pointers resolve through.
+// invariant: a second repository claiming an already-stored oid cannot replace
+// the bytes every other repository's pointers resolve through.
 func TestLFSUploadDoesNotOverwriteStoredObjectBytes(t *testing.T) {
 	t.Parallel()
 	srv, byteStore, repo := newLFSServer(t, false)
@@ -445,7 +433,7 @@ func TestLFSUploadDoesNotOverwriteStoredObjectBytes(t *testing.T) {
 		t.Fatalf("the stored object was overwritten by a mismatched upload (err=%v)", err)
 	}
 
-	// The honest upload of the same content from the second repository shares
+	// An honest upload of the same content from the second repository shares
 	// the stored bytes and makes it downloadable there.
 	resp = srv.lfsUpload(t, href, defaultToken, content)
 	resp.Body.Close()
@@ -460,10 +448,9 @@ func TestLFSUploadDoesNotOverwriteStoredObjectBytes(t *testing.T) {
 
 // ─── Authorization ──────────────────────────────────────────────────────
 
-// TestLFSPrivateRepositoryAuthorization walks the matrix: anonymous callers get
-// the 401 challenge that lets git-lfs supply credentials, an authenticated
-// caller with no access cannot tell the repository exists, a puller may read
-// but not write, and a pusher may do both.
+// TestLFSPrivateRepositoryAuthorization walks the matrix: anonymous gets the
+// 401 challenge, an unauthorized caller cannot tell the repo exists, a puller
+// may read but not write, and a pusher may do both.
 func TestLFSPrivateRepositoryAuthorization(t *testing.T) {
 	t.Parallel()
 	srv, _, repo := newLFSServer(t, true)
@@ -544,9 +531,9 @@ func TestLFSPrivateRepositoryAuthorization(t *testing.T) {
 	}
 }
 
-// TestLFSObjectsAreNotReadableThroughAnotherRepository pins that the shared,
-// content-addressed key is not a shared namespace: holding an oid in one
-// repository does not make it readable through another.
+// TestLFSObjectsAreNotReadableThroughAnotherRepository pins that holding an oid
+// in one repository does not make it readable through another, despite the
+// shared content-addressed key.
 func TestLFSObjectsAreNotReadableThroughAnotherRepository(t *testing.T) {
 	t.Parallel()
 	srv, _, private := newLFSServer(t, true)
@@ -723,9 +710,8 @@ func TestLFSLockingRequiresPushAccess(t *testing.T) {
 // ─── S3-backed object storage ───────────────────────────────────────────
 
 // TestLFSObjectBytesLandInTheS3ByteStore runs the transfer against the real
-// S3-backed byte store (MinIO) rather than the in-process fake, so the theme
-// the feature exists to serve — LFS bytes live in object storage — is pinned
-// against the implementation that ships, including its checksum metadata.
+// S3-backed byte store (MinIO) rather than the in-process fake, pinning that
+// LFS bytes land in object storage on the implementation that ships.
 func TestLFSObjectBytesLandInTheS3ByteStore(t *testing.T) {
 	resetS3FSCacheForTest(t)
 	objectFS, byteStore := newObjectByteStoreForTest(t)
@@ -762,9 +748,9 @@ func TestLFSObjectBytesLandInTheS3ByteStore(t *testing.T) {
 // ─── End-to-end with the real git-lfs client ────────────────────────────
 
 // TestGitLFSClientRoundTrip drives the real git and git-lfs binaries against
-// the server, which is the only way to know the endpoint discovery, the
-// pre-push hook, the batch negotiation and the smudge filter all agree: a
-// fresh clone must contain the file's real bytes, not its 130-byte pointer.
+// the server — the only way to know discovery, pre-push hook, batch
+// negotiation and smudge filter agree — so a fresh clone contains the file's
+// real bytes, not its 130-byte pointer.
 func TestGitLFSClientRoundTrip(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -797,9 +783,8 @@ func TestGitLFSClientRoundTrip(t *testing.T) {
 		return string(output)
 	}
 
-	// The clone below only runs the smudge filter if git-lfs is installed for
-	// the user, which is the one-time `git lfs install` every git-lfs user
-	// performs; HOME points at the test's temp dir, so it touches nothing.
+	// The clone below runs the smudge filter only if git-lfs is installed for
+	// the user; HOME points at the test's temp dir, so this touches nothing.
 	runGit(temp, "lfs", "install")
 
 	worktree := filepath.Join(temp, "worktree")
@@ -816,7 +801,6 @@ func TestGitLFSClientRoundTrip(t *testing.T) {
 	runGit(worktree, "remote", "add", "origin", remote)
 	runGit(worktree, "push", "origin", "HEAD:main")
 
-	// The pre-push hook uploaded the object to the byte store, keyed by oid.
 	if _, err := byteStore.Get(context.Background(), store.LFSObjectDataKey(lfsOIDOf(payload))); err != nil {
 		t.Fatalf("git lfs push did not store the object: %v", err)
 	}
@@ -832,7 +816,6 @@ func TestGitLFSClientRoundTrip(t *testing.T) {
 			len(got), got, len(payload))
 	}
 
-	// Locking works against the same clone, which is what `git lfs lock` needs.
 	if out := runGit(clone, "lfs", "lock", "asset.bin"); !strings.Contains(out, "asset.bin") {
 		t.Fatalf("git lfs lock said %q", out)
 	}

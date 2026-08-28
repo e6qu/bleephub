@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// getWith issues a GET against the isolated server with optional extra headers
-// and returns the response (body already drained + closed).
+// getWith issues a GET with optional extra headers and returns the response
+// (body already drained and closed).
 func (s *isolatedServer) getWith(t *testing.T, path, token string, headers map[string]string) (*http.Response, []byte) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, s.baseURL+path, nil)
@@ -29,17 +29,14 @@ func (s *isolatedServer) getWith(t *testing.T, path, token string, headers map[s
 	return resp, body
 }
 
-// TestConditional304DoesNotConsumeRateLimit pins that a conditional GET which
-// results in 304 Not Modified is not billed against the primary rate limit —
-// GitHub's documented behaviour. bleephub consumes in middleware before the 304
-// decision, so the unit must be refunded and the 304's X-RateLimit-Remaining
-// must match the remaining budget from just before the conditional re-request.
+// TestConditional304DoesNotConsumeRateLimit pins GitHub's rule that a 304 is not
+// billed: bleephub consumes in middleware before the 304 decision, so the unit
+// must be refunded and reflected in the 304's X-RateLimit-Remaining.
 func TestConditional304DoesNotConsumeRateLimit(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "cond-rl"}).Body.Close()
 
-	// First read: consumes a unit and hands back an ETag.
 	first, _ := s.getWith(t, "/api/v3/repos/admin/cond-rl", defaultToken, nil)
 	etag := first.Header.Get("ETag")
 	if etag == "" {
@@ -47,8 +44,8 @@ func TestConditional304DoesNotConsumeRateLimit(t *testing.T) {
 	}
 	remainingAfterFirst := first.Header.Get("X-RateLimit-Remaining")
 
-	// Conditional re-read: 304, and the budget must be unchanged from after the
-	// first read (the consumed unit was refunded), not decremented again.
+	// The 304 re-read's budget must be unchanged from after the first read — the
+	// consumed unit was refunded, not decremented again.
 	second, body := s.getWith(t, "/api/v3/repos/admin/cond-rl", defaultToken, map[string]string{"If-None-Match": etag})
 	if second.StatusCode != http.StatusNotModified {
 		t.Fatalf("conditional GET = %d, want 304", second.StatusCode)
@@ -61,9 +58,9 @@ func TestConditional304DoesNotConsumeRateLimit(t *testing.T) {
 	}
 }
 
-// TestActivityFeedsAdvertisePollInterval pins REST-031: the activity event
-// feeds and the notifications list carry X-Poll-Interval, and unrelated
-// endpoints (including the issues-events list) do not.
+// TestActivityFeedsAdvertisePollInterval pins REST-031: the activity feeds and
+// notifications list carry X-Poll-Interval, and unrelated endpoints (including
+// issues-events) do not.
 func TestActivityFeedsAdvertisePollInterval(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -87,10 +84,9 @@ func TestActivityFeedsAdvertisePollInterval(t *testing.T) {
 	}
 }
 
-// TestActivityFeedIsConditionalOnLastModified pins REST-031's Last-Modified
-// on the activity feeds: the feed advertises the newest event's time, a
-// matching If-Modified-Since yields a bodyless 304, and a present (even
-// non-matching) If-None-Match takes precedence over If-Modified-Since.
+// TestActivityFeedIsConditionalOnLastModified pins REST-031's Last-Modified on
+// the feeds: a matching If-Modified-Since yields a bodyless 304, and a present
+// If-None-Match takes precedence over it.
 func TestActivityFeedIsConditionalOnLastModified(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -113,7 +109,6 @@ func TestActivityFeedIsConditionalOnLastModified(t *testing.T) {
 		t.Fatalf("feed unexpectedly empty: %q", body)
 	}
 
-	// A matching If-Modified-Since yields a bodyless 304.
 	resp, body = srv.getWith(t, "/api/v3/events", defaultToken, map[string]string{"If-Modified-Since": lastMod})
 	if resp.StatusCode != http.StatusNotModified {
 		t.Fatalf("conditional feed = %d, want 304", resp.StatusCode)

@@ -210,14 +210,12 @@ func TestGistCommentTraitFieldsBacking(t *testing.T) {
 	}
 }
 
-// firstCommentNode returns the first node of repository.issue.comments.
 func firstCommentNode(t *testing.T, data map[string]interface{}) map[string]interface{} {
 	t.Helper()
 	conn := at(t, data, "repository", "issue", "comments")
 	return firstNode(t, conn)
 }
 
-// firstNodeAt returns the first node of the connection at the given path.
 func firstNodeAt(t *testing.T, data map[string]interface{}, path ...string) map[string]interface{} {
 	t.Helper()
 	conn := at(t, data, path...)

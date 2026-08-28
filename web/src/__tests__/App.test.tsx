@@ -79,7 +79,7 @@ describe("App session states", () => {
   it("gives the probe a bounded timeout", () => {
     mockedProbe.mockReturnValue(new Promise<boolean>(() => {}));
     render(<App />);
-    // Called with no explicit argument: the module's bounded default applies.
+    // No explicit argument → the module's bounded default timeout applies.
     expect(mockedProbe).toHaveBeenCalledTimes(1);
     expect(mockedProbe.mock.calls[0]!).toHaveLength(0);
   });

@@ -70,7 +70,6 @@ func TestRulesets_FullLifecycle(t *testing.T) {
 		t.Errorf("expected 3 rules, got %v", created["rules"])
 	}
 
-	// List
 	w = do("GET", "/api/v3/repos/admin/rules-repo/rulesets", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list: %d body=%s", w.Code, w.Body.String())
@@ -84,7 +83,6 @@ func TestRulesets_FullLifecycle(t *testing.T) {
 		t.Errorf("list should not include rules by default")
 	}
 
-	// Get
 	w = do("GET", "/api/v3/repos/admin/rules-repo/rulesets/"+itoa(rsID), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get: %d body=%s", w.Code, w.Body.String())
@@ -95,7 +93,6 @@ func TestRulesets_FullLifecycle(t *testing.T) {
 		t.Errorf("get name = %v", got["name"])
 	}
 
-	// Update
 	update, _ := json.Marshal(map[string]any{
 		"enforcement": "evaluate",
 		"rules": []map[string]any{
@@ -115,7 +112,6 @@ func TestRulesets_FullLifecycle(t *testing.T) {
 		t.Errorf("expected 1 rule after update, got %v", updated["rules"])
 	}
 
-	// History exists after update.
 	w = do("GET", "/api/v3/repos/admin/rules-repo/rulesets/"+itoa(rsID)+"/history", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("history: %d body=%s", w.Code, w.Body.String())
@@ -126,7 +122,6 @@ func TestRulesets_FullLifecycle(t *testing.T) {
 		t.Errorf("expected 1 history version, got %d", len(hist))
 	}
 
-	// List branch rules
 	w = do("GET", "/api/v3/repos/admin/rules-repo/rules/branches/main", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("branch rules: %d body=%s", w.Code, w.Body.String())
@@ -137,7 +132,6 @@ func TestRulesets_FullLifecycle(t *testing.T) {
 		t.Errorf("expected active creation rule on main, got %+v", brules)
 	}
 
-	// Delete
 	w = do("DELETE", "/api/v3/repos/admin/rules-repo/rulesets/"+itoa(rsID), nil)
 	if w.Code != http.StatusNoContent {
 		t.Errorf("delete: %d", w.Code)
@@ -341,7 +335,6 @@ func TestRulesets_OrgFullLifecycle(t *testing.T) {
 		t.Errorf("expected 2 rules, got %v", created["rules"])
 	}
 
-	// List
 	w = do("GET", "/api/v3/orgs/rules-org/rulesets", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list: %d body=%s", w.Code, w.Body.String())
@@ -355,7 +348,6 @@ func TestRulesets_OrgFullLifecycle(t *testing.T) {
 		t.Errorf("list should not include rules by default")
 	}
 
-	// Get
 	w = do("GET", "/api/v3/orgs/rules-org/rulesets/"+itoa(rsID), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get: %d body=%s", w.Code, w.Body.String())
@@ -366,7 +358,6 @@ func TestRulesets_OrgFullLifecycle(t *testing.T) {
 		t.Errorf("get name = %v", got["name"])
 	}
 
-	// Update
 	update, _ := json.Marshal(map[string]any{
 		"enforcement": "evaluate",
 		"rules": []map[string]any{
@@ -386,7 +377,6 @@ func TestRulesets_OrgFullLifecycle(t *testing.T) {
 		t.Errorf("expected 1 rule after update, got %v", updated["rules"])
 	}
 
-	// History exists after update.
 	w = do("GET", "/api/v3/orgs/rules-org/rulesets/"+itoa(rsID)+"/history", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("history: %d body=%s", w.Code, w.Body.String())
@@ -397,7 +387,6 @@ func TestRulesets_OrgFullLifecycle(t *testing.T) {
 		t.Errorf("expected 1 history version, got %d", len(hist))
 	}
 
-	// List rule suites returns empty list.
 	w = do("GET", "/api/v3/orgs/rules-org/rulesets/rule-suites", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("rule suites: %d body=%s", w.Code, w.Body.String())
@@ -408,7 +397,6 @@ func TestRulesets_OrgFullLifecycle(t *testing.T) {
 		t.Errorf("expected empty rule suites, got %+v", suites)
 	}
 
-	// Delete
 	w = do("DELETE", "/api/v3/orgs/rules-org/rulesets/"+itoa(rsID), nil)
 	if w.Code != http.StatusNoContent {
 		t.Errorf("delete: %d", w.Code)
@@ -427,7 +415,6 @@ func TestRulesets_OrgNonAdminCannotCreate(t *testing.T) {
 	org := s.store.CreateOrg(admin, "rules-org2", "Rules Org 2", "")
 	_ = org
 
-	// Create a non-admin member.
 	member := &store.User{ID: 999, Login: "member-user", Email: "member@example.com"}
 	s.store.Users[member.ID] = member
 	s.store.UsersByLogin[member.Login] = member

@@ -4,8 +4,8 @@ import AxeBuilder from "@axe-core/playwright";
 const ADMIN_TOKEN = "bleephub-admin-token-00000000000000000000";
 const BASE = "http://localhost:15555";
 
-// Repo "Go to file" fuzzy finder — real-browser proof it opens (button + `t`),
-// filters the recursive tree, navigates to a blob, and is accessible.
+// Prove the repo "Go to file" fuzzy finder opens, filters the recursive tree,
+// navigates to a blob, and stays accessible in a real browser.
 
 async function api(page: Page, method: string, path: string, body?: Record<string, unknown>) {
   const bodyJson = body === undefined ? null : JSON.stringify(body);

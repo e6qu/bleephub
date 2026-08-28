@@ -35,12 +35,7 @@ func listIssuesViaHandler(t *testing.T, s *Server, owner, repo, query string) []
 	return numbers
 }
 
-// TestIssueOrderIndexStaysConsistentAcrossLifecycle exercises the per-repo
-// creation-order index through the issue lifecycle: creation (including one
-// created "in the past", which must binary-insert mid-slice), close, reopen,
-// and the repo-delete cascade. The order index must always agree with the
-// per-repo number index, hand out detached snapshots (STORE-021), and vanish
-// with the repo.
+// TestIssueOrderIndexStaysConsistentAcrossLifecycle drives the per-repo creation-order index through create (including a back-dated mid-slice insert), close, reopen, and repo-delete: it must agree with the number index, hand out detached snapshots (STORE-021), and vanish with the repo.
 func TestIssueOrderIndexStaysConsistentAcrossLifecycle(t *testing.T) {
 	s := newTestServer()
 	current := fixedTestTime
@@ -58,9 +53,7 @@ func TestIssueOrderIndexStaysConsistentAcrossLifecycle(t *testing.T) {
 	admin := s.store.LookupUserByLogin("admin")
 	repo := s.store.CreateRepo(admin, "order-index", "", false)
 
-	// Issues 1-3 share one creation instant (the number is the tie-break),
-	// 4 and 5 are later, and 6 is created with the clock wound back between
-	// 4 and 5 so it must insert mid-slice.
+	// Issues 1-3 share one instant (number breaks the tie), 4 and 5 are later, and 6 is back-dated between 4 and 5 so it inserts mid-slice.
 	for i := 0; i < 3; i++ {
 		s.store.CreateIssue(repo.ID, admin.ID, fmt.Sprintf("issue %d", i+1), "", nil, nil, 0)
 	}
@@ -140,12 +133,7 @@ func TestIssueOrderIndexStaysConsistentAcrossLifecycle(t *testing.T) {
 	}
 }
 
-// TestListIssuesIndexPathMatchesNaiveScan is the A/B correctness check for
-// the indexed listing: for every supported sort, direction, and state filter
-// the handler's order must equal an independently computed naive
-// scan-and-sort over the same seeded data — issues and pull requests mixed,
-// with duplicate timestamps and comment counts to exercise the number
-// tie-break.
+// TestListIssuesIndexPathMatchesNaiveScan checks the indexed listing against an independent naive scan-and-sort over the same seeded data for every sort, direction, and state filter — issues and PRs mixed, with duplicate timestamps and comment counts to exercise the number tie-break.
 func TestListIssuesIndexPathMatchesNaiveScan(t *testing.T) {
 	s := newTestServer()
 	current := fixedTestTime
@@ -186,10 +174,7 @@ func TestListIssuesIndexPathMatchesNaiveScan(t *testing.T) {
 		}
 	}
 
-	// 3 pull requests (open, closed, open) with comments — the listing merges
-	// them into the same rows. CreatePullRequest resolves real git branches,
-	// so seed the rows directly under the store lock, the way
-	// store_map_access_race_test.go seeds its fixtures.
+	// CreatePullRequest resolves real git branches, so seed the PR rows directly under the store lock (as store_map_access_race_test.go does).
 	for i := 0; i < 3; i++ {
 		advance(11 * time.Second)
 		now := s.store.CurrentTime()
@@ -222,8 +207,7 @@ func TestListIssuesIndexPathMatchesNaiveScan(t *testing.T) {
 		}
 	}
 
-	// The naive reference: a flat scan of both stores into rows, filtered and
-	// sorted in the test with the documented semantics.
+	// The naive reference: a flat scan of both stores, filtered and sorted in the test with the documented semantics.
 	type refRow struct {
 		number   int
 		state    string
@@ -309,11 +293,7 @@ func TestListIssuesIndexPathMatchesNaiveScan(t *testing.T) {
 	}
 }
 
-// TestIssueOrderIndexAccessIsRaceFree drives concurrent issue creation and
-// state updates against the ordered listing, in the bounded pattern of
-// store_map_access_race_test.go: the -race detector proves the index reads
-// take the store lock; the final assertions keep the test meaningful
-// without it.
+// TestIssueOrderIndexAccessIsRaceFree drives concurrent issue creation and state updates against the ordered listing so -race proves the index reads take the store lock; the final assertions keep it meaningful without -race.
 func TestIssueOrderIndexAccessIsRaceFree(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.LookupUserByLogin("admin")

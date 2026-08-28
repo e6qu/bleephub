@@ -16,7 +16,6 @@ func TestOrgCopilotBillingSeats_AddListCancelReinstate(t *testing.T) {
 	org, members := s.copilotTestOrg(t, "copilot-billing-org", "copilot-alice", "copilot-bob")
 	base := "/api/v3/orgs/" + org.Login
 
-	// Assign seats to both members.
 	resp := s.post(t, base+"/copilot/billing/selected_users", defaultToken,
 		map[string]interface{}{"selected_usernames": []string{"copilot-alice", "copilot-bob"}})
 	created := decodeJSONWithStatus(t, resp, 201)
@@ -24,7 +23,6 @@ func TestOrgCopilotBillingSeats_AddListCancelReinstate(t *testing.T) {
 		t.Fatalf("seats_created = %v, want 2", got)
 	}
 
-	// Billing details reflect the real seat state.
 	billing := decodeJSONWithStatus(t, s.get(t, base+"/copilot/billing", defaultToken), 200)
 	breakdown, ok := billing["seat_breakdown"].(map[string]interface{})
 	if !ok {
@@ -40,7 +38,6 @@ func TestOrgCopilotBillingSeats_AddListCancelReinstate(t *testing.T) {
 		t.Fatalf("public_code_suggestions missing: %v", billing)
 	}
 
-	// Seat listing carries full seat objects.
 	seatsBody := decodeJSONWithStatus(t, s.get(t, base+"/copilot/billing/seats", defaultToken), 200)
 	if seatsBody["total_seats"] != float64(2) {
 		t.Fatalf("total_seats = %v, want 2", seatsBody["total_seats"])
@@ -60,7 +57,6 @@ func TestOrgCopilotBillingSeats_AddListCancelReinstate(t *testing.T) {
 		t.Fatalf("seat organization = %v", first["organization"])
 	}
 
-	// Seat listing pagination.
 	pageTwo := decodeJSONWithStatus(t, s.get(t, base+"/copilot/billing/seats?per_page=1&page=2", defaultToken), 200)
 	if pageTwo["total_seats"] != float64(2) {
 		t.Fatalf("paged total_seats = %v, want 2", pageTwo["total_seats"])
@@ -69,18 +65,15 @@ func TestOrgCopilotBillingSeats_AddListCancelReinstate(t *testing.T) {
 		t.Fatalf("page 2 has %d seats, want 1", len(page))
 	}
 
-	// Member seat detail is consistent with the billing state.
 	seat := decodeJSONWithStatus(t, s.get(t, base+"/members/copilot-alice/copilot", defaultToken), 200)
 	if seat["assignee"].(map[string]interface{})["login"] != "copilot-alice" || seat["plan_type"] != "business" {
 		t.Fatalf("member seat = %v", seat)
 	}
 
-	// A member views their own seat.
 	aliceTok := s.store.CreateToken(members[0].ID, "read:org").Value
 	requireStatus(t, s.get(t, base+"/members/copilot-alice/copilot", aliceTok), 200)
 
-	// Cancel one seat: it goes pending-cancellation at the next cycle,
-	// still counted in the total.
+	// Cancel one seat: it goes pending-cancellation but stays counted in the total.
 	resp = s.do(t, "DELETE", base+"/copilot/billing/selected_users", defaultToken,
 		map[string]interface{}{"selected_usernames": []string{"copilot-alice"}})
 	cancelled := decodeJSONWithStatus(t, resp, 200)
@@ -98,7 +91,6 @@ func TestOrgCopilotBillingSeats_AddListCancelReinstate(t *testing.T) {
 		t.Fatalf("pending_cancellation_date = %v, want YYYY-MM-DD", seat["pending_cancellation_date"])
 	}
 
-	// Re-adding reinstates the pending seat.
 	resp = s.post(t, base+"/copilot/billing/selected_users", defaultToken,
 		map[string]interface{}{"selected_usernames": []string{"copilot-alice"}})
 	if got := decodeJSONWithStatus(t, resp, 201)["seats_created"]; got != float64(1) {
@@ -179,7 +171,6 @@ func TestOrgCopilotBillingSeats_Teams(t *testing.T) {
 		t.Fatalf("team seats_created = %v, want 2", got)
 	}
 
-	// The seat records its assigning team.
 	seat := decodeJSONWithStatus(t, s.get(t, base+"/members/"+members[0].Login+"/copilot", defaultToken), 200)
 	at, ok := seat["assigning_team"].(map[string]interface{})
 	if !ok || at["slug"] != team.Slug {
@@ -277,7 +268,6 @@ func TestOrgCopilotContentExclusion_RoundTrip(t *testing.T) {
 		t.Fatalf("unconfigured rules = %v, want empty", rules)
 	}
 
-	// Configure path rules and read them back verbatim.
 	rules := map[string]interface{}{
 		"copilot-exclusion-org/secrets-repo": []interface{}{"/src/some-dir/kernel.rs", "secrets.json"},
 		"*":                                  []interface{}{"/scripts/**"},
@@ -334,7 +324,6 @@ func TestOrgCopilotCodingAgentPermissions_RepoScopedPolicy(t *testing.T) {
 	// Invalid policy value → 422.
 	requireStatus(t, s.put(t, base, defaultToken, map[string]interface{}{"enabled_repositories": "some"}), 422)
 
-	// Switch to selected.
 	requireStatus(t, s.put(t, base, defaultToken, map[string]interface{}{"enabled_repositories": "selected"}), 204)
 	perms = decodeJSONWithStatus(t, s.get(t, base, defaultToken), 200)
 	if perms["enabled_repositories"] != "selected" || perms["selected_repositories_url"] == nil {
@@ -364,7 +353,6 @@ func TestOrgCopilotCodingAgentPermissions_RepoScopedPolicy(t *testing.T) {
 		t.Fatalf("repositories[0] = %v", repos[0])
 	}
 
-	// Disable one.
 	requireStatus(t, s.delete(t, base+"/repositories/"+fmt.Sprint(repo1.ID), defaultToken), 204)
 	list = decodeJSONWithStatus(t, s.get(t, base+"/repositories", defaultToken), 200)
 	if list["total_count"] != float64(1) {

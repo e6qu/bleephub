@@ -12,15 +12,11 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// TestRangedReadsTransferOnlyTheExtentTouched is the read-amplification claim,
-// and it is the reason packing is a win rather than a catastrophe. Reading one
-// object out of a packed repository must cost the bytes of the extent that
-// holds it, not the bytes of the pack — otherwise every blob served from a
-// monorepo would drag the whole monorepo across the wire.
-//
-// The extent size is turned down so the pack is many extents long without the
-// test having to build a gigabyte one; the ratio is what is being pinned, and
-// it is the same ratio at any scale.
+// TestRangedReadsTransferOnlyTheExtentTouched is the read-amplification claim:
+// reading one object from a packed repo must cost the extent that holds it, not
+// the whole pack, or every blob would drag the whole monorepo across the wire.
+// The extent size is turned down so the pack is many extents long; the ratio is
+// what is pinned, and it holds at any scale.
 func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	t.Setenv(packChunkBytesEnv, "4096")
@@ -52,8 +48,8 @@ func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
 	if counts.getRanged == 0 {
 		t.Fatal("reading one object issued no ranged read")
 	}
-	// The index and the membership filter are fetched whole because they are
-	// read whole; what must not scale with the pack is the packfile traffic.
+	// The index and membership filter are read whole; only the packfile traffic
+	// must not scale with the pack.
 	packTraffic := counts.bytesDown - indexAndFilterBytes(fake)
 	if packTraffic >= int64(packBytes)/4 {
 		t.Fatalf("reading one object pulled %d bytes of a %d byte pack; a ranged read must cost the extent, not the pack",
@@ -62,9 +58,8 @@ func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
 	t.Logf("one object out of a %d byte pack transferred %d bytes of packfile (%s)", packBytes, packTraffic, counts)
 }
 
-// indexAndFilterBytes is the fixed cost of opening a pack at all: its index and
-// its membership filter, both of which are read in full whatever is asked of
-// the pack afterwards.
+// indexAndFilterBytes is the fixed cost of opening a pack: its index and
+// membership filter, both read in full.
 func indexAndFilterBytes(fake *fakeS3) int64 {
 	total := int64(0)
 	for _, extension := range []string{".idx", ".bfilter"} {
@@ -195,21 +190,18 @@ func TestOnlyContentAddressedKeysAreCached(t *testing.T) {
 }
 
 // TestWritesRequestCompactionWhenTheLooseTierFills pins that the write path
-// still decides WHEN to flush — the loose tier is a memtable and only the
-// write path knows it has filled — while the caller that has a lifetime to
-// bound a goroutine with decides who runs it. This matters beyond tidiness:
-// objects also arrive through the REST git-database endpoints, which never go
-// through a push, so a repository built entirely through the API depends on
-// this signal rather than on post-receive scheduling.
+// decides WHEN to flush (only it knows the loose tier filled) while the caller
+// decides who runs it. Objects also arrive through the REST git-database
+// endpoints, which never push, so an API-built repo depends on this signal
+// rather than post-receive scheduling.
 func TestWritesRequestCompactionWhenTheLooseTierFills(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	t.Setenv(compactionTriggerEnv, "150")
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 
-	// The write path signals that the loose tier has filled; it no longer runs
-	// the compaction itself, because this package has no lifetime to bound a
-	// goroutine with. Capture the signal and verify it names this repository.
+	// The write path only signals; capture the signal and verify it names this
+	// repo.
 	var requestMu sync.Mutex
 	var requested []string
 	SetCompactionRequestHandler(func(repo string, _ gitStorage.Storer) {
@@ -231,9 +223,8 @@ func TestWritesRequestCompactionWhenTheLooseTierFills(t *testing.T) {
 			t.Fatalf("compaction requested for %q, want %q", name, stor.repo)
 		}
 	}
-	// The handler is what performs the work now, so run it here and assert the
-	// pack it publishes. Doing it inline also means the test never races a
-	// background goroutine against its own cleanup.
+	// Run the handler inline and assert the pack; inline also avoids racing a
+	// background goroutine against cleanup.
 	if _, err := CompactRepository(context.Background(), stor); err != nil {
 		t.Fatalf("compact: %v", err)
 	}

@@ -7,16 +7,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
-// The GraphQL surface the official `gh` command line drives, pinned by the
-// selections gh itself sends. Every case here corresponds to an operation the
-// SDK/CLI conformance harness (test/conformance) runs against a live server:
-// `gh pr view --json commits`, `gh pr checks`, `gh issue edit --add-label` and
-// `gh gist list`. They are Go tests as well as harness rows because the harness
-// is slow and only reports the first failing operation of a command.
+// These pin the GraphQL surface the official `gh` CLI drives (gh pr view --json commits, gh pr checks, gh issue edit --add-label, gh gist list) by the exact selections gh sends; they duplicate the slow conformance harness because it only reports the first failing operation of a command.
 
-// ghConformanceQuery posts one document and returns the decoded envelope
-// without asserting anything about errors — the null-user case has to be able
-// to look at them.
+// ghConformanceQuery posts one document and returns the decoded envelope without asserting on errors, so the null-user case can inspect them.
 func (s *isolatedServer) ghConformanceQuery(t *testing.T, token, query string, variables map[string]interface{}) map[string]interface{} {
 	t.Helper()
 	body := map[string]interface{}{"query": query}
@@ -41,11 +34,7 @@ func (s *isolatedServer) ghConformanceData(t *testing.T, token, query string, va
 	return data
 }
 
-// TestGraphQLCommitAuthorsUserIsNullForAnUnknownEmail covers the failure that
-// broke `gh pr view --json commits` outright: a commit signed by an address no
-// account owns was rendered with a User shell rather than no user at all, and
-// GraphQL then failed the entire query on the non-null User.id rather than
-// answering the null GitHub answers.
+// TestGraphQLCommitAuthorsUserIsNullForAnUnknownEmail covers the failure that broke `gh pr view --json commits`: a commit from an address no account owns must resolve GitActor.user to null, not a User shell that fails the whole query on non-null User.id.
 func TestGraphQLCommitAuthorsUserIsNullForAnUnknownEmail(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -58,9 +47,7 @@ func TestGraphQLCommitAuthorsUserIsNullForAnUnknownEmail(t *testing.T) {
 	if stor == nil {
 		t.Fatal("fixture repository has no git storage")
 	}
-	// A signature deliberately owned by nobody: this is what a contributor's
-	// laptop-configured git identity looks like to a server that has never
-	// seen the address.
+	// A signature deliberately owned by nobody, like a contributor's laptop git identity the server has never seen.
 	stranger := repoSignature("Nobody At All", "nobody@example.invalid")
 	base, err := initRepoWithFiles(stor, "main", "initial commit", map[string]string{"README.md": "base\n"}, stranger)
 	if err != nil {
@@ -238,11 +225,7 @@ func newGHConformanceRepo(t *testing.T, s *isolatedServer) *ghConformanceRepo {
 	}
 }
 
-// TestGraphQLStatusCheckIsRequiredReportsBranchProtection covers `gh pr
-// checks`, whose document selects isRequired on every rollup context. The
-// answer has to come from the repository's branch protection: a constant would
-// mark either everything or nothing required, and the command's whole point is
-// to tell a contributor which failures block the merge.
+// TestGraphQLStatusCheckIsRequiredReportsBranchProtection covers `gh pr checks`: isRequired on each rollup context must come from the repository's branch protection, since the command's whole point is telling a contributor which failures block the merge.
 func TestGraphQLStatusCheckIsRequiredReportsBranchProtection(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -385,10 +368,7 @@ func rollupRequiredByName(t *testing.T, data map[string]interface{}) map[string]
 	return out
 }
 
-// TestGraphQLLabelMutationsEditAnIssuesLabels covers `gh issue edit
-// --add-label` / `--remove-label`, which speak addLabelsToLabelable and
-// removeLabelsFromLabelable and have no REST fallback: without the mutations
-// the command fails outright.
+// TestGraphQLLabelMutationsEditAnIssuesLabels covers `gh issue edit --add-label`/`--remove-label`, which speak addLabelsToLabelable and removeLabelsFromLabelable with no REST fallback.
 func TestGraphQLLabelMutationsEditAnIssuesLabels(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -479,9 +459,7 @@ func TestGraphQLLabelMutationsEditAPullRequestsLabels(t *testing.T) {
 	}
 }
 
-// TestGraphQLAddLabelsRefusesALabelFromAnotherRepository keeps the mutation
-// from attaching a label the repository does not own — the id space is global,
-// so a bare id is not by itself proof the label belongs here.
+// TestGraphQLAddLabelsRefusesALabelFromAnotherRepository keeps the mutation from attaching a label the repository does not own — the id space is global, so a bare id is not proof the label belongs here.
 func TestGraphQLAddLabelsRefusesALabelFromAnotherRepository(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -574,9 +552,7 @@ const gistListQuery = `query($privacy:GistPrivacy!,$first:Int!,$after:String){
 	}
 }`
 
-// TestGraphQLViewerGistsServesTheGistListQuery covers `gh gist list`, which
-// reads gists over GraphQL only: without User.gists, GistPrivacy and the
-// GistConnection the command's document fails validation outright.
+// TestGraphQLViewerGistsServesTheGistListQuery covers `gh gist list`, which reads gists over GraphQL only: without User.gists, GistPrivacy, and GistConnection the document fails validation outright.
 func TestGraphQLViewerGistsServesTheGistListQuery(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

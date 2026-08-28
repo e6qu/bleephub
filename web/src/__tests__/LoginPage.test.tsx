@@ -8,8 +8,7 @@ vi.mock("../components/Shell.js", () => ({ BleephubBuildFooter: () => null }));
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
-// LoginPage navigates by assigning window.location.href; jsdom can't
-// navigate, so swap in a writable stub and assert on it.
+// jsdom can't navigate; stub window.location.href writable to assert on it.
 const originalLocation = window.location;
 beforeEach(() => {
   const stub = { ...originalLocation, href: "" };
@@ -86,8 +85,7 @@ describe("LoginPage", () => {
     mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     render(<LoginPage />);
 
-    // Token sign-in must still be offered — but the reason the other methods
-    // are absent has to be stated, not left looking like "none configured".
+    // Token sign-in stays offered, but the failure reason must be stated, not look like "none configured".
     expect(await screen.findByLabelText(/access token/i)).toBeInTheDocument();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/Could not load the available sign-in methods/i);

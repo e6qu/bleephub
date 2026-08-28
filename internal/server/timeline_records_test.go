@@ -1,11 +1,9 @@
 package bleephub
 
-// Timeline-record + log-upload coverage: the runner-facing
-// /_apis/v1/Timeline, /_apis/v1/Logfiles and TimeLineWebConsoleLog routes
-// are driven the way the official actions/runner drives them (PATCH with
-// a VssJsonCollectionWrapper body, repeated record updates as state
-// advances, block-wise log upload), and the GitHub-shape jobs API is
-// asserted to serve the reported records rather than synthesized steps.
+// Drive the runner-facing /_apis/v1/Timeline, /_apis/v1/Logfiles and
+// TimeLineWebConsoleLog routes the way the official actions/runner drives them,
+// and assert the GitHub-shape jobs API serves the reported records rather than
+// synthesized steps.
 
 import (
 	"archive/zip"
@@ -67,7 +65,6 @@ func patchTimelineRecords(t *testing.T, s *Server, planID, timelineID string, wr
 	return w
 }
 
-// createLogFile POSTs the Logfiles create route and returns the minted ID.
 func createLogFile(t *testing.T, s *Server, planID string) int {
 	t.Helper()
 	req := httptest.NewRequest("POST",
@@ -88,7 +85,6 @@ func createLogFile(t *testing.T, s *Server, planID string) int {
 	return resp.ID
 }
 
-// uploadLogBlock POSTs one content block to the Logfiles upload route.
 func uploadLogBlock(t *testing.T, s *Server, planID string, logID int, content []byte) {
 	t.Helper()
 	req := httptest.NewRequest("POST",

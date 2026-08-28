@@ -50,19 +50,16 @@ func gunzip(t *testing.T, compressed []byte) []byte {
 	return plain
 }
 
-// TestAPIGzipNegotiationAndConditional304 pins the delivery contract for a
-// large API JSON GET end-to-end through the production pipeline: identity when
-// the client does not accept gzip, gzip (decoding to the identical bytes) when
-// it does, the strong ETag computed over identity bytes either way, and a
-// conditional re-request through the gzip path yielding an unbilled 304 (the
-// rate-limit unit visibly refunded via X-RateLimit-Remaining).
+// TestAPIGzipNegotiationAndConditional304 pins the end-to-end delivery contract
+// for a large API JSON GET: identity vs gzip (decoding to identical bytes), an
+// identity-bytes ETag either way, and a conditional re-request yielding an
+// unbilled 304 (rate-limit unit refunded via X-RateLimit-Remaining).
 func TestAPIGzipNegotiationAndConditional304(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "gzip-repo"}).Body.Close()
 	path := s.baseURL + "/api/v3/repos/admin/gzip-repo"
 
-	// Identity: no Accept-Encoding at all.
 	plain, plainBody := rawGet(t, path, defaultToken, nil)
 	if plain.StatusCode != http.StatusOK {
 		t.Fatalf("identity GET = %d, want 200", plain.StatusCode)
@@ -78,8 +75,6 @@ func TestAPIGzipNegotiationAndConditional304(t *testing.T) {
 		t.Fatal("identity GET carried no ETag")
 	}
 
-	// Negotiated gzip: compressed on the wire, identical bytes after decode,
-	// same identity-bytes ETag, Vary declared.
 	zipped, zippedBody := rawGet(t, path, defaultToken, map[string]string{"Accept-Encoding": "gzip"})
 	if got := zipped.Header.Get("Content-Encoding"); got != "gzip" {
 		t.Fatalf("gzip GET Content-Encoding = %q, want gzip", got)
@@ -98,8 +93,6 @@ func TestAPIGzipNegotiationAndConditional304(t *testing.T) {
 	}
 	remainingBefore := zipped.Header.Get("X-RateLimit-Remaining")
 
-	// Conditional re-request through the gzip layer: bodyless 304 carrying the
-	// ETag, and the consumed unit refunded (remaining unchanged).
 	cond, condBody := rawGet(t, path, defaultToken, map[string]string{
 		"Accept-Encoding": "gzip",
 		"If-None-Match":   etag,

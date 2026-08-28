@@ -11,7 +11,6 @@ func TestOrgIssueTypes_CRUD(t *testing.T) {
 	srv := newIsolatedServer(t)
 	org := srv.createTestOrg(t)
 
-	// Create.
 	resp := srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name":        "Epic",
 		"description": "An issue type for a multi-week tracking of work",
@@ -30,7 +29,6 @@ func TestOrgIssueTypes_CRUD(t *testing.T) {
 	}
 	id := itoa(int(created["id"].(float64)))
 
-	// List.
 	resp = srv.get(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list issue types: %d", resp.StatusCode)
@@ -40,7 +38,6 @@ func TestOrgIssueTypes_CRUD(t *testing.T) {
 		t.Fatalf("list = %v", list)
 	}
 
-	// Update via PUT.
 	resp = srv.put(t, "/api/v3/orgs/"+org+"/issue-types/"+id, defaultToken, map[string]interface{}{
 		"name":       "Initiative",
 		"is_enabled": false,
@@ -56,7 +53,6 @@ func TestOrgIssueTypes_CRUD(t *testing.T) {
 		t.Fatalf("PUT must replace optional fields, got %v", updated)
 	}
 
-	// Delete.
 	resp = srv.delete(t, "/api/v3/orgs/"+org+"/issue-types/"+id, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -80,7 +76,6 @@ func TestOrgIssueTypes_Validation(t *testing.T) {
 	srv := newIsolatedServer(t)
 	org := srv.createTestOrg(t)
 
-	// Unsupported color.
 	resp := srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name":       "Bug",
 		"is_enabled": true,
@@ -91,7 +86,6 @@ func TestOrgIssueTypes_Validation(t *testing.T) {
 		t.Fatalf("invalid color: %d", resp.StatusCode)
 	}
 
-	// Missing is_enabled.
 	resp = srv.post(t, "/api/v3/orgs/"+org+"/issue-types", defaultToken, map[string]interface{}{
 		"name": "Bug",
 	})
@@ -100,7 +94,6 @@ func TestOrgIssueTypes_Validation(t *testing.T) {
 		t.Fatalf("missing is_enabled: %d", resp.StatusCode)
 	}
 
-	// Unknown org.
 	resp = srv.get(t, "/api/v3/orgs/no-such-org-issue-types/issue-types", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {

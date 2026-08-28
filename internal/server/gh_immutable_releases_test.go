@@ -34,7 +34,6 @@ func TestImmutableReleases_OrgSettingsAndRepoEnforcement(t *testing.T) {
 		t.Fatalf("repo check while disabled: %d", resp.StatusCode)
 	}
 
-	// Enforce for all repositories.
 	resp = s.put(t, orgSettings, defaultToken, map[string]interface{}{
 		"enforced_repositories": "all",
 	})
@@ -43,7 +42,6 @@ func TestImmutableReleases_OrgSettingsAndRepoEnforcement(t *testing.T) {
 		t.Fatalf("set org settings: %d", resp.StatusCode)
 	}
 
-	// The repo check reflects the owner enforcement.
 	resp = s.get(t, repoEndpoint, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("repo check under enforcement: %d", resp.StatusCode)
@@ -118,7 +116,6 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 		t.Fatalf("set selection without selected policy: %d", resp.StatusCode)
 	}
 
-	// Switch to selected with an initial selection.
 	resp = s.put(t, orgSettings, defaultToken, map[string]interface{}{
 		"enforced_repositories":   "selected",
 		"selected_repository_ids": []int{repoAID},
@@ -128,14 +125,12 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 		t.Fatalf("set selected policy: %d", resp.StatusCode)
 	}
 
-	// The settings carry the selection URL.
 	resp = s.get(t, orgSettings, defaultToken)
 	settings := decodeJSON(t, resp)
 	if settings["enforced_repositories"] != "selected" || settings["selected_repositories_url"] == nil {
 		t.Fatalf("settings = %v", settings)
 	}
 
-	// List the selection.
 	resp = s.get(t, reposEndpoint, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list selection: %d", resp.StatusCode)
@@ -158,7 +153,6 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 		t.Fatalf("selected repo check = %v", check)
 	}
 
-	// Add the sibling with the single-repository PUT.
 	resp = s.put(t, reposEndpoint+"/"+strconv.Itoa(repoBID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -169,7 +163,6 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 		t.Fatalf("selection after add = %v", listed)
 	}
 
-	// Remove one with the single-repository DELETE.
 	resp = s.delete(t, reposEndpoint+"/"+strconv.Itoa(repoAID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -185,7 +178,6 @@ func TestImmutableReleases_SelectedRepositories(t *testing.T) {
 		t.Fatalf("selection after remove = %v", repos)
 	}
 
-	// Replace the whole selection.
 	resp = s.put(t, reposEndpoint, defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{repoAID, repoBID},
 	})

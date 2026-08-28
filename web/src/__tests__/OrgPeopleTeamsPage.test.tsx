@@ -171,7 +171,7 @@ describe("OrgTeamsPage", () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
       if (u === "/api/v3/orgs/acme/teams") return Promise.resolve(jsonResponse([parent, child]));
-      // team-full hydration for the member/repo counts
+      // team-full hydration supplies the member/repo counts
       if (u === "/api/v3/orgs/acme/teams/platform")
         return Promise.resolve(jsonResponse({ ...parent, members_count: 4, repos_count: 2 }));
       if (u === "/api/v3/orgs/acme/teams/platform-oncall")
@@ -189,7 +189,6 @@ describe("OrgTeamsPage", () => {
       expect(screen.getByText("4")).toBeInTheDocument();
     });
 
-    // Collapsing the parent hides the child row.
     fireEvent.click(toggle);
     await waitFor(() => {
       expect(screen.queryByText("Oncall")).not.toBeInTheDocument();

@@ -70,7 +70,6 @@ describe("DashboardPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Flaky runner timeout")).toBeInTheDocument();
     });
-    // The following feed (received_events) renders the actor + activity phrase.
     expect(screen.getByText("Following")).toBeInTheDocument();
     expect(await screen.findByText("hubot")).toBeInTheDocument();
     expect(screen.getByText(/pushed 2 commits to/i)).toBeInTheDocument();
@@ -123,11 +122,10 @@ describe("DashboardPage", () => {
     // Only the first 8 show before expanding.
     expect(screen.queryByText("acme/svc-9")).toBeNull();
 
-    // Client-side find-a-repository filter over the fetched list.
+    // Filter runs client-side over the already-fetched list.
     fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "svc-12" } });
     expect(screen.getByText("acme/svc-12")).toBeInTheDocument();
     expect(screen.queryByText("acme/svc-0")).toBeNull();
-    // No matches state is honest.
     fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "zzz" } });
     expect(screen.getByText(/No repositories match/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "" } });

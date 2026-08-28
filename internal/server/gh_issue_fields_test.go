@@ -12,7 +12,6 @@ func TestOrgIssueFields_CRUD(t *testing.T) {
 	s := newIsolatedServer(t)
 	org := s.createTestOrg(t)
 
-	// Create a single-select field with options.
 	resp := s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
 		"name":        "Priority",
 		"description": "Level of importance for the issue",
@@ -39,7 +38,6 @@ func TestOrgIssueFields_CRUD(t *testing.T) {
 	firstOptionID := int(options[0].(map[string]interface{})["id"].(float64))
 	fieldID := itoa(int(created["id"].(float64)))
 
-	// List.
 	resp = s.get(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list issue fields: %d", resp.StatusCode)
@@ -48,7 +46,7 @@ func TestOrgIssueFields_CRUD(t *testing.T) {
 		t.Fatalf("list = %v", list)
 	}
 
-	// PATCH: rename and replace options, retaining "High" by ID.
+	// Reuse the "High" option's ID so it is retained and renamed, not replaced.
 	resp = s.patch(t, "/api/v3/orgs/"+org+"/issue-fields/"+fieldID, defaultToken, map[string]interface{}{
 		"name": "Severity",
 		"options": []map[string]interface{}{
@@ -72,7 +70,6 @@ func TestOrgIssueFields_CRUD(t *testing.T) {
 		t.Fatalf("option with existing id must be retained and renamed, got %v", retained)
 	}
 
-	// Delete.
 	resp = s.delete(t, "/api/v3/orgs/"+org+"/issue-fields/"+fieldID, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -90,7 +87,6 @@ func TestOrgIssueFields_Validation(t *testing.T) {
 	s := newIsolatedServer(t)
 	org := s.createTestOrg(t)
 
-	// single_select without options.
 	resp := s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
 		"name":      "Status",
 		"data_type": "single_select",
@@ -100,7 +96,6 @@ func TestOrgIssueFields_Validation(t *testing.T) {
 		t.Fatalf("single_select without options: %d", resp.StatusCode)
 	}
 
-	// Unsupported data type.
 	resp = s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
 		"name":      "Weird",
 		"data_type": "geo_point",
@@ -110,7 +105,6 @@ func TestOrgIssueFields_Validation(t *testing.T) {
 		t.Fatalf("bad data_type: %d", resp.StatusCode)
 	}
 
-	// Options on a text field.
 	resp = s.post(t, "/api/v3/orgs/"+org+"/issue-fields", defaultToken, map[string]interface{}{
 		"name":      "Notes",
 		"data_type": "text",
@@ -158,7 +152,6 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 
 	valuesPath := repoKey.path() + "/issues/" + itoa(number) + "/issue-field-values"
 
-	// POST adds values.
 	resp := s.post(t, valuesPath, defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{
 			{"field_id": textID, "value": "needs design review"},
@@ -197,7 +190,6 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 		t.Fatalf("multi_select_options = %v", mso)
 	}
 
-	// GET lists the same values.
 	resp = s.get(t, valuesPath, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list field values: %d", resp.StatusCode)
@@ -206,7 +198,6 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 		t.Fatalf("GET values = %v", got)
 	}
 
-	// PUT replaces all values.
 	resp = s.put(t, valuesPath, defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{
 			{"field_id": selectID, "value": "Low"},
@@ -220,7 +211,6 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 		t.Fatalf("values after PUT = %v", replaced)
 	}
 
-	// Invalid option name is a 422.
 	resp = s.post(t, valuesPath, defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{
 			{"field_id": selectID, "value": "Nonexistent"},
@@ -231,7 +221,6 @@ func TestIssueFieldValues_AddSetListClear(t *testing.T) {
 		t.Fatalf("invalid option: %d", resp.StatusCode)
 	}
 
-	// Unknown field is a 422.
 	resp = s.post(t, valuesPath, defaultToken, map[string]interface{}{
 		"issue_field_values": []map[string]interface{}{
 			{"field_id": 99999999, "value": "x"},

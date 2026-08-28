@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// TestListTags verifies GET /repos/{owner}/{repo}/tags.
 func TestListTags(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -100,8 +99,7 @@ func TestListTags(t *testing.T) {
 	}
 }
 
-// TestListRefs_All verifies the official matching-refs operation with an
-// empty prefix, which lists every reference.
+// An empty prefix on the official matching-refs operation lists every reference.
 func TestListRefs_All(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -140,7 +138,6 @@ func TestListRefs_All(t *testing.T) {
 	}
 }
 
-// TestListRefs_HeadsNamespace verifies GET /repos/{owner}/{repo}/git/refs/heads.
 func TestListRefs_HeadsNamespace(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -169,7 +166,6 @@ func TestListRefs_HeadsNamespace(t *testing.T) {
 	}
 }
 
-// TestGetRef_Single verifies GET /repos/{owner}/{repo}/git/refs/heads/main.
 func TestGetRef_Single(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -199,7 +195,6 @@ func TestGetRef_Single(t *testing.T) {
 	}
 }
 
-// TestGetRef_NotFound verifies GET for a non-existent ref returns 404.
 func TestGetRef_NotFound(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -215,7 +210,6 @@ func TestGetRef_NotFound(t *testing.T) {
 	}
 }
 
-// TestListRefs_TagsNamespaceEmpty verifies GET /repos/{owner}/{repo}/git/refs/tags returns empty array.
 func TestListRefs_TagsNamespaceEmpty(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -224,12 +218,10 @@ func TestListRefs_TagsNamespaceEmpty(t *testing.T) {
 		"auto_init": true,
 	})
 
-	// The legacy GET /git/refs/{namespace} answers 404 when nothing matches --
-	// its long-standing documented behaviour, and the reason the modern
-	// GET /git/matching-refs/{ref} was introduced alongside it to return an
-	// empty array instead. This test used to pin 200 + [], which is the
-	// matching-refs contract rather than this one's; the vendored spec no
-	// longer documents a GET on this path at all (only DELETE and PATCH).
+	// The legacy GET /git/refs/{namespace} answers 404 when nothing matches (its
+	// documented behaviour, and why the modern GET /git/matching-refs/{ref} was
+	// introduced to return [] instead); the vendored spec no longer documents a
+	// GET on this path at all (only DELETE and PATCH).
 	resp := s.get(t, "/api/v3/repos/admin/refs-tags-empty-repo/git/refs/tags", defaultToken)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {

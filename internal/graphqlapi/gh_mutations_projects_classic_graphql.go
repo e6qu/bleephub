@@ -16,7 +16,6 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// ---------------------------------------------------------------------------
 // Authorization
 
 // projectClassicTarget is what a classic-project mutation acts on: the repo
@@ -270,7 +269,6 @@ func init() {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Resolver helpers
 
 // projectClassicByNodeID answers a detached snapshot of the named board (the
@@ -363,7 +361,6 @@ func (s *Resolver) createProjectClassicForTarget(target projectClassicTarget, cr
 	return s.store.CreateProjectClassicForOwner(target.ownerType, target.ownerLogin, creatorID, name, body, public)
 }
 
-// ---------------------------------------------------------------------------
 // Registration
 
 func (s *Resolver) addProjectsClassicMutations(mutationType *graphql.Object) {

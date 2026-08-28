@@ -143,7 +143,6 @@ func TestCodeScanningOrgAlerts_List(t *testing.T) {
 		t.Fatalf("org alert repository = %v, want %s", list[0]["repository"], repo.FullName)
 	}
 
-	// Severity filter.
 	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/code-scanning/alerts?severity=error", defaultToken)
 	var filtered []map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&filtered); err != nil {
@@ -154,7 +153,6 @@ func TestCodeScanningOrgAlerts_List(t *testing.T) {
 		t.Fatalf("severity-filtered org alerts = %d, want 1", len(filtered))
 	}
 
-	// Unknown org.
 	mustStatus(t, s.get(t, "/api/v3/orgs/no-such-org/code-scanning/alerts", defaultToken), 404, "unknown org alerts")
 }
 
@@ -173,10 +171,8 @@ func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
 	number := int(alert["number"].(float64))
 	autofixPath := fmt.Sprintf("/api/v3/repos/%s/code-scanning/alerts/%d/autofix", repo.FullName, number)
 
-	// No autofix yet.
 	mustStatus(t, s.get(t, autofixPath, defaultToken), 404, "autofix before generation")
 
-	// Committing before an autofix exists is a 400.
 	mustStatus(t, s.post(t, autofixPath+"/commits", defaultToken, map[string]interface{}{
 		"target_ref": "refs/heads/main",
 	}), 400, "commit before autofix")
@@ -197,7 +193,6 @@ func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
 	}
 	mustStatus(t, s.post(t, autofixPath, defaultToken, nil), 200, "re-create autofix")
 
-	// GET returns the stored autofix.
 	resp = s.get(t, autofixPath, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get autofix: %d", resp.StatusCode)
@@ -207,12 +202,11 @@ func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
 		t.Fatalf("autofix = %v, want success with started_at", got)
 	}
 
-	// Commit against a branch that does not exist is a 422.
 	mustStatus(t, s.post(t, autofixPath+"/commits", defaultToken, map[string]interface{}{
 		"target_ref": "refs/heads/no-such-branch",
 	}), 422, "commit to missing branch")
 
-	// Commit onto main: a real commit lands on the branch.
+	// Committing the autofix lands a real commit on the branch.
 	resp = s.post(t, autofixPath+"/commits", defaultToken, map[string]interface{}{
 		"target_ref": "refs/heads/main",
 		"message":    "Apply Copilot Autofix",
@@ -267,7 +261,7 @@ func TestCodeScanningAutofix_NotEligible(t *testing.T) {
 	number := int(alert["number"].(float64))
 	autofixPath := fmt.Sprintf("/api/v3/repos/%s/code-scanning/alerts/%d/autofix", repo.FullName, number)
 
-	// Dismiss the alert; generation must refuse with a 422.
+	// A dismissed alert is ineligible: generation must refuse with a 422.
 	resp := s.patch(t, fmt.Sprintf("/api/v3/repos/%s/code-scanning/alerts/%d", repo.FullName, number), defaultToken, map[string]interface{}{
 		"state":            "dismissed",
 		"dismissed_reason": "won't fix",
@@ -275,7 +269,6 @@ func TestCodeScanningAutofix_NotEligible(t *testing.T) {
 	mustStatus(t, resp, 200, "dismiss alert")
 	mustStatus(t, s.post(t, autofixPath, defaultToken, nil), 422, "autofix for dismissed alert")
 
-	// Unknown alert number.
 	mustStatus(t, s.post(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/alerts/99999/autofix", defaultToken, nil), 404, "autofix for unknown alert")
 }
 
@@ -293,7 +286,6 @@ func TestCodeQLDatabases_RoundTrip(t *testing.T) {
 		t.Fatalf("seeded language = %v, want go", created["language"])
 	}
 
-	// List.
 	resp := s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list databases: %d", resp.StatusCode)
@@ -322,7 +314,6 @@ func TestCodeQLDatabases_RoundTrip(t *testing.T) {
 	}
 	assertNoInternalURL(t, db)
 
-	// Get one.
 	resp = s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get database: %d", resp.StatusCode)
@@ -378,10 +369,8 @@ func TestCodeQLDatabases_RoundTrip(t *testing.T) {
 		t.Fatalf("downloaded bytes = %q, want %q", raw, dbBytes)
 	}
 
-	// Unknown language.
 	mustStatus(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/ruby", defaultToken), 404, "get unknown database")
 
-	// Delete.
 	mustStatus(t, s.delete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), 204, "delete database")
 	mustStatus(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), 404, "get deleted database")
 	mustStatus(t, s.delete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), 404, "delete deleted database")
@@ -839,7 +828,6 @@ func TestCodeQLVariantAnalyses_CreateAndReadBack(t *testing.T) {
 		t.Fatalf("query pack bytes = %q, want %q", packRaw, queryPackBytes)
 	}
 
-	// Get by id.
 	resp = s.get(t, fmt.Sprintf("%s/%d", basePath, vaID), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get variant analysis: %d", resp.StatusCode)
@@ -850,7 +838,6 @@ func TestCodeQLVariantAnalyses_CreateAndReadBack(t *testing.T) {
 	}
 	assertNoInternalURL(t, got)
 
-	// Per-repository task.
 	resp = s.get(t, fmt.Sprintf("%s/%d/repos/%s", basePath, vaID, withDB.FullName), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get repo task: %d", resp.StatusCode)
@@ -867,10 +854,8 @@ func TestCodeQLVariantAnalyses_CreateAndReadBack(t *testing.T) {
 		t.Fatalf("database_commit_sha = %v", task["database_commit_sha"])
 	}
 
-	// A repository that was not scanned is a 404 on the task endpoint.
 	mustStatus(t, s.get(t, fmt.Sprintf("%s/%d/repos/%s", basePath, vaID, withoutDB.FullName), defaultToken), 404, "task for skipped repo")
 
-	// Unknown analysis id.
 	mustStatus(t, s.get(t, basePath+"/99999", defaultToken), 404, "unknown variant analysis")
 }
 
@@ -1005,24 +990,20 @@ func TestCodeQLVariantAnalyses_Validation(t *testing.T) {
 	basePath := "/api/v3/repos/" + controller.FullName + "/code-scanning/codeql/variant-analyses"
 	queryPack := base64.StdEncoding.EncodeToString([]byte("pack"))
 
-	// Invalid language.
 	mustStatus(t, s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language": "cobol", "query_pack": queryPack, "repositories": []string{"a/b"},
 	}), 422, "invalid language")
 
-	// Missing query pack.
 	mustStatus(t, s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language": "go", "repositories": []string{"a/b"},
 	}), 422, "missing query pack")
 
-	// More than one repository selector.
 	mustStatus(t, s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language": "go", "query_pack": queryPack,
 		"repositories":      []string{"a/b"},
 		"repository_owners": []string{"admin"},
 	}), 422, "two repository selectors")
 
-	// No repository selector at all.
 	mustStatus(t, s.post(t, basePath, defaultToken, map[string]interface{}{
 		"language": "go", "query_pack": queryPack,
 	}), 422, "no repository selector")

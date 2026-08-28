@@ -34,7 +34,6 @@ jobs: {}
 	}
 	td := on["workflow_dispatch"]
 
-	// Happy path with defaults applied
 	inputs, typed, errMsg := resolveDispatchInputs(td, map[string]string{"env": "staging"})
 	if errMsg != "" {
 		t.Fatalf("resolveDispatchInputs: %v", errMsg)
@@ -52,19 +51,15 @@ jobs: {}
 		t.Errorf("choice input = %v", typed["env"])
 	}
 
-	// Required missing
 	if _, _, msg := resolveDispatchInputs(td, nil); msg == "" {
 		t.Error("missing required input should error")
 	}
-	// Unknown input
 	if _, _, msg := resolveDispatchInputs(td, map[string]string{"env": "staging", "bogus": "x"}); msg == "" {
 		t.Error("unknown input should error")
 	}
-	// Bad choice
 	if _, _, msg := resolveDispatchInputs(td, map[string]string{"env": "qa"}); msg == "" {
 		t.Error("out-of-options choice should error")
 	}
-	// Bad boolean
 	if _, _, msg := resolveDispatchInputs(td, map[string]string{"env": "prod", "dry-run": "yes"}); msg == "" {
 		t.Error("non-true/false boolean should error")
 	}

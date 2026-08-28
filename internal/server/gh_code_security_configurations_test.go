@@ -66,7 +66,6 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 	org := s.createTestOrg(t)
 	base := "/api/v3/orgs/" + org + "/code-security/configurations"
 
-	// Create.
 	resp := s.post(t, base, defaultToken, map[string]interface{}{
 		"name":                        "octo-defaults",
 		"description":                 "Baseline security posture",
@@ -106,7 +105,6 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 		t.Fatalf("duplicate name: %d", resp.StatusCode)
 	}
 
-	// List.
 	resp = s.get(t, base, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("list configurations: %d", resp.StatusCode)
@@ -115,7 +113,6 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 		t.Fatalf("list = %v", list)
 	}
 
-	// GET one.
 	resp = s.get(t, base+"/"+id, defaultToken)
 	if resp.StatusCode != 200 {
 		t.Fatalf("get configuration: %d", resp.StatusCode)
@@ -144,7 +141,6 @@ func TestCodeSecurityConfigurations_CRUD(t *testing.T) {
 		t.Fatalf("no-op patch: %d", resp.StatusCode)
 	}
 
-	// DELETE.
 	resp = s.delete(t, base+"/"+id, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -173,7 +169,6 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 	}
 	id := itoa(int(decodeJSON(t, resp)["id"].(float64)))
 
-	// Attach to the selected repository.
 	resp = s.post(t, base+"/"+id+"/attach", defaultToken, map[string]interface{}{
 		"scope":                   "selected",
 		"selected_repository_ids": []int{repoID},
@@ -216,7 +211,6 @@ func TestCodeSecurityConfigurations_AttachDetachAndRepoView(t *testing.T) {
 		t.Fatalf("repo view configuration = %v", cfg)
 	}
 
-	// Detach via the repository-selection body.
 	resp = s.do(t, "DELETE", base+"/detach", defaultToken, map[string]interface{}{
 		"selected_repository_ids": []int{repoID},
 	})
@@ -275,7 +269,6 @@ func TestCodeSecurityConfigurations_Defaults(t *testing.T) {
 		t.Fatalf("defaults = %v", got)
 	}
 
-	// Set as default for all new repositories.
 	resp = s.put(t, base+"/"+id+"/defaults", defaultToken, map[string]interface{}{
 		"default_for_new_repos": "all",
 	})
@@ -290,7 +283,6 @@ func TestCodeSecurityConfigurations_Defaults(t *testing.T) {
 		t.Fatalf("set default configuration = %v", cfg)
 	}
 
-	// The defaults listing reflects it.
 	resp = s.get(t, base+"/defaults", defaultToken)
 	defaults := decodeJSONArray(t, resp)
 	if len(defaults) != 1 || defaults[0]["default_for_new_repos"] != "all" {

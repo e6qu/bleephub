@@ -7,13 +7,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// The refusal and entitled halves for the issue mutation surface.
-//
-// The repository-scoped rows ride the shared gqlAuthzFixture, so the refusing
-// caller is an account with no access to a private repository. The
-// organization-scoped rows — the issue-type and issue-field definitions —
-// need an organization to own them, so they have a fixture of their own whose
-// refusing caller owns a different organization.
+// Repository-scoped issue mutations: the refusing caller (shared gqlAuthzFixture)
+// has no access to the private repository. Organization-scoped definitions get
+// their own fixture below, whose refuser owns a different organization.
 
 var gqlIssueMutationCases = []gqlMutationCase{
 	{

@@ -6,12 +6,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestListDeploymentsDeterministicOrder covers the STORE pagination fix (P7).
-// The reload path repopulates DeploymentStore.byRepo in arbitrary
-// map-iteration order, so ListDeployments must impose its own deterministic,
-// GitHub-faithful order (most-recent first, highest ID) rather than returning
-// the raw slice. Here byRepo is deliberately scrambled to mimic a post-reload
-// ordering; the returned slice must still be strictly descending by ID.
+// TestListDeploymentsDeterministicOrder covers the STORE pagination fix (P7):
+// the reload path repopulates byRepo in arbitrary map order, so ListDeployments
+// must impose its own deterministic GitHub-faithful order (most-recent first,
+// highest ID). byRepo is deliberately scrambled to mimic a post-reload ordering;
+// the returned slice must still be strictly descending by ID.
 func TestListDeploymentsDeterministicOrder(t *testing.T) {
 	ds := newTestServer().store.Deployments
 	const repoID = 4242
@@ -22,8 +21,8 @@ func TestListDeploymentsDeterministicOrder(t *testing.T) {
 		ids = append(ids, d.ID)
 	}
 
-	// Simulate a reload: byRepo comes back in arbitrary order. Apply a fixed
-	// non-sorted permutation so the test does not depend on map iteration.
+	// Apply a fixed non-sorted permutation so the test does not depend on map
+	// iteration order.
 	ds.Mu.Lock()
 	src := ds.ByRepo[repoID]
 	perm := []int{2, 5, 0, 3, 1, 4}

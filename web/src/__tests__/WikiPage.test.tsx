@@ -73,7 +73,6 @@ describe("WikiPage", () => {
     });
     renderAt("/ui/admin/hello/wiki");
 
-    // sidebar link + rendered markdown heading
     expect(await screen.findByRole("link", { name: "Home" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Welcome" })).toBeInTheDocument();
     expect(screen.getByText("Hello wiki")).toBeInTheDocument();
@@ -178,7 +177,6 @@ describe("WikiPage", () => {
     renderAt("/ui/admin/hello/wiki/home");
 
     fireEvent.click(await screen.findByRole("button", { name: "History" }));
-    // Newest-first rows with message, editor and a relative <time>.
     expect(await screen.findByText("tweak wording")).toBeInTheDocument();
     expect(screen.getByText("(no edit summary)")).toBeInTheDocument();
     expect(screen.getByText(/octo ·/)).toBeInTheDocument();
@@ -213,7 +211,6 @@ describe("WikiPage read-only viewer gating", () => {
     renderAt("/ui/admin/hello/wiki/home");
 
     expect(await screen.findByRole("heading", { name: "Welcome" })).toBeInTheDocument();
-    // History stays readable; every write control is hidden.
     expect(screen.getByRole("button", { name: "History" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
@@ -229,7 +226,6 @@ describe("WikiPage read-only viewer gating", () => {
     });
     renderAt("/ui/admin/hello/wiki");
 
-    // The explanatory read-only state: the blankslate text without the CTA.
     expect(await screen.findByText(/wiki has no pages yet/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /create the first page/i })).not.toBeInTheDocument();
   });

@@ -5,15 +5,10 @@ import (
 	"testing"
 )
 
-// TestCheckRunListingHonoursCheckNameFilter pins the documented check_name
-// filter on both check-run listings, and the naming rule the `latest` filter
-// rests on.
-//
-// check_name is how a client asks about one check among the many a commit
-// carries — a required-status gate polling for "build" should not have to page
-// through every other app's runs and filter client-side, and a listing that
-// ignores the parameter tells it the check it asked about is whatever came back
-// first.
+// TestCheckRunListingHonoursCheckNameFilter pins the check_name filter on both
+// check-run listings and the naming rule the `latest` filter rests on: a
+// required-status gate polling for one check must not have to page through every
+// other app's runs, nor be told its check is whatever came back first.
 func TestCheckRunListingHonoursCheckNameFilter(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -25,9 +20,9 @@ func TestCheckRunListingHonoursCheckNameFilter(t *testing.T) {
 	}
 
 	base := "/api/v3/repos/admin/" + repo + "/check-runs"
-	// Two differently-named checks, and a rerun of one of them. This is the
-	// shape that a suite-keyed `latest` collapsed wrongly: the rerun of "build"
-	// must supersede the first "build" without hiding "lint" beside it.
+	// Two differently-named checks plus a rerun of one: a suite-keyed `latest`
+	// collapsed this wrongly, so the rerun of "build" must supersede the first
+	// "build" without hiding "lint".
 	for _, spec := range []map[string]interface{}{
 		{"name": "build", "head_sha": sha, "status": "completed", "conclusion": "failure"},
 		{"name": "lint", "head_sha": sha, "status": "completed", "conclusion": "success"},

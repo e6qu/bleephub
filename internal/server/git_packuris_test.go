@@ -17,18 +17,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Everything here runs against the object store, because a packfile URI only
-// exists there: the URL is a presigned GET against a real bucket, and a
-// deployment without one has no address to hand out. The MinIO server the S3
-// tests already share is that bucket.
+// Everything here runs against the object store: a packfile URI is a presigned
+// GET against a bucket, which a directory deployment has no address to hand out.
 
-// newS3GitServerForTest brings up a server whose repositories live in object
-// storage, which is the deployment shape packfile-uris and bundle-uri are for.
-//
-// It is not parallel, and cannot be: the storage backend is chosen from the
-// process environment, so a test that changes it changes it for the binary. Go
-// runs the sequential tests of a package before it resumes the parallel ones,
-// which is what keeps that from reaching another test.
+// newS3GitServerForTest brings up an object-storage server; it cannot be
+// parallel because the storage backend is chosen from the process environment.
 func newS3GitServerForTest(t *testing.T) *isolatedServer {
 	t.Helper()
 	fs := newS3FSForTest(t)
@@ -40,12 +33,8 @@ func newS3GitServerForTest(t *testing.T) *isolatedServer {
 	return newIsolatedServer(t)
 }
 
-// packURIHistoryCommits is how deep the fixture history is.
-//
-// Compaction publishes a pack once a repository's loose tier holds enough
-// objects to be worth one, and each of these commits writes three: a blob, the
-// tree above it and the commit itself. A shallower fixture would be served
-// entirely out of the loose tier, where there is no pack to hand an address to.
+// packURIHistoryCommits is deep enough that compaction publishes a pack; a
+// shallower fixture stays in the loose tier with no pack to address.
 const packURIHistoryCommits = 30
 
 // packURIWorktree is the file the fixture's tip checks out to.
@@ -57,9 +46,8 @@ func packURIWorktree() string {
 	return content.String()
 }
 
-// seedS3Repo builds the fixture history in object storage: one file rewritten
-// once per commit, at fixed instants so the object ids — and therefore the pack
-// — are the same on every run.
+// seedS3Repo builds the fixture history at fixed instants so the object ids —
+// and therefore the pack — are the same on every run.
 func seedS3Repo(t *testing.T, srv *isolatedServer, name string, private bool) {
 	t.Helper()
 	admin := srv.store.LookupUserByLogin("admin")
@@ -88,17 +76,15 @@ func seedS3Repo(t *testing.T, srv *isolatedServer, name string, private bool) {
 	}
 }
 
-// seedPackedS3Repo seeds a repository in object storage and compacts it, so its
-// objects are in one published packfile — the state that makes a URI an answer.
-// It returns the name of the pack that was published.
+// seedPackedS3Repo seeds a repository and compacts it so its objects are in one
+// published pack, returning that pack's name.
 func seedPackedS3Repo(t *testing.T, srv *isolatedServer, name string) string {
 	t.Helper()
 	seedS3Repo(t, srv, name, false)
 	return compactS3Repo(t, srv, name)
 }
 
-// compactS3Repo packs a repository's loose objects and returns the name of the
-// pack that was published.
+// compactS3Repo packs a repository's loose objects and returns the published pack's name.
 func compactS3Repo(t *testing.T, srv *isolatedServer, name string) string {
 	t.Helper()
 	stor := srv.store.GetGitStorage("admin", name)
@@ -115,8 +101,7 @@ func compactS3Repo(t *testing.T, srv *isolatedServer, name string) string {
 	return result.PackName
 }
 
-// gitPackEntryCount reads the number of entries a packfile states in its
-// header.
+// gitPackEntryCount reads the entry count a packfile states in its header.
 func gitPackEntryCount(t *testing.T, pack []byte) int {
 	t.Helper()
 	if len(pack) < gitPackHeaderSize || string(pack[:4]) != "PACK" {
@@ -126,8 +111,8 @@ func gitPackEntryCount(t *testing.T, pack []byte) int {
 }
 
 // fetchV2WithPackURIs runs one protocol v2 fetch of a branch tip, stating the
-// transfer protocols the client is willing to fetch a packfile over, and
-// returns the reply's sections and its packfile.
+// transfer protocols the client will fetch a packfile over, and returns the
+// reply's sections and its packfile.
 func fetchV2WithPackURIs(t *testing.T, srv *isolatedServer, name, protocols string, extra ...string) ([]string, []byte) {
 	t.Helper()
 	tip := gitSeedTip(t, srv, name)

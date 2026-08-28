@@ -8,15 +8,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestMarkThreadReadBoundsReadMarkers pins STORE-023: the per-user read-marker
-// set (re-serialised in full on every mark) must not grow without limit as a
-// user reads more and more threads. Once it exceeds the cap plus slack the
-// oldest markers are pruned by read-at time, and the newest are always kept.
+// TestMarkThreadReadBoundsReadMarkers pins STORE-023: the per-user read-marker set must not grow without limit; past cap plus slack the oldest markers are pruned by read-at time while the newest are kept.
 func TestMarkThreadReadBoundsReadMarkers(t *testing.T) {
 	st := newTestServer().store
 	const userID = 1
-	// A fixed base time (time.Now is banned in tests); each mark is one second
-	// newer than the last, so "oldest" is deterministic.
+	// Fixed base time (time.Now is banned in tests); each mark is one second newer, making "oldest" deterministic.
 	base := time.Unix(1_600_000_000, 0)
 	total := store.MaxReadThreadIDs + store.PruneReadThreadSlack + 100
 	for i := 0; i < total; i++ {

@@ -108,7 +108,7 @@ func TestGitHubAppBrowserSettingsListAndManageInstallation(t *testing.T) {
 func TestAppManifestFlowEndToEnd(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// 1. Submit the manifest form (the github.com/settings/apps/new POST).
+	// Submit the manifest form — GitHub's /settings/apps/new POST.
 	manifest := map[string]interface{}{
 		"name":         "manifest-flow-app",
 		"url":          "https://example.test/app",
@@ -144,7 +144,6 @@ func TestAppManifestFlowEndToEnd(t *testing.T) {
 		t.Fatal("redirect carries no code")
 	}
 
-	// 2. Redeem the code for credentials.
 	convResp := s.post(t, "/api/v3/app-manifests/"+code+"/conversions", "", nil)
 	if convResp.StatusCode != http.StatusCreated {
 		convResp.Body.Close()
@@ -167,8 +166,7 @@ func TestAppManifestFlowEndToEnd(t *testing.T) {
 		t.Fatalf("code reuse: got %d, want 404", convAgain.StatusCode)
 	}
 
-	// 3. The returned Privacy Enhanced Mail key signs a JSON Web Token that
-	// authenticates GET /app.
+	// The returned PEM key signs a JWT that authenticates GET /app.
 	jwt, err := signAppJWT(pemKey, appID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +184,7 @@ func TestAppManifestFlowEndToEnd(t *testing.T) {
 		t.Errorf("external_url = %v, want the manifest url", got["external_url"])
 	}
 
-	// 4. The manifest's hook_attributes landed on the app webhook config.
+	// The manifest's hook_attributes landed on the app webhook config.
 	cfgResp := s.get(t, "/api/v3/app/hook/config", jwt)
 	if cfgResp.StatusCode != http.StatusOK {
 		cfgResp.Body.Close()
@@ -209,7 +207,6 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 	}
 	tokenPath := fmt.Sprintf("/api/v3/app/installations/%d/access_tokens", instID)
 
-	// Escalation beyond the installation grant → 422.
 	esc := s.post(t, tokenPath, jwt, map[string]interface{}{
 		"permissions": map[string]string{"contents": "write"},
 	})
@@ -218,7 +215,6 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 		t.Fatalf("escalation: got %d, want 422", esc.StatusCode)
 	}
 
-	// Scope the installation doesn't have at all → 422.
 	unknown := s.post(t, tokenPath, jwt, map[string]interface{}{
 		"permissions": map[string]string{"deployments": "read"},
 	})
@@ -227,7 +223,6 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 		t.Fatalf("ungranted scope: got %d, want 422", unknown.StatusCode)
 	}
 
-	// Invalid permission level value → 422.
 	badLevel := s.post(t, tokenPath, jwt, map[string]interface{}{
 		"permissions": map[string]string{"contents": "sudo"},
 	})
@@ -236,7 +231,7 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 		t.Fatalf("bad level: got %d, want 422", badLevel.StatusCode)
 	}
 
-	// Malformed JSON body → 400, not a silently full-permission token.
+	// Malformed JSON body 400s rather than silently minting a full-permission token.
 	malReq, _ := http.NewRequest("POST", s.baseURL+tokenPath, strings.NewReader("{not json"))
 	malReq.Header.Set("Authorization", "Bearer "+jwt)
 	malResp, err := http.DefaultClient.Do(malReq)
@@ -248,7 +243,6 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 		t.Fatalf("malformed body: got %d, want 400", malResp.StatusCode)
 	}
 
-	// repository_ids outside the installation → 422.
 	badRepo := s.post(t, tokenPath, jwt, map[string]interface{}{
 		"repository_ids": []int{99999999},
 	})
@@ -257,7 +251,6 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 		t.Fatalf("foreign repository_ids: got %d, want 422", badRepo.StatusCode)
 	}
 
-	// Unknown repository name → 422.
 	badName := s.post(t, tokenPath, jwt, map[string]interface{}{
 		"repositories": []string{"no-such-repo"},
 	})
@@ -266,9 +259,8 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 		t.Fatalf("unknown repository name: got %d, want 422", badName.StatusCode)
 	}
 
-	// Valid downscope (read ≤ write on issues) with a repo subset → 201,
-	// repository_selection=selected, and the token's permissions reflect
-	// the downscoped set.
+	// Valid downscope (read ≤ write on issues) with a repo subset yields 201,
+	// repository_selection=selected, and the downscoped permission set.
 	ok := s.post(t, tokenPath, jwt, map[string]interface{}{
 		"permissions":  map[string]string{"issues": "read"},
 		"repositories": []string{"scoped-repo"},
@@ -290,7 +282,7 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 		t.Errorf("token permissions = %v, want issues:read plus mandatory metadata:read", perms)
 	}
 
-	// The downscoped token cannot write where the level is read-only:
+	// The downscoped token cannot write where its level is read-only:
 	// requirePerm(scopeIssues, permWrite) gates issue creation.
 	issueResp := s.post(t, "/api/v3/repos/downscope-org/scoped-repo/issues", tokenStr,
 		map[string]interface{}{"title": "blocked"})
@@ -299,9 +291,9 @@ func TestInstallationTokenDownscoping(t *testing.T) {
 		t.Fatalf("downscoped token issue write: got %d, want 403", issueResp.StatusCode)
 	}
 
-	// A token carrying the full installation grant (issues:write) passes
-	// the same gate — the decorator enforces the TOKEN's permissions, not
-	// just the installation's.
+	// A token with the full installation grant (issues:write) passes the same
+	// gate — the decorator enforces the TOKEN's permissions, not the
+	// installation's.
 	full := s.post(t, tokenPath, jwt, nil)
 	if full.StatusCode != http.StatusCreated {
 		full.Body.Close()
@@ -426,35 +418,31 @@ func TestInstallationSuspensionBlocksTokens(t *testing.T) {
 	}
 	tokenStr := decodeJSON(t, mint)["token"].(string)
 
-	// Token works before suspension.
 	before := s.get(t, "/api/v3/installation/repositories", tokenStr)
 	before.Body.Close()
 	if before.StatusCode != http.StatusOK {
 		t.Fatalf("pre-suspension: got %d, want 200", before.StatusCode)
 	}
 
-	// Suspend through the JSON Web Token-authenticated endpoint.
 	susp := s.put(t, fmt.Sprintf("/api/v3/app/installations/%d/suspended", instID), jwt, nil)
 	susp.Body.Close()
 	if susp.StatusCode != http.StatusNoContent {
 		t.Fatalf("suspend: got %d, want 204", susp.StatusCode)
 	}
 
-	// Existing tokens die for the whole application programming interface
-	// surface while suspended.
+	// Existing tokens die across the whole API surface while suspended.
 	during := s.get(t, "/api/v3/installation/repositories", tokenStr)
 	during.Body.Close()
 	if during.StatusCode != http.StatusForbidden {
 		t.Fatalf("suspended token: got %d, want 403", during.StatusCode)
 	}
-	// Minting fresh tokens is blocked too.
 	mint2 := s.post(t, tokenPath, jwt, nil)
 	mint2.Body.Close()
 	if mint2.StatusCode != http.StatusForbidden {
 		t.Fatalf("mint while suspended: got %d, want 403", mint2.StatusCode)
 	}
 
-	// Unsuspend restores the (unexpired) token.
+	// Unsuspend restores the still-unexpired token.
 	unsusp := s.delete(t, fmt.Sprintf("/api/v3/app/installations/%d/suspended", instID), jwt)
 	unsusp.Body.Close()
 	if unsusp.StatusCode != http.StatusNoContent {
@@ -505,7 +493,6 @@ func TestOrgInstallationsList(t *testing.T) {
 		t.Errorf("installation row = %v", first)
 	}
 
-	// Installing the same app twice on one target is rejected.
 	form := url.Values{"target_login": {"instlist-org"}}
 	req, _ := http.NewRequest("POST", s.baseURL+"/apps/"+appSlug+"/installations/new", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

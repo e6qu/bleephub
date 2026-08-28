@@ -87,7 +87,6 @@ describe("PackagesPage detail", () => {
     });
     renderAt("/ui/orgs/acme/packages");
 
-    // Switch to the npm tab, open the package detail.
     fireEvent.click(await screen.findByRole("tab", { name: "npm" }));
     fireEvent.click(await screen.findByRole("button", { name: "web-sdk" }));
 
@@ -96,7 +95,6 @@ describe("PackagesPage detail", () => {
     });
     // Latest (non-deleted) version fills the npm install command.
     expect(await screen.findByText(/npm install web-sdk@2\.1\.0/)).toBeInTheDocument();
-    // Owning repository is linked.
     expect(screen.getByRole("link", { name: "acme/web" })).toHaveAttribute(
       "href",
       "/ui/acme/web",

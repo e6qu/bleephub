@@ -1,9 +1,7 @@
-// A 404 on a page's PRIMARY resource renders github.com's "not found" page
-// instead of the raw error banner; every other failure (500, network) keeps
-// the banner. Owning resources (repo, profile, org, gist) get the full-page
-// 404 (RepoNotFound); sub-resources inside an existing repo (release, run,
-// discussion, wiki page, tree/blob path) keep the repo chrome and render the
-// 404 state inside the shell.
+// A 404 on a page's PRIMARY resource renders github.com's not-found page; every
+// other failure (500, network) keeps the raw error banner. Owning resources
+// (repo, profile, org, gist) get the full-page 404; sub-resources inside an
+// existing repo keep the repo chrome and render the 404 state inside the shell.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -356,8 +354,7 @@ describe("WikiPage missing page", () => {
 });
 
 describe("catch-all 404 route", () => {
-  // App.tsx routes /ui/* to this page so unknown paths get github.com's 404
-  // instead of silently landing on the dashboard.
+  // App.tsx routes /ui/* here so unknown paths get github.com's 404, not the dashboard.
   it("renders the not-found page for unknown routes", () => {
     render(<RepoNotFound />);
     expect(screen.getByText("This page does not exist")).toBeInTheDocument();

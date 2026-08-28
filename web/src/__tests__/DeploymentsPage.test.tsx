@@ -106,7 +106,7 @@ describe("DeploymentsPage", () => {
     );
 
     fireEvent.click(screen.getByText("#7"));
-    // "success" appears both in the timeline entry and the create-status select.
+    // "success" appears in both the timeline entry and the create-status select.
     await waitFor(() => expect(screen.getAllByText("success").length).toBeGreaterThan(0));
     expect(screen.getByText(/shipped/)).toBeInTheDocument();
   });

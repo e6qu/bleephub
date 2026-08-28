@@ -6,18 +6,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// The refusal and entitled halves for the mutation surface assembled in
-// internal/graphqlapi/gh_mutations_*_graphql.go.
-//
-// They are the same two halves gqlMutationCases is driven through, over the
-// same fixture: a private repository with one of everything, its owner, and an
-// account with no relationship to it. A stranger must be refused by every row,
-// and the owner must still be served by every row — a guard that refuses
-// everybody is not a guard.
-//
-// Behavioural tests follow the tables. A mutation that authorizes correctly
-// and changes nothing is a stub, so each family has at least one test that
-// reads the store back afterwards.
+// Refusal and entitled halves for the mutation surface in
+// internal/graphqlapi/gh_mutations_*_graphql.go: a stranger must be refused by
+// every row and the owner served by every row, since a guard that refuses
+// everybody is not a guard. A mutation that authorizes correctly and changes
+// nothing is a stub, so each family also reads the store back afterwards.
 
 var gqlSurfaceMutationCases = []gqlMutationCase{
 	{
@@ -125,7 +118,7 @@ func TestGraphQLSurfaceMutationsRefuseAnUnrelatedAuthenticatedUser(t *testing.T)
 	}
 }
 
-// assertGQLSurfaceFixtureUntouched checks the records this table's mutations
+// assertGQLSurfaceFixtureUntouched re-reads the records this table's mutations
 // address, so a refusal reported after the write landed still fails.
 func (s *isolatedServer) assertGQLSurfaceFixtureUntouched(t *testing.T, what string, f *gqlAuthzFixture) {
 	t.Helper()
@@ -194,8 +187,8 @@ func TestGraphQLLabelMutationsWriteTheStore(t *testing.T) {
 	if created == nil {
 		t.Fatalf("createLabel returned a payload but the store holds no such label")
 	}
-	// GitHub stores the colour without the leading hash whichever way it was
-	// given, so the REST label shape and the GraphQL one agree.
+	// GitHub stores the colour without the leading hash either way, so the REST
+	// and GraphQL label shapes agree.
 	if created.Color != "fbca04" {
 		t.Errorf("created colour = %q, want fbca04", created.Color)
 	}
@@ -234,8 +227,8 @@ func TestGraphQLLabelMutationsWriteTheStore(t *testing.T) {
 		t.Errorf("description = %q, want the original", updated.Description)
 	}
 
-	// Attaching the label to an issue and then deleting it detaches it, which
-	// is the store primitive the REST delete uses.
+	// Deleting an attached label must also detach it, the store primitive the
+	// REST delete relies on.
 	s.store.SetIssueLabels(f.repo.ID, f.issue.Number, []int{updated.ID}, f.owner.ID)
 	env = s.gqlAuthzPost(t, f.ownerToken,
 		`mutation($input:DeleteLabelInput!){deleteLabel(input:$input){clientMutationId}}`,
@@ -271,8 +264,8 @@ func TestGraphQLUpdateTopicsWritesValidNamesAndReportsTheRest(t *testing.T) {
 	if repo == nil {
 		t.Fatalf("the repository disappeared")
 	}
-	// The names are normalised to lower case, as they are on github.com, and
-	// the one carrying a space is reported back rather than stored.
+	// Names normalise to lower case as on github.com; the one carrying a space is
+	// reported back rather than stored.
 	if len(repo.Topics) != 2 || repo.Topics[0] != "go" || repo.Topics[1] != "graphql" {
 		t.Errorf("stored topics = %v, want [go graphql]", repo.Topics)
 	}
@@ -372,8 +365,8 @@ func TestGraphQLUpdateRepositoryWritesEverySettingItAccepts(t *testing.T) {
 	case repo.PullRequestCreationPolicy != "collaborators_only":
 		t.Errorf("pull request creation policy = %q", repo.PullRequestCreationPolicy)
 	}
-	// The rename went through the same helper PATCH /repos/{o}/{r} uses, so
-	// the repository answers to its new name and not to the old one.
+	// The rename went through the same helper PATCH /repos/{o}/{r} uses, so the
+	// repository answers to its new name.
 	if s.store.GetRepo(f.owner.Login, "gqlauthz-repo-renamed") == nil {
 		t.Errorf("the renamed repository is not reachable by its new name")
 	}
@@ -426,8 +419,7 @@ func TestGraphQLUpdateRepositoryWebCommitSignoffSetting(t *testing.T) {
 	}
 }
 
-// nestedStringSlice reads a [String!] member out of a GraphQL response
-// envelope by path.
+// nestedStringSlice reads a [String!] member out of a GraphQL envelope by path.
 func nestedStringSlice(t *testing.T, env map[string]interface{}, path ...string) []string {
 	t.Helper()
 	var cursor interface{} = env

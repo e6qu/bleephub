@@ -10,9 +10,8 @@ import (
 )
 
 // TestBuildIdentityIsAuthenticatedNotOnHealth covers CORE-016: the anonymous
-// /health liveness probe must not disclose build identity or the tenant slug,
-// and that identity is instead served from the site-admin-gated internal status
-// endpoint.
+// /health probe must not disclose build identity or the tenant slug; that
+// identity is served only from the site-admin-gated internal status endpoint.
 func TestBuildIdentityIsAuthenticatedNotOnHealth(t *testing.T) {
 	build := BuildInfo{
 		Version:     "0123456789ab",

@@ -59,7 +59,6 @@ func loadSchemas(t *testing.T) {
 	}
 }
 
-// validateSchema checks a JSON object against a named schema.
 func validateSchema(t *testing.T, schemaName string, obj map[string]interface{}) {
 	t.Helper()
 	loadSchemas(t)
@@ -69,14 +68,12 @@ func validateSchema(t *testing.T, schemaName string, obj map[string]interface{})
 		t.Fatalf("unknown schema: %s", schemaName)
 	}
 
-	// Check required fields
 	for _, field := range schema.Required {
 		if _, exists := obj[field]; !exists {
 			t.Errorf("[%s] missing required field: %s", schemaName, field)
 		}
 	}
 
-	// Check types for present fields
 	for field, prop := range schema.Properties {
 		val, exists := obj[field]
 		if !exists {
@@ -128,7 +125,6 @@ func TestOpenAPIRepo(t *testing.T) {
 	data := decodeJSON(t, resp)
 	validateSchema(t, "Repository", data)
 
-	// Also validate GET
 	resp2 := ghGet(t, "/api/v3/repos/admin/oa-repo", "")
 	if resp2.StatusCode != 200 {
 		resp2.Body.Close()
@@ -152,7 +148,6 @@ func TestOpenAPIIssue(t *testing.T) {
 	data := decodeJSON(t, resp)
 	validateSchema(t, "Issue", data)
 
-	// GET
 	resp2 := ghGet(t, "/api/v3/repos/admin/oa-issue/issues/1", "")
 	data2 := decodeJSON(t, resp2)
 	validateSchema(t, "Issue", data2)
@@ -175,7 +170,6 @@ func TestOpenAPIPullRequest(t *testing.T) {
 	data := decodeJSON(t, resp)
 	validateSchema(t, "PullRequest", data)
 
-	// GET
 	resp2 := s.get(t, "/api/v3/repos/admin/oa-pr/pulls/1", "")
 	data2 := decodeJSON(t, resp2)
 	validateSchema(t, "PullRequest", data2)
@@ -310,7 +304,6 @@ func TestOpenAPILabel(t *testing.T) {
 	data := decodeJSON(t, resp)
 	validateSchema(t, "Label", data)
 
-	// GET
 	resp2 := ghGet(t, "/api/v3/repos/admin/oa-label/labels/oa-bug", "")
 	data2 := decodeJSON(t, resp2)
 	validateSchema(t, "Label", data2)
@@ -339,7 +332,6 @@ func TestOpenAPIUser(t *testing.T) {
 	data := decodeJSON(t, resp)
 	validateSchema(t, "User", data)
 
-	// Users endpoint
 	resp2 := ghGet(t, "/api/v3/users/admin", "")
 	data2 := decodeJSON(t, resp2)
 	validateSchema(t, "User", data2)
@@ -377,7 +369,6 @@ func TestOpenAPIError(t *testing.T) {
 	data := decodeJSON(t, resp)
 	validateSchema(t, "Error", data)
 
-	// 401 error
 	resp2 := ghGet(t, "/api/v3/user", "")
 	if resp2.StatusCode != 401 {
 		resp2.Body.Close()
@@ -406,7 +397,6 @@ func TestOpenAPIListSchemaConsistency(t *testing.T) {
 		t.Fatal("expected at least 1 issue")
 	}
 
-	// Each item in list should conform to Issue schema
 	for i, issue := range issues {
 		t.Run(fmt.Sprintf("issue-%d", i), func(t *testing.T) {
 			validateSchema(t, "Issue", issue)
@@ -428,7 +418,6 @@ func TestOpenAPIRepoListSchemaConsistency(t *testing.T) {
 		t.Fatal("expected at least 1 repo")
 	}
 
-	// Validate first repo against schema
 	validateSchema(t, "Repository", repos[0])
 }
 

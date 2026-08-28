@@ -79,7 +79,6 @@ func TestListAuthUserTeams_RequiresAuthNotReadOrgScope(t *testing.T) {
 		t.Fatalf("listed %d teams, want 1", len(listed))
 	}
 
-	// Unauthenticated requests still get 401.
 	req2 := httptest.NewRequest("GET", "/api/v3/user/teams", nil)
 	w2 := httptest.NewRecorder()
 	s.requestHandler().ServeHTTP(w2, req2)
@@ -105,10 +104,8 @@ func TestListAuthUserTeams_ViaOAuthWebFlow(t *testing.T) {
 
 	oapp := s.store.CreateOAuthApp(admin.ID, "AuthJSReproducer", "", "", "http://localhost:3000/api/auth/callback/github")
 
-	// Step 1: authorize through the real login + consent flow.
 	code := authorizeOAuthWebFlow(t, s, "admin", oapp.ClientID, "http://localhost:3000/api/auth/callback/github", "repo", "xyz")
 
-	// Step 2: exchange the code for an access token (JSON Accept, like Auth.js).
 	form := url.Values{}
 	form.Set("client_id", oapp.ClientID)
 	form.Set("client_secret", oapp.ClientSecret)
@@ -132,7 +129,6 @@ func TestListAuthUserTeams_ViaOAuthWebFlow(t *testing.T) {
 		t.Fatalf("access_token response missing access_token: %s", w2.Body.String())
 	}
 
-	// Step 3: call GET /api/v3/user/teams with the web-flow token.
 	req3 := httptest.NewRequest("GET", "/api/v3/user/teams?per_page=100", nil)
 	req3.Header.Set("Authorization", "Bearer "+accessToken)
 	w3 := httptest.NewRecorder()
@@ -190,10 +186,8 @@ func TestListAuthUserTeams_ViaOAuthWebFlow_ReadOrgScope(t *testing.T) {
 
 	oapp := s.store.CreateOAuthApp(admin.ID, "AuthJSReadOrg", "", "", "http://localhost:3000/api/auth/callback/github")
 
-	// Step 1: authorize with read:org only through the real login + consent flow.
 	code := authorizeOAuthWebFlow(t, s, "admin", oapp.ClientID, "http://localhost:3000/api/auth/callback/github", "read:org", "xyz")
 
-	// Step 2: exchange the code for an access token.
 	form := url.Values{}
 	form.Set("client_id", oapp.ClientID)
 	form.Set("client_secret", oapp.ClientSecret)
@@ -217,7 +211,6 @@ func TestListAuthUserTeams_ViaOAuthWebFlow_ReadOrgScope(t *testing.T) {
 		t.Fatalf("access_token response missing access_token: %s", w2.Body.String())
 	}
 
-	// Step 3: call GET /api/v3/user/teams with the web-flow token.
 	req3 := httptest.NewRequest("GET", "/api/v3/user/teams?per_page=100", nil)
 	req3.Header.Set("Authorization", "Bearer "+accessToken)
 	w3 := httptest.NewRecorder()
@@ -253,7 +246,6 @@ func TestTeamMembersList(t *testing.T) {
 		t.Errorf("outsider list members = %d, want 404", w.Code)
 	}
 
-	// Org member can list.
 	w = tokenRequest(s, "GET", "/api/v3/orgs/team-test-org/teams/"+team.Slug+"/members", teamTestToken(s, member, "read:org"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("member list members = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -272,13 +264,11 @@ func TestTeamMembershipGet(t *testing.T) {
 
 	path := "/api/v3/orgs/team-test-org/teams/" + team.Slug + "/memberships/" + member.Login
 
-	// Outsider cannot read.
 	w := tokenRequest(s, "GET", path, teamTestToken(s, outsider, "read:org"))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("outsider get membership = %d, want 404", w.Code)
 	}
 
-	// Org member can read.
 	w = tokenRequest(s, "GET", path, teamTestToken(s, maintainer, "read:org"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("get membership = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -307,13 +297,11 @@ func TestTeamMembershipAddUpdateRemove(t *testing.T) {
 
 	path := "/api/v3/orgs/team-test-org/teams/" + team.Slug + "/memberships/" + newUser.Login
 
-	// Outsider cannot add.
 	w := tokenRequest(s, "PUT", path, teamTestToken(s, outsider, "read:org"))
 	if w.Code != http.StatusForbidden && w.Code != http.StatusNotFound {
 		t.Errorf("outsider add membership = %d, want 403/404", w.Code)
 	}
 
-	// Maintainer can add a member.
 	body, _ := json.Marshal(map[string]string{"role": "member"})
 	w = httptestPost(s, path, teamTestToken(s, maintainer, "admin:org"), body)
 	if w.Code != http.StatusOK {
@@ -333,7 +321,6 @@ func TestTeamMembershipAddUpdateRemove(t *testing.T) {
 		t.Fatalf("owner promote = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 
-	// Maintainer can remove.
 	w = tokenRequest(s, "DELETE", path, teamTestToken(s, maintainer, "admin:org"))
 	if w.Code != http.StatusNoContent {
 		t.Errorf("maintainer remove = %d, want 204; body=%s", w.Code, w.Body.String())
@@ -344,13 +331,11 @@ func TestTeamMembershipRequiresAuth(t *testing.T) {
 	s, _, _, member, _, _, team := setupTeamTestServer(t)
 	path := "/api/v3/orgs/team-test-org/teams/" + team.Slug + "/members"
 
-	// Unauthenticated request is rejected.
 	w := tokenRequest(s, "GET", path, "")
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("unauthenticated list = %d, want 401", w.Code)
 	}
 
-	// Authenticated org member can read.
 	w = tokenRequest(s, "GET", path, teamTestToken(s, member, "read:org"))
 	if w.Code != http.StatusOK {
 		t.Errorf("authenticated list = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -367,7 +352,6 @@ func TestTeamReposCRUD(t *testing.T) {
 	listPath := "/api/v3/orgs/team-test-org/teams/" + team.Slug + "/repos"
 	repoPath := "/api/v3/orgs/team-test-org/teams/" + team.Slug + "/repos/team-test-org/team-repo"
 
-	// Org member can list (empty initially).
 	w := tokenRequest(s, "GET", listPath, teamTestToken(s, member, "read:org"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("list repos = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -395,13 +379,11 @@ func TestTeamReposCRUD(t *testing.T) {
 		t.Errorf("role_name = %v, want write", repos[0]["role_name"])
 	}
 
-	// Check repo returns 204.
 	w = tokenRequest(s, "GET", repoPath, teamTestToken(s, member, "read:org"))
 	if w.Code != http.StatusNoContent {
 		t.Errorf("check repo = %d, want 204; body=%s", w.Code, w.Body.String())
 	}
 
-	// The organization owner removes it.
 	w = tokenRequest(s, "DELETE", repoPath, teamTestToken(s, admin, "admin:org, repo"))
 	if w.Code != http.StatusNoContent {
 		t.Errorf("remove repo = %d, want 204; body=%s", w.Code, w.Body.String())
@@ -417,7 +399,6 @@ func TestTeamRepoPermissionOverride(t *testing.T) {
 
 	repoPath := "/api/v3/orgs/team-test-org/teams/" + team.Slug + "/repos/team-test-org/perm-repo"
 
-	// Add with explicit admin permission.
 	body, _ := json.Marshal(map[string]string{"permission": "admin"})
 	w := httptestPost(s, repoPath, teamTestToken(s, admin, "admin:org, repo"), body)
 	if w.Code != http.StatusNoContent {
@@ -429,7 +410,6 @@ func TestTeamRepoPermissionOverride(t *testing.T) {
 		t.Errorf("repo perm = %v, linked=%v, want admin/true", perm, linked)
 	}
 
-	// Invalid permission is rejected.
 	body, _ = json.Marshal(map[string]string{"permission": "superuser"})
 	w = httptestPost(s, repoPath, teamTestToken(s, admin, "admin:org, repo"), body)
 	if w.Code != http.StatusUnprocessableEntity {

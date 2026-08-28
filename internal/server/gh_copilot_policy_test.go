@@ -46,7 +46,6 @@ func TestCopilotOrganizationPolicyIsStoredNotAssumed(t *testing.T) {
 		t.Fatalf("default Copilot policy = %v", billing)
 	}
 
-	// An owner turns two features off and moves to the enterprise plan.
 	updated := decodeJSONWithStatus(t, f.put(t, "/ui-data/orgs/"+f.org+"/copilot/policy", defaultToken, map[string]interface{}{
 		"plan_type":               store.CopilotPlanEnterprise,
 		"cli":                     store.CopilotFeatureDisabled,
@@ -96,7 +95,6 @@ func TestCopilotUsageDrivesSeatActivityAndMetrics(t *testing.T) {
 		t.Fatal("metrics must be empty before any usage is recorded")
 	}
 
-	// Record two days across two editors and a chat session.
 	for _, usage := range []map[string]interface{}{
 		{"username": f.seatUsername, "day": f.day, "editor": "vscode", "language": "go",
 			"suggestions": 10, "acceptances": 4, "lines_suggested": 30, "lines_accepted": 12},

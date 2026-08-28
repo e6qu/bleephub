@@ -6,9 +6,8 @@ afterEach(() => {
   cleanup();
 });
 
-// LogViewer line numbers are zero-padded to 3 chars in the editorial-
-// brutalist redesign. Tests use textContent matching instead of strict
-// getByText so the format is decoupled from the assertion.
+// Match on textContent, not getByText, so the zero-padded line-number format
+// stays decoupled from the assertions.
 function preText() {
   return document.querySelector("pre")?.textContent ?? "";
 }
@@ -31,8 +30,7 @@ describe("LogViewer", () => {
   it("strips ANSI codes and renders content", () => {
     render(<LogViewer lines={["\x1b[32mOK\x1b[0m"]} />);
     expect(preText()).toContain("OK");
-    // Find the ANSI-coloured span (the one wrapping "OK"). The line-
-    // number column also has a color style, so match by text content.
+    // The line-number column is also color-styled, so match the span by text.
     const spans = Array.from(document.querySelectorAll('span[style*="color"]'));
     const hit = spans.find((s) => s.textContent === "OK");
     expect(hit).toBeDefined();
@@ -42,8 +40,7 @@ describe("LogViewer", () => {
     render(<LogViewer lines={['<script>alert("xss")</script>']} />);
     const pre = document.querySelector("pre");
     expect(pre?.innerHTML).toContain("&lt;script&gt;");
-    // The dangerouslySetInnerHTML span should not contain a real
-    // <script> tag — only the escaped text.
+    // The dangerouslySetInnerHTML span must hold only escaped text, no real tag.
     const dangerSpans = Array.from(
       pre?.querySelectorAll("div > span:last-child") ?? [],
     );
@@ -64,7 +61,7 @@ describe("LogViewer", () => {
     const spans = Array.from(document.querySelectorAll('span[style*="color"]'));
     const hit = spans.find((s) => s.textContent === "UNCLOSED");
     expect(hit).toBeDefined();
-    // No dangling open tags inside the line container.
+    // An unclosed ANSI span must still balance opens with closes.
     const html = hit?.parentElement?.innerHTML ?? "";
     const opens = (html.match(/<span/g) || []).length;
     const closes = (html.match(/<\/span>/g) || []).length;

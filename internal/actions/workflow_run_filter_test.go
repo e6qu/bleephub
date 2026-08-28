@@ -2,9 +2,7 @@ package actions
 
 import "testing"
 
-// TestWorkflowRunWorkflowsFilter pins `on.workflow_run.workflows`: the trigger
-// fires only for runs of the named workflows. Without the filter every
-// completed run in the repository starts the listening workflow.
+// TestWorkflowRunWorkflowsFilter pins that `on.workflow_run.workflows` fires only for runs of the named workflows.
 func TestWorkflowRunWorkflowsFilter(t *testing.T) {
 	on, err := ParseWorkflowOn([]byte(`
 on:
@@ -41,8 +39,7 @@ jobs: {}
 	}
 }
 
-// TestWorkflowRunWithoutWorkflowsFilterMatchesAny keeps the unfiltered form
-// permissive: `on: workflow_run: types: [completed]` listens to every run.
+// TestWorkflowRunWithoutWorkflowsFilterMatchesAny pins that an unfiltered `workflow_run` listens to every run.
 func TestWorkflowRunWithoutWorkflowsFilterMatchesAny(t *testing.T) {
 	on, err := ParseWorkflowOn([]byte("on:\n  workflow_run:\n    types: [completed]\njobs: {}\n"))
 	if err != nil {

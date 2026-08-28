@@ -142,7 +142,6 @@ func TestFilterPatternsNegation(t *testing.T) {
 	if filterPatternsMatch(patterns, "releases/v1-alpha") {
 		t.Error("releases/v1-alpha should be excluded by negation")
 	}
-	// Re-inclusion after negation
 	patterns = []string{"releases/**", "!releases/**-alpha", "releases/v2-alpha"}
 	if !filterPatternsMatch(patterns, "releases/v2-alpha") {
 		t.Error("releases/v2-alpha should be re-included by the later positive pattern")

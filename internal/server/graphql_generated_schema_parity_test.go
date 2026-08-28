@@ -61,7 +61,7 @@ func TestGeneratedGraphQLSchemaIsComplete(t *testing.T) {
 	if len(report.MissingFields) != 0 {
 		var lines []string
 		for typeName, fields := range report.MissingFields {
-			lines = append(lines, typeName+"."+strings.Join(fields, ",")) // one entry per type
+			lines = append(lines, typeName+"."+strings.Join(fields, ","))
 		}
 		sort.Strings(lines)
 		t.Errorf("generated schema is missing fields on %d types: %s",

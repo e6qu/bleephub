@@ -115,7 +115,6 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 		t.Fatalf("classic PAT organization review status = %d, want 403", resp.StatusCode)
 	}
 	resp.Body.Close()
-	// Pending request appears in the admin listing.
 	resp = s.get(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests", appToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -147,7 +146,6 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 		t.Fatalf("request repositories wrong: %v", reqRepos)
 	}
 
-	// Approve: the request becomes an active grant.
 	resp = s.post(t, fmt.Sprintf("/api/v3/orgs/%s/personal-access-token-requests/%d", orgLogin, requestID), appToken, map[string]interface{}{"action": "approve"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
@@ -209,7 +207,6 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Grant repositories round-trip.
 	resp = s.get(t, fmt.Sprintf("/api/v3/orgs/%s/personal-access-tokens/%d/repositories", orgLogin, grantID), appToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -220,7 +217,6 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 		t.Fatalf("grant repositories wrong: %v", grantRepos)
 	}
 
-	// Revoke the single grant.
 	resp = s.post(t, fmt.Sprintf("/api/v3/orgs/%s/personal-access-tokens/%d", orgLogin, grantID), appToken, map[string]interface{}{"action": "revoke"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
@@ -281,7 +277,6 @@ func TestOrgPATGrantRequests_BulkReviewAndBulkRevoke(t *testing.T) {
 		t.Fatalf("bulk deny created grants: %v", grants)
 	}
 
-	// Bulk approve, then bulk revoke.
 	c := seed("bulk-c")
 	resp = s.post(t, "/api/v3/orgs/"+orgLogin+"/personal-access-token-requests", appToken, map[string]interface{}{
 		"pat_request_ids": []int{c},

@@ -250,7 +250,6 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 	id2 := s.uploadAttestation(t, org.Login+"/signed-images", defaultToken,
 		makeSigstoreBundle(t, digest, "https://spdx.dev/Document/v2.3"))
 
-	// Org-level list by digest.
 	resp := s.get(t, "/api/v3/orgs/"+org.Login+"/attestations/"+digest, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -261,7 +260,6 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 		t.Fatalf("org attestations = %d, want 2", got)
 	}
 
-	// Repositories with attestations.
 	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/attestations/repositories", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -293,7 +291,6 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 		t.Fatalf("page_info = %v", bulk["page_info"])
 	}
 
-	// Bulk list without digests → 422.
 	resp = s.post(t, "/api/v3/orgs/"+org.Login+"/attestations/bulk-list", defaultToken,
 		map[string]interface{}{"subject_digests": []string{}})
 	resp.Body.Close()
@@ -310,7 +307,6 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 		t.Fatalf("non-admin delete = %d, want 403", resp.StatusCode)
 	}
 
-	// Delete by ID.
 	resp = s.delete(t, "/api/v3/orgs/"+org.Login+"/attestations/"+strconv.Itoa(id1), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
@@ -322,7 +318,6 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 		t.Fatalf("delete by id again = %d, want 404", resp.StatusCode)
 	}
 
-	// delete-request with attestation_ids removes the second one.
 	resp = s.post(t, "/api/v3/orgs/"+org.Login+"/attestations/delete-request", defaultToken,
 		map[string]interface{}{"attestation_ids": []int{id2}})
 	resp.Body.Close()
@@ -353,7 +348,6 @@ func TestOrgAttestations_ListRepositoriesBulkAndDelete(t *testing.T) {
 		t.Fatalf("delete-request with both lists = %d, want 422", resp.StatusCode)
 	}
 
-	// Delete by digest: reupload then wipe the digest.
 	s.uploadAttestation(t, org.Login+"/signed-images", defaultToken, bundle)
 	resp = s.delete(t, "/api/v3/orgs/"+org.Login+"/attestations/digest/"+digest, defaultToken)
 	resp.Body.Close()
@@ -380,7 +374,6 @@ func TestUserAttestations_ListBulkAndDelete(t *testing.T) {
 	bundle := makeSigstoreBundle(t, digest, "https://slsa.dev/provenance/v1")
 	id := s.uploadAttestation(t, owner.Login+"/personal-artifacts", ownerToken, bundle)
 
-	// List by digest at the user scope.
 	resp := s.get(t, "/api/v3/users/"+owner.Login+"/attestations/"+digest, defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -391,7 +384,6 @@ func TestUserAttestations_ListBulkAndDelete(t *testing.T) {
 		t.Fatalf("user attestations = %d, want 1", got)
 	}
 
-	// Bulk list at the user scope.
 	resp = s.post(t, "/api/v3/users/"+owner.Login+"/attestations/bulk-list", defaultToken,
 		map[string]interface{}{"subject_digests": []string{digest}})
 	if resp.StatusCode != 200 {
@@ -413,14 +405,12 @@ func TestUserAttestations_ListBulkAndDelete(t *testing.T) {
 		t.Fatalf("stranger delete = %d, want 403", resp.StatusCode)
 	}
 
-	// The owner deletes by ID.
 	resp = s.delete(t, "/api/v3/users/"+owner.Login+"/attestations/"+strconv.Itoa(id), ownerToken)
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Fatalf("owner delete = %d, want 204", resp.StatusCode)
 	}
 
-	// delete-request + delete-by-digest round-trip.
 	s.uploadAttestation(t, owner.Login+"/personal-artifacts", ownerToken, bundle)
 	resp = s.post(t, "/api/v3/users/"+owner.Login+"/attestations/delete-request", ownerToken,
 		map[string]interface{}{"subject_digests": []string{digest}})
@@ -435,7 +425,6 @@ func TestUserAttestations_ListBulkAndDelete(t *testing.T) {
 		t.Fatalf("user delete by digest = %d, want 204", resp.StatusCode)
 	}
 
-	// Unknown user → 404.
 	resp = s.get(t, "/api/v3/users/no-such-user/attestations/"+digest, defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != 404 {

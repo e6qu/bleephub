@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// Commit Comments REST API — create, list, get, update, delete.
-
 func TestCommitComments_CRUD(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -28,7 +26,6 @@ func TestCommitComments_CRUD(t *testing.T) {
 		return w
 	}
 
-	// Create a commit comment.
 	b1, _ := json.Marshal(map[string]any{
 		"body":     "nice commit",
 		"path":     "main.go",
@@ -46,7 +43,6 @@ func TestCommitComments_CRUD(t *testing.T) {
 		t.Errorf("created shape: %v", c1)
 	}
 
-	// Create another comment on a different commit.
 	sha2 := "cafebabe"
 	b2, _ := json.Marshal(map[string]string{"body": "another comment"})
 	req := httptest.NewRequest("POST", "/api/v3/repos/admin/cc-repo/commits/"+sha2+"/comments", bytes.NewReader(b2))
@@ -60,7 +56,6 @@ func TestCommitComments_CRUD(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &c2)
 	id2 := int(c2["id"].(float64))
 
-	// List comments for the first commit.
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/cc-repo/commits/"+sha+"/comments", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
@@ -74,7 +69,6 @@ func TestCommitComments_CRUD(t *testing.T) {
 		t.Errorf("commit list len = %d, want 1", len(commitList))
 	}
 
-	// List all repo commit comments.
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/cc-repo/comments", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
@@ -88,7 +82,6 @@ func TestCommitComments_CRUD(t *testing.T) {
 		t.Errorf("repo list len = %d, want 2", len(repoList))
 	}
 
-	// Get single comment.
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/cc-repo/comments/"+strconv.Itoa(id1), nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
@@ -102,7 +95,6 @@ func TestCommitComments_CRUD(t *testing.T) {
 		t.Errorf("get body = %v", got["body"])
 	}
 
-	// Update comment.
 	patch, _ := json.Marshal(map[string]string{"body": "updated comment"})
 	req = httptest.NewRequest("PATCH", "/api/v3/repos/admin/cc-repo/comments/"+strconv.Itoa(id1), bytes.NewReader(patch))
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
@@ -117,7 +109,6 @@ func TestCommitComments_CRUD(t *testing.T) {
 		t.Errorf("patched body = %v", patched["body"])
 	}
 
-	// Delete the second comment.
 	req = httptest.NewRequest("DELETE", "/api/v3/repos/admin/cc-repo/comments/"+strconv.Itoa(id2), nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()
@@ -126,7 +117,6 @@ func TestCommitComments_CRUD(t *testing.T) {
 		t.Fatalf("delete comment: %d body=%s", w.Code, w.Body.String())
 	}
 
-	// Repo list now has one.
 	req = httptest.NewRequest("GET", "/api/v3/repos/admin/cc-repo/comments", nil)
 	req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
 	w = httptest.NewRecorder()

@@ -10,9 +10,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestAPIInsights_StatsFromObservedTraffic drives real REST traffic with a
-// dedicated member's classic personal access token and asserts every API
-// insights aggregation reports it.
+// TestAPIInsights_StatsFromObservedTraffic drives real REST traffic under a
+// member's classic PAT and asserts every insights aggregation reports it.
 func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
@@ -44,7 +43,6 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 	window := "min_timestamp=" + url.QueryEscape(minTS)
 	actorPath := fmt.Sprintf("classic_pat/%d", member.ID)
 
-	// Route stats by actor.
 	resp := srv.get(t, "/api/v3/orgs/insights-org/insights/api/route-stats/"+actorPath+"?"+window, defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -70,7 +68,6 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 		t.Fatalf("last_request_timestamp missing: %v", userRoute)
 	}
 
-	// Subject stats.
 	resp = srv.get(t, "/api/v3/orgs/insights-org/insights/api/subject-stats?"+window+"&subject_name_substring=insights-member", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()

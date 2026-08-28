@@ -18,7 +18,6 @@ func TestExpandMatrix2x2(t *testing.T) {
 		t.Fatalf("combos = %d, want 4", len(combos))
 	}
 
-	// Check all 4 combinations exist
 	found := map[string]bool{}
 	for _, c := range combos {
 		key := c["go"].(string) + "-" + c["os"].(string)
@@ -62,7 +61,6 @@ func TestExpandMatrixWithExclude(t *testing.T) {
 		t.Fatalf("combos = %d, want 3 (4 base - 1 exclude)", len(combos))
 	}
 
-	// Verify the excluded combo is absent
 	for _, c := range combos {
 		if c["os"] == "macos" && c["go"] == "1.21" {
 			t.Error("excluded combo should not be present")

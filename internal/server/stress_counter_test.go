@@ -9,12 +9,10 @@ import (
 )
 
 // TestStressCounterIntegrity hammers the store's monotonic ID allocators and
-// its idempotent operations from many goroutines at once and asserts the
-// invariants that concurrency must never break: every allocated ID is unique
-// (no two callers get the same run/repo/issue ID), an idempotent reaction POST
-// yields exactly one reaction with a stable ID, and a membership upsert
-// converges on a single row. A lost update or a non-atomic read-modify-write
-// on a Next* counter shows up here as a duplicate ID.
+// idempotent operations from many goroutines and asserts the invariants
+// concurrency must not break: every allocated ID is unique, an idempotent
+// reaction POST yields exactly one reaction, and a membership upsert converges
+// on a single row. A lost update on a Next* counter shows up as a duplicate ID.
 func TestStressCounterIntegrity(t *testing.T) {
 	s := newTestServer()
 	st := s.store
@@ -26,7 +24,6 @@ func TestStressCounterIntegrity(t *testing.T) {
 	const workers = 32
 	const perWorker = 40
 
-	// --- run-ID allocator: every ReserveRunID must be unique ---
 	t.Run("ReserveRunID uniqueness", func(t *testing.T) {
 		var mu sync.Mutex
 		seen := make(map[int]bool, workers*perWorker)
@@ -59,7 +56,6 @@ func TestStressCounterIntegrity(t *testing.T) {
 		}
 	})
 
-	// --- repo + issue ID allocators: unique object IDs under concurrent create ---
 	t.Run("repo and issue ID uniqueness", func(t *testing.T) {
 		var mu sync.Mutex
 		repoIDs := make(map[int]bool)
@@ -99,7 +95,6 @@ func TestStressCounterIntegrity(t *testing.T) {
 		wg.Wait()
 	})
 
-	// --- reaction idempotency: same (user, content) repeatedly → one reaction ---
 	t.Run("reaction idempotency", func(t *testing.T) {
 		repo := st.CreateRepo(admin, "reaction-idem", "", false)
 		if repo == nil {
@@ -137,7 +132,6 @@ func TestStressCounterIntegrity(t *testing.T) {
 		}
 	})
 
-	// --- membership upsert: concurrent SetMembership converges on one row ---
 	t.Run("membership upsert", func(t *testing.T) {
 		org := st.CreateOrg(admin, "cnt-org", "Org", "")
 		if org == nil {

@@ -7,7 +7,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// scheduleRunCounter counts schedule-triggered runs for one repo.
 func (s *isolatedServer) scheduleRunCounter(repoKey string) func() int {
 	return func() int {
 		s.store.Mu.RLock()
@@ -120,32 +119,27 @@ jobs:
 		return n
 	}
 
-	// Non-matching minute: nothing fires.
 	s.actions.FireDueSchedules(time.Date(2026, 6, 12, 4, 29, 0, 0, time.UTC))
 	if got := countRuns(); got != 0 {
 		t.Fatalf("4:29 fired %d runs, want 0", got)
 	}
 
-	// Matching minute fires exactly once.
 	at := time.Date(2026, 6, 12, 4, 30, 0, 0, time.UTC)
 	s.actions.FireDueSchedules(at)
 	if got := countRuns(); got != 1 {
 		t.Fatalf("4:30 fired %d runs, want 1", got)
 	}
 
-	// Same minute again: deduped.
 	s.actions.FireDueSchedules(at.Add(10 * time.Second))
 	if got := countRuns(); got != 1 {
 		t.Fatalf("4:30 re-tick fired %d runs total, want still 1", got)
 	}
 
-	// Next day fires again.
 	s.actions.FireDueSchedules(at.Add(24 * time.Hour))
 	if got := countRuns(); got != 2 {
 		t.Fatalf("next-day 4:30 fired %d runs total, want 2", got)
 	}
 
-	// The run carries schedule event metadata.
 	s.store.Mu.RLock()
 	var run *store.Workflow
 	for _, w := range s.store.Workflows {

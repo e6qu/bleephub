@@ -122,12 +122,11 @@ func assertHookShape(t *testing.T, h hookResp, targetURL string) {
 	}
 }
 
-// TestHooks_CRUD exercises create → list → get → update → delete lifecycle
-// and verifies the response shape matches GitHub's published schema.
+// TestHooks_CRUD verifies the create/list/get/update/delete responses match
+// GitHub's published hook schema.
 func TestHooks_CRUD(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Spin up a trivial HTTP target that returns 200 for every POST.
 	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusOK)
@@ -135,12 +134,10 @@ func TestHooks_CRUD(t *testing.T) {
 	defer target.Close()
 
 	repo := "admin/hooks-crud"
-	// Create repo so the hook has something to attach to.
 	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
 		"name": "hooks-crud",
 	}).Body.Close()
 
-	// CreateHook
 	resp := s.post(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
 			"url":          target.URL + "/hook",
@@ -161,7 +158,6 @@ func TestHooks_CRUD(t *testing.T) {
 	}
 	hookID := created.ID
 
-	// ListHooks
 	listResp := s.get(t, "/api/v3/repos/"+repo+"/hooks", defaultToken)
 	if listResp.StatusCode != http.StatusOK {
 		listResp.Body.Close()
@@ -179,7 +175,6 @@ func TestHooks_CRUD(t *testing.T) {
 		t.Errorf("created hook id=%d not found in ListHooks", hookID)
 	}
 
-	// GetHook
 	getResp := s.get(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), defaultToken)
 	if getResp.StatusCode != http.StatusOK {
 		getResp.Body.Close()
@@ -191,7 +186,6 @@ func TestHooks_CRUD(t *testing.T) {
 		t.Errorf("get hook id = %d, want %d", got.ID, hookID)
 	}
 
-	// UpdateHook — deactivate and add a new event.
 	newTarget := target.URL + "/hook-updated"
 	patchResp, _ := func() (*http.Response, error) {
 		b, _ := json.Marshal(map[string]interface{}{
@@ -220,7 +214,6 @@ func TestHooks_CRUD(t *testing.T) {
 		t.Errorf("updated events = %v, want [push]", updated.Events)
 	}
 
-	// DeleteHook
 	delReq, _ := http.NewRequest("DELETE",
 		s.baseURL+"/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), nil)
 	delReq.Header.Set("Authorization", "token "+defaultToken)
@@ -233,7 +226,6 @@ func TestHooks_CRUD(t *testing.T) {
 		t.Errorf("delete hook: got %d, want 204", delResp.StatusCode)
 	}
 
-	// Verify gone
 	goneResp := s.get(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), defaultToken)
 	goneResp.Body.Close()
 	if goneResp.StatusCode != http.StatusNotFound {
@@ -269,14 +261,12 @@ func TestHooks_Ping(t *testing.T) {
 		t.Fatalf("create hook: %d", resp.StatusCode)
 	}
 
-	// Fetch hook list to get the ID.
 	hooks := decodeHookList(t, ghGet(t, "/api/v3/repos/"+repo+"/hooks", defaultToken))
 	if len(hooks) == 0 {
 		t.Fatal("no hooks in list")
 	}
 	hookID := hooks[len(hooks)-1].ID
 
-	// Ping
 	pingResp := ghPost(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/pings",
 		defaultToken, nil)
 	pingResp.Body.Close()
@@ -284,7 +274,6 @@ func TestHooks_Ping(t *testing.T) {
 		t.Errorf("ping: got %d, want 204", pingResp.StatusCode)
 	}
 
-	// Wait for async delivery (up to 3 s).
 	select {
 	case <-received:
 	case <-time.After(3 * time.Second):
@@ -320,7 +309,6 @@ func TestHooks_Ping(t *testing.T) {
 		t.Errorf("status = %v, want OK", d["status"])
 	}
 
-	// GetDelivery — verify full delivery includes request + response.
 	dlID := int(d["id"].(float64))
 	fullResp := ghGet(t,
 		"/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/deliveries/"+strconv.Itoa(dlID),
@@ -372,7 +360,6 @@ func TestHooks_Deliveries_Redeliver(t *testing.T) {
 	hooks := decodeHookList(t, listResp)
 	hookID := hooks[len(hooks)-1].ID
 
-	// Trigger a ping to produce the initial delivery.
 	ghPost(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/pings", defaultToken, nil).Body.Close()
 	select {
 	case <-delivered:
@@ -380,11 +367,9 @@ func TestHooks_Deliveries_Redeliver(t *testing.T) {
 		t.Fatal("initial ping not received")
 	}
 
-	// Poll for the delivery to be persisted before querying.
 	deliveries := pollDeliveries(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/deliveries", 1)
 	dlID := int(deliveries[0]["id"].(float64))
 
-	// Redeliver.
 	redeliverResp := ghPost(t,
 		"/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/deliveries/"+strconv.Itoa(dlID)+"/attempts",
 		defaultToken, nil)
@@ -395,7 +380,6 @@ func TestHooks_Deliveries_Redeliver(t *testing.T) {
 	}
 	redeliverResp.Body.Close()
 
-	// A second delivery should arrive.
 	select {
 	case <-delivered:
 	case <-time.After(3 * time.Second):
@@ -512,14 +496,12 @@ func TestHooks_ConfigContentTypeRoundTrip(t *testing.T) {
 		t.Errorf("insecure_ssl = %v, want \"1\"", h2.Config["insecure_ssl"])
 	}
 
-	// GET round-trips the stored values.
 	getResp := ghGet(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(h2.ID), defaultToken)
 	got := decodeHook(t, getResp)
 	if got.Config["content_type"] != "json" || got.Config["insecure_ssl"] != "1" {
 		t.Errorf("GET config = %v, want json/1", got.Config)
 	}
 
-	// PATCH back to form/0 and confirm.
 	patchResp := ghPatch(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(h2.ID), defaultToken, map[string]interface{}{
 		"config": map[string]interface{}{
 			"url":          "https://example.com/hook2",
@@ -548,7 +530,6 @@ func TestHooks_NameValidation(t *testing.T) {
 		"name": "hooks-name-validation",
 	}).Body.Close()
 
-	// name=web is accepted.
 	ok := ghPost(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"name":   "web",
 		"config": map[string]interface{}{"url": sink.URL + "/hook"},
@@ -561,7 +542,6 @@ func TestHooks_NameValidation(t *testing.T) {
 	}
 	ok.Body.Close()
 
-	// A non-"web" name is rejected with 422.
 	bad := ghPost(t, "/api/v3/repos/"+repo+"/hooks", defaultToken, map[string]interface{}{
 		"name":   "slack",
 		"config": map[string]interface{}{"url": "https://example.com/hook"},
@@ -595,16 +575,13 @@ func TestHooks_LastResponseAfterDelivery(t *testing.T) {
 	created := decodeHook(t, resp)
 	hookID := created.ID
 
-	// Before any delivery → unused.
 	if created.LastResponse["status"] != "unused" {
 		t.Errorf("pre-delivery last_response.status = %v, want unused", created.LastResponse["status"])
 	}
 
-	// Ping triggers a successful delivery.
 	ghPost(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/pings", defaultToken, nil).Body.Close()
 	pollDeliveries(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID)+"/deliveries", 1)
 
-	// Poll the hook until last_response reflects the OK delivery.
 	ok := testutil.TestEventually(3*time.Second, 50*time.Millisecond, func() bool {
 		got := decodeHook(t, ghGet(t, "/api/v3/repos/"+repo+"/hooks/"+strconv.Itoa(hookID), defaultToken))
 		if got.LastResponse["status"] == "OK" {

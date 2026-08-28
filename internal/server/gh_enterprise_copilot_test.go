@@ -12,7 +12,6 @@ func TestEnterpriseCopilotCodingAgentPolicy(t *testing.T) {
 	policy := enterpriseAPI + "/copilot/policies/coding_agent"
 	orgs := policy + "/organizations"
 
-	// Invalid policy state → 400.
 	resp := s.put(t, policy, defaultToken, map[string]interface{}{"policy_state": "sideways"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
@@ -64,7 +63,6 @@ func TestEnterpriseCopilotCodingAgentPolicy(t *testing.T) {
 		t.Fatalf("enabled orgs after remove = %d, want 0", remaining)
 	}
 
-	// Non-owner → 403.
 	memberTok := s.createEnterpriseTestUser(t, "ent-copilot-member")
 	resp = s.put(t, policy, memberTok, map[string]interface{}{"policy_state": "enabled_for_all_orgs"})
 	resp.Body.Close()

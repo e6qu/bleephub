@@ -75,10 +75,8 @@ const orgSecrets = {
   ],
 };
 
-/**
- * Build mocks around a real X25519 keypair so the test can sealed-box
- * decrypt whatever the page uploads (libsodium runs fine under node).
- */
+/** Mock a real X25519 keypair so the test can sealed-box decrypt whatever
+ *  the page uploads (libsodium runs under node). */
 async function installMocks() {
   await sodium.ready;
   const keypair = sodium.crypto_box_keypair();
@@ -156,7 +154,6 @@ describe("RepoSecretsPage secrets", () => {
     renderPage();
     await screen.findByText("NPM_TOKEN");
     fireEvent.click(screen.getAllByRole("button", { name: /^delete$/i })[0]!);
-    // Destructive delete now goes through the shared confirmation modal.
     fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
@@ -220,7 +217,6 @@ describe("RepoSecretsPage variables", () => {
     await screen.findByText("NODE_ENV");
     // Two delete buttons exist (secret + variable) — the variable one is second.
     fireEvent.click(screen.getAllByRole("button", { name: /^delete$/i })[1]!);
-    // Destructive delete now goes through the shared confirmation modal.
     fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(

@@ -51,7 +51,6 @@ func TestPackagesAuthUser_CRUDAndVersionRestore(t *testing.T) {
 		t.Fatalf("get version = %v", version)
 	}
 
-	// Delete + restore the version.
 	resp = s.delete(t, "/api/v3/user/packages/npm/authuser-pkg/versions/"+strconv.Itoa(versionID), defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {

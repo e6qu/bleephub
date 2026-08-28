@@ -49,19 +49,16 @@ func TestAppStoreCreateAndGet(t *testing.T) {
 		t.Fatalf("expected permissions[contents]=read, got %s", app.Permissions["contents"])
 	}
 
-	// Lookup by ID
 	got := st.GetApp(app.ID)
 	if got == nil || got.ID != app.ID {
 		t.Fatal("GetApp by ID failed")
 	}
 
-	// Lookup by slug
 	got2 := st.GetAppBySlug("my-test-app")
 	if got2 == nil || got2.ID != app.ID {
 		t.Fatal("GetAppBySlug failed")
 	}
 
-	// Not found
 	if st.GetApp(999) != nil {
 		t.Fatal("expected nil for nonexistent app ID")
 	}
@@ -108,7 +105,6 @@ func TestInstallationStoreCreateAndList(t *testing.T) {
 		t.Fatalf("expected RepositorySelection=all, got %s", inst.RepositorySelection)
 	}
 
-	// Create a second installation
 	st.CreateInstallation(app.ID, "Organization", 99, "myorg", nil, nil)
 
 	list := st.ListAppInstallations(app.ID)
@@ -116,13 +112,11 @@ func TestInstallationStoreCreateAndList(t *testing.T) {
 		t.Fatalf("expected 2 installations, got %d", len(list))
 	}
 
-	// GetInstallation
 	got := st.GetInstallation(inst.ID)
 	if got == nil || got.ID != inst.ID {
 		t.Fatal("GetInstallation failed")
 	}
 
-	// GetRepoInstallation
 	got2 := st.GetRepoInstallation("testuser")
 	if got2 == nil || got2.ID != inst.ID {
 		t.Fatal("GetRepoInstallation failed")
@@ -131,7 +125,6 @@ func TestInstallationStoreCreateAndList(t *testing.T) {
 		t.Fatal("expected nil for nonexistent owner")
 	}
 
-	// Installation for nonexistent app
 	if st.CreateInstallation(999, "User", 1, "x", nil, nil) != nil {
 		t.Fatal("expected nil for nonexistent app")
 	}
@@ -153,7 +146,6 @@ func TestInstallationTokenGeneration(t *testing.T) {
 		t.Fatalf("expected permissions[contents]=read, got %s", token.Permissions["contents"])
 	}
 
-	// Lookup
 	tok, inst2 := st.LookupInstallationToken(token.Token)
 	if tok == nil || inst2 == nil {
 		t.Fatal("LookupInstallationToken failed")
@@ -170,7 +162,6 @@ func TestInstallationTokenExpiry(t *testing.T) {
 
 	token := st.CreateInstallationToken(inst.ID, app.ID, nil, nil)
 
-	// Force expire
 	st.Mu.Lock()
 	st.InstallationTokens[token.Token].ExpiresAt = fixedTestTime.Add(-1 * time.Hour)
 	st.Mu.Unlock()
@@ -190,13 +181,11 @@ func TestManifestCodeOneTimeUse(t *testing.T) {
 		t.Fatal("expected non-empty code")
 	}
 
-	// First consume succeeds
 	appID, ok := st.ConsumeManifestCode(code)
 	if !ok || appID != app.ID {
 		t.Fatalf("first consume: expected appID=%d ok=true, got %d ok=%v", app.ID, appID, ok)
 	}
 
-	// Second consume fails
 	_, ok2 := st.ConsumeManifestCode(code)
 	if ok2 {
 		t.Fatal("expected second consume to fail")
@@ -259,7 +248,6 @@ func TestJSONWebTokenExpiredRejected(t *testing.T) {
 	st := newAppTestStore()
 	app := st.CreateApp(1, "Expired JSON Web Token App", "", nil, nil)
 
-	// Sign with a time in the past
 	jwt, err := signAppJWT(app.PEMPrivateKey, app.ID, fixedTestTime.Add(-20*time.Minute))
 	if err != nil {
 		t.Fatalf("signAppJSONWebToken: %v", err)
@@ -323,7 +311,6 @@ func TestJSONWebTokenWrongAppIdentifier(t *testing.T) {
 	st := newAppTestStore()
 	app := st.CreateApp(1, "Wrong ID App", "", nil, nil)
 
-	// Sign with the wrong app identifier.
 	jwt, err := signAppJWT(app.PEMPrivateKey, 9999, fixedTestTime)
 	if err != nil {
 		t.Fatalf("signAppJSONWebToken: %v", err)
@@ -416,13 +403,11 @@ func TestGetAuthenticatedApp(t *testing.T) {
 	appID := int(appData["id"].(float64))
 	pem := appData["pem"].(string)
 
-	// Sign the JSON Web Token.
 	jwt, err := signAppJWT(pem, appID, fixedTestTime)
 	if err != nil {
 		t.Fatalf("signAppJSONWebToken: %v", err)
 	}
 
-	// GET /app with a JSON Web Token.
 	req, _ := http.NewRequest("GET", s.baseURL+"/api/v3/app", nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp, err := http.DefaultClient.Do(req)
@@ -474,7 +459,6 @@ func TestGetAuthenticatedApp(t *testing.T) {
 func TestGetAuthenticatedAppNoJSONWebToken401(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// GET /app with a personal access token, not a JSON Web Token, should 401.
 	resp := s.get(t, "/api/v3/app", defaultToken)
 	if resp.StatusCode != 401 {
 		resp.Body.Close()
@@ -508,7 +492,6 @@ func TestListAppInstallationsHTTP(t *testing.T) {
 
 	s.installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
 
-	// List via a JSON Web Token.
 	jwt, _ := signAppJWT(pem, appID, fixedTestTime)
 	req, _ := http.NewRequest("GET", s.baseURL+"/api/v3/app/installations", nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
@@ -619,7 +602,6 @@ func TestCreateInstallationTokenHTTP(t *testing.T) {
 	instData := s.installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
 	instID := int(instData["id"].(float64))
 
-	// Create an installation token via a JSON Web Token.
 	jwt, _ := signAppJWT(pemKey, appID, fixedTestTime)
 	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", s.baseURL, instID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
@@ -710,11 +692,10 @@ func TestInstallationTokenWrongApp(t *testing.T) {
 	appBPEM := appB["pem"].(string)
 	appBID := int(appB["id"].(float64))
 
-	// Create an installation for app A.
 	instData := s.installGitHubAppViaBrowser(t, appA["slug"].(string), "admin", "all")
 	instAID := int(instData["id"].(float64))
 
-	// Try to create a token for app A's installation using app B's JSON Web Token.
+	// Create a token for app A's installation using app B's JSON Web Token → 403.
 	jwt, _ := signAppJWT(appBPEM, appBID, fixedTestTime)
 	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v3/app/installations/%d/access_tokens", s.baseURL, instAID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
@@ -748,7 +729,6 @@ func TestGetRepoInstallationHTTP(t *testing.T) {
 
 	s.installGitHubAppViaBrowser(t, appData["slug"].(string), "repo-inst-owner", "all")
 
-	// GET /repos/{owner}/{repo}/installation
 	resp2 := s.get(t, "/api/v3/repos/repo-inst-owner/somerepo/installation", appJWT)
 	if resp2.StatusCode != 200 {
 		resp2.Body.Close()
@@ -767,7 +747,6 @@ func TestGetRepoInstallationHTTP(t *testing.T) {
 	}
 	respNoRepo.Body.Close()
 
-	// Not found
 	resp3 := s.get(t, "/api/v3/repos/nonexistent-owner/somerepo/installation", appJWT)
 	if resp3.StatusCode != 404 {
 		resp3.Body.Close()
@@ -805,7 +784,6 @@ func TestDeleteInstallationHTTP(t *testing.T) {
 	instData := s.installGitHubAppViaBrowser(t, appData["slug"].(string), "admin", "all")
 	instID := int(instData["id"].(float64))
 
-	// Delete via a JSON Web Token.
 	jwt, _ := signAppJWT(pemKey, appID, fixedTestTime)
 	req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v3/app/installations/%d", s.baseURL, instID), nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
@@ -819,7 +797,6 @@ func TestDeleteInstallationHTTP(t *testing.T) {
 	}
 	httpResp.Body.Close()
 
-	// Verify gone
 	req2, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v3/app/installations/%d", s.baseURL, instID), nil)
 	req2.Header.Set("Authorization", "Bearer "+jwt)
 	httpResp2, _ := http.DefaultClient.Do(req2)
@@ -833,7 +810,6 @@ func TestDeleteInstallationHTTP(t *testing.T) {
 func TestExistingPersonalAccessTokenAuthUnaffected(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Verify personal access token authentication still works for existing endpoints.
 	resp := s.get(t, "/api/v3/user", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -844,7 +820,6 @@ func TestExistingPersonalAccessTokenAuthUnaffected(t *testing.T) {
 		t.Fatalf("expected login=admin, got %v", data["login"])
 	}
 
-	// Verify no-auth still returns 401
 	resp2 := s.get(t, "/api/v3/user", "")
 	if resp2.StatusCode != 401 {
 		resp2.Body.Close()

@@ -277,13 +277,11 @@ func TestOrgSecretsLifecycle(t *testing.T) {
 	selRepo := s.seedOrgRepo(t, org, "sel-target", false)
 	base := "/api/v3/orgs/" + org.Login + "/actions/secrets"
 
-	// visibility=all secret.
 	enc, keyID := s.sealForServer(t, "all-value")
 	mustStatus(t, s.put(t, base+"/ORG_ALL", defaultToken, map[string]interface{}{
 		"encrypted_value": enc, "key_id": keyID, "visibility": "all",
 	}), 201, "create all")
 
-	// visibility=selected secret.
 	enc, keyID = s.sealForServer(t, "sel-value")
 	mustStatus(t, s.put(t, base+"/ORG_SEL", defaultToken, map[string]interface{}{
 		"encrypted_value": enc, "key_id": keyID, "visibility": "selected",
@@ -310,7 +308,6 @@ func TestOrgSecretsLifecycle(t *testing.T) {
 		}
 	}
 
-	// Selected-repositories list.
 	repos := decodeJSON(t, s.get(t, base+"/ORG_SEL/repositories", defaultToken))
 	if int(repos["total_count"].(float64)) != 1 {
 		t.Fatalf("repositories total_count = %v, want 1", repos["total_count"])
@@ -325,7 +322,6 @@ func TestOrgSecretsLifecycle(t *testing.T) {
 	mustStatus(t, s.put(t, idPath, defaultToken, nil), 409, "add to visibility=all")
 	mustStatus(t, s.delete(t, idPath, defaultToken), 409, "remove from visibility=all")
 
-	// Add + remove on the selected secret.
 	other := s.seedOrgRepo(t, org, "sel-other", true)
 	addPath := fmt.Sprintf("%s/ORG_SEL/repositories/%d", base, other.ID)
 	mustStatus(t, s.put(t, addPath, defaultToken, nil), 204, "add repo")
@@ -347,7 +343,6 @@ func TestOrgSecretsLifecycle(t *testing.T) {
 	mustStatus(t, s.put(t, base+"/ORG_SEL/repositories", defaultToken,
 		map[string]interface{}{"selected_repository_ids": []int{999999}}), 404, "set unknown repo id")
 
-	// Delete; then 404.
 	mustStatus(t, s.delete(t, base+"/ORG_ALL", defaultToken), 204, "delete")
 	mustStatus(t, s.get(t, base+"/ORG_ALL", defaultToken), 404, "get after delete")
 	mustStatus(t, s.delete(t, base+"/ORG_ALL", defaultToken), 404, "delete again")

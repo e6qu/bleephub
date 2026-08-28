@@ -18,7 +18,6 @@ func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
 	digest := testSubjectDigest("storage-artifact")
 	base := "/api/v3/orgs/" + org.Login + "/artifacts"
 
-	// Create a storage record.
 	resp := s.post(t, base+"/metadata/storage-record", defaultToken, map[string]interface{}{
 		"name":         "libfoo",
 		"digest":       digest,
@@ -64,7 +63,6 @@ func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
 		t.Fatalf("return_records=false still returned records: %v", silent)
 	}
 
-	// List by digest.
 	resp = s.get(t, base+"/"+digest+"/metadata/storage-records", defaultToken)
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -75,7 +73,6 @@ func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
 		t.Fatalf("list total_count = %v, want 1", listed["total_count"])
 	}
 
-	// Validation failures.
 	for i, body := range []map[string]interface{}{
 		{"digest": digest, "registry_url": "https://x/"},                                // missing name
 		{"name": "x", "digest": "sha256:short", "registry_url": "https://x/"},           // bad digest
@@ -122,8 +119,7 @@ func TestOrgArtifactMetadata_DeploymentRecords(t *testing.T) {
 	digest := testSubjectDigest("deploy-artifact")
 	base := "/api/v3/orgs/" + org.Login + "/artifacts"
 
-	// Create a deployment record. No provenance attestation exists yet,
-	// so attestation_id is null.
+	// No provenance attestation exists yet, so attestation_id is null.
 	resp := s.post(t, base+"/metadata/deployment-record", defaultToken, map[string]interface{}{
 		"name":                 "libfoo",
 		"digest":               digest,
@@ -197,7 +193,6 @@ func TestOrgArtifactMetadata_DeploymentRecords(t *testing.T) {
 		t.Fatalf("attestation_id = %v, want %d", linked["attestation_id"], attID)
 	}
 
-	// Validation failures.
 	for i, body := range []map[string]interface{}{
 		{"digest": digest, "status": "deployed", "logical_environment": "p", "deployment_name": "d"}, // missing name
 		{"name": "x", "digest": "sha256:nope", "status": "deployed", "logical_environment": "p", "deployment_name": "d"},

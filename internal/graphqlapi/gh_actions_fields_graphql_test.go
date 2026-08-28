@@ -280,7 +280,6 @@ func TestActionsRunGraphRefusesAStranger(t *testing.T) {
 		t.Fatalf("stranger reached a private repository's actions graph: %#v", strangerData["repository"])
 	}
 
-	// The owner reaches the same graph.
 	ownerData := h.query(owner, actionsRollupQuery, vars)
 	if ownerData["repository"] == nil {
 		t.Fatal("owner was refused their own private repository")

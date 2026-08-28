@@ -53,7 +53,6 @@ func (s *Resolver) sponsorsTypes() *sponsorsTypeRegistry {
 	return s.graphqlTypes.sponsors
 }
 
-// ---------------------------------------------------------------------------
 // shared small types
 
 func (s *Resolver) sponsorsOrderInput(name, fieldEnumName string, fieldValues ...string) *graphql.InputObject {
@@ -100,7 +99,6 @@ func (s *Resolver) sponsorsConnectionType(name string, nodeType graphql.Output, 
 	return conn
 }
 
-// ---------------------------------------------------------------------------
 // account rendering
 
 // sponsorsAccountGQL renders a login as the User or Organization map the
@@ -180,7 +178,6 @@ func (s *Resolver) sponsorableExists(login string) (string, bool) {
 	return "", false
 }
 
-// ---------------------------------------------------------------------------
 // privacy
 
 // sponsorshipVisible is the one privacy predicate the Sponsors surface uses. A
@@ -207,7 +204,6 @@ func (s *Resolver) visibleSponsorships(p graphql.ResolveParams, in []*store.Spon
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // object rendering
 
 func sponsorsTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
@@ -394,7 +390,6 @@ func sponsorsSourceString(source interface{}, key string) string {
 	return value
 }
 
-// ---------------------------------------------------------------------------
 // type construction
 
 func (s *Resolver) sponsorsGoalType() *graphql.Object {
@@ -981,7 +976,6 @@ func (s *Resolver) sponsorLifetimeValueType() *graphql.Object {
 	return types.lifetimeValue
 }
 
-// ---------------------------------------------------------------------------
 // connections
 
 func sponsorsConnectionArgs(extra graphql.FieldConfigArgument) graphql.FieldConfigArgument {
@@ -1049,7 +1043,6 @@ func (s *Resolver) sponsorshipConnection(p graphql.ResolveParams, rows []*store.
 	return conn
 }
 
-// ---------------------------------------------------------------------------
 // Sponsorable interface fields — shared by User and Organization
 
 // sponsorableFields is the whole Sponsorable field set, built once and installed
@@ -1434,7 +1427,6 @@ func (s *Resolver) resolveSponsorsActivities(p graphql.ResolveParams) (interface
 	return paginateGQLMaps(nodes, p.Args), nil
 }
 
-// ---------------------------------------------------------------------------
 // schema assembly
 
 // addSponsorsFieldsToSchema installs the Sponsors surface: the Sponsorable
@@ -1541,7 +1533,6 @@ func (s *Resolver) gqlSponsorsCountryOrRegionCodeEnum() *graphql.Enum {
 	)
 }
 
-// ---------------------------------------------------------------------------
 // node lookup
 
 // sponsorsNodeByID resolves a Sponsors global id for Query.node.

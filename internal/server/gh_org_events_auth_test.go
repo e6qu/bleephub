@@ -41,7 +41,6 @@ func TestOrgEvents_AuthRequired(t *testing.T) {
 		t.Fatalf("anonymous org events = %d, want 401", w.Code)
 	}
 
-	// Authenticated GET /orgs/{org}/events succeeds and surfaces the activity.
 	w = pagedJSONRequest(t, s, "GET", orgPath, token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("authenticated org events = %d, want 200", w.Code)

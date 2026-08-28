@@ -19,10 +19,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// The tests in this file drive the upload-pack wire format directly, without a
-// git client, so they can ask for one capability at a time and then look inside
-// the packfile that comes back. The end-to-end matrix in
-// git_protocol_cli_test.go proves real git is happy with the same answers.
+// Drive the upload-pack wire format directly, without a git client, to exercise
+// one capability at a time; git_protocol_cli_test.go proves real git accepts the
+// same answers.
 
 // gitPktScript builds a pkt-line request by hand, so a test can ask for a
 // capability combination no git client would pick on its own.
@@ -47,8 +46,6 @@ func (s *gitPktScript) delim() *gitPktScript {
 	return s
 }
 
-// postGitUploadPack sends a handcrafted request to the smart-HTTP upload-pack
-// endpoint and returns the whole reply.
 func postGitUploadPack(t *testing.T, srv *isolatedServer, repoName string, script *gitPktScript, header map[string]string) []byte {
 	t.Helper()
 	request, err := http.NewRequest(http.MethodPost, srv.baseURL+"/admin/"+repoName+".git/git-upload-pack", bytes.NewReader(script.out.Bytes()))
@@ -75,13 +72,10 @@ func postGitUploadPack(t *testing.T, srv *isolatedServer, repoName string, scrip
 	return body
 }
 
-// splitGitUploadPackResponse separates the pkt-line half of a protocol v0
-// reply — the shallow update and the ACK/NAK negotiation — from whatever
-// follows it, which is either a raw packfile or the multiplexed stream.
-//
-// The two halves are told apart by looking at the byte after a pkt-line length
-// prefix: a raw packfile opens with "PACK", a multiplexed one opens with a band
-// number, and every control line opens with printable text.
+// splitGitUploadPackResponse separates the pkt-line control half (shallow update
+// + ACK/NAK) from the packfile or multiplexed stream that follows, told apart by
+// the byte after a length prefix: "PACK" for a raw pack, a band number for a
+// multiplexed one, printable text for control lines.
 func splitGitUploadPackResponse(t *testing.T, body []byte) (control []string, rest []byte) {
 	t.Helper()
 	reader := bufio.NewReader(bytes.NewReader(body))
@@ -108,9 +102,8 @@ func splitGitUploadPackResponse(t *testing.T, body []byte) (control []string, re
 	return control, remainder
 }
 
-// demuxGitSideband splits a multiplexed reply into its packfile and its
-// progress text, and fails the test if the server reported a fatal error on
-// band 3.
+// demuxGitSideband splits a multiplexed reply into packfile and progress text,
+// failing on a band-3 fatal error.
 func demuxGitSideband(t *testing.T, stream []byte) (pack []byte, progress string) {
 	t.Helper()
 	pack, progress, err := tryDemuxGitSideband(stream)
@@ -129,9 +122,8 @@ func tryDemuxGitSideband(stream []byte) (pack []byte, progress string, err error
 	return packOut.Bytes(), progressOut.String(), err
 }
 
-// scanGitPack walks a packfile, verifying its trailing checksum, and reports
-// how many objects of each type it carries and which object ids its reference
-// deltas are based on.
+// scanGitPack verifies the trailing checksum and reports per-type object counts
+// and the bases of its reference deltas.
 func scanGitPack(t *testing.T, pack []byte) (counts map[plumbing.ObjectType]int, deltaBases []plumbing.Hash) {
 	t.Helper()
 	scanner := packfile.NewScanner(bytes.NewReader(pack))
@@ -187,7 +179,6 @@ func gitSeedNth(t *testing.T, srv *isolatedServer, repoName string, back int) pl
 	return hash
 }
 
-// gitTreeOfCommit reads the tree a commit points at.
 func gitTreeOfCommit(stor storer.Storer, hash plumbing.Hash) (*object.Tree, error) {
 	commit, err := object.GetCommit(stor, hash)
 	if err != nil {
@@ -196,8 +187,7 @@ func gitTreeOfCommit(stor storer.Storer, hash plumbing.Hash) (*object.Tree, erro
 	return commit.Tree()
 }
 
-// seedGitAnnotatedTag writes an annotated tag object and the reference that
-// names it. The tagger time is fixed because the wall-clock gate forbids
+// seedGitAnnotatedTag fixes the tagger time because the wall-clock gate forbids
 // reading the real clock from a test.
 func seedGitAnnotatedTag(t *testing.T, srv *isolatedServer, repoName, tagName string, target plumbing.Hash) plumbing.Hash {
 	t.Helper()
@@ -391,7 +381,7 @@ func TestGitUploadPackThinPackDeltasAgainstClientObjects(t *testing.T) {
 }
 
 // seedGitThinPackRepo builds a two-commit history whose file is large enough
-// for a delta to beat sending it whole, and reports both commits.
+// for a delta to beat sending it whole.
 func seedGitThinPackRepo(t *testing.T, srv *isolatedServer, name string) (older, newer plumbing.Hash) {
 	t.Helper()
 	admin := srv.store.LookupUserByLogin("admin")
@@ -419,7 +409,6 @@ func seedGitThinPackRepo(t *testing.T, srv *isolatedServer, name string) (older,
 	return older, newer
 }
 
-// gitBlobAtPath reports the blob a commit's tree holds at a path.
 func gitBlobAtPath(t *testing.T, srv *isolatedServer, repoName string, commit plumbing.Hash, path string) plumbing.Hash {
 	t.Helper()
 	stor := srv.store.GetGitStorage("admin", repoName)
@@ -510,10 +499,9 @@ func TestGitUploadPackRefusesAnUnknownFilter(t *testing.T) {
 	seedGitShallowRepo(t, srv.Server, name)
 	tip := gitSeedTip(t, srv, name)
 
-	// The spec has to be one the server does not recognise at all. sparse:oid=
-	// is deliberately not used here: it is now a supported filter, so a bad oid
-	// is a *resolution* failure with its own message rather than an unknown
-	// spec, and asserting on it here would stop testing this refusal.
+	// Use a spec the server does not recognise at all; sparse:oid= is now a
+	// supported filter, so a bad oid is a resolution failure with its own
+	// message, not the unknown-spec refusal under test.
 	script := (&gitPktScript{}).
 		linef("want %s\x00filter agent=test\n", tip).
 		linef("filter nosuchfilter:7\n").
@@ -807,8 +795,6 @@ func TestGitProtocolV2UnbornHeadOnAnEmptyRepository(t *testing.T) {
 	}
 }
 
-// gitV2Advertisement fetches the protocol v2 capability advertisement from
-// info/refs.
 func gitV2Advertisement(t *testing.T, srv *isolatedServer, repoName string) []string {
 	t.Helper()
 	request, err := http.NewRequest(http.MethodGet, srv.baseURL+"/admin/"+repoName+".git/info/refs?service=git-upload-pack", nil)
@@ -832,7 +818,6 @@ func gitV2Advertisement(t *testing.T, srv *isolatedServer, repoName string) []st
 	return gitPktLines(t, body)
 }
 
-// gitPktLines decodes a reply that is nothing but pkt-lines.
 func gitPktLines(t *testing.T, body []byte) []string {
 	t.Helper()
 	pkt := newGitPktReader(bufio.NewReader(bytes.NewReader(body)))

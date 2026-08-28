@@ -342,7 +342,6 @@ func TestSponsorsBrowserSurfaceLifecycle(t *testing.T) {
 	t.Parallel()
 	f := newSponsorsFixture(t)
 
-	// The sponsor opens a recurring sponsorship.
 	resp := f.post(t, "/ui-data/sponsors/"+f.maintainer.Login+"/sponsorship", f.sponsorToken, map[string]interface{}{
 		"tier_id": f.fiveDollarTier.ID, "is_recurring": true, "privacy_level": "PUBLIC",
 	})
@@ -351,7 +350,6 @@ func TestSponsorsBrowserSurfaceLifecycle(t *testing.T) {
 		t.Fatalf("created sponsorship = %v", created)
 	}
 
-	// The listing page shows the viewer's own sponsorship back to them.
 	resp = f.get(t, "/ui-data/sponsors/"+f.maintainer.Login, f.sponsorToken)
 	page := decodeJSONWithStatus(t, resp, http.StatusOK)
 	if page["viewer_sponsorship"] == nil {
@@ -365,7 +363,7 @@ func TestSponsorsBrowserSurfaceLifecycle(t *testing.T) {
 		t.Fatal("the maintainer's contact email leaked to a sponsor")
 	}
 
-	// The maintainer's own view carries the payout configuration.
+	// The maintainer's own view carries the payout configuration a sponsor's does not.
 	resp = f.get(t, "/ui-data/sponsors/"+f.maintainer.Login, f.maintainerToken)
 	page = decodeJSONWithStatus(t, resp, http.StatusOK)
 	listing = page["listing"].(map[string]interface{})
@@ -376,7 +374,6 @@ func TestSponsorsBrowserSurfaceLifecycle(t *testing.T) {
 		t.Fatalf("estimated next payout = %v, want 500", listing["estimated_next_payout_in_cents"])
 	}
 
-	// Upgrading the tier through the browser surface.
 	resp = f.patch(t, "/ui-data/sponsors/"+f.maintainer.Login+"/sponsorship", f.sponsorToken, map[string]interface{}{
 		"tier_id": f.tenDollarTier.ID,
 	})
@@ -428,7 +425,6 @@ func TestSponsorsListingManagementIsMaintainerOnly(t *testing.T) {
 		t.Fatal("an outsider rewrote the maintainer's Sponsors profile")
 	}
 
-	// The maintainer themselves may do all of it.
 	resp := f.post(t, "/ui-data/sponsors/"+f.maintainer.Login+"/tiers", f.maintainerToken, map[string]interface{}{
 		"amount_in_cents": 100, "description": "coffee", "publish": true,
 	})

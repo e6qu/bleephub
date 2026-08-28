@@ -65,7 +65,6 @@ func rawBody(t *testing.T, resp *http.Response) string {
 	return string(raw)
 }
 
-// beginEnrollment starts an enrolment and returns the provisioning secret.
 func beginEnrollment(t *testing.T, s *isolatedServer, token string) string {
 	t.Helper()
 	body := decodeBody(t, s.post(t, "/ui-data/user/two-factor/enrollment", token, nil), http.StatusCreated)

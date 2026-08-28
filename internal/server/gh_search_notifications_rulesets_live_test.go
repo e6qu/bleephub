@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// Live-server shape tests for the new Search, Notifications, and Rulesets
-// surfaces. These travel through the shared TestMain server so the OpenAPI
-// response-shape validator observes them.
+// Live-server shape tests for Search, Notifications, and Rulesets: they travel
+// through the shared TestMain server so the OpenAPI response-shape validator
+// observes them.
 
 func TestLiveSearch_IssuesAndReposAndUsers(t *testing.T) {
 	t.Parallel()

@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// decodeDeploymentListing asserts a 200 and decodes the deployments listing.
 func decodeDeploymentListing(t *testing.T, resp *http.Response) []map[string]interface{} {
 	t.Helper()
 	defer resp.Body.Close()

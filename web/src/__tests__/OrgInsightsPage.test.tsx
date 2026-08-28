@@ -41,7 +41,7 @@ describe("OrgInsightsPage", () => {
     });
     renderPage();
 
-    expect(await screen.findByText("1,234")).toBeInTheDocument(); // total requests
+    expect(await screen.findByText("1,234")).toBeInTheDocument();
     expect(screen.getByText("Total API requests")).toBeInTheDocument();
     expect(await screen.findByText("ci-bot")).toBeInTheDocument();
     // Highest request-count subject sorts first.

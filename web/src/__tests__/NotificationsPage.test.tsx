@@ -118,12 +118,10 @@ describe("NotificationsPage", () => {
     await waitFor(() => expect(screen.getByText("Other issue")).toBeInTheDocument());
     expect(screen.getByText("Issue title")).toBeInTheDocument();
 
-    // Filter by repository → only octo/other's thread remains.
     fireEvent.change(screen.getByLabelText("Filter by repository"), { target: { value: "octo/other" } });
     expect(screen.getByText("Other issue")).toBeInTheDocument();
     expect(screen.queryByText("Issue title")).toBeNull();
 
-    // Reset repo, filter by reason → only the 'subscribed' thread remains.
     fireEvent.change(screen.getByLabelText("Filter by repository"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Filter by reason"), { target: { value: "subscribed" } });
     expect(screen.getByText("Issue title")).toBeInTheDocument();
@@ -148,13 +146,9 @@ describe("NotificationsPage", () => {
     await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "By repository" }));
-    // Grouped view: the flat table is gone and two single-thread groups render
-    // (each header carries a "(1)" count).
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.getAllByText("(1)")).toHaveLength(2);
-    // The toggle reflects the active mode.
     expect(screen.getByRole("button", { name: "By repository" })).toHaveAttribute("aria-pressed", "true");
-    // Thread links still resolve under their repo group.
     expect(screen.getByRole("link", { name: "Issue title" })).toHaveAttribute(
       "href",
       "/ui/admin/repo/issues/1",
@@ -230,7 +224,6 @@ describe("NotificationsPage", () => {
     mockEndpoints();
     renderPage();
     await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
-    // Grouped by default: no flat table, and the toggle reflects it.
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.getByRole("button", { name: "By repository" })).toHaveAttribute("aria-pressed", "true");
 
@@ -253,7 +246,6 @@ describe("NotificationsPage", () => {
       );
     });
 
-    // The Saved tab lists the /ui-data saved view.
     fireEvent.click(screen.getByRole("tab", { name: "Saved" }));
     await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
     expect(
@@ -285,8 +277,7 @@ describe("NotificationsPage", () => {
       mockFetch.mock.calls.some(([u]) => String(u).startsWith("/ui-data/notifications?view=done")),
     ).toBe(true);
     await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
-    // No Done/Mark read/Subscription actions in the review surface; Saved
-    // toggling stays available.
+    // Done view is read-only: no Done/Mark read/Subscription actions, but Save stays.
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Mark read" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Subscription" })).toBeNull();
