@@ -135,7 +135,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- User keys ---
+// User keys
 
 func (s *Server) handleListUserKeys(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -527,7 +527,7 @@ func (s *Server) handleUnfollowUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Actions OIDC ---
+// Actions OIDC
 
 func (s *Server) handleActionsOIDCToken(w http.ResponseWriter, r *http.Request) {
 	audience := r.URL.Query().Get("audience")
@@ -840,7 +840,7 @@ func signRS256JWT(payload map[string]interface{}, key *rsa.PrivateKey, kid strin
 	return signing + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-// --- Pages ---
+// Pages
 
 func (s *Server) handlePagesGet(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
@@ -1176,7 +1176,7 @@ func (s *Server) handlePagesGetBuild(w http.ResponseWriter, r *http.Request) {
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
-// --- Orgs depth ---
+// Orgs depth
 
 func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 	orgName := r.PathValue("org")
@@ -1425,7 +1425,7 @@ func (s *Server) handleMarketplacePlanAccounts(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, out)
 }
 
-// --- Helpers ---
+// Helpers
 
 func userKeyToJSON(k *store.UserKey, baseURL string) map[string]interface{} {
 	return map[string]interface{}{

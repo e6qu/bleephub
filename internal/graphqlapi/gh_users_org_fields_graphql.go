@@ -22,7 +22,7 @@ import (
 func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 	userType := types.user
 
-	// --- truthful program-membership constants ----------------------------
+	// truthful program-membership constants
 	falseBool := func() *graphql.Field {
 		return &graphql.Field{
 			Type:    graphql.NewNonNull(graphql.Boolean),
@@ -71,7 +71,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return []interface{}{}, nil },
 	})
 
-	// --- status -----------------------------------------------------------
+	// status
 	userType.AddFieldConfig("status", &graphql.Field{
 		Type: s.gqlUserStatusType(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -83,7 +83,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- hovercard --------------------------------------------------------
+	// hovercard
 	userType.AddFieldConfig("hovercard", &graphql.Field{
 		Type: graphql.NewNonNull(s.sharedHovercardType()),
 		Args: graphql.FieldConfigArgument{
@@ -99,7 +99,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- lists ------------------------------------------------------------
+	// lists
 	userType.AddFieldConfig("lists", &graphql.Field{
 		Type: graphql.NewNonNull(s.accountConnectionType(types, "UserList", s.gqlUserListType(), false, nil)),
 		Args: connectionArgs(nil),
@@ -127,7 +127,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return []interface{}{}, nil },
 	})
 
-	// --- packages ---------------------------------------------------------
+	// packages
 	userType.AddFieldConfig("packages", s.packagesField(types, func(p graphql.ResolveParams) (string, error) {
 		user, err := s.userFromSource(p.Source)
 		if err != nil {
@@ -136,7 +136,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		return user.Login, nil
 	}))
 
-	// --- starredRepositories ---------------------------------------------
+	// starredRepositories
 	// StarredRepositoryEdge carries an extra starredAt. The resolver stashes the
 	// real time on the node as `_starredAt`, falling back to the repo's createdAt.
 	starredConnection := s.accountConnectionType(types, "StarredRepository", types.repository, true, graphql.Fields{
@@ -198,7 +198,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- recentProjects ---------------------------------------------------
+	// recentProjects
 	s.addRecentProjectsField(userType, "User", func(p graphql.ResolveParams) (int, error) {
 		user, err := s.userFromSource(p.Source)
 		if err != nil {
@@ -207,7 +207,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		return user.ID, nil
 	})
 
-	// --- savedReplies -----------------------------------------------------
+	// savedReplies
 	// bleephub persists no saved replies (no route or mutation creates one), so
 	// the connection is empty. Reported as needing a SavedReply model and its
 	// create/update/delete mutations.
@@ -222,7 +222,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- contributionsCollection -----------------------------------------
+	// contributionsCollection
 	contributionsDateTime := s.graphQLStringScalar("DateTime")
 	userType.AddFieldConfig("contributionsCollection", &graphql.Field{
 		Type: graphql.NewNonNull(s.gqlContributionsCollectionType()),
@@ -248,7 +248,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- repositoryDiscussions / repositoryDiscussionComments ------------
+	// repositoryDiscussions / repositoryDiscussionComments
 	if discussionConn := s.namedObject("DiscussionConnection"); discussionConn != nil {
 		userType.AddFieldConfig("repositoryDiscussions", &graphql.Field{
 			Type: graphql.NewNonNull(discussionConn),
@@ -380,7 +380,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 	orgType := types.organization
 	dateTime := s.graphQLStringScalar("DateTime")
 
-	// --- packages ---------------------------------------------------------
+	// packages
 	orgType.AddFieldConfig("packages", s.packagesField(types, func(p graphql.ResolveParams) (string, error) {
 		org, err := s.orgFromSource(p.Source)
 		if err != nil {
@@ -389,7 +389,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		return org.Login, nil
 	}))
 
-	// --- recentProjects ---------------------------------------------------
+	// recentProjects
 	s.addRecentProjectsField(orgType, "Organization", func(p graphql.ResolveParams) (int, error) {
 		org, err := s.orgFromSource(p.Source)
 		if err != nil {
@@ -398,7 +398,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		return org.ID, nil
 	})
 
-	// --- memberStatuses ---------------------------------------------------
+	// memberStatuses
 	orgType.AddFieldConfig("memberStatuses", &graphql.Field{
 		Type: graphql.NewNonNull(s.accountConnectionType(types, "UserStatus", s.gqlUserStatusType(), false, nil)),
 		Args: connectionArgs(nil),
@@ -424,7 +424,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- issueTypes -------------------------------------------------------
+	// issueTypes
 	orgType.AddFieldConfig("issueTypes", &graphql.Field{
 		Type: s.accountConnectionType(types, "IssueType", s.graphqlTypes.issueType, false, nil),
 		Args: connectionArgs(nil),
@@ -446,7 +446,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- pinnedIssueFields ------------------------------------------------
+	// pinnedIssueFields
 	// bleephub models no per-org pinned-field ordering, so the connection is
 	// empty. (Organization.issueFields is skipped: GitHub types it as
 	// [IssueFieldCreateOrUpdateInput!], an input type in output position that
@@ -464,7 +464,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		})
 	}
 
-	// --- domains ----------------------------------------------------------
+	// domains
 	orgType.AddFieldConfig("domains", &graphql.Field{
 		Type: s.accountConnectionType(types, "VerifiableDomain", s.gqlVerifiableDomainType(), false, nil),
 		Args: connectionArgs(nil),
@@ -490,7 +490,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- enterpriseOwners -------------------------------------------------
+	// enterpriseOwners
 	ownerConnection := s.accountConnectionType(types, "OrganizationEnterpriseOwner", types.user, false, graphql.Fields{
 		"organizationRole": &graphql.Field{
 			Type: graphql.NewNonNull(s.sharedEnum("RoleInOrganization", "DIRECT_MEMBER", "OWNER", "UNAFFILIATED")),
@@ -544,7 +544,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- announcementBanner ----------------------------------------------
+	// announcementBanner
 	// bleephub records no createdAt, which AnnouncementBanner requires non-null,
 	// so the field answers null rather than fabricating a timestamp. Reported as
 	// needing a createdAt on store.EnterpriseAnnouncement.
@@ -558,7 +558,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- auditLog ---------------------------------------------------------
+	// auditLog
 	// Served from admin_audit_log, gated to owners inside
 	// organizationAuditLogConnection.
 	auditOrder := s.mutationInput("AuditLogOrder", graphql.InputObjectConfigFieldMap{
@@ -584,7 +584,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- mannequins -------------------------------------------------------
+	// mannequins
 	mannequinConnection := s.gqlConnectionType("Mannequin", s.gqlMannequinType())
 	orgType.AddFieldConfig("mannequins", &graphql.Field{
 		Type: graphql.NewNonNull(mannequinConnection),
@@ -612,7 +612,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- repositoryDiscussions / repositoryDiscussionComments ------------
+	// repositoryDiscussions / repositoryDiscussionComments
 	if discussionConn := s.namedObject("DiscussionConnection"); discussionConn != nil {
 		orgType.AddFieldConfig("repositoryDiscussions", &graphql.Field{
 			Type: graphql.NewNonNull(discussionConn),
@@ -646,7 +646,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		})
 	}
 
-	// --- innersourceVulnerabilities --------------------------------------
+	// innersourceVulnerabilities
 	// bleephub runs no cross-repository innersource scan, so the connection is
 	// empty.
 	if vulnConn := s.namedObject("SecurityVulnerabilityConnection"); vulnConn != nil {
@@ -664,7 +664,7 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 		})
 	}
 
-	// --- samlIdentityProvider --------------------------------------------
+	// samlIdentityProvider
 	// SAML is bound at the enterprise, never the organization, so the field
 	// answers null. Reported as needing an org-scoped identity-provider binding.
 	orgType.AddFieldConfig("samlIdentityProvider", &graphql.Field{

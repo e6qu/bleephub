@@ -12,7 +12,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- ACT-044: job-state GC + hot-path indexes ---
+// ACT-044: job-state GC + hot-path indexes
 
 func gcQueueTestJob(t *testing.T, s *Server, jobID, repo string) *store.Job {
 	t.Helper()

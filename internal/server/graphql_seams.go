@@ -42,7 +42,7 @@ func (s *Server) newGraphQLResolver() *graphqlapi.Resolver {
 	})
 }
 
-// --- graphqlapi.Authz ------------------------------------------------------
+// graphqlapi.Authz
 
 func (a graphqlSeams) ViewerCanReadRepo(ctx context.Context, repo *store.Repo) bool {
 	return a.s.viewerCanReadRepo(ctx, repo)
@@ -102,7 +102,7 @@ func (a graphqlSeams) CanWriteProjectV2(ctx context.Context, user *store.User, o
 	return a.s.canWriteProjectV2(ctx, user, owner)
 }
 
-// --- graphqlapi.Events -----------------------------------------------------
+// graphqlapi.Events
 
 func (a graphqlSeams) EmitWebhookEvent(repoKey, eventType, action string, payload interface{}) {
 	a.s.emitWebhookEvent(repoKey, eventType, action, payload)
@@ -162,7 +162,7 @@ func (a graphqlSeams) EmitDeploymentStatusEvent(repo *store.Repo, d *store.Deplo
 		buildDeploymentStatusEventPayload(repo, d, status, sender, a.s.publicOrigin()))
 }
 
-// --- graphqlapi.Pulls ------------------------------------------------------
+// graphqlapi.Pulls
 
 func (a graphqlSeams) PRHeadSha(repo *store.Repo, pr *store.PullRequest) string {
 	return a.s.prHeadSha(repo, pr)
@@ -214,7 +214,7 @@ func (a graphqlSeams) AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequ
 	a.s.autoRequestCodeOwners(repo, pr, sender)
 }
 
-// --- graphqlapi.Migrations --------------------------------------------------
+// graphqlapi.Migrations
 
 // StartRepositoryMigration and StartOrganizationMigration hand a recorded
 // migration to the workers that perform it. The resolver layer may not dial a
@@ -241,7 +241,7 @@ func (a graphqlSeams) RepositoryMigrationLogURL(m *store.RepositoryMigration) st
 	return a.s.externalURL + fmt.Sprintf("/ui-data/orgs/%s/migrations/repositories/%d/log", org.Login, m.ID)
 }
 
-// --- graphqlapi.Repos -------------------------------------------------------
+// graphqlapi.Repos
 
 // RenameRepository renames through the same helper PATCH /repos/{owner}/{repo}
 // uses, so full-name-embedding metadata moves either way.

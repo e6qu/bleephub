@@ -63,7 +63,7 @@ func (s *Server) registerGHDependabotRoutes() {
 		s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermWrite, s.handleSetDependabotRepositoryAccessDefaultLevel))
 }
 
-// --- alerts ---
+// alerts
 
 func (s *Server) handleListDependabotAlerts(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupSecurityReadableRepo(w, r)
@@ -243,7 +243,7 @@ func dependabotAlertToJSON(a *store.DependabotAlert, baseURL string, repo *store
 	}
 }
 
-// --- repository secrets ---
+// repository secrets
 
 func (s *Server) handleListDependabotRepoSecrets(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
@@ -353,7 +353,7 @@ func (s *Server) handleDeleteDependabotRepoSecret(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- organization secrets ---
+// organization secrets
 
 func (s *Server) resolveOrgForDependabot(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
@@ -548,7 +548,7 @@ func (s *Server) handleSetDependabotOrgSecretRepos(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- shared helpers ---
+// shared helpers
 
 func (s *Server) validateDependabotSecretKeyID(w http.ResponseWriter, keyID string) bool {
 	if keyID == "" {
@@ -629,7 +629,7 @@ func dependabotMinimalRepoJSON(repo *store.Repo, st *store.Store, baseURL string
 	return out
 }
 
-// --- org alerts and repository access ---
+// org alerts and repository access
 
 func (s *Server) handleListDependabotOrgAlerts(w http.ResponseWriter, r *http.Request) {
 	org, ok := s.resolveOrgForDependabot(w, r)

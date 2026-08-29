@@ -109,7 +109,7 @@ func (s *Server) handleCodespacePermissionsCheck(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, map[string]interface{}{"accepted": true})
 }
 
-// --- auth helpers ---
+// auth helpers
 
 func (s *Server) requireOrgAdminOrCodespaceScope(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +149,7 @@ func (s *Server) resolveCodespace(w http.ResponseWriter, r *http.Request, ownerL
 	return cs
 }
 
-// --- user codespace handlers ---
+// user codespace handlers
 
 func (s *Server) handleListUserCodespaces(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -297,7 +297,7 @@ func (s *Server) handleStopUserCodespace(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, s.codespaceToJSON(cs, s.baseURL(r)))
 }
 
-// --- repo codespace handlers ---
+// repo codespace handlers
 
 func (s *Server) handleListRepoCodespaces(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
@@ -349,7 +349,7 @@ func (s *Server) handleCreateRepoCodespace(w http.ResponseWriter, r *http.Reques
 	writeJSONCreated(w, jsonStringField(csJSON, "url"), csJSON)
 }
 
-// --- machines ---
+// machines
 
 // codespaceMachineJSON renders one catalog machine. bleephub has no prebuild
 // pipeline, so prebuild_availability is "none".
@@ -415,7 +415,7 @@ func (s *Server) handleUserCodespaceThreeSegGetDispatch(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, s.codespaceExportJSON(cs, cs.LatestExport, s.baseURL(r)))
 }
 
-// --- exports + publish ---
+// exports + publish
 
 func (s *Server) codespaceExportJSON(live *store.Codespace, liveExport *store.CodespaceExport, baseURL string) map[string]interface{} {
 	cs, export := s.snapshotCodespaceExport(live, liveExport)
@@ -488,7 +488,7 @@ func (s *Server) handlePublishUserCodespace(w http.ResponseWriter, r *http.Reque
 	writeJSONCreated(w, jsonStringField(out, "url"), out)
 }
 
-// --- pull-request codespaces ---
+// pull-request codespaces
 
 func (s *Server) handleCreatePullRequestCodespace(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -529,7 +529,7 @@ func (s *Server) handleCreatePullRequestCodespace(w http.ResponseWriter, r *http
 	writeJSONCreated(w, jsonStringField(prJSON, "url"), prJSON)
 }
 
-// --- user-secret selected repositories ---
+// user-secret selected repositories
 
 func (s *Server) handleListUserCodespaceSecretRepos(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -600,7 +600,7 @@ func (s *Server) handleRemoveUserCodespaceSecretRepo(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- organization-member codespace handlers ---
+// organization-member codespace handlers
 
 // resolveOrgMemberForCodespaces resolves {org}/{username}: the user must hold an
 // active membership. The caller was already vetted as an org owner.
@@ -693,7 +693,7 @@ func (s *Server) handleStopOrgMemberCodespace(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, s.codespaceToJSON(cs, s.baseURL(r)))
 }
 
-// --- secrets handlers ---
+// secrets handlers
 
 func (s *Server) handleListUserCodespaceSecrets(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -900,7 +900,7 @@ func (s *Server) readSealedCodespaceSecret(w http.ResponseWriter, r *http.Reques
 	return s.decryptSealedSecret(w, req.EncryptedValue, req.KeyID)
 }
 
-// --- lifecycle helpers ---
+// lifecycle helpers
 
 func (s *Server) startCodespace(cs *store.Codespace) error {
 	if cs.ContainerID == "" {
@@ -936,7 +936,7 @@ func (s *Server) stopCodespace(cs *store.Codespace) error {
 	return nil
 }
 
-// --- request/response shapes ---
+// request/response shapes
 
 type codespaceCreateRequest struct {
 	RepositoryID           int                   `json:"repository_id"`

@@ -23,7 +23,7 @@ func (s *Server) registerGHPullsUIDataRoutes() {
 	s.route("POST /ui-data/repos/{owner}/{repo}/pulls/{number}/review-comments/{comment_id}/apply-suggestion", s.handleUIApplySuggestion)
 }
 
-// --- whitespace-ignoring PR files ---
+// whitespace-ignoring PR files
 
 func (s *Server) handleUIPullFiles(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
@@ -398,7 +398,7 @@ func hunkRange(start, length int) string {
 	return strconv.Itoa(start) + "," + strconv.Itoa(length)
 }
 
-// --- apply suggestion ---
+// apply suggestion
 
 // firstSuggestionBlock extracts the body of the first ```suggestion fence;
 // ok=false when there is no terminated fence.

@@ -25,7 +25,7 @@ func (s *Resolver) addAccountActionsFields() {
 	s.addReleaseAccountFields()
 }
 
-// --- Commit ----------------------------------------------------------------
+// Commit
 
 func (s *Resolver) addCommitAccountFields() {
 	commitType := s.graphqlTypes.commit
@@ -74,7 +74,7 @@ func commitStringSourceHTML(key string) graphql.FieldResolveFn {
 	}
 }
 
-// --- StatusContext ---------------------------------------------------------
+// StatusContext
 
 func (s *Resolver) addStatusContextFields() {
 	statusContextType := s.graphqlTypes.statusContext
@@ -144,7 +144,7 @@ func statusContextSourceField(key string) graphql.FieldResolveFn {
 	}
 }
 
-// --- StatusCheckRollup -----------------------------------------------------
+// StatusCheckRollup
 
 func (s *Resolver) addStatusCheckRollupFields() {
 	rollupType := s.graphqlTypes.statusCheckRollup
@@ -212,7 +212,7 @@ func (s *Resolver) commitSourceForRepoSHA(ctx context.Context, repoFullName, sha
 	return gitCommitSource(commit, s.store, repo.FullName)
 }
 
-// --- Release ---------------------------------------------------------------
+// Release
 
 func (s *Resolver) addReleaseAccountFields() {
 	releaseType := s.graphqlTypes.release

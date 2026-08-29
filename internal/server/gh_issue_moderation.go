@@ -22,7 +22,7 @@ var validLockReasons = map[string]bool{
 	"spam":       true,
 }
 
-// --- Comment edit / delete (Issue + PR conversation comments) ---
+// Comment edit / delete (Issue + PR conversation comments)
 
 func (s *Server) handleUpdateIssueComment(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -167,7 +167,7 @@ func commentParentNumber(st *store.Store, c *store.Comment) int {
 	return 0
 }
 
-// --- Issue / PR lock + unlock ---
+// Issue / PR lock + unlock
 
 func (s *Server) handleLockIssue(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())

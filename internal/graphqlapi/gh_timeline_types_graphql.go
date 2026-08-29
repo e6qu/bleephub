@@ -180,7 +180,7 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 		},
 	})
 
-	// --- the event object types -------------------------------------------
+	// the event object types
 	//
 	// declare() adds id/createdAt/actor, registers the type for union and Node
 	// dispatch, and returns it. `intent`/`rationale` describe a Copilot-suggested
@@ -332,7 +332,7 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 		"wasAutomated": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 	})
 
-	// --- pull-request-only members ----------------------------------------
+	// pull-request-only members
 	declare("MergedEvent", nodeAndURL, withLocatable(graphql.Fields{
 		"commit":       &graphql.Field{Type: s.graphqlTypes.commit},
 		"mergeRef":     &graphql.Field{Type: s.graphqlTypes.ref},
@@ -387,7 +387,7 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 		"pullRequest":     pullRequestNonNull,
 	})
 
-	// --- the unions and their connections ---------------------------------
+	// the unions and their connections
 	reg.issueItemTypeOf = issueTimelineItemTypes()
 	reg.pullItemTypeOf = pullRequestTimelineItemTypes()
 	reg.issueMemberSet = map[string]bool{}

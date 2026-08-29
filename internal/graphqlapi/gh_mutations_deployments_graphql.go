@@ -108,7 +108,7 @@ func (s *Resolver) addDeploymentsMutationsToSchema(mutationType *graphql.Object)
 	})
 	s.graphqlTypes.pinnedEnvironment = pinnedEnvironmentType
 
-	// --- deployment reviews ------------------------------------------------
+	// deployment reviews
 
 	reviewInput := func(name string) *graphql.InputObject {
 		return s.mutationInput(name, graphql.InputObjectConfigFieldMap{
@@ -194,7 +194,7 @@ func (s *Resolver) addDeploymentsMutationsToSchema(mutationType *graphql.Object)
 		Resolve: resolveReview("rejected"),
 	})
 
-	// --- deployments -------------------------------------------------------
+	// deployments
 
 	s.registerMutation(mutationType, "createDeployment", &graphql.Field{
 		Type: s.mutationPayload("CreateDeploymentPayload", graphql.Fields{
@@ -342,7 +342,7 @@ func (s *Resolver) addDeploymentsMutationsToSchema(mutationType *graphql.Object)
 		},
 	})
 
-	// --- environments ------------------------------------------------------
+	// environments
 
 	s.registerMutation(mutationType, "createEnvironment", &graphql.Field{
 		Type: s.mutationPayload("CreateEnvironmentPayload", graphql.Fields{

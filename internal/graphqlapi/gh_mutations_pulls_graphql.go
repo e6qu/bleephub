@@ -37,7 +37,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 	userEdge := s.gqlUserEdgeType(s.graphqlTypes.accountSurface)
 	diffSide := s.sharedEnum("DiffSide", "LEFT", "RIGHT")
 
-	// --- review comments and threads ---------------------------------------
+	// review comments and threads
 
 	s.registerMutation(mutationType, "addPullRequestReviewComment", &graphql.Field{
 		Type: s.mutationPayload("AddPullRequestReviewCommentPayload", graphql.Fields{
@@ -121,7 +121,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 		Resolve: s.resolveDeletePullRequestReviewComment,
 	})
 
-	// --- reviews -------------------------------------------------------------
+	// reviews
 
 	s.registerMutation(mutationType, "updatePullRequestReview", &graphql.Field{
 		Type: s.mutationPayload("UpdatePullRequestReviewPayload", graphql.Fields{
@@ -148,7 +148,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 		Resolve: s.resolveDeletePullRequestReview,
 	})
 
-	// --- reviewer requests ---------------------------------------------------
+	// reviewer requests
 
 	s.registerMutation(mutationType, "requestReviews", &graphql.Field{
 		Type: s.mutationPayload("RequestReviewsPayload", graphql.Fields{
@@ -190,7 +190,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 		},
 	})
 
-	// --- the reviewer's own diff state ---------------------------------------
+	// the reviewer's own diff state
 
 	viewedFile := func(name, payloadName, inputName string, viewed bool) {
 		s.registerMutation(mutationType, name, &graphql.Field{
@@ -211,7 +211,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 	viewedFile("markFileAsViewed", "MarkFileAsViewedPayload", "MarkFileAsViewedInput", true)
 	viewedFile("unmarkFileAsViewed", "UnmarkFileAsViewedPayload", "UnmarkFileAsViewedInput", false)
 
-	// --- branch state --------------------------------------------------------
+	// branch state
 
 	s.registerMutation(mutationType, "updatePullRequestBranch", &graphql.Field{
 		Type: s.mutationPayload("UpdatePullRequestBranchPayload", graphql.Fields{
@@ -245,7 +245,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 	archive("archivePullRequest", "ArchivePullRequestPayload", "ArchivePullRequestInput", true)
 	archive("unarchivePullRequest", "UnarchivePullRequestPayload", "UnarchivePullRequestInput", false)
 
-	// --- the merge queue -----------------------------------------------------
+	// the merge queue
 
 	mergeQueueEntryType := s.gqlMergeQueueEntryType()
 
@@ -275,7 +275,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 		Resolve: s.resolveDequeuePullRequest,
 	})
 
-	// --- the creation-cap bypass list ----------------------------------------
+	// the creation-cap bypass list
 
 	bypass := func(name, payloadName, inputName string, add bool) {
 		s.registerMutation(mutationType, name, &graphql.Field{
@@ -298,7 +298,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 	bypass("removePullRequestCreationCapBypassUsers", "RemovePullRequestCreationCapBypassUsersPayload",
 		"RemovePullRequestCreationCapBypassUsersInput", false)
 
-	// --- team review assignment ----------------------------------------------
+	// team review assignment
 
 	s.registerMutation(mutationType, "updateTeamReviewAssignment", &graphql.Field{
 		Type: s.mutationPayload("UpdateTeamReviewAssignmentPayload", graphql.Fields{
@@ -324,7 +324,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 	})
 }
 
-// --- merge queue types --------------------------------------------------------
+// merge queue types
 
 func (s *Resolver) gqlMergeQueueType() *graphql.Object {
 	uri := s.graphQLStringScalar("URI")
@@ -498,7 +498,7 @@ func (s *Resolver) mergeQueueEntryToGQL(repo *store.Repo, pr *store.PullRequest,
 	return entry
 }
 
-// --- review comment and thread resolvers ---------------------------------------
+// review comment and thread resolvers
 
 func (s *Resolver) resolveAddPullRequestReviewComment(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -675,7 +675,7 @@ func (s *Resolver) resolveDeletePullRequestReviewComment(p graphql.ResolveParams
 	}, nil
 }
 
-// --- review resolvers -----------------------------------------------------------
+// review resolvers
 
 func (s *Resolver) resolveUpdatePullRequestReview(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -718,7 +718,7 @@ func (s *Resolver) resolveDeletePullRequestReview(p graphql.ResolveParams) (inte
 	return map[string]interface{}{"pullRequestReview": optionalObject(rendered)}, nil
 }
 
-// --- reviewer requests -----------------------------------------------------------
+// reviewer requests
 
 // resolveRequestReviews backs requestReviews and requestReviewsByLogin.
 // `union: false` (default) replaces the requested set, `union: true` adds to it,
@@ -837,7 +837,7 @@ func (s *Resolver) teamByNodeID(nodeID string) *store.Team {
 	return nil
 }
 
-// --- viewed files, branch state, archival ------------------------------------------
+// viewed files, branch state, archival
 
 func (s *Resolver) resolveFileViewed(p graphql.ResolveParams, viewed bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -899,7 +899,7 @@ func (s *Resolver) resolvePullRequestArchival(p graphql.ResolveParams, archived 
 	return map[string]interface{}{"pullRequest": optionalObject(pullRequestToGQL(updated, s.store))}, nil
 }
 
-// --- merge queue resolvers ----------------------------------------------------------
+// merge queue resolvers
 
 func (s *Resolver) resolveEnqueuePullRequest(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -941,7 +941,7 @@ func (s *Resolver) resolveDequeuePullRequest(p graphql.ResolveParams) (interface
 	}, nil
 }
 
-// --- the creation-cap bypass list ------------------------------------------------------
+// the creation-cap bypass list
 
 func (s *Resolver) resolveCreationCapBypass(p graphql.ResolveParams, add bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -965,7 +965,7 @@ func (s *Resolver) resolveCreationCapBypass(p graphql.ResolveParams, add bool) (
 	return map[string]interface{}{"repository": optionalObject(repoToGraphQL(s.store, repo))}, nil
 }
 
-// --- team review assignment ------------------------------------------------------------
+// team review assignment
 
 func (s *Resolver) resolveUpdateTeamReviewAssignment(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -1045,7 +1045,7 @@ func (s *Resolver) teamToGQL(team *store.Team) map[string]interface{} {
 	return out
 }
 
-// --- shared helpers ---------------------------------------------------------------------
+// shared helpers
 
 // pullRequestFromInput resolves the pull request a mutation input names, as a
 // detached snapshot.

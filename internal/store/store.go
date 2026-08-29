@@ -835,7 +835,7 @@ type Store struct {
 	NextRepoActivity int                           // next RepoActivity ID
 	RepoCloneTraffic map[string]*RepoTrafficBucket // "repoID:YYYY-MM-DD" → clone counters
 
-	// --- Actions hot-path indexes (actions_indexes.go) ---
+	// Actions hot-path indexes (actions_indexes.go)
 	//
 	// Unexported on purpose: the replica-refresh field copy skips unexported
 	// fields, so a snapshot swap can never smuggle stale pointers through them.

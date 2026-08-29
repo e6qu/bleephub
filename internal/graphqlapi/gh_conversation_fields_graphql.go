@@ -16,7 +16,7 @@ import (
 // small metadata connection types (RepositoryTopic, Language, Reactor).
 // Companion to gh_issue_fields_graphql.go.
 
-// --- shared render helpers -------------------------------------------------
+// shared render helpers
 
 // repoNodeSource renders a repository as its GraphQL source map.
 func (s *Resolver) repoNodeSource(repoID int) map[string]interface{} {
@@ -201,7 +201,7 @@ func (s *Resolver) reactorConnectionFor(parentType string, parentID int, restCon
 	}
 }
 
-// --- Milestone -------------------------------------------------------------
+// Milestone
 
 func (s *Resolver) enrichMilestoneType() {
 	milestoneType := s.graphqlTypes.milestone
@@ -376,7 +376,7 @@ func (s *Resolver) milestonePullRequestConnection(repoID, msID int, args map[str
 	return paginateGQLMaps(nodes, args)
 }
 
-// --- Label -----------------------------------------------------------------
+// Label
 
 func (s *Resolver) enrichLabelType() {
 	labelType := s.graphqlTypes.labelType
@@ -477,7 +477,7 @@ func (s *Resolver) labelPullRequestConnection(repoID, labelID int, args map[stri
 	return paginateGQLMaps(nodes, args)
 }
 
-// --- Discussion ------------------------------------------------------------
+// Discussion
 
 func (s *Resolver) enrichDiscussionType() {
 	discussionType := s.graphqlTypes.discussion
@@ -616,7 +616,7 @@ func (s *Resolver) discussionAnswerComment(discussionID int) *store.DiscussionCo
 	return nil
 }
 
-// --- DiscussionComment -----------------------------------------------------
+// DiscussionComment
 
 // discussionCommentExtraFields returns the remaining DiscussionComment fields.
 // The type is built from a FieldsThunk that AddFieldConfig cannot extend, so

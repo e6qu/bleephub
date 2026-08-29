@@ -368,7 +368,7 @@ func base64url(data []byte) string {
 	return strings.TrimRight(s, "=")
 }
 
-// --- runner protocol credentials ---
+// runner protocol credentials
 //
 // Three credentials carry runner identity, all signed with one process key: the
 // registration token config.sh presents, the agent client id the client_assertion

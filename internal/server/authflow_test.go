@@ -16,7 +16,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- shared fixtures ---
+// shared fixtures
 
 var authflowSeq int64
 
@@ -46,7 +46,7 @@ func withUser(r *http.Request, user *store.User) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ctxUser, user))
 }
 
-// --- redirect_uri must match the client's registration ---
+// redirect_uri must match the client's registration
 
 func TestOAuthAuthorizeRefusesUnregisteredRedirectURI(t *testing.T) {
 	s := newTestServer()
@@ -113,7 +113,7 @@ func TestOAuthApproveRefusesUnregisteredRedirectURI(t *testing.T) {
 	}
 }
 
-// --- a GitHub App's registered callback ---
+// a GitHub App's registered callback
 
 // registerGitHubAppViaManifest submits the app manifest the way the browser
 // form does and returns the created app. callbackURLs is passed through
@@ -306,7 +306,7 @@ func TestGitHubAppCallbackSurvivesAReload(t *testing.T) {
 	}
 }
 
-// --- the consent token is not the session cookie ---
+// the consent token is not the session cookie
 
 func TestOAuthConsentTokenIsNotTheSessionCookie(t *testing.T) {
 	s := newTestServer()
@@ -439,7 +439,7 @@ func TestTokenLoginExchangesUserCredentialForHttpOnlySession(t *testing.T) {
 	}
 }
 
-// --- repository secrets: resolved scope, administrator only ---
+// repository secrets: resolved scope, administrator only
 
 func TestRepositorySecretWriteRefusesAStranger(t *testing.T) {
 	s := newTestServer()
@@ -561,7 +561,7 @@ func TestRepositorySecretHandlersKeyOffTheResolvedRepository(t *testing.T) {
 	}
 }
 
-// --- destructive ref writes ---
+// destructive ref writes
 
 // authflowProtectedRepo creates an auto-initialised repository on the shared
 // harness, protects main, and returns the repository name plus a pushing
@@ -643,7 +643,7 @@ func TestProtectedBranchAllowanceIsHonoured(t *testing.T) {
 	requireStatus(t, s.delete(t, "/api/v3/repos/admin/"+repoName+"/git/refs/heads/main", pushToken), 204)
 }
 
-// --- branch protection is administrator-only ---
+// branch protection is administrator-only
 
 func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 	t.Parallel()
@@ -694,7 +694,7 @@ func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 	requireStatus(t, s.get(t, base, defaultToken), 200)
 }
 
-// --- source import must not fetch private address space ---
+// source import must not fetch private address space
 
 func TestSourceImportRefusesNonPublicSources(t *testing.T) {
 	s := newTestServer()
@@ -773,7 +773,7 @@ func TestLoopbackDeliveryPermittedNonPublicRefused(t *testing.T) {
 	}
 }
 
-// --- the invented per-username codespaces route is gone ---
+// the invented per-username codespaces route is gone
 
 func TestUserCodespacesByLoginRouteIsNotRegistered(t *testing.T) {
 	t.Parallel()
@@ -789,7 +789,7 @@ func TestUserCodespacesByLoginRouteIsNotRegistered(t *testing.T) {
 	}
 }
 
-// --- gist sub-resources honour visibility ---
+// gist sub-resources honour visibility
 
 func TestSecretGistSubResourcesRefuseAnonymousCallers(t *testing.T) {
 	t.Parallel()

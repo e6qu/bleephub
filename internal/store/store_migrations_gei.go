@@ -173,7 +173,7 @@ func OrgMigratorRoleKey(orgID int, actorType, actor string) string {
 	return strconv.Itoa(orgID) + "/" + strings.ToUpper(actorType) + "/" + strings.ToLower(actor)
 }
 
-// --- clones (STORE-021) ---
+// clones (STORE-021)
 
 func cloneMigrationSource(src *MigrationSource) *MigrationSource {
 	if src == nil {
@@ -218,7 +218,7 @@ func cloneOrgMigratorRole(r *OrgMigratorRole) *OrgMigratorRole {
 	return &c
 }
 
-// --- persistence ---
+// persistence
 
 func (st *Store) persistMigrationSourceLocked(src *MigrationSource) {
 	if st.Persist != nil {
@@ -244,7 +244,7 @@ func (st *Store) persistOrgMigratorRoleLocked(r *OrgMigratorRole) {
 	}
 }
 
-// --- migration sources ---
+// migration sources
 
 // CreateMigrationSource records a place to migrate from and returns a detached
 // snapshot.
@@ -305,7 +305,7 @@ func (st *Store) ListMigrationSources(ownerOrgID int) []*MigrationSource {
 	return out
 }
 
-// --- repository migrations ---
+// repository migrations
 
 // NewRepositoryMigration is the create input for a repository migration.
 type NewRepositoryMigration struct {
@@ -550,7 +550,7 @@ func (st *Store) RequeueRepositoryMigration(id int) bool {
 	return true
 }
 
-// --- organization migrations ---
+// organization migrations
 
 // CreateOrganizationMigration queues an organization migration and returns a
 // detached snapshot.
@@ -673,7 +673,7 @@ func (st *Store) RequeueOrganizationMigration(id int) bool {
 	return true
 }
 
-// --- the organization migrator role ---
+// the organization migrator role
 
 // SetOrgMigratorRole grants or revokes the migrator role for one actor on one
 // organization. It reports whether the grant set changed.
@@ -770,7 +770,7 @@ func (st *Store) UserHoldsOrgMigratorRole(orgID int, user *User) bool {
 	return false
 }
 
-// --- persistence load ---
+// persistence load
 
 // loadGEIMigrationBuckets restores the GEI layer during construction (no lock:
 // the store is not yet reachable).

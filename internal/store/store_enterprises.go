@@ -316,7 +316,7 @@ func (st *Store) persistEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityCo
 	}
 }
 
-// --- enterprise teams ---
+// enterprise teams
 
 // CreateEnterpriseTeam creates an enterprise team. Returns nil when a team
 // with the same slug already exists.
@@ -629,7 +629,7 @@ func (st *Store) ListEnterpriseTeamOrgs(t *EnterpriseTeam) []*Org {
 	return snapshotOrgs(out)
 }
 
-// --- enterprise code security configurations ---
+// enterprise code security configurations
 
 // CreateEnterpriseCodeSecurityConfig stores a new configuration.
 func (st *Store) CreateEnterpriseCodeSecurityConfig(c *EnterpriseCodeSecurityConfiguration) *EnterpriseCodeSecurityConfiguration {
@@ -773,7 +773,7 @@ func (st *Store) SetEnterpriseCodeSecurityConfigDefault(c *EnterpriseCodeSecurit
 	st.persistEnterpriseCodeSecurityConfig(live)
 }
 
-// --- enterprise settings mutators ---
+// enterprise settings mutators
 
 // SetEnterpriseDependabotRepoAccess replaces the Dependabot accessible
 // repository ID list.

@@ -117,7 +117,7 @@ func (st *Store) rawMergeQueueLocked(repoID int, baseRef string) []*PullRequest 
 	return queued
 }
 
-// --- per-reviewer viewed files -------------------------------------------
+// per-reviewer viewed files
 
 // SetPullRequestFileViewed sets or clears one reviewer's "viewed" mark on one
 // file of a PR diff. Returns false when the PR does not exist.

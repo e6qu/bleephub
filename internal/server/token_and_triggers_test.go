@@ -18,7 +18,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- Presented credentials that do not verify ---
+// Presented credentials that do not verify
 
 // TestPresentedCredentialThatDoesNotVerifyIsRejected pins the difference
 // between "no credential" and "a credential that is not good". Every
@@ -64,7 +64,7 @@ func TestSessionSurvivesWithoutAnAuthorizationHeader(t *testing.T) {
 	requireStatus(t, s.get(t, "/api/v3/meta", ""), http.StatusOK)
 }
 
-// --- Classic OAuth scopes ---
+// Classic OAuth scopes
 
 // TestClassicScopesGateOrganizationDeletion is the finding itself: the scope
 // string was stored, persisted and echoed in X-OAuth-Scopes while being
@@ -215,7 +215,7 @@ func TestClassicScopeGrantsCoverEveryPermission(t *testing.T) {
 	}
 }
 
-// --- Workflow trigger refs ---
+// Workflow trigger refs
 
 const forkTriggerBaseYAML = `name: base-ci
 on: [pull_request]
@@ -397,7 +397,7 @@ func runNames(runs []*store.Workflow) []string {
 	return names
 }
 
-// --- Job leases ---
+// Job leases
 
 // TestExpiredJobLeaseIsRedelivered: the lease was written at dispatch, renewed
 // on every runner poll, and read nowhere, so a runner that vanished mid-job
@@ -540,7 +540,7 @@ func (s *isolatedServer) pendingMessageFor(jobID string) *store.TaskAgentMessage
 	return nil
 }
 
-// --- Contents preconditions ---
+// Contents preconditions
 
 // TestPutContentsEnforcesTheBlobSHA: the sha was decoded and never read, so
 // every write was an unconditional overwrite and two editors of the same file
@@ -604,7 +604,7 @@ func TestPutContentsEnforcesTheBlobSHA(t *testing.T) {
 		}), http.StatusUnprocessableEntity)
 }
 
-// --- Pull requests are issues ---
+// Pull requests are issues
 
 // TestPullRequestsAppearAsIssues: on GitHub every pull request is also an
 // issue, and the `pull_request` member is what distinguishes them. Both the

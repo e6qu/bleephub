@@ -75,7 +75,7 @@ func (s *Server) registerGHIssueRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}/{p3}", s.handleIssuesThreeSegGetDispatch)
 }
 
-// --- Label handlers ---
+// Label handlers
 
 // buildLabelPayload assembles the `label` webhook event body.
 func buildLabelPayload(repo *store.Repo, labelJSON map[string]interface{}, sender *store.User, action, baseURL string) map[string]interface{} {
@@ -260,7 +260,7 @@ func (s *Server) handleDeleteLabel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Milestone handlers ---
+// Milestone handlers
 
 func (s *Server) handleCreateMilestone(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -522,7 +522,7 @@ func (s *Server) handleListMilestoneLabels(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-// --- JSON converters ---
+// JSON converters
 
 func issueLabelToJSON(l *store.IssueLabel, baseURL, repoFullName string) map[string]interface{} {
 	return map[string]interface{}{

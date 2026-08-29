@@ -19,13 +19,13 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 	uri := s.graphQLStringScalar("URI")
 	htmlScalar := s.graphQLStringScalar("HTML")
 
-	// --- Reaction types ---
+	// Reaction types
 	// Shared reaction types come from the registry so every reactable subject
 	// exposes one set.
 	discussionReactionGroupType := s.gqlReactionGroupType()
 	discussionReactionConnectionType := s.graphqlTypes.reactionConnection
 
-	// --- Category type ---
+	// Category type
 	discussionCategoryType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "DiscussionCategory",
 		Fields: graphql.Fields{
@@ -105,7 +105,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		},
 	})
 
-	// --- Comment and discussion types (forward-declared for recursion) ---
+	// Comment and discussion types (forward-declared for recursion)
 	var discussionType *graphql.Object
 	var discussionCommentType *graphql.Object
 	var discussionCommentConnectionType *graphql.Object
@@ -543,7 +543,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 	s.stashNamedObject(discussionConnectionType)
 	s.stashNamedObject(discussionCommentConnectionType)
 
-	// --- Enums ---
+	// Enums
 	discussionOrderFieldEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "DiscussionOrderField",
 		Values: graphql.EnumValueConfigMap{
@@ -554,7 +554,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 	discussionOrderDirectionEnum := s.graphQLEnum("OrderDirection", "ASC", "DESC")
 
-	// --- Repository fields ---
+	// Repository fields
 	repoType.AddFieldConfig("discussionCategories", &graphql.Field{
 		Type: graphql.NewNonNull(discussionCategoryConnectionType),
 		Args: graphql.FieldConfigArgument{
@@ -662,7 +662,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		},
 	})
 
-	// --- Mutations ---
+	// Mutations
 	createDiscussionInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "CreateDiscussionInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -1138,7 +1138,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		},
 	})
 
-	// --- addUpvote / removeUpvote ---
+	// addUpvote / removeUpvote
 
 	addUpvoteInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "AddUpvoteInput",
@@ -1241,7 +1241,7 @@ func (s *Resolver) gqlVotableInterface() *graphql.Interface {
 	return s.graphqlTypes.votable
 }
 
-// --- GraphQL converters ---
+// GraphQL converters
 
 // slugifyCategoryName renders GitHub's DiscussionCategory.slug: lowercase,
 // non-alphanumeric runs collapsed to '-', dashes trimmed.
@@ -1488,4 +1488,4 @@ func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}
 	return paginateGQLItems(items, args)
 }
 
-// --- Node ID lookup helpers ---
+// Node ID lookup helpers

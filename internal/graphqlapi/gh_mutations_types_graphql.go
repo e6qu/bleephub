@@ -157,7 +157,7 @@ func (s *Resolver) mutationUnion(name string, types func() []*graphql.Object, re
 	return union
 }
 
-// --- small field/argument shorthands ---------------------------------------
+// small field/argument shorthands
 //
 // Named for the SDL spelling rather than graphql-go's constructors:
 // nonNullID() reads as ID! does.
@@ -226,7 +226,7 @@ func gqlConnectionSource(nodes []map[string]interface{}) map[string]interface{} 
 	return paginateGQLMaps(nodes, nil)
 }
 
-// --- input readers ----------------------------------------------------------
+// input readers
 
 // gqlInputString reads a String input member, reporting whether the client
 // supplied it — an update mutation distinguishes "set to empty" from "leave alone".

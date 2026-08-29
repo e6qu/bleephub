@@ -119,7 +119,7 @@ func (s *Resolver) addTeamFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- members -----------------------------------------------------------
+	// members
 	teamMemberRole := s.sharedEnum("TeamMemberRole", "MAINTAINER", "MEMBER")
 	memberConnection := s.accountConnectionType(types, "TeamMember", types.user, true, graphql.Fields{
 		"role":                     &graphql.Field{Type: graphql.NewNonNull(teamMemberRole)},
@@ -182,7 +182,7 @@ func (s *Resolver) addTeamFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- repositories ------------------------------------------------------
+	// repositories
 	teamRepositoryConnection := s.accountConnectionType(types, "TeamRepository", types.repository, true, graphql.Fields{
 		"permission": &graphql.Field{
 			Type: graphql.NewNonNull(s.sharedEnum("RepositoryPermission",

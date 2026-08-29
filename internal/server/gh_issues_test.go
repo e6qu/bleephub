@@ -32,7 +32,7 @@ func createTestIssueRepo(t *testing.T, name string) {
 	}))
 }
 
-// --- Label tests ---
+// Label tests
 
 func TestCreateLabel(t *testing.T) {
 	createTestIssueRepo(t, "label-test")
@@ -170,7 +170,7 @@ func TestDeleteLabel(t *testing.T) {
 	}
 }
 
-// --- Milestone tests ---
+// Milestone tests
 
 func TestCreateMilestone(t *testing.T) {
 	createTestIssueRepo(t, "ms-test")
@@ -268,7 +268,7 @@ func TestDeleteMilestone(t *testing.T) {
 	}
 }
 
-// --- Issue REST tests ---
+// Issue REST tests
 
 func TestCreateIssueREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-create")
@@ -467,7 +467,7 @@ func TestUpdateIssueMilestoneLabelsAssigneesREST(t *testing.T) {
 	}
 }
 
-// --- Comment REST tests ---
+// Comment REST tests
 
 func TestCreateCommentREST(t *testing.T) {
 	createTestIssueRepo(t, "comment-create")
@@ -511,7 +511,7 @@ func TestListCommentsREST(t *testing.T) {
 	}
 }
 
-// --- Issue label management tests ---
+// Issue label management tests
 
 func TestAddIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-addlabels")
@@ -557,7 +557,7 @@ func TestRemoveIssueLabelREST(t *testing.T) {
 	}
 }
 
-// --- Issue label set/clear tests ---
+// Issue label set/clear tests
 
 func TestSetIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-setlabels")
@@ -611,7 +611,7 @@ func TestClearIssueLabelsREST(t *testing.T) {
 	}
 }
 
-// --- Issue assignee tests ---
+// Issue assignee tests
 
 func TestAddIssueAssigneesREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-addassignees")
@@ -649,7 +649,7 @@ func TestRemoveIssueAssigneesREST(t *testing.T) {
 	}
 }
 
-// --- Repo-level comment tests ---
+// Repo-level comment tests
 
 func TestListRepoIssueCommentsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-repo-comments")
@@ -711,7 +711,7 @@ func TestPinIssueCommentREST(t *testing.T) {
 	}
 }
 
-// --- Issue timeline + events tests ---
+// Issue timeline + events tests
 
 func TestListIssueTimelineREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-timeline")
@@ -845,7 +845,7 @@ func TestGetIssueEventREST(t *testing.T) {
 	}
 }
 
-// --- Sub-issues / dependencies ---
+// Sub-issues / dependencies
 
 func TestSubIssuesREST_EmptyList(t *testing.T) {
 	createTestIssueRepo(t, "issue-subissues")
@@ -864,7 +864,7 @@ func TestSubIssuesREST_EmptyList(t *testing.T) {
 	}
 }
 
-// --- GraphQL tests ---
+// GraphQL tests
 
 func TestGraphQLCreateIssue(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{

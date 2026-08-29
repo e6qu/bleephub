@@ -52,7 +52,7 @@ func brokerJobStatus(s *Server, jobID string) string {
 	return ""
 }
 
-// --- nothing on the job control plane answers without a credential ---
+// nothing on the job control plane answers without a credential
 
 func TestJobControlRoutesRejectUnauthenticatedCalls(t *testing.T) {
 	s := newTestServer()
@@ -80,7 +80,7 @@ func TestJobControlRoutesRejectUnauthenticatedCalls(t *testing.T) {
 	}
 }
 
-// --- a job request belongs to the runner it was dispatched to ---
+// a job request belongs to the runner it was dispatched to
 
 func TestAgentRequestRefusesAnotherRunnersJob(t *testing.T) {
 	s := newTestServer()
@@ -159,7 +159,7 @@ func TestAgentRequestServesTheAssignedRunner(t *testing.T) {
 	}
 }
 
-// --- plan-addressed routes belong to the job whose plan they name ---
+// plan-addressed routes belong to the job whose plan they name
 
 func TestPlanRoutesRefuseAnotherJobsRuntimeToken(t *testing.T) {
 	s := newTestServer()
@@ -235,7 +235,7 @@ func TestFinishJobRefusesABodySuppliedJobID(t *testing.T) {
 	}
 }
 
-// --- action metadata is plan-scoped ---
+// action metadata is plan-scoped
 
 func TestActionDownloadInfoRequiresThePlansJobToken(t *testing.T) {
 	s := newTestServer()
@@ -263,7 +263,7 @@ func TestActionDownloadInfoRequiresThePlansJobToken(t *testing.T) {
 	}
 }
 
-// --- task metadata needs a runner credential of either audience ---
+// task metadata needs a runner credential of either audience
 
 func TestTaskRoutesAcceptEitherRunnerAudience(t *testing.T) {
 	s := newTestServer()
@@ -283,7 +283,7 @@ func TestTaskRoutesAcceptEitherRunnerAudience(t *testing.T) {
 	}
 }
 
-// --- the timeline is written by the job whose plan it is ---
+// the timeline is written by the job whose plan it is
 
 func TestTimelineRoutesRefuseAnotherJobsPlan(t *testing.T) {
 	s := newTestServer()
@@ -389,7 +389,7 @@ func TestLogUploadRefusesAnotherPlansContainer(t *testing.T) {
 	}
 }
 
-// --- an operator-submitted job reaches its own plan and nothing else ---
+// an operator-submitted job reaches its own plan and nothing else
 
 func TestOperatorSubmittedJobTokenReportsItsOwnPlanOnly(t *testing.T) {
 	s := newTestServer()
@@ -434,7 +434,7 @@ func TestOperatorSubmittedJobTokenReportsItsOwnPlanOnly(t *testing.T) {
 	}
 }
 
-// --- an ephemeral runner survives its own teardown ---
+// an ephemeral runner survives its own teardown
 
 func TestEphemeralRunnerFinishesItsOwnTeardown(t *testing.T) {
 	s := newTestServer()

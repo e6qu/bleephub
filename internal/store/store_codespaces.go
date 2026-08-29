@@ -551,7 +551,7 @@ func (st *Store) SetCodespaceState(id int, state string, markUsed bool) {
 	st.persistCodespaceLocked(cs)
 }
 
-// --- secret helpers ---
+// secret helpers
 
 func CodespaceSecretScopeKey(scope, key string) string { return scope + "\x1f" + key }
 
@@ -768,7 +768,7 @@ func (st *Store) PublishCodespace(id int, owner *User, name string, private bool
 	return cs, nil
 }
 
-// --- internal helpers ---
+// internal helpers
 
 func CodespaceDefaultMachine() CodespaceMachine {
 	return CodespaceMachines[1]
@@ -955,7 +955,7 @@ func exportGitRef(stor gitStorage.Storer, refName, dst string) error {
 	})
 }
 
-// --- docker helpers ---
+// docker helpers
 
 // CodespaceDockerLifecycleTimeout bounds user-visible start, stop and remove
 // operations without mistaking a loaded Docker daemon for a failed runtime.

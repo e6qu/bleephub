@@ -205,7 +205,7 @@ func (s *Server) registerGHActionsPermissionsRoutes() {
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleRemoveRunnerLabel)))
 }
 
-// --- Org permissions handlers ---
+// Org permissions handlers
 
 func (s *Server) handleGetOrgActionsPermissions(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
@@ -334,7 +334,7 @@ func (s *Server) handleSetOrgWorkflowPermissions(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Org permissions extras ---
+// Org permissions extras
 
 func (s *Server) handleGetOrgArtifactAndLogRetention(w http.ResponseWriter, r *http.Request) {
 	p := s.store.GetOrgActionsPermissions(r.PathValue("org"))
@@ -559,7 +559,7 @@ func (s *Server) handleRemoveOrgSelfHostedRunnerRepo(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Org cache usage + policy limits ---
+// Org cache usage + policy limits
 
 // orgCacheUsageByRepo aggregates the org's finalized Actions cache entries
 // into repo full name → (count, bytes), plus sorted repo names.
@@ -672,7 +672,7 @@ func (s *Server) handleSetOrgMaxCacheSize(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Repo permissions handlers ---
+// Repo permissions handlers
 
 func (s *Server) handleGetRepoActionsPermissions(w http.ResponseWriter, r *http.Request) {
 	repo := repoFullName(r)
@@ -939,7 +939,7 @@ func (s *Server) handleUpdateRepoCacheUsagePolicy(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Run logs ---
+// Run logs
 
 func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
@@ -999,7 +999,7 @@ func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Runner labels ---
+// Runner labels
 
 func (s *Server) handleListRunnerLabels(w http.ResponseWriter, r *http.Request) {
 	target, ok := s.runnerTargetFromRequest(w, r)
@@ -1158,7 +1158,7 @@ func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, runnerLabelsJSON(a.Labels))
 }
 
-// --- JSON helpers ---
+// JSON helpers
 
 func orgActionsPermissionsJSON(p *store.OrgActionsPermissions, baseURL, org string) map[string]any {
 	apiBase := fmt.Sprintf("%s/api/v3/orgs/%s/actions/permissions", baseURL, org)

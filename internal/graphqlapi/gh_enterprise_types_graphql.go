@@ -14,7 +14,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- EnterpriseUserAccount -------------------------------------------------
+// EnterpriseUserAccount
 
 // enterpriseUserAccountToGraphQL renders one user's membership in one
 // enterprise. The node id carries the membership, not the user, so the same
@@ -167,7 +167,7 @@ func (s *Resolver) addEnterpriseOrganizationMembershipConnection(orgType *graphq
 	return s.enterpriseOrgMembershipConnMemo
 }
 
-// --- invitations -----------------------------------------------------------
+// invitations
 
 // enterpriseInvitationToGraphQL renders an admin or member invitation.
 func (s *Resolver) enterpriseInvitationToGraphQL(inv *store.EnterpriseInvitation) map[string]interface{} {
@@ -259,7 +259,7 @@ func (s *Resolver) addEnterpriseMemberInvitationTypes(enterpriseType, userType *
 	return invitationType, connectionType
 }
 
-// --- identity provider -----------------------------------------------------
+// identity provider
 
 // enterpriseIdentityProviderToGraphQL renders an enterprise's SAML binding.
 // recoveryCodes are secrets; the caller passes redacted = true to withhold them.
@@ -316,7 +316,7 @@ func (s *Resolver) addEnterpriseIdentityProviderType(enterpriseType *graphql.Obj
 	})
 }
 
-// --- IP allow list ---------------------------------------------------------
+// IP allow list
 
 func ipAllowListEntryToGraphQL(entry *store.IPAllowListEntry) map[string]interface{} {
 	if entry == nil {
@@ -390,7 +390,7 @@ func (s *Resolver) addIPAllowListTypes(enterpriseType, orgType *graphql.Object, 
 	return entryType, connectionType
 }
 
-// --- billing ---------------------------------------------------------------
+// billing
 
 // enterpriseBillingInfo measures the enterprise against its provisioned
 // entitlements, counting usage from what the instance actually stores.
@@ -493,7 +493,7 @@ func (s *Resolver) addEnterpriseBillingInfoType() *graphql.Object {
 	})
 }
 
-// --- EnterpriseOwnerInfo ---------------------------------------------------
+// EnterpriseOwnerInfo
 
 // enterpriseOwnerInfoDeps carries the types EnterpriseOwnerInfo's fields return.
 type enterpriseOwnerInfoDeps struct {

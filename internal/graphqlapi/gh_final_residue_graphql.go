@@ -23,7 +23,7 @@ func (s *Resolver) addFinalResidueFields(types *accountSurfaceTypes) {
 	s.addRefRulesField()
 }
 
-// --- Package ----------------------------------------------------------------
+// Package
 
 // packageSourceMap renders a store package into the Package source shape,
 // threading the store id and owner identity for version/repository lookups.
@@ -307,7 +307,7 @@ func (s *Resolver) addRepositoryPackagesField(types *accountSurfaceTypes) {
 	})
 }
 
-// --- Assignable interface ---------------------------------------------------
+// Assignable interface
 
 // addAssignableActorInterfaceFields completes the Assignable interface with the
 // actor connections Issue and PullRequest already carry.
@@ -324,7 +324,7 @@ func (s *Resolver) addAssignableActorInterfaceFields() {
 	})
 }
 
-// --- Query.topic ------------------------------------------------------------
+// Query.topic
 
 // addQueryTopicField installs Query.topic(name:), resolving a topic name onto
 // the Topic object.
@@ -344,7 +344,7 @@ func (s *Resolver) addQueryTopicField(queryType *graphql.Object) {
 	})
 }
 
-// --- Ref.rules --------------------------------------------------------------
+// Ref.rules
 
 // addRefRulesField installs Ref.rules over the shared RepositoryRuleConnection.
 // Attributing rules to a ref needs each ruleset's ref-name match predicate,

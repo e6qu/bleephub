@@ -387,7 +387,7 @@ func (st *Store) SetDependabotOrgSecretSelectedRepos(orgLogin, name string, ids 
 	return sec, true
 }
 
-// --- user secrets ---
+// user secrets
 
 type DependabotUserSecret struct {
 	DependabotSecret
@@ -463,7 +463,7 @@ func (st *Store) ListDependabotUserSecrets(userLogin string) []*DependabotUserSe
 	return snapshotSlice(out)
 }
 
-// --- org repository access ---
+// org repository access
 
 // SetDependabotRepositoryAccess replaces an org's repository access list,
 // returning true when no list previously existed.
@@ -489,7 +489,7 @@ func (st *Store) GetDependabotRepositoryAccess(orgLogin string) []int {
 	return append([]int(nil), st.DependabotRepositoryAccess[orgLogin]...)
 }
 
-// --- org alerts ---
+// org alerts
 
 // ListDependabotAlertsByOrg returns alerts for an org's repos, filtered and
 // sorted per GitHub's query parameters. Unknown filter values match nothing

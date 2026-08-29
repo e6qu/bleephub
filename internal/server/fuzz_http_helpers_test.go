@@ -150,7 +150,7 @@ func seedGitContent(tb testing.TB, s *Server, repoFullName string, files map[str
 	}
 }
 
-// --- deterministic byte reader ------------------------------------------------
+// deterministic byte reader
 
 type fuzzReader struct {
 	b []byte

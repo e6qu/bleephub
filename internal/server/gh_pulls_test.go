@@ -29,7 +29,7 @@ func (s *isolatedServer) createGraphQLPRRepo(t *testing.T, name string, branches
 	return repoData["node_id"].(string)
 }
 
-// --- REST tests ---
+// REST tests
 
 func TestCreatePullRequestREST(t *testing.T) {
 	t.Parallel()
@@ -830,7 +830,7 @@ func TestDeleteRefREST(t *testing.T) {
 	}
 }
 
-// --- GraphQL tests ---
+// GraphQL tests
 
 func TestGraphQLCreatePullRequest(t *testing.T) {
 	t.Parallel()

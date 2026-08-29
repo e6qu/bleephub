@@ -244,7 +244,7 @@ func (s *Server) branchProtectionNotFound(w http.ResponseWriter) {
 	writeGHError(w, http.StatusNotFound, "Branch not protected")
 }
 
-// --- Top-level protection ---
+// Top-level protection
 
 func (s *Server) handleBranchProtectionGet(w http.ResponseWriter, r *http.Request) {
 	repo, branch, bp := s.getBranchProtection(r)
@@ -475,7 +475,7 @@ func (s *Server) hydrateRestrictionsURLs(r *store.BPRestrictions, baseURL, fullN
 	}
 }
 
-// --- Required status checks ---
+// Required status checks
 
 func (s *Server) handleBPStatusChecksGet(w http.ResponseWriter, r *http.Request) {
 	repo, branch, bp := s.getBranchProtection(r)
@@ -561,7 +561,7 @@ func (s *Server) handleBPStatusChecksDelete(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Contexts ---
+// Contexts
 
 func (s *Server) handleBPContextsGet(w http.ResponseWriter, r *http.Request) {
 	repo, _, bp := s.getBranchProtection(r)
@@ -662,7 +662,7 @@ func removeStrings(values, removed []string) []string {
 	return out
 }
 
-// --- Required pull request reviews ---
+// Required pull request reviews
 
 func (s *Server) handleBPReviewsGet(w http.ResponseWriter, r *http.Request) {
 	repo, branch, bp := s.getBranchProtection(r)
@@ -721,7 +721,7 @@ func (s *Server) handleBPReviewsDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Restrictions ---
+// Restrictions
 
 func (s *Server) handleBPRestrictionsGet(w http.ResponseWriter, r *http.Request) {
 	repo, branch, bp := s.getBranchProtection(r)
@@ -753,7 +753,7 @@ func (s *Server) handleBPRestrictionsDelete(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Restrictions users ---
+// Restrictions users
 
 func (s *Server) handleBPRestrictionsUsersGet(w http.ResponseWriter, r *http.Request) {
 	repo, _, bp := s.getBranchProtection(r)
@@ -829,7 +829,7 @@ func (s *Server) handleBPRestrictionsUsersDelete(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users, s.baseURL(r)))
 }
 
-// --- Restrictions teams ---
+// Restrictions teams
 
 func (s *Server) handleBPRestrictionsTeamsGet(w http.ResponseWriter, r *http.Request) {
 	repo, _, bp := s.getBranchProtection(r)
@@ -1009,7 +1009,7 @@ func (s *Server) bpRestrictedTeamsJSON(repo *store.Repo, actors []store.BPActor,
 	return out
 }
 
-// --- Enforce admins ---
+// Enforce admins
 
 func (s *Server) handleBPEnforceAdminsGet(w http.ResponseWriter, r *http.Request) {
 	repo, branch, bp := s.getBranchProtection(r)
@@ -1063,7 +1063,7 @@ func (s *Server) handleBPEnforceAdminsDelete(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Required commit signatures ---
+// Required commit signatures
 
 func (s *Server) requiredSignaturesJSON(bp *store.BranchProtection, repo *store.Repo, branch, baseURL string) map[string]interface{} {
 	enabled := bp.RequiredSignatures != nil && bp.RequiredSignatures.Enabled
@@ -1116,7 +1116,7 @@ func (s *Server) handleBPRequiredSignaturesDelete(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Restrictions apps ---
+// Restrictions apps
 
 // bpRestrictedAppsJSON renders app actors as full GitHub App objects.
 func (s *Server) bpRestrictedAppsJSON(actors []store.BPActor) []map[string]interface{} {
@@ -1249,7 +1249,7 @@ func (s *Server) handleBPRestrictionsAppsDelete(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, s.bpRestrictedAppsJSON(bp.Restrictions.Apps))
 }
 
-// --- Helpers ---
+// Helpers
 
 // decodeStringArrayBody decodes a bare JSON array or {"contexts":[...]}.
 func decodeStringArrayBody(w http.ResponseWriter, r *http.Request, out *[]string) bool {

@@ -267,7 +267,7 @@ func EnterpriseMembershipKey(enterpriseID, userID int) string {
 	return strconv.Itoa(enterpriseID) + "/" + strconv.Itoa(userID)
 }
 
-// --- persistence ---
+// persistence
 
 func (st *Store) persistEnterpriseLocked(e *Enterprise) {
 	if st.Persist != nil {
@@ -301,7 +301,7 @@ func (st *Store) persistEnterpriseOrganizationLocked(link *EnterpriseOrganizatio
 	}
 }
 
-// --- clones (STORE-021) ---
+// clones (STORE-021)
 
 func cloneEnterprise(e *Enterprise) *Enterprise {
 	if e == nil {
@@ -330,7 +330,7 @@ func copyBoolPtr(v *bool) *bool {
 	return &c
 }
 
-// --- lifecycle ---
+// lifecycle
 
 // CreateEnterprise creates an enterprise account with GitHub's default policy
 // set, or returns nil when the slug is taken.
@@ -491,7 +491,7 @@ func (st *Store) UpdateEnterprisePolicy(enterpriseID int, mutate func(*Enterpris
 	return cloneEnterprise(e)
 }
 
-// --- membership ---
+// membership
 
 // SetEnterpriseMembership creates or re-roles a user's membership and returns
 // a detached snapshot. It returns nil when the enterprise does not exist.
@@ -632,7 +632,7 @@ func (st *Store) SetEnterpriseSupportEntitlement(enterpriseID, userID int, entit
 	return true
 }
 
-// --- organizations ---
+// organizations
 
 // AddEnterpriseOrganization binds an organization to an enterprise. It
 // returns false when the organization already belongs to a different
@@ -723,7 +723,7 @@ func (st *Store) listEnterpriseOrgIDsLocked(enterpriseID int) []int {
 	return out
 }
 
-// --- invitations ---
+// invitations
 
 // CreateEnterpriseInvitation records an invitation ("admin" or "member"; role
 // applies to "admin" only) and returns a detached snapshot, or nil when the
@@ -864,7 +864,7 @@ func (st *Store) AcceptEnterpriseInvitation(id, userID int) *EnterpriseInvitatio
 	return accepted
 }
 
-// --- migrator role ---
+// migrator role
 
 // SetEnterpriseMigratorRole grants or revokes the organizations-migrator role
 // for a login across the enterprise. It reports whether the enterprise exists.
@@ -891,7 +891,7 @@ func (st *Store) SetEnterpriseMigratorRole(enterpriseID int, login string, grant
 	return true
 }
 
-// --- identity provider ---
+// identity provider
 
 // SetEnterpriseIdentityProvider binds (or rebinds) an enterprise's SAML identity
 // provider and returns a detached snapshot. The caller generates recoveryCodes
@@ -958,7 +958,7 @@ func (st *Store) RemoveEnterpriseIdentityProvider(enterpriseID int) *EnterpriseS
 	return removed
 }
 
-// --- IP allow list ---
+// IP allow list
 
 // CreateIPAllowListEntry appends an entry to an owner's allow list.
 func (st *Store) CreateIPAllowListEntry(ownerType string, ownerID int, allowListValue, name string, isActive bool) *IPAllowListEntry {
@@ -1258,7 +1258,7 @@ func (st *Store) IsEnterpriseBillingReader(enterpriseID int, user *User) bool {
 	return false
 }
 
-// --- billing measurement ---------------------------------------------------
+// billing measurement
 //
 // Storage and bandwidth are measured from what the organizations actually hold
 // and served, so EnterpriseBillingInfo reports this instance, not a constant.
@@ -1372,7 +1372,7 @@ func (st *Store) RecordAuditEntry(action, actor, org string, data map[string]int
 	return entry
 }
 
-// --- policy resolution -----------------------------------------------------
+// policy resolution
 
 // EnterprisePolicyForOrg returns the policy governing an organization — that of
 // the enterprise that owns it, or the instance's own enterprise for an unclaimed
@@ -1519,7 +1519,7 @@ func (st *Store) ActiveUserIPAllowList(userID int) []string {
 	return values
 }
 
-// --- verified domains ------------------------------------------------------
+// verified domains
 
 // NormalizeVerifiedDomain reduces a domain to the stored form: lower case, no
 // surrounding space, no leading "@", no trailing dot. A non-domain reduces to "".

@@ -115,7 +115,7 @@ func (s *Resolver) addInterfaceShells() {
 	repo := s.graphqlTypes.repository
 	issueFieldDate := unionMemberObject(s.graphqlTypes.issueFieldsUnion, "IssueFieldDate")
 
-	// --- Agentic -----------------------------------------------------------
+	// Agentic
 	agentic := s.mutationInterface("Agentic", func() graphql.Fields {
 		return graphql.Fields{
 			"viewerCopilotAgentCreatesChannel":     gqlField(graphql.String),
@@ -125,7 +125,7 @@ func (s *Resolver) addInterfaceShells() {
 		}
 	}, nilResolveType)
 
-	// --- Comment -----------------------------------------------------------
+	// Comment
 	comment16 := []string{
 		"author", "authorAssociation", "body", "bodyHTML", "bodyText",
 		"createdAt", "createdViaEmail", "editor", "id", "includesCreatedEdit",
@@ -136,7 +136,7 @@ func (s *Resolver) addInterfaceShells() {
 		return shellCopyFields(comment, comment16...)
 	}, nilResolveType)
 
-	// --- Deletable / Updatable / UpdatableComment --------------------------
+	// Deletable / Updatable / UpdatableComment
 	deletable := s.mutationInterface("Deletable", func() graphql.Fields {
 		return graphql.Fields{"viewerCanDelete": gqlNonNull(graphql.Boolean)}
 	}, nilResolveType)
@@ -149,7 +149,7 @@ func (s *Resolver) addInterfaceShells() {
 		return shellCopyFields(comment, "viewerCannotUpdateReasons")
 	}, nilResolveType)
 
-	// --- Pinnable ----------------------------------------------------------
+	// Pinnable
 	pinnable := s.mutationInterface("Pinnable", func() graphql.Fields {
 		return graphql.Fields{
 			"isPinned":       gqlField(graphql.Boolean),
@@ -160,7 +160,7 @@ func (s *Resolver) addInterfaceShells() {
 		}
 	}, nilResolveType)
 
-	// --- IssueFieldCommon / IssueFieldValueCommon --------------------------
+	// IssueFieldCommon / IssueFieldValueCommon
 	issueFieldCommon := s.mutationInterface("IssueFieldCommon", func() graphql.Fields {
 		return shellCopyFields(issueFieldDate,
 			"createdAt", "dataType", "description", "fullDatabaseId", "name", "visibility")
@@ -170,12 +170,12 @@ func (s *Resolver) addInterfaceShells() {
 		return graphql.Fields{"field": gqlField(s.graphqlTypes.issueFieldsUnion)}
 	}, nilResolveType)
 
-	// --- MemberStatusable --------------------------------------------------
+	// MemberStatusable
 	memberStatusable := s.mutationInterface("MemberStatusable", func() graphql.Fields {
 		return shellCopyFields(team, "memberStatuses")
 	}, nilResolveType)
 
-	// --- PackageOwner ------------------------------------------------------
+	// PackageOwner
 	// The concrete Organization.packages exposes only the four window arguments;
 	// GitHub's other four are reconstructed here against the reused instances.
 	packageOwner := s.mutationInterface("PackageOwner", func() graphql.Fields {
@@ -202,7 +202,7 @@ func (s *Resolver) addInterfaceShells() {
 		}
 	}, nilResolveType)
 
-	// --- ProfileOwner ------------------------------------------------------
+	// ProfileOwner
 	profileOwner := s.mutationInterface("ProfileOwner", func() graphql.Fields {
 		return shellCopyFields(org,
 			"anyPinnableItems", "email", "id", "itemShowcase", "location",
@@ -210,12 +210,12 @@ func (s *Resolver) addInterfaceShells() {
 			"pinnedItemsRemaining", "viewerCanChangePinnedItems", "websiteUrl")
 	}, nilResolveType)
 
-	// --- ProjectV2Recent ---------------------------------------------------
+	// ProjectV2Recent
 	projectV2Recent := s.mutationInterface("ProjectV2Recent", func() graphql.Fields {
 		return shellCopyFields(org, "recentProjects")
 	}, nilResolveType)
 
-	// --- RepositoryDiscussionAuthor ---------------------------------------
+	// RepositoryDiscussionAuthor
 	// The concrete field omits orderBy (DiscussionOrder) and states; both are
 	// reconstructed here, reaching DiscussionOrder from Repository.discussions.
 	repositoryDiscussionAuthor := s.mutationInterface("RepositoryDiscussionAuthor", func() graphql.Fields {
@@ -239,12 +239,12 @@ func (s *Resolver) addInterfaceShells() {
 		}
 	}, nilResolveType)
 
-	// --- RepositoryDiscussionCommentAuthor --------------------------------
+	// RepositoryDiscussionCommentAuthor
 	repositoryDiscussionCommentAuthor := s.mutationInterface("RepositoryDiscussionCommentAuthor", func() graphql.Fields {
 		return shellCopyFields(org, "repositoryDiscussionComments")
 	}, nilResolveType)
 
-	// --- SubscribableThread ------------------------------------------------
+	// SubscribableThread
 	subscribableThread := s.mutationInterface("SubscribableThread", func() graphql.Fields {
 		fields := graphql.Fields{"id": gqlNonNull(graphql.ID)}
 		for _, name := range []string{"viewerThreadSubscriptionFormAction", "viewerThreadSubscriptionStatus"} {
@@ -255,7 +255,7 @@ func (s *Resolver) addInterfaceShells() {
 		return fields
 	}, nilResolveType)
 
-	// --- TeamReviewRequestable --------------------------------------------
+	// TeamReviewRequestable
 	// name is String! here (Team's own name is nullable), so it is built directly.
 	teamReviewRequestable := s.mutationInterface("TeamReviewRequestable", func() graphql.Fields {
 		return graphql.Fields{
@@ -265,7 +265,7 @@ func (s *Resolver) addInterfaceShells() {
 		}
 	}, nilResolveType)
 
-	// --- OrganizationOrUser ------------------------------------------------
+	// OrganizationOrUser
 	organizationOrUser := s.mutationUnion("OrganizationOrUser", func() []*graphql.Object {
 		return []*graphql.Object{org, user}
 	}, nilResolveType)

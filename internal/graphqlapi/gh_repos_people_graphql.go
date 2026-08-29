@@ -29,7 +29,7 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	repositoryPermission := s.sharedEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE")
 
-	// --- collaborators -----------------------------------------------------
+	// collaborators
 	collaboratorConnection := s.accountConnectionType(types, "RepositoryCollaborator", types.user, true, graphql.Fields{
 		"permission": &graphql.Field{Type: graphql.NewNonNull(repositoryPermission)},
 	})
@@ -69,7 +69,7 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- mentionable accounts ---------------------------------------------
+	// mentionable accounts
 	repoType.AddFieldConfig("mentionableUsers", &graphql.Field{
 		Type: graphql.NewNonNull(types.userConnection),
 		Args: connectionArgs(graphql.FieldConfigArgument{
@@ -88,7 +88,7 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- forks -------------------------------------------------------------
+	// forks
 	repoType.AddFieldConfig("forks", &graphql.Field{
 		Type: graphql.NewNonNull(s.graphqlTypes.repositoryConnection),
 		Args: connectionArgs(graphql.FieldConfigArgument{
@@ -112,7 +112,7 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- milestone / label by identifier ----------------------------------
+	// milestone / label by identifier
 	repoType.AddFieldConfig("milestone", &graphql.Field{
 		Type: s.graphqlTypes.milestone,
 		Args: graphql.FieldConfigArgument{
@@ -151,7 +151,7 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- deploy keys -------------------------------------------------------
+	// deploy keys
 	deployKey := graphql.NewObject(graphql.ObjectConfig{
 		Name: "DeployKey",
 		Fields: graphql.Fields{
@@ -200,7 +200,7 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- commit comments ---------------------------------------------------
+	// commit comments
 	repoType.AddFieldConfig("commitComments", &graphql.Field{
 		Type: graphql.NewNonNull(s.accountConnectionType(types, "CommitComment", s.graphqlTypes.commitComment, false, nil)),
 		Args: connectionArgs(nil),

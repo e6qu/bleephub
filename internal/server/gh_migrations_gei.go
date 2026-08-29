@@ -54,7 +54,7 @@ const (
 // survive to where the state is recorded.
 var errGEIValidation = errors.New("migration validation failed")
 
-// --- supervision -----------------------------------------------------------
+// supervision
 
 func (s *Server) startGEIRepositoryMigration(id int) {
 	s.goBackground(func() { s.runGEIRepositoryMigration(id) })
@@ -84,7 +84,7 @@ func (s *Server) resumeGEIMigrations() {
 	}
 }
 
-// --- the repository migration worker ---------------------------------------
+// the repository migration worker
 
 func (s *Server) runGEIRepositoryMigration(id int) {
 	if !s.store.ClaimRepositoryMigration(id) {
@@ -387,7 +387,7 @@ func migrationSourceAuth(source *store.MigrationSource) transport.AuthMethod {
 	return &gitHTTP.BasicAuth{Username: "x-access-token", Password: source.AccessToken}
 }
 
-// --- content ---------------------------------------------------------------
+// content
 
 // ingestGEIRepositoryContent materialises the non-git records: issues, pull
 // requests and releases. A declared metadata archive is streamed and applied;
@@ -577,7 +577,7 @@ func decodeGEIArchiveEntry(reader io.Reader, out interface{}) error {
 	return json.NewDecoder(io.LimitReader(reader, geiArchiveEntryMaxBytes)).Decode(out)
 }
 
-// --- the organization migration worker --------------------------------------
+// the organization migration worker
 
 func (s *Server) runGEIOrganizationMigration(id int) {
 	if !s.store.ClaimOrganizationMigration(id) {
@@ -847,7 +847,7 @@ func (s *Server) migrationSourceHTTPClient() *http.Client {
 	}
 }
 
-// --- shared helpers ---------------------------------------------------------
+// shared helpers
 
 // repoFromMigrationSourceURL resolves a source URL to a repository on this
 // instance, or nil when it names somewhere else. lockSource and the in-instance
@@ -902,7 +902,7 @@ func (l *migrationLog) reader() io.Reader {
 	return strings.NewReader(strings.Join(l.lines, "\n") + "\n")
 }
 
-// --- the browser surface ----------------------------------------------------
+// the browser surface
 //
 // GitHub exposes GEI entities only over GraphQL, so the web UI's migration
 // status is served under /ui-data rather than invented under /api/v3. Every

@@ -12,7 +12,7 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// --- Repository activity (recorded ref updates) ---
+// Repository activity (recorded ref updates)
 
 // classifyRefUpdate maps a ref command onto GitHub's activity types from the
 // object graph: a non-fast-forward update is a force push.
@@ -113,7 +113,7 @@ func (s *Server) handleListRepoActivity(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-// --- Repository events ---
+// Repository events
 
 type repoEventEntry struct {
 	when  time.Time
@@ -299,7 +299,7 @@ func (s *Server) handleListNetworkEvents(w http.ResponseWriter, r *http.Request)
 	writeEventEntries(w, r, entries)
 }
 
-// --- Traffic ---
+// Traffic
 
 // trafficWeekStart returns midnight UTC of the Monday beginning t's week;
 // GitHub's traffic API buckets weeks from Monday.

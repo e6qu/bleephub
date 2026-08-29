@@ -228,7 +228,7 @@ func TestGraphQLAccountMutationsStillServeTheirEntitledCaller(t *testing.T) {
 	}
 }
 
-// --- behavioural ------------------------------------------------------------
+// behavioural
 
 func TestGraphQLFollowMutationsWriteTheFollowGraph(t *testing.T) {
 	t.Parallel()

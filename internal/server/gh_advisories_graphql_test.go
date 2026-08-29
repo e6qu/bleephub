@@ -802,7 +802,7 @@ func TestWithdrawnAdvisoryLeavesTheListingButStaysAddressable(t *testing.T) {
 	}
 }
 
-// --- helpers ---------------------------------------------------------------
+// helpers
 
 func (f *advisoryFixture) alertNodes(t *testing.T, token string) []map[string]interface{} {
 	t.Helper()

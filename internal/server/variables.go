@@ -42,7 +42,7 @@ func (s *Server) registerVariablesRoutes() {
 	s.route("DELETE /api/v3/orgs/{org}/actions/variables/{name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleRemoveOrgVariableRepo))
 }
 
-// --- shared pieces ---
+// shared pieces
 
 func variableJSON(v *store.ActionsVariable) map[string]interface{} {
 	return map[string]interface{}{
@@ -200,7 +200,7 @@ func writeVariablesList(w http.ResponseWriter, list []map[string]interface{}) {
 	})
 }
 
-// --- repository variables ---
+// repository variables
 
 func (s *Server) handleListRepoVariables(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.repoVariableTableFor(w, r)
@@ -359,7 +359,7 @@ func (s *Server) handleListRepoOrgVariables(w http.ResponseWriter, r *http.Reque
 	writeVariablesList(w, list)
 }
 
-// --- environment variables ---
+// environment variables
 
 func (s *Server) envVariableTableFor(w http.ResponseWriter, r *http.Request) (variableTable, string, string, bool) {
 	repoKey, scopeKey, envName, ok := s.resolveEnvScope(w, r)
@@ -461,7 +461,7 @@ func (s *Server) handleDeleteEnvVariable(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- organization variables ---
+// organization variables
 
 func (s *Server) handleListOrgVariables(w http.ResponseWriter, r *http.Request) {
 	org, ok := s.resolveOrgForActions(w, r)
@@ -616,7 +616,7 @@ func (s *Server) handleDeleteOrgVariable(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- organization variable selected-repositories endpoints ---
+// organization variable selected-repositories endpoints
 //
 // Unlike org secrets, the variables spec documents 409 Conflict on the list/set
 // endpoints too when visibility is not "selected".

@@ -109,7 +109,7 @@ func (s *Resolver) addRepositoryMetadataMutations(mutationType *graphql.Object) 
 	topicType := s.gqlTopicType()
 	uri := s.graphQLStringScalar("URI")
 
-	// --- labels ------------------------------------------------------------
+	// labels
 
 	s.registerMutation(mutationType, "createLabel", &graphql.Field{
 		Type: s.mutationPayload("CreateLabelPayload", graphql.Fields{
@@ -151,7 +151,7 @@ func (s *Resolver) addRepositoryMetadataMutations(mutationType *graphql.Object) 
 		Resolve: s.resolveDeleteLabel,
 	})
 
-	// --- topics ------------------------------------------------------------
+	// topics
 
 	s.registerMutation(mutationType, "updateTopics", &graphql.Field{
 		Type: s.mutationPayload("UpdateTopicsPayload", graphql.Fields{
@@ -195,7 +195,7 @@ func (s *Resolver) addRepositoryMetadataMutations(mutationType *graphql.Object) 
 		Resolve: s.resolveDeclineTopicSuggestion,
 	})
 
-	// --- lifecycle ---------------------------------------------------------
+	// lifecycle
 
 	s.registerMutation(mutationType, "archiveRepository", &graphql.Field{
 		Type: s.mutationPayload("ArchiveRepositoryPayload", graphql.Fields{
@@ -225,7 +225,7 @@ func (s *Resolver) addRepositoryMetadataMutations(mutationType *graphql.Object) 
 		},
 	})
 
-	// --- settings ----------------------------------------------------------
+	// settings
 
 	s.registerMutation(mutationType, "updateRepository", &graphql.Field{
 		Type: s.mutationPayload("UpdateRepositoryPayload", graphql.Fields{
@@ -277,7 +277,7 @@ func topicToGQL(name string) map[string]interface{} {
 	return map[string]interface{}{"name": name}
 }
 
-// --- label resolvers --------------------------------------------------------
+// label resolvers
 
 func (s *Resolver) resolveCreateLabel(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -391,7 +391,7 @@ func (s *Resolver) emitLabelEvent(repo *store.Repo, label *store.IssueLabel, p g
 	})
 }
 
-// --- topic resolvers --------------------------------------------------------
+// topic resolvers
 
 func (s *Resolver) resolveUpdateTopics(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -510,7 +510,7 @@ func withoutString(values []string, drop string) []string {
 	return out
 }
 
-// --- lifecycle and settings resolvers ---------------------------------------
+// lifecycle and settings resolvers
 
 func (s *Resolver) resolveRepositoryArchival(p graphql.ResolveParams, archived bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -617,7 +617,7 @@ func (s *Resolver) resolveUpdateRepositoryWebCommitSignoff(p graphql.ResolvePara
 	}, nil
 }
 
-// --- shared helpers ---------------------------------------------------------
+// shared helpers
 
 // mutationRepoFromInput resolves the repository a mutation input names. The
 // policy row already authorized the caller, so a miss here is a repository that

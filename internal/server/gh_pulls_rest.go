@@ -1588,7 +1588,7 @@ func requestedTeamJSONLocked(st *store.Store, team *store.Team, org *store.Org, 
 	return out
 }
 
-// --- JSON converters ---
+// JSON converters
 
 func pullRequestHeadSHA(pr *store.PullRequest, st *store.Store) string {
 	if pr == nil {

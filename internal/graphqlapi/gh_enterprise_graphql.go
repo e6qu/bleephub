@@ -89,7 +89,7 @@ func enterpriseForbidden() error {
 	return &ghForbiddenError{message: "You must be a member of the enterprise to view this information."}
 }
 
-// --- enums -----------------------------------------------------------------
+// enums
 
 // sharedEnum memoizes an enum by name; graphql-go rejects two distinct types
 // with one name, so any enum more than one family needs must come from here.
@@ -145,7 +145,7 @@ func (s *Resolver) ipAllowListUserLevelEnforcementEnum() *graphql.Enum {
 	return s.sharedEnum("IpAllowListUserLevelEnforcementEnabledSettingValue", "ENABLED", "DISABLED")
 }
 
-// --- shared connection builders -------------------------------------------
+// shared connection builders
 
 // enterpriseConnection renders a node list as a Relay connection.
 func enterpriseConnection(nodes []map[string]interface{}, args map[string]interface{}) map[string]interface{} {
@@ -175,7 +175,7 @@ func (s *Resolver) enterpriseEdgeAndConnectionTypes(connectionName, edgeName str
 	return graphql.NewObject(graphql.ObjectConfig{Name: connectionName, Fields: connectionFields})
 }
 
-// --- the enterprise family -------------------------------------------------
+// the enterprise family
 
 // addEnterpriseFieldsToSchema assembles the enterprise read surface onto Query
 // and User and returns the Enterprise object.
@@ -509,7 +509,7 @@ func (s *Resolver) lookupEnterpriseInvitation(p graphql.ResolveParams, slug, use
 	return nil
 }
 
-// --- member / organization node lists --------------------------------------
+// member / organization node lists
 
 // enterpriseOrganizationNodes renders the organizations an enterprise owns.
 func (s *Resolver) enterpriseOrganizationNodes(e *store.Enterprise) []map[string]interface{} {
@@ -616,7 +616,7 @@ func (s *Resolver) userIsInAnyEnterpriseOrg(e *store.Enterprise, user *store.Use
 	return false
 }
 
-// --- helpers ---------------------------------------------------------------
+// helpers
 
 // sourceValue reads a key from a map-shaped resolver source.
 func sourceValue(p graphql.ResolveParams, key string) (interface{}, error) {

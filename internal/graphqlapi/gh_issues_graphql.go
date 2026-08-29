@@ -32,10 +32,10 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			"CLOSED": &graphql.EnumValueConfig{Value: "CLOSED"},
 		},
 	})
-	// --- Label types (shared with PullRequest via the registry) ---
+	// Label types (shared with PullRequest via the registry)
 	labelConnectionType := s.gqlLabelConnectionType()
 
-	// --- Milestone type ---
+	// Milestone type
 	issueMilestoneType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Milestone",
 		Fields: graphql.Fields{
@@ -75,18 +75,18 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Reaction group type (shared via the registry) ---
+	// Reaction group type (shared via the registry)
 	reactionGroupType := s.gqlReactionGroupType()
 
-	// --- Comment types (shared with PullRequest via the registry) ---
+	// Comment types (shared with PullRequest via the registry)
 	issueCommentType := s.gqlIssueCommentType()
 	commentConnectionType := s.gqlIssueCommentConnectionType()
 
-	// --- Assignee connection (shared UserConnection via the registry) ---
+	// Assignee connection (shared UserConnection via the registry)
 
 	assigneeConnectionType := s.gqlUserConnectionType(userType)
 
-	// --- Issue-type and sub-issue support types ---
+	// Issue-type and sub-issue support types
 	// Memoized: the issue-type and issue-field mutations return these same
 	// objects, and graphql-go refuses a schema holding two types of one name.
 	issueTypeMetaType := graphql.NewObject(graphql.ObjectConfig{
@@ -115,7 +115,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 	issueFieldValueConnectionType := s.issueFieldValueGraphQLConnectionType()
 
-	// --- Issue type ---
+	// Issue type
 	issueType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Issue",
 		// Every interface must be claimed at construction: graphql-go memoizes
@@ -364,10 +364,10 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Issue connection (shared with PullRequest via the registry) ---
+	// Issue connection (shared with PullRequest via the registry)
 	issueConnectionType := s.gqlIssueConnectionType(issueType)
 
-	// --- Issue filters input ---
+	// Issue filters input
 	issueFieldValueFilterInput := s.mutationInput("IssueFieldValueFilter", graphql.InputObjectConfigFieldMap{
 		"dateValue":               gqlString(),
 		"fieldId":                 gqlID(),
@@ -396,7 +396,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Add fields to Repository type ---
+	// Add fields to Repository type
 
 	repoType.AddFieldConfig("hasIssuesEnabled", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
@@ -870,7 +870,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Mutations ---
+	// Mutations
 
 	createIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "CreateIssueInput",
@@ -1085,7 +1085,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Pinned issues (pinIssue / unpinIssue, Repository.pinnedIssues) ---
+	// Pinned issues (pinIssue / unpinIssue, Repository.pinnedIssues)
 
 	pinnedIssueType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PinnedIssue",
@@ -1255,7 +1255,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- transferIssue / deleteIssue ---
+	// transferIssue / deleteIssue
 
 	transferIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "TransferIssueInput",
@@ -1642,7 +1642,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	return issueType, issueMilestoneType
 }
 
-// --- GraphQL converter helpers ---
+// GraphQL converter helpers
 
 func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
 	// Shared enums: the issue-field mutations name the same three on their inputs.
@@ -2750,7 +2750,7 @@ func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parent
 	return out
 }
 
-// --- Node ID lookup helpers ---
+// Node ID lookup helpers
 
 // resolveGQLLabelIDs maps a mutation's labelIds onto store ids. A nil argument
 // leaves the labels alone; an id naming no label of repoID is refused, not

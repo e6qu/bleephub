@@ -12,7 +12,7 @@ func init() {
 }
 
 func (s *Resolver) addOrderingShells() {
-	// --- standalone enums --------------------------------------------------
+	// standalone enums
 	checkRunType := s.sharedEnum("CheckRunType", "ALL", "LATEST")
 	discussionState := s.sharedEnum("DiscussionState", "CLOSED", "OPEN")
 	environmentPinnedFilterField := s.sharedEnum("EnvironmentPinnedFilterField", "ALL", "NONE", "ONLY")
@@ -29,7 +29,7 @@ func (s *Resolver) addOrderingShells() {
 		userBlockDuration,
 	)
 
-	// --- *OrderField enums -------------------------------------------------
+	// *OrderField enums
 	orderDirection := s.sharedEnum("OrderDirection", "ASC", "DESC")
 
 	enterpriseMemberOrderField := s.sharedEnum("EnterpriseMemberOrderField", "CREATED_AT", "LOGIN")
@@ -74,7 +74,7 @@ func (s *Resolver) addOrderingShells() {
 		workflowRunOrderField,
 	)
 
-	// --- regular `{ direction: OrderDirection!, field: <X>OrderField! }` ----
+	// regular `{ direction: OrderDirection!, field: <X>OrderField! }`
 	enterpriseMemberOrder := s.mutationInput("EnterpriseMemberOrder", graphql.InputObjectConfigFieldMap{
 		"direction": gqlNonNullInputOf(orderDirection),
 		"field":     gqlNonNullInputOf(enterpriseMemberOrderField),
@@ -140,7 +140,7 @@ func (s *Resolver) addOrderingShells() {
 		"field":     gqlNonNullInputOf(workflowRunOrderField),
 	})
 
-	// --- Package* orders: both fields NULLABLE (`OrderDirection`, `*OrderField`)
+	// Package* orders: both fields NULLABLE (`OrderDirection`, `*OrderField`)
 	packageFileOrder := s.mutationInput("PackageFileOrder", graphql.InputObjectConfigFieldMap{
 		"direction": gqlInputOf(orderDirection),
 		"field":     gqlInputOf(packageFileOrderField),
@@ -154,7 +154,7 @@ func (s *Resolver) addOrderingShells() {
 		"field":     gqlInputOf(packageVersionOrderField),
 	})
 
-	// --- irregular filter inputs ------------------------------------------
+	// irregular filter inputs
 	checkConclusionState := s.sharedEnum("CheckConclusionState",
 		"ACTION_REQUIRED", "CANCELLED", "FAILURE", "NEUTRAL", "SKIPPED", "STALE",
 		"STARTUP_FAILURE", "SUCCESS", "TIMED_OUT")

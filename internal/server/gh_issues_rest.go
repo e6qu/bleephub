@@ -11,7 +11,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- Issue handlers ---
+// Issue handlers
 
 func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -632,7 +632,7 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, issueToJSON(updated, s.store, s.baseURL(r), repo.FullName))
 }
 
-// --- Comment handlers ---
+// Comment handlers
 
 func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -738,7 +738,7 @@ func (s *Server) handleListIssueComments(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
-// --- Issue label management handlers ---
+// Issue label management handlers
 
 // labelIDsToJSON renders label IDs as label JSON in stored order, skipping any
 // that no longer resolve.
@@ -890,7 +890,7 @@ func (s *Server) handleRemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Repo-level comment handlers ---
+// Repo-level comment handlers
 
 func (s *Server) handleListRepoIssueComments(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
@@ -954,7 +954,7 @@ func (s *Server) handleGetIssueComment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, store.CommentToJSON(comment, s.store, s.baseURL(r), repo.FullName, parentNumber))
 }
 
-// --- Issue label set/clear handlers ---
+// Issue label set/clear handlers
 
 func (s *Server) handleSetIssueLabels(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -1060,7 +1060,7 @@ func (s *Server) handleClearIssueLabels(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Issue assignee handlers ---
+// Issue assignee handlers
 
 func (s *Server) handleAddIssueAssignees(w http.ResponseWriter, r *http.Request) {
 	repo, issue, ok := s.resolveRepoIssue(w, r)
@@ -1106,7 +1106,7 @@ func (s *Server) handleRemoveIssueAssignees(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, issueToJSON(updated, s.store, s.baseURL(r), repo.FullName))
 }
 
-// --- Comment pin handlers ---
+// Comment pin handlers
 
 func (s *Server) handlePinIssueComment(w http.ResponseWriter, r *http.Request) {
 	repo, comment, ok := s.resolveRepoIssueComment(w, r)
@@ -1197,7 +1197,7 @@ func resolveUserIDs(st *store.Store, logins []string) []int {
 	return ids
 }
 
-// --- Issue timeline + events handlers ---
+// Issue timeline + events handlers
 
 func (s *Server) handleListIssueTimeline(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
@@ -1418,7 +1418,7 @@ func (s *Server) handleGetIssueEvent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, issueEventToJSON(event, s.store, s.baseURL(r), repo.FullName))
 }
 
-// --- JSON converters ---
+// JSON converters
 
 func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	// Read every mutable field into locals under the read lock: UpdateIssue /

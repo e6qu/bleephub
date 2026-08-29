@@ -14,7 +14,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- P57-001c: continue-on-error tests ---
+// P57-001c: continue-on-error tests
 
 func TestContinueOnErrorDepStillRuns(t *testing.T) {
 	s := newTestServer()
@@ -87,7 +87,7 @@ func TestContinueOnErrorNeedsContextShowsFailure(t *testing.T) {
 	}
 }
 
-// --- P57-001d: max-parallel tests ---
+// P57-001d: max-parallel tests
 
 func TestMaxParallelLimitsDispatch(t *testing.T) {
 	s := newTestServer()
@@ -177,7 +177,7 @@ func TestMaxParallelZeroMeansUnlimited(t *testing.T) {
 	}
 }
 
-// --- P57-001e: timeout enforcement test ---
+// P57-001e: timeout enforcement test
 
 func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 	s := newTestServer()
@@ -216,7 +216,7 @@ func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 	}
 }
 
-// --- P57-002: Concurrency tests ---
+// P57-002: Concurrency tests
 
 func TestQueuedJobsSpreadAcrossPollingRunners(t *testing.T) {
 	s := newTestServer()
@@ -323,7 +323,7 @@ func TestConcurrentWorkflowLimit(t *testing.T) {
 	}
 }
 
-// --- P57-003: Metrics and observability tests ---
+// P57-003: Metrics and observability tests
 
 func TestMetricsEndpoint(t *testing.T) {
 	resp := authedGet(t, "/internal/metrics")
@@ -362,7 +362,7 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 }
 
-// --- P57-004b: Complex workflow patterns ---
+// P57-004b: Complex workflow patterns
 
 func TestThreeStagePipeline(t *testing.T) {
 	s := newTestServer()
@@ -594,7 +594,7 @@ func TestRootFailureCascadesSkipAll(t *testing.T) {
 	}
 }
 
-// --- P59-004: Matrix fail-fast tests ---
+// P59-004: Matrix fail-fast tests
 
 func TestFailFastCancelsSiblings(t *testing.T) {
 	s := newTestServer()
@@ -786,7 +786,7 @@ func TestFailFastOnlySameGroup(t *testing.T) {
 
 func boolPtr(b bool) *bool { return &b }
 
-// --- P59-003: Job-level if: tests ---
+// P59-003: Job-level if: tests
 
 func TestJobIfSkipsOnFalse(t *testing.T) {
 	s := newTestServer()
@@ -862,7 +862,7 @@ func TestJobIfFailureRunsAfterFailure(t *testing.T) {
 	}
 }
 
-// --- P59-006: Cancellation tests ---
+// P59-006: Cancellation tests
 
 func TestCancelRunningWorkflow(t *testing.T) {
 	s := newTestServer()

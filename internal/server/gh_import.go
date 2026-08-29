@@ -419,7 +419,7 @@ func (s *Server) handleListImportLargeFiles(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, out)
 }
 
-// --- Import execution ---
+// Import execution
 
 // errUnsupportedImportProtocol marks a source URL whose scheme the import
 // transports do not speak — a request fault, distinct from a fetch failure.

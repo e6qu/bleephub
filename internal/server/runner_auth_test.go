@@ -20,7 +20,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- helpers ---
+// helpers
 
 func testUser(t *testing.T, s *Server, login string) *store.User {
 	t.Helper()
@@ -178,7 +178,7 @@ func runnerRequest(s *Server, method, path, token string, body string) *httptest
 	return w
 }
 
-// --- forged and tampered runner tokens ---
+// forged and tampered runner tokens
 
 func TestAuthenticateRunnerDistinguishesMissingAndUnsupportedCredentials(t *testing.T) {
 	s := newTestServer()
@@ -260,7 +260,7 @@ func TestRunnerTokenLifetimeIsBoundedToAJob(t *testing.T) {
 	}
 }
 
-// --- the runner protocol is authenticated ---
+// the runner protocol is authenticated
 
 // TestRunnerProtocolRejectsUnauthenticatedCalls sweeps the registered route
 // table rather than a remembered list of paths: every /_apis/ and /twirp/
@@ -438,7 +438,7 @@ func TestAgentSessionTokenCannotReachAnotherRunnersSession(t *testing.T) {
 	}
 }
 
-// --- job secrets only reach an entitled runner ---
+// job secrets only reach an entitled runner
 
 func TestBrokerWithholdsJobMessagesOutsideTheRunnerScope(t *testing.T) {
 	s := newTestServer()
@@ -481,7 +481,7 @@ func TestJobSecretsEntitlement(t *testing.T) {
 	}
 }
 
-// --- artifacts are repository-scoped ---
+// artifacts are repository-scoped
 
 func TestArtifactDownloadRejectsCrossRepository(t *testing.T) {
 	s := newTestServer()
@@ -558,7 +558,7 @@ func TestListArtifactsRequiresARunID(t *testing.T) {
 	}
 }
 
-// --- action tarballs are not a private-repository export ---
+// action tarballs are not a private-repository export
 
 func TestActionTarballRejectsPrivateRepositoryOutsideScope(t *testing.T) {
 	s := newTestServer()
@@ -612,7 +612,7 @@ func TestActionTarballRejectsPrivateRepositoryOutsideScope(t *testing.T) {
 	}
 }
 
-// --- a small body cannot make the server allocate a terabyte ---
+// a small body cannot make the server allocate a terabyte
 
 func TestCacheUploadContentRangeDoesNotAllocateBeyondTheBody(t *testing.T) {
 	s := newTestServer()
@@ -693,7 +693,7 @@ func TestCacheUploadAssemblesChunksAndRejectsGaps(t *testing.T) {
 	}
 }
 
-// --- the filter-pattern cache under concurrency ---
+// the filter-pattern cache under concurrency
 
 func TestFilterPatternCacheConcurrentCompilation(t *testing.T) {
 	patterns := make([]string, 64)
@@ -718,7 +718,7 @@ func TestFilterPatternCacheConcurrentCompilation(t *testing.T) {
 	wg.Wait()
 }
 
-// --- a dropped connection must not lose a queued job ---
+// a dropped connection must not lose a queued job
 
 // failingResponseWriter fails the body write, standing in for a runner that
 // hung up between the status line and the payload.

@@ -112,7 +112,7 @@ func (s *Server) resolveOrgMember(w http.ResponseWriter, r *http.Request) (*stor
 	return org, user
 }
 
-// --- organization invitations ---
+// organization invitations
 
 // orgInvitationJSON renders the `organization-invitation` shape.
 func (s *Server) orgInvitationJSON(inv *store.OrgInvitation, org *store.Org, baseURL string) map[string]interface{} {
@@ -343,7 +343,7 @@ func (s *Server) handleListTeamInvitations(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
-// --- outside collaborators ---
+// outside collaborators
 
 func (s *Server) handleListOutsideCollaborators(w http.ResponseWriter, r *http.Request) {
 	org, _ := s.resolveOrgMember(w, r)
@@ -416,7 +416,7 @@ func (s *Server) handleRemoveOutsideCollaborator(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- organization user blocks ---
+// organization user blocks
 
 func (s *Server) handleListOrgBlocks(w http.ResponseWriter, r *http.Request) {
 	org, _ := s.resolveOrgOwner(w, r)
@@ -482,7 +482,7 @@ func (s *Server) handleUnblockOrgUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- organization interaction limits ---
+// organization interaction limits
 
 // orgInteractionExpiryDurations maps the interaction-expiry enum to durations.
 var orgInteractionExpiryDurations = map[string]time.Duration{
@@ -555,7 +555,7 @@ func (s *Server) handleDeleteOrgInteractionLimits(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- organization roles ---
+// organization roles
 
 // predefinedOrgRole is one entry of the predefined organization role catalog.
 type predefinedOrgRole struct {
@@ -862,7 +862,7 @@ func (s *Server) handleRevokeAllOrganizationRolesFromUser(w http.ResponseWriter,
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- security managers ---
+// security managers
 
 func (s *Server) handleListSecurityManagerTeams(w http.ResponseWriter, r *http.Request) {
 	org, _ := s.resolveOrgMember(w, r)
@@ -906,7 +906,7 @@ func (s *Server) handleRemoveSecurityManagerTeam(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- org-wide security-product enablement ---
+// org-wide security-product enablement
 
 // orgSecurityProductRepoFlags maps the per-repo-modeled security products onto
 // their Repo flag fields — the same state the per-repo vulnerability-alerts and

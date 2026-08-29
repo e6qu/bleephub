@@ -13,7 +13,7 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// --- Single commit ---
+// Single commit
 
 func (s *Server) handleGetSingleCommit(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
@@ -223,7 +223,7 @@ func commitDiffEntries(commit *object.Commit, repo *store.Repo, baseURL string) 
 	return files, totalAdd, totalDel, nil
 }
 
-// --- Pull requests containing a commit ---
+// Pull requests containing a commit
 
 func (s *Server) handleListPullsForCommit(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
@@ -275,7 +275,7 @@ func pullRequestContainsCommit(stor gitStorage.Storer, pr *store.PullRequest, ha
 	return false
 }
 
-// --- Branches where a commit is head ---
+// Branches where a commit is head
 
 func (s *Server) handleListBranchesWhereHead(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
@@ -322,7 +322,7 @@ func (s *Server) handleListBranchesWhereHead(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, out)
 }
 
-// --- Contributors ---
+// Contributors
 
 // contributorBucket aggregates one commit-author identity.
 type contributorBucket struct {
@@ -414,7 +414,7 @@ func (s *Server) handleListRepoContributors(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-// --- Statistics over the real commit history ---
+// Statistics over the real commit history
 
 // defaultBranchCommits returns every commit reachable from the default branch;
 // ok is false when the repo has no git data or no commits.

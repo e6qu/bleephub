@@ -270,7 +270,7 @@ func EncodeCursor(idx int) string { return encodeCursor(idx) }
 // DecodeCursor decodes a connection cursor to its index (zero when invalid).
 func DecodeCursor(s string) int { return decodeCursor(s) }
 
-// --- seam delegators -------------------------------------------------------
+// seam delegators
 //
 // Each unexported method forwards to the injected seam under the resolver
 // code's historical spelling.

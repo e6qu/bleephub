@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// --- Error format conformance ---
+// Error format conformance
 
 func TestConformance401ErrorFormat(t *testing.T) {
 	resp := ghGet(t, "/api/v3/user", "")
@@ -174,7 +174,7 @@ func TestConformance422PRValidation(t *testing.T) {
 	}
 }
 
-// --- Content negotiation / charset ---
+// Content negotiation / charset
 
 func TestConformanceContentTypeCharset(t *testing.T) {
 	resp := ghGet(t, "/api/v3/user", defaultToken)
@@ -282,7 +282,7 @@ func TestConformanceMediaTypeAndStreamingWriter(t *testing.T) {
 	}
 }
 
-// --- Rate limit headers ---
+// Rate limit headers
 
 func TestConformanceRateLimitOnREST(t *testing.T) {
 	resp := ghGet(t, "/api/v3/user", defaultToken)
@@ -351,7 +351,7 @@ func TestConformanceRateLimitEndpoint(t *testing.T) {
 	}
 }
 
-// --- Cross-endpoint consistency (gh api tests) ---
+// Cross-endpoint consistency (gh api tests)
 
 func TestGHApiRepoCreateThenGraphQL(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
@@ -557,7 +557,7 @@ func TestGHApiGraphQLPRsQuery(t *testing.T) {
 	}
 }
 
-// --- Permissions in repo response ---
+// Permissions in repo response
 
 func TestConformanceRepoPermissions(t *testing.T) {
 	ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
@@ -597,7 +597,7 @@ func TestConformanceRepoPermissions(t *testing.T) {
 	}
 }
 
-// --- helpers ---
+// helpers
 
 func newGHRequest(method, url, token string) (*http.Request, error) {
 	req, err := http.NewRequest(method, url, nil)

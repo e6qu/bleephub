@@ -64,7 +64,7 @@ func (s *Server) registerGHRepoReadsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/traffic/popular/referrers", s.handleTrafficPopularReferrers)
 }
 
-// --- People / watching / access ---
+// People / watching / access
 
 func (s *Server) handleListRepoSubscribers(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
@@ -164,7 +164,7 @@ func (s *Server) handleCheckRepoCollaborator(w http.ResponseWriter, r *http.Requ
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
-// --- Repository metadata reads ---
+// Repository metadata reads
 
 func (s *Server) handleGetRepoHashAlgorithm(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
@@ -504,7 +504,7 @@ func (s *Server) handleListPublicRepositories(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, out)
 }
 
-// --- Git refs ---
+// Git refs
 
 func (s *Server) handleGetSingleRef(w http.ResponseWriter, r *http.Request) {
 	_, _, repo, stor := s.gitDataContext(w, r)
@@ -553,7 +553,7 @@ func (s *Server) handleListMatchingRefs(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, items))
 }
 
-// --- shared git helpers ---
+// shared git helpers
 
 // gitStorageForRepo returns the repo's git storage, or nil.
 func (s *Server) gitStorageForRepo(repo *store.Repo) gitStorage.Storer {

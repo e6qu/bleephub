@@ -393,4 +393,4 @@ func normalizeIssueFieldValue(field *store.IssueField, value interface{}) (inter
 	return nil, fmt.Errorf("field %q has unsupported data type %q", field.Name, field.DataType)
 }
 
-// --- store ---
+// store

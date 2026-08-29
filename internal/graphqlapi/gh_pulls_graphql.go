@@ -51,7 +51,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		"PatchStatus",
 		"ADDED", "CHANGED", "COPIED", "DELETED", "MODIFIED", "RENAMED",
 	)
-	// --- Enums ---
+	// Enums
 	pullRequestStateEnum := s.sharedEnum("PullRequestState", "OPEN", "CLOSED", "MERGED")
 
 	mergeableStateEnum := graphql.NewEnum(graphql.EnumConfig{
@@ -96,7 +96,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	prAssigneeConnectionType := s.gqlUserConnectionType(userType)
 	prReactionGroupType := s.gqlReactionGroupType()
 
-	// --- Commit + status-check rollup types ---
+	// Commit + status-check rollup types
 	// gh selects PR check state through commits(last:1){commit{statusCheckRollup
 	// {contexts{...on StatusContext, ...on CheckRun}}}}. CheckRun nodes come from
 	// the checks store, StatusContext nodes from the REST commit-status store.
@@ -378,7 +378,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- Review types ---
+	// Review types
 	prReviewType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "PullRequestReview",
 		Interfaces: []*graphql.Interface{s.graphqlTypes.reactable},
@@ -454,7 +454,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- Review request types ---
+	// Review request types
 	// gh's reviewRequests fragment unions User/Bot/Team. Bot and Team exist so
 	// the fragments type-check; only user review requests are stored.
 	botType := graphql.NewObject(graphql.ObjectConfig{
@@ -584,13 +584,13 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- PR Comment connection ---
+	// PR Comment connection
 	// PR conversation comments are IssueComment (PRs are issues internally), so
 	// the shared IssueCommentConnection serves gh's merged Issue|PullRequest
 	// `comments` fragments. Nodes are commentToGQLLocked maps.
 	prCommentConnectionType := s.gqlIssueCommentConnectionType()
 
-	// --- PR Review thread types ---
+	// PR Review thread types
 	prReviewCommentType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "PullRequestReviewComment",
 		Interfaces: []*graphql.Interface{s.graphqlTypes.reactable},
@@ -668,7 +668,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- PR Commit connection ---
+	// PR Commit connection
 	prCommitConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PullRequestCommitConnection",
 		Fields: graphql.Fields{
@@ -679,7 +679,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- Auto-merge request type ---
+	// Auto-merge request type
 	// Local so its PullRequest back-reference can be attached once that exists.
 	autoMergeRequestType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "AutoMergeRequest",
@@ -693,7 +693,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- Changed-file types ---
+	// Changed-file types
 	// viewerViewedState is VIEWED for a file the viewer marked, else UNVIEWED;
 	// DISMISSED (changed since last viewed) is not tracked.
 	fileViewedStateEnum := s.sharedEnum("FileViewedState", "DISMISSED", "UNVIEWED", "VIEWED")
@@ -734,7 +734,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- PullRequest type ---
+	// PullRequest type
 	pullRequestType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PullRequest",
 		// Closable and Assignable are claimed so a timeline ClosedEvent or
@@ -1197,7 +1197,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		pullRequestMergeEnum: pullRequestMergeMethodEnum,
 	})
 
-	// --- PR Connection ---
+	// PR Connection
 	prEdgeType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PullRequestEdge",
 		Fields: graphql.Fields{
@@ -1217,7 +1217,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 	s.graphqlTypes.pullRequestConnection = prConnectionType
 
-	// --- Add fields to Repository type ---
+	// Add fields to Repository type
 
 	repoType.AddFieldConfig("pullRequests", &graphql.Field{
 		Type: graphql.NewNonNull(prConnectionType),
@@ -1396,7 +1396,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- Query.search ---
+	// Query.search
 	// SearchType omits ISSUE_ADVANCED deliberately: gh introspects the enum and
 	// opts into it only when present, so omitting it keeps gh on the plain
 	// ISSUE backend.
@@ -1548,7 +1548,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- Mutations ---
+	// Mutations
 
 	createPRInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "CreatePullRequestInput",
@@ -1914,7 +1914,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- enablePullRequestAutoMerge / disablePullRequestAutoMerge ---
+	// enablePullRequestAutoMerge / disablePullRequestAutoMerge
 	// Auto-merge arms a merge that runs later through the REST-shared merge gate.
 	// It can only arm while something blocks the merge — a PR that could merge
 	// now is refused ("Pull request is in clean status") — so an enable never
@@ -2071,7 +2071,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- addPullRequestReview (gh pr review) ---
+	// addPullRequestReview (gh pr review)
 	// Mapped onto the same review store as REST POST .../pulls/{n}/reviews.
 	pullRequestReviewEventEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "PullRequestReviewEvent",
@@ -2240,7 +2240,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- submitPullRequestReview (submit a pending review) ---
+	// submitPullRequestReview (submit a pending review)
 	// Both id args are nullable: submit by review id, or by PR id (the viewer's
 	// pending review); event is required.
 	submitPRReviewInputType := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -2296,7 +2296,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// --- dismissPullRequestReview ---
+	// dismissPullRequestReview
 	dismissPRReviewInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "DismissPullRequestReviewInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -2538,7 +2538,7 @@ func closedByPullRequestsForIssue(st *store.Store, repo *store.Repo, issue *stor
 	return out
 }
 
-// --- GraphQL converter helpers ---
+// GraphQL converter helpers
 
 func pullRequestAndRepoFromGQLSource(src interface{}, st *store.Store) (*store.PullRequest, *store.Repo, error) {
 	prMap, ok := src.(map[string]interface{})

@@ -151,7 +151,7 @@ func benchDo(b *testing.B, h http.Handler, method, target string, body string) {
 	}
 }
 
-// --- List / read hot paths ---
+// List / read hot paths
 
 func BenchmarkListOrgRepos(b *testing.B) {
 	_, h, org, _ := benchServer(b, defaultCorpus())
@@ -223,7 +223,7 @@ func BenchmarkGraphQLPullRequests(b *testing.B) {
 	}
 }
 
-// --- Serializer micro-benchmarks (no HTTP framing) ---
+// Serializer micro-benchmarks (no HTTP framing)
 
 func BenchmarkRepoToJSON(b *testing.B) {
 	s, _, org, _ := benchServer(b, defaultCorpus())
@@ -238,7 +238,7 @@ func BenchmarkRepoToJSON(b *testing.B) {
 	}
 }
 
-// --- Git-backed reads ---
+// Git-backed reads
 
 func BenchmarkListCommits(b *testing.B) {
 	_, h, org, gitRepo := benchServer(b, defaultCorpus())

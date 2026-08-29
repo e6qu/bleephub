@@ -340,4 +340,4 @@ func codeSecurityConfigurationJSON(c *store.CodeSecurityConfiguration, baseURL s
 	return out
 }
 
-// --- store ---
+// store

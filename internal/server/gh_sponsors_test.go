@@ -91,7 +91,6 @@ func mustCreateSponsorsTier(t *testing.T, s *isolatedServer, listingID, cents in
 	return tier
 }
 
-// ---------------------------------------------------------------------------
 // store: the billing state machine
 
 func TestSponsorshipBillingLifecycle(t *testing.T) {
@@ -335,7 +334,6 @@ func TestSponsorsStoreGettersReturnDetachedSnapshots(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // the /ui-data browser surface
 
 func TestSponsorsBrowserSurfaceLifecycle(t *testing.T) {
@@ -475,7 +473,6 @@ func TestSponsorshipNewslettersRequireSponsorshipOrOwnership(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // webhooks
 
 func TestSponsorshipWebhookDeliversTheActionSequence(t *testing.T) {
@@ -599,7 +596,6 @@ func newSponsorsWebhookReceiver(t *testing.T, sink *sponsorshipWebhookSink) stri
 	return url
 }
 
-// ---------------------------------------------------------------------------
 // GraphQL
 
 func TestSponsorableGraphQLSurface(t *testing.T) {
@@ -824,7 +820,6 @@ func TestSponsorsNodeIDsResolveThroughQueryNode(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // test helpers
 
 func sponsorsGraphQLAs(t *testing.T, s *isolatedServer, token, query string, variables map[string]interface{}) map[string]interface{} {
@@ -879,7 +874,7 @@ func assertSponsorsStatus(t *testing.T, resp *http.Response, want int) {
 	}
 }
 
-// --- the Sponsors mutation authorization table -----------------------------
+// the Sponsors mutation authorization table
 //
 // Every Sponsors mutation names an account rather than a repository or a
 // project, so the repository and project refusal tables say nothing about

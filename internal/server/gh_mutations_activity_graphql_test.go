@@ -182,7 +182,7 @@ func TestGraphQLActivityOrgMutationsStillServeTheOrganizationOwner(t *testing.T)
 	}
 }
 
-// --- behavioural ------------------------------------------------------------
+// behavioural
 
 func TestGraphQLStarMutationsWriteTheStarStore(t *testing.T) {
 	t.Parallel()

@@ -23,7 +23,7 @@ func (s *Resolver) enrichConversationTypes(userType, repoType *graphql.Object) {
 	s.enrichDiscussionType()
 }
 
-// --- shared small helpers --------------------------------------------------
+// shared small helpers
 
 // emptyGQLConnection is a well-formed empty Relay connection.
 func emptyGQLConnection() map[string]interface{} {
@@ -138,7 +138,7 @@ func cannotUpdateReasons(viewer *store.User, canUpdate bool) []interface{} {
 	return []interface{}{"INSUFFICIENT_ACCESS"}
 }
 
-// --- Issue -----------------------------------------------------------------
+// Issue
 
 func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 	issueType := s.graphqlTypes.issue

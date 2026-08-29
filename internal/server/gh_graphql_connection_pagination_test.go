@@ -64,7 +64,7 @@ func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
 	const total = 5
 	seedPRReviews(s, t, owner, name, prNum, total)
 
-	// --- Page 1: first:2 returns exactly 2, hasNextPage:true, real endCursor ---
+	// Page 1: first:2 returns exactly 2, hasNextPage:true, real endCursor
 	page1 := queryPRReviews(s, t, owner, name, prNum, "first: 2")
 	nodes1, _ := page1["nodes"].([]interface{})
 	if len(nodes1) != 2 {
@@ -85,7 +85,7 @@ func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
 		t.Fatalf("page1 endCursor empty, want a non-null cursor: %v", pi1)
 	}
 
-	// --- Page 2: after:<endCursor> returns the next slice ---
+	// Page 2: after:<endCursor> returns the next slice
 	page2 := queryPRReviews(s, t, owner, name, prNum, `first: 2, after: "`+endCursor1+`"`)
 	nodes2, _ := page2["nodes"].([]interface{})
 	if len(nodes2) != 2 {
@@ -109,7 +109,7 @@ func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
 		t.Errorf("page2 overlaps page1: %v vs %v", nodes2, nodes1)
 	}
 
-	// --- Page 3: the final single review ---
+	// Page 3: the final single review
 	endCursor2, _ := pi2["endCursor"].(string)
 	page3 := queryPRReviews(s, t, owner, name, prNum, `first: 2, after: "`+endCursor2+`"`)
 	nodes3, _ := page3["nodes"].([]interface{})
@@ -121,7 +121,7 @@ func TestPRGraphQL_ReviewsConnectionPagination(t *testing.T) {
 		t.Errorf("page3 hasNextPage = %v, want false (list exhausted)", pi3["hasNextPage"])
 	}
 
-	// --- first:100 (the runner-cell shape) returns everything, one page ---
+	// first:100 (the runner-cell shape) returns everything, one page
 	all := queryPRReviews(s, t, owner, name, prNum, "first: 100")
 	allNodes, _ := all["nodes"].([]interface{})
 	if len(allNodes) != total {

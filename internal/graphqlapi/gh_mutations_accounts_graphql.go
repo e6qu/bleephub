@@ -17,7 +17,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- authorization rules ----------------------------------------------------
+// authorization rules
 
 // viewerAccountRule is the policy for a mutation on the viewer's own account.
 // The registrar checks authentication; this checks the credential's grant, so a
@@ -102,7 +102,7 @@ func (notificationRestrictionRule) authorize(s *Resolver, p graphql.ResolveParam
 	return nil
 }
 
-// --- schema -----------------------------------------------------------------
+// schema
 
 func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 	userType := s.graphqlTypes.user
@@ -111,7 +111,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 	userListType := s.gqlUserListType()
 	dateTime := s.graphQLStringScalar("DateTime")
 
-	// --- the follow graph --------------------------------------------------
+	// the follow graph
 
 	follow := func(name, payloadName, inputName, idKey string, payloadField string, payloadType *graphql.Object, following bool) {
 		s.registerMutation(mutationType, name, &graphql.Field{
@@ -133,7 +133,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 	follow("followOrganization", "FollowOrganizationPayload", "FollowOrganizationInput", "organizationId", "organization", orgType, true)
 	follow("unfollowOrganization", "UnfollowOrganizationPayload", "UnfollowOrganizationInput", "organizationId", "organization", orgType, false)
 
-	// --- the profile status ------------------------------------------------
+	// the profile status
 
 	s.registerMutation(mutationType, "changeUserStatus", &graphql.Field{
 		Type: s.mutationPayload("ChangeUserStatusPayload", graphql.Fields{
@@ -151,7 +151,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 		Resolve: s.resolveChangeUserStatus,
 	})
 
-	// --- the stars-page lists ----------------------------------------------
+	// the stars-page lists
 
 	s.registerMutation(mutationType, "createUserList", &graphql.Field{
 		Type: s.mutationPayload("CreateUserListPayload", graphql.Fields{
@@ -211,7 +211,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 		Resolve: s.resolveUpdateUserListsForItem,
 	})
 
-	// --- notification delivery ---------------------------------------------
+	// notification delivery
 
 	s.registerMutation(mutationType, "updateNotificationRestrictionSetting", &graphql.Field{
 		Type: s.mutationPayload("UpdateNotificationRestrictionSettingPayload", graphql.Fields{
@@ -228,7 +228,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 	})
 }
 
-// --- types ------------------------------------------------------------------
+// types
 
 func (s *Resolver) gqlUserStatusType() *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
@@ -374,7 +374,7 @@ func (s *Resolver) userListToGQL(list *store.UserList) map[string]interface{} {
 	}
 }
 
-// --- resolvers --------------------------------------------------------------
+// resolvers
 
 func (s *Resolver) resolveFollow(p graphql.ResolveParams, idKey, payloadField string, following bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})

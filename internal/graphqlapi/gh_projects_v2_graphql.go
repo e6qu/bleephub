@@ -8,7 +8,7 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// --- ProjectV2 mutation authorization ---
+// ProjectV2 mutation authorization
 //
 // A project belongs to a user or organization, so the entitlement is the
 // owner-scoped pair the REST surface enforces: canReadProjectV2 for visibility,
@@ -366,7 +366,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	// --- createProjectV2Field ---
+	// createProjectV2Field
 
 	dataTypeEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "ProjectV2CustomFieldType",
@@ -445,7 +445,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	// --- updateProjectV2ItemFieldValue ---
+	// updateProjectV2ItemFieldValue
 
 	fieldValueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "ProjectV2FieldValue",

@@ -102,7 +102,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 		},
 	})
 
-	// --- Repository fields gh CLI selects (clone/create/view --json) ---
+	// Repository fields gh CLI selects (clone/create/view --json)
 	// These resolve from the same store state as the REST repository shape.
 
 	repoType.AddFieldConfig("hasWikiEnabled", &graphql.Field{
@@ -525,7 +525,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 	orderDirectionEnum := s.sharedEnum("OrderDirection", "ASC", "DESC")
 	repositoryOrderInput := s.gqlRepositoryOrderInput()
 
-	// --- Releases (gh release list / view / download / delete) ---
+	// Releases (gh release list / view / download / delete)
 	// gh release list needs $direction typed OrderDirection — that enum must keep
 	// its exact name. Backed by the real release store; immutable derives from the
 	// repo and org immutable-release settings the REST surface persists.
@@ -1064,7 +1064,7 @@ func graphQLRepositoryAffiliations(value interface{}) []string {
 	return affiliations
 }
 
-// --- Mutation authorization ---
+// Mutation authorization
 //
 // Every mutation reaches the schema through registerMutation, which refuses a
 // name graphqlMutationAuthz does not cover. A mutation added without a policy

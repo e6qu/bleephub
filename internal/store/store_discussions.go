@@ -534,7 +534,7 @@ func (st *Store) SetPinnedDiscussions(repoID int, ids []int) []int {
 	return append([]int(nil), stored...)
 }
 
-// --- Persistence helpers ---
+// Persistence helpers
 
 func (st *Store) persistDiscussionCategory(cat *DiscussionCategory) {
 	if st.Persist != nil {

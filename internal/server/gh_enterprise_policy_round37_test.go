@@ -18,7 +18,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- membersCanMakePurchases ------------------------------------------------
+// membersCanMakePurchases
 
 // TestEnterprisePolicyGovernsMarketplacePurchases: the Marketplace write paths
 // that spend money — the initial purchase and a later plan change — answer to
@@ -70,7 +70,7 @@ func TestEnterprisePolicyGovernsMarketplacePurchases(t *testing.T) {
 	}
 }
 
-// --- organizationProjects ---------------------------------------------------
+// organizationProjects
 
 const createProjectV2Mutation = `mutation($ownerId: ID!, $title: String!) {
   createProjectV2(input: {ownerId: $ownerId, title: $title}) { projectV2 { id title } }
@@ -122,7 +122,7 @@ func TestEnterprisePolicyGovernsOrganizationProjects(t *testing.T) {
 	}
 }
 
-// --- proofOfPresenceRequired (sudo mode) ------------------------------------
+// proofOfPresenceRequired (sudo mode)
 
 // sudoFixture is an account with a local password and a live browser session,
 // which is the only principal sudo mode governs.
@@ -289,7 +289,7 @@ func TestEnterpriseProofOfPresenceMFARequiresASecondFactor(t *testing.T) {
 		http.StatusNoContent, "revoke a session with an MFA proof")
 }
 
-// --- ipAllowListUserLevelEnforcementEnabled ---------------------------------
+// ipAllowListUserLevelEnforcementEnabled
 
 // TestEnterpriseUserLevelIPAllowListEnforcement: an account's own allow list
 // binds its API requests only while the enterprise turns user-level
@@ -367,7 +367,7 @@ func TestUserIPAllowListIsPrivateToItsAccount(t *testing.T) {
 		"the owning account deleting its own entry")
 }
 
-// --- twoFactorDisallowedMethods ---------------------------------------------
+// twoFactorDisallowedMethods
 
 // TestEnterpriseDisallowsInsecureTwoFactorMethods: with the setting at
 // INSECURE, the second-factor method bleephub classes insecure — the printed
@@ -433,7 +433,7 @@ func TestEnterpriseDisallowsInsecureTwoFactorMethods(t *testing.T) {
 	}
 }
 
-// --- notificationDeliveryRestrictionEnabled ---------------------------------
+// notificationDeliveryRestrictionEnabled
 
 // TestEnterpriseNotificationDeliveryRestriction: with delivery restricted to
 // the enterprise's verified domains, an account whose address is outside them

@@ -220,7 +220,7 @@ func (s *Server) handleDeleteEnterpriseTeam(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- memberships ---
+// memberships
 
 func (s *Server) handleListEnterpriseTeamMemberships(w http.ResponseWriter, r *http.Request) {
 	team := s.lookupEnterpriseTeam(w, r)
@@ -346,7 +346,7 @@ func (s *Server) handleRemoveEnterpriseTeamMembership(w http.ResponseWriter, r *
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- organization assignments ---
+// organization assignments
 
 // requireSelectedEnterpriseTeam 422s unless the team is "selected" mode;
 // "all"/"disabled" derive their assignment set from the selection type itself.

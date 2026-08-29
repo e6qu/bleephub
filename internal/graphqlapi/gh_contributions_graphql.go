@@ -19,7 +19,7 @@ var contributionColorRamp = []string{"#ebedf0", "#9be9a8", "#40c463", "#30a14e",
 
 var contributionLevelNames = []string{"NONE", "FIRST_QUARTILE", "SECOND_QUARTILE", "THIRD_QUARTILE", "FOURTH_QUARTILE"}
 
-// --- enums & inputs ---------------------------------------------------------
+// enums & inputs
 
 func (s *Resolver) contributionLevelEnum() *graphql.Enum {
 	return s.sharedEnum("ContributionLevel", "FIRST_QUARTILE", "FOURTH_QUARTILE", "NONE", "SECOND_QUARTILE", "THIRD_QUARTILE")
@@ -38,7 +38,7 @@ func (s *Resolver) commitContributionOrderInput() *graphql.InputObject {
 	})
 }
 
-// --- the Contribution interface & its implementers --------------------------
+// the Contribution interface & its implementers
 
 func (s *Resolver) contributionInterface() *graphql.Interface {
 	return s.mutationInterface("Contribution", func() graphql.Fields {
@@ -163,7 +163,7 @@ func (s *Resolver) restrictedContributionType() *graphql.Object {
 	})
 }
 
-// --- unions -----------------------------------------------------------------
+// unions
 
 func (s *Resolver) createdIssueOrRestrictedUnion() *graphql.Union {
 	return s.mutationUnion("CreatedIssueOrRestrictedContribution", func() []*graphql.Object {
@@ -189,7 +189,7 @@ func (s *Resolver) createdRepositoryOrRestrictedUnion() *graphql.Union {
 	})
 }
 
-// --- connections ------------------------------------------------------------
+// connections
 
 func (s *Resolver) contributionConnectionType(name string, node *graphql.Object) *graphql.Object {
 	return s.mutationObject(name, graphql.Fields{
@@ -228,7 +228,7 @@ func (s *Resolver) createdCommitContributionConnection() *graphql.Object {
 	return s.contributionConnectionType("CreatedCommitContributionConnection", s.createdCommitContributionType())
 }
 
-// --- *ByRepository groupings ------------------------------------------------
+// *ByRepository groupings
 
 // contributionsConnectionField is the `contributions(...)` connection every
 // *ByRepository object declares, paginating the group's pre-rendered node list.
@@ -289,7 +289,7 @@ func (s *Resolver) pullRequestReviewContributionsByRepositoryType() *graphql.Obj
 	})
 }
 
-// --- calendar ---------------------------------------------------------------
+// calendar
 
 func (s *Resolver) contributionCalendarType() *graphql.Object {
 	return s.mutationObject("ContributionCalendar", graphql.Fields{
@@ -330,7 +330,7 @@ func (s *Resolver) contributionCalendarMonthType() *graphql.Object {
 	})
 }
 
-// --- the collection ---------------------------------------------------------
+// the collection
 
 func (s *Resolver) gqlContributionsCollectionType() *graphql.Object {
 	return s.mutationObjectLazy("ContributionsCollection", func() graphql.Fields {
@@ -395,7 +395,7 @@ func (s *Resolver) gqlContributionsCollectionType() *graphql.Object {
 	})
 }
 
-// --- collection field builders ----------------------------------------------
+// collection field builders
 
 func excludeArgs() graphql.FieldConfigArgument {
 	return graphql.FieldConfigArgument{
@@ -510,7 +510,7 @@ func (s *Resolver) excludableRepoCountField(key string) *graphql.Field {
 	}
 }
 
-// --- source-map access & filtering ------------------------------------------
+// source-map access & filtering
 
 func sourceNodes(source interface{}, key string) []map[string]interface{} {
 	src, _ := source.(map[string]interface{})
@@ -628,7 +628,7 @@ func paginateContributionNodes(nodes []map[string]interface{}, args map[string]i
 	return paginateGQLItems(items, args)
 }
 
-// --- the aggregate source ---------------------------------------------------
+// the aggregate source
 
 // contributionsCollectionSource computes the aggregate for the window and
 // returns the ContributionsCollection source map. A zero from or to means the
@@ -721,7 +721,7 @@ func firstDBID[T any](record *T, from, to time.Time, id func() int) interface{} 
 	return id()
 }
 
-// --- contribution node renderers --------------------------------------------
+// contribution node renderers
 
 func (s *Resolver) baseContribution(typename, resourcePath string, occurredAt time.Time, userSource map[string]interface{}, dbID int) map[string]interface{} {
 	return map[string]interface{}{
@@ -892,7 +892,7 @@ func groupByRepository(nodes []map[string]interface{}, st *store.Store) []map[st
 	return groups
 }
 
-// --- first / popular / joined renderers -------------------------------------
+// first / popular / joined renderers
 
 func (s *Resolver) renderFirstIssue(data *store.ContributionData, userSource map[string]interface{}, from, to time.Time) map[string]interface{} {
 	if data.FirstIssue == nil || data.FirstIssue.CreatedAt.Before(from) || data.FirstIssue.CreatedAt.After(to) {
@@ -956,7 +956,7 @@ func (s *Resolver) renderJoinedGitHub(data *store.ContributionData, userSource m
 	return s.baseContribution("JoinedGitHubContribution", path, data.User.CreatedAt, userSource, data.User.ID)
 }
 
-// --- calendar rendering -----------------------------------------------------
+// calendar rendering
 
 func (s *Resolver) renderContributionCalendar(data *store.ContributionData, from, to time.Time) map[string]interface{} {
 	// Positive day counts determine the quartile thresholds.
@@ -1023,7 +1023,7 @@ func (s *Resolver) renderContributionCalendar(data *store.ContributionData, from
 	}
 }
 
-// --- small helpers ----------------------------------------------------------
+// small helpers
 
 func repoFullName(repo *store.Repo) string {
 	if repo == nil {

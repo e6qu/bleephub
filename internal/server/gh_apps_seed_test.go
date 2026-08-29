@@ -55,7 +55,7 @@ func TestSeedPreRegisteredApp(t *testing.T) {
 		t.Fatalf("app %d was not seeded into the store", appID)
 	}
 
-	// ---- From here on, act ONLY as a coordinate-only client. ----
+	// From here on, act ONLY as a coordinate-only client.
 	jwt, err := signAppJWT(pemKey, appID, fixedTestTime)
 	if err != nil {
 		t.Fatal(err)
