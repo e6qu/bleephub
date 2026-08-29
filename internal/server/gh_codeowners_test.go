@@ -11,9 +11,9 @@ import (
 )
 
 // TestCodeownersPatternSemantics pins the path-matching rules GitHub documents
-// for CODEOWNERS, pattern by pattern, including the two places its syntax
-// departs from gitignore's: a wildcard-terminated pattern does not own the
-// subtree below the files it matches, and `!` is not a negation.
+// for CODEOWNERS, pattern by pattern, including the two places its syntax departs
+// from gitignore's: a wildcard-terminated pattern does not own the subtree below
+// the files it matches, and `!` is not a negation.
 func TestCodeownersPatternSemantics(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -106,8 +106,8 @@ func TestCodeownersPatternSemantics(t *testing.T) {
 }
 
 // TestCodeownersLastMatchWinsAndClearing covers the file-level rules: the last
-// matching pattern owns the path, a pattern naming no owners clears ownership
-// for what it matches, comments and blank lines are not rules, and `!` is not a
+// matching pattern owns the path, a pattern naming no owners clears ownership for
+// what it matches, comments and blank lines are not rules, and `!` is not a
 // negation because GitHub's syntax has none.
 func TestCodeownersLastMatchWinsAndClearing(t *testing.T) {
 	t.Parallel()
@@ -145,8 +145,8 @@ func TestCodeownersLastMatchWinsAndClearing(t *testing.T) {
 }
 
 // codeownersRepo creates a private admin repository with the given CODEOWNERS
-// content on its default branch and a "feature" branch cut from it, and returns
-// the repository.
+// content on its default branch and a "feature" branch cut from it, returning the
+// repository.
 func codeownersRepo(t *testing.T, s *isolatedServer, name, codeowners string) *store.Repo {
 	t.Helper()
 	resp := s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
@@ -164,8 +164,8 @@ func codeownersRepo(t *testing.T, s *isolatedServer, name, codeowners string) *s
 }
 
 // codeownersUser seeds a user with a token, optionally as a collaborator on
-// repo — a user left off the collaborator list cannot read a private
-// repository, which is what makes them ineligible as a reviewer.
+// repo — a user left off the collaborator list cannot read a private repo, which
+// is what makes them ineligible as a reviewer.
 func codeownersUser(t *testing.T, s *isolatedServer, login string, repo *store.Repo, permission string) (*store.User, string) {
 	t.Helper()
 	user := s.createTestUser(t, login)
@@ -193,10 +193,10 @@ func requestedReviewerLogins(t *testing.T, s *isolatedServer, repo *store.Repo, 
 }
 
 // TestCodeownersAutoRequestOnOpenAndHeadAdvance covers the automatic reviewer
-// requests: the owners of the files a pull request changes are requested when
-// it opens and again when a push brings newly owned files into the diff, while
-// the author, an owner who cannot read the repository, an owner-less path and
-// an owner who has already reviewed are all left alone.
+// requests: the owners of the files a pull request changes are requested when it
+// opens and again when a push brings newly owned files into the diff, while the
+// author, an owner who cannot read the repo, an owner-less path and an owner who
+// has already reviewed are all left alone.
 func TestCodeownersAutoRequestOnOpenAndHeadAdvance(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -209,8 +209,8 @@ func TestCodeownersAutoRequestOnOpenAndHeadAdvance(t *testing.T) {
 	docsOwner, _ := codeownersUser(t, s, "docs-owner", repo, "push")
 	require.NotNil(t, docsOwner)
 	codeownersUser(t, s, "api-owner", repo, "push")
-	// A CODEOWNERS entry for somebody with no access to a private repository
-	// names a person who could never review it, so they are never requested.
+	// A CODEOWNERS entry for somebody with no access to a private repo names a
+	// person who could never review it, so they are never requested.
 	codeownersUser(t, s, "locked-out", repo, "")
 
 	s.putReadsFile(t, repo.Name, "docs/guide.md", "# guide\n", "document", "feature")
@@ -255,10 +255,9 @@ func TestCodeownersAutoRequestOnOpenAndHeadAdvance(t *testing.T) {
 	require.Equal(t, []string{"api-owner"}, users, "an owner who already reviewed is not re-requested")
 }
 
-// TestCodeownersRepoWithoutCodeownersFileIsUnaffected pins that a repository
-// with no CODEOWNERS file gets no reviewer requests and that
-// require_code_owner_reviews cannot block a merge there — there is nobody it
-// could be waiting for.
+// TestCodeownersRepoWithoutCodeownersFileIsUnaffected pins that a repo with no
+// CODEOWNERS file gets no reviewer requests and that require_code_owner_reviews
+// cannot block a merge there — there is nobody it could be waiting for.
 func TestCodeownersRepoWithoutCodeownersFileIsUnaffected(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -293,8 +292,8 @@ func TestCodeownersRepoWithoutCodeownersFileIsUnaffected(t *testing.T) {
 // TestRequireCodeOwnerReviewsGatesMerge covers the enforcement half: with
 // require_code_owner_reviews set the merge is refused until a code owner of the
 // changed files approves, an approval from somebody who owns nothing does not
-// count, a dismissed approval stops counting, and the read path reports the
-// same blocked state it reports for any other protection refusal.
+// count, a dismissed approval stops counting, and the read path reports the same
+// blocked state it reports for any other protection refusal.
 func TestRequireCodeOwnerReviewsGatesMerge(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -343,7 +342,7 @@ func TestRequireCodeOwnerReviewsGatesMerge(t *testing.T) {
 	require.NotEqual(t, "blocked", detail["mergeable_state"], "an approved pull request is no longer blocked")
 
 	// Dismissing that approval closes it again — a stale approval carries no
-	// weight, exactly as it carries none for the other review rules.
+	// weight, as it carries none for the other review rules.
 	resp = s.put(t, prPath+"/reviews/"+reviewID+"/dismissals", defaultToken, map[string]interface{}{
 		"message": "the head moved on",
 	})
@@ -363,8 +362,8 @@ func TestRequireCodeOwnerReviewsGatesMerge(t *testing.T) {
 }
 
 // TestCodeownersTeamOwnerRequestedAndApproves covers team ownership end to end:
-// an `@org/team` owner is requested as a team reviewer rather than as its
-// individual members, and any member's approval satisfies the merge gate.
+// an `@org/team` owner is requested as a team reviewer, not as its individual
+// members, and any member's approval satisfies the merge gate.
 func TestCodeownersTeamOwnerRequestedAndApproves(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

@@ -1255,8 +1255,7 @@ func (s *Resolver) buildComparison(ctx context.Context, repoFullName string, sto
 			if src := s.commitSourceForRepoSHA(ctx, repoFullName, h.String()); src != nil {
 				aheadCommits = append(aheadCommits, src.(map[string]interface{}))
 			}
-			// authorCount is the distinct authors and co-authors across the
-			// commits ahead.
+			// authorCount: distinct authors and co-authors across the commits ahead.
 			if commit, err := object.GetCommit(stor, h); err == nil {
 				if email := strings.ToLower(strings.TrimSpace(commit.Author.Email)); email != "" {
 					authors[email] = struct{}{}

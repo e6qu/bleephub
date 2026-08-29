@@ -15,8 +15,7 @@ import (
 // TestRangedReadsTransferOnlyTheExtentTouched is the read-amplification claim:
 // reading one object from a packed repo must cost the extent that holds it, not
 // the whole pack, or every blob would drag the whole monorepo across the wire.
-// The extent size is turned down so the pack is many extents long; the ratio is
-// what is pinned, and it holds at any scale.
+// The extent size is turned down so the pack is many extents long; the pinned ratio holds at any scale.
 func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
 	t.Setenv(packCacheDirEnv, t.TempDir())
 	t.Setenv(packChunkBytesEnv, "4096")

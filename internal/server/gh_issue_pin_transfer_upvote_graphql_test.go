@@ -84,7 +84,7 @@ func TestGraphQLPinIssueCapsAtThreeAndSurfacesPinnedState(t *testing.T) {
 	}
 
 	// Unpinning frees a slot (payload carries the unpinned PinnedIssue id) and
-	// unpinning again is a no-op with a null id, mirroring removeReaction.
+	// unpinning again is a no-op with a null id, like removeReaction.
 	unpinDoc := `mutation($input:UnpinIssueInput!){unpinIssue(input:$input){id issue{isPinned}}}`
 	payload := gqlMutationData(t, s.gqlAuthzPost(t, f.ownerToken, unpinDoc,
 		map[string]interface{}{"input": map[string]interface{}{"issueId": f.issue.NodeID}}), "unpinIssue")
@@ -113,7 +113,7 @@ func TestGraphQLTransferIssueMovesToTheSameOwnersRepo(t *testing.T) {
 	st := s.store
 
 	// A pre-existing issue in the target proves the moved issue takes the
-	// target's next number rather than keeping its own.
+	// target's next number, not its own.
 	if st.CreateIssue(f.repo2.ID, f.owner.ID, "target already has one", "", nil, nil, 0) == nil {
 		t.Fatal("could not seed the target repository's issue")
 	}
@@ -165,8 +165,8 @@ func TestGraphQLTransferIssueMovesToTheSameOwnersRepo(t *testing.T) {
 		t.Errorf("target-repo timeline events = %v, want opened and transferred", events)
 	}
 
-	// A repository under another owner is refused even when the caller has
-	// push on both sides: GitHub only transfers between same-owner repos.
+	// A repo under another owner is refused even when the caller has push on both
+	// sides: GitHub only transfers between same-owner repos.
 	foreign := st.CreateRepo(f.stranger, "foreign-target", "", true)
 	if foreign == nil {
 		t.Fatal("could not create the foreign repository")
@@ -226,8 +226,8 @@ func TestGraphQLDeleteIssueRemovesTheIssueAndItsChildren(t *testing.T) {
 func TestGraphQLUpvotesOnDiscussionsAndComments(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	// Public repository: upvoting is read-level participation, so the
-	// unrelated account exercises the second voter.
+	// Public repo: upvoting is read-level participation, so the unrelated account
+	// exercises the second voter.
 	f := newGQLAuthzFixture(t, s.Server, "upvote", false)
 
 	addDoc := `mutation($input:AddUpvoteInput!){addUpvote(input:$input){subject{upvoteCount viewerHasUpvoted}}}`
@@ -259,8 +259,7 @@ func TestGraphQLUpvotesOnDiscussionsAndComments(t *testing.T) {
 		if count != 2 || !voted {
 			t.Fatalf("%s: after second voter count=%v voted=%v, want 2/true", subjectID, count, voted)
 		}
-		// Removing one vote leaves the other, and the remover's viewer flag
-		// clears.
+		// Removing one vote leaves the other, and the remover's viewer flag clears.
 		count, voted = subjectAfter(s.gqlAuthzPost(t, f.ownerToken, removeDoc, input), "removeUpvote")
 		if count != 1 || voted {
 			t.Fatalf("%s: after removeUpvote count=%v voted=%v, want 1/false", subjectID, count, voted)

@@ -92,9 +92,9 @@ func (st *Store) DeleteCustomProperty(orgLogin, name string) bool {
 	return true
 }
 
-// OrgOwnsCustomProperty reports whether the definition is the org's own
-// rather than inherited from the enterprise schema. Editing an
-// enterprise-level definition is the enterprise owner's call, not the org's.
+// OrgOwnsCustomProperty reports whether the definition is the org's own rather
+// than inherited from the enterprise schema. Editing an enterprise-level
+// definition is the enterprise owner's call, not the org's.
 func (st *Store) OrgOwnsCustomProperty(orgLogin, name string) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

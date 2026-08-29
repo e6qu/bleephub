@@ -11,8 +11,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// The security-advisory, vulnerability-alert and dependency-graph GraphQL
-// surface.
+// The security-advisory, vulnerability-alert and dependency-graph GraphQL surface.
 //
 // The three root fields (securityAdvisory, securityAdvisories,
 // securityVulnerabilities) read the public global advisory database and take

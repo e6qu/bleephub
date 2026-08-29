@@ -1,11 +1,9 @@
 package graphqlapi
 
-// The account-scoped mutation surface: the follow graph, the profile status,
-// the stars-page repository lists, and the notification-delivery restriction.
+// The account-scoped mutation surface: the follow graph, profile status, stars-page repository lists, and the notification-delivery restriction.
 //
-// These name no repository, so their policy rows bypass repoRule. Each is
-// entitled either by the credential's grant over the viewer's own account or
-// by ownership of the named organization/enterprise.
+// These name no repository, so their policy rows bypass repoRule. Each is entitled either by the credential's grant over
+// the viewer's own account or by ownership of the named organization/enterprise.
 
 import (
 	"fmt"
@@ -17,11 +15,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// authorization rules
-
-// viewerAccountRule is the policy for a mutation on the viewer's own account.
-// The registrar checks authentication; this checks the credential's grant, so a
-// foreign or nowhere-installed token is refused where the bearer's session is served.
+// viewerAccountRule is the policy for a mutation on the viewer's own account. The registrar checks authentication; this
+// checks the credential's grant, so a foreign or nowhere-installed token is refused where the bearer's session is served.
 type viewerAccountRule struct {
 	scope store.PermScope
 }
@@ -44,8 +39,7 @@ func (r viewerAccountRule) authorize(s *Resolver, p graphql.ResolveParams, _ map
 	return nil
 }
 
-// userListRule requires the named list to be the viewer's own. Another user's
-// list is answered as absent, so the mutation cannot reveal a private list exists.
+// userListRule requires the named list to be the viewer's own. Another user's list is answered as absent, so the mutation cannot reveal a private list exists.
 type userListRule struct {
 	idKey string
 }
@@ -73,8 +67,7 @@ func (r userListRule) authorize(s *Resolver, p graphql.ResolveParams, input map[
 	return nil
 }
 
-// notificationRestrictionRule is the policy for
-// updateNotificationRestrictionSetting: ownership of the named enterprise or
+// notificationRestrictionRule is the policy for updateNotificationRestrictionSetting: ownership of the named enterprise or
 // organization, so owning one never authorizes a write against another.
 type notificationRestrictionRule struct{}
 
@@ -327,8 +320,7 @@ func (s *Resolver) gqlUserListItemsConnectionType() *graphql.Object {
 	})
 }
 
-// gqlVerifiableDomainOwnerUnion is the Enterprise | Organization union the
-// verifiable-domain and notification-restriction payloads return.
+// gqlVerifiableDomainOwnerUnion is the Enterprise | Organization union the verifiable-domain and notification-restriction payloads return.
 func (s *Resolver) gqlVerifiableDomainOwnerUnion() *graphql.Union {
 	return s.mutationUnion("VerifiableDomainOwner",
 		func() []*graphql.Object {

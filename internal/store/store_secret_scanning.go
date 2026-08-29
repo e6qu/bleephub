@@ -157,8 +157,7 @@ func secretTypeDisplayName(secretType string) string {
 }
 
 // cloneSecretScanningAlert returns a detached deep copy (STORE-021). Locations
-// and ResolvedAt are the only reference fields, so copying the struct plus
-// those two suffices.
+// and ResolvedAt are its only reference fields, so copying the struct plus those suffices.
 func cloneSecretScanningAlert(a *SecretScanningAlert) *SecretScanningAlert {
 	if a == nil {
 		return nil
@@ -352,9 +351,9 @@ func (st *Store) persistSecretScanningAlert(a *SecretScanningAlert) {
 	}
 }
 
-// ListSecretScanningAlertsByOrg returns alerts for the org's repos, filtered
-// and sorted per GitHub's org-alerts query parameters. Unknown filter values
-// yield no matches rather than a 400, matching GitHub's lenient behavior.
+// ListSecretScanningAlertsByOrg returns alerts for the org's repos, filtered and
+// sorted per GitHub's org-alerts query parameters. Unknown filter values yield no
+// matches rather than a 400, matching GitHub's lenient behavior.
 func (st *Store) ListSecretScanningAlertsByOrg(orgID int, state, secretType, resolution, sortField, direction string) []*SecretScanningAlert {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

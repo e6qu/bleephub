@@ -21,13 +21,10 @@ import (
 // The configuration handshake of the official actions/runner, step for step,
 // against the live test server.
 //
-// Every gate on the runner control plane was verified to reject a caller with
-// no credential. What that cannot show is the other half — that a runner
-// holding exactly the credentials `config.sh` has at each point still gets
-// through. A gate one credential too tight fails identically to a missing
-// route: 401, before the runner has configured itself at all. So each step
-// here asserts both directions, and the sequence is the one the runner
-// actually performs:
+// Refusal tests show every gate rejects an anonymous caller; they can't show a
+// runner holding exactly config.sh's credentials at each point still gets
+// through. An over-tight gate fails identically to a missing route (401), so
+// each step asserts both directions, in the sequence the runner performs:
 //
 //	operator  POST /api/v3/repos/{owner}/{repo}/actions/runners/registration-token
 //	           (or the {org} form) — administration:write mints the token
@@ -115,14 +112,13 @@ func handshakeStep(t *testing.T, baseURL, step, method, path, authorization, con
 }
 
 // refuseAnonymous asserts the same route is unreachable without a credential.
-// Every step of the handshake is paired with one of these: the point of the
-// test is that widening a gate for the runner did not open it to everyone.
+// Each handshake step is paired with one: widening a gate for the runner must
+// not open it to everyone.
 //
-// A runner protocol route has to refuse in the runner's own terms as well. The
-// runner opens every session by sending a request with no credential attached
-// and asks for one only when the refusal names the Bearer scheme, so a 401
-// without that challenge ends configuration instead of starting the token
-// exchange.
+// A runner protocol route must also refuse in the runner's own terms: the runner
+// opens every session with no credential and asks for one only when the refusal
+// names the Bearer scheme, so a 401 without that challenge ends configuration
+// instead of starting the token exchange.
 func refuseAnonymous(t *testing.T, baseURL, step, method, path, contentType, body string) {
 	t.Helper()
 	status, header, payload := handshakeCall(t, baseURL, method, path, "", contentType, body)
@@ -233,15 +229,12 @@ func (h *handshakeRunner) listPools() {
 		"Bearer "+h.setupToken, "", "", http.StatusOK)
 }
 
-// testConnection is the step that runs once the pool has accepted the
-// registration: the runner reconnects on the OAuth credential it derives from
-// the authorization record it was handed, and reads the pool list a second
-// time to force that credential into use.
-//
-// It holds no token at this point, so the call goes out bare, is challenged,
-// and is only then exchanged and retried. Nothing before this step exercises
-// the OAuth credential — the tenant token carried everything up to here — so
-// the whole exchange lives or dies on this one call being challenged.
+// testConnection runs once the pool has accepted the registration: the runner
+// reconnects on the OAuth credential from its authorization record, re-reading
+// the pool list to force it into use. Holding no token yet, the call goes out
+// bare, is challenged, exchanged, then retried. Nothing before this exercises
+// the OAuth credential (the tenant token carried everything up to here), so the
+// exchange lives or dies on this call being challenged.
 func (h *handshakeRunner) testConnection() {
 	h.t.Helper()
 	const path = "/_apis/v1/AgentPools?poolType=Automation"
@@ -728,11 +721,10 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	}
 }
 
-// actionArchiveAuthorization is the header the runner's action downloader
-// builds out of the token an ActionDownloadInfo response named. It is spelled
-// out here rather than taken from the server so the test pins the wire shape
-// the runner actually sends: basic auth, the token as the password, under a
-// fixed user name.
+// actionArchiveAuthorization is the header the runner's action downloader builds
+// from the token an ActionDownloadInfo response named. Spelled out rather than
+// taken from the server, to pin the wire shape the runner sends: basic auth, the
+// token as the password, under a fixed user name.
 func actionArchiveAuthorization(token string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
 }
@@ -742,11 +734,11 @@ func actionArchiveAuthorization(token string) string {
 // that archive.
 //
 // The fetch is the one runner protocol call not made by the runner's service
-// stack. A plain HTTP client makes it, holding no credential of its own and no
-// ability to negotiate one — it sends the token the download info named, as
-// basic auth, or no header at all when the response named none. So the
-// contract has two halves and neither is optional: the response has to carry a
-// usable token, and the route has to accept it in that shape.
+// stack. A plain HTTP client makes it, holding no credential of its own and
+// unable to negotiate one — it sends the token the download info named as basic
+// auth, or no header when the response named none. So the contract has two
+// halves, neither optional: the response must carry a usable token, and the
+// route must accept it in that shape.
 func TestRunnerActionDownloadCarriesTheCredentialItIsGiven(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

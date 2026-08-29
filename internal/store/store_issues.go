@@ -117,9 +117,8 @@ func cloneComment(comment *Comment) *Comment {
 
 // IssueEvent is an event in an issue's or PR's timeline. Event matches GitHub's
 // REST issue-event type names ("opened", "closed", "labeled", ...). ParentType
-// selects the ID space for IssueID — "issue" (st.Issues) or "pull_request"
-// (st.PullRequests): the two share a per-repo number sequence but have
-// independent global ID sequences.
+// selects IssueID's ID space — "issue" (st.Issues) or "pull_request"
+// (st.PullRequests); the two share a per-repo number sequence but independent global IDs.
 type IssueEvent struct {
 	ID                  int
 	NodeID              string
@@ -227,8 +226,7 @@ func (st *Store) RecordIssueEvent(repoID, issueID, actorID int, event string, pa
 // RecordIssueOrPREvent records a timeline event against whichever of the issue
 // or PR in repoID carries `number`, stamping the correct ParentType. Shared
 // issue+PR endpoints (lock/unlock) must use this, not RecordIssueEvent: a PR
-// event parented to "issue" is dropped from the PR timeline and can collide
-// into an unrelated issue's events.
+// event parented to "issue" is dropped from the PR timeline and can collide into an unrelated issue's.
 func (st *Store) RecordIssueOrPREvent(repoID, number, actorID int, event string, payload map[string]interface{}) *IssueEvent {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

@@ -10,9 +10,9 @@ import (
 // pattern language that decision is made in.
 //
 // git matches such a filter with its ordinary non-cone pattern engine, and the
-// cone-mode files `git sparse-checkout set` writes are deliberately in that same
-// language, so one faithful non-cone matcher answers for both modes. This mirrors
-// git's parse_path_pattern and last_matching_pattern_from_list (dir.c) over the
+// cone-mode files `git sparse-checkout set` writes are in that same language, so
+// one faithful non-cone matcher answers both modes. Mirrors git's
+// parse_path_pattern and last_matching_pattern_from_list (dir.c) over the
 // wildmatch of wildmatch.c.
 
 // gitPatternMatch is what a pattern list says about one path. Undecided means no
@@ -33,7 +33,7 @@ type gitSparsePattern struct {
 	negative bool
 	// mustBeDir: a trailing "/", the pattern names directories only.
 	mustBeDir bool
-	// noDir: no "/" remains, so it matches a basename at any depth rather than a
+	// noDir: no "/" remains, so it matches a basename at any depth, not a
 	// root-anchored path.
 	noDir bool
 	// endsWith: the "*literal" shape, answered by a suffix test rather than a glob walk.
@@ -47,7 +47,7 @@ var gitUTF8BOM = []byte("\xef\xbb\xbf")
 
 // parseGitSparsePatterns reads a sparse-checkout pattern file. Lines are matched
 // in reverse (last match wins); blank and "#" lines are skipped; trailing spaces
-// are dropped unless backslash-quoted; and a final line with no newline still
+// are dropped unless backslash-quoted; a final line with no newline still
 // contributes, since git appends the missing newline before parsing.
 func parseGitSparsePatterns(blob []byte) []gitSparsePattern {
 	blob = bytes.TrimPrefix(blob, gitUTF8BOM)
@@ -136,7 +136,7 @@ func isGitGlobSpecial(b byte) bool {
 // matchGitSparsePath decides one path against a pattern list, walking from the
 // last line backwards so a later "!" re-includes what an earlier line excluded.
 // A trailing-"/" pattern is consulted only for a directory; a path no pattern
-// names is undecided, resolved by the caller from the path's directory.
+// names is undecided, resolved by the caller from the path's dir.
 func matchGitSparsePath(patterns []gitSparsePattern, path string, isDir bool) gitPatternMatch {
 	basename := path
 	if slash := strings.LastIndexByte(path, '/'); slash >= 0 {
@@ -169,7 +169,7 @@ func matchedGitPattern(pattern *gitSparsePattern) gitPatternMatch {
 
 // matchGitPatternBasename matches a "/"-free pattern against the last path
 // component, so "*.md" selects markdown at any depth. The glob runs without the
-// pathname flag, matching git, since a basename holds no separator to protect.
+// pathname flag (matching git): a basename holds no separator to protect.
 func matchGitPatternBasename(basename string, pattern *gitSparsePattern) bool {
 	text := []byte(basename)
 	switch {
@@ -184,7 +184,7 @@ func matchGitPatternBasename(basename string, pattern *gitSparsePattern) bool {
 }
 
 // matchGitPatternPathname matches a pattern carrying a "/" against the whole path
-// from the repository root. A leading "/" is dropped (any interior separator is
+// from the repo root. A leading "/" is dropped (any interior separator is
 // already root-relative), and the literal head is compared outright before the
 // glob runs, so a long directory prefix costs a comparison rather than a walk.
 func matchGitPatternPathname(path string, pattern *gitSparsePattern) bool {

@@ -152,8 +152,7 @@ const fetchSameOwnerRepos = (owner: string, ownerType: string | undefined) =>
       : `/api/v3/users/${encodeURIComponent(owner)}/repos?per_page=100`,
   );
 
-// Spec issue.labels is (string | object)[]; bleephub always returns objects.
-// Normalise to the pill shape.
+// Spec issue.labels is (string | object)[]; bleephub always returns objects — normalise to the pill shape.
 const issueLabelPills = (labels: GithubIssue["labels"]) =>
   labels.flatMap((l) => (typeof l === "object" ? [{ name: l.name ?? "", color: l.color ?? "" }] : []));
 

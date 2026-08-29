@@ -25,19 +25,15 @@ type WorkflowEventMeta struct {
 	Inputs    map[string]string
 	// Attempt sets the run's 1-based run_attempt (0 = first attempt).
 	Attempt int
-	// ReuseRunID keeps the original run id/number across rerun attempts;
-	// real GitHub never mints a new run id for a re-run.
+	// ReuseRunID keeps the original run id/number across rerun attempts; real GitHub never mints a new run id for a re-run.
 	ReuseRunID     int
 	ReuseRunNumber int
-	// WorkflowFileID / WorkflowFilePath pin the originating workflow file
-	// across reruns even when files share a display name.
+	// WorkflowFileID / WorkflowFilePath pin the originating workflow file across reruns even when files share a display name.
 	WorkflowFileID   int64
 	WorkflowFilePath string
-	// CarryOverJobs pre-completes jobs by key with results carried from the
-	// previous attempt (rerun-failed-jobs keeps successful jobs).
+	// CarryOverJobs pre-completes jobs by key with results carried from the previous attempt (rerun-failed-jobs keeps successful jobs).
 	CarryOverJobs map[string]*store.WorkflowJob
-	// TypedInputs carries workflow_dispatch inputs with their declared types
-	// for the `inputs` context; Inputs keeps the string github.event.inputs forms.
+	// TypedInputs carries workflow_dispatch inputs with declared types for the `inputs` context; Inputs keeps the string github.event.inputs forms.
 	TypedInputs map[string]interface{}
 	// Payload is the triggering webhook event, exposed as github.event.
 	Payload map[string]interface{}
@@ -139,9 +135,7 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *store
 		workflow.WorkflowFileID = m.WorkflowFileID
 		workflow.WorkflowFilePath = m.WorkflowFilePath
 
-		// Carry results from the previous attempt (rerun-failed-jobs re-runs
-		// only the failed jobs) before storing, so dispatch never sees a
-		// carried job as pending.
+		// Carry results from the previous attempt (rerun-failed-jobs re-runs only failed jobs) before storing, so dispatch never sees a carried job as pending.
 		for key, prev := range m.CarryOverJobs {
 			wfJob, ok := workflow.Jobs[key]
 			if !ok {
@@ -172,8 +166,7 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *store
 		workflow.DisplayTitle = displayTitle
 	}
 
-	// Concurrency groups are template strings on real GitHub
-	// (`group: ci-${{ github.ref }}`); resolve them before grouping.
+	// Concurrency groups are template strings on real GitHub (`group: ci-${{ github.ref }}`); resolve them before grouping.
 	if workflow.ConcurrencyGroup != "" && strings.Contains(workflow.ConcurrencyGroup, "${{") {
 		inputsCtx := make(map[string]interface{}, len(workflow.Inputs))
 		for k, v := range workflow.Inputs {
@@ -189,8 +182,7 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *store
 		workflow.ConcurrencyGroup = group
 	}
 
-	// Resolve the originating workflow file for the run's stable id and path,
-	// constant across every run produced from the file.
+	// Resolve the originating workflow file for the run's stable id and path, constant across every run produced from the file.
 	workflow.WorkflowFileID, workflow.WorkflowFilePath = s.ResolveWorkflowFileForRun(workflow)
 	if len(eventMeta) > 0 && eventMeta[0] != nil && eventMeta[0].ReuseRunNumber > 0 {
 		workflow.RunNumber = eventMeta[0].ReuseRunNumber
@@ -198,8 +190,7 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *store
 		workflow.RunNumber = s.store.ReserveWorkflowRunNumber(workflow)
 	}
 
-	// Fork-PR gating: a fork pull_request run holds in action_required until a
-	// maintainer approves it, when the base repo requires contributor approval.
+	// Fork-PR gating: a fork pull_request run holds in action_required until a maintainer approves it, when the base repo requires contributor approval.
 	if workflowNeedsForkPRApproval(workflow, s.store) {
 		workflow.Status = store.WorkflowStatusActionRequired
 		s.store.Mu.Lock()
@@ -210,11 +201,9 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *store
 		return workflow, nil
 	}
 
-	// Concurrency admission and insertion are one critical section, else
-	// simultaneous submissions both observe an empty group and start. GitHub
-	// retains only the newest pending run per group, so stale queued runs are
-	// cancelled as a new one arrives. On a shared database the section runs
-	// under the group's database lock so two replicas cannot both admit (ACT-012).
+	// Concurrency admission and insertion are one critical section, else simultaneous submissions both observe an empty group
+	// and start. GitHub retains only the newest pending run per group, so stale queued runs are cancelled as a new one arrives.
+	// On a shared database the section runs under the group's database lock so two replicas cannot both admit (ACT-012).
 	var cancelForConcurrency []*store.Workflow
 	if workflow.ConcurrencyGroup != "" {
 		releaseGroupLock := s.acquireConcurrencyAdmissionLock(ActionsConcurrencyLockName(workflow.ConcurrencyGroup))
@@ -267,10 +256,8 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *store
 	return workflow, nil
 }
 
-// ResolveWorkflowFileForRun returns the stable id and path of the
-// [WorkflowFile] that produced this run. When no file is registered yet it
-// derives a deterministic id from (repo, conventional-path) so workflow_id
-// and path stay constant across reruns even before the file lands in git.
+// ResolveWorkflowFileForRun returns the stable id and path of the [WorkflowFile] that produced this run. When no file is
+// registered yet it derives a deterministic id from (repo, conventional-path) so workflow_id and path stay constant across reruns even before the file lands in git.
 func (s *Engine) ResolveWorkflowFileForRun(wf *store.Workflow) (int64, string) {
 	repo := wf.RepoFullName
 	if repo != "" {
@@ -298,15 +285,13 @@ func (s *Engine) ResolveWorkflowFileForRun(wf *store.Workflow) (int64, string) {
 	return store.StableWorkflowFileID(repo, path), path
 }
 
-// DispatchReadyJobs dispatches pending jobs whose dependencies are satisfied,
-// looping until stable so skip cascades settle.
+// DispatchReadyJobs dispatches pending jobs whose dependencies are satisfied, looping until stable so skip cascades settle.
 func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serverURL string, defaultImage string) {
 	ctx, span := otel.Tracer("bleephub").Start(ctx, "dispatchReadyJobs",
 		trace.WithAttributes(attribute.String("workflow.id", wf.ID)))
 	defer span.End()
-	// Job-level concurrency admission must serialize across replicas on a
-	// shared database (ACT-012). The lock spans one pass, released before the
-	// recursive dispatch of affected workflows below (which takes it itself).
+	// Job-level concurrency admission must serialize across replicas on a shared database (ACT-012). The lock spans one pass,
+	// released before the recursive dispatch of affected workflows below (which takes it itself).
 	jobAdmissionNeedsLock := workflowHasJobConcurrency(wf)
 	for {
 		releaseJobAdmission := func() {}
@@ -345,8 +330,7 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 				continue
 			}
 
-			// A cancel-requested run only dispatches jobs explicitly
-			// gated on always()/cancelled(); everything else cancels.
+			// A cancel-requested run only dispatches jobs explicitly gated on always()/cancelled(); everything else cancels.
 			if wf.CancelRequested {
 				gated := wfJob.Def != nil && ExprGatesOnCancellation(wfJob.Def.If)
 				if !gated {
@@ -360,11 +344,9 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 			}
 
 			if wfJob.Def != nil && wfJob.Def.If != "" {
-				// A job carries an implicit success(); naming any of
-				// success()/always()/cancelled()/failure() replaces it, so the
-				// dependency roll-up below must not re-impose it. Checking only
-				// always()/failure() left an `if: cancelled()` job skipped by the
-				// very cancellation that made its condition true.
+				// A job carries an implicit success(); naming any of success()/always()/cancelled()/failure() replaces it, so the
+				// dependency roll-up below must not re-impose it. Checking only always()/failure() left an `if: cancelled()`
+				// job skipped by the very cancellation that made its condition true.
 				overridesStatusCheck := ExprContainsAnyStatusFunction(wfJob.Def.If)
 				exprCtx, err := s.jobExprContext(wf, wfJob)
 				if err != nil {
@@ -411,8 +393,7 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 				continue
 			}
 
-			// Synthetic reusable-workflow nodes complete in the engine (gates
-			// resolve call inputs, collectors map outputs) and never dispatch.
+			// Synthetic reusable-workflow nodes complete in the engine (gates resolve call inputs, collectors map outputs) and never dispatch.
 			if wfJob.Def != nil && wfJob.Def.ServerCompleted {
 				s.completeServerJobLocked(wf, wfJob)
 				changed = true
@@ -449,8 +430,7 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 						changed = true
 						continue
 					}
-					// Index now so a sibling in the same group sees this one
-					// within the same lock pass.
+					// Index now so a sibling in the same group sees this one within the same lock pass.
 					s.store.SyncJobConcurrencyEntryLocked(wf, wfJob)
 				}
 				blocked := false
@@ -529,8 +509,7 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 				}
 			}
 
-			// A job targeting an environment with required reviewers waits for
-			// a deployment review.
+			// A job targeting an environment with required reviewers waits for a deployment review.
 			if envName := jobEnvironmentName(wfJob); envName != "" && !envApproved(wf, envName) {
 				if env := s.protectedEnvironmentLocked(wf, envName); env != nil {
 					wfJob.Status = store.JobStatusWaiting
@@ -580,8 +559,7 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 		}
 	}
 
-	// A run can reach all-done here with no runner completion event (a
-	// server-completed collector as the final node); finalize is idempotent.
+	// A run can reach all-done here with no runner completion event (a server-completed collector as the final node); finalize is idempotent.
 	s.FinalizeWorkflowIfDone(wf)
 }
 
@@ -690,9 +668,8 @@ func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
 		return // Not a workflow job
 	}
 
-	// The official runner reports completion twice (DELETE AgentRequest and
-	// POST FinishJob), both landing here. Only the first terminal transition
-	// may finalize and emit; ignore the rest.
+	// The official runner reports completion twice (DELETE AgentRequest and POST FinishJob), both landing here.
+	// Only the first terminal transition may finalize and emit; ignore the rest.
 	if foundJob.Status == store.JobStatusCompleted || foundJob.Status == store.JobStatusSkipped {
 		s.store.Mu.Unlock()
 		return
@@ -703,9 +680,8 @@ func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
 	foundJob.CompletedAt = time.Now()
 	s.QueueEvent(EvJobCompleted, foundWf, foundJob)
 
-	// Matrix fail-fast cancels siblings on a job failure. A continue-on-error
-	// job is excluded: the roll-up excludes its tolerated failure but counts a
-	// cancellation, so cancelling siblings would turn the run red anyway.
+	// Matrix fail-fast cancels siblings on a job failure. A continue-on-error job is excluded: the roll-up excludes its
+	// tolerated failure but counts a cancellation, so cancelling siblings would turn the run red anyway.
 	if foundJob.Result == store.ResultFailure && foundJob.MatrixGroup != "" && !foundJob.ContinueOnError {
 		if foundJob.Def.FailFast() {
 			for _, sibling := range foundWf.Jobs {
@@ -772,8 +748,7 @@ func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
 		default:
 			foundWf.Result = store.ResultSuccess
 		}
-		// Run over: drop its secret-bearing job messages. Late runner calls
-		// authenticate through planScopes.
+		// Run over: drop its secret-bearing job messages. Late runner calls authenticate through planScopes.
 		s.store.ClearRunJobMessagesLocked(foundWf)
 	}
 	concurrencyGroup := foundWf.ConcurrencyGroup
@@ -846,8 +821,7 @@ func envApproved(wf *store.Workflow, envName string) bool {
 	return false
 }
 
-// protectedEnvironmentLocked returns the environment when it carries required
-// reviewers; referencing one auto-creates it. Caller holds s.store.mu.
+// protectedEnvironmentLocked returns the environment when it carries required reviewers; referencing one auto-creates it. Caller holds s.store.mu.
 func (s *Engine) protectedEnvironmentLocked(wf *store.Workflow, envName string) *store.Environment {
 	if wf.RepoFullName == "" {
 		return nil
@@ -880,9 +854,8 @@ func addPendingDeployment(wf *store.Workflow, env *store.Environment) {
 	})
 }
 
-// ApplyDeploymentReview resolves a review against pending deployments:
-// approved environments release their waiting jobs; rejected ones fail them.
-// Returns the environment names the review covered.
+// ApplyDeploymentReview resolves a review against pending deployments: approved environments release their waiting jobs;
+// rejected ones fail them. Returns the environment names the review covered.
 func (s *Engine) ApplyDeploymentReview(ctx context.Context, wf *store.Workflow, envIDs []int, state, comment string, reviewer *store.User) []string {
 	s.store.Mu.Lock()
 	covered := map[string]bool{}
@@ -950,9 +923,8 @@ func (s *Engine) ApplyDeploymentReview(ctx context.Context, wf *store.Workflow, 
 	return names
 }
 
-// FinalizeWorkflowIfDone completes the run once every job is terminal —
-// needed independently of OnJobCompleted when a rejection fails jobs without
-// any job completion event.
+// FinalizeWorkflowIfDone completes the run once every job is terminal — needed independently of OnJobCompleted
+// when a rejection fails jobs without any job completion event.
 func (s *Engine) FinalizeWorkflowIfDone(wf *store.Workflow) {
 	s.store.Mu.Lock()
 	allDone, anyFailed := workflowRollupLocked(wf)
@@ -987,10 +959,8 @@ func (s *Engine) FinalizeWorkflowIfDone(wf *store.Workflow) {
 	}
 }
 
-// CancelWorkflow requests cancellation: pending/queued jobs cancel
-// immediately (their undelivered messages purged), running jobs get a
-// JobCancellation broker message, and jobs gated on always()/cancelled()
-// still dispatch. The run finalizes once nothing remains in flight.
+// CancelWorkflow requests cancellation: pending/queued jobs cancel immediately (their undelivered messages purged),
+// running jobs get a JobCancellation broker message, and jobs gated on always()/cancelled() still dispatch. The run finalizes once nothing remains in flight.
 func (s *Engine) CancelWorkflow(wf *store.Workflow) {
 	s.store.Mu.Lock()
 	wf.CancelRequested = true
@@ -1000,8 +970,7 @@ func (s *Engine) CancelWorkflow(wf *store.Workflow) {
 	for _, wfJob := range wf.Jobs {
 		switch wfJob.Status {
 		case store.JobStatusPending, store.JobStatusWaiting:
-			// Jobs gated on always()/cancelled() still run after a cancel;
-			// leave them pending for dispatch to evaluate with cancelled()==true.
+			// Jobs gated on always()/cancelled() still run after a cancel; leave them pending for dispatch to evaluate with cancelled()==true.
 			if wfJob.Def != nil && ExprGatesOnCancellation(wfJob.Def.If) {
 				wfJob.Status = store.JobStatusPending
 				continue
@@ -1012,8 +981,7 @@ func (s *Engine) CancelWorkflow(wf *store.Workflow) {
 			cancelledJobIDs[wfJob.JobID] = true
 			s.QueueEvent(EvJobCompleted, wf, wfJob)
 		case store.JobStatusQueued, store.JobStatusRunning:
-			// Delivered to a runner: signal it. Undelivered queued messages
-			// are purged below and the job cancels immediately.
+			// Delivered to a runner: signal it. Undelivered queued messages are purged below and the job cancels immediately.
 			if job := s.store.Jobs[wfJob.JobID]; job != nil && job.AgentID != 0 && job.Status != "completed" {
 				runningJobIDs = append(runningJobIDs, wfJob.JobID)
 			} else {
@@ -1045,8 +1013,7 @@ func (s *Engine) CancelWorkflow(wf *store.Workflow) {
 	}
 	s.store.Mu.Unlock()
 
-	// JobCancellation rides the runner's open mid-job poll; job requests are
-	// pull-only, but cancellations are what the open poll exists for.
+	// JobCancellation rides the runner's open mid-job poll; job requests are pull-only, but cancellations are what the open poll exists for.
 	for _, jobID := range runningJobIDs {
 		s.SendJobCancellation(jobID)
 	}
@@ -1065,12 +1032,10 @@ func (s *Engine) CancelWorkflow(wf *store.Workflow) {
 	}
 }
 
-// startPendingConcurrencyWorkflow promotes the next pending run in the group.
-// On a shared database the promotion runs under the group's database lock so
-// a peer cannot double-admit (ACT-012).
+// startPendingConcurrencyWorkflow promotes the next pending run in the group. On a shared database the promotion
+// runs under the group's database lock so a peer cannot double-admit (ACT-012).
 func (s *Engine) startPendingConcurrencyWorkflow(group string) {
-	// Release the lock once the promotion is committed, before stale-run
-	// cancellation, which can recurse here for the same group.
+	// Release the lock once the promotion is committed, before stale-run cancellation, which can recurse here for the same group.
 	releaseGroupLock := s.acquireConcurrencyAdmissionLock(ActionsConcurrencyLockName(group))
 	s.workflowConcurrencyMu.Lock()
 	s.store.Mu.Lock()
@@ -1125,9 +1090,8 @@ func (s *Engine) startPendingConcurrencyWorkflow(group string) {
 	}
 }
 
-// workflowNeedsForkPRApproval reports whether the run must hold in
-// action_required for maintainer approval: a fork pull_request run whose base
-// repo sets require_approval_for_fork_pr_workflows.
+// workflowNeedsForkPRApproval reports whether the run must hold in action_required for maintainer approval:
+// a fork pull_request run whose base repo sets require_approval_for_fork_pr_workflows.
 func workflowNeedsForkPRApproval(wf *store.Workflow, st *store.Store) bool {
 	if wf.EventName != "pull_request" || wf.RepoFullName == "" || wf.EventPayload == nil {
 		return false
@@ -1192,14 +1156,11 @@ func (s *Engine) StopTimeoutWatcher(wf *store.Workflow) {
 	}
 }
 
-// jobLeaseDuration bounds how long a dispatched job stays leased; the runner
-// renews it while working, and a lapsed lease means the runner is gone.
+// jobLeaseDuration bounds how long a dispatched job stays leased; the runner renews it while working, and a lapsed lease means the runner is gone.
 const jobLeaseDuration = 1 * time.Hour
 
-// reclaimExpiredJobLeases requeues jobs whose runner stopped renewing so a
-// mid-job runner death no longer hangs the run until the 6-hour job timeout.
-// A job still on the pending queue is untaken, so its lease is merely
-// extended. Callers must not hold the store lock.
+// reclaimExpiredJobLeases requeues jobs whose runner stopped renewing so a mid-job runner death no longer hangs the run
+// until the 6-hour job timeout. A job still on the pending queue is untaken, so its lease is merely extended. Callers must not hold the store lock.
 func (s *Engine) reclaimExpiredJobLeases(wf *store.Workflow) {
 	now := s.currentTime()
 	var redeliver []*store.TaskAgentMessage
@@ -1225,8 +1186,7 @@ func (s *Engine) reclaimExpiredJobLeases(wf *store.Workflow) {
 			continue
 		}
 		job.Status = "queued"
-		// Free the gone runner's agent record so a reconnecting non-ephemeral
-		// runner can take work again.
+		// Free the gone runner's agent record so a reconnecting non-ephemeral runner can take work again.
 		s.store.ClearAgentAssignmentLocked(job)
 		job.AgentID = 0
 		wfJob.Status = store.JobStatusQueued
@@ -1313,9 +1273,8 @@ func (s *Engine) CheckJobTimeouts(wf *store.Workflow) {
 // jobExprContext builds the job-level `if:` context (github, needs, vars,
 // inputs). Callers hold the store write lock.
 func (s *Engine) jobExprContext(wf *store.Workflow, wfJob *store.WorkflowJob) (*ExprContext, error) {
-	// Jobs inside a reusable-workflow call see their own view: sibling needs
-	// under unprefixed keys, the synthetic gate invisible, and the call's
-	// resolved inputs as the inputs context.
+	// Jobs inside a reusable-workflow call see their own view: sibling needs under unprefixed keys, the synthetic gate
+	// invisible, and the call's resolved inputs as the inputs context.
 	var binding *store.WorkflowCallBinding
 	if wfJob.Def != nil && wfJob.Def.Call != nil && wfJob.Def.CallRole == "" {
 		binding = wfJob.Def.Call
@@ -1383,8 +1342,7 @@ func (s *Engine) jobExprContext(wf *store.Workflow, wfJob *store.WorkflowJob) (*
 	}, nil
 }
 
-// GithubContextMap assembles the server-side `github` expression context,
-// mirroring the job message's contextData (same defaults as BuildJobMessageFromDef).
+// GithubContextMap assembles the server-side `github` expression context, mirroring the job message's contextData (same defaults as BuildJobMessageFromDef).
 func (s *Engine) GithubContextMap(wf *store.Workflow) map[string]interface{} {
 	eventName := wf.EventName
 	if eventName == "" {
@@ -1487,10 +1445,8 @@ func ValidateJobGraph(wf *store.WorkflowDef) error {
 	return nil
 }
 
-// workflowRollupLocked reports whether every job is terminal and whether any
-// should fail the run. A continue-on-error job is excluded from the failure
-// roll-up (but cancellation still counts — it speaks to failure, not to an
-// operator-stopped run). Caller holds the store lock.
+// workflowRollupLocked reports whether every job is terminal and whether any should fail the run. A continue-on-error job
+// is excluded from the failure roll-up (but cancellation still counts — it speaks to failure, not an operator-stopped run). Caller holds the store lock.
 func workflowRollupLocked(wf *store.Workflow) (allDone, anyFailed bool) {
 	allDone = true
 	for _, wfJob := range wf.Jobs {

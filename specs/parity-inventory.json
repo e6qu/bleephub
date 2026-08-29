@@ -51,7 +51,7 @@
       },
       {
         "event": "deployment",
-        "line": 156,
+        "line": 154,
         "producer": "emitWebhookEvent",
         "source": "internal/server/graphql_seams.go"
       },
@@ -69,7 +69,7 @@
       },
       {
         "event": "deployment_status",
-        "line": 161,
+        "line": 159,
         "producer": "emitWebhookEvent",
         "source": "internal/server/graphql_seams.go"
       },
@@ -165,7 +165,7 @@
       },
       {
         "event": "page_build",
-        "line": 1132,
+        "line": 1129,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_misc_endpoints.go"
       },
@@ -285,13 +285,13 @@
       },
       {
         "event": "release",
-        "line": 505,
+        "line": 504,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
       {
         "event": "release",
-        "line": 549,
+        "line": 548,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
@@ -303,7 +303,7 @@
       },
       {
         "event": "repository_dispatch",
-        "line": 66,
+        "line": 65,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_actions_extras.go"
       },
@@ -22678,13 +22678,13 @@
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 68,
+        "line": 67,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 70,
+        "line": 69,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches/{cache_id}",
         "source": "internal/server/artifacts.go"
@@ -23014,7 +23014,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 97,
+        "line": 96,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -24370,43 +24370,43 @@
         "source": "internal/server/gh_repos_templates.go"
       },
       {
-        "line": 110,
+        "line": 108,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/accounts/{account_id}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 109,
+        "line": 107,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/plans",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 111,
+        "line": 109,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/plans/{plan_id}/accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 114,
+        "line": 112,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/stubbed/accounts/{account_id}",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 112,
+        "line": 110,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/stubbed/plans",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 113,
+        "line": 111,
         "method": "GET",
         "path": "/api/v3/marketplace_listing/stubbed/plans/{plan_id}/accounts",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 118,
+        "line": 115,
         "method": "GET",
         "path": "/api/v3/meta",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -24598,7 +24598,7 @@
         "source": "internal/server/gh_actions_oidc_properties.go"
       },
       {
-        "line": 87,
+        "line": 86,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -24832,7 +24832,7 @@
         "source": "internal/server/gh_attestations.go"
       },
       {
-        "line": 105,
+        "line": 104,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/audit-log",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -25588,7 +25588,7 @@
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 23,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/security-advisories",
         "source": "internal/server/gh_security_advisories.go"
@@ -25768,7 +25768,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 72,
+        "line": 71,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage",
         "source": "internal/server/artifacts.go"
@@ -25780,7 +25780,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 67,
+        "line": 66,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
@@ -25810,7 +25810,7 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 84,
+        "line": 83,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -26932,25 +26932,25 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 92,
+        "line": 91,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 99,
+        "line": 98,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 102,
+        "line": 101,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds/latest",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 103,
+        "line": 102,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds/{build_id}",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -29848,13 +29848,13 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 93,
+        "line": 92,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 100,
+        "line": 99,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pages/builds",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -29974,7 +29974,7 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 22,
+        "line": 21,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}",
         "source": "internal/server/gh_security_advisories.go"
@@ -30436,7 +30436,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 88,
+        "line": 87,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -30802,7 +30802,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 85,
+        "line": 84,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub",
         "source": "internal/server/gh_misc_endpoints.go"
@@ -31018,7 +31018,7 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 95,
+        "line": 94,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/pages",
         "source": "internal/server/gh_misc_endpoints.go"

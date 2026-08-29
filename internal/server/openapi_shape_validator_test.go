@@ -29,10 +29,10 @@ import (
 // shrinks. The companion route check (gh_api_definition_test.go) keeps
 // paths honest; this keeps the bodies honest.
 //
-// Two properties the gate depends on and therefore enforces on itself:
-// every judgement is a deterministic function of the vendored
-// description (no Go map iteration order reaches a verdict), and an
-// exchange the description does not cover is reported, never skipped.
+// Two properties the gate enforces on itself: every judgement is a
+// deterministic function of the vendored description (no map iteration order
+// reaches a verdict), and an exchange the description does not cover is
+// reported, never skipped.
 
 // allowlistFile is the single gate ledger, resolved relative to the
 // package directory. TestViolationAllowlistIsSingleCopy keeps it single.
@@ -475,16 +475,13 @@ func internalURLFields(v any, field string) []string {
 	return nil
 }
 
-// isInternalOperatorURL reports whether s leaks bleephub's private
-// /internal/ operator surface. That surface lives at the server root, so a
-// genuine leak is a value whose URL path *begins* with /internal/ — either
-// a bare "/internal/..." path or an absolute URL whose path starts there.
-// An ordinary repository value that merely contains an "internal" path
-// segment is normal content, not a leak: a contents/blob URL such as
-// ".../contents/internal/config.go", a "path" field like "internal/x", or
-// an issue body mentioning such a path must not be flagged. The previous
-// substring test (strings.Contains(x, "/internal/")) mislabeled all of
-// those as internal-URL violations.
+// isInternalOperatorURL reports whether s leaks bleephub's private /internal/
+// operator surface, which lives at the server root. A genuine leak is a value
+// whose URL path *begins* with /internal/ (a bare "/internal/..." or an
+// absolute URL whose path starts there). A value that merely contains an
+// "internal" path segment — a contents URL like ".../contents/internal/x", a
+// "path" field, an issue body — is normal content, not a leak (a plain
+// strings.Contains test mislabeled all of those).
 func isInternalOperatorURL(s string) bool {
 	if strings.HasPrefix(s, "/internal/") {
 		return true
@@ -795,16 +792,13 @@ func readViolationAllowlist(path string) (map[string]bool, error) {
 }
 
 // minShapeCoverage is the coverage floor the full suite must clear (PAR-011).
-// The shared observer now validates ~5k /api/v3 responses on a full run — far
-// fewer than the ~26k when this gate was added, because TEST-008 has steadily
-// migrated tests to isolated servers that do not feed the shared observer. That
-// pulled the count down onto the old 5000 floor, so an ordinary -race + MinIO
-// full run (seen as low as 4879 while a green run sits just above 5000) began
-// to false-fail on normal variance. The floor is set below that observed
-// operating range, with margin, so the intermittent near-floor dip is tolerated
-// while a genuine collapse (observer unwired → orders of magnitude lower) is
-// still caught. TestMain logs the actual count each full run so the trend stays
-// visible; raise this back up if isolated servers are ever wired to the observer.
+// The shared observer now validates ~5k /api/v3 responses per full run (down
+// from ~26k when this gate was added, as TEST-008 migrated tests to isolated
+// servers that don't feed the observer). Since near-floor runs dip as low as
+// 4879 on normal -race + MinIO variance, the floor sits below that operating
+// range with margin: the intermittent dip is tolerated while a genuine collapse
+// (observer unwired → orders of magnitude lower) is still caught. TestMain logs
+// the count each run; raise this if isolated servers are ever wired to the observer.
 const minShapeCoverage = 4000
 
 // isFullTestRun reports whether every test ran, so the coverage floor applies.
@@ -860,13 +854,11 @@ func (v *shapeValidator) ratchet() (newKeys []string, total int) {
 	return newKeys, len(v.seen)
 }
 
-// unusedAllowlistEntries returns allowlist keys that no observed violation
-// matched during this run. On a full run every allowlisted deviation should be
-// triggered by the endpoint it cites; an entry that never fires is a dead
-// suppression — it protects nothing and only inflates the count (PAR-022). The
-// full-run teardown reports these for removal so the gate ledger cannot quietly
-// accumulate entries for shapes no test exercises. Meaningful only on a full
-// run: a `-run <subset>` legitimately exercises few of the cited endpoints.
+// unusedAllowlistEntries returns allowlist keys no observed violation matched
+// this run. An entry that never fires is a dead suppression — it protects
+// nothing and only inflates the count (PAR-022); the full-run teardown reports
+// these for removal. Meaningful only on a full run: a `-run <subset>` exercises
+// few cited endpoints.
 func (v *shapeValidator) unusedAllowlistEntries() ([]string, error) {
 	allowed, err := readViolationAllowlist(allowlistFile)
 	if err != nil {
@@ -940,13 +932,10 @@ func TestViolationAllowlistIsSingleCopy(t *testing.T) {
 			"the validator reads the package-relative copy; any other copy is unread and will drift",
 			allowlistFile, want, len(found), found)
 	}
-	// The ledger must be readable now, not merely present. A missing or
-	// unreadable allowlist is a hard failure rather than a swallowed error:
-	// treating a read failure as "zero entries" would let the gate proceed
-	// as though the allowlist were empty, and every allowlisted key would
-	// resurface as a spurious "new" violation, burying the real ones. A file
-	// that exists but is genuinely empty is legitimate and parses to zero
-	// entries without error, so it is not failed here.
+	// The ledger must be readable now, not merely present: a missing or
+	// unreadable allowlist is a hard failure, since reading it as "zero entries"
+	// would resurface every allowlisted key as a spurious "new" violation. A
+	// genuinely empty file parses to zero entries without error, so it passes.
 	if _, err := os.Stat(want); err != nil {
 		t.Fatalf("allowlist %s is missing or unreadable: %v", want, err)
 	}

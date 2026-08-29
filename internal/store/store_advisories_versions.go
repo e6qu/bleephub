@@ -126,9 +126,8 @@ func CompareEcosystemVersions(ecosystem, left, right string) (int, bool) {
 	case EcosystemComposer:
 		return compareComposer(left, right)
 	default:
-		// SemVer 2.0.0: what npm/Go/Cargo/Hex/pub/SwiftPM/Actions use, and the
-		// right default for any unknown ecosystem (all remaining ones are
-		// semver-ordered).
+		// SemVer 2.0.0 (npm/Go/Cargo/Hex/pub/SwiftPM/Actions), and the right
+		// default for any unknown ecosystem — all remaining ones are semver-ordered.
 		return compareSemVer(left, right)
 	}
 }
@@ -270,8 +269,7 @@ func comparePrereleaseIdentifiers(left, right []string) int {
 				return signOf(leftNumber - rightNumber)
 			}
 		case leftNotNumeric == nil:
-			// Numeric identifiers always have lower precedence than
-			// alphanumeric ones (SemVer §11.4.3).
+			// Numeric identifiers rank below alphanumeric (SemVer §11.4.3).
 			return -1
 		case rightNotNumeric == nil:
 			return 1
@@ -281,8 +279,7 @@ func comparePrereleaseIdentifiers(left, right []string) int {
 			}
 		}
 	}
-	// A larger set of prerelease identifiers outranks a smaller set when all
-	// of the preceding identifiers are equal (SemVer §11.4.4).
+	// With all preceding identifiers equal, the larger set outranks (SemVer §11.4.4).
 	return signOf(len(left) - len(right))
 }
 
@@ -299,9 +296,9 @@ type pep440Version struct {
 	preNumber int
 	// postNumber is -1 when absent, so a post-release sorts above the release.
 	postNumber int
-	// hasDev is a separate flag, not a sentinel devNumber: a dev release sorts
-	// below everything at the same stage ("1.0a1" outranks "1.0a1.dev1"), which
-	// no numeric sentinel gets right in both directions.
+	// hasDev is a flag, not a sentinel devNumber: a dev release sorts below
+	// everything at the same stage ("1.0a1" outranks "1.0a1.dev1"), which no
+	// numeric sentinel gets right in both directions.
 	hasDev    bool
 	devNumber int
 	local     []string
@@ -459,8 +456,8 @@ func parsePEP440Suffix(parsed *pep440Version, suffix string) bool {
 		if suffix == "" {
 			break
 		}
-		// Implicit post-release "1.0-1": a leading digit (separator already
-		// trimmed) means the number stood alone.
+		// Implicit post-release "1.0-1": a leading digit (separator trimmed)
+		// means the number stood alone.
 		if suffix[0] >= '0' && suffix[0] <= '9' {
 			word, rest := splitLeadingDigits(suffix)
 			number, err := strconv.Atoi(word)

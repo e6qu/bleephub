@@ -7,9 +7,8 @@ import (
 )
 
 // The global advisory database: the published advisories every account can
-// read. Publishing a drafted repository advisory moves it here, where it is
-// public; these lookups take no viewer because unpublished advisories are
-// unreachable from here.
+// read. Publishing a drafted repository advisory moves it here; these lookups
+// take no viewer because unpublished advisories are unreachable from here.
 
 // GlobalAdvisoryFilter narrows a global-advisory listing. A zero filter
 // matches every published advisory.
@@ -69,7 +68,7 @@ func (st *Store) GetGlobalAdvisoryByGHSA(ghsaID string) *SecurityAdvisory {
 
 // SnapshotAllRepos returns every repository as detached snapshots (STORE-021).
 // The two instance-wide advisory sweeps do substantial per-repo work that must
-// not run under the store lock, so they snapshot first and release it.
+// not run under the store lock, so they snapshot first.
 func (st *Store) SnapshotAllRepos() []*Repo {
 	st.Mu.RLock()
 	repos := make([]*Repo, 0, len(st.Repos))

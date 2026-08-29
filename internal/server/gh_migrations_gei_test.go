@@ -30,9 +30,8 @@ type geiFixture struct {
 	migrator      *store.User
 	migratorToken string
 	// stranger owns otherOrg and holds the migrator role on it, and nothing at
-	// all on org. Every refusal case is driven as this account, which is what
-	// makes the refusals evidence of tenant isolation rather than of
-	// authentication.
+	// all on org. Every refusal case is driven as this account, making the
+	// refusals evidence of tenant isolation rather than of authentication.
 	stranger      *store.User
 	strangerToken string
 	otherOrg      *store.Org

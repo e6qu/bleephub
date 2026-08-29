@@ -12,8 +12,8 @@ type OrgActionsPermissions struct {
 	CacheRetentionLimitDays     int
 	CacheStorageLimitGB         int64
 	ArtifactAndLogRetentionDays int
-	// ForkPRApprovalPolicy names which fork-PR contributors an approval is
-	// demanded of. Whether approval is demanded at all is
+	// ForkPRApprovalPolicy names which fork-PR contributors approval is demanded
+	// of; whether it is demanded at all is
 	// ForkPRWorkflowsPrivateRepos.RequireApprovalForForkPRWorkflows.
 	ForkPRApprovalPolicy                 string
 	ForkPRWorkflowsPrivateRepos          *ForkPRWorkflowsPrivateRepos
@@ -66,8 +66,8 @@ func (st *Store) LookupOrgActionsPermissionsLocked(orgLogin string) *OrgActionsP
 }
 
 // GetOrgActionsPermissionsLocked materializes an org's Actions settings,
-// filling defaults for fields whose zero value is invalid. Writes to the store:
-// caller must hold the WRITE lock (a read lock is a fatal concurrent map write).
+// filling defaults for fields whose zero value is invalid. Writes to the store,
+// so the caller must hold the WRITE lock (a read lock is a fatal map write).
 func (st *Store) GetOrgActionsPermissionsLocked(orgLogin string) *OrgActionsPermissions {
 	if st.OrgActionsPermissions == nil {
 		st.OrgActionsPermissions = map[string]*OrgActionsPermissions{}
@@ -180,8 +180,8 @@ func (st *Store) RemoveOrgSelectedRepo(orgLogin string, repoID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	p := st.GetOrgActionsPermissionsLocked(orgLogin)
-	// Fresh slice, not in-place s[:0]: a reader handed the old backing array
-	// earlier must not see it rewritten (STORE-021).
+	// Fresh slice, not in-place s[:0]: a reader handed the old backing array must
+	// not see it rewritten (STORE-021).
 	kept := make([]int, 0, len(p.SelectedRepositoryIDs))
 	for _, id := range p.SelectedRepositoryIDs {
 		if id != repoID {

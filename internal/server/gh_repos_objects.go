@@ -271,14 +271,14 @@ func gitTreeEntryJSON(stor gitStorage.Storer, baseURL, fullName, name string, en
 	out := map[string]interface{}{
 		"path": name,
 		// GitHub emits the 6-char octal mode (100644); go-git's Mode.String() is
-		// 7-char (0100644), which breaks round-tripping and comparisons.
+		// 7-char (0100644), breaking round-tripping and comparisons.
 		"mode": fmt.Sprintf("%06o", uint32(entry.Mode)),
 		"type": entryType,
 		"sha":  entry.Hash.String(),
 	}
 	if entryType == "commit" {
-		// A gitlink names a commit in the submodule's repository, absent here, so
-		// there is no object URL. github.com omits url and size for commit entries.
+		// A gitlink names a commit in the submodule's repo, absent here, so there
+		// is no object URL. github.com omits url and size for commit entries.
 		return out
 	}
 	out["url"] = baseURL + "/api/v3/repos/" + fullName + "/git/" + entryType + "s/" + entry.Hash.String()
@@ -332,8 +332,8 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The blob endpoint addresses an object by hash, with no filename to type it
-	// by, so the raw media type answers octet-stream.
+	// The blob endpoint addresses an object by hash, with no filename to type it,
+	// so the raw media type answers octet-stream.
 	if acceptsGitHubMediaType(r.Header.Get("Accept"), "raw") {
 		setGitHubMediaType(w, r, "raw")
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -442,7 +442,7 @@ func contentBlobSHA(stor gitStorage.Storer, branch, path string) (string, bool) 
 
 // contentSHAPreconditionMet enforces the contents API's optimistic-concurrency
 // check, writing the refusal itself. `sha` names the blob a write replaces;
-// without it concurrent editors would silently lose an edit. Creation carries none.
+// without it concurrent editors silently lose an edit. Creation carries none.
 func contentSHAPreconditionMet(w http.ResponseWriter, stor gitStorage.Storer, branch, path, given string) bool {
 	current, exists := contentBlobSHA(stor, branch, path)
 	switch {
@@ -558,7 +558,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// PUT contents never creates branches: a missing branch on a repo that
-	// already has branches is a 404; only an empty repo initializes here.
+	// already has branches is 404; only an empty repo initializes here.
 	branchRef := plumbing.NewBranchReferenceName(branch)
 	ref, refErr := stor.Reference(branchRef)
 	var commitHash plumbing.Hash
@@ -937,8 +937,8 @@ func (s *Server) writeContentsFile(
 	}
 	accept := r.Header.Get("Accept")
 	// Blob-size contract, decided from blob.Size so an oversized file is never
-	// read into memory: <=1 MB base64-inlined; 1-100 MB JSON carries
-	// content:"" encoding:"none" (only raw/object media types work); >100 MB unsupported.
+	// read into memory: <=1 MB base64-inlined; 1-100 MB JSON carries content:""
+	// encoding:"none" (only raw/object media types work); >100 MB unsupported.
 	if blob.Size > contentsAPIMaxFileBytes {
 		writeGHBlobTooLargeError(w, "This API does not support blobs larger than 100 MB in size.")
 		return
@@ -991,9 +991,9 @@ func (s *Server) writeContentsFile(
 	writeJSON(w, http.StatusOK, out)
 }
 
-// writeContentsRaw serves a file's bytes for the raw media type as
-// text/plain; charset=utf-8 — octokit returns text/* as a string and anything
-// else as a Buffer. nosniff stops a raw HTML file from rendering in a browser.
+// writeContentsRaw serves a file's bytes for the raw media type as text/plain;
+// charset=utf-8 — octokit returns text/* as a string and anything else as a
+// Buffer. nosniff stops a raw HTML file from rendering in a browser.
 func writeContentsRaw(w http.ResponseWriter, r *http.Request, content []byte) {
 	setGitHubMediaType(w, r, "raw")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

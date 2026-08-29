@@ -2,11 +2,10 @@ package store
 
 // GitHub Marketplace category taxonomy and listing profiles: the GraphQL
 // MarketplaceListing marketing metadata (categories, logo, screenshots,
-// policy/support links, verification state machine) that the REST
-// plan/purchase surface in store_marketplace.go does not carry. Kept separate
-// because a purchase is billing state and a profile is publication state, with
-// different writers. Every getter and List* here returns a detached snapshot
-// (STORE-021).
+// policy/support links, verification state machine) that the REST plan/purchase
+// surface in store_marketplace.go does not carry. Kept separate because a
+// purchase is billing state and a profile publication state, with different
+// writers. Every getter and List* here returns a detached snapshot (STORE-021).
 
 import (
 	"encoding/base64"
@@ -56,8 +55,7 @@ func ParseMarketplaceListingNodeID(nodeID string) (string, bool) {
 
 // DefaultMarketplaceListingProfile is the profile a listing has before its
 // publisher fills one in: catch-all category, draft state, no marketing links.
-// Synthesized rather than written, so a GraphQL read performs no durable write
-// (STORE-034).
+// Synthesized, not written, so a GraphQL read does no durable write (STORE-034).
 func DefaultMarketplaceListingProfile(slug string) *MarketplaceListingProfile {
 	slug = strings.ToLower(slug)
 	return &MarketplaceListingProfile{
@@ -146,9 +144,8 @@ const (
 	marketplaceProfilesBucket   = "marketplace_listing_profiles"
 )
 
-// defaultMarketplaceCategories is GitHub's own Marketplace taxonomy, seeded
-// once so a listing always has a primary category to point at (the field is
-// non-null on GitHub).
+// defaultMarketplaceCategories is GitHub's own Marketplace taxonomy, seeded once
+// so a listing always has a primary category to point at (non-null on GitHub).
 var defaultMarketplaceCategories = []MarketplaceCategory{
 	{Slug: "api-management", Name: "API management", Description: "Manage, secure and monitor your APIs.", TopicAliases: []string{"api"}},
 	{Slug: "chat", Name: "Chat", Description: "Bring your work into the conversation.", TopicAliases: []string{"chatops"}},

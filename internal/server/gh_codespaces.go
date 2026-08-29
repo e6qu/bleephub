@@ -973,9 +973,8 @@ type codespacePatchRequest struct {
 	RetentionPeriodMinutes int    `json:"retention_period_minutes"`
 }
 
-// snapshotCodespace copies a stored codespace under the store lock; lifecycle
-// transitions mutate it concurrently, and a serializer walking the live record
-// could publish a half-applied one.
+// snapshotCodespace copies a stored codespace under the store lock, since a
+// concurrent lifecycle transition could otherwise publish a half-applied record.
 func (s *Server) snapshotCodespace(cs *store.Codespace) *store.Codespace {
 	if cs == nil {
 		return nil

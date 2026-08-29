@@ -9,9 +9,9 @@ import (
 // Enterprise-scoped state. Exactly one enterprise exists; its slug is
 // configuration (BLEEPHUB_ENTERPRISE_SLUG), not store state.
 
-// EnterpriseTeam is a team scoped to the enterprise, not one organization.
-// OrganizationSelectionType governs org assignments: "disabled" none, "all"
-// every org on the instance, "selected" exactly SelectedOrgLogins.
+// EnterpriseTeam is a team scoped to the enterprise, not one org.
+// OrganizationSelectionType governs org assignments: "disabled" none, "all" every
+// org on the instance, "selected" exactly SelectedOrgLogins.
 type EnterpriseTeam struct {
 	ID                        int       `json:"id"`
 	Name                      string    `json:"name"`
@@ -74,8 +74,8 @@ const (
 	DependabotDefaultLevelInternal DependabotDefaultLevel = "internal"
 )
 
-// EnterpriseSettings holds the singleton enterprise-level settings, persisted
-// as one row under the "enterprise_settings" bucket. normalizeEnterpriseSettings
+// EnterpriseSettings holds the singleton enterprise-level settings, persisted as
+// one row under the "enterprise_settings" bucket. normalizeEnterpriseSettings
 // seeds zero-value fields with defaults.
 type EnterpriseSettings struct {
 	// Enterprise administration settings.
@@ -355,8 +355,8 @@ func (st *Store) CreateEnterpriseTeam(name, description, selectionType string, g
 	return t
 }
 
-// cloneEnterpriseTeam deep-copies a team so callers hold a row detached from
-// the stored one (STORE-021); mutators re-fetch the live row by ID.
+// cloneEnterpriseTeam deep-copies a team so callers hold a row detached from the
+// stored one (STORE-021); mutators re-fetch the live row by ID.
 func cloneEnterpriseTeam(t *EnterpriseTeam) *EnterpriseTeam {
 	if t == nil {
 		return nil

@@ -15,9 +15,8 @@ import (
 	"github.com/e6qu/bleephub/internal/actions"
 )
 
-// Replay the EXACT GraphQL shapes gh CLI (v2.96) sends, copied verbatim from
-// the gh source, so schema drift against the real client fails here before the
-// harness.
+// Replay the EXACT GraphQL shapes gh CLI (v2.96) sends, copied verbatim from the
+// gh source, so schema drift against the real client fails here before the harness.
 
 func TestGHCLIIssueLookupAcceptsExclusiveStateEnums(t *testing.T) {
 	t.Parallel()
@@ -43,7 +42,7 @@ query IssueByNumber($owner: String!, $repo: String!, $number: Int!) {
 	}
 
 	// The exception must not disable the overlap rule generally: these two
-	// selections execute on the same Issue and name different fields.
+	// selections run on the same Issue and name different fields.
 	conflicting := `
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {

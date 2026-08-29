@@ -1,8 +1,8 @@
 package graphqlapi
 
-// The authorization policy for the mutation surface assembled in
-// gh_mutations_*_graphql.go, merged into graphqlMutationAuthz at init. A
-// mutation registered without a row fails at schema build.
+// The authz policy for the mutation surface assembled in gh_mutations_*_graphql.go,
+// merged into graphqlMutationAuthz at init. A mutation registered without a row
+// fails at schema build.
 
 import (
 	"fmt"
@@ -13,9 +13,9 @@ import (
 )
 
 // githubMutationAuthzRows is the policy for every mutation the extended surface
-// registers, following GitHub's own gates. Repository administration (settings,
-// topics, archival) is Administration at admin standing. Label CRUD is
-// repository triage: Issues at push standing, no author exemption.
+// registers, following GitHub's own gates. Repo administration (settings,
+// topics, archival) is Administration at admin standing. Label CRUD is repo
+// triage: Issues at push standing, no author exemption.
 func githubMutationAuthzRows() map[string]mutationRule {
 	return map[string]mutationRule{
 		"createLabel": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")},
@@ -31,8 +31,8 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"updateRepository":                        repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 		"updateRepositoryWebCommitSignoffSetting": repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 
-		// Account activity changes the viewer's own account, so the entitlement
-		// is the credential's Metadata grant over it, at write.
+		// Account activity changes the viewer's own account, so the entitlement is
+		// the credential's Metadata grant over it, at write.
 		"followUser":             viewerAccountRule{scope: store.ScopeMetadata},
 		"unfollowUser":           viewerAccountRule{scope: store.ScopeMetadata},
 		"followOrganization":     viewerAccountRule{scope: store.ScopeMetadata},
@@ -46,8 +46,8 @@ func githubMutationAuthzRows() map[string]mutationRule {
 
 		"updateNotificationRestrictionSetting": notificationRestrictionRule{},
 
-		// Issue comments: Issues scope however the subject was opened. Editing
-		// or deleting admits the author; pinning does not (thread curation).
+		// Issue comments: Issues scope however the subject was opened. Editing or
+		// deleting admits the author; pinning does not (thread curation).
 		"updateIssueComment": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("id")},
 		"deleteIssueComment": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("id")},
 		"pinIssueComment":    repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssueComment("issueCommentId")},
@@ -89,8 +89,8 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"applyPendingIssueSuggestions":  repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 		"rejectPendingIssueSuggestions": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 
-		// Pull requests. A review comment is participation: read only. Editing
-		// or deleting is the author's content or a moderator's push.
+		// Pull requests. A review comment is participation: read only. Editing or
+		// deleting is the author's content or a moderator's push.
 		"addPullRequestReviewComment":     repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: reviewSubjectMutationTarget()},
 		"addPullRequestReviewThread":      repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: reviewSubjectMutationTarget()},
 		"addPullRequestReviewThreadReply": repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetReviewThread("pullRequestReviewThreadId")},
@@ -122,8 +122,8 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"updateTeamReviewAssignment": teamOwnerRule{idKey: "id"},
 
 		// Starring and watching record the viewer's relationship to a repo, so
-		// read is the whole standing. The Metadata credential grant still
-		// applies; an unreadable private repo answers as absent, not forbidden.
+		// read is the whole standing. The Metadata credential grant still applies;
+		// an unreadable private repo answers as absent, not forbidden.
 		"addStar":            repoRule{scope: store.ScopeMetadata, level: mutationReadRepo, target: mutationTargetRepo("starrableId")},
 		"removeStar":         repoRule{scope: store.ScopeMetadata, level: mutationReadRepo, target: mutationTargetRepo("starrableId")},
 		"updateSubscription": repoRule{scope: store.ScopeMetadata, level: mutationReadRepo, target: mutationTargetRepo("subscribableId")},
@@ -134,8 +134,8 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"setOrganizationInteractionLimit": orgOwnerRule{idKey: "organizationId", scope: store.ScopeOrgAdministration},
 		"setUserInteractionLimit":         viewerUserRule{idKey: "userId"},
 
-		// Removing an outside collaborator needs the owner's Members grant; the
-		// two org settings are org administration.
+		// Removing an outside collaborator needs the owner's Members grant; the two
+		// org settings are org administration.
 		"removeOutsideCollaborator":                              orgOwnerRule{idKey: "organizationId", scope: store.ScopeMembers},
 		"updateOrganizationAllowPrivateRepositoryForkingSetting": orgOwnerRule{idKey: "organizationId", scope: store.ScopeOrgAdministration},
 		"updateOrganizationWebCommitSignoffSetting":              orgOwnerRule{idKey: "organizationId", scope: store.ScopeOrgAdministration},
@@ -181,8 +181,8 @@ func reviewSubjectMutationTarget() func(*Resolver, map[string]interface{}) mutat
 	}
 }
 
-// mutationTargetReviewComment resolves the repository a pull-request review
-// comment belongs to, and the comment's author for the author exemption.
+// mutationTargetReviewComment resolves the repo a pull-request review comment
+// belongs to, and the comment's author for the author exemption.
 func mutationTargetReviewComment(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
@@ -242,9 +242,9 @@ func assignableMutationTarget(key string) func(*Resolver, map[string]interface{}
 	}
 }
 
-// orgOwnerRule is the policy for a mutation whose subject is an organization
-// definition: the viewer must administer the org and the credential must carry
-// the grant over it. Owning one org never authorizes a write against another.
+// orgOwnerRule is the policy for a mutation whose subject is an org definition:
+// the viewer must administer the org and the credential must carry the grant
+// over it. Owning one org never authorizes a write against another.
 type orgOwnerRule struct {
 	idKey string
 	scope store.PermScope
@@ -269,9 +269,9 @@ func (r orgOwnerRule) authorize(s *Resolver, p graphql.ResolveParams, input map[
 	return s.authorizeOrgAdministration(p, org.Login, r.scope)
 }
 
-// authorizeOrgAdministration is the two-part organization entitlement every
-// org-scoped rule asks: the viewer administers the account, and the credential
-// was granted the scope over it.
+// authorizeOrgAdministration is the two-part org entitlement every org-scoped
+// rule asks: the viewer administers the account, and the credential was granted
+// the scope over it.
 func (s *Resolver) authorizeOrgAdministration(p graphql.ResolveParams, login string, scope store.PermScope) error {
 	if !s.viewerCanAdminAccount(p.Context, login) {
 		return &ghForbiddenError{message: "You must be an owner of the organization to perform this action."}
@@ -334,8 +334,8 @@ func init() {
 	}
 }
 
-// mutationTargetLabel resolves the repository a label belongs to. A label
-// carries no author, so there is no author exemption to derive from it.
+// mutationTargetLabel resolves the repo a label belongs to. A label carries no
+// author, so there is no author exemption to derive from it.
 func mutationTargetLabel(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)

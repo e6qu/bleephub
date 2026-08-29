@@ -85,8 +85,7 @@ function hasFreeTextTerm(query: string): boolean {
 
 // ─── page-local search helpers ───────────────────────────────────────────────
 
-// GET /search/code item plus opt-in text-match payload; default_branch on the
-// repo powers blob links.
+// GET /search/code item plus opt-in text-match payload; repo.default_branch powers blob links.
 export type CodeSearchItem = GithubSearchCodeItem & {
   repository: GithubSearchCodeItem["repository"] & { default_branch?: string };
   text_matches?: GithubSearchTextMatch[];

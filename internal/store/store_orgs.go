@@ -445,8 +445,7 @@ func (st *Store) deleteOrgMetadata(login string) ([]PendingDeletion, PendingDele
 // DeleteUserOwnedResourcesLocked cascades a deleted user's repositories,
 // directly-owned packages (with file bytes), Marketplace purchases and org
 // memberships, mirroring the org cascade so no orphaned rows or object bytes
-// remain (STORE-028). Caller holds st.Mu; returns the repo intents and the
-// user's package-byte intent to drain after releasing the lock.
+// remain (STORE-028). Caller holds st.Mu; returns the repo and package-byte intents to drain after releasing the lock.
 func (st *Store) DeleteUserOwnedResourcesLocked(u *User) ([]PendingDeletion, PendingDeletion, error) {
 	var repoNames []string
 	for fullName, repo := range st.ReposByName {

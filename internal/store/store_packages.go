@@ -204,7 +204,7 @@ func (st *Store) ListPackages(ownerKey string) []*Package {
 }
 
 // DeletePackage soft-deletes a package: it leaves the by-owner map (freeing the
-// name) but keeps the row, versions, and files so it stays restorable, matching
+// name) but keeps the row, versions, and files so it stays restorable, per
 // GitHub's delete/restore contract.
 func (st *Store) DeletePackage(ownerKey, pkgType, name string) bool {
 	st.Mu.Lock()

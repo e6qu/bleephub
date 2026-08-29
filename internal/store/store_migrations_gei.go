@@ -121,10 +121,9 @@ type RepositoryMigration struct {
 	OrgMigrationID int `json:"org_migration_id,omitempty"`
 	// StartedByUserID owns everything the migration creates in the target.
 	StartedByUserID int `json:"started_by_user_id,omitempty"`
-	// TargetRepoID is the repository this migration created. A resumed
-	// migration continues into that repo by ID, not by name: name-matching
-	// would let someone pre-plant a repo under a queued migration's name and
-	// receive its contents.
+	// TargetRepoID is the repository this migration created. A resumed migration
+	// continues by ID, not name: name-matching would let someone pre-plant a repo
+	// under a queued migration's name and receive its contents.
 	TargetRepoID int `json:"target_repo_id,omitempty"`
 	// SourceRepoLock is the full name of the repo on *this* instance that
 	// lock_source froze, or "" when the source is elsewhere. Held until the

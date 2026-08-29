@@ -69,8 +69,7 @@ func (s *Resolver) addLabelMutationsToSchema(mutationType *graphql.Object) {
 		Fields: graphql.InputObjectConfigFieldMap{
 			"labelableId": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"labelIds":    &graphql.InputObjectFieldConfig{Type: labelIDList},
-			// The richer add form: each label carries an optional
-			// rationale/suggest flag.
+			// The richer add form: each label carries an optional rationale/suggest flag.
 			"labels": gqlListOf(s.gqlLabelUpdateInput()),
 		},
 	})

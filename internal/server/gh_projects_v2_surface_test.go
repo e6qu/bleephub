@@ -630,8 +630,7 @@ func TestProjectsV2GraphQL_LinksAndCollaborators(t *testing.T) {
 // TestProjectsV2Webhooks_DeliverTheEventFamily pins that the three event names
 // are delivered to the owning organization's hooks with GitHub's payload
 // shapes. A hook subscriber is the only way to observe a project change from
-// outside, so an event that is not emitted is a feature that silently is not
-// there.
+// outside, so an unemitted event is a silently-missing feature.
 func TestProjectsV2Webhooks_DeliverTheEventFamily(t *testing.T) {
 	t.Parallel()
 

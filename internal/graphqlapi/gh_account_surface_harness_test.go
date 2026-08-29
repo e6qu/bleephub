@@ -17,14 +17,14 @@ import (
 )
 
 // The account-surface tests execute real GraphQL documents against a seeded
-// store, because what they are asserting is the wire answer a client receives
-// — including the authorization outcome for a stranger — not the shape of an
+// store, because what they assert is the wire answer a client receives —
+// including the authorization outcome for a stranger — not the shape of an
 // internal helper.
 
 type accountViewerKey struct{}
 
 // accountTestAuthz answers the resolver's authorization questions from the
-// seeded store, so a test's expectations about who may see what are the
+// seeded store, so a test's expectations about who may see what rest on the
 // store's real ownership and membership, not a stub's blanket yes or no.
 type accountTestAuthz struct{ st *store.Store }
 
@@ -172,8 +172,8 @@ func newAccountHarness(t *testing.T) *accountHarness {
 }
 
 // user adds an account to the store. The store has no exported user-creation
-// entry point (the management endpoint composes the row itself), so the test
-// harness composes the same row.
+// entry point (the management endpoint composes the row itself), so the harness
+// composes the same row.
 func (h *accountHarness) user(login string) *store.User {
 	h.t.Helper()
 	h.store.Mu.Lock()
@@ -208,9 +208,9 @@ func zeroPaddedID(id int) string {
 	return digits
 }
 
-// follow records that follower follows target. The follow graph has no
-// exported writer (the REST follow routes mutate it in place), so the harness
-// writes the same edge under the same lock.
+// follow records that follower follows target. The follow graph has no exported
+// writer (the REST follow routes mutate it in place), so the harness writes the
+// same edge under the same lock.
 func (h *accountHarness) follow(follower, target string) {
 	h.t.Helper()
 	h.store.Misc.Mu.Lock()
@@ -290,8 +290,8 @@ func (h *accountHarness) queryWithErrors(viewer *store.User, document string, va
 }
 
 // at walks a decoded GraphQL response by key path, failing on a missing or
-// wrongly-typed member so a test reads as one assertion rather than five
-// type switches.
+// wrongly-typed member so a test reads as one assertion rather than five type
+// switches.
 func at(t *testing.T, data map[string]interface{}, path ...string) interface{} {
 	t.Helper()
 	var current interface{} = data
@@ -333,7 +333,7 @@ func (h *accountHarness) commitRepoFiles(repo *store.Repo, files map[string]stri
 		h.t.Fatal(err)
 	}
 	// A fixed signature time keeps the commit deterministic; the store's test
-	// clock, not the wall clock, is the suite's source of time.
+	// clock, not the wall clock, is the suite's time source.
 	when := h.store.CurrentTime()
 	commit := &object.Commit{
 		Message:   "seed repository content",
@@ -441,7 +441,7 @@ func sortStrings(values []string) {
 	}
 }
 
-// fixedTestTime is the instant the account-surface tests set the store clock
-// to. Tests must not read the wall clock (the test-clock ratchet), and a
+// fixedTestTime is the instant the account-surface tests set the store clock to.
+// Tests must not read the wall clock (the test-clock ratchet), and a
 // deterministic clock is also what makes an expiry assertion decidable.
 var fixedTestTime = time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)

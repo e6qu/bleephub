@@ -546,8 +546,7 @@ func (s *Server) attributeTreeMetaEntries(tip *object.Commit, dirPath string, en
 
 		changed, err := commitChangedPaths(commit)
 		if err != nil {
-			// Best effort: an unreadable object ends the walk rather than
-			// failing the page.
+			// Best effort: an unreadable object ends the walk rather than failing the page.
 			return storer.ErrStop
 		}
 		if dirLatest == nil && touches(changed, dirPath) {

@@ -49,8 +49,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		s.repoBoolField(func(r *store.Repo) bool { return r.OwnerType == "Organization" }))
 	repoType.AddFieldConfig("isUserConfigurationRepository",
 		s.repoBoolField(func(r *store.Repo) bool {
-			// The profile-configuration repository is the one whose name equals
-			// its owner's login (the profile README repo).
+			// The profile-config repository has its name equal to its owner's login (the profile README repo).
 			owner, name, ok := store.SplitRepoFullName(r.FullName)
 			return ok && r.OwnerType != "Organization" && owner == name
 		}))
@@ -59,9 +58,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 	repoType.AddFieldConfig("hasSponsorshipsEnabled",
 		s.repoBoolField(func(r *store.Repo) bool { return s.repositoryHasSponsorships(r) }))
 
-	// lifecycle state
-	//
-	// No repository is ever disabled, mirrored or locked here (no
+	// lifecycle state: no repository is ever disabled, mirrored or locked here (no
 	// suspension, mirror import or read-only migration); REST reports the same
 	// (`disabled: false`, `mirror_url: null`).
 	repoType.AddFieldConfig("isDisabled",
@@ -175,10 +172,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// social preview
-	//
-	// No social-preview upload exists, so every repository uses the generated
-	// card at its avatar path.
+	// social preview: no upload exists, so every repository uses the generated card at its avatar path.
 	repoType.AddFieldConfig("usesCustomOpenGraphImage",
 		s.repoBoolField(func(*store.Repo) bool { return false }))
 	repoType.AddFieldConfig("openGraphImageUrl", &graphql.Field{

@@ -161,9 +161,9 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 	// one instance rather than minting a duplicate type name.
 	s.graphqlTypes.issueEventRationale = reg.eventRationale
 
-	// The Assignable/Closable interfaces are claimed by Issue and PullRequest
-	// at construction (graphql-go memoizes an object's interface list), so they
-	// are only referenced here.
+	// Issue and PullRequest claim the Assignable/Closable interfaces at
+	// construction (graphql-go memoizes an object's interface list), so they are
+	// only referenced here.
 	_ = s.gqlClosableInterface()
 	_ = s.gqlAssignableInterface()
 

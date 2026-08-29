@@ -2,14 +2,14 @@
 // backing GET /images/icons/emoji/{path}.
 //
 // Unicode emoji rasters come from the Twemoji project (the maintained
-// jdecked/twemoji fork), whose 72×72 PNG graphics are licensed CC-BY 4.0.
-// The tool maps every `unicode/<codepoints>.png` path in gemoji_catalog.txt
-// to its Twemoji 72×72 filename: gemoji zero-pads codepoints to four hex
-// digits and omits U+FE0F (variation selector-16) and U+200D (zero-width
-// joiner) from ZWJ-sequence names, while Twemoji uses minimal hex and keeps
-// those codepoints, so both sides are normalized (strip leading zeros, drop
-// fe0f/200d tokens) before matching. The run fails if any catalog path does
-// not resolve or if the normalization is ambiguous.
+// jdecked/twemoji fork), whose 72×72 PNG graphics are licensed CC-BY 4.0. The
+// tool maps every `unicode/<codepoints>.png` path in gemoji_catalog.txt to its
+// Twemoji 72×72 filename: gemoji zero-pads codepoints to four hex digits and
+// omits U+FE0F (variation selector-16) and U+200D (zero-width joiner) from
+// ZWJ-sequence names, while Twemoji uses minimal hex and keeps those codepoints,
+// so both sides are normalized (strip leading zeros, drop fe0f/200d tokens)
+// before matching. The run fails if any catalog path does not resolve or the
+// normalization is ambiguous.
 //
 // GitHub-custom emoji (catalog paths with no unicode/ prefix — octocat,
 // shipit, trollface, …) are original bleephub artwork generated
@@ -42,10 +42,10 @@ import (
 )
 
 // The unicode assets come from one immutable jdecked/twemoji commit — the one
-// release tag v17.0.3 pointed at when it was vendored — and the tarball's
-// SHA-256 is checked before anything reads it. A tag can be moved; a commit
-// cannot, and the digest catches a rewritten archive either way. Bumping the
-// pin means changing all three constants together and regenerating.
+// release tag v17.0.3 pointed at when it was vendored — and the tarball's SHA-256
+// is checked before anything reads it. A tag can be moved; a commit cannot, and
+// the digest catches a rewritten archive either way. Bumping the pin means
+// changing all three constants together and regenerating.
 const (
 	twemojiVersion       = "17.0.3"
 	twemojiCommit        = "b6b55fef1e8636b540a6d016a4729ca8cdf2e60b"
@@ -148,9 +148,9 @@ func main() {
 }
 
 // readTwemojiTarball returns the pinned twemoji source tarball, from disk when
-// -twemoji-tarball names one and from the pinned commit otherwise. Either way
-// the bytes are rejected unless they hash to twemojiTarballSHA256, before any
-// caller extracts them.
+// -twemoji-tarball names one and from the pinned commit otherwise. Either way the
+// bytes are rejected unless they hash to twemojiTarballSHA256, before any caller
+// extracts them.
 func readTwemojiTarball(localPath string) ([]byte, error) {
 	tarball, err := fetchTwemojiTarball(localPath)
 	if err != nil {
@@ -175,9 +175,8 @@ var buildPathPattern = regexp.MustCompile(`^/?[A-Za-z0-9._/-]+$`)
 
 // localBuildPath validates and canonicalizes an operator-supplied build path.
 // emojigen is a build-time command; its paths come from the operator's command
-// line, never from a request. A path outside the safe alphabet or containing
-// ".." is rejected, and the rest are resolved to a clean absolute path before
-// any file is opened.
+// line, never a request. A path outside the safe alphabet or containing ".." is
+// rejected; the rest resolve to a clean absolute path before any file is opened.
 func localBuildPath(p string) string {
 	if p == "" || strings.Contains(p, "..") || !buildPathPattern.MatchString(p) {
 		log.Fatalf("path %q is not an allowed build path", p)
@@ -197,12 +196,12 @@ func fetchTwemojiTarball(localPath string) ([]byte, error) {
 	return fetchTwemojiFromUpstream()
 }
 
-// fetchTwemojiFromUpstream downloads the pinned twemoji source tarball. It
-// takes no caller input: the request target is derived solely from the
-// compile-time constant twemojiTarballURL, and is additionally validated to be
-// https against the single expected host before the request, so it can never
-// be pointed at an internal or attacker-chosen address. The response bytes are
-// still SHA-256 pinned by readTwemojiTarball before anything extracts them.
+// fetchTwemojiFromUpstream downloads the pinned twemoji source tarball. It takes
+// no caller input: the request target is derived solely from the compile-time
+// constant twemojiTarballURL, and is validated https against the single expected
+// host before the request, so it can never be pointed at an internal or
+// attacker-chosen address. The response bytes are still SHA-256 pinned by
+// readTwemojiTarball before anything extracts them.
 func fetchTwemojiFromUpstream() ([]byte, error) {
 	if err := ensureTwemojiURLIsPinnedHTTPS(); err != nil {
 		return nil, err
@@ -223,9 +222,9 @@ func fetchTwemojiFromUpstream() ([]byte, error) {
 }
 
 // ensureTwemojiURLIsPinnedHTTPS rejects the vendored upstream URL unless it is
-// https pointed at the single expected host. twemojiTarballURL is a constant,
-// so this always passes at runtime; it exists to make the fetch target provably
-// fixed and to fail loudly if the constant is ever edited to something unsafe.
+// https pointed at the single expected host. twemojiTarballURL is a constant, so
+// this always passes at runtime; it makes the fetch target provably fixed and
+// fails loudly if the constant is ever edited to something unsafe.
 func ensureTwemojiURLIsPinnedHTTPS() error {
 	target, err := url.Parse(twemojiTarballURL)
 	if err != nil || target.Scheme != "https" || target.Hostname() != "codeload.github.com" {

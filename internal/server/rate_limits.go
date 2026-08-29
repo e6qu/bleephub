@@ -41,9 +41,8 @@ var apiRateResourceLimits = map[string]int{
 	"scim":                        15000,
 	"search":                      30,
 	"source_import":               100,
-	// auth is an internal, IP-scoped per-minute anti-brute-force budget for the
-	// sign-in endpoints. It is not GitHub-exposed and never appears in
-	// /rate_limit.
+	// auth: internal IP-scoped per-minute anti-brute-force budget for the sign-in
+	// endpoints. Not GitHub-exposed; never appears in /rate_limit.
 	"auth": authFlowRateLimit,
 }
 

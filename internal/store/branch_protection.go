@@ -25,9 +25,9 @@ type BranchProtection struct {
 	LockBranch                     *BPEnabled            `json:"lock_branch,omitempty"`
 	AllowForkSyncing               *BPEnabled            `json:"allow_fork_syncing,omitempty"`
 	URL                            string                `json:"url,omitempty"`
-	// Enabled records that the branch is protected at all, set only by
-	// PUT .../protection and cleared by DELETE — never by turning one rule off.
-	// Without it, disabling the last rule silently dropped protection entirely.
+	// Enabled records that the branch is protected at all: set only by
+	// PUT .../protection, cleared only by DELETE — never by turning one rule
+	// off. Without it, disabling the last rule silently dropped protection.
 	Enabled bool `json:"enabled,omitempty"`
 }
 
@@ -215,8 +215,8 @@ func cloneBranchProtectionRuleExtras(e *BranchProtectionRuleExtras) *BranchProte
 }
 
 // deepCloneBranchProtection deep-copies a rule via JSON round trip, so no
-// caller holds a pointer into the stored table and a newly-added field cannot
-// be silently shared.
+// caller holds a pointer into the stored table and a new field can't be
+// silently shared.
 func deepCloneBranchProtection(bp *BranchProtection) *BranchProtection {
 	if bp == nil {
 		return nil

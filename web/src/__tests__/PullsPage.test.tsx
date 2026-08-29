@@ -1282,8 +1282,7 @@ describe("PullsPage list filters", () => {
       const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
       expect(calls.some((u) => u.includes("/pulls?") && u.includes("sort=popularity"))).toBe(true);
     });
-    // GitHub's /pulls endpoint rejects sort=comments (that's the issues
-    // dialect) — it must never be sent.
+    // GitHub's /pulls endpoint rejects sort=comments (the issues dialect) — never send it.
     const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
     expect(calls.some((u) => u.includes("sort=comments"))).toBe(false);
   });

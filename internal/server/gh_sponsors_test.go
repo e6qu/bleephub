@@ -120,9 +120,8 @@ func TestSponsorshipBillingLifecycle(t *testing.T) {
 		t.Fatalf("monthly estimated income = %d cents, want 500", got)
 	}
 
-	// Upgrade: effective immediately, and the difference is billed prorated
-	// over the days left in the period. The sponsorship has just started, so
-	// essentially the whole difference is due.
+	// Upgrade: effective immediately, the difference billed prorated over the
+	// days left in the period. Just started, so nearly the whole difference is due.
 	upgrade, err := sponsors.ChangeSponsorshipTier(sponsorship.ID, f.tenDollarTier.ID)
 	if err != nil {
 		t.Fatalf("upgrade tier: %v", err)

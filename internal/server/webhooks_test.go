@@ -224,17 +224,15 @@ func startWebhookReceiver(t *testing.T, handler http.HandlerFunc) (string, func(
 	return srv.URL, srv.Close
 }
 
-// webhookEventJSON extracts the JSON event payload from a received
-// webhook request body, honoring the Content-Type the way a real
-// receiver must: content_type=form (GitHub's default) sends the JSON as
-// the `payload` field of an x-www-form-urlencoded body; content_type=json
-// sends it verbatim.
-// webhookEventJSON runs inside the receiver's HTTP handler goroutine, not the
-// test goroutine, so it must NOT call t.Fatalf: Fatalf calls runtime.Goexit,
-// which would tear down only the handler goroutine and leave the test running
-// (and possibly hanging) without reliably failing. t.Errorf is documented as
-// safe to call from any goroutine and records the failure; on a parse error we
-// report it and return an empty (non-nil) map so callers never dereference nil.
+// webhookEventJSON extracts the JSON event payload from a received webhook body,
+// honoring Content-Type: content_type=form (GitHub's default) sends the JSON as
+// the `payload` field of an x-www-form-urlencoded body; content_type=json sends
+// it verbatim.
+// It runs inside the receiver's handler goroutine, not the test goroutine, so it
+// must NOT call t.Fatalf (Fatalf's runtime.Goexit would tear down only the
+// handler goroutine and leave the test hanging without failing). t.Errorf is
+// safe from any goroutine; on a parse error it reports and returns an empty
+// (non-nil) map so callers never dereference nil.
 func webhookEventJSON(t *testing.T, contentType string, body []byte) map[string]interface{} {
 	t.Helper()
 	raw := body

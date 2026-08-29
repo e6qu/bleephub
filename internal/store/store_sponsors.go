@@ -5,9 +5,8 @@ package store
 // goal, featured items and newsletters; a [Sponsorship] bills monthly into a
 // [SponsorsInvoice], rolled up into a [SponsorsPayout].
 //
-// Money is integer US cents everywhere, and no arithmetic divides before it
-// multiplies. Nothing here contacts a payment processor; the whole lifecycle
-// is simulated.
+// Money is integer US cents; no arithmetic divides before it multiplies.
+// Nothing contacts a payment processor; the whole lifecycle is simulated.
 //
 // STORE-021: every getter and List* returns a detached snapshot; only
 // Find*ByNodeID returns the live row.
@@ -1634,8 +1633,7 @@ func (ss *SponsorsStore) ListSponsorsActivities(login string, includeAsSponsor b
 
 // money — every figure derived from the invoice ledger, in integer cents
 
-// ListSponsorsInvoices returns the invoices billed for a listing, newest
-// first.
+// ListSponsorsInvoices returns the invoices billed for a listing, newest first.
 func (ss *SponsorsStore) ListSponsorsInvoices(listingID int) []*SponsorsInvoice {
 	ss.Mu.RLock()
 	defer ss.Mu.RUnlock()

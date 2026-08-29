@@ -16,7 +16,7 @@ import (
 
 // ArtifactStore holds artifact/cache metadata for @actions/artifact v4 and the
 // byte backend for artifact/cache/log content. Persisted startup requires
-// byteStore so durable bytes reach object storage rather than local disk.
+// byteStore so durable bytes reach object storage, not local disk.
 type ArtifactStore struct {
 	Mu          sync.RWMutex          `json:"-"`
 	Artifacts   map[int64]*Artifact   `json:"-"`
@@ -72,9 +72,9 @@ func NewArtifactStoreWithByteStore(dataDir string, byteStore ActionsByteStore) *
 }
 
 // SetPersistence moves Actions artifact/cache metadata onto the durable
-// SQLite/dqlite store. Local metadata is migrated only when the durable buckets
-// are empty; once durable metadata exists it is authoritative, so a stale
-// replica cannot overwrite newer shared records.
+// SQLite/dqlite store. Local metadata migrates only when the durable buckets are
+// empty; once durable metadata exists it is authoritative, so a stale replica
+// cannot overwrite newer shared records.
 func (as *ArtifactStore) SetPersistence(p *Persistence) error {
 	if p == nil {
 		return nil
@@ -170,8 +170,8 @@ func (as *ArtifactStore) SetPersistence(p *Persistence) error {
 	return nil
 }
 
-// RefreshFromPersistenceIfStale pulls Actions metadata written by another
-// dqlite replica into this process. In-flight local uploads are preserved; only
+// RefreshFromPersistenceIfStale pulls Actions metadata written by another dqlite
+// replica into this process. In-flight local uploads are preserved; only
 // finalized rows are durable and replaceable.
 func (as *ArtifactStore) RefreshFromPersistenceIfStale() error {
 	as.Mu.RLock()
@@ -437,7 +437,7 @@ func (as *ArtifactStore) WriteLogData(ctx context.Context, logID int, data []byt
 
 // ReleaseLogClaimsForPlans drops the log-container claims held by the given
 // plans and reports the released log ids. Only the in-memory claim registry is
-// touched; durable byte-store log objects are not.
+// touched; durable byte-store log objects are untouched.
 func (as *ArtifactStore) ReleaseLogClaimsForPlans(planIDs []string) []int {
 	if len(planIDs) == 0 {
 		return nil
@@ -461,7 +461,7 @@ func (as *ArtifactStore) ReleaseLogClaimsForPlans(planIDs []string) []int {
 }
 
 func (as *ArtifactStore) DeleteLogData(ctx context.Context, logID int) error {
-	// Releasing the claim so it does not outlive the bytes it guards.
+	// Release the claim so it does not outlive the bytes it guards.
 	as.Mu.Lock()
 	delete(as.logPlans, logID)
 	as.Mu.Unlock()
@@ -579,8 +579,8 @@ func (as *ArtifactStore) RenameRepository(oldFullName, newFullName string) error
 }
 
 // prepareRepositoryDeletion holds the artifact index stable while the caller
-// commits the durable intent. The returned closure stages metadata deletion
-// when given a batch, or aborts without mutation when given nil; either way it
+// commits the durable intent. The returned closure stages metadata deletion when
+// given a batch, or aborts without mutation when given nil; either way it
 // releases the lock.
 func (as *ArtifactStore) prepareRepositoryDeletion(repoFullName string, logIDs map[int]bool, record *PendingDeletion) func(*PersistBatch) {
 	as.Mu.Lock()
@@ -659,8 +659,8 @@ func (as *ArtifactStore) PersistCacheMeta(entry *CacheEntry) error {
 	return os.WriteFile(filepath.Join(dir, "meta.json"), data, 0o600)
 }
 
-// WriteCacheDataAt writes a ranged chunk to the cache's on-disk data file at
-// its Content-Range offset, for restart recovery (entry.Data is authoritative
+// WriteCacheDataAt writes a ranged chunk to the cache's on-disk data file at its
+// Content-Range offset, for restart recovery (entry.Data is authoritative
 // in-process).
 func (as *ArtifactStore) WriteCacheDataAt(entry *CacheEntry, chunk []byte, offset int64) error {
 	if as.ByteStore != nil {
@@ -739,9 +739,8 @@ type Artifact struct {
 }
 
 // CacheEntry is one immutable Actions dependency cache archive, scoped to the
-// repository whose run created it. DownloadToken stands in for GitHub's
-// pre-signed archive URL: the toolkit fetches it unauthenticated, so it must be
-// unguessable.
+// repo whose run created it. DownloadToken stands in for GitHub's pre-signed
+// archive URL: the toolkit fetches it unauthenticated, so it must be unguessable.
 type CacheEntry struct {
 	ID             int64     `json:"id"`
 	Repo           string    `json:"repo"`
@@ -755,9 +754,9 @@ type CacheEntry struct {
 	LastAccessedAt time.Time `json:"lastAccessedAt"`
 
 	// Chunks holds the ranged bodies received for an unfinalized reservation;
-	// finalize tiles them into Data. Buffering only what arrived bounds the
-	// memory a client can make this server allocate by the bytes it uploaded,
-	// not by the Content-Range it declared.
+	// finalize tiles them into Data. Buffering only what arrived bounds the memory
+	// a client can make this server allocate by the bytes it uploaded, not the
+	// Content-Range it declared.
 	Chunks   []CacheChunk `json:"-"`
 	Received int64        `json:"-"`
 }
@@ -770,7 +769,7 @@ func CacheLookupKey(repo, key, version string) string {
 const defaultMaxRepoCacheBytes = 10 << 30
 
 // JobMessageScopeAndRepo reads a dispatched job message's plan scopeIdentifier
-// and repository. An operator-submitted job carries no repository and yields "".
+// and repository. An operator-submitted job carries no repo and yields "".
 func JobMessageScopeAndRepo(message string) (scopeID, repo string) {
 	var msg struct {
 		Plan struct {

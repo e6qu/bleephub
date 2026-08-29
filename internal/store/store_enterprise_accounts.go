@@ -1,10 +1,10 @@
 package store
 
-// Enterprise accounts: the account entity, its membership roll, organizations,
+// Enterprise accounts: the account entity, membership roll, organizations,
 // invitations, support entitlements, SAML identity provider binding and IP
-// allow list. This is the account layer GitHub's GraphQL schema models, distinct
-// from the pre-existing GHES enterprise-settings singleton. Everything is keyed
-// by enterprise id, so one enterprise's data is never reachable from another.
+// allow list — the account layer GitHub's GraphQL schema models, distinct from
+// the GHES enterprise-settings singleton. Keyed by enterprise id, so one
+// enterprise's data is never reachable from another.
 //
 // STORE-021: every getter and List* returns a detached snapshot;
 // FindEnterpriseByNodeID returns the live row (the write path's lookup).
@@ -21,8 +21,8 @@ import (
 const EnterpriseNodeIDPrefix = "E_kgDO"
 
 // EnterpriseUserAccountNodeIDPrefix is the global-id prefix for the
-// EnterpriseUserAccount projection of a user's membership. The suffix is the
-// membership's own database id.
+// EnterpriseUserAccount projection of a user's membership; the suffix is the
+// membership's database id.
 const EnterpriseUserAccountNodeIDPrefix = "EUA_kgDO"
 
 // EnterpriseAdminInvitationNodeIDPrefix and EnterpriseMemberInvitationNodeIDPrefix
@@ -42,7 +42,7 @@ const (
 )
 
 // EnterpriseRole is a principal's standing in an enterprise account, spelled
-// with GitHub's enum values so the stored value is what the GraphQL enums serve.
+// with GitHub's enum values so the stored value is what GraphQL serves.
 type EnterpriseRole string
 
 const (
@@ -69,7 +69,7 @@ func ValidEnterpriseAdministratorRole(role string) bool {
 }
 
 // Policy-setting values, spelled with GitHub's enum values. A policy field's
-// zero value is never served — the enterprise is created with GitHub's defaults
+// zero value is never served: the enterprise is created with GitHub's defaults,
 // so a non-null GraphQL field always has a value.
 const (
 	EnterprisePolicyEnabled  = "ENABLED"
@@ -96,8 +96,8 @@ type EnterprisePolicy struct {
 	// organization may grant its members.
 	DefaultRepositoryPermission          string `json:"default_repository_permission"`
 	MembersCanChangeRepositoryVisibility string `json:"members_can_change_repository_visibility"`
-	// The three booleans are the per-visibility refinement GitHub applies when
-	// MembersCanCreateRepositories is neither DISABLED nor NO_POLICY.
+	// Per-visibility refinement GitHub applies when MembersCanCreateRepositories
+	// is neither DISABLED nor NO_POLICY.
 	MembersCanCreateRepositories         string `json:"members_can_create_repositories"`
 	MembersCanCreatePublicRepositories   *bool  `json:"members_can_create_public_repositories"`
 	MembersCanCreatePrivateRepositories  *bool  `json:"members_can_create_private_repositories"`
@@ -124,9 +124,8 @@ type EnterprisePolicy struct {
 	IPAllowListEnabled                     string `json:"ip_allow_list_enabled"`
 	IPAllowListForInstalledAppsEnabled     string `json:"ip_allow_list_for_installed_apps_enabled"`
 	IPAllowListUserLevelEnforcementEnabled string `json:"ip_allow_list_user_level_enforcement_enabled"`
-	// These report an unfinished enterprise-wide roll-out. bleephub applies a
-	// policy to every organization in one batch write, so both are false outside
-	// the window a mutation is mid-apply.
+	// Report an unfinished enterprise-wide roll-out. bleephub applies a policy to
+	// every org in one batch write, so both are false outside a mid-apply window.
 	IsUpdatingDefaultRepositoryPermission bool `json:"is_updating_default_repository_permission"`
 	IsUpdatingTwoFactorRequirement        bool `json:"is_updating_two_factor_requirement"`
 }
@@ -228,8 +227,8 @@ type EnterpriseOrganization struct {
 }
 
 // EnterpriseInvitation is an outstanding invitation to an enterprise. Kind
-// distinguishes the admin invitation (which carries a role) from the member
-// invitation (which does not); one record type keeps their lifecycles aligned.
+// distinguishes the admin invitation (carries a role) from the member one (does
+// not); one record type keeps their lifecycles aligned.
 type EnterpriseInvitation struct {
 	ID           int    `json:"id"`
 	NodeID       string `json:"node_id"`
@@ -1062,8 +1061,8 @@ func (st *Store) loadEnterpriseAccountBuckets() error {
 			return err
 		}
 		if e.Policy.AllowPrivateRepositoryForking == "" {
-			// An older persisted row reads back with Go zero values that are not
-			// enum members; fill from the defaults so every field is answerable.
+			// Older persisted rows read back with Go zero values that are not enum
+			// members; fill from defaults so every field is answerable.
 			e.Policy = mergeEnterprisePolicyDefaults(e.Policy)
 		}
 		st.Enterprises[e.ID] = &e
@@ -1170,9 +1169,9 @@ func mergeEnterprisePolicyDefaults(p EnterprisePolicy) EnterprisePolicy {
 	return p
 }
 
-// PrimaryEnterpriseSlug names the instance's own enterprise account, configured
-// via BLEEPHUB_ENTERPRISE_SLUG and set once at boot. It is the enterprise every
-// account on the instance belongs to.
+// PrimaryEnterpriseSlug names the instance's own enterprise account (configured
+// via BLEEPHUB_ENTERPRISE_SLUG, set once at boot): the enterprise every account
+// on the instance belongs to.
 func (st *Store) PrimaryEnterpriseSlug() string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

@@ -19,7 +19,6 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 	uri := s.graphQLStringScalar("URI")
 	htmlScalar := s.graphQLStringScalar("HTML")
 
-	// Reaction types
 	// Shared reaction types come from the registry so every reactable subject
 	// exposes one set.
 	discussionReactionGroupType := s.gqlReactionGroupType()
@@ -46,7 +45,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			// GitHub returns a small HTML span around the emoji; a minimal
-			// wrapper satisfies the HTML! contract.
+			// wrapper satisfies HTML!.
 			"emojiHTML": &graphql.Field{
 				Type: graphql.NewNonNull(htmlScalar),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -239,8 +238,8 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 						return discussionReactionConnection(s.store, "discussion_comment", commentID, p.Args), nil
 					},
 				},
-				// Remaining Reactable fields, declared here because this type
-				// uses a FieldsThunk (AddFieldConfig cannot extend it).
+				// Remaining Reactable fields, declared here because this type uses
+				// a FieldsThunk (AddFieldConfig cannot extend it).
 				"databaseId": &graphql.Field{
 					Type: graphql.Int,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -279,7 +278,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				},
 			}
 			// The remaining GitHub fields (authorAssociation, replyTo, url,
-			// viewerCan*, …) join here rather than via AddFieldConfig.
+			// viewerCan*, …) join here, not via AddFieldConfig.
 			for k, v := range s.discussionCommentExtraFields() {
 				base[k] = v
 			}
@@ -538,7 +537,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
-	// The account surface, assembled later, publishes
+	// The account surface (assembled later) publishes
 	// {Organization,User}.repositoryDiscussions over these instances.
 	s.stashNamedObject(discussionConnectionType)
 	s.stashNamedObject(discussionCommentConnectionType)
@@ -825,7 +824,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				return nil, fmt.Errorf("title is required")
 			}
 			d := s.store.CreateDiscussion(repo.ID, cat.ID, user.ID, title, body)
-			// `discussion` (created) fires so `on: discussion` workflows run (ACT-026).
+			// Fires `on: discussion` (created) workflows (ACT-026).
 			s.emitWebhookEvent(repo.FullName, "discussion", "created", map[string]interface{}{
 				"action":     "created",
 				"discussion": map[string]interface{}{"number": d.Number, "title": d.Title, "body": d.Body},
@@ -982,7 +981,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			s.store.UpdateDiscussion(d.ID, func(disc *store.Discussion) {
 				disc.Closed = false
 				disc.ClosedAt = nil
-				// REOPENED is github's post-reopen state reason.
+				// REOPENED is GitHub's post-reopen state reason.
 				disc.StateReason = "REOPENED"
 			})
 			repo := s.store.GetRepoByID(d.RepoID)
@@ -1173,7 +1172,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 	})
 
 	// resolveUpvote is the shared body over any Votable (discussion or comment);
-	// the two mutations differ only in the vote direction.
+	// the two mutations differ only in vote direction.
 	resolveUpvote := func(up bool) func(graphql.ResolveParams) (interface{}, error) {
 		return func(p graphql.ResolveParams) (interface{}, error) {
 			user := s.ghUserFromContext(p.Context)
@@ -1275,7 +1274,7 @@ func discussionCategoryToGQL(cat *store.DiscussionCategory) map[string]interface
 
 func discussionToGQL(d *store.Discussion, st *store.Store) map[string]interface{} {
 	// A comment can outlive its soft-deleted discussion, and callers pass a
-	// re-fetched GetDiscussion straight through; guard against a nil d.
+	// re-fetched GetDiscussion straight through; guard a nil d.
 	if d == nil {
 		return nil
 	}

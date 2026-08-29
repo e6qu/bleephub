@@ -31,7 +31,7 @@ var (
 
 func (s *Server) registerTimelineRoutes() {
 	// Every route addresses a plan by {planId}, so each gates on that plan's job
-	// token — the {scopeId} segment is not what the handlers read.
+	// token; the {scopeId} segment is not what the handlers read.
 
 	// Timeline CRUD
 	s.route("POST /_apis/v1/Timeline/{scopeId}/{hubName}/{planId}/timeline", s.requirePlanJob(s.handleCreateTimeline))

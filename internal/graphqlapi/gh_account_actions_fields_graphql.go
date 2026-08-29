@@ -16,8 +16,7 @@ import (
 )
 
 // addAccountActionsFields hangs the residual Commit, Release and status-rollup
-// members onto the already-built types. Runs after every type family is
-// assembled.
+// members onto the already-built types. Runs after every type family is built.
 func (s *Resolver) addAccountActionsFields() {
 	s.addCommitAccountFields()
 	s.addStatusContextFields()
@@ -173,8 +172,7 @@ func (s *Resolver) addStatusCheckRollupFields() {
 }
 
 // commitSourceFromStatus builds the Commit source a StatusContext or
-// StatusCheckRollup points back at, applying the standard private-repo
-// visibility gate.
+// StatusCheckRollup points back at, applying the private-repo visibility gate.
 func (s *Resolver) commitSourceFromStatus(ctx context.Context, source interface{}) interface{} {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -428,7 +426,7 @@ func releaseAssetField(key string) graphql.FieldResolveFn {
 }
 
 // releaseTagOID resolves the git object id the release's tag points at, or ""
-// when the tag is absent (e.g. a draft release whose tag does not yet exist).
+// when the tag is absent (e.g. a draft release whose tag does not exist yet).
 func (s *Resolver) releaseTagOID(ctx context.Context, repoFullName, tag string) string {
 	stor := s.readableGitStorage(ctx, repoFullName)
 	if stor == nil || tag == "" {
@@ -503,7 +501,7 @@ func (s *Resolver) bodyMentionedUsers(body string) []*store.User {
 	return users
 }
 
-// mentionLoginPattern matches an @login honoring GitHub's login grammar
+// mentionLoginPattern matches an @login per GitHub's login grammar
 // (alphanumerics and single hyphens, up to 39 characters).
 var mentionLoginPattern = regexp.MustCompile(`(?:^|[^a-zA-Z0-9_/])@([a-zA-Z0-9](?:-?[a-zA-Z0-9]){0,38})`)
 

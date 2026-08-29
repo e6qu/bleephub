@@ -83,8 +83,8 @@ type PullRequestReview struct {
 	DismissedAt      *time.Time
 	DismissalMessage string
 	// PreviousState is the state held before dismissal ("" if never dismissed).
-	// Dismissal overwrites State, and ReviewDismissedEvent.previousReviewState
-	// needs the overturned standing.
+	// Dismissal overwrites State; ReviewDismissedEvent.previousReviewState needs
+	// the overturned standing.
 	PreviousState string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -303,8 +303,8 @@ func (st *Store) UpdatePullRequest(id int, fn func(*PullRequest)) bool {
 		return false
 	}
 	fn(pr)
-	// Every state transition funnels through here, so retiring an armed
-	// auto-merge request when the PR leaves OPEN needs no per-call-site bookkeeping.
+	// Every state transition funnels through here, so retiring an armed auto-merge
+	// when the PR leaves OPEN needs no per-call-site bookkeeping.
 	if pr.State != "OPEN" {
 		pr.AutoMerge = nil
 	}
@@ -353,7 +353,7 @@ func (st *Store) AddPullRequestLabels(repoID, prNumber int, labelIDs []int, acto
 		}
 	}
 	if added {
-		// One transaction so a crash cannot split the events from the label set
+		// One transaction so a crash cannot split events from the label set
 		// (STORE-001/002).
 		pr.UpdatedAt = st.CurrentTime()
 		batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)

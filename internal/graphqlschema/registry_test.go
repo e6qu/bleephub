@@ -132,9 +132,8 @@ func TestResolveTypeDispatch(t *testing.T) {
 
 func TestCustomScalarsComeFromTheSDL(t *testing.T) {
 	registry := New()
-	// The thirteen custom scalars are read out of the vendored SDL by the
-	// generator; this pins the set so a schema update that adds or removes
-	// one is a reviewed change.
+	// The thirteen custom scalars are read from the vendored SDL by the generator;
+	// pin the set so a schema update that adds or removes one is a reviewed change.
 	want := []string{
 		"Base64String", "BigInt", "CustomPropertyValue", "Date", "DateTime",
 		"GitObjectID", "GitRefname", "GitSSHRemote", "GitTimestamp", "HTML",
@@ -216,25 +215,23 @@ func BenchmarkSchemaRetainedHeap(b *testing.B) {
 	runtime.KeepAlive(schemas)
 }
 
-// TestDefaultValuesAreReproducedAndIntrospectionIsLimited covers the SDL's
-// default values from both sides.
+// TestDefaultValuesAreReproducedAndIntrospectionIsLimited covers SDL default
+// values from both sides.
 //
-// The value graphql-go uses to coerce a missing argument is the Go value
-// the generator emitted, and that is exact for every SDL default kind —
-// scalars, enums, lists and input objects. Introspection is a different
-// story: graphql-go v0.8.1 renders an input value's default by calling
-// astFromValue(inputVal.DefaultValue, inputVal) — passing the *Argument
-// itself where the function expects the argument's *type*
-// (introspection.go:265 and :272). Every `ttype.(*List)` and
-// `ttype.(*Enum)` check inside therefore fails, and astFromValue also
-// carries an explicit "TODO: implement astFromValue from Map to Value"
-// (introspection.go:738). The result is that enum, list and input-object
-// defaults are printed by Go's %v fallback instead of as GraphQL literals.
+// The value graphql-go uses to coerce a missing argument is the Go value the
+// generator emitted — exact for every SDL default kind (scalars, enums, lists,
+// input objects). Introspection is a different story: graphql-go v0.8.1 renders
+// an input value's default via astFromValue(inputVal.DefaultValue, inputVal),
+// passing the *Argument where the function expects the argument's *type*
+// (introspection.go:265, :272). Every `ttype.(*List)`/`ttype.(*Enum)` check
+// therefore fails, and astFromValue also carries an explicit "TODO: implement
+// astFromValue from Map to Value" (introspection.go:738). So enum, list and
+// input-object defaults print via Go's %v fallback, not as GraphQL literals.
 //
 // The deviation is confined to the introspected __InputValue.defaultValue
-// string; execution reads DefaultValue directly and is unaffected. This
-// test pins both halves, so if graphql-go ever fixes the rendering the
-// failure says so rather than going unnoticed.
+// string; execution reads DefaultValue directly and is unaffected. This test
+// pins both halves, so if graphql-go ever fixes the rendering the failure says
+// so rather than going unnoticed.
 func TestDefaultValuesAreReproducedAndIntrospectionIsLimited(t *testing.T) {
 	registry := New()
 	schema, err := registry.Schema()

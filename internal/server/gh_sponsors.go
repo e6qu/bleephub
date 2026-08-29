@@ -1,9 +1,9 @@
 package bleephub
 
 // GitHub Sponsors, HTTP half: the /ui-data browser surface, the `sponsorship`
-// webhook family, and billing-cycle reconciliation. GitHub publishes no REST
-// API for Sponsors (GraphQL plus webhooks only), so routes here live under
-// /ui-data; the client-facing contract is internal/graphqlapi/gh_sponsors_graphql.go.
+// webhook family, and billing-cycle reconciliation. GitHub publishes no REST API
+// for Sponsors (GraphQL plus webhooks only), so routes here live under /ui-data;
+// the client-facing contract is internal/graphqlapi/gh_sponsors_graphql.go.
 
 import (
 	"context"
@@ -119,8 +119,8 @@ func (s *Server) ReconcileSponsorships() {
 // webhooks
 
 // sponsorsTierWebhookJSON renders a tier as GitHub's `sponsorship` payload does.
-// GitHub really spells the custom-amount flag `is_custom_ammount`; the
-// misspelling is reproduced so an unmodified consumer reads the field.
+// GitHub really spells the custom-amount flag `is_custom_ammount`; the misspelling
+// is reproduced so an unmodified consumer reads the field.
 func sponsorsTierWebhookJSON(tier *store.SponsorsTier) map[string]interface{} {
 	if tier == nil {
 		return nil
@@ -166,7 +166,7 @@ func (s *Server) sponsorshipWebhookJSON(sponsorship *store.Sponsorship, tier *st
 }
 
 // emitSponsorshipEvent delivers a `sponsorship` webhook, fanning out to the
-// sponsorable org's hooks and to every subscribed App installed on the sponsorable.
+// sponsorable org's hooks and every subscribed App installed on the sponsorable.
 func (s *Server) emitSponsorshipEvent(action string, transition *store.SponsorsTransition, sender *store.User) {
 	if transition == nil || transition.Sponsorship == nil {
 		return

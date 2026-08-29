@@ -76,8 +76,7 @@ func (s *Server) registerGHMiscEndpoints() {
 	s.route("GET /api/v3/user/starred/{owner}/{repo}", s.handleCheckMyStarredRepo)
 	s.route("GET /api/v3/user/subscriptions", s.handleListMySubscriptions)
 
-	// Actions OIDC — the token is minted for the requesting job, so gate it on
-	// that job's runtime token.
+	// Actions OIDC — minted for the requesting job, so gate it on that job's runtime token.
 	s.route("GET /token", s.requireJobToken(s.handleActionsOIDCToken))
 	s.route("GET /.well-known/openid-configuration", s.handleOIDCDiscovery)
 	s.route("GET /.well-known/jwks", s.handleJWKS)
@@ -104,8 +103,7 @@ func (s *Server) registerGHMiscEndpoints() {
 
 	s.route("GET /api/v3/orgs/{org}/audit-log", s.handleOrgAuditLog)
 
-	// Marketplace; the stubbed variants serve the same plan/purchase state as
-	// the production routes.
+	// Marketplace; the stubbed variants serve the same plan/purchase state as the production routes.
 	s.route("GET /api/v3/marketplace_listing/plans", s.handleMarketplacePlans)
 	s.route("GET /api/v3/marketplace_listing/accounts/{account_id}", s.handleMarketplaceAccount)
 	s.route("GET /api/v3/marketplace_listing/plans/{plan_id}/accounts", s.handleMarketplacePlanAccounts)
@@ -113,8 +111,7 @@ func (s *Server) registerGHMiscEndpoints() {
 	s.route("GET /api/v3/marketplace_listing/stubbed/plans/{plan_id}/accounts", s.handleMarketplacePlanAccounts)
 	s.route("GET /api/v3/marketplace_listing/stubbed/accounts/{account_id}", s.handleMarketplaceAccount)
 
-	// Meta — gh resolves the host version from installed_version to gate its
-	// GHES feature detection.
+	// Meta — gh resolves the host version from installed_version to gate its GHES feature detection.
 	s.route("GET /api/v3/meta", s.handleMeta)
 }
 
@@ -1248,8 +1245,7 @@ func (s *Server) recordAuditEvent(action, actor, org string, data map[string]int
 	s.store.RecordAuditEntry(action, actor, org, data)
 }
 
-// maxAuditLogEntries bounds the in-memory audit log, keeping the newest
-// entries so the prepend-only slice cannot grow without limit.
+// maxAuditLogEntries bounds the in-memory audit log, keeping the newest entries so the prepend-only slice cannot grow without limit.
 const maxAuditLogEntries = 5000
 
 func marketplacePlanToJSON(p *store.MarketplacePlan, baseURL string) map[string]interface{} {

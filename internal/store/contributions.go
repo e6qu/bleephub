@@ -1,9 +1,9 @@
 package store
 
 // Contribution aggregation for GraphQL User.contributionsCollection, computed
-// from real store data. It composes the store's individually-locked readers
-// rather than holding st.Mu itself, so it never deadlocks against them and
-// always reads committed snapshots.
+// from real store data. Composes the store's individually-locked readers rather
+// than holding st.Mu itself, so it never deadlocks against them and always reads
+// committed snapshots.
 
 import (
 	"sort"
@@ -55,8 +55,8 @@ type ContributionData struct {
 	IssueComments map[int]int
 	PRComments    map[int]int
 
-	// The user's all-time first issue/PR/repository. GraphQL's
-	// first*Contribution surfaces these only when they fall inside the window.
+	// The user's all-time first issue/PR/repository. GraphQL's first*Contribution
+	// surfaces these only when they fall inside the window.
 	FirstIssue *Issue
 	FirstPR    *PullRequest
 	FirstRepo  *Repo
@@ -278,9 +278,8 @@ func (st *Store) accumulateCommitContributions(data *ContributionData, repo *Rep
 	}
 }
 
-// commitAuthoredBy reports whether a git signature is the given user's, using
-// the same email-then-name attribution as ResolveUserBySignature but scoped to
-// one account.
+// commitAuthoredBy reports whether a git signature is the user's, using the same
+// email-then-name attribution as ResolveUserBySignature but scoped to one account.
 func (st *Store) commitAuthoredBy(user *User, sig object.Signature) bool {
 	if sig.Email != "" {
 		if strings.EqualFold(sig.Email, user.Email) {

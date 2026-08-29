@@ -19,12 +19,12 @@ import (
 // with no REST API. The pages the UI reads are a projection of the tip commit
 // and every UI write is a commit; the projection is a memo keyed by the tip it
 // was computed from, so a stale memo is detected by comparing object ids rather
-// than invalidated by a writer that has to remember to.
+// than invalidated by a writer.
 
 // WikiStorageSuffix keys a wiki's git storage: `admin/docs` stores its wiki
 // under `admin/docs.wiki.git`. The `.git` is deliberate — repository names
 // ending in `.git` are refused at creation, so no repository can collide with
-// this key, and the wiki gets the same pluggable storer as any other repository.
+// this key, and the wiki gets the same pluggable storer as any repository.
 const WikiStorageSuffix = ".wiki.git"
 
 // WikiURLSuffix is the repository-name suffix a git client addresses a wiki
@@ -59,7 +59,7 @@ const WikiPageExtension = ".md"
 const maxWikiHistoryCommits = 5000
 
 // WikiPageFileName maps a page title to its file name the way github does:
-// spaces (and path separators) become hyphens and the extension is appended, so
+// spaces and path separators become hyphens and the extension is appended, so
 // "Getting Started" is `Getting-Started.md`. Folding separators keeps a title
 // from escaping into a subdirectory, where it would no longer round-trip.
 func WikiPageFileName(title string) string {
@@ -113,7 +113,7 @@ func WikiTitleFromPath(filePath string) (string, bool) {
 
 // WikiProjection is the wiki's tip commit read as pages, stamped with the tip it
 // was derived from. A projection whose Tip is not the current tip is stale and
-// thrown away rather than patched.
+// discarded, not patched.
 type WikiProjection struct {
 	Tip       plumbing.Hash
 	Branch    string
@@ -284,9 +284,9 @@ func (st *Store) wikiProjectionLocked(repoKey, fallbackBranch string) *WikiProje
 }
 
 // buildWikiProjection replays the wiki's first-parent history oldest-first,
-// comparing each commit's page files with the previous commit's: a page's
-// revisions are the commits that changed its blob, and its history restarts when
-// the file is deleted and written again.
+// comparing each commit's page files with the previous: a page's revisions are
+// the commits that changed its blob, and its history restarts when the file is
+// deleted and written again.
 func buildWikiProjection(stor gitStorage.Storer, repoKey, branch string, tip plumbing.Hash) (*WikiProjection, error) {
 	commits, err := wikiFirstParentHistory(stor, tip)
 	if err != nil {
@@ -301,8 +301,7 @@ func buildWikiProjection(stor gitStorage.Storer, repoKey, branch string, tip plu
 		if err != nil {
 			return nil, err
 		}
-		// Sorted so the winner is deterministic when two file names fold to
-		// one slug.
+		// Sorted so the winner is deterministic when two file names fold to one slug.
 		for _, filePath := range sortedKeys(current) {
 			blob := current[filePath]
 			if previous[filePath] == blob {

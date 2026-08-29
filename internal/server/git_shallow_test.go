@@ -22,11 +22,10 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// The shallow protocol is only worth testing against the program that speaks
-// it, so everything below drives the real git CLI at a running bleephub. The
-// same matrix runs over smart HTTP and over SSH, because the two transports
-// share one upload-pack implementation and the point of these tests is that
-// they cannot drift apart.
+// The shallow protocol is only worth testing against the program that speaks it,
+// so everything below drives the real git CLI at a running bleephub. The same
+// matrix runs over smart HTTP and SSH: the two transports share one upload-pack
+// implementation, and the point of these tests is that they cannot drift apart.
 
 // gitShallowHistoryCommits is the number of commits seedGitShallowRepo builds:
 // a root plus five dated commits.
@@ -40,10 +39,10 @@ const gitShallowExcludeBranch = "base"
 // commit, so a --shallow-since clone of it keeps exactly two.
 const gitShallowSince = "2020-03-15"
 
-// seedGitShallowRepo builds a repository with a deterministic linear history:
-// a root commit plus five commits dated one month apart through 2020, and a
-// "base" branch at the third of them. The dates are fixed rather than relative
-// to now so --shallow-since asserts on an exact commit count.
+// seedGitShallowRepo builds a repository with a deterministic linear history: a
+// root commit plus five commits dated one month apart through 2020, and a "base"
+// branch at the third of them. Dates are fixed rather than relative to now so
+// --shallow-since asserts on an exact commit count.
 func seedGitShallowRepo(t *testing.T, s *Server, name string) {
 	t.Helper()
 	admin := s.store.LookupUserByLogin("admin")
@@ -316,9 +315,9 @@ func TestGitShallowCloneOverSSH(t *testing.T) {
 // port with a freshly generated host key, registers a client key on the admin
 // account, and returns the path to that key's private half.
 //
-// Keys are generated rather than fixtured because a skipped test proves
-// nothing, and the listener is this server's rather than the package-wide one
-// so the test stays isolated (TEST-008).
+// Keys are generated rather than fixtured because a skipped test proves nothing,
+// and the listener is this server's rather than the package-wide one so the test
+// stays isolated (TEST-008).
 func startIsolatedGitSSH(t *testing.T, srv *isolatedServer) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -379,8 +378,8 @@ func startIsolatedGitSSH(t *testing.T, srv *isolatedServer) string {
 }
 
 // TestGitUploadPackRejectsAMalformedRequest keeps the one failure mode that can
-// still carry an HTTP status: a request refused before any of the reply has
-// been written is a 400, not a 200 with a body no client can parse.
+// still carry an HTTP status: a request refused before any reply is written is a
+// 400, not a 200 with a body no client can parse.
 func TestGitUploadPackRejectsAMalformedRequest(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)

@@ -10,11 +10,10 @@ import (
 )
 
 // builtinScalarGaps are the only differences a complete generated schema
-// may have from GitHub's SDL. GitHub's published schema does not declare
-// the five GraphQL built-in scalars (they are implicit in every schema),
-// but they are real types in any assembled schema and introspection
-// reports them, so the SDL-directed diff necessarily names them. The
-// served schema's ratchet allowlists the same five.
+// may have from GitHub's SDL. GitHub's published schema omits the five
+// built-in scalars (implicit in every schema), but they are real types in any
+// assembled schema and introspection reports them, so the SDL-directed diff
+// names them. The served-schema ratchet allowlists the same five.
 var builtinScalarGaps = []string{
 	"type\tBoolean\tSCALAR is absent from GitHub",
 	"type\tFloat\tSCALAR is absent from GitHub",
@@ -73,8 +72,8 @@ func TestGeneratedGraphQLSchemaIsComplete(t *testing.T) {
 	if report.ImplementedFields != report.OfficialFields {
 		t.Errorf("generated schema implements %d of GitHub's %d fields", report.ImplementedFields, report.OfficialFields)
 	}
-	// A field whose type or nullability differs from GitHub's is worse than
-	// a missing one: a client trusts the signature it introspects.
+	// A field whose type or nullability differs from GitHub's is worse than a
+	// missing one: a client trusts the signature it introspects.
 	if report.SignatureExactFields != report.OfficialFields {
 		t.Errorf("generated schema reproduces %d of GitHub's %d field signatures exactly",
 			report.SignatureExactFields, report.OfficialFields)

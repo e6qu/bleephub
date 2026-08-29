@@ -112,9 +112,8 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-// Per-row metadata fetches fan out across many rows, so throttle through a
-// shared semaphore + session cache: one request per key, at most
-// MAX_META_FETCHES in flight.
+// Per-row metadata fetches fan out, so throttle through a shared semaphore +
+// session cache: one request per key, at most MAX_META_FETCHES in flight.
 const MAX_META_FETCHES = 6;
 let metaInFlight = 0;
 const metaWaiters: Array<() => void> = [];
@@ -317,8 +316,8 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
     queryFn: async ({ signal }) => {
       const data = await fetchRepoBootstrap(owner, repo, signal);
       const defaultBranch = data.repo.default_branch;
-      // Decode like the readme hook; a corrupt payload skips the seed so that
-      // hook fetches and errors itself.
+      // Decode like the readme hook; a corrupt payload skips the seed, leaving
+      // that hook to fetch and error itself.
       let readmeSeed: { name: string; text: string } | null = null;
       try {
         readmeSeed = data.readme

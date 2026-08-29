@@ -54,11 +54,9 @@ type Repo struct {
 	MergeCommitMessage        string     `json:"merge_commit_message"`
 	PullRequestCreationPolicy string     `json:"pull_request_creation_policy"`
 	IssueCreationPolicy       string     `json:"issue_creation_policy"`
-	// HasSponsorships records whether to show a sponsor button. Nil means unset,
-	// so the answer derives from the owner's Sponsors listing and FUNDING file.
+	// HasSponsorships shows a sponsor button; nil derives the answer from the owner's Sponsors listing and FUNDING file.
 	HasSponsorships *bool `json:"has_sponsorships,omitempty"`
-	// DeclinedTopics are topics an admin declined; never applied by a suggestion
-	// accept nor offered again.
+	// DeclinedTopics are topics an admin declined; never re-suggested nor applied.
 	DeclinedTopics                           []string          `json:"declined_topics,omitempty"`
 	LicenseKey                               string            `json:"license_key"`
 	LicenseName                              string            `json:"license_name"`
@@ -102,7 +100,7 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 	st.PendingRepoCreations[fullName] = true
 	st.Mu.Unlock()
 
-	// Storage init can do filesystem/S3 I/O, so run it outside the lock; the
+	// Storage init does filesystem/S3 I/O; run it outside the lock. The
 	// pending-name reservation preserves duplicate-create atomicity.
 	openStorage := st.RepoStorageOpen
 	if openStorage == nil {
@@ -129,8 +127,7 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 // createRepoLocked creates a repo record around prepared git storage; caller
 // holds st.Mu. The repo row and its default discussion categories commit in one
 // transaction (STORE-001/002); a non-nil batch stages them into the caller's
-// transaction instead (e.g. PublishCodespace commits repo and codespace rows
-// together).
+// transaction instead (e.g. PublishCodespace commits repo and codespace together).
 func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, description string, private bool, ownerID int, ownerType string, owner *User, stor gitStorage.Storer) *Repo {
 	// GitHub rejects a name colliding only by case; the folded index
 	// (name_fold.go) relies on canonical names never colliding under folding.
@@ -162,9 +159,9 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 		HasWiki:         true,
 		HasDiscussions:  BoolPointer(false),
 		HasPullRequests: true,
-		// LFS is on for every new repo, as on github.com; the per-repo lfs
-		// toggle exists to turn it off. A false default would break `git lfs
-		// push` until an enterprise-only endpoint was called.
+		// LFS is on for every new repo, as on github.com; the per-repo toggle
+		// turns it off. A false default would break `git lfs push` until an
+		// enterprise-only endpoint was called.
 		LFSEnabled:                true,
 		AllowSquashMerge:          true,
 		AllowMergeCommit:          true,
@@ -462,8 +459,7 @@ func snapshotRepos(in []*Repo) []*Repo {
 	return out
 }
 
-// snapshot* helpers detach a list of store pointers (STORE-021), each reusing
-// the element's existing clone helper.
+// snapshot* helpers detach a list of store pointers (STORE-021) via each element's clone helper.
 func snapshotIssues(in []*Issue) []*Issue {
 	if in == nil {
 		return nil

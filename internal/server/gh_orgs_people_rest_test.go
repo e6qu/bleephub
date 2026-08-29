@@ -89,8 +89,7 @@ func TestOrgInvitationsLifecycle(t *testing.T) {
 		t.Fatalf("legacy team invitations = %v", legacyTeamInvs)
 	}
 
-	// Accepting the membership consumes the invitation and joins the
-	// invited team.
+	// Accepting the membership consumes the invitation and joins the invited team.
 	expectStatus(t, srv.patch(t, "/api/v3/user/memberships/orgs/people-inv-org", inviteeToken,
 		map[string]interface{}{"state": "active"}), http.StatusOK, "accept invitation")
 	if remaining := decodeJSONArray(t, srv.get(t, "/api/v3/orgs/people-inv-org/invitations", defaultToken)); len(remaining) != 0 {
@@ -449,8 +448,7 @@ func TestOrganizationRoles(t *testing.T) {
 		t.Fatalf("role teams = %v", teams)
 	}
 
-	// Team members hold the role indirectly; a direct grant on top makes
-	// it mixed; revoking the direct grant reverts to indirect.
+	// Team members hold the role indirectly; a direct grant on top makes it mixed; revoking it reverts to indirect.
 	expectStatus(t, srv.put(t, "/api/v3/orgs/people-roles-org/teams/roles-team/memberships/people-roles-user", defaultToken, nil),
 		http.StatusOK, "add team member")
 	assignmentOf := func() string {
@@ -506,8 +504,7 @@ func TestSecurityManagers(t *testing.T) {
 		t.Fatalf("security managers = %v", managers)
 	}
 
-	// The deprecated surface is an alias of the security_manager
-	// organization role, so the role's team list agrees.
+	// The deprecated surface is an alias of the security_manager organization role, so the role's team list agrees.
 	roleTeams := decodeJSONArray(t, srv.get(t, "/api/v3/orgs/people-sm-org/organization-roles/143/teams", defaultToken))
 	if len(roleTeams) != 1 || roleTeams[0]["slug"] != "sm-team" {
 		t.Fatalf("security_manager role teams = %v", roleTeams)
@@ -600,9 +597,8 @@ func TestOrgSecurityProductEnablement(t *testing.T) {
 		http.StatusForbidden, "non-owner flips security product")
 }
 
-// TestTeamsPeoplePersistenceReload verifies the teams-people buckets
-// (org invitations, blocks, interaction limits, role assignments)
-// survive a persistence reload.
+// TestTeamsPeoplePersistenceReload verifies the teams-people buckets (org
+// invitations, blocks, interaction limits, role assignments) survive a persistence reload.
 func TestTeamsPeoplePersistenceReload(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BLEEPHUB_PERSIST", "true")

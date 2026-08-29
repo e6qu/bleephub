@@ -1,9 +1,9 @@
 import type { components } from "../../third_party/github-openapi.js";
 
-// Enum unions mirror the exact strings the server emits; only values the server
-// assigns belong here. "waiting" = held on a reviewer-protected environment approval.
+// Enum unions mirror the exact strings the server emits. "waiting" = held on a
+// reviewer-protected environment approval.
 
-// Like Partial<T> but each optional member also admits `undefined`, for
+// Partial<T> where each optional member also admits `undefined`, for
 // exactOptionalPropertyTypes (callers build patches with `field: value || undefined`).
 export type Undef<T> = { [K in keyof T]?: T[K] | undefined };
 
@@ -807,10 +807,9 @@ export interface GithubProjectV2Item {
 }
 
 /**
- * A single entry from GET /users/{login}/events. The simulator derives a small
- * set of event types (CreateEvent, DeleteEvent, PushEvent, IssuesEvent,
- * IssueCommentEvent, PullRequestEvent); the profile Overview buckets these by
- * day for the contribution graph and lists them as recent activity.
+ * One entry from GET /users/{login}/events. The profile Overview buckets the
+ * derived events (Create/Delete/Push/Issues/IssueComment/PullRequest) by day
+ * for the contribution graph and lists them as recent activity.
  */
 export interface GithubUserEvent {
   id?: string;

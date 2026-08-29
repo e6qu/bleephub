@@ -42,9 +42,9 @@ func copilotSeatExpired(seat *CopilotSeat, now time.Time) bool {
 }
 
 // expireCopilotSeatsBatchLocked drops expired seats, staging the deletes into
-// batch so they commit with the seat mutation in one transaction
-// (STORE-001/002). Callers hold the write lock. Invoked only from write paths,
-// never a read: a GET must not perform a durable delete (STORE-034).
+// batch so they commit with the seat mutation in one transaction (STORE-001/002).
+// Callers hold the write lock. Write paths only, never a read: a GET must not
+// perform a durable delete (STORE-034).
 func (st *Store) expireCopilotSeatsBatchLocked(batch *PersistBatch, orgLogin string, now time.Time) {
 	for userID, seat := range st.CopilotSeats[orgLogin] {
 		if copilotSeatExpired(seat, now) {

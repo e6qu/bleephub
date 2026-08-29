@@ -14,18 +14,18 @@ const (
 	LoginSessionsBucket    = "login_sessions"
 	oidcLogoutClaimsBucket = "oidc_logout_claims"
 	loginSessionReapPeriod = time.Hour
-	// LoginSessionsByUserBucket is a durable secondary index, one row per
-	// session keyed by `<userID>:<sessionStorageKey>`, so a user's sessions are
-	// fetched by a bounded prefix scan (STORE-025) rather than scanning the
-	// whole session bucket. PutLoginSession writes the index row in the same
-	// batch as the session, so it is a superset of live sessions and revocation
-	// never misses one; stale rows are reclaimed on the next per-user purge.
+	// LoginSessionsByUserBucket is a durable secondary index, one row per session
+	// keyed by `<userID>:<sessionStorageKey>`, so a user's sessions are fetched by
+	// a bounded prefix scan (STORE-025) rather than scanning the whole bucket.
+	// PutLoginSession writes the index row in the session's batch, so it is a
+	// superset of live sessions and revocation never misses one; stale rows are
+	// reclaimed on the next per-user purge.
 	LoginSessionsByUserBucket = "login_sessions_by_user"
 	// loginSessionUserIndexSep separates the numeric user id from the session
 	// storage key. ':' is not a digit, so `1:` never overlaps `12:`, and unlike
 	// NUL it carries no embedded-NUL-in-TEXT risk across SQLite/dqlite. The key
-	// suffix may itself contain ':' (`hmac:v1:…`); the FIRST separator is the
-	// one after the all-digit user id.
+	// suffix may itself contain ':' (`hmac:v1:…`); the FIRST separator is the one
+	// after the all-digit user id.
 	loginSessionUserIndexSep = ":"
 )
 
@@ -83,8 +83,8 @@ func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 		return fmt.Errorf("login session id and value are required")
 	}
 	// Hold st.Mu across both the durable Put and the map write as one critical
-	// section, or two concurrent writers for the same id could leave the
-	// durable row and the map disagreeing on which write won.
+	// section, or two concurrent writers for the same id could leave the durable
+	// row and the map disagreeing on which write won.
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	persist := st.Persist
@@ -262,8 +262,8 @@ func (st *Store) GetLoginSession(id string) (*LoginSession, error) {
 	cached := session
 	st.LoginSessions[mapKey] = &cached
 	st.Mu.Unlock()
-	// Return a distinct copy, never the pointer in the map: a caller mutating
-	// the result (e.g. rotating the CSRF token) must not race a locked reader.
+	// Return a distinct copy, never the map's pointer: a caller mutating the
+	// result (e.g. rotating the CSRF token) must not race a locked reader.
 	result := session
 	return &result, nil
 }
@@ -338,8 +338,8 @@ func (st *Store) DeleteLoginSessionsForUser(userID int) error {
 	return nil
 }
 
-// LoginSessionSummary is one row of the account's "active sessions" list. It
-// carries no credential: the storage key, CSRF token and ID token stay in the
+// LoginSessionSummary is one row of the account's "active sessions" list,
+// carrying no credential: the storage key, CSRF token and ID token stay in the
 // store, and the UI revokes by Handle, drawn independently of the cookie.
 type LoginSessionSummary struct {
 	Handle     string    `json:"handle"`

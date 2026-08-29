@@ -22,8 +22,7 @@ import (
 // maxCacheEntryBytes is GitHub's per-entry Actions cache limit.
 const maxCacheEntryBytes = 10 << 30
 
-// maxArtifactChunkBytes is GitHub's per-artifact size limit, bounding a single
-// upload body.
+// maxArtifactChunkBytes is GitHub's per-artifact size limit, bounding a single upload body.
 const maxArtifactChunkBytes = 10 << 30
 
 // artifactByIDForCaller returns an artifact's metadata (no Data) for the access

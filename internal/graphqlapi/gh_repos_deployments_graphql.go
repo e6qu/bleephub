@@ -1,7 +1,6 @@
 package graphqlapi
 
-// Repository.deployments / environments / environment, over the same
-// deployment store the REST routes write.
+// Repository.deployments / environments / environment, over the same deployment store the REST routes write.
 
 import (
 	"encoding/json"

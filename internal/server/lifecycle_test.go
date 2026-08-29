@@ -19,14 +19,11 @@ import (
 	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
-// lifecycleServer starts a server of its own on a free port and returns it with
-// a cancel that stops it. The shared harness server cannot be used here: these
-// tests shut a server down, and every other test in the package needs one that
-// stays up.
+// lifecycleServer starts a server of its own on a free port and returns it with a cancel that stops it. The shared harness
+// server cannot be used here: these tests shut a server down, and every other test in the package needs one that stays up.
 func lifecycleServer(t *testing.T) (base string, cancel func(), done <-chan error) {
 	t.Helper()
-	// The shared harness points this at its own SSH port; a second server
-	// binding it would fail to start and never become ready.
+	// The shared harness points this at its own SSH port; a second server binding it would fail to start and never become ready.
 	t.Setenv("BLEEPHUB_SSH_ADDR", "")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -58,9 +55,8 @@ func lifecycleServer(t *testing.T) (base string, cancel func(), done <-chan erro
 	return "", nil, nil
 }
 
-// A request already in flight when the signal arrives must finish. Cutting it
-// is what happens with no handler at all: the runtime sends SIGTERM, the
-// process ignores it, and SIGKILL lands mid-response.
+// A request already in flight when the signal arrives must finish. Cutting it is what happens with no handler at all:
+// the runtime sends SIGTERM, the process ignores it, and SIGKILL lands mid-response.
 func TestShutdownDrainsAnInFlightRequest(t *testing.T) {
 	base, stop, done := lifecycleServer(t)
 
@@ -104,15 +100,13 @@ func TestShutdownDrainsAnInFlightRequest(t *testing.T) {
 	}
 }
 
-// The drain is bounded. This server holds long-poll requests open by design, so
-// an unbounded wait for connections to close would mean never stopping — and a
-// container that will not stop is SIGKILLed, after which nothing drains at all.
+// The drain is bounded. This server holds long-poll requests open by design, so an unbounded wait for connections to close
+// would mean never stopping — and a container that will not stop is SIGKILLed, after which nothing drains at all.
 func TestShutdownIsBoundedByItsGrace(t *testing.T) {
 	base, stop, done := lifecycleServer(t)
 
-	// A broker long-poll is the shape that would otherwise hold shutdown open.
-	// It needs no credential to be *started*; being refused is fine, what
-	// matters is that the connection exists across the shutdown.
+	// A broker long-poll is the shape that would otherwise hold shutdown open. It needs no credential to be *started*;
+	// being refused is fine, what matters is that the connection exists across the shutdown.
 	conn, err := net.Dial("tcp", base[len("http://"):])
 	if err != nil {
 		t.Fatalf("open a connection to hold across shutdown: %v", err)
@@ -128,9 +122,8 @@ func TestShutdownIsBoundedByItsGrace(t *testing.T) {
 	}
 }
 
-// The cron dispatcher used to be `for { time.Sleep }` with no owner, so it ran
-// until the process died. Shutdown must be able to stop it, and must wait for
-// it rather than returning while it still runs.
+// The cron dispatcher used to be `for { time.Sleep }` with no owner, so it ran until the process died. Shutdown must be
+// able to stop it, and must wait for it rather than returning while it still runs.
 func TestShutdownStopsTheScheduleDispatcher(t *testing.T) {
 	srv := NewServer("127.0.0.1:0", zerolog.New(io.Discard))
 	ctx, stop := context.WithCancel(context.Background())
@@ -157,9 +150,7 @@ func TestShutdownStopsTheScheduleDispatcher(t *testing.T) {
 	}
 }
 
-// startGitSSH's accept loop had no owner either, and its listener was never
-// closed. Both are checked here because the loop only unblocks when the
-// listener does.
+// startGitSSH's accept loop had no owner either, and its listener was never closed. Both are checked here because the loop only unblocks when the listener does.
 func TestShutdownClosesTheSSHListener(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -170,8 +161,7 @@ func TestShutdownClosesTheSSHListener(t *testing.T) {
 		t.Fatalf("release the reserved port: %v", err)
 	}
 
-	// Generated here rather than read from a fixture: a skipped test proves
-	// nothing, and this one is about shutdown, not about key handling.
+	// Generated here rather than read from a fixture: a skipped test proves nothing, and this one is about shutdown, not key handling.
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("generate a host key: %v", err)

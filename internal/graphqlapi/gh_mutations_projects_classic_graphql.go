@@ -26,8 +26,7 @@ type projectClassicTarget struct {
 	ownerType  string // "User" or "Organization" when account-scoped
 	ownerLogin string
 	project    *store.ProjectClassic
-	// missing answers both "no such node" and "you may not see it"
-	// indistinguishably.
+	// missing answers "no such node" and "you may not see it" indistinguishably.
 	missing error
 }
 

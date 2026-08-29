@@ -57,8 +57,7 @@ import (
 // loose before the swap and packed after.
 
 const (
-	// compactionMinLooseObjects is the loose count below which packing is not
-	// worth its round trips.
+	// compactionMinLooseObjects is the loose count below which packing isn't worth its round trips.
 	compactionMinLooseObjects = 64
 	// compactionPackWindow is the delta window the pack encoder searches.
 	compactionPackWindow = 10
@@ -68,8 +67,7 @@ const (
 	// what packing bought.
 	compactionMergeThreshold = 8
 	// supersededPackRetention is how long a merged-away pack is kept before its
-	// bytes are removed, in case a request that began before the merge still
-	// reads it.
+	// bytes are removed, for requests that began before the merge and still read it.
 	supersededPackRetention = time.Hour
 	// defaultMultipartThreshold is the size above which a pack is uploaded in
 	// parts. Configurable because non-Amazon endpoints cap the single-request
@@ -94,13 +92,11 @@ type CompactionResult struct {
 	Packed int
 	// Merged is the number of previously packed objects rewritten into it.
 	Merged int
-	// PackName is the published pack-<sha> base name, empty when there was
-	// nothing to do.
+	// PackName is the published pack-<sha> base name; empty when nothing to do.
 	PackName string
 	// PackBytes is the size of the published packfile.
 	PackBytes int64
-	// RetiredPacks lists packs whose bytes were removed after their retention
-	// window elapsed.
+	// RetiredPacks lists packs whose bytes were removed after their retention window.
 	RetiredPacks []string
 	// FilterBytes is the size of the membership filter published beside the pack.
 	FilterBytes int
@@ -151,12 +147,11 @@ func (s *atomicRefStorer) noteObjectWritten() {
 }
 
 // compactionRequestFunc is invoked when a repository's loose tier fills. The
-// package owns no goroutine lifecycle, so the actual flush is delegated to an
-// installed handler: the server's scheduler runs one supervised, cancel-at-
-// shutdown compaction per repository. Left unset (tests, embeddings), the loose
-// tier just keeps accumulating — slower, not broken. The signal is needed
-// because the REST git-database endpoints write objects directly, outside the
-// post-receive path.
+// package owns no goroutine lifecycle, so the flush is delegated to an installed
+// handler: the server's scheduler runs one supervised, cancel-at-shutdown
+// compaction per repository. Left unset (tests, embeddings), the loose tier just
+// accumulates — slower, not broken. Needed because the REST git-database
+// endpoints write objects directly, outside the post-receive path.
 var (
 	compactionRequestMu   sync.RWMutex
 	compactionRequestFunc func(repo string, stor gitStorage.Storer)
@@ -472,8 +467,8 @@ type builtPack struct {
 	name string
 	// stagingDir is the staging directory and packFile the staged file's bare
 	// name within it (never a path). Kept apart so every use resolves the name
-	// under an os.Root on the directory, which stops the name or a planted
-	// symlink from escaping it.
+	// under an os.Root on the directory, stopping the name or a planted symlink
+	// from escaping it.
 	stagingDir string
 	packFile   string
 	packSize   int64

@@ -1547,11 +1547,10 @@ func TestPullRequestTimelineREST(t *testing.T) {
 	}
 }
 
-// TestPullRequestTimelineFullFlowREST drives a git-backed pull request
-// through reviewer request/removal and merge, and asserts the issue
-// timeline carries the committed / review_requested /
-// review_request_removed / merged / closed entries GitHub documents, in
-// order, with stable ids and recorded timestamps.
+// TestPullRequestTimelineFullFlowREST drives a git-backed pull request through
+// reviewer request/removal and merge, then asserts the issue timeline carries the
+// documented committed / review_requested / review_request_removed / merged /
+// closed entries in order, with stable ids and recorded timestamps.
 func TestPullRequestTimelineFullFlowREST(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

@@ -84,8 +84,7 @@ func (a graphqlSeams) ViewerCanAdminAccount(ctx context.Context, login string) b
 	return a.s.viewerCanAdminAccount(ctx, login)
 }
 
-// ViewerMayMigrateOrg reuses the REST migration predicate so both surfaces admit
-// the same principals.
+// ViewerMayMigrateOrg reuses the REST migration predicate so both surfaces admit the same principals.
 func (a graphqlSeams) ViewerMayMigrateOrg(ctx context.Context, org *store.Org) bool {
 	return a.s.viewerMayMigrateOrg(ctx, org)
 }
@@ -140,8 +139,7 @@ func (a graphqlSeams) EmitPullRequestChanges(repo *store.Repo, pr *store.PullReq
 	a.s.pullRequestEmitter(repo, pr, sender).emitChanges(change)
 }
 
-// EmitCheckRunEvent / EmitCheckSuiteEvent reuse the REST checks emitters, so a
-// GraphQL rerequest fires the identical payload.
+// EmitCheckRunEvent / EmitCheckSuiteEvent reuse the REST checks emitters, so a GraphQL rerequest fires the identical payload.
 func (a graphqlSeams) EmitCheckRunEvent(repoKey string, checkRunID int64, action string) {
 	a.s.CheckRunEvent(repoKey, checkRunID, action)
 }
@@ -194,8 +192,7 @@ func (a graphqlSeams) ChangedFiles(repo *store.Repo, pr *store.PullRequest, base
 	return pullRequestChangedFiles(a.s.store, repo, pr, baseURL)
 }
 
-// UpdatePullRequestBranch brings a PR's head branch up to date with its base
-// through the same helper PUT /pulls/{n}/update-branch uses.
+// UpdatePullRequestBranch brings a PR's head branch up to date with its base through the same helper PUT /pulls/{n}/update-branch uses.
 func (a graphqlSeams) UpdatePullRequestBranch(repo *store.Repo, pr *store.PullRequest, user *store.User, expectedHeadOid, method string) error {
 	return a.s.updatePullRequestBranch(repo, pr, user, expectedHeadOid, method, a.s.externalURL)
 }
@@ -204,8 +201,7 @@ func (a graphqlSeams) MaybeAutoMerge(prID int) {
 	a.s.maybeAutoMergePR(prID)
 }
 
-// MaybeAutoMergeHeadSHA releases any armed auto-merge waiting on this commit,
-// through the same helper the REST checks routes call.
+// MaybeAutoMergeHeadSHA releases any armed auto-merge waiting on this commit, through the same helper the REST checks routes call.
 func (a graphqlSeams) MaybeAutoMergeHeadSHA(repo *store.Repo, headSha string) {
 	a.s.maybeAutoMergeHeadSHA(repo, headSha)
 }

@@ -10,10 +10,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// mustPost asserts a setup/precondition request returned a 2xx status, then
-// closes its body. Setup helpers that discarded the status let a broken
-// precondition surface later as a misleading assertion failure in the code
-// under test; routing them through mustPost fails loudly at the setup point.
+// mustPost asserts a setup request returned 2xx, then closes its body — so a
+// broken precondition fails loudly here instead of surfacing later as a
+// misleading assertion failure in the code under test.
 func mustPost(t *testing.T, resp *http.Response) {
 	t.Helper()
 	defer resp.Body.Close()

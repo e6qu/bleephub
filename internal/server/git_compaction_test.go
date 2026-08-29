@@ -18,14 +18,14 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// fakeCompactingStorer is a storer that can pack itself, which is the shape the
-// scheduler looks for. It reports when a compaction starts and waits to be let
-// go, so a test can hold one open and push again underneath it.
+// fakeCompactingStorer is a storer that can pack itself, the shape the scheduler
+// looks for. It reports when a compaction starts and waits to be let go, so a
+// test can hold one open and push again underneath it.
 type fakeCompactingStorer struct {
 	gitStorage.Storer
 	// gitRefLifecycleStorer is the compare-and-set reference lifecycle a push
-	// needs, promoted from the wrapped storer so this type can stand in for a
-	// repository's real storage and still take a push.
+	// needs, promoted from the wrapped storer so this type can stand in for
+	// a repository's real storage and still take a push.
 	gitRefLifecycleStorer
 	started chan struct{}
 	release chan struct{}
@@ -71,8 +71,8 @@ func awaitStart(t *testing.T, stor *fakeCompactingStorer) {
 	}
 }
 
-// bytesRecorder collects log output from the goroutine that writes it, so a
-// test can read it from its own without racing the writer.
+// bytesRecorder collects log output from the goroutine that writes it, so a test
+// can read it from its own without racing the writer.
 type bytesRecorder struct {
 	mu    sync.Mutex
 	lines []byte

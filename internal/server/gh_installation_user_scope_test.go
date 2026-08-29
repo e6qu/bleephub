@@ -9,14 +9,13 @@ import (
 	"testing"
 )
 
-// loadOperationsClosedToGitHubApps returns the set of normalized
-// "METHOD /path" operations the vendored GitHub description marks as
-// unavailable to a GitHub App installation token, via
-// `x-github.enabledForGitHubApps: false`.
+// loadOperationsClosedToGitHubApps returns the normalized "METHOD /path"
+// operations the vendored GitHub description marks unavailable to a GitHub App
+// installation token, via `x-github.enabledForGitHubApps: false`.
 //
-// This is GitHub's own record of which operations refuse an installation
-// token, published alongside the operations themselves, so a refusal gate
-// measured against it cannot drift from the contract.
+// This is GitHub's own record of which operations refuse an installation token,
+// published alongside them, so a refusal gate measured against it cannot drift
+// from the contract.
 func loadOperationsClosedToGitHubApps(t *testing.T) map[string]bool {
 	t.Helper()
 	f, err := os.Open(vendoredSpecFile)

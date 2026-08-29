@@ -16,9 +16,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// TestCancellationSignalsRunningJob verifies cancel sends
-// JobCancellation to the runner executing a job, leaves always()-gated
-// jobs runnable, and the run concludes cancelled.
+// TestCancellationSignalsRunningJob verifies cancel sends JobCancellation to
+// the runner executing a job, leaves always()-gated jobs runnable, and the run
+// concludes cancelled.
 func TestCancellationSignalsRunningJob(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -181,9 +181,9 @@ jobs:
 	}
 }
 
-// TestStartupFailureRunShell verifies a matched workflow that
-// can't start yields a run with conclusion startup_failure, visible on
-// the runs API, with no jobs.
+// TestStartupFailureRunShell verifies a matched workflow that can't start
+// yields a run with conclusion startup_failure, visible on the runs API, with
+// no jobs.
 func TestStartupFailureRunShell(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -410,8 +410,8 @@ func bytesReader(b []byte) *bytes.Reader {
 	return bytes.NewReader(b)
 }
 
-// TestLocalActionTarball verifies actions hosted on bleephub
-// itself serve GitHub-layout tarballs from their own git storage.
+// TestLocalActionTarball verifies actions hosted on bleephub itself serve
+// GitHub-layout tarballs from their own git storage.
 func TestLocalActionTarball(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

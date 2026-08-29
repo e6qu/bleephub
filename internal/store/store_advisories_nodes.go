@@ -11,11 +11,10 @@ import (
 // Node-id lookup and event-payload rendering for Dependabot alerts, shared by
 // the REST handlers and the GraphQL resolvers.
 
-// LookupDependabotAlertByNodeID returns a detached snapshot of the alert.
-//
-// Not spelt Find*ByNodeID (which signals a LIVE row) because the dismissal
-// mutation reads pre-change state to decide the webhook action; a live row
-// would report the post-change state instead.
+// LookupDependabotAlertByNodeID returns a detached snapshot of the alert. Not
+// spelt Find*ByNodeID (which signals a LIVE row) because the dismissal mutation
+// reads pre-change state to decide the webhook action; a live row would report
+// post-change state instead.
 func (st *Store) LookupDependabotAlertByNodeID(nodeID string) *DependabotAlert {
 	if nodeID == "" {
 		return nil

@@ -250,9 +250,9 @@ func (cs *CopilotPolicyStore) GetCopilotSeatActivity(orgLogin string, userID int
 	return nil
 }
 
-// RecordCopilotUsage files one day's usage and advances the seat's last-activity
-// marker. Both commit together, so metrics and seat details can never disagree
-// about whether a member has used Copilot.
+// RecordCopilotUsage files one day's usage and advances the seat's
+// last-activity marker. Both commit together, so metrics and seat details can
+// never disagree about whether a member has used Copilot.
 func (cs *CopilotPolicyStore) RecordCopilotUsage(record *CopilotUsageRecord, at time.Time) (*CopilotUsageRecord, error) {
 	if record == nil || record.OrgLogin == "" || record.UserID <= 0 {
 		return nil, fmt.Errorf("copilot usage needs an organization and a member")

@@ -13,12 +13,11 @@ import (
 
 // Permission enforcement for /api routes. Level ordering: read < write < admin.
 
-// permissionGrant is the typed authorization fact requirePerm attaches to the
-// context after both halves of its decision succeed (credential carries the
-// permission, credential reaches every named target). Unexported and
-// constructible only by requirePerm, so a handler cannot manufacture authority;
-// downstream org resolvers rely on it rather than reinterpreting an installation
-// token's synthetic bot user as a human member.
+// permissionGrant is the typed authorization fact requirePerm attaches after
+// both halves of its decision succeed (credential carries the permission, and
+// reaches every named target). Constructible only by requirePerm, so a handler
+// cannot manufacture authority; org resolvers rely on it rather than
+// reinterpreting an installation token's bot user as a human member.
 type permissionGrant struct {
 	scope store.PermScope
 	level store.PermLevel
@@ -43,12 +42,11 @@ func parsePermLevel(s string) store.PermLevel {
 	return store.PermRead
 }
 
-// requirePerm enforces (scope, level) on the request's auth. Two checks, both
-// for every credential shape: the credential's own permission set (may it do
-// this kind of thing at all — the only question the permission map can answer),
-// then the resource check (is this credential entitled to this target).
-// Skipping the second for any shape let an app installed on the attacker's own
-// account write to a stranger's private repository.
+// requirePerm enforces (scope, level). Two checks per credential shape: the
+// credential's own permission set (may it do this kind of act — the only
+// question the permission map answers), then the resource check (is it entitled
+// to this target). Skipping the second let an app installed on the attacker's
+// own account write to a stranger's private repository.
 func (s *Server) requirePerm(scope store.PermScope, level store.PermLevel, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		instTok := ghInstallationTokenFromContext(r.Context())
@@ -64,8 +62,8 @@ func (s *Server) requirePerm(scope store.PermScope, level store.PermLevel, next 
 				return
 			}
 		case jobTok != nil:
-			// A workflow GITHUB_TOKEN carries the workflow's resolved
-			// least-privilege permission set; reject an un-granted scope (ACT-014).
+			// A workflow GITHUB_TOKEN carries the workflow's least-privilege
+			// permission set; reject an un-granted scope (ACT-014).
 			if !hasPerm(jobTok.Perms, scope, level) {
 				writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
 				return
@@ -116,9 +114,9 @@ func (s *Server) requirePerm(scope store.PermScope, level store.PermLevel, next 
 }
 
 // requirePerms composes permission requirements as a conjunction, for endpoints
-// whose authorization names both a repository and an organization permission
-// (team-repository grants). One "closest" scope would reject valid
-// installations or accept under-scoped ones.
+// naming both a repository and an organization permission (team-repository
+// grants). One "closest" scope would reject valid installations or accept
+// under-scoped ones.
 func (s *Server) requirePerms(requirements []permissionGrant, next http.HandlerFunc) http.HandlerFunc {
 	for index := len(requirements) - 1; index >= 0; index-- {
 		requirement := requirements[index]
@@ -136,9 +134,9 @@ func (s *Server) authenticatedBrowserRequest(r *http.Request) (*http.Request, *s
 }
 
 // targetVerdict is the outcome of the resource half of the gate. Denied and
-// missing are separate because they get separate responses: a denial is 403 or
-// 404 by level, while a path naming a missing resource is always 404 and never
-// confirms which repositories or organizations are real.
+// missing get separate responses: a denial is 403 or 404 by level, while a path
+// naming a missing resource is always 404 and never confirms which repositories
+// or organizations are real.
 type targetVerdict int
 
 const (
@@ -156,8 +154,8 @@ func (s *Server) credentialMayAccessTarget(r *http.Request, user *store.User, in
 		return verdict
 	}
 	if jobTok := ghJobTokenFromContext(r.Context()); jobTok != nil {
-		// A workflow GITHUB_TOKEN reaches exactly its own repository; a request
-		// naming a different repo or no repository is outside its reach (ACT-014).
+		// A workflow GITHUB_TOKEN reaches only its own repository; a different
+		// repo or none is outside its reach (ACT-014).
 		repo := s.repoFromPATRequest(r)
 		if repo == nil || !strings.EqualFold(repo.FullName, jobTok.Repo) {
 			return targetDenied
@@ -172,18 +170,18 @@ func (s *Server) credentialMayAccessTarget(r *http.Request, user *store.User, in
 	}
 	// A ghu_ user-to-server token is the intersection of what the user can reach
 	// and what the app is installed on: an app cannot borrow a user's access to a
-	// repository it was never installed on, so both halves must hold.
+	// repo it was never installed on, so both halves must hold.
 	if uts := ghUserToServerTokenFromContext(r.Context()); uts != nil && uts.AppID != 0 {
 		if repo := s.repoFromPATRequest(r); repo != nil {
-			// Same public-repository carve-out the installation path gets, so a
-			// ghu_ token is not narrower than a ghs_ token of the same app.
+			// Same public-repo carve-out the installation path gets, so a ghu_
+			// token is not narrower than a ghs_ token of the same app.
 			readOnly := r.Method == http.MethodGet || r.Method == http.MethodHead
 			if !(readOnly && !repo.Private && publicReadAllowed(scope)) && !s.userToServerReachesRepo(uts, repo) {
 				return targetDenied
 			}
 		}
-		// The organization half: checking only the repository let a ghu_ token
-		// for an app installed on a user (never the org) mint that org's runner
+		// The org half: checking only the repo let a ghu_ token for an app
+		// installed on a user (never the org) mint that org's runner
 		// registration token.
 		if orgLogin := r.PathValue("org"); orgLogin != "" && !s.userToServerReachesAccount(uts, store.OrganizationAccount, orgLogin) {
 			return targetDenied
@@ -196,9 +194,9 @@ func (s *Server) credentialMayAccessTarget(r *http.Request, user *store.User, in
 }
 
 // namedTargetsResolve reports whether every resource the request path names
-// actually exists. "Names no repository" and "names a missing repository" both
-// reduce to a nil lookup; treating that nil as "nothing to check" let an
-// unrelated account create a working webhook on anyone/does-not-exist.
+// exists. "Names no repository" and "names a missing repository" both reduce to
+// a nil lookup; treating that nil as "nothing to check" let an unrelated account
+// create a working webhook on anyone/does-not-exist.
 func (s *Server) namedTargetsResolve(r *http.Request) targetVerdict {
 	if repoNamedInRequest(r) && s.repoFromPATRequest(r) == nil {
 		return targetMissing
@@ -219,9 +217,9 @@ func repoNamedInRequest(r *http.Request) bool {
 }
 
 // installationOnAccount reports whether an installation targets the given
-// account. The kind matters as much as the login: nothing keeps a user login
-// and an org login distinct, so matching on login alone let an app installed on
-// a *user* named acme administer the *organization* named acme.
+// account. The kind matters as much as the login: a user login and an org login
+// are not kept distinct, so matching on login alone let an app installed on a
+// *user* named acme administer the *organization* named acme.
 func installationOnAccount(inst *store.Installation, kind store.AccountKind, login string) bool {
 	if inst == nil || login == "" {
 		return false
@@ -296,10 +294,10 @@ func (s *Server) installationReachesRepo(tok *store.InstallationToken, repo *sto
 }
 
 // installationCovers reports whether an installation covers a repository: it
-// must belong to the account the app was installed on, be within a non-"all"
+// must belong to the app's installed account, be within a non-"all"
 // installation's chosen set, and be within any narrower set the token was scoped
-// to. The selection test is deny-by-default so a future selection value cannot
-// silently admit every repository.
+// to. Deny-by-default selection so a future selection value cannot silently
+// admit every repository.
 func installationCovers(inst *store.Installation, tokenRepoIDs []int, repo *store.Repo) bool {
 	if inst == nil || repo == nil {
 		return false
@@ -336,10 +334,9 @@ func containsRepoID(ids []int, id int) bool {
 // viewerHasRepoPermission answers, for whichever credential the request carries,
 // whether it may act on this repository at this level. For an app credential it
 // intersects two independent questions — the permission map (what kind of act)
-// and the installation (which repositories) — and neither half is optional. The
-// caller supplies the scope because only it knows it (issue triage is
-// issues:write, a push is contents:write). Takes a context, not a request, so
-// GraphQL resolvers reach the same decision.
+// and the installation (which repositories) — neither half optional. The caller
+// supplies the scope (issue triage is issues:write, a push is contents:write).
+// Takes a context, not a request, so GraphQL resolvers reach the same decision.
 func (s *Server) viewerHasRepoPermission(ctx context.Context, repo *store.Repo, scope store.PermScope, level store.PermLevel) bool {
 	return s.viewerMayActOnRepo(ctx, repo, scope, level, repoCapabilityForScope(scope, level))
 }
@@ -354,10 +351,10 @@ func (s *Server) viewerMayActOnRepo(ctx context.Context, repo *store.Repo, scope
 	if !s.principalHoldsRepoCapability(ctx, repo, standing) {
 		return false
 	}
-	// A repository locked by a migration is frozen for writes. Enforced here
-	// because this is the one predicate every repository write asks (REST,
-	// GraphQL, both git transports), so the lock holds everywhere and a new
-	// handler inherits it. Reads are unaffected — the export itself must read.
+	// A repo locked by a migration is frozen for writes. Enforced here because
+	// this is the one predicate every repo write asks (REST, GraphQL, both git
+	// transports), so the lock holds everywhere and a new handler inherits it.
+	// Reads are unaffected — the export itself must read.
 	if standing >= store.PermWrite && repo != nil && s.store.RepoLockedForMigration(repo.FullName) {
 		return false
 	}
@@ -365,17 +362,17 @@ func (s *Server) viewerMayActOnRepo(ctx context.Context, repo *store.Repo, scope
 }
 
 // credentialGrantsRepo is the credential half of viewerHasRepoPermission: the
-// grant the request's credential carries, intersected with the repositories it
-// covers. Separate from the principal half because the GraphQL author exemption
-// relaxes the principal and must not relax this — an issue author may retitle
-// it, but not through an app that was never granted issues. A browser session
-// carries no selection and is decided by the principal half.
+// grant the credential carries, intersected with the repositories it covers.
+// Separate from the principal half because the GraphQL author exemption relaxes
+// the principal but must not relax this — an issue author may retitle it, but
+// not through an app never granted issues. A browser session carries no
+// selection and is decided by the principal half.
 func (s *Server) credentialGrantsRepo(ctx context.Context, repo *store.Repo, scope store.PermScope, level store.PermLevel) bool {
 	if repo == nil {
 		return false
 	}
 	// Public data is public to every credential; asked before the grant so
-	// scoping app credentials does not remove an anonymous caller's reads.
+	// scoping app credentials does not remove anonymous reads.
 	if level == store.PermRead && !repo.Private && publicReadAllowed(scope) {
 		return true
 	}
@@ -385,8 +382,8 @@ func (s *Server) credentialGrantsRepo(ctx context.Context, repo *store.Repo, sco
 		}
 		return s.installationReachesRepo(tok, repo)
 	}
-	// A user-to-server token is intersected here too, not only in
-	// credentialMayAccessTarget, for self-gating handlers that never reach
+	// A user-to-server token is intersected here too (not only in
+	// credentialMayAccessTarget) for self-gating handlers that never reach
 	// requirePerm; otherwise it borrows the bearer's collaborator access and
 	// ends up broader than the refused ghs_ token of the same app. Only ghu_ is
 	// asked the reach question: a gho_ OAuth-App token has no installation to
@@ -399,14 +396,14 @@ func (s *Server) credentialGrantsRepo(ctx context.Context, repo *store.Repo, sco
 	}
 	// A fine-grained PAT names both halves itself. requirePerm consults them via
 	// fineGrainedPATAllows, but /api/graphql and the git transports never reach
-	// it, so without this arm a token selecting one repository acted on every
-	// repository its bearer could reach.
+	// it, so without this arm a token selecting one repo acted on every repo its
+	// bearer could reach.
 	if token := ghPersonalAccessTokenFromContext(ctx); token != nil {
 		if token.FineGrained {
 			return s.fineGrainedPATGrantsRepo(token, repo, scope, level)
 		}
 		// Classic scope selection on classicScopeGateApplies's terms: writes
-		// only, since classic scopes are coarse while GitHub's read rules vary.
+		// only, since classic scopes are coarse and read rules vary.
 		return level < store.PermWrite || classicScopeCovers(token.Scopes, scope, level)
 	}
 	return true
@@ -447,9 +444,8 @@ func fineGrainedPATSelectsRepo(token *store.Token, repo *store.Repo) bool {
 }
 
 // principalHoldsRepoCapability is the user half: the capability the bearer holds
-// on the repository in their own right. An installation token's bearer is a
-// synthetic bot that owns and collaborates on nothing, so the installation arm
-// stands in for it.
+// on the repository in their own right. An installation token's bearer is a bot
+// that owns and collaborates on nothing, so the installation arm stands in.
 func (s *Server) principalHoldsRepoCapability(ctx context.Context, repo *store.Repo, need store.PermLevel) bool {
 	if repo == nil {
 		return false
@@ -488,8 +484,7 @@ func (s *Server) viewerCanAdminRepo(ctx context.Context, repo *store.Repo) bool 
 // credentialGrantsAccount is credentialGrantsRepo for an account-scoped resource
 // (org membership, a ProjectV2). Same intersection: a user-to-server token that
 // skipped the reach half acted as its bearer on accounts the app was never
-// installed on. A browser session is unconstrained; its standing is the
-// caller's own.
+// installed on. A browser session is unconstrained; its standing is its own.
 func (s *Server) credentialGrantsAccount(ctx context.Context, kind store.AccountKind, login string, scope store.PermScope, level store.PermLevel) bool {
 	if login == "" {
 		return false
@@ -510,11 +505,10 @@ func (s *Server) credentialGrantsAccount(ctx context.Context, kind store.Account
 
 // fineGrainedPATGrantsAccount is fineGrainedPATGrantsRepo for the account half:
 // a fine-grained token belongs to exactly one resource owner. Both halves of the
-// permission map are consulted because creating a repository under an org is
-// granted by the *repository* Administration permission while the org's
-// membership is granted by the organization Members permission; with no URL
-// pattern to pick from here, narrowing to one half would refuse grants GitHub
-// allows.
+// permission map are consulted because creating a repo under an org is granted
+// by the *repository* Administration permission while org membership is granted
+// by the organization Members permission; with no URL pattern to pick from here,
+// narrowing to one half would refuse grants GitHub allows.
 func (s *Server) fineGrainedPATGrantsAccount(token *store.Token, login string, scope store.PermScope, level store.PermLevel) bool {
 	if fineGrainedPATExpired(token) || !s.fineGrainedPATApproved(token) {
 		return false
@@ -527,9 +521,9 @@ func (s *Server) fineGrainedPATGrantsAccount(token *store.Token, login string, s
 }
 
 // viewerReachesOrg asks only whether the app behind the request is installed on
-// the organization. Handlers whose answer is the caller's own membership record
+// the org. Handlers whose answer is the caller's own membership record
 // (including a pending invitation, which viewerIsOrgMember refuses) need this
-// half on its own.
+// half alone.
 func (s *Server) viewerReachesOrg(ctx context.Context, orgLogin string) bool {
 	return s.credentialGrantsAccount(ctx, store.OrganizationAccount, orgLogin, store.ScopeMetadata, store.PermRead)
 }
@@ -550,7 +544,7 @@ const (
 //
 // An installation token's viewer is a bot with no membership. On a requirePerm
 // route the typed grant in the context stands in for human membership (the
-// middleware already checked the permission map and target). Outside that
+// middleware already checked the permission map and target); outside that
 // chokepoint there is no grant, so a bot cannot acquire org standing here.
 func (s *Server) viewerHoldsOrgRole(ctx context.Context, orgLogin string, need orgRole) bool {
 	if ghInstallationTokenFromContext(ctx) != nil {
@@ -602,18 +596,18 @@ func repoCapabilityForScope(scope store.PermScope, level store.PermLevel) store.
 }
 
 // resourceCapabilityFor maps a scope, level and method onto the capability the
-// caller must hold on the resource named in the path. Two adjustments, both
-// matching GitHub: admin scopes always demand admin, and "write" on
-// collaborative scopes gates creation on read (opening an issue, proposing a PR
-// from a fork, reviewing) while editing and deleting still require push.
+// caller must hold on the path's resource. Two adjustments, both matching
+// GitHub: admin scopes always demand admin, and "write" on collaborative scopes
+// gates creation on read (opening an issue, proposing a PR from a fork,
+// reviewing) while editing and deleting still require push.
 func resourceCapabilityFor(scope store.PermScope, level store.PermLevel, method, path string) store.PermLevel {
 	if scopeAdministersResource(scope) {
 		return store.PermAdmin
 	}
 	// A team-repository association endpoint carries {owner}/{repo}, but the repo
-	// is the object being assigned, not the authorization boundary; the handler's
-	// team maintainer check decides standing, and requiring push here would
-	// override an org's read-only base permission.
+	// is the object being assigned, not the authz boundary; the handler's team
+	// maintainer check decides standing, and requiring push here would override
+	// an org's read-only base permission.
 	if scope == store.ScopeMembers && strings.Contains(path, "/teams/") && strings.Contains(path, "/repos/") {
 		return store.PermRead
 	}
@@ -627,7 +621,7 @@ func resourceCapabilityFor(scope store.PermScope, level store.PermLevel, method,
 	}
 	// GitHub lets a comment's author edit or delete it without push. Keep the
 	// credential grant at write but defer the resource decision to the handler,
-	// which inspects the comment owner. Path-specific: labels, milestones,
+	// which inspects the comment owner. Path-specific: labels, milestones and
 	// assignments under the same scopes still require push.
 	if (method == http.MethodPatch || method == http.MethodDelete) && isAuthorEditableCommentPath(path) {
 		return store.PermRead
@@ -648,7 +642,7 @@ func isAuthorEditableCommentPath(path string) bool {
 // commenting, reviewing, reacting, forking. Keyed on the path, not the scope:
 // POST .../labels, .../milestones, .../assignees also live under scopeIssues/
 // scopePullRequests but require push, so a scope-keyed downgrade let any account
-// create labels and assign issues on any public repository.
+// create labels and assign issues on any public repo.
 func isOutsideContributorPost(path string) bool {
 	switch {
 	case strings.HasSuffix(path, "/issues"),
@@ -674,7 +668,7 @@ func (s *Server) principalMayAccessTarget(r *http.Request, user *store.User, nee
 		return true
 	}
 	// The org is checked first and separately: several org routes also carry a
-	// caller-supplied {repository_id}, so returning the repository's verdict let
+	// caller-supplied {repository_id}, so returning the repo's verdict let
 	// someone name a repo they own and administer a stranger's org. Both must
 	// pass when both are named. Orgs are gated at admin only; read/write on
 	// org-scoped collections varies per endpoint and belongs with the resolvers.
@@ -699,8 +693,8 @@ func (s *Server) principalMayAccessTarget(r *http.Request, user *store.User, nee
 }
 
 // denyResourceAccess answers a failed resource check. A caller who cannot read
-// the repository gets 404 whatever the route's level — choosing status by level
-// made every write/admin route an existence oracle (403 for a private repo that
+// the repo gets 404 whatever the route's level — choosing status by level made
+// every write/admin route an existence oracle (403 for a private repo that
 // exists, 404 for one that does not). Only a caller who can read but lacks
 // standing to change gets the 403 GitHub gives.
 func (s *Server) denyResourceAccess(w http.ResponseWriter, r *http.Request, need store.PermLevel) {
@@ -772,8 +766,8 @@ func (s *Server) fineGrainedPATResourceAllowed(r *http.Request, token *store.Tok
 	}
 	repo := s.repoFromPATRequest(r)
 	if repo == nil {
-		// A path naming a missing repository differs from one naming none; only
-		// the latter has nothing to check.
+		// A path naming a missing repo differs from one naming none; only the
+		// latter has nothing to check.
 		return !repoNamedInRequest(r)
 	}
 	return fineGrainedPATSelectsRepo(token, repo)
@@ -784,7 +778,7 @@ func (s *Server) fineGrainedPATResourceAllowed(r *http.Request, token *store.Tok
 // constants model only repository and organization permissions, so they stand in
 // only where the request names one (not account-level routes like keys, gists,
 // notifications); and the level mapping is trusted for writes only, since
-// classic scopes are coarse while GitHub's read rules vary per endpoint.
+// classic scopes are coarse and read rules vary per endpoint.
 func classicScopeGateApplies(r *http.Request, level store.PermLevel) bool {
 	if level < store.PermWrite {
 		return false
@@ -799,9 +793,9 @@ func denyMissingScope(w http.ResponseWriter, scope store.PermScope) {
 }
 
 // classicOAuthScopesOffered returns the classic OAuth scope selection the
-// request's credential carries, and whether it carries one. A classic PAT and a
-// gho_ OAuth-App token share the scope model; reading only the first let a
-// scopeless OAuth token pass self-gating routes a classic token is refused.
+// credential carries, and whether it carries one. A classic PAT and a gho_
+// OAuth-App token share the scope model; reading only the first let a scopeless
+// OAuth token pass self-gating routes a classic token is refused.
 func classicOAuthScopesOffered(ctx context.Context) (string, bool) {
 	if token := ghPersonalAccessTokenFromContext(ctx); token != nil && !token.FineGrained {
 		return token.Scopes, true
@@ -815,7 +809,7 @@ func classicOAuthScopesOffered(ctx context.Context) (string, bool) {
 // enforceFineGrainedPATResource is the per-route credential-selection gate for
 // handlers that do their own role checks instead of using requirePerm (e.g.
 // DELETE /orgs/{org}). Running after path values are filled keeps a
-// selected-repository token from inheriting its owner's wider membership and a
+// selected-repository token from inheriting its owner's wider membership, and a
 // classic scope selection from being exceeded.
 func (s *Server) enforceFineGrainedPATResource(pattern string, next http.HandlerFunc) http.HandlerFunc {
 	if !strings.Contains(pattern, " /api/") || (!strings.Contains(pattern, "{repo}") && !strings.Contains(pattern, "{org}") && !strings.Contains(pattern, "{repository_id}")) {
@@ -873,9 +867,8 @@ func fineGrainedPATPermissionForPattern(pattern, method string) (store.PermScope
 	if strings.Contains(lower, "/orgs/{org}/hooks") {
 		return store.ScopeOrganizationHooks, level
 	}
-	// A team route naming a repository is still a team route: classifying by the
-	// {repo} made adding a repo to a team demand repository admin rather than org
-	// membership.
+	// A team route naming a repo is still a team route: classifying by the {repo}
+	// made adding a repo to a team demand repo admin rather than org membership.
 	if strings.Contains(lower, "/orgs/{org}/teams") {
 		return store.ScopeMembers, level
 	}
@@ -1026,7 +1019,7 @@ type classicScopeGrant struct {
 // classicScopeGrants maps every gated permission to the classic OAuth scopes
 // GitHub accepts for it. Deny-by-default: a permission with no entry is granted
 // to no classic credential, and startup panics on a missing permScope. `repo` is
-// deliberately broad, matching GitHub's documented full-access scope.
+// deliberately broad, matching GitHub's full-access scope.
 var classicScopeGrants = map[store.PermScope][]classicScopeGrant{
 	store.ScopeMetadata:          {{"repo", store.PermAdmin}, {"public_repo", store.PermAdmin}},
 	store.ScopeContents:          {{"repo", store.PermWrite}, {"public_repo", store.PermWrite}},
@@ -1102,8 +1095,8 @@ func parseClassicScopes(scopes string) map[string]struct{} {
 
 // classicScopeCovers reports whether a classic OAuth scope string grants
 // (scope, level). The empty scope string is a real credential shape — a
-// scopeless classic PAT reads public information only, which is what the
-// metadata carve-out below gives it.
+// scopeless classic PAT reads public information only, which the metadata
+// carve-out below gives it.
 func classicScopeCovers(scopes string, scope store.PermScope, level store.PermLevel) bool {
 	if scope == store.ScopeMetadata && level == store.PermRead {
 		return true
@@ -1118,10 +1111,10 @@ func classicScopeCovers(scopes string, scope store.PermScope, level store.PermLe
 }
 
 // publicReadAllowed reports whether a scope's data is genuinely public when the
-// repository is. A public repository is not the same as every scope on it being
+// repository is. A public repo is not the same as every scope on it being
 // public: Actions secrets/variables listings live under scopeSecrets:read and
 // return values, so a blanket public-repo bypass would leak them. Keyed on the
-// scope, not the repository alone.
+// scope, not the repo alone.
 func publicReadAllowed(scope store.PermScope) bool {
 	switch scope {
 	case store.ScopeMetadata, store.ScopeContents, store.ScopeIssues, store.ScopeDiscussions, store.ScopePullRequests,

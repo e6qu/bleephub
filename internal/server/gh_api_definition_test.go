@@ -22,11 +22,10 @@ const (
 )
 
 // TestVendoredOpenAPIMatchesRecordedPin makes the provenance record
-// load-bearing. Both fidelity gates measure against the vendored
-// description, so if the bytes can be swapped without a matching pin
-// update, a gate's verdict can change without anyone deciding it should.
-// The digest covers the uncompressed description: gzip output is not
-// portable across implementations, the content is.
+// load-bearing: both fidelity gates measure against the vendored description,
+// so swapping the bytes without a matching pin update could change a gate's
+// verdict silently. The digest covers the uncompressed description (gzip output
+// is not portable across implementations, the content is).
 func TestVendoredOpenAPIMatchesRecordedPin(t *testing.T) {
 	meta, err := os.ReadFile(vendoredSpecVersion)
 	if err != nil {
@@ -72,13 +71,12 @@ func TestVendoredOpenAPIMatchesRecordedPin(t *testing.T) {
 	}
 }
 
-// This test enforces the core fidelity invariant the project cares about:
-// every route bleephub serves under the GitHub-compatible /api/v3 surface must
-// be a REAL GitHub API path — bleephub must not invent paths under the GitHub
-// namespace. It validates the registered route table (Server.routePatterns,
-// recorded by Server.route) against the official github/rest-api-description
-// OpenAPI document, vendored (gzipped) at ../../third_party/github-openapi.json.gz so
-// the test is hermetic. Refresh the vendored copy with
+// This test enforces the core fidelity invariant: every route bleephub serves
+// under the GitHub-compatible /api/v3 surface must be a REAL GitHub API path —
+// no invented paths under the GitHub namespace. It validates the registered
+// route table (Server.routePatterns, recorded by Server.route) against the
+// official github/rest-api-description, vendored gzipped at
+// ../../third_party/github-openapi.json.gz for hermeticity. Refresh with
 // scripts/update-github-openapi.sh.
 
 var paramSegment = regexp.MustCompile(`\{[^}]+\}`)
@@ -178,13 +176,12 @@ func loadOfficialRouteIndex(t *testing.T) map[string]map[string]bool {
 	return index
 }
 
-// describedOutsideDotcom maps a route bleephub serves to the official
-// GitHub description that documents it, for routes the dotcom description
-// omits: the Enterprise Server admin/staff-tools surface, and Projects
-// classic, which GitHub retired from the current descriptions but still
-// describes in ghes-3.13 and ghes-2.22. The citation is checked, not
-// trusted: TestRouteAllowlistCitationsHold fails if the named description
-// does not carry the route.
+// describedOutsideDotcom maps a route bleephub serves to the official GitHub
+// description that documents it, for routes the dotcom description omits: the
+// Enterprise Server admin/staff-tools surface, and Projects classic (retired
+// from current descriptions but still in ghes-3.13/ghes-2.22). The citation is
+// checked, not trusted: TestRouteAllowlistCitationsHold fails if the named
+// description does not carry the route.
 var describedOutsideDotcom = map[string]string{
 	"DELETE /admin/hooks/{}":                                                           "ghes-3.21",
 	"DELETE /admin/keys/{}":                                                            "ghes-3.21",

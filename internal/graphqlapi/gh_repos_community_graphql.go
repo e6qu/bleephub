@@ -71,8 +71,7 @@ func (s *Resolver) repositoryDefaultTree(repo *store.Repo) (gitStorage.Storer, *
 	return stor, tree, true
 }
 
-// repoBranchTree resolves a branch's commit tree in a repository's git
-// storage.
+// repoBranchTree resolves a branch's commit tree in a repository's git storage.
 func repoBranchTree(stor gitStorage.Storer, branch string) (*object.Tree, bool) {
 	if branch == "" {
 		return nil, false

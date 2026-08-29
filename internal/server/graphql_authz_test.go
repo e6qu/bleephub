@@ -193,10 +193,9 @@ type gqlMutationCase struct {
 	name  string
 	doc   string
 	input func(f *gqlAuthzFixture) map[string]interface{}
-	// setup, when set, arranges preconditions the mutation's own semantics
-	// demand beyond the plain fixture (e.g. enablePullRequestAutoMerge is
-	// only legal while something blocks the merge). It runs before the
-	// request in both the refusal and the entitled table.
+	// setup, when set, arranges preconditions the mutation's semantics demand
+	// beyond the plain fixture (e.g. enablePullRequestAutoMerge is legal only
+	// while something blocks the merge). Runs before the request in both tables.
 	setup func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture)
 }
 

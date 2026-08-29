@@ -1,10 +1,10 @@
 package bleephub
 
 // The export-migration worker drives a migration from "pending" through
-// "exporting" to "exported" or "failed". It runs under s.lifetime, so a
-// shutdown cancels an in-flight export; resumeMigrationExports returns any
-// interrupted "exporting" migration to "pending" and re-runs it. An export is
-// idempotent: it writes one object under a key derived from the migration guid.
+// "exporting" to "exported" or "failed". It runs under s.lifetime, so shutdown
+// cancels an in-flight export; resumeMigrationExports returns any interrupted
+// "exporting" migration to "pending" and re-runs it. An export is idempotent: it
+// writes one object under a key derived from the migration guid.
 
 import (
 	"archive/tar"
@@ -79,7 +79,7 @@ func (s *Server) runMigrationExport(scope store.MigrationScope, id int) {
 	}
 	if !s.store.CompleteMigrationExport(scope, id, key, size, digest) {
 		// The migration was deleted or re-entered while the archive was built;
-		// its orphaned bytes are removed.
+		// remove its orphaned bytes.
 		if delErr := s.migrationObjectStore().Delete(ctx, key); delErr != nil {
 			s.logger.Warn().Err(delErr).Str("key", key).Msg("orphaned migration archive not deleted")
 		}
@@ -100,9 +100,9 @@ func (s *Server) migrationObjectStore() store.ActionsByteStore {
 }
 
 // writeMigrationArchive streams the archive into the byte store and reports its
-// size and SHA-256. The tar stream is produced and consumed through a pipe, so
-// a large export costs a pipe buffer, not a full in-memory copy; size and
-// digest are computed on the way past.
+// size and SHA-256. The tar stream is produced and consumed through a pipe, so a
+// large export costs a pipe buffer, not a full in-memory copy; size and digest
+// are computed on the way past.
 func (s *Server) writeMigrationArchive(ctx context.Context, key string, scope store.MigrationScope, migration *store.MigrationCommon) (int64, string, error) {
 	reader, writer := io.Pipe()
 	hasher := sha256.New()
@@ -134,7 +134,7 @@ func (c *migrationByteCounter) Write(p []byte) (int, error) {
 // buildMigrationArchive writes the whole archive to w in GitHub's migration
 // layout: a schema stamp, one JSON document per record type, and a bare git
 // repository per repository. The migration's exclude_* flags are honoured here,
-// so an archive asked to exclude git data does not contain it.
+// so an archive asked to exclude git data omits it.
 func (s *Server) buildMigrationArchive(ctx context.Context, w io.Writer, scope store.MigrationScope, migration *store.MigrationCommon) error {
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
@@ -282,8 +282,8 @@ func (s *Server) writeMigrationRepoRecords(tw *tar.Writer, repo *store.Repo, mig
 	return addTarJSON(tw, base+"attachments_000001.json", []map[string]interface{}{}, modTime)
 }
 
-// writeMigrationRepoGit writes a repository's git data as a real bare
-// repository (HEAD, packed-refs, packfile + index) that `git clone` can restore.
+// writeMigrationRepoGit writes a repository's git data as a real bare repo
+// (HEAD, packed-refs, packfile + index) that `git clone` can restore.
 func (s *Server) writeMigrationRepoGit(ctx context.Context, tw *tar.Writer, repo *store.Repo, modTime time.Time) error {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
@@ -321,8 +321,8 @@ func (s *Server) writeMigrationRepoGit(ctx context.Context, tw *tar.Writer, repo
 }
 
 // writeMigrationPack stages the packfile on disk, derives its index from the
-// written bytes, and copies both into the archive. Staging keeps a repository
-// larger than process memory off the heap.
+// written bytes, and copies both into the archive. Staging keeps a repo larger
+// than process memory off the heap.
 func (s *Server) writeMigrationPack(tw *tar.Writer, stor gitStorage.Storer, hashes []plumbing.Hash, base string, modTime time.Time) error {
 	temp, err := os.CreateTemp("", "bleephub-migration-*.pack")
 	if err != nil {

@@ -36,9 +36,9 @@ func gcQueueTestJob(t *testing.T, s *Server, jobID, repo string) *store.Job {
 // TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC pins the security property
 // the broker comment documents: a used EPHEMERAL agent used to be disqualified
 // from a second job by its completed job lingering in store.Jobs forever. Now
-// that the janitor deletes completed job stubs, the disqualification must
-// survive on the agent itself (EverAssigned) — and a resident runner must NOT
-// be over-penalized by the same sweep.
+// that the janitor deletes completed job stubs, the disqualification must survive
+// on the agent itself (EverAssigned) — and a resident runner must NOT be
+// over-penalized by the same sweep.
 func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	s := newTestServer()
 
@@ -70,8 +70,8 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 		t.Fatal("swept job stub is still in store.Jobs")
 	}
 
-	// With the stub gone, the flag alone must keep the used ephemeral runner
-	// away from the next job.
+	// With the stub gone, the flag alone must keep the used ephemeral runner from
+	// the next job.
 	gcQueueTestJob(t, s, "gc-eph-second", "octo/a")
 	if msg := s.actions.PullPendingMessage(session, store.RunnerScope{Repo: "octo/a"}); msg != nil {
 		t.Fatal("used ephemeral runner was handed a second job after its completed job was garbage-collected")
@@ -97,9 +97,9 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 }
 
 // TestLateFinishJobAfterMessageGCAuthenticates proves the plan-scope record
-// keeps job-token authentication working after run finalization has cleared
-// the secret-bearing job message: the official runner's listener can report
-// FinishJob (and flush logs) minutes after the run completed.
+// keeps job-token authentication working after run finalization cleared the
+// secret-bearing job message: the official runner's listener can report FinishJob
+// (and flush logs) minutes after the run completed.
 func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
@@ -127,8 +127,8 @@ func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 		t.Fatal("dispatched job message carries no plan scope")
 	}
 
-	// The run finalizes (first completion report); the finalization GC must
-	// clear the secret-bearing message.
+	// The run finalizes (first completion report); the finalization GC must clear
+	// the secret-bearing message.
 	s.actions.OnJobCompleted(context.Background(), wfJob.JobID, "Succeeded")
 	s.store.Mu.RLock()
 	message := job.Message
@@ -141,9 +141,9 @@ func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 		t.Fatal("run finalization did not stamp the job's retirement time")
 	}
 
-	// The late duplicate FinishJob (the official runner reports completion
-	// twice) must still authenticate — via planScopes, since the message that
-	// used to carry the scope is gone.
+	// The late duplicate FinishJob (the official runner reports completion twice)
+	// must still authenticate — via planScopes, since the message that used to
+	// carry the scope is gone.
 	token := makeJWT(scopeID, runnerAudJob)
 	w := runnerRequest(s, "POST", "/_apis/v1/FinishJob/"+scopeID+"/free/"+wfJob.PlanID,
 		token, `{"name":"JobCompleted","result":"succeeded"}`)
@@ -159,10 +159,9 @@ func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 	}
 }
 
-// TestActionsJanitorSweepsRetiredJobState verifies the sweep removes every
-// piece of a retired job's replica-local state — stub, indexes, plan scope,
-// log masks, console lines and in-memory log bytes — while leaving live jobs
-// untouched.
+// TestActionsJanitorSweepsRetiredJobState verifies the sweep removes every piece
+// of a retired job's replica-local state — stub, indexes, plan scope, log masks,
+// console lines and in-memory log bytes — while leaving live jobs untouched.
 func TestActionsJanitorSweepsRetiredJobState(t *testing.T) {
 	s := newTestServer()
 
