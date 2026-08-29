@@ -79718,7 +79718,7 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "d8a31c89188b41d5a846129900283c2c6a1e71737003a7f927ce8802f544d8de",
+  "source_sha256": "d0c9206fb92d51d1acde0699364ca06e489141e78cdee0081e4af4da013eeca0",
   "summary": {
     "operations": 1222,
     "state_changing": 584,
