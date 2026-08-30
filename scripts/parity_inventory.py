@@ -105,9 +105,9 @@ def read_ledger() -> tuple[dict[str, Any], list[dict[str, Any]]]:
     ]
     if duplicates:
         raise InventoryError(f"duplicate ledger IDs: {', '.join(sorted(duplicates))}")
-    if len(findings) < 400:
+    if len(findings) < 1:
         raise InventoryError(
-            f"only {len(findings)} ledger rows parsed; the ledger is truncated"
+            "no ledger rows parsed; the table format or the ledger is broken"
         )
 
     severity = collections.Counter(finding["severity"] for finding in findings)

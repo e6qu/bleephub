@@ -11,11 +11,11 @@ Bleephub is a faithful, self-contained Go reimplementation of GitHub Enterprise'
 
 ## What it implements
 
-Essentially all of GitHub's server-side surface: the REST and GraphQL APIs, the Actions runner protocol and a real workflow engine, smart-HTTP and SSH git, webhooks, GitHub Apps and OAuth Apps, Packages and the container registry, Pages, code scanning and CodeQL, artifact attestations, deployments and environments, and organization/team administration. The exact parity boundary — per route and per field — is audited in [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md); every known gap is tracked in [`BUGS.md`](BUGS.md).
+Essentially all of GitHub's server-side surface: the REST and GraphQL APIs, the Actions runner protocol and a real workflow engine, smart-HTTP and SSH git, webhooks, GitHub Apps and OAuth Apps, Packages and the container registry, Pages, code scanning and CodeQL, artifact attestations, deployments and environments, and organization/team administration. The exact parity boundary — per route and per field — is audited in [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md); the remaining gaps are listed below, and [`BUGS.md`](BUGS.md) records the audited non-defects (findings whose premise is wrong).
 
 ## What it does not implement
 
-These are real GitHub behaviours Bleephub does not have. They are not "deferred" — a client that depends on one will not work, and calling that a design decision would be dishonest. `BUGS.md` tracks each.
+These are real GitHub behaviours Bleephub does not have. They are not "deferred" — a client that depends on one will not work, and calling that a design decision would be dishonest. They are listed here in full.
 
 **Whole surfaces**
 
@@ -253,7 +253,7 @@ Two hermetic unit-test gates validate Bleephub against the vendored GitHub OpenA
 - [docs/BLEEPHUB_GH_CLI.md](docs/BLEEPHUB_GH_CLI.md) — the full `gh` CLI walkthrough.
 - [docs/oidc.md](docs/oidc.md) — OIDC / SSO integration (any compliant provider, or shauth).
 - [docs/private-api.md](docs/private-api.md) — bleephub's own non-GitHub management and data-plane routes (`/ui-data`, `/manage`, `/internal`, `/_apis`).
-- [BUGS.md](BUGS.md) — the tracked gap ledger.
+- [BUGS.md](BUGS.md) — audited non-defects (false-positive findings); the fixed-defect history is in git.
 
 ## Releasing
 
