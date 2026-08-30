@@ -75,7 +75,7 @@ Any change to code, config, specs, workflows, or `BUGS.md` runs everything.
 `BUGS.md` is the human-editable defect ledger and the source of truth for parity
 findings. Each row carries an ID, a severity (`B` blocker, `M` major, `m`
 minor), a location, a one-sentence claim, and a status (`open`, `partial`,
-`fixed`, or `deferred`). The same parser that regenerates the parity inventory
+`fixed`, `deferred`, or `false-positive`). The same parser that regenerates the parity inventory
 checks its totals and status vocabulary, so a row that loses a column or reuses
 an ID fails CI.
 

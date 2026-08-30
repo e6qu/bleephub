@@ -314,7 +314,7 @@ Git repository storage (go-git) is selected by its own env vars:
 
 Database persistence **requires** durable git storage (`BLEEPHUB_GIT_DIR` or `BLEEPHUB_S3_BUCKET`): reloading repo metadata against in-memory git storage would resurrect every repo empty, so that combination is a startup error — never a silent degraded mode.
 
-The S3 filesystem test suite drives this path through a real S3 server — a MinIO container started by the test itself (`s3fs_test.go`) — and `aws-sdk-go-v2`, not an in-process fake. The tests cover object reads/writes/open modes, paginated listings, and repository-prefix rename/delete through the same list/copy/delete APIs that S3-backed git storage uses. When MinIO cannot be started the suite fails rather than skipping, so an absent dependency can never read as a pass.
+The S3 filesystem test suite drives this path through a real S3 server — a MinIO container started by the test itself (`s3fs_test.go`) — and `minio-go`, the same vendor-neutral S3 client the server uses, not an in-process fake. The tests cover object reads/writes/open modes, paginated listings, and repository-prefix rename/delete through the same list/copy/delete APIs that S3-backed git storage uses. When MinIO cannot be started the suite fails rather than skipping, so an absent dependency can never read as a pass.
 
 Actions byte storage is selected separately from git storage:
 
