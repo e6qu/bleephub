@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,13 +63,21 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 	// Every pull request is an issue on GitHub, so this cross-repository listing
 	// interleaves issues and their pull requests.
 	s.store.Mu.RLock()
+	// The mention-derived filters would otherwise re-scan every comment per row
+	// (O(issues×comments)). Precompute the mentioned-parent set in one pass, as
+	// the notifications path does, so the per-row test is O(1).
+	var mentions map[string]bool
+	switch filter {
+	case "mentioned", "subscribed", "all":
+		mentions = buildCommentMentionIndex(s.store, user.Login)
+	}
 	rows := make([]crossRepoIssueRow, 0)
 	for _, issue := range s.store.Issues {
 		repo := s.store.Repos[issue.RepoID]
 		if repo == nil {
 			continue
 		}
-		if !issueMatchesUserFilter(s.store, issue, repo, user, filter) {
+		if !issueMatchesUserFilter(s.store, issue, repo, user, filter, mentions) {
 			continue
 		}
 		if state != "all" && !strings.EqualFold(issue.State, state) {
@@ -90,7 +99,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 		if repo == nil {
 			continue
 		}
-		if !pullMatchesUserFilter(s.store, pr, repo, user, filter) {
+		if !pullMatchesUserFilter(s.store, pr, repo, user, filter, mentions) {
 			continue
 		}
 		if !prMatchesStateFilter(pr, state) {
@@ -120,8 +129,9 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 }
 
 // issueMatchesUserFilter implements the `filter` values. Caller holds the
-// store read lock.
-func issueMatchesUserFilter(st *store.Store, issue *store.Issue, repo *store.Repo, user *store.User, filter string) bool {
+// store read lock. mentions is the precomputed mentioned-parent set (nil for
+// filters that don't consult mentions).
+func issueMatchesUserFilter(st *store.Store, issue *store.Issue, repo *store.Repo, user *store.User, filter string, mentions map[string]bool) bool {
 	assigned := false
 	for _, id := range issue.AssigneeIDs {
 		if id == user.ID {
@@ -136,32 +146,46 @@ func issueMatchesUserFilter(st *store.Store, issue *store.Issue, repo *store.Rep
 	case "created":
 		return created
 	case "mentioned":
-		return issueMentionsUser(st, issue, user)
+		return issueMentionsUser(issue, user, mentions)
 	case "subscribed":
 		// Issues in repos the user watches, plus issues the user participates in.
 		if _, watching := st.RepoSubscriptions[store.RepoSubscriptionKey(user.ID, repo.ID)]; watching {
 			return true
 		}
-		return assigned || created || issueMentionsUser(st, issue, user)
+		return assigned || created || issueMentionsUser(issue, user, mentions)
 	case "repos":
 		return repo.OwnerID == user.ID || store.RepoCollaboratorPermissionAtLeastLocked(st, repo.FullName, user.Login, "pull")
 	case "all":
-		return assigned || created || issueMentionsUser(st, issue, user)
+		return assigned || created || issueMentionsUser(issue, user, mentions)
 	}
 	return false
 }
 
-// issueMentionsUser reports whether the issue body or a comment mentions @user.
-// Caller holds the store read lock.
-func issueMentionsUser(st *store.Store, issue *store.Issue, user *store.User) bool {
-	mention := "@" + user.Login
-	if strings.Contains(issue.Body, mention) {
-		return true
-	}
+// buildCommentMentionIndex records, in one pass over st.Comments, which
+// (parentType, parentID) conversations @-mention login. Callers hold the store
+// read lock and test membership in O(1) instead of rescanning every comment per
+// issue/PR. Mirrors the precompute in store.NotificationRowsFor.
+func buildCommentMentionIndex(st *store.Store, login string) map[string]bool {
+	mention := "@" + login
+	idx := make(map[string]bool)
 	for _, c := range st.Comments {
-		if c.ParentType == "issue" && c.IssueID == issue.ID && strings.Contains(c.Body, mention) {
-			return true
+		if strings.Contains(c.Body, mention) {
+			idx[commentMentionKey(c.ParentType, c.IssueID)] = true
 		}
 	}
-	return false
+	return idx
+}
+
+// commentMentionKey keys the mention index by a comment's parent.
+func commentMentionKey(parentType string, parentID int) string {
+	return parentType + "\x00" + strconv.Itoa(parentID)
+}
+
+// issueMentionsUser reports whether the issue body mentions @user or a comment
+// on it does (via the precomputed mentions set).
+func issueMentionsUser(issue *store.Issue, user *store.User, mentions map[string]bool) bool {
+	if strings.Contains(issue.Body, "@"+user.Login) {
+		return true
+	}
+	return mentions[commentMentionKey("issue", issue.ID)]
 }

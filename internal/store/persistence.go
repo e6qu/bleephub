@@ -175,6 +175,10 @@ type Persistence struct {
 	// keyHighWater caches the per-bucket identifier high-water mark this process
 	// has written, so the common case costs no extra SQL.
 	keyHighWater map[string]int64
+	// gc batches fsyncs off the caller's Store.Mu section (group commit). Non-nil
+	// only for exclusively-owned SQLite with BLEEPHUB_GROUP_COMMIT=true; nil keeps
+	// every write synchronous, as the dqlite/Raft path always is.
+	gc *groupCommitter
 }
 
 func (p *Persistence) Ready(ctx context.Context) error {
@@ -268,6 +272,12 @@ func (p *Persistence) apply(ops []persistOp) error {
 	if p == nil {
 		return nil
 	}
+	// Group commit: enqueue and return; the committer fsyncs off Store.Mu and the
+	// HTTP durability barrier gates the response until this write is durable.
+	if p.gc != nil {
+		p.gc.enqueue(ops)
+		return nil
+	}
 	p.Mu.Lock()
 	defer p.Mu.Unlock()
 	tx, err := p.Db.Begin()
@@ -275,31 +285,74 @@ func (p *Persistence) apply(ops []persistOp) error {
 		return err
 	}
 	raised := map[string]int64{}
+	if err := p.execOpsTx(tx, ops, raised); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	revision, err := p.bumpStateRevisionTx(tx)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	p.observeLocalRevision(revision)
+	for bucket, next := range raised {
+		p.cacheKeyHighWater(bucket, next)
+	}
+	return nil
+}
+
+// execOpsTx runs one batch of put/delete ops inside tx, recording raised
+// key-high-water marks. Shared by the synchronous apply and the group committer.
+func (p *Persistence) execOpsTx(tx *sql.Tx, ops []persistOp, raised map[string]int64) error {
 	for _, op := range ops {
 		storageKey := p.StorageKey(op.Bucket, op.Key)
 		switch op.kind {
 		case persistOpPut:
 			if err := p.raiseKeyHighWaterTx(tx, op.Bucket, storageKey, raised); err != nil {
-				_ = tx.Rollback()
 				return err
 			}
 			raw, err := p.sealValue(op.Bucket, storageKey, op.raw)
 			if err != nil {
-				_ = tx.Rollback()
 				return err
 			}
 			if _, err := tx.Exec(p.Dialect.PutSQL, op.Bucket, storageKey, raw); err != nil {
-				_ = tx.Rollback()
 				return err
 			}
 		case persistOpDelete:
 			if _, err := tx.Exec(p.Dialect.deleteSQL, op.Bucket, storageKey); err != nil {
-				_ = tx.Rollback()
 				return err
 			}
 		default:
-			_ = tx.Rollback()
 			return fmt.Errorf("unknown persistence operation %d for %s/%s", op.kind, op.Bucket, op.Key)
+		}
+	}
+	return nil
+}
+
+// commitGroup fsyncs a drained set of enqueued batches in one transaction: every
+// batch's put/delete ops, every counter raise, and a single state-revision bump.
+// Runs on the committer goroutine, off any caller's Store.Mu.
+func (p *Persistence) commitGroup(entries []gcEntry) error {
+	p.Mu.Lock()
+	defer p.Mu.Unlock()
+	tx, err := p.Db.Begin()
+	if err != nil {
+		return err
+	}
+	raised := map[string]int64{}
+	for _, e := range entries {
+		if err := p.execOpsTx(tx, e.ops, raised); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		for _, c := range e.counters {
+			if _, err := tx.Exec(p.Dialect.raiseSQL, c.name, c.value); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
 		}
 	}
 	revision, err := p.bumpStateRevisionTx(tx)
@@ -315,6 +368,27 @@ func (p *Persistence) apply(ops []persistOp) error {
 		p.cacheKeyHighWater(bucket, next)
 	}
 	return nil
+}
+
+// GroupCommitActive reports whether writes are batched off the caller's lock.
+func (p *Persistence) GroupCommitActive() bool { return p != nil && p.gc != nil }
+
+// EnqueuedSeq is the highest group-commit sequence handed out; the HTTP
+// durability barrier waits for it to become durable before flushing a response.
+func (p *Persistence) EnqueuedSeq() int64 {
+	if p == nil || p.gc == nil {
+		return 0
+	}
+	return p.gc.enqueuedSeq()
+}
+
+// WaitDurable blocks until every write up to seq is durable, returning the commit
+// error (or ctx error) if it cannot be.
+func (p *Persistence) WaitDurable(ctx context.Context, seq int64) error {
+	if p == nil || p.gc == nil {
+		return nil
+	}
+	return p.gc.waitDurable(ctx, seq)
 }
 
 // PutBatch commits related records in one transaction. Callers update their
@@ -652,6 +726,11 @@ func NewPersistence() (*Persistence, error) {
 		return nil, err
 	}
 	p.localRevision.Store(revision)
+	// Group commit is opt-in and only sound when this process owns the database
+	// exclusively (local SQLite). A dqlite quorum keeps every write synchronous.
+	if p.OwnedExclusively() && os.Getenv("BLEEPHUB_GROUP_COMMIT") == "true" {
+		p.gc = newGroupCommitter(p)
+	}
 	return p, nil
 }
 
@@ -1262,6 +1341,11 @@ func (p *Persistence) AllocateCounterValue(name string, minimum int64) (int64, e
 	if p == nil {
 		return minimum, nil
 	}
+	// Group commit: allocate from the in-memory high-water and persist the raise
+	// asynchronously, so a create no longer fsyncs a counter under Store.Mu.
+	if p.gc != nil {
+		return p.gc.allocateCounter(name, minimum), nil
+	}
 	p.Mu.Lock()
 	defer p.Mu.Unlock()
 	var next int64
@@ -1281,6 +1365,11 @@ func (p *Persistence) AllocateCounterValue(name string, minimum int64) (int64, e
 func (p *Persistence) Close() error {
 	if p == nil {
 		return nil
+	}
+	// Flush any queued group-commit work before the database goes away, so a
+	// graceful shutdown loses nothing.
+	if p.gc != nil {
+		p.gc.close()
 	}
 	// A closed database cannot arbitrate git object locks; leaving it installed
 	// fails every ref update with "database is closed".

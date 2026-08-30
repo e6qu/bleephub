@@ -883,7 +883,7 @@ func (s *Server) requestHandler() http.Handler {
 	// base net/http writer (whose SetReadDeadline coordinates with connection
 	// management) without relying on every inner wrapper implementing Unwrap.
 	return slowBodyGuard(bodyReadInactivityTimeout,
-		otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(s.inFlightLimitMiddleware(secured)))), "bleephub"))
+		otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(s.inFlightLimitMiddleware(s.durabilityBarrierMiddleware(secured))))), "bleephub"))
 }
 
 // inFlightLimitMiddleware bounds concurrent non-byte-transfer requests to the
