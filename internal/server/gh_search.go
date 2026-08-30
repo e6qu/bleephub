@@ -53,6 +53,42 @@ func (s *Server) searchAccessibleRepoIDs(ctx context.Context) map[int]struct{} {
 	return accessible
 }
 
+// searchAccessibleRepoIDForScope resolves reachability for a single repo:-scoped
+// search without cloning and access-checking every repository in the instance.
+// Returns an empty set when the repo is unknown or unreadable.
+func (s *Server) searchAccessibleRepoIDForScope(ctx context.Context, fullName string) map[int]struct{} {
+	s.store.Mu.RLock()
+	var snapshot *store.Repo
+	if repo := s.store.RepoByNameLocked(fullName); repo != nil {
+		clone := *repo
+		snapshot = &clone
+	}
+	s.store.Mu.RUnlock()
+
+	accessible := map[int]struct{}{}
+	if snapshot != nil && s.viewerCanReadRepo(ctx, snapshot) {
+		accessible[snapshot.ID] = struct{}{}
+	}
+	return accessible
+}
+
+// searchCandidateReposLocked returns the repositories a search must consider: the
+// single repository named by a repo: qualifier (or none, if unknown) instead of
+// every repo in the instance, else all repos. Callers hold the store read lock.
+func (s *Server) searchCandidateReposLocked(repoQualifier string) []*store.Repo {
+	if repoQualifier != "" {
+		if repo := s.store.RepoByNameLocked(repoQualifier); repo != nil {
+			return []*store.Repo{repo}
+		}
+		return nil
+	}
+	out := make([]*store.Repo, 0, len(s.store.Repos))
+	for _, repo := range s.store.Repos {
+		out = append(out, repo)
+	}
+	return out
+}
+
 // searchQuery holds the parsed pieces of a GitHub search query.
 type searchQuery struct {
 	Terms         []string
@@ -418,7 +454,14 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
+	// A repo:-scoped search only needs that one repository's reachability, not a
+	// clone-and-check of every repo in the instance.
+	var accessibleRepoIDs map[int]struct{}
+	if q.Repo != "" {
+		accessibleRepoIDs = s.searchAccessibleRepoIDForScope(r.Context(), q.Repo)
+	} else {
+		accessibleRepoIDs = s.searchAccessibleRepoIDs(r.Context())
+	}
 
 	// Rows are gathered under the read lock, then rendered after release (the
 	// JSON builders re-lock). The fields the scorer and sorter read directly
@@ -1471,9 +1514,14 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		stor gitStorage.Storer
 	}
 	var searchRepos []codeSearchRepo
-	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
+	var accessibleRepoIDs map[int]struct{}
+	if q.Repo != "" {
+		accessibleRepoIDs = s.searchAccessibleRepoIDForScope(r.Context(), q.Repo)
+	} else {
+		accessibleRepoIDs = s.searchAccessibleRepoIDs(r.Context())
+	}
 	s.store.Mu.RLock()
-	for _, repo := range s.store.Repos {
+	for _, repo := range s.searchCandidateReposLocked(q.Repo) {
 		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
@@ -2091,9 +2139,14 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		stor gitStorage.Storer
 	}
 	var searchRepos []commitSearchRepo
-	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
+	var accessibleRepoIDs map[int]struct{}
+	if q.Repo != "" {
+		accessibleRepoIDs = s.searchAccessibleRepoIDForScope(r.Context(), q.Repo)
+	} else {
+		accessibleRepoIDs = s.searchAccessibleRepoIDs(r.Context())
+	}
 	s.store.Mu.RLock()
-	for _, repo := range s.store.Repos {
+	for _, repo := range s.searchCandidateReposLocked(q.Repo) {
 		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
