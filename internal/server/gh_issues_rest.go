@@ -1722,7 +1722,8 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 		labelNames = strings.Split(v, ",")
 	}
 
-	// Gather the org's issues under the read lock, render outside it.
+	// Gather the org's issues and pull requests under the read lock, render
+	// outside it. Every pull request is an issue on GitHub, so both appear here.
 	s.store.Mu.RLock()
 	orgRepos := map[int]*store.Repo{}
 	for _, repo := range s.store.Repos {
@@ -1730,34 +1731,25 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 			orgRepos[repo.ID] = repo
 		}
 	}
-	type issueRow struct {
-		issue *store.Issue
-		repo  *store.Repo
-	}
 	commentedIssueIDs := map[int]bool{}
+	commentedPRIDs := map[int]bool{}
 	for _, c := range s.store.Comments {
-		if c.ParentType == "issue" && c.AuthorID == user.ID {
-			commentedIssueIDs[c.IssueID] = true
-		}
-	}
-	var rows []issueRow
-	for _, issue := range s.store.Issues {
-		repo := orgRepos[issue.RepoID]
-		if repo == nil {
+		if c.AuthorID != user.ID {
 			continue
 		}
-		switch stateFilter {
-		case "open":
-			if issue.State != "OPEN" {
-				continue
-			}
-		case "closed":
-			if issue.State != "CLOSED" {
-				continue
-			}
+		switch c.ParentType {
+		case "issue":
+			commentedIssueIDs[c.IssueID] = true
+		case "pull_request":
+			commentedPRIDs[c.IssueID] = true
 		}
+	}
+	// orgFilterMatches applies the `filter` values uniformly to an issue or a
+	// pull request; `commented` is whether the caller has commented on it, which
+	// counts as participation for `subscribed`.
+	orgFilterMatches := func(authorID int, assigneeIDs []int, body string, commented bool) bool {
 		assigned := false
-		for _, aid := range issue.AssigneeIDs {
+		for _, aid := range assigneeIDs {
 			if aid == user.ID {
 				assigned = true
 				break
@@ -1765,43 +1757,67 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		switch filter {
 		case "assigned":
-			if !assigned {
-				continue
-			}
+			return assigned
 		case "created":
-			if issue.AuthorID != user.ID {
-				continue
-			}
+			return authorID == user.ID
 		case "mentioned":
-			if !strings.Contains(issue.Body, "@"+user.Login) {
-				continue
-			}
+			return strings.Contains(body, "@"+user.Login)
 		case "subscribed":
 			// Participation (authored, assigned, or commented) auto-subscribes.
-			if issue.AuthorID != user.ID && !assigned && !commentedIssueIDs[issue.ID] {
-				continue
-			}
+			return authorID == user.ID || assigned || commented
 		case "repos", "all":
-			// Every issue across the org's repositories.
+			return true
 		default:
+			return false
+		}
+	}
+	var rows []crossRepoIssueRow
+	for _, issue := range s.store.Issues {
+		repo := orgRepos[issue.RepoID]
+		if repo == nil {
+			continue
+		}
+		if !issueMatchesStateFilter(issue.State, stateFilter) {
+			continue
+		}
+		if !orgFilterMatches(issue.AuthorID, issue.AssigneeIDs, issue.Body, commentedIssueIDs[issue.ID]) {
 			continue
 		}
 		if !since.IsZero() && issue.UpdatedAt.Before(since) {
 			continue
 		}
-		rows = append(rows, issueRow{issue: issue, repo: repo})
+		if len(labelNames) > 0 && !labelIDsHaveNames(s.store, issue.LabelIDs, labelNames) {
+			continue
+		}
+		rows = append(rows, crossRepoIssueRow{
+			number: issue.Number, commentCount: s.store.CountCommentsForLocked("issue", issue.ID),
+			issue: issue, repo: repo,
+		})
+	}
+	for _, pr := range s.store.PullRequests {
+		repo := orgRepos[pr.RepoID]
+		if repo == nil {
+			continue
+		}
+		if !prMatchesStateFilter(pr, stateFilter) {
+			continue
+		}
+		if !orgFilterMatches(pr.AuthorID, pr.AssigneeIDs, pr.Body, commentedPRIDs[pr.ID]) {
+			continue
+		}
+		if !since.IsZero() && pr.UpdatedAt.Before(since) {
+			continue
+		}
+		if len(labelNames) > 0 && !labelIDsHaveNames(s.store, pr.LabelIDs, labelNames) {
+			continue
+		}
+		rows = append(rows, crossRepoIssueRow{
+			number: pr.Number, commentCount: s.store.CountCommentsForLocked("pull_request", pr.ID),
+			pr: pr, repo: repo,
+		})
 	}
 	s.store.Mu.RUnlock()
 
-	if len(labelNames) > 0 {
-		kept := rows[:0]
-		for _, row := range rows {
-			if store.IssueHasAllLabels(s.store, row.issue, labelNames, row.repo.ID) {
-				kept = append(kept, row)
-			}
-		}
-		rows = kept
-	}
 	// Private repos the caller cannot read never surface.
 	readable := rows[:0]
 	for _, row := range rows {
@@ -1811,30 +1827,8 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	rows = readable
 
-	sortKey := q.Get("sort")
-	asc := q.Get("direction") == "asc"
-	sort.SliceStable(rows, func(i, j int) bool {
-		var before bool
-		switch sortKey {
-		case "updated":
-			before = rows[i].issue.UpdatedAt.Before(rows[j].issue.UpdatedAt)
-		case "comments":
-			before = rows[i].issue.ID < rows[j].issue.ID
-		default: // created
-			before = rows[i].issue.CreatedAt.Before(rows[j].issue.CreatedAt)
-		}
-		if asc {
-			return before
-		}
-		return !before
-	})
+	less := crossRepoRowLess(q.Get("sort"), q.Get("direction") == "asc")
+	sort.SliceStable(rows, func(i, j int) bool { return less(rows[i], rows[j]) })
 
-	base := s.baseURL(r)
-	out := make([]map[string]interface{}, 0, len(rows))
-	for _, row := range rows {
-		issueJSON := issueToJSON(row.issue, s.store, base, row.repo.FullName)
-		issueJSON["repository"] = store.RepoToJSON(row.repo, s.store, base)
-		out = append(out, issueJSON)
-	}
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
+	s.renderCrossRepoIssueRows(w, r, s.baseURL(r), rows)
 }

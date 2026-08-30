@@ -5,6 +5,43 @@ import (
 	"testing"
 )
 
+// TestOrgIssues_IncludePullRequests pins that GET /orgs/{org}/issues returns
+// pull requests alongside issues, matching GitHub where every PR is an issue.
+func TestOrgIssues_IncludePullRequests(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	admin := srv.store.UsersByLogin["admin"]
+	org := srv.store.CreateOrg(admin, "orgpr-org", "Org PR Org", "")
+	if org == nil {
+		t.Fatal("create org failed")
+	}
+	repo := srv.store.CreateOrgRepo(org, admin, "orgpr-repo", "", false)
+	if repo == nil {
+		t.Fatal("create org repo failed")
+	}
+	seedPullRequestBranches(t, srv.Server, repo, "feature")
+	pr := srv.store.CreatePullRequest(repo.ID, admin.ID, "org pull request", "body",
+		"feature", "main", false, nil, []int{admin.ID}, 0)
+	if pr == nil {
+		t.Fatal("failed to create pull request")
+	}
+
+	resp := srv.get(t, "/api/v3/orgs/orgpr-org/issues", defaultToken)
+	var found map[string]interface{}
+	for _, it := range decodeJSONArray(t, resp) {
+		if it["number"] == float64(pr.Number) {
+			found = it
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("org issues list did not include PR #%d", pr.Number)
+	}
+	if found["pull_request"] == nil {
+		t.Fatalf("org PR row missing pull_request member: %v", found)
+	}
+}
+
 func TestOrgIssues_ListForAuthenticatedUser(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)

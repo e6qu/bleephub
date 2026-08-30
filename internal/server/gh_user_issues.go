@@ -59,12 +59,10 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 		since = t
 	}
 
-	type row struct {
-		issue *store.Issue
-		repo  *store.Repo
-	}
+	// Every pull request is an issue on GitHub, so this cross-repository listing
+	// interleaves issues and their pull requests.
 	s.store.Mu.RLock()
-	rows := make([]row, 0)
+	rows := make([]crossRepoIssueRow, 0)
 	for _, issue := range s.store.Issues {
 		repo := s.store.Repos[issue.RepoID]
 		if repo == nil {
@@ -82,42 +80,43 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 		if !since.IsZero() && issue.UpdatedAt.Before(since) {
 			continue
 		}
-		rows = append(rows, row{issue, repo})
+		rows = append(rows, crossRepoIssueRow{
+			number: issue.Number, commentCount: s.store.CountCommentsForLocked("issue", issue.ID),
+			issue: issue, repo: repo,
+		})
+	}
+	for _, pr := range s.store.PullRequests {
+		repo := s.store.Repos[pr.RepoID]
+		if repo == nil {
+			continue
+		}
+		if !pullMatchesUserFilter(s.store, pr, repo, user, filter) {
+			continue
+		}
+		if !prMatchesStateFilter(pr, state) {
+			continue
+		}
+		if len(labelFilter) > 0 && !labelIDsHaveNames(s.store, pr.LabelIDs, labelFilter) {
+			continue
+		}
+		if !since.IsZero() && pr.UpdatedAt.Before(since) {
+			continue
+		}
+		rows = append(rows, crossRepoIssueRow{
+			number: pr.Number, commentCount: s.store.CountCommentsForLocked("pull_request", pr.ID),
+			pr: pr, repo: repo,
+		})
 	}
 	s.store.Mu.RUnlock()
 
-	rows = slices.DeleteFunc(rows, func(candidate row) bool {
+	rows = slices.DeleteFunc(rows, func(candidate crossRepoIssueRow) bool {
 		return !s.viewerCanReadRepo(r.Context(), candidate.repo)
 	})
 
-	sortKey := q.Get("sort")
-	direction := q.Get("direction")
-	sort.SliceStable(rows, func(i, j int) bool {
-		var less bool
-		switch sortKey {
-		case "updated":
-			less = rows[i].issue.UpdatedAt.Before(rows[j].issue.UpdatedAt)
-		case "comments":
-			less = rows[i].issue.ID < rows[j].issue.ID
-		default:
-			less = rows[i].issue.CreatedAt.Before(rows[j].issue.CreatedAt)
-		}
-		if direction == "asc" {
-			return less
-		}
-		return !less
-	})
+	less := crossRepoRowLess(q.Get("sort"), q.Get("direction") == "asc")
+	sort.SliceStable(rows, func(i, j int) bool { return less(rows[i], rows[j]) })
 
-	page := paginateAndLink(w, r, rows)
-	base := s.baseURL(r)
-	out := make([]map[string]interface{}, 0, len(page))
-	for _, rw := range page {
-		item := issueToJSON(rw.issue, s.store, base, rw.repo.FullName)
-		// Results span repositories, so each issue carries its repository.
-		item["repository"] = store.RepoToJSON(rw.repo, s.store, base)
-		out = append(out, item)
-	}
-	writeJSON(w, http.StatusOK, out)
+	s.renderCrossRepoIssueRows(w, r, s.baseURL(r), rows)
 }
 
 // issueMatchesUserFilter implements the `filter` values. Caller holds the

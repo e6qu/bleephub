@@ -15,55 +15,52 @@ Essentially all of GitHub's server-side surface: the REST and GraphQL APIs, the 
 
 ## What it does not implement
 
-These are real GitHub behaviours Bleephub does not have. They are not "deferred" — a client that depends on one will not work, and calling that a design decision would be dishonest. They are listed here in full.
+These are the notable GitHub behaviours Bleephub does not reproduce. They are not "deferred" — a client that depends on one will not work, and calling that a design decision would be dishonest. The exact parity boundary, per route and per field, is audited in [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md).
 
 **Whole surfaces**
 
-- Copilot Spaces — 28 REST operations, none routed.
-- SAML SSO and SCIM provisioning.
-- Organization `plan` member and billing endpoints.
-- The V2 broker flow; the runner is driven over the legacy V1 pipelines paths.
+- **SAML single sign-on.** The enterprise SAML *settings* fields are served, but
+  there is no SAML authentication flow. Sign-in is by token or OpenID Connect
+  (see [SSO](#sso-optional)). SCIM user provisioning, by contrast, *is*
+  implemented, at both organization and enterprise scope.
+- **The Actions merge queue.** `on: merge_group`, the merge-queue API, and
+  queued-pull-request evaluation are absent; a pull request carries a
+  merge-queue position field but nothing advances it.
+- **Most organization billing endpoints.** Billing *usage* reports are served,
+  but the per-product organization billing and seat/plan endpoints are not.
 
-**Partly present, and wrong in ways a client will notice**
+**A minor scheduling difference**
 
-- Roughly forty `on:` event types parse and are then never dispatched. Only
-  `push`, `pull_request`, `repository_dispatch`, `release` and `schedule` ever
-  fire a workflow, so a workflow keyed on `workflow_run`, `issues`,
-  `issue_comment` or `pull_request_target` is accepted and silently inert.
-- Several workflow keys are accepted by the parser and discarded, including
-  `permissions:`, `defaults:`, `run-name:`, job-level `concurrency:`, and
-  `steps.*.env` / `steps.*.shell`. `permissions:` matters most: the
-  `GITHUB_TOKEN` is minted with a fixed scope regardless of what the workflow
-  asked for.
-- Pull requests do not appear in the issues list and cannot be fetched through
-  `GET /issues/{number}`, though on GitHub every pull request is an issue.
-- `on: schedule` crons fire from real server time, minute-aligned, and accept
-  intervals below GitHub's five-minute minimum. There is no time-warp hook for
-  tests beyond calling the dispatcher directly.
-- `gh` commands needing workflow-run state Bleephub does not synthesize —
-  `gh run watch` long-poll and log tail.
+- `on: schedule` enforces GitHub's five-minute floor by *dropping* a cron whose
+  interval is shorter, where GitHub accepts the schedule and simply runs it no
+  more often than every five minutes. A `*/1 * * * *` schedule therefore never
+  fires on Bleephub rather than firing every five minutes.
 
-**Failure-path deviations**
-
-- A workflow that cannot start produces a failed-run shell with conclusion
-  `startup_failure` and no jobs, but emits no check suite and reports an empty
-  conclusion. An explicit dispatch instead returns 422 with the parse error,
-  which is more useful to the caller and is a deliberate difference.
+Everything else in the Actions surface behaves as GitHub does: every documented
+`on:` event other than `merge_group` dispatches workflows (including
+`pull_request_target`, `workflow_run`, `issues`, `issue_comment`, and
+`discussion`); `permissions:`, `defaults:`,
+`run-name:`, job-level `concurrency:`, and step-level `env`/`shell` are honored;
+pull requests appear in the issues endpoints with a `pull_request` member; and a
+workflow that fails to start emits a check suite with the `startup_failure`
+conclusion. Workflow runs advance as a connected `actions/runner` executes them,
+which is what `gh run watch` polls — Bleephub has no GitHub-hosted runners, so
+bring your own (see [How it works](#how-it-works)).
 
 ## Quick start
 
-Bleephub serves plain HTTP with no certificate. Build it, run it, and point a browser, `curl`, or `git` at it directly:
+Bleephub serves plain HTTP with no certificate. `make build` produces `./bleephub-server` with the web UI embedded. Run it, and point a browser, `curl`, or `git` at it directly:
 
 ```bash
-make build                                   # → ./bleephub-server (embeds the web UI)
+make build
 BLEEPHUB_ADMIN_TOKEN=bleephub-admin-token-00000000000000000000 \
-  ./bleephub-server --addr :8080             # logs: listening on http://localhost:8080
+  ./bleephub-server --addr :8080
 ```
 
-`BLEEPHUB_ADMIN_TOKEN` is **required** and has no default — pick any value that is not shaped like a GitHub personal access token. It authenticates every API call. Then:
+It logs `listening on http://localhost:8080`. `BLEEPHUB_ADMIN_TOKEN` is **required** and has no default — pick any value that is not shaped like a GitHub personal access token. It authenticates every API call. Then open the dashboard at `http://localhost:8080/ui/`, call the API, and clone a repo:
 
 ```bash
-open http://localhost:8080/ui/               # the Bleephub dashboard
+open http://localhost:8080/ui/
 curl -H "Authorization: Bearer bleephub-admin-token-00000000000000000000" \
   http://localhost:8080/api/v3/user
 git clone http://localhost:8080/admin/demo.git
@@ -73,20 +70,53 @@ No TLS certificate, no keychain trust. `go-github`, Octokit, and Probot work aga
 
 ### Using the `gh` CLI
 
-`gh` (verified against gh 2.97.0) is the one exception: against any non-`github.com` host it forces `https://` and refuses a plain-HTTP server, so `gh` — and only `gh` — needs TLS. The simplest cross-platform way to give it a locally-trusted certificate is [Caddy](https://caddyserver.com) as an HTTPS reverse proxy in front of bleephub's HTTP port — the same recipe works on macOS and Linux:
+`gh` (verified against gh 2.97.0) is the one exception: against any non-`github.com` host it forces `https://` and refuses a plain-HTTP server, so `gh` — and only `gh` — needs TLS. The simplest cross-platform way to give it a locally-trusted certificate is [Caddy](https://caddyserver.com) as an HTTPS reverse proxy in front of bleephub's HTTP port. The same recipe works on macOS and Linux.
+
+First, run bleephub on plain HTTP, exactly as in the quick start above:
 
 ```bash
-# 1. Run bleephub on plain HTTP (as in the quick start above).
 BLEEPHUB_ADMIN_TOKEN=bleephub-admin-token-00000000000000000000 \
   ./bleephub-server --addr :8080 &
+```
 
-# 2. Install Caddy's local CA into the system trust store (macOS keychain or
-#    Linux ca-certificates), then terminate HTTPS on :8443 → bleephub's :8080.
+Next, install Caddy's local certificate authority into the system trust store. `caddy trust` does this for you on both operating systems — the macOS system keychain, or the Linux `ca-certificates` store:
+
+```bash
 caddy trust
-caddy reverse-proxy --from localhost:8443 --to localhost:8080 &
+```
 
-# 3. Point gh at the HTTPS front door (GH_ENTERPRISE_TOKEN, not GH_TOKEN:
-#    gh reads GH_TOKEN only for github.com, every other host uses the former).
+To install the CA by hand instead — for example when `caddy trust` cannot elevate, or to trust it in a browser — Caddy writes its root to `root.crt` under its data directory, and each OS trusts it its own way. On **macOS** the root is at `~/Library/Application Support/Caddy/pki/authorities/local/root.crt`, and `gh` (a Go binary) reads trust only from the system keychain:
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \
+  "$HOME/Library/Application Support/Caddy/pki/authorities/local/root.crt"
+```
+
+On **Linux** the root is at `~/.local/share/caddy/pki/authorities/local/root.crt`. Debian and Ubuntu trust a certificate copied into `/usr/local/share/ca-certificates`, then refreshed:
+
+```bash
+sudo cp "$HOME/.local/share/caddy/pki/authorities/local/root.crt" \
+  /usr/local/share/ca-certificates/caddy-local-ca.crt
+sudo update-ca-certificates
+```
+
+Fedora, RHEL, and their derivatives use a different anchor directory and refresh command:
+
+```bash
+sudo cp "$HOME/.local/share/caddy/pki/authorities/local/root.crt" \
+  /etc/pki/ca-trust/source/anchors/caddy-local-ca.crt
+sudo update-ca-trust
+```
+
+With the CA trusted, terminate HTTPS on `:8443` and reverse-proxy it to bleephub's HTTP port:
+
+```bash
+caddy reverse-proxy --from localhost:8443 --to localhost:8080 &
+```
+
+Finally, point `gh` at the HTTPS front door. Use `GH_ENTERPRISE_TOKEN`, not `GH_TOKEN` — `gh` reads `GH_TOKEN` only for github.com and sends it to no other host:
+
+```bash
 export GH_HOST=localhost:8443
 export GH_ENTERPRISE_TOKEN=bleephub-admin-token-00000000000000000000
 gh repo create demo --public
@@ -128,14 +158,14 @@ unconditionally.
 For day-to-day hacking, the convenience script wraps the build/run steps:
 
 ```bash
-./scripts/local-dev.sh start          # HTTP :5555 + embedded UI
-./scripts/local-dev.sh start --dev    # HTTP :5555 API + :5173 Vite UI with hot module replacement
-./scripts/local-dev.sh start --tls    # HTTPS :8443 + embedded UI (self-signed cert)
+./scripts/local-dev.sh start
+./scripts/local-dev.sh start --dev
+./scripts/local-dev.sh start --tls
 ./scripts/local-dev.sh status | logs | stop
-./scripts/local-dev.sh clean          # remove local data, logs, PID files
+./scripts/local-dev.sh clean
 ```
 
-It compiles the current source, starts the server and UI, and prints the endpoints, admin token, data directory, and log paths. Data, git storage, logs, and the PID file live under `.local/bleephub/` by default (override with `BLEEPHUB_DATA_DIR` / `BLEEPHUB_GIT_DIR`).
+`start` serves HTTP on `:5555` with the embedded UI; `start --dev` adds the Vite UI on `:5173` with hot module replacement; `start --tls` serves HTTPS on `:8443` with a self-signed cert; `clean` removes the local data, logs, and PID files. It compiles the current source, starts the server and UI, and prints the endpoints, admin token, data directory, and log paths. Data, git storage, logs, and the PID file live under `.local/bleephub/` by default (override with `BLEEPHUB_DATA_DIR` / `BLEEPHUB_GIT_DIR`).
 
 ## How it works
 
@@ -153,12 +183,11 @@ For ad-hoc REST / GraphQL clients (Probot, Octokit, `gh`), point `GH_HOST` at th
 ## Configuration
 
 ```bash
-make build                                            # → ./bleephub-server
+make build
 BLEEPHUB_ADMIN_TOKEN=<token> ./bleephub-server --addr :80 --log-level info
-# or: make run   (builds + runs on :5555; still requires BLEEPHUB_ADMIN_TOKEN)
 ```
 
-Flags: `--addr` (listen address, default `:5555`; the runner strips non-standard ports, so use 80/443 for runner integration tests) and `--log-level` (`debug` | `info` | `warn` | `error`, default `info`).
+`make build` produces `./bleephub-server`; `make run` builds and runs it on `:5555` (still requiring `BLEEPHUB_ADMIN_TOKEN`). Flags: `--addr` (listen address, default `:5555`; the runner strips non-standard ports, so use 80/443 for runner integration tests) and `--log-level` (`debug` | `info` | `warn` | `error`, default `info`).
 
 **Core**
 
@@ -223,12 +252,12 @@ docker run --rm \
 ## Integration tests
 
 ```bash
-make test                                     # Go unit tests
-make gh-test                                  # real gh CLI inside Docker (Bleephub + gh + self-signed TLS)
-SHAUTH_SOURCE_DIR=../shauth make shauth-sso-test   # two-relying-party SSO + global logout contract
+make test
+make gh-test
+SHAUTH_SOURCE_DIR=../shauth make shauth-sso-test
 ```
 
-The `gh` harness (`Dockerfile.gh-test`, `test/run-gh-test.sh`) exercises `gh auth login`, native repo/issue verbs over both REST and GraphQL paths, `gh secret set` (real sealed-box encryption), `gh variable`/`gh workflow` verbs, and the parity probes for endpoints with no native `gh` verb. It runs in CI as the Bleephub gh CLI job and must be green to merge.
+`make test` runs the Go unit tests; `make gh-test` runs the real `gh` CLI inside Docker (Bleephub + `gh` + self-signed TLS); `make shauth-sso-test` runs the two-relying-party SSO and global-logout contract. The `gh` harness (`Dockerfile.gh-test`, `test/run-gh-test.sh`) exercises `gh auth login`, native repo/issue verbs over both REST and GraphQL paths, `gh secret set` (real sealed-box encryption), `gh variable`/`gh workflow` verbs, and the parity probes for endpoints with no native `gh` verb. It runs in CI as the Bleephub gh CLI job and must be green to merge.
 
 Two hermetic unit-test gates validate Bleephub against the vendored GitHub OpenAPI description (`third_party/github-openapi.json.gz`): a **route-definition** gate (`gh_api_definition_test.go`) requires every registered `/api/v3` route to be documented in an official description or carried in a shrink-only ledger, and a **response-shape ratchet** (`openapi_shape_validator_test.go`) validates every 2xx `/api/v3` JSON response member-by-member against the documented schema, gated by `internal/server/openapi-violation-allowlist.txt`. The description is pinned in `third_party/github-openapi.VERSION` and checked by `TestVendoredOpenAPIMatchesRecordedPin`.
 
