@@ -286,6 +286,11 @@ func ParseWorkflow(yamlBytes []byte) (*WorkflowDef, error) {
 
 // normalizeJob converts a rawJobDef into a JobDef, handling quirks.
 func normalizeJob(rj *rawJobDef) (*JobDef, error) {
+	// A null job body (`jobs:\n  build:` with no value) unmarshals to a nil
+	// rawJobDef; GitHub rejects it rather than crashing.
+	if rj == nil {
+		return nil, fmt.Errorf("job definition is empty")
+	}
 	jd := &JobDef{
 		Name:            rj.Name,
 		RunsOn:          rj.RunsOn,
