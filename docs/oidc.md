@@ -177,7 +177,8 @@ The flow:
 
 - `GET /auth/saml` — builds a signed-assertion-expecting `AuthnRequest`,
   deflate-encodes it (HTTP-Redirect binding), and redirects to the IdP. A signed
-  state cookie carries the CSRF `RelayState` and the return target.
+  state cookie carries the CSRF `RelayState` that binds the eventual response.
+  After a successful sign-in the browser lands on the dashboard (`/ui/`).
 - `POST /saml/consume` — the assertion consumer service. It validates the
   enveloped XML-DSig signature on the response or its assertion against the
   configured certificate, checks the issuer, audience, recipient, `InResponseTo`,

@@ -174,15 +174,12 @@ func (s *Server) handleSAMLConsume(w http.ResponseWriter, r *http.Request) {
 
 	// The state cookie is present for a service-provider-initiated flow on a
 	// same-site POST; a cross-site IdP POST (SameSite=Lax) or an IdP-initiated
-	// flow arrives without it. When present it binds InResponseTo and carries the
-	// return target, laundered across the request boundary by the signed cookie.
-	// When absent, the signed assertion still stands on its own, but the return
-	// target falls back to the dashboard: RelayState is raw request input and must
-	// not steer the post-login redirect (open-redirect guard).
-	returnTo := "/ui/"
+	// flow arrives without it. When present it binds InResponseTo. Post-login the
+	// browser always lands on the dashboard — neither RelayState nor the cookie's
+	// stored return path steers the redirect, so no request-controlled value can
+	// reach it (open-redirect guard).
 	expectedInResponseTo := ""
 	if pending, stateErr := s.consumeIdentityState(w, r, "saml", relayState); stateErr == nil {
-		returnTo = pending.ReturnTo
 		expectedInResponseTo = samlRequestID(pending.State)
 	}
 
@@ -219,11 +216,7 @@ func (s *Server) handleSAMLConsume(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}
-	redirectTarget := "/ui/"
-	if strings.HasPrefix(returnTo, "/") && !strings.HasPrefix(returnTo, "//") && !strings.Contains(returnTo, "\\") {
-		redirectTarget = returnTo
-	}
-	http.Redirect(w, r, redirectTarget, http.StatusFound)
+	http.Redirect(w, r, "/ui/", http.StatusFound)
 }
 
 // samlValidatedAssertion validates the enveloped XML-DSig signature on the SAML

@@ -104,8 +104,8 @@ func TestSAMLServiceProviderLogin(t *testing.T) {
 	if acsResp.StatusCode != http.StatusFound {
 		t.Fatalf("/saml/consume status = %d, want 302; body=%s", acsResp.StatusCode, body)
 	}
-	if got := acsResp.Header.Get("Location"); got != "/ui/repos" {
-		t.Fatalf("redirect = %q, want /ui/repos", got)
+	if got := acsResp.Header.Get("Location"); got != "/ui/" {
+		t.Fatalf("redirect = %q, want /ui/", got)
 	}
 	sessionSet := false
 	for _, c := range acsResp.Cookies() {
