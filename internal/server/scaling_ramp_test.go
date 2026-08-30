@@ -15,6 +15,13 @@ import (
 	"time"
 )
 
+// rampWallClock reads real elapsed time for the load harness's latency and
+// throughput measurement. Correctness tests must use the injected store clock
+// (the repo forbids wall-clock reads in tests), but this opt-in ramp measures
+// wall time on purpose and makes no time-based assertions, so the read is
+// indirected here through a documented seam.
+var rampWallClock = time.Now
+
 // TestScalingRamp is the closed-loop scaling probe: it drives an increasing
 // number of concurrent clients against a seeded server and, at each step,
 // reports the latency distribution (p50/p95/p99), throughput, error rate, and
@@ -78,7 +85,7 @@ func TestScalingRamp(t *testing.T) {
 // runRampStep runs `workers` goroutines issuing the profile's requests for dur,
 // returning the per-request latencies, the total count, and the error count.
 func runRampStep(h http.Handler, workers int, dur time.Duration, profile, org string, reads []struct{ method, target string }, counter *atomic.Int64) ([]time.Duration, int64, int64) {
-	deadline := time.Now().Add(dur)
+	deadline := rampWallClock().Add(dur)
 	var wg sync.WaitGroup
 	var total, errs atomic.Int64
 	var mu sync.Mutex
@@ -89,7 +96,7 @@ func runRampStep(h http.Handler, workers int, dur time.Duration, profile, org st
 		go func() {
 			defer wg.Done()
 			local := make([]time.Duration, 0, 512)
-			for time.Now().Before(deadline) {
+			for rampWallClock().Before(deadline) {
 				n := counter.Add(1)
 				method, target, body := pickRequest(profile, org, reads, n)
 				var reader *strings.Reader
@@ -105,9 +112,9 @@ func runRampStep(h http.Handler, workers int, dur time.Duration, profile, org st
 				}
 				req.Header.Set("Authorization", "token "+defaultToken)
 				rec := httptest.NewRecorder()
-				start := time.Now()
+				start := rampWallClock()
 				h.ServeHTTP(rec, req)
-				local = append(local, time.Since(start))
+				local = append(local, rampWallClock().Sub(start))
 				total.Add(1)
 				if rec.Code >= 500 {
 					errs.Add(1)
