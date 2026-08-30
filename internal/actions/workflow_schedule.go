@@ -14,8 +14,10 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// scheduleFiredKeys dedupes cron firings: a (repo, file, cron) tuple fires at
-// most once per minute even if the ticker drifts.
+// scheduleFiredKeys throttles cron firings to GitHub's five-minute floor: a
+// (repo, file, cron) tuple fires at most once per scheduleMinimumInterval, which
+// also dedupes a minute the ticker drifts over or replays. seen holds the last
+// firing minute per key.
 type scheduleFiredKeys struct {
 	mu   sync.Mutex
 	seen map[string]time.Time
@@ -24,6 +26,12 @@ type scheduleFiredKeys struct {
 // maxScheduleCatchup bounds how many missed minutes one tick replays, so a
 // long stall cannot unleash an unbounded burst of scans.
 const maxScheduleCatchup = 10 * time.Minute
+
+// scheduleMinimumInterval is GitHub's floor for scheduled workflows: a schedule
+// runs at most once every five minutes. A cron whose pattern matches more often
+// (e.g. `* * * * *`) is not rejected — it is throttled to this interval, firing
+// on the first matching minute at least this long after its previous run.
+const scheduleMinimumInterval = 5 * time.Minute
 
 // startScheduleDispatcher launches the minute-aligned loop that fires
 // `on: schedule:` workflows.
@@ -139,8 +147,9 @@ func (si *scheduleIndex) retain(live map[string]struct{}) {
 }
 
 // buildScheduleIndex reads and parses every schedule-bearing workflow file at
-// definitionRef. Invalid crons and sub-five-minute intervals are logged and
-// dropped here, not re-warned every minute.
+// definitionRef. Invalid crons are logged and dropped here, not re-warned every
+// minute. A cron finer than GitHub's five-minute floor is kept, not dropped; the
+// firing path throttles it to scheduleMinimumInterval.
 func (s *Engine) buildScheduleIndex(repoKey, definitionRef string, stor gitStorage.Storer) []indexedWorkflowSchedule {
 	var out []indexedWorkflowSchedule
 	for name, content := range ListWorkflowFilesAtRef(stor, definitionRef) {
@@ -158,10 +167,6 @@ func (s *Engine) buildScheduleIndex(repoKey, definitionRef string, stor gitStora
 			cs, err := parseCron(entry.Cron)
 			if err != nil {
 				s.logger.Warn().Err(err).Str("file", name).Str("cron", entry.Cron).Msg("invalid cron in on: schedule")
-				continue
-			}
-			if cs.minimumInterval() < 5*time.Minute {
-				s.logger.Warn().Str("file", name).Str("cron", entry.Cron).Msg("scheduled workflow interval is shorter than GitHub's five-minute minimum")
 				continue
 			}
 			entries = append(entries, indexedCronEntry{cron: entry.Cron, timezone: entry.Timezone, cs: cs})
@@ -273,20 +278,23 @@ func scheduleInactive(repo *store.Repo, now time.Time) bool {
 	return !lastActivity.IsZero() && now.Sub(lastActivity) >= 60*24*time.Hour
 }
 
-// markScheduleFired records a firing; false means this (key, minute) already fired.
+// markScheduleFired claims a firing for a schedule at the given minute. It
+// returns false when the schedule already fired within scheduleMinimumInterval —
+// GitHub's five-minute floor — which also collapses a minute replayed by ticker
+// drift or catch-up into a single run.
 func (s *Engine) markScheduleFired(key string, minute time.Time) (bool, error) {
 	s.store.Mu.RLock()
 	persist := s.store.Persist
 	s.store.Mu.RUnlock()
 	if persist != nil {
-		return persist.ClaimScheduleFiring(key, minute)
+		return persist.ClaimScheduleFiring(key, minute, scheduleMinimumInterval)
 	}
 	s.scheduleFired.mu.Lock()
 	defer s.scheduleFired.mu.Unlock()
 	if s.scheduleFired.seen == nil {
 		s.scheduleFired.seen = map[string]time.Time{}
 	}
-	if last, ok := s.scheduleFired.seen[key]; ok && last.Equal(minute) {
+	if last, ok := s.scheduleFired.seen[key]; ok && minute.Sub(last) < scheduleMinimumInterval {
 		return false, nil
 	}
 	s.scheduleFired.seen[key] = minute
@@ -372,37 +380,6 @@ func (s *Engine) fireScheduledWorkflow(repoKey, fileName string, content []byte,
 type cronSchedule struct {
 	min, hour, dom, month, dow uint64
 	domStar, dowStar           bool
-}
-
-// minimumInterval returns the shortest interval this cron's minute/hour masks
-// can produce. Day/month filters only spread occurrences farther apart, so this
-// conservatively enforces GitHub's five-minute floor.
-func (cs *cronSchedule) minimumInterval() time.Duration {
-	var minutes []int
-	for hour := 0; hour < 24; hour++ {
-		if cs.hour&(uint64(1)<<hour) == 0 {
-			continue
-		}
-		for minute := 0; minute < 60; minute++ {
-			if cs.min&(uint64(1)<<minute) != 0 {
-				minutes = append(minutes, hour*60+minute)
-			}
-		}
-	}
-	if len(minutes) < 2 {
-		return 24 * time.Hour
-	}
-	best := 24 * time.Hour
-	for i, current := range minutes {
-		next := minutes[(i+1)%len(minutes)]
-		if i == len(minutes)-1 {
-			next += 24 * 60
-		}
-		if gap := time.Duration(next-current) * time.Minute; gap < best {
-			best = gap
-		}
-	}
-	return best
 }
 
 var cronMonthNames = map[string]int{

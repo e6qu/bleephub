@@ -76,7 +76,7 @@ func TestScheduleClaimIsDurableAndExclusiveAcrossReplicas(t *testing.T) {
 		go func(persistence *store.Persistence) {
 			ready.Done()
 			<-start
-			claimed, err := persistence.ClaimScheduleFiring("owner/repo\x00workflow.yml\x000 12 * * *", minute)
+			claimed, err := persistence.ClaimScheduleFiring("owner/repo\x00workflow.yml\x000 12 * * *", minute, 5*time.Minute)
 			results <- outcome{claimed: claimed, err: err}
 		}(persistence)
 	}
@@ -95,11 +95,16 @@ func TestScheduleClaimIsDurableAndExclusiveAcrossReplicas(t *testing.T) {
 	if claims != 1 {
 		t.Fatalf("successful schedule claims = %d, want exactly one", claims)
 	}
-	if claimed, err := first.ClaimScheduleFiring("owner/repo\x00workflow.yml\x000 12 * * *", minute); err != nil || claimed {
+	if claimed, err := first.ClaimScheduleFiring("owner/repo\x00workflow.yml\x000 12 * * *", minute, 5*time.Minute); err != nil || claimed {
 		t.Fatalf("persisted duplicate claim = %v, err=%v", claimed, err)
 	}
-	if claimed, err := second.ClaimScheduleFiring("owner/repo\x00workflow.yml\x000 12 * * *", minute.Add(time.Minute)); err != nil || !claimed {
-		t.Fatalf("next-minute claim = %v, err=%v", claimed, err)
+	// A minute inside the five-minute floor is still throttled...
+	if claimed, err := second.ClaimScheduleFiring("owner/repo\x00workflow.yml\x000 12 * * *", minute.Add(time.Minute), 5*time.Minute); err != nil || claimed {
+		t.Fatalf("within-interval claim = %v, err=%v (want throttled)", claimed, err)
+	}
+	// ...but one at least the interval later is claimed.
+	if claimed, err := second.ClaimScheduleFiring("owner/repo\x00workflow.yml\x000 12 * * *", minute.Add(5*time.Minute), 5*time.Minute); err != nil || !claimed {
+		t.Fatalf("post-interval claim = %v, err=%v (want claimed)", claimed, err)
 	}
 }
 
@@ -116,16 +121,16 @@ func TestReleasedScheduleClaimCanBeRetaken(t *testing.T) {
 	key := "owner/repo\x00workflow.yml\x000 12 * * *"
 	minute := time.Date(2026, 7, 29, 12, 30, 0, 0, time.UTC)
 
-	if claimed, err := p.ClaimScheduleFiring(key, minute); err != nil || !claimed {
+	if claimed, err := p.ClaimScheduleFiring(key, minute, 5*time.Minute); err != nil || !claimed {
 		t.Fatalf("initial claim = %v, err=%v", claimed, err)
 	}
-	if claimed, err := p.ClaimScheduleFiring(key, minute); err != nil || claimed {
+	if claimed, err := p.ClaimScheduleFiring(key, minute, 5*time.Minute); err != nil || claimed {
 		t.Fatalf("duplicate claim before release = %v, err=%v (want false)", claimed, err)
 	}
 	if err := p.ReleaseScheduleFiring(key, minute); err != nil {
 		t.Fatalf("release: %v", err)
 	}
-	if claimed, err := p.ClaimScheduleFiring(key, minute); err != nil || !claimed {
+	if claimed, err := p.ClaimScheduleFiring(key, minute, 5*time.Minute); err != nil || !claimed {
 		t.Fatalf("re-claim after release = %v, err=%v (want true)", claimed, err)
 	}
 }

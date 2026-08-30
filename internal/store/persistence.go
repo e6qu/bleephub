@@ -1036,48 +1036,54 @@ func (p *Persistence) ReleaseLock(name, owner string) error {
 // ClaimScheduleFiring atomically selects one replica for a cron tuple/minute.
 // Claims stay outside the metadata revision feed: they coordinate a Workflow
 // row's creation but are not themselves API state.
-func (p *Persistence) ClaimScheduleFiring(key string, minute time.Time) (bool, error) {
+// ClaimScheduleFiring claims a firing for a schedule at minute, honoring
+// GitHub's per-schedule minimum interval: the claim succeeds only if the
+// schedule has no prior firing or its last firing is at least minInterval old.
+// One row per schedule holds the last firing time and is updated in place, so
+// this doubles as the exact-minute dedup for ticker drift and catch-up replays.
+func (p *Persistence) ClaimScheduleFiring(key string, minute time.Time, minInterval time.Duration) (bool, error) {
 	if p == nil {
 		return false, fmt.Errorf("claim scheduled workflow: persistence is disabled")
 	}
-	digest := sha256.Sum256([]byte(key + "\x00" + minute.UTC().Truncate(time.Minute).Format(time.RFC3339)))
+	digest := sha256.Sum256([]byte(key))
 	claimKey := hex.EncodeToString(digest[:])
+	at := minute.UTC().Truncate(time.Minute).Unix()
+	gate := int64(minInterval / time.Second)
 	p.Mu.Lock()
 	defer p.Mu.Unlock()
-	tx, err := p.Db.Begin()
+	// One atomic statement: insert a new schedule's first firing, or advance the
+	// last-firing time only when at least the gate has elapsed. A row is affected
+	// (RowsAffected == 1) exactly when this call claimed the firing; a conflicting
+	// insert within the interval — a concurrent replica, a replayed minute, or a
+	// sub-interval cron tick — updates nothing (RowsAffected == 0).
+	res, err := p.Db.Exec(
+		`INSERT INTO schedule_claims (key, scheduled_at) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET scheduled_at = excluded.scheduled_at
+		 WHERE excluded.scheduled_at - schedule_claims.scheduled_at >= ?`,
+		claimKey, at, gate)
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	result, err := tx.Exec(`INSERT INTO schedule_claims (key, scheduled_at) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`, claimKey, minute.UTC().Unix())
+	changed, err := res.RowsAffected()
 	if err != nil {
 		return false, err
 	}
-	inserted, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if _, err := tx.Exec(`DELETE FROM schedule_claims WHERE scheduled_at < ?`, minute.UTC().Add(-48*time.Hour).Unix()); err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return inserted == 1, nil
+	return changed == 1, nil
 }
 
-// ReleaseScheduleFiring drops a ClaimScheduleFiring claim whose firing failed
-// transiently, so the occurrence can be retried. The digest mirrors
-// ClaimScheduleFiring exactly.
+// ReleaseScheduleFiring reverts a ClaimScheduleFiring whose firing failed
+// transiently, so the occurrence can be retried. It removes the schedule's row
+// only while this minute is still the one recorded (we are the latest claimant).
 func (p *Persistence) ReleaseScheduleFiring(key string, minute time.Time) error {
 	if p == nil {
 		return fmt.Errorf("release scheduled workflow: persistence is disabled")
 	}
-	digest := sha256.Sum256([]byte(key + "\x00" + minute.UTC().Truncate(time.Minute).Format(time.RFC3339)))
+	digest := sha256.Sum256([]byte(key))
 	claimKey := hex.EncodeToString(digest[:])
+	at := minute.UTC().Truncate(time.Minute).Unix()
 	p.Mu.Lock()
 	defer p.Mu.Unlock()
-	_, err := p.Db.Exec(`DELETE FROM schedule_claims WHERE key = ?`, claimKey)
+	_, err := p.Db.Exec(`DELETE FROM schedule_claims WHERE key = ? AND scheduled_at = ?`, claimKey, at)
 	return err
 }
 

@@ -91,6 +91,34 @@ jobs:
 	}
 }
 
+// A cron finer than GitHub's five-minute floor is not dropped — it fires on the
+// first matching minute and is then throttled until five minutes have passed.
+func TestFireDueSchedulesThrottlesSubFiveMinuteCron(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoKey := "cronowner/throttle-repo"
+	s.cancelRepoRunsCleanup(t, repoKey)
+	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/everymin.yml", `name: everymin
+on:
+  schedule:
+    - cron: '* * * * *'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo tick
+`)
+	countRuns := s.scheduleRunCounter(repoKey)
+	base := time.Date(2026, 6, 12, 8, 0, 0, 0, time.UTC)
+	for i := 0; i < 6; i++ {
+		s.actions.FireDueSchedules(base.Add(time.Duration(i) * time.Minute))
+	}
+	// Minutes :00 through :05 all match, but only :00 and :05 fire.
+	if got := countRuns(); got != 2 {
+		t.Fatalf("every-minute cron fired %d runs across six minutes, want 2 (throttled to the five-minute floor)", got)
+	}
+}
+
 func TestFireDueSchedules(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
