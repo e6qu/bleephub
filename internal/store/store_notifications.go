@@ -78,22 +78,57 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 	}
 	st.Mu.RLock()
 
+	// A repo-scoped request (GET /repos/{o}/{r}/notifications) restricts the whole
+	// pass to one repository's issues, PRs, and comments via the per-repo indexes,
+	// so it does not walk every thread in the instance. The add closure still
+	// filters by opts.RepoScope, so the result set is identical either way; an
+	// unknown repo name yields nothing.
+	scoped := false
+	var scopedIssues map[int]*Issue
+	var scopedPulls map[int]*PullRequest
+	if opts.RepoScope != "" {
+		if repo := st.RepoByNameLocked(opts.RepoScope); repo != nil {
+			scoped = true
+			scopedIssues = st.IssuesByRepo[repo.ID]
+			scopedPulls = st.PullsByRepo[repo.ID]
+		} else {
+			st.Mu.RUnlock()
+			return nil
+		}
+	}
+
 	state := st.notificationsStateViewLocked(user.ID)
 	preferences := notificationPreferencesLocked(st.Users[user.ID])
 	var rows []NotificationThreadRow
 
-	// One pass over st.Comments precomputes the (parentType, parentID) sets the
-	// viewer commented on and was @-mentioned in, keeping the per-thread reason
-	// O(1) instead of rescanning every comment per thread.
+	// One pass over the candidate comments precomputes the (parentType, parentID)
+	// sets the viewer commented on and was @-mentioned in, keeping the per-thread
+	// reason O(1) instead of rescanning every comment per thread.
 	commentedOn := make(map[string]struct{})
 	mentionedInComment := make(map[string]struct{})
-	for _, c := range st.Comments {
+	addComment := func(c *Comment) {
 		key := strings.ToLower(c.ParentType) + "\x1f" + strconv.Itoa(c.IssueID)
 		if c.AuthorID == user.ID {
 			commentedOn[key] = struct{}{}
 		}
 		if bodyMentions(c.Body, user.Login) {
 			mentionedInComment[key] = struct{}{}
+		}
+	}
+	if scoped {
+		for _, issue := range scopedIssues {
+			for _, c := range st.CommentsByParent[CommentCountKey("issue", issue.ID)] {
+				addComment(c)
+			}
+		}
+		for _, pr := range scopedPulls {
+			for _, c := range st.CommentsByParent[CommentCountKey("pull_request", pr.ID)] {
+				addComment(c)
+			}
+		}
+	} else {
+		for _, c := range st.Comments {
+			addComment(c)
 		}
 	}
 
@@ -187,7 +222,13 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 		rows = append(rows, NotificationThreadRow{src, repo, threadID, reason, unread, lastReadAtFor(state, threadID), state.SavedThreadIDs[threadID]})
 	}
 
-	for _, issue := range st.Issues {
+	issuesToScan := st.Issues
+	pullsToScan := st.PullRequests
+	if scoped {
+		issuesToScan = scopedIssues
+		pullsToScan = scopedPulls
+	}
+	for _, issue := range issuesToScan {
 		add(notificationThreadSource{
 			Type:        "Issue",
 			ID:          issue.ID,
@@ -200,7 +241,7 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 			AssigneeIDs: issue.AssigneeIDs,
 		})
 	}
-	for _, pr := range st.PullRequests {
+	for _, pr := range pullsToScan {
 		add(notificationThreadSource{
 			Type:                 "PullRequest",
 			ID:                   pr.ID,

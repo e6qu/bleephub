@@ -447,14 +447,48 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 
 	s.store.Mu.RLock()
 
+	// A repo: qualifier (the common case) scopes the scan to one repository's
+	// issues/PRs via the per-repo indexes, so search does not walk every issue and
+	// PR in the instance. An unknown repo name yields no results.
+	issuesToScan := s.store.Issues
+	prsToScan := s.store.PullRequests
+	var scopedRepoID int
+	scopedComments := true
+	if q.Repo != "" {
+		if repo := s.store.RepoByNameLocked(q.Repo); repo != nil {
+			scopedRepoID = repo.ID
+			issuesToScan = s.store.IssuesByRepo[repo.ID]
+			prsToScan = s.store.PullsByRepo[repo.ID]
+		} else {
+			issuesToScan = nil
+			prsToScan = nil
+			scopedComments = false
+		}
+	}
+
 	// in:comments needs comment bodies concatenated per subject, keyed by
-	// "parentType:id"; build it once, only when the query asks.
+	// "parentType:id"; build it once, only when the query asks. When the search is
+	// scoped to one repo, restrict the pass to that repo's parents.
 	var commentBodies map[string]string
-	if q.InComments {
+	if q.InComments && scopedComments {
 		commentBodies = map[string]string{}
-		for _, c := range s.store.Comments {
-			key := c.ParentType + ":" + strconv.Itoa(c.IssueID)
-			commentBodies[key] += " " + c.Body
+		addComments := func(parentType string, id int) {
+			for _, c := range s.store.CommentsByParent[store.CommentCountKey(parentType, id)] {
+				commentBodies[parentType+":"+strconv.Itoa(id)] += " " + c.Body
+			}
+		}
+		if scopedRepoID != 0 {
+			for _, issue := range issuesToScan {
+				addComments("issue", issue.ID)
+			}
+			for _, pr := range prsToScan {
+				addComments("pull_request", pr.ID)
+			}
+		} else {
+			for _, c := range s.store.Comments {
+				key := c.ParentType + ":" + strconv.Itoa(c.IssueID)
+				commentBodies[key] += " " + c.Body
+			}
 		}
 	}
 	commentBodyFor := func(parentType string, id int) string {
@@ -464,7 +498,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		return commentBodies[parentType+":"+strconv.Itoa(id)]
 	}
 
-	for _, issue := range s.store.Issues {
+	for _, issue := range issuesToScan {
 		repo := s.store.Repos[issue.RepoID]
 		if repo == nil {
 			continue
@@ -541,7 +575,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		issueRows = append(issueRows, issueRow{issue, repo, store.AuthorAssociationLocked(s.store, issue.AuthorID, repo), issue.Title, issue.Body, issue.CreatedAt, issue.UpdatedAt})
 	}
 
-	for _, pr := range s.store.PullRequests {
+	for _, pr := range prsToScan {
 		repo := s.store.Repos[pr.RepoID]
 		if repo == nil {
 			continue
