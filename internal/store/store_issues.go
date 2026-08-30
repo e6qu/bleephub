@@ -232,20 +232,11 @@ func (st *Store) RecordIssueOrPREvent(repoID, number, actorID int, event string,
 	defer st.Mu.Unlock()
 	parentType := "issue"
 	var parentID int
-	for _, i := range st.Issues {
-		if i.RepoID == repoID && i.Number == number {
-			parentID = i.ID
-			break
-		}
-	}
-	if parentID == 0 {
-		for _, pr := range st.PullRequests {
-			if pr.RepoID == repoID && pr.Number == number {
-				parentID = pr.ID
-				parentType = "pull_request"
-				break
-			}
-		}
+	if i := st.IssuesByRepo[repoID][number]; i != nil {
+		parentID = i.ID
+	} else if pr := st.PullsByRepo[repoID][number]; pr != nil {
+		parentID = pr.ID
+		parentType = "pull_request"
 	}
 	if parentID == 0 {
 		return nil
@@ -1306,11 +1297,10 @@ func (st *Store) ListIssueComments(repoKey string, issueNumber int) []*Comment {
 	if issue == nil {
 		return nil
 	}
-	var comments []*Comment
-	for _, c := range st.Comments {
-		if c.ParentType == "issue" && c.IssueID == issue.ID {
-			comments = append(comments, cloneComment(c))
-		}
+	indexed := st.CommentsByParent[CommentCountKey("issue", issue.ID)]
+	comments := make([]*Comment, 0, len(indexed))
+	for _, c := range indexed {
+		comments = append(comments, cloneComment(c))
 	}
 	return snapshotComments(comments)
 }
@@ -1328,8 +1318,8 @@ func (st *Store) ListRepoIssueComments(repoID int) []*Comment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	var comments []*Comment
-	for _, c := range st.Comments {
-		if c.ParentType == "issue" && st.Issues[c.IssueID] != nil && st.Issues[c.IssueID].RepoID == repoID {
+	for _, issue := range st.IssuesByRepo[repoID] {
+		for _, c := range st.CommentsByParent[CommentCountKey("issue", issue.ID)] {
 			comments = append(comments, cloneComment(c))
 		}
 	}

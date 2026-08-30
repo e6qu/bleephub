@@ -29,8 +29,8 @@ func AuthorAssociationLocked(st *Store, authorID int, repo *Repo) string {
 			return "COLLABORATOR"
 		}
 	}
-	for _, pr := range st.PullRequests {
-		if pr.RepoID == repo.ID && pr.AuthorID == author.ID && pr.State == "MERGED" {
+	for _, pr := range st.PullsByRepo[repo.ID] {
+		if pr.AuthorID == author.ID && pr.State == "MERGED" {
 			return "CONTRIBUTOR"
 		}
 	}

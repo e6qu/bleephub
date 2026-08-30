@@ -116,8 +116,8 @@ func prMatchesStateFilter(pr *store.PullRequest, state string) bool {
 
 // pullMatchesUserFilter is the pull-request twin of issueMatchesUserFilter,
 // implementing the `filter` values for the cross-repository listings. Caller
-// holds the store read lock.
-func pullMatchesUserFilter(st *store.Store, pr *store.PullRequest, repo *store.Repo, user *store.User, filter string) bool {
+// holds the store read lock. mentions is the precomputed mentioned-parent set.
+func pullMatchesUserFilter(st *store.Store, pr *store.PullRequest, repo *store.Repo, user *store.User, filter string, mentions map[string]bool) bool {
 	assigned := false
 	for _, id := range pr.AssigneeIDs {
 		if id == user.ID {
@@ -132,16 +132,16 @@ func pullMatchesUserFilter(st *store.Store, pr *store.PullRequest, repo *store.R
 	case "created":
 		return created
 	case "mentioned":
-		return pullMentionsUser(st, pr, user)
+		return pullMentionsUser(pr, user, mentions)
 	case "subscribed":
 		if _, watching := st.RepoSubscriptions[store.RepoSubscriptionKey(user.ID, repo.ID)]; watching {
 			return true
 		}
-		return assigned || created || pullMentionsUser(st, pr, user)
+		return assigned || created || pullMentionsUser(pr, user, mentions)
 	case "repos":
 		return repo.OwnerID == user.ID || store.RepoCollaboratorPermissionAtLeastLocked(st, repo.FullName, user.Login, "pull")
 	case "all":
-		return assigned || created || pullMentionsUser(st, pr, user)
+		return assigned || created || pullMentionsUser(pr, user, mentions)
 	}
 	return false
 }
@@ -167,17 +167,11 @@ func labelIDsHaveNames(st *store.Store, labelIDs []int, names []string) bool {
 	return true
 }
 
-// pullMentionsUser reports whether the PR body or a conversation comment
-// mentions @user. Caller holds the store read lock.
-func pullMentionsUser(st *store.Store, pr *store.PullRequest, user *store.User) bool {
-	mention := "@" + user.Login
-	if strings.Contains(pr.Body, mention) {
+// pullMentionsUser reports whether the PR body mentions @user or a conversation
+// comment does (via the precomputed mentions set).
+func pullMentionsUser(pr *store.PullRequest, user *store.User, mentions map[string]bool) bool {
+	if strings.Contains(pr.Body, "@"+user.Login) {
 		return true
 	}
-	for _, c := range st.Comments {
-		if c.ParentType == "pull_request" && c.IssueID == pr.ID && strings.Contains(c.Body, mention) {
-			return true
-		}
-	}
-	return false
+	return mentions[commentMentionKey("pull_request", pr.ID)]
 }

@@ -3790,13 +3790,22 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlCon
 		}
 		return true
 	}
+	// commenterMatch is called once per candidate with the same login
+	// (spec.involves). Memoize the set of conversations that login commented on
+	// so the whole search costs one pass over comments, not one per candidate.
+	commenterSets := map[string]map[string]bool{}
 	commenterMatch := func(parentType string, parentID int, login string) bool {
-		for _, c := range s.store.Comments {
-			if c.ParentType == parentType && c.IssueID == parentID && loginOf(c.AuthorID) == login {
-				return true
+		set, ok := commenterSets[login]
+		if !ok {
+			set = make(map[string]bool)
+			for _, c := range s.store.Comments {
+				if loginOf(c.AuthorID) == login {
+					set[c.ParentType+"\x00"+strconv.Itoa(c.IssueID)] = true
+				}
 			}
+			commenterSets[login] = set
 		}
-		return false
+		return set[parentType+"\x00"+strconv.Itoa(parentID)]
 	}
 	assigneeMatch := func(assigneeIDs []int, login string) bool {
 		for _, id := range assigneeIDs {

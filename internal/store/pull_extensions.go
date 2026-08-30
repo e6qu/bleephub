@@ -137,8 +137,8 @@ func (st *Store) CanCreatePullRequest(repoID, userID int, login string) bool {
 		return true
 	}
 	open := 0
-	for _, pull := range st.PullRequests {
-		if pull.RepoID == repoID && pull.AuthorID == userID && pull.State == "OPEN" {
+	for _, pull := range st.PullsByRepo[repoID] {
+		if pull.AuthorID == userID && pull.State == "OPEN" {
 			open++
 		}
 	}

@@ -20,8 +20,8 @@ func (st *Store) MergeQueuePullRequests(repoID int, baseRef string) []*PullReque
 
 func (st *Store) mergeQueuePullRequestsLocked(repoID int, baseRef string) []*PullRequest {
 	var queued []*PullRequest
-	for _, pr := range st.PullRequests {
-		if pr.RepoID == repoID && pr.BaseRefName == baseRef && pr.MergeQueuePosition > 0 {
+	for _, pr := range st.PullsByRepo[repoID] {
+		if pr.BaseRefName == baseRef && pr.MergeQueuePosition > 0 {
 			queued = append(queued, pr)
 		}
 	}
@@ -103,8 +103,8 @@ func (st *Store) DequeuePullRequest(prID int) *PullRequest {
 // holding the write lock, to mutate.
 func (st *Store) rawMergeQueueLocked(repoID int, baseRef string) []*PullRequest {
 	var queued []*PullRequest
-	for _, pr := range st.PullRequests {
-		if pr.RepoID == repoID && pr.BaseRefName == baseRef && pr.MergeQueuePosition > 0 {
+	for _, pr := range st.PullsByRepo[repoID] {
+		if pr.BaseRefName == baseRef && pr.MergeQueuePosition > 0 {
 			queued = append(queued, pr)
 		}
 	}
