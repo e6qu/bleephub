@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -129,8 +130,10 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 		t.Fatalf("downloaded package object bytes = %q", string(downloaded))
 	}
 
-	digest := digestSHA256([]byte("registry object bytes"))
-	if err := s.writeRegistryBlob(digest, []byte("registry object bytes")); err != nil {
+	raw := []byte("registry object bytes")
+	digest := digestSHA256(raw)
+	sum := sha256.Sum256(raw)
+	if err := s.writeRegistryBlobStream(digest, bytes.NewReader(raw), int64(len(raw)), sum[:]); err != nil {
 		t.Fatalf("write registry blob: %v", err)
 	}
 	registryGot := readS3TestFile(t, objectFS, store.PackageRegistryBlobDataKey(digest))

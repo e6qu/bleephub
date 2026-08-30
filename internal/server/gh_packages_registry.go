@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
@@ -21,9 +23,27 @@ import (
 
 const containerRegistryAPIVersion = "registry/2.0"
 
+// containerRegistryUpload is one in-progress blob upload session. The bytes
+// stream to a temp file across the POST → PATCH* → PUT lifecycle (hashed as they
+// arrive) rather than accumulating in a heap buffer, so a multi-GiB layer push
+// never lands whole in memory. mu serializes the (sequential, per docker's
+// protocol) chunk writes.
 type containerRegistryUpload struct {
 	Name string
-	Data []byte
+	mu   sync.Mutex
+	tmp  *os.File
+	hash hash.Hash
+	size int64
+}
+
+// discard closes and removes the session's temp file. Safe to call more than once.
+func (u *containerRegistryUpload) discard() {
+	if u.tmp != nil {
+		name := u.tmp.Name()
+		_ = u.tmp.Close()
+		_ = os.Remove(name)
+		u.tmp = nil
+	}
 }
 
 type containerRegistryDescriptor struct {
@@ -80,9 +100,14 @@ func (s *Server) handleContainerRegistryStartBlobUpload(w http.ResponseWriter, r
 	if _, _, ok := s.resolveContainerRegistryOwner(w, name); !ok {
 		return
 	}
+	tmp, err := os.CreateTemp("", "bleephub-registry-blob-*")
+	if err != nil {
+		s.writeRegistryError(w, http.StatusInternalServerError, "BLOB_UPLOAD_INVALID", "stage upload: "+err.Error())
+		return
+	}
 	uploadID := uuid.NewString()
 	s.registryUploadsMu.Lock()
-	s.registryUploads[uploadID] = &containerRegistryUpload{Name: name}
+	s.registryUploads[uploadID] = &containerRegistryUpload{Name: name, tmp: tmp, hash: sha256.New()}
 	s.registryUploadsMu.Unlock()
 	w.Header().Set("Docker-Upload-UUID", uploadID)
 	w.Header().Set("Location", s.containerRegistryUploadLocation(name, uploadID))
@@ -94,23 +119,20 @@ func (s *Server) handleContainerRegistryPatchBlobUpload(w http.ResponseWriter, r
 	if s.requireRegistryUser(w, r) == nil {
 		return
 	}
-	chunk, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxUploadBytes))
-	if err != nil {
-		s.writeRegistryError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", "read upload body: "+err.Error())
-		return
-	}
 	s.registryUploadsMu.Lock()
 	upload := s.registryUploads[uploadID]
-	if upload != nil && upload.Name == name {
-		upload.Data = append(upload.Data, chunk...)
-	}
-	size := 0
-	if upload != nil {
-		size = len(upload.Data)
-	}
 	s.registryUploadsMu.Unlock()
 	if upload == nil || upload.Name != name {
 		s.writeRegistryError(w, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "blob upload unknown")
+		return
+	}
+	upload.mu.Lock()
+	n, err := io.Copy(io.MultiWriter(upload.tmp, upload.hash), http.MaxBytesReader(w, r.Body, maxUploadBytes))
+	upload.size += n
+	size := int(upload.size)
+	upload.mu.Unlock()
+	if err != nil {
+		s.writeRegistryError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", "read upload body: "+err.Error())
 		return
 	}
 	w.Header().Set("Docker-Upload-UUID", uploadID)
@@ -132,15 +154,9 @@ func (s *Server) handleContainerRegistryPutBlobUpload(w http.ResponseWriter, r *
 		s.writeRegistryError(w, http.StatusBadRequest, "DIGEST_INVALID", "digest query parameter is required")
 		return
 	}
-	tail, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxUploadBytes))
-	if err != nil {
-		s.writeRegistryError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", "read upload body: "+err.Error())
-		return
-	}
 	s.registryUploadsMu.Lock()
 	upload := s.registryUploads[uploadID]
 	if upload != nil && upload.Name == name {
-		upload.Data = append(upload.Data, tail...)
 		delete(s.registryUploads, uploadID)
 	}
 	s.registryUploadsMu.Unlock()
@@ -148,11 +164,28 @@ func (s *Server) handleContainerRegistryPutBlobUpload(w http.ResponseWriter, r *
 		s.writeRegistryError(w, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "blob upload unknown")
 		return
 	}
-	if got := digestSHA256(upload.Data); got != digest {
+	defer upload.discard()
+
+	// Append the (optional) final chunk carried on the PUT, then finalize.
+	upload.mu.Lock()
+	n, copyErr := io.Copy(io.MultiWriter(upload.tmp, upload.hash), http.MaxBytesReader(w, r.Body, maxUploadBytes))
+	upload.size += n
+	sum := upload.hash.Sum(nil)
+	size := upload.size
+	upload.mu.Unlock()
+	if copyErr != nil {
+		s.writeRegistryError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", "read upload body: "+copyErr.Error())
+		return
+	}
+	if got := "sha256:" + hex.EncodeToString(sum); got != digest {
 		s.writeRegistryError(w, http.StatusBadRequest, "DIGEST_INVALID", "digest mismatch")
 		return
 	}
-	if err := s.writeRegistryBlob(digest, upload.Data); err != nil {
+	if _, err := upload.tmp.Seek(0, io.SeekStart); err != nil {
+		s.writeRegistryError(w, http.StatusInternalServerError, "BLOB_UPLOAD_INVALID", err.Error())
+		return
+	}
+	if err := s.writeRegistryBlobStream(digest, upload.tmp, size, sum); err != nil {
 		s.writeRegistryError(w, http.StatusInternalServerError, "BLOB_UPLOAD_INVALID", err.Error())
 		return
 	}
@@ -374,9 +407,12 @@ func packageVersionManifestDigest(v *store.PackageVersion) string {
 	return v.RegistryManifestDigest
 }
 
-func (s *Server) writeRegistryBlob(digest string, data []byte) error {
+// writeRegistryBlobStream stores a blob from a reader whose size and SHA-256 the
+// caller already computed while receiving it, so a layer push never buffers the
+// whole blob in memory.
+func (s *Server) writeRegistryBlobStream(digest string, r io.Reader, size int64, sum []byte) error {
 	if s.store.ObjectByteStore != nil {
-		return s.store.ObjectByteStore.Put(context.Background(), store.PackageRegistryBlobDataKey(digest), data)
+		return s.store.ObjectByteStore.PutStreamHashed(context.Background(), store.PackageRegistryBlobDataKey(digest), r, size, sum)
 	}
 	if s.store.PackageDataDir == "" {
 		return fmt.Errorf("package file storage is not configured")
@@ -388,7 +424,15 @@ func (s *Server) writeRegistryBlob(digest string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, r); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func (s *Server) readRegistryBlob(digest string) ([]byte, error) {
