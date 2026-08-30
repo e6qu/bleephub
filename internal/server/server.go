@@ -797,6 +797,12 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		s.scheduleGitCompaction(repo, stor)
 	})
 	defer gitstore.SetCompactionRequestHandler(nil)
+	// Bind the git object store's S3 I/O to the server lifetime so a slow or dead
+	// store cancels in-flight calls on shutdown instead of detaching and holding
+	// per-repo git locks past the drain.
+	if fs, _ := gitstore.GetS3FS(ctx); fs != nil {
+		fs.SetBaseContext(ctx)
+	}
 	s.actions.Start(ctx)
 	// Re-run migration exports a dead process left "exporting"; nothing else
 	// claims them.
