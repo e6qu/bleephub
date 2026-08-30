@@ -82,6 +82,63 @@ compare-and-swap — a reference moves only if it still holds the value the writ
 observed — so concurrent pushes and the merge queue's ref writes stay safe on all
 three backends.
 
+## Consistency, durability, and resilience
+
+Bleephub keeps **metadata** (issues, PRs, refs-as-rows, package/artifact records) in
+SQLite/dqlite and **bytes** (git objects, artifacts, logs, packages, LFS, CodeQL
+databases) in the object store. The two are reconciled by a strict ordering:
+
+- **Bytes first, metadata second.** Every write path uploads the object, then
+  commits the metadata row that points at it — so a metadata row never references
+  bytes that are not already durable. A crash between the two can only orphan an
+  object (storage waste), never dangle a pointer at missing bytes. Read paths that
+  do hit a missing object surface an explicit error, not a silent success, and a
+  stored SHA-256 is verified on read — buffered reads reject a mismatch, and
+  streamed reads recompute the digest and fail the final read rather than serving
+  corruption silently.
+- **The durability barrier gates metadata, not bytes.** Group commit's HTTP
+  durability barrier withholds a mutating response until the metadata is fsynced;
+  byte-transfer routes are exempt (they carry their own protocol). Because bytes
+  are written first, an acknowledged write's bytes are already durable when its
+  metadata becomes durable.
+- **Orphan reclamation.** Objects a crash orphaned, or content-addressed blobs
+  (LFS, container-registry) left behind when their last referrer is deleted, are
+  reclaimed by the object reaper — a mark-and-sweep that only removes keys with no
+  live metadata reference and only after a grace window, so an in-flight
+  byte-first upload is never swept. It is opt-in and reports before it deletes.
+- **Upload memory is bounded, not streamed everywhere.** Genuinely large or
+  unbounded transfers (git packs, LFS objects, migration archives, package
+  downloads) stream without ever residing whole in the heap. The remaining
+  buffered paths that must hold the content to process it — CodeQL bundle
+  validation, release-asset digesting, chunked artifact assembly — are each capped
+  (2 GiB uploads, 10 GiB artifact assembly) rather than unbounded.
+
+## Multi-replica coordination
+
+The object store has no advisory locking and multiple bleephub replicas may share
+one bucket, so cross-replica correctness borrows the durable metadata store that
+already serializes shared state:
+
+- **Reference CAS across replicas** — every ref mutation takes a durable
+  `GitObjectLocker` lock (a single TTL'd upsert in the SQLite/dqlite `locks`
+  table) in addition to the process-local lock, so two replicas cannot both
+  advance a branch from the same tip. A replica that dies holding a lock frees it
+  when the TTL expires.
+- **Membership freshness** — the loose-object index answers "absent" only from a
+  snapshot no older than `BLEEPHUB_GITSTORE_INDEX_FRESHNESS`, relying on S3's
+  strongly-consistent list-after-write; against a weakly-consistent S3-compatible
+  store, that window is the staleness bound.
+- **Compaction is single-writer per repo** — it runs under a durable
+  `git-compact:` lock and publishes the `.pack` last (its commit point), deleting
+  loose objects only after the pack that holds them is visible, so a concurrent
+  reader on another replica never sees an object in neither tier.
+- **Outage resilience** — S3 calls derive their timeout from the server-lifetime
+  context (cancelled on shutdown) and pass through a circuit breaker: after a run
+  of hard failures the breaker fast-fails for a short cooldown so a dead store
+  returns in microseconds rather than every goroutine blocking the full timeout
+  while holding a repo lock. The breaker's open error is transient, never
+  "object absent", so go-git can't mistake an outage for a deleted ref.
+
 ## Why it is arranged this way
 
 Because everything sits on `storage.Storer`, the durable-storage choice is a
