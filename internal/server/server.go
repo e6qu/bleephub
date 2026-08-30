@@ -803,6 +803,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if fs, _ := gitstore.GetS3FS(ctx); fs != nil {
 		fs.SetBaseContext(ctx)
 	}
+	s.startObjectReaper(ctx)
 	s.actions.Start(ctx)
 	// Re-run migration exports a dead process left "exporting"; nothing else
 	// claims them.

@@ -268,6 +268,34 @@ func (s *S3ActionsByteStore) Key(key string) string {
 	return path.Join(s.Fs.Prefix(), strings.TrimPrefix(key, "/"))
 }
 
+// ObjectListing is one stored object, keyed relative to the store prefix.
+type ObjectListing struct {
+	Key          string
+	Size         int64
+	LastModified time.Time
+}
+
+// listAll enumerates every stored object, keyed relative to the store prefix
+// (the inverse of Key), for the orphan reaper.
+func (s *S3ActionsByteStore) listAll(ctx context.Context) ([]ObjectListing, error) {
+	listPrefix := s.Fs.Prefix()
+	if listPrefix != "" && !strings.HasSuffix(listPrefix, "/") {
+		listPrefix += "/"
+	}
+	var out []ObjectListing
+	for obj := range s.Fs.Client().Client.ListObjects(ctx, s.Fs.Bucket(), minio.ListObjectsOptions{Prefix: listPrefix, Recursive: true}) {
+		if obj.Err != nil {
+			return nil, fmt.Errorf("list objects: %w", obj.Err)
+		}
+		out = append(out, ObjectListing{
+			Key:          strings.TrimPrefix(obj.Key, listPrefix),
+			Size:         obj.Size,
+			LastModified: obj.LastModified,
+		})
+	}
+	return out, nil
+}
+
 func ArtifactDataKey(id int64) string {
 	return fmt.Sprintf("actions/artifacts/%d/data", id)
 }
