@@ -336,11 +336,6 @@ func LFSObjectDataKey(oid string) string {
 	return path.Join("lfs/objects", oid[:2], oid[2:4], oid)
 }
 
-func CodeQLDatabaseDataKey(id int, content []byte) string {
-	digest := sha256.Sum256(content)
-	return CodeQLDatabaseDataKeyHashed(id, digest[:])
-}
-
 // CodeQLDatabaseDataKeyHashed builds the key from an already-computed SHA-256, so
 // a streamed upload never has to hold the whole database in memory to hash it.
 func CodeQLDatabaseDataKeyHashed(id int, sha256Sum []byte) string {

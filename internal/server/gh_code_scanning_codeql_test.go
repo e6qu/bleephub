@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -705,7 +706,8 @@ func TestCodeQLDatabaseUpload_PersistenceFailurePreservesPreviousDatabase(t *tes
 	if !bytes.Equal(bytesAfterFailure, first) {
 		t.Fatalf("database bytes changed after persistence failure: %q", bytesAfterFailure)
 	}
-	newPath := store.CodeQLDatabaseDataKey(database.ID, second)
+	secondSum := sha256.Sum256(second)
+	newPath := store.CodeQLDatabaseDataKeyHashed(database.ID, secondSum[:])
 	if _, err := objectStore.Get(context.Background(), newPath); err == nil {
 		t.Fatalf("replacement object %s survived persistence rollback", newPath)
 	}

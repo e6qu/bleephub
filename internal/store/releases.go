@@ -316,20 +316,6 @@ func (rs *ReleaseStore) assetFilePath(id int) string {
 	return filepath.Join(rs.assetDataDir, strconv.Itoa(id))
 }
 
-func (rs *ReleaseStore) saveAssetDataLocked(id int, data []byte) error {
-	if rs.ByteStore != nil {
-		return rs.ByteStore.Put(context.Background(), ReleaseAssetDataKey(id), data)
-	}
-	if rs.assetDataDir != "" {
-		if err := os.MkdirAll(rs.assetDataDir, 0o750); err != nil {
-			return err
-		}
-		return os.WriteFile(rs.assetFilePath(id), data, 0o600)
-	}
-	rs.assetData[id] = data
-	return nil
-}
-
 // saveAssetDataStreamLocked stores an asset from a reader whose size and SHA-256
 // the caller already computed, so a large upload never lands whole on the heap.
 func (rs *ReleaseStore) saveAssetDataStreamLocked(id int, r io.Reader, size int64, sum []byte) error {
