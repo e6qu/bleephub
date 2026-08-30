@@ -383,17 +383,55 @@ func (st *Store) ListUserFilteredIssues(user *User, filter string) []IssueWithRe
 	return out
 }
 
-// CountIssueComments returns the number of conversation comments on an issue.
-func (st *Store) CountIssueComments(issueID int) int {
+// ListUserFilteredPulls is the pull-request analogue of ListUserFilteredIssues.
+// GitHub's issues endpoints return pull requests too (every PR is an issue), so
+// the cross-repository issue listings merge these rows in. The `filter` values
+// carry the same meaning as for issues.
+func (st *Store) ListUserFilteredPulls(user *User, filter string) []PullWithRepo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	n := 0
-	for _, c := range st.Comments {
-		if c.ParentType == "issue" && c.IssueID == issueID {
-			n++
+
+	subscribed := func(repoID int) bool {
+		sub := st.RepoSubscriptions[RepoSubscriptionKey(user.ID, repoID)]
+		return sub != nil && sub.Subscribed
+	}
+	matches := func(pr *PullRequest, repo *Repo) bool {
+		assigned := false
+		for _, aid := range pr.AssigneeIDs {
+			if aid == user.ID {
+				assigned = true
+				break
+			}
+		}
+		created := pr.AuthorID == user.ID
+		mentioned := strings.Contains(pr.Body, "@"+user.Login)
+		switch filter {
+		case "created":
+			return created
+		case "mentioned":
+			return mentioned
+		case "subscribed":
+			return subscribed(repo.ID)
+		case "repos":
+			return repo.OwnerID == user.ID
+		case "all":
+			return assigned || created || mentioned || subscribed(repo.ID)
+		default: // "assigned"
+			return assigned
 		}
 	}
-	return n
+
+	var out []PullWithRepo
+	for _, pr := range st.PullRequests {
+		repo := st.Repos[pr.RepoID]
+		if repo == nil {
+			continue
+		}
+		if matches(pr, repo) {
+			out = append(out, PullWithRepo{Pull: clonePullRequest(pr), Repo: repo})
+		}
+	}
+	return out
 }
 
 // ActionsBillingUsageForOwner derives Actions usage line items from completed
@@ -448,6 +486,11 @@ type deleteEmailsResult int
 type IssueWithRepo struct {
 	Issue *Issue `json:"-"`
 	Repo  *Repo  `json:"-"`
+}
+
+type PullWithRepo struct {
+	Pull *PullRequest `json:"-"`
+	Repo *Repo        `json:"-"`
 }
 
 // materializeEmailsLocked seeds the multi-email list from the single Email

@@ -93,6 +93,11 @@ type Pulls interface {
 	UpdatePullRequestBranch(repo *store.Repo, pr *store.PullRequest, user *store.User, expectedHeadOid, method string) error
 	AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User)
 	MaybeAutoMergeHeadSHA(repo *store.Repo, headSha string)
+	// AdvanceMergeQueue processes the merge queue for a base branch after an
+	// enqueue or dequeue: it forms a merge group for the front entry, fires the
+	// merge_group event, and merges entries whose required checks pass. It is a
+	// git write, so it lives behind the seam.
+	AdvanceMergeQueue(repo *store.Repo, baseBranch string)
 }
 
 // Migrations starts the GitHub Enterprise Importer's workers. The resolver

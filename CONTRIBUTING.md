@@ -9,9 +9,11 @@ surface CI already gates. This document describes their workflow.
 The server embeds the built web UI, so a full binary needs both halves:
 
 ```bash
-cd web && bun install --frozen-lockfile && bun run build   # → web/dist/
-cd ..  && make build                                        # → ./bleephub-server (embeds dist/)
+cd web && bun install --frozen-lockfile && bun run build
+cd ..  && make build
 ```
+
+The first command writes the built UI to `web/dist/`; `make build` then produces `./bleephub-server` with that `dist/` embedded.
 
 `make build` compiles with `CGO_ENABLED=0 GOWORK=off`. To type-check the whole
 Go tree without producing the binary — the fastest inner loop — use:
@@ -30,8 +32,10 @@ For UI work, `cd web && bun run dev` serves Vite with HMR on `:5173`; rerun
 ## Running the tests
 
 ```bash
-make test        # GOWORK=off go test -tags noui -count=1 ./... (root module)
+make test
 ```
+
+`make test` runs `GOWORK=off go test -tags noui -count=1 ./...` over the root module.
 
 The nested modules are separate `go test` targets and do not run from the root
 module. CI builds and vets each, and runs the `sdk-tests` go-github conformance

@@ -131,6 +131,7 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 	// A check run created already-completed can satisfy an armed auto-merge.
 	if run := s.store.GetCheckRun(cr.ID); run != nil && run.Status == "completed" {
 		s.maybeAutoMergeHeadSHA(repo, run.HeadSHA)
+		s.advanceMergeQueuesForRepo(repo)
 	}
 	checkRunJSON := s.checkRunToJSON(s.store.GetCheckRun(cr.ID), s.baseURL(r))
 	writeJSONCreated(w, jsonStringField(checkRunJSON, "url"), checkRunJSON)

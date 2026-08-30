@@ -89,6 +89,7 @@ func (stubPulls) MaybeAutoMerge(int)                                            
 func (stubPulls) MaybeAutoMergeRepo(*store.Repo)                                     {}
 func (stubPulls) AutoRequestCodeOwners(*store.Repo, *store.PullRequest, *store.User) {}
 func (stubPulls) MaybeAutoMergeHeadSHA(*store.Repo, string)                          {}
+func (stubPulls) AdvanceMergeQueue(*store.Repo, string)                              {}
 
 // stubMigrations queues nothing; the server package drives the real workers end to end.
 type stubMigrations struct{}

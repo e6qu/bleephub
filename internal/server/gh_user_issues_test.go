@@ -75,6 +75,66 @@ func TestAuthenticatedUserIssues(t *testing.T) {
 	}
 }
 
+// TestGlobalIssueListsIncludePullRequests pins that GET /issues and
+// GET /user/issues return pull requests alongside issues — every PR is an issue
+// on GitHub — each carrying the pull_request member and a repository object.
+func TestGlobalIssueListsIncludePullRequests(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	user := srv.createTestUser(t, "pr-in-global-issues")
+	token := srv.store.CreateToken(user.ID, "repo").Value
+	repoKey := srv.createTestRepo(t)
+	repo := srv.store.GetRepoByFullName(repoKey.fullName())
+	if repo == nil {
+		t.Fatal("repo not found")
+	}
+	seedPullRequestBranches(t, srv.Server, repo, "feature")
+
+	// A pull request authored by and assigned to the user.
+	pr := srv.store.CreatePullRequest(repo.ID, user.ID, "my pull request", "body",
+		"feature", "main", false, nil, []int{user.ID}, 0)
+	if pr == nil {
+		t.Fatal("failed to create pull request")
+	}
+
+	assertPRPresent := func(path string) {
+		t.Helper()
+		resp := srv.get(t, path, token)
+		items := decodeJSONArray(t, resp)
+		var found map[string]interface{}
+		for _, it := range items {
+			if it["number"] == float64(pr.Number) {
+				found = it
+				break
+			}
+		}
+		if found == nil {
+			t.Fatalf("%s did not include PR #%d: %v", path, pr.Number, items)
+		}
+		if found["pull_request"] == nil {
+			t.Fatalf("%s PR row missing pull_request member: %v", path, found)
+		}
+		if found["repository"] == nil {
+			t.Fatalf("%s PR row missing repository member", path)
+		}
+	}
+	// Default filter=assigned and filter=created both surface it, on both the
+	// all-repos (/issues → handleListGlobalUserIssues) and the account-scoped
+	// (/user/issues → handleListAuthUserIssues) endpoints.
+	assertPRPresent("/api/v3/issues")
+	assertPRPresent("/api/v3/issues?filter=created")
+	assertPRPresent("/api/v3/user/issues")
+	assertPRPresent("/api/v3/user/issues?filter=created")
+
+	// An open PR is excluded by state=closed.
+	resp := srv.get(t, "/api/v3/issues?state=closed", token)
+	for _, it := range decodeJSONArray(t, resp) {
+		if it["number"] == float64(pr.Number) {
+			t.Fatalf("state=closed unexpectedly included open PR: %v", it)
+		}
+	}
+}
+
 func TestAuthenticatedUserIssuesLabelFilter(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)

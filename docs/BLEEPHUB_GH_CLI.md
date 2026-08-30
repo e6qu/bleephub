@@ -24,20 +24,55 @@ Three consequences:
 ### Recommended: Caddy reverse proxy (macOS + Linux)
 
 [Caddy](https://caddyserver.com) mints a certificate from a local CA and installs
-that CA into the system trust store on both macOS and Linux, so the same three
-commands work everywhere. Run bleephub on plain HTTP and let Caddy terminate
-HTTPS in front of it:
+that CA into the system trust store on both macOS and Linux, so one recipe works
+everywhere.
+
+First, run bleephub on plain HTTP:
 
 ```bash
-# 1. bleephub on plain HTTP.
 BLEEPHUB_ADMIN_TOKEN="$TOKEN" ./bleephub-server --addr :8080 &
+```
 
-# 2. Trust Caddy's local CA (system keychain on macOS, ca-certificates on
-#    Linux), then reverse-proxy HTTPS :8443 → bleephub :8080.
+Trust Caddy's local certificate authority. `caddy trust` installs it into the
+macOS system keychain or the Linux `ca-certificates` store:
+
+```bash
 caddy trust
-caddy reverse-proxy --from localhost:8443 --to localhost:8080 &
+```
 
-# 3. Point gh at the HTTPS front door.
+To install the CA by hand instead — for example when `caddy trust` cannot
+elevate — Caddy writes its root to `root.crt` under its data directory. On
+**macOS** the root is at `~/Library/Application Support/Caddy/pki/authorities/local/root.crt`,
+and `gh` (a Go binary) reads trust only from the system keychain:
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \
+  "$HOME/Library/Application Support/Caddy/pki/authorities/local/root.crt"
+```
+
+On **Linux** the root is at `~/.local/share/caddy/pki/authorities/local/root.crt`.
+Debian and Ubuntu trust a certificate copied into `/usr/local/share/ca-certificates`:
+
+```bash
+sudo cp "$HOME/.local/share/caddy/pki/authorities/local/root.crt" \
+  /usr/local/share/ca-certificates/caddy-local-ca.crt
+sudo update-ca-certificates
+```
+
+Fedora, RHEL, and their derivatives use a different anchor directory and refresh
+command:
+
+```bash
+sudo cp "$HOME/.local/share/caddy/pki/authorities/local/root.crt" \
+  /etc/pki/ca-trust/source/anchors/caddy-local-ca.crt
+sudo update-ca-trust
+```
+
+With the CA trusted, terminate HTTPS on `:8443`, reverse-proxy it to bleephub's
+HTTP port, and point `gh` at the front door:
+
+```bash
+caddy reverse-proxy --from localhost:8443 --to localhost:8080 &
 export GH_HOST=localhost:8443
 export GH_ENTERPRISE_TOKEN="$TOKEN"
 gh repo create demo --public
@@ -52,18 +87,32 @@ If you would rather not run Caddy, bleephub serves TLS directly from
 `BPH_TLS_CERT` + `BPH_TLS_KEY`. Mint a `localhost` cert and trust it yourself —
 the trust step is OS-specific:
 
+Mint a `localhost` certificate:
+
 ```bash
 BPH_TLS_DIR="$HOME/.bleephub/tls"; mkdir -p "$BPH_TLS_DIR"
 openssl req -x509 -newkey rsa:2048 -days 825 -nodes \
   -keyout "$BPH_TLS_DIR/bph.key" -out "$BPH_TLS_DIR/bph.crt" \
   -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+```
 
-# macOS — Go reads trust ONLY from the keychain:
+Trust it. On macOS, Go — and therefore `gh` — reads trust only from the keychain:
+
+```bash
 sudo security add-trusted-cert -d -r trustRoot \
   -k /Library/Keychains/System.keychain "$BPH_TLS_DIR/bph.crt"
-# Linux (Debian/Ubuntu):
-# sudo cp "$BPH_TLS_DIR/bph.crt" /usr/local/share/ca-certificates/bleephub.crt && sudo update-ca-certificates
+```
 
+On Debian or Ubuntu, install it into the `ca-certificates` store:
+
+```bash
+sudo cp "$BPH_TLS_DIR/bph.crt" /usr/local/share/ca-certificates/bleephub.crt
+sudo update-ca-certificates
+```
+
+Then serve TLS directly from `BPH_TLS_CERT` + `BPH_TLS_KEY` and point `gh` at it:
+
+```bash
 BLEEPHUB_ADMIN_TOKEN="$TOKEN" \
   BPH_TLS_CERT="$BPH_TLS_DIR/bph.crt" BPH_TLS_KEY="$BPH_TLS_DIR/bph.key" \
   ./bleephub-server --addr :8443 &
@@ -77,21 +126,28 @@ verification entirely.
 
 ## One-time auth
 
-```bash
-# The admin user's token is whatever BLEEPHUB_ADMIN_TOKEN was set to when
-# Bleephub started (required, no default — see README.md § Usage).
-# The Docker harnesses use this value:
-TOKEN="bleephub-admin-token-00000000000000000000"
+The admin user's token is whatever `BLEEPHUB_ADMIN_TOKEN` was set to when
+Bleephub started (required, no default — see the README). The Docker harnesses
+use this value:
 
-# Option A — bleephub on any port (e.g. :8443), no gh auth login needed.
-# GH_HOST accepts host:port at runtime; GH_ENTERPRISE_TOKEN is the env
-# credential gh uses for every non-github.com host (GH_TOKEN is
-# github.com-only and is silently ignored here).
+```bash
+TOKEN="bleephub-admin-token-00000000000000000000"
+```
+
+Option A — bleephub on any port (for example `:8443`), no `gh auth login`
+needed. `GH_HOST` accepts `host:port` at runtime, and `GH_ENTERPRISE_TOKEN` is
+the credential `gh` uses for every non-github.com host (`GH_TOKEN` is
+github.com-only and is silently ignored here):
+
+```bash
 export GH_HOST=localhost:8443
 export GH_ENTERPRISE_TOKEN="$TOKEN"
+```
 
-# Option B — bleephub on :443: the bare hostname passes gh auth login's
-# validator, giving you a persistent ~/.config/gh/hosts.yml entry.
+Option B — bleephub on `:443`: the bare hostname passes `gh auth login`'s
+validator, giving you a persistent `~/.config/gh/hosts.yml` entry:
+
+```bash
 echo "$TOKEN" | gh auth login --hostname localhost --with-token
 export GH_HOST=localhost
 ```
@@ -154,17 +210,17 @@ until a harness assertion covers them.
 
 Use `gh api` for these (real GH also doesn't expose them in `gh`'s top-level commands):
 
-```bash
-gh api /apps/<slug>                                           # public app lookup (anon-allowed)
-gh api -X PUT /app/installations/{id}/suspended               # suspend
-gh api -X DELETE /app/installations/{id}/suspended            # unsuspend
-gh api /installation/repositories                              # ghs_-token-scoped repos
-gh api /repos/{o}/{r}/environments                             # env list
-gh api -X POST /repos/{o}/{r}/dispatches -f event_type=deploy  # repository_dispatch
-gh api /repos/{o}/{r}/branches/main/protection                 # branch protection
-gh api /token                                                  # Actions OIDC token
-gh api /.well-known/jwks                                       # JWKS for cloud-IdP verification
-```
+| Command | Purpose |
+|---|---|
+| `gh api /apps/<slug>` | public app lookup (anonymous-allowed) |
+| `gh api -X PUT /app/installations/{id}/suspended` | suspend an installation |
+| `gh api -X DELETE /app/installations/{id}/suspended` | unsuspend an installation |
+| `gh api /installation/repositories` | `ghs_`-token-scoped repositories |
+| `gh api /repos/{o}/{r}/environments` | environment list |
+| `gh api -X POST /repos/{o}/{r}/dispatches -f event_type=deploy` | repository_dispatch |
+| `gh api /repos/{o}/{r}/branches/main/protection` | branch protection |
+| `gh api /token` | Actions OIDC token |
+| `gh api /.well-known/jwks` | JWKS for cloud-IdP verification |
 
 ## Tokens at a glance
 
@@ -185,8 +241,9 @@ bleephub accepts both typed and string-coerced JSON booleans/integers — `gh ap
 
 ## Testing your gh setup end-to-end
 
+This round-trip creates a repo, opens an issue, reacts, comments, and closes it:
+
 ```bash
-# Round-trip: create repo → issue → react → comment → close
 gh repo create bleephub-test --public --description "smoke"
 ISSUE=$(gh issue create --repo admin/bleephub-test --title "first" --body "hello")
 gh issue view 1 --repo admin/bleephub-test

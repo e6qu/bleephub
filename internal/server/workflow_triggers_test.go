@@ -65,6 +65,47 @@ jobs: {}
 	}
 }
 
+// TestPullRequestActivityAlsoTriggersPullRequestTarget pins that a pull_request
+// activity, delivered through the webhook/Actions coupling, also fires
+// `on: pull_request_target` workflows — evaluated against the base branch — the
+// way GitHub does. A workflow that only listens for pull_request must not fire
+// on this path, and vice versa.
+func TestPullRequestActivityAlsoTriggersPullRequestTarget(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	const repoKey = "prt-owner/prt-app"
+	s.cancelRepoRunsCleanup(t, repoKey)
+	baseSha := commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/pt.yml", `name: pr-target
+on: [pull_request_target]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`)
+
+	payload := map[string]interface{}{
+		"number": float64(1),
+		"pull_request": map[string]interface{}{
+			"number": float64(1),
+			"head":   map[string]interface{}{"ref": "feature", "sha": baseSha},
+			"base": map[string]interface{}{
+				"ref":  "main",
+				"repo": map[string]interface{}{"full_name": repoKey},
+			},
+		},
+	}
+	s.triggerWorkflowsForWebhookEvent(repoKey, "pull_request", "opened", payload)
+
+	runs := s.runsForRepo(t, repoKey)
+	if len(runs) != 1 || runs[0].Name != "pr-target" {
+		t.Fatalf("pull_request activity did not fire on: pull_request_target; runs = %+v", runs)
+	}
+	if runs[0].EventName != "pull_request_target" {
+		t.Fatalf("run event = %q, want pull_request_target", runs[0].EventName)
+	}
+}
+
 func TestTriggerFiltersEndToEnd(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

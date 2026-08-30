@@ -193,8 +193,14 @@ func (s *Resolver) addPullRequestNodeFields(
 
 	// No inbound-email PR path.
 	pr.AddFieldConfig("createdViaEmail", constBoolField(false))
-	// No merge queue is modelled.
-	pr.AddFieldConfig("isInMergeQueue", constBoolField(false))
+	// isInMergeQueue reflects the pull request's live queue position.
+	pr.AddFieldConfig("isInMergeQueue", &graphql.Field{
+		Type: graphql.NewNonNull(graphql.Boolean),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			prRow, ok := p.Source.(*store.PullRequest)
+			return ok && prRow.MergeQueuePosition > 0, nil
+		},
+	})
 	pr.AddFieldConfig("isMergeQueueEnabled", constBoolField(false))
 	pr.AddFieldConfig("mergeQueue", &graphql.Field{
 		Type:    s.gqlMergeQueueType(),

@@ -104,6 +104,8 @@ func (s *Server) handleCreateCommitStatus(w http.ResponseWriter, r *http.Request
 	if strings.EqualFold(string(st.State), "success") {
 		s.maybeAutoMergeHeadSHA(repo, sha)
 	}
+	// A status on a merge-group head advances (or drops from) the merge queue.
+	s.advanceMergeQueuesForRepo(repo)
 	statusJSON := commitStatusToJSON(st, s.store, s.baseURL(r), repo.FullName)
 	writeJSONCreated(w, jsonStringField(statusJSON, "url"), statusJSON)
 }

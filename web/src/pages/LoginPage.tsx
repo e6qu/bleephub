@@ -27,7 +27,7 @@ export function LoginPage() {
   const [token, setTokenValue] = useState("");
   const [error, setError] = useState("");
   const [verifying, setVerifying] = useState(false);
-  const [providers, setProviders] = useState<{ github?: boolean; shauth?: boolean } | null>(null);
+  const [providers, setProviders] = useState<{ github?: boolean; shauth?: boolean; saml?: boolean } | null>(null);
   const [providersError, setProvidersError] = useState<string | null>(null);
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
@@ -40,7 +40,7 @@ export function LoginPage() {
         if (!response.ok) {
           throw new Error(`${response.status} ${response.statusText}`);
         }
-        setProviders((await response.json()) as { github?: boolean; shauth?: boolean });
+        setProviders((await response.json()) as { github?: boolean; shauth?: boolean; saml?: boolean });
       } catch (err) {
         // An unreachable provider list is not "no providers configured": token
         // sign-in still works, so fall through but report why the rest are gone.
@@ -94,17 +94,22 @@ export function LoginPage() {
   const githubHref = `/auth/github?return_to=${encodeURIComponent(
     returnTo?.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/ui/",
   )}`;
-  const shauthHref = `/auth/shauth?return_to=${encodeURIComponent(
-    returnTo?.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/ui/",
-  )}`;
+  const safeReturnTo = returnTo?.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/ui/";
+  const shauthHref = `/auth/shauth?return_to=${encodeURIComponent(safeReturnTo)}`;
+  const samlHref = `/auth/saml?return_to=${encodeURIComponent(safeReturnTo)}`;
+  // An organization single sign-on provider (Shauth OIDC, or SAML) takes over the
+  // sign-in screen and auto-redirects; Shauth wins if both are configured.
+  const ssoActive = Boolean(providers?.shauth || providers?.saml);
+  const ssoHref = providers?.shauth ? shauthHref : samlHref;
+  const ssoLabel = providers?.shauth ? "Shauth" : "SSO";
 
   useEffect(() => {
-    if (providers?.shauth) {
-      window.location.href = shauthHref;
+    if (ssoActive) {
+      window.location.href = ssoHref;
     }
-  }, [providers, shauthHref]);
+  }, [ssoActive, ssoHref]);
 
-  if (providers === null || providers.shauth) {
+  if (providers === null || ssoActive) {
     return (
       <div
         className="flex min-h-screen flex-col px-4"
@@ -126,15 +131,15 @@ export function LoginPage() {
           >
             <Mark size={42} />
             <h1 id="bleephub-sign-in-title" style={{ marginTop: ".7rem", fontSize: "1.4rem", fontWeight: 650, color: "var(--color-fg)" }}>
-              {providers?.shauth ? "Sign in to Bleephub" : "Preparing sign-in…"}
+              {ssoActive ? "Sign in to Bleephub" : "Preparing sign-in…"}
             </h1>
-            {providers?.shauth && (
+            {ssoActive && (
               <>
                 <p style={{ margin: ".65rem 0 1rem", color: "var(--color-fg-muted)", fontSize: ".88rem" }}>
-                  Use your shared e6qu identity to continue.
+                  Use your organization identity to continue.
                 </p>
                 <a
-                  href={shauthHref}
+                  href={ssoHref}
                   className="inline-flex min-h-11 w-full items-center justify-center"
                   style={{
                     border: "1px solid var(--color-accent)",
@@ -145,7 +150,7 @@ export function LoginPage() {
                     textDecoration: "none",
                   }}
                 >
-                  Sign in with Shauth
+                  Sign in with {ssoLabel}
                 </a>
               </>
             )}

@@ -524,6 +524,15 @@ func (s *Server) triggerWorkflowsForWebhookEvent(repoKey, eventType, action stri
 		}
 	}
 	s.triggerWorkflowsForEvent(repoKey, eventType, action, ref, payload)
+	// A pull_request activity also drives `on: pull_request_target` workflows.
+	// GitHub evaluates those against the base branch's workflow definitions and
+	// runs them in the base repository's context (workflowRefsForEvent resolves
+	// the base ref for the "pull_request_target" type). Only workflows that
+	// declare the trigger match, so ordinary pull_request workflows never
+	// double-fire.
+	if eventType == "pull_request" {
+		s.triggerWorkflowsForEvent(repoKey, "pull_request_target", action, ref, payload)
+	}
 }
 
 func hookMatchesEvent(hook *store.Webhook, eventType string) bool {

@@ -15,7 +15,7 @@
       },
       {
         "event": "check_suite",
-        "line": 92,
+        "line": 95,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
@@ -140,6 +140,12 @@
         "source": "internal/server/gh_invitations_rest.go"
       },
       {
+        "event": "merge_group",
+        "line": 171,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/merge_queue_processor.go"
+      },
+      {
         "event": "milestone",
         "line": 311,
         "producer": "emitWebhookEvent",
@@ -222,6 +228,12 @@
         "line": 616,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request",
+        "line": 140,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/merge_queue_processor.go"
       },
       {
         "event": "pull_request",

@@ -505,27 +505,21 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 		state = "open"
 	}
 
-	pairs := s.store.ListUserFilteredIssues(user, filter)
-
-	var filtered []store.IssueWithRepo
 	since := parseSinceTime(r)
 	var labelNames []string
 	if labelsParam := q.Get("labels"); labelsParam != "" {
 		labelNames = strings.Split(labelsParam, ",")
 	}
-	for _, p := range pairs {
+
+	// Every pull request is an issue on GitHub, so this cross-repository listing
+	// interleaves issues and their pull requests.
+	var rows []crossRepoIssueRow
+	for _, p := range s.store.ListUserFilteredIssues(user, filter) {
 		if !s.viewerCanReadRepo(r.Context(), p.Repo) {
 			continue
 		}
-		switch state {
-		case "open":
-			if p.Issue.State != "OPEN" {
-				continue
-			}
-		case "closed":
-			if p.Issue.State != "CLOSED" {
-				continue
-			}
+		if !issueMatchesStateFilter(p.Issue.State, state) {
+			continue
 		}
 		if !since.IsZero() && p.Issue.UpdatedAt.Before(since) {
 			continue
@@ -533,36 +527,34 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 		if len(labelNames) > 0 && !store.IssueHasAllLabels(s.store, p.Issue, labelNames, p.Repo.ID) {
 			continue
 		}
-		filtered = append(filtered, p)
+		rows = append(rows, crossRepoIssueRow{
+			number: p.Issue.Number, commentCount: s.store.CountCommentsFor("issue", p.Issue.ID),
+			issue: p.Issue, repo: p.Repo,
+		})
+	}
+	for _, p := range s.store.ListUserFilteredPulls(user, filter) {
+		if !s.viewerCanReadRepo(r.Context(), p.Repo) {
+			continue
+		}
+		if !prMatchesStateFilter(p.Pull, state) {
+			continue
+		}
+		if !since.IsZero() && p.Pull.UpdatedAt.Before(since) {
+			continue
+		}
+		if len(labelNames) > 0 && !store.LabelIDsCoverNames(s.store, p.Pull.LabelIDs, labelNames) {
+			continue
+		}
+		rows = append(rows, crossRepoIssueRow{
+			number: p.Pull.Number, commentCount: s.store.CountCommentsFor("pull_request", p.Pull.ID),
+			pr: p.Pull, repo: p.Repo,
+		})
 	}
 
-	sortKey := q.Get("sort")
-	ascending := q.Get("direction") == "asc"
-	sort.Slice(filtered, func(i, j int) bool {
-		a, b := filtered[i].Issue, filtered[j].Issue
-		var less bool
-		switch sortKey {
-		case "updated":
-			less = a.UpdatedAt.Before(b.UpdatedAt)
-		case "comments":
-			less = s.store.CountIssueComments(a.ID) < s.store.CountIssueComments(b.ID)
-		default: // "created"
-			less = a.CreatedAt.Before(b.CreatedAt)
-		}
-		if ascending {
-			return less
-		}
-		return !less
-	})
+	less := crossRepoRowLess(q.Get("sort"), q.Get("direction") == "asc")
+	sort.Slice(rows, func(i, j int) bool { return less(rows[i], rows[j]) })
 
-	base := s.baseURL(r)
-	out := make([]map[string]interface{}, 0, len(filtered))
-	for _, p := range filtered {
-		item := issueToJSON(p.Issue, s.store, base, p.Repo.FullName)
-		item["repository"] = store.RepoToJSON(p.Repo, s.store, base)
-		out = append(out, item)
-	}
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
+	s.renderCrossRepoIssueRows(w, r, s.baseURL(r), rows)
 }
 
 // ─── Enhanced billing platform usage reports ─────────────────────────────
