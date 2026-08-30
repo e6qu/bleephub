@@ -93,6 +93,12 @@ func (s *FilesystemByteStore) PutStream(_ context.Context, key string, r io.Read
 	return nil
 }
 
+// PutStreamHashed streams r to disk like PutStream; the filesystem store keeps
+// no per-object checksum (Get does not verify), so size and sha256Sum are unused.
+func (s *FilesystemByteStore) PutStreamHashed(ctx context.Context, key string, r io.Reader, _ int64, _ []byte) error {
+	return s.PutStream(ctx, key, r)
+}
+
 func (s *FilesystemByteStore) Get(_ context.Context, key string) ([]byte, error) {
 	path, err := s.resolve(key)
 	if err != nil {
@@ -156,6 +162,10 @@ func (s *MemoryByteStore) PutStream(ctx context.Context, key string, r io.Reader
 		return fmt.Errorf("object put %s: %w", key, err)
 	}
 	return s.Put(ctx, key, data)
+}
+
+func (s *MemoryByteStore) PutStreamHashed(ctx context.Context, key string, r io.Reader, _ int64, _ []byte) error {
+	return s.PutStream(ctx, key, r)
 }
 
 func (s *MemoryByteStore) Get(_ context.Context, key string) ([]byte, error) {

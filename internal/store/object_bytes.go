@@ -28,6 +28,11 @@ type ActionsByteStore interface {
 	// PutStream stores everything read from r; implementations must not buffer
 	// the entire stream in memory.
 	PutStream(ctx context.Context, key string, r io.Reader) error
+	// PutStreamHashed stores exactly size bytes read from r whose SHA-256 is
+	// sha256Sum, uploading directly without a re-spool or re-hash. Callers that
+	// have already staged the object to a temp file (to compute its size + digest
+	// for metadata) use this to avoid holding the whole object on the heap.
+	PutStreamHashed(ctx context.Context, key string, r io.Reader, size int64, sha256Sum []byte) error
 	// GetStream returns the object as a stream the caller must Close. The stored
 	// SHA-256 cannot be checked before the first byte reaches the client, but the
 	// stream recomputes it and fails the final Read (a non-EOF error) on mismatch,
@@ -94,6 +99,12 @@ func (s *S3ActionsByteStore) PutStream(ctx context.Context, key string, r io.Rea
 		return fmt.Errorf("s3 put %s: size upload: %w", s.Key(key), err)
 	}
 	return s.putObject(ctx, key, tmp, info.Size(), hasher.Sum(nil))
+}
+
+// PutStreamHashed uploads r directly with a caller-computed size and checksum,
+// skipping the temp-file staging PutStream does (the caller already staged it).
+func (s *S3ActionsByteStore) PutStreamHashed(ctx context.Context, key string, r io.Reader, size int64, sha256Sum []byte) error {
+	return s.putObject(ctx, key, r, size, sha256Sum)
 }
 
 func (s *S3ActionsByteStore) putObject(ctx context.Context, key string, body io.Reader, size int64, checksum []byte) error {
@@ -225,6 +236,32 @@ func (s *S3ActionsByteStore) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("s3 delete %s: %w", s.Key(key), err)
 	}
 	return nil
+}
+
+// StageUpload spools everything read from r to a temp file while computing its
+// size and SHA-256, then rewinds it. The caller owns the returned file and must
+// Close and os.Remove it; uploading it via ActionsByteStore.PutStreamHashed keeps
+// the whole object off the heap and avoids a second hash pass. This is how a
+// handler turns a (size-capped) request body into a digest + size for metadata
+// without buffering the object in memory.
+func StageUpload(r io.Reader) (f *os.File, size int64, sum []byte, err error) {
+	tmp, err := os.CreateTemp("", "bleephub-upload-*")
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("stage upload: %w", err)
+	}
+	hasher := sha256.New()
+	n, err := io.Copy(io.MultiWriter(tmp, hasher), r)
+	if err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return nil, 0, nil, fmt.Errorf("stage upload: %w", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return nil, 0, nil, fmt.Errorf("stage upload: %w", err)
+	}
+	return tmp, n, hasher.Sum(nil), nil
 }
 
 func (s *S3ActionsByteStore) Key(key string) string {
