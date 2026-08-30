@@ -18,7 +18,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 	uri := s.graphQLStringScalar("URI")
 	html := s.graphQLStringScalar("HTML")
 
-	// --- merge configuration ---------------------------------------------
+	// merge configuration
 	repoType.AddFieldConfig("autoMergeAllowed",
 		s.repoBoolField(func(r *store.Repo) bool { return r.AllowAutoMerge }))
 	repoType.AddFieldConfig("allowUpdateBranch",
@@ -38,7 +38,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		s.sharedEnum("SquashMergeCommitMessage", "BLANK", "COMMIT_MESSAGES", "PR_BODY"),
 		func(r *store.Repo) string { return repoMergeSetting(r.SquashMergeCommitMessage, "COMMIT_MESSAGES") }))
 
-	// --- feature switches -------------------------------------------------
+	// feature switches
 	repoType.AddFieldConfig("hasPullRequestsEnabled",
 		s.repoBoolField(func(r *store.Repo) bool { return r.HasPullRequests }))
 	repoType.AddFieldConfig("webCommitSignoffRequired",
@@ -49,8 +49,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		s.repoBoolField(func(r *store.Repo) bool { return r.OwnerType == "Organization" }))
 	repoType.AddFieldConfig("isUserConfigurationRepository",
 		s.repoBoolField(func(r *store.Repo) bool {
-			// The profile-configuration repository is the one whose name equals
-			// its owner's login (the profile README repo).
+			// The profile-config repository has its name equal to its owner's login (the profile README repo).
 			owner, name, ok := store.SplitRepoFullName(r.FullName)
 			return ok && r.OwnerType != "Organization" && owner == name
 		}))
@@ -59,9 +58,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 	repoType.AddFieldConfig("hasSponsorshipsEnabled",
 		s.repoBoolField(func(r *store.Repo) bool { return s.repositoryHasSponsorships(r) }))
 
-	// --- lifecycle state --------------------------------------------------
-	//
-	// No repository is ever disabled, mirrored or locked here (no
+	// lifecycle state: no repository is ever disabled, mirrored or locked here (no
 	// suspension, mirror import or read-only migration); REST reports the same
 	// (`disabled: false`, `mirror_url: null`).
 	repoType.AddFieldConfig("isDisabled",
@@ -80,7 +77,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
 	})
 
-	// --- description rendering -------------------------------------------
+	// description rendering
 	repoType.AddFieldConfig("descriptionHTML", &graphql.Field{
 		Type: graphql.NewNonNull(html),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -109,7 +106,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- size --------------------------------------------------------------
+	// size
 	repoType.AddFieldConfig("diskUsage", &graphql.Field{
 		Type: graphql.Int,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -122,7 +119,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- interaction limits ------------------------------------------------
+	// interaction limits
 	repoType.AddFieldConfig("interactionAbility", &graphql.Field{
 		Type: s.gqlInteractionAbilityType(types),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -148,7 +145,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- security policy ---------------------------------------------------
+	// security policy
 	repoType.AddFieldConfig("isSecurityPolicyEnabled", &graphql.Field{
 		Type: graphql.Boolean,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -175,10 +172,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- social preview ----------------------------------------------------
-	//
-	// No social-preview upload exists, so every repository uses the generated
-	// card at its avatar path.
+	// social preview: no upload exists, so every repository uses the generated card at its avatar path.
 	repoType.AddFieldConfig("usesCustomOpenGraphImage",
 		s.repoBoolField(func(*store.Repo) bool { return false }))
 	repoType.AddFieldConfig("openGraphImageUrl", &graphql.Field{
@@ -228,7 +222,7 @@ func (s *Resolver) repositoryHasSponsorships(repo *store.Repo) bool {
 	return len(s.repositoryFundingLinks(repo)) > 0
 }
 
-// --- viewer standing --------------------------------------------------------
+// viewer standing
 
 // addRepositoryViewerFields installs the viewer* members of Repository, each
 // answering from the same authorization predicates REST enforces rather than a

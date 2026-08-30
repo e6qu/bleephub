@@ -13,7 +13,7 @@ import (
 // primitive both the HTTP handlers and the followUser/unfollowUser mutations go
 // through, so the two surfaces cannot disagree.
 
-// --- user status ------------------------------------------------------------
+// user status
 
 // UserStatus is the message, emoji and availability a user sets on their
 // profile. GitHub keeps one per account, so it lives on the account and its node
@@ -95,7 +95,7 @@ func (st *Store) SetUserStatus(userID int, status UserStatus) *UserStatus {
 	return cloneUserStatus(stored)
 }
 
-// --- user lists -------------------------------------------------------------
+// user lists
 
 // UserList is one named list a user sorts starred repositories into, public or
 // private, with a slug derived from its name.
@@ -324,7 +324,7 @@ func FindUserListByNodeID(st *Store, nodeID string) *UserList {
 	return nil
 }
 
-// --- follow edges -----------------------------------------------------------
+// follow edges
 
 // SetFollow records or removes a follow edge. The graph is keyed by login, not
 // id, because a user may follow an organization.

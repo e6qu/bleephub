@@ -138,7 +138,7 @@ func (s *Resolver) addUserProfileFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- account keys and links -------------------------------------------
+	// account keys and links
 	publicKey := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PublicKey",
 		Fields: graphql.Fields{
@@ -262,7 +262,7 @@ func (s *Resolver) addUserProfileFields(types *accountSurfaceTypes) {
 func (s *Resolver) addUserConnectionFields(types *accountSurfaceTypes) {
 	userType := types.user
 
-	// --- follow graph ------------------------------------------------------
+	// follow graph
 	followerConnection := s.gqlUserEdgeConnection(types, "Follower")
 	followingConnection := s.gqlUserEdgeConnection(types, "Following")
 	followField := func(connection *graphql.Object, logins func(string) []string) *graphql.Field {
@@ -287,7 +287,7 @@ func (s *Resolver) addUserConnectionFields(types *accountSurfaceTypes) {
 	userType.AddFieldConfig("followers", followField(followerConnection, s.store.FollowerLoginsOf))
 	userType.AddFieldConfig("following", followField(followingConnection, s.store.FollowingLoginsOf))
 
-	// --- authored issues and pull requests --------------------------------
+	// authored issues and pull requests
 	userType.AddFieldConfig("issues", &graphql.Field{
 		Type: graphql.NewNonNull(s.graphqlTypes.issueConnection),
 		Args: connectionArgs(graphql.FieldConfigArgument{
@@ -359,7 +359,7 @@ func (s *Resolver) addUserConnectionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- authored comments -------------------------------------------------
+	// authored comments
 	userType.AddFieldConfig("issueComments", &graphql.Field{
 		Type: graphql.NewNonNull(s.graphqlTypes.issueCommentConnection),
 		Args: connectionArgs(graphql.FieldConfigArgument{
@@ -453,7 +453,7 @@ func (s *Resolver) addUserConnectionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- one gist by name --------------------------------------------------
+	// one gist by name
 	userType.AddFieldConfig("gist", &graphql.Field{
 		Type: s.gqlGistType(),
 		Args: graphql.FieldConfigArgument{
@@ -480,7 +480,7 @@ func (s *Resolver) addUserConnectionFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- repositories the account watches, starred and contributed to ------
+	// repositories the account watches, starred and contributed to
 	repositoryConnection := s.graphqlTypes.repositoryConnection
 	userType.AddFieldConfig("watching", &graphql.Field{
 		Type: graphql.NewNonNull(repositoryConnection),

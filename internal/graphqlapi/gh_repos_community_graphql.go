@@ -71,8 +71,7 @@ func (s *Resolver) repositoryDefaultTree(repo *store.Repo) (gitStorage.Storer, *
 	return stor, tree, true
 }
 
-// repoBranchTree resolves a branch's commit tree in a repository's git
-// storage.
+// repoBranchTree resolves a branch's commit tree in a repository's git storage.
 func repoBranchTree(stor gitStorage.Storer, branch string) (*object.Tree, bool) {
 	if branch == "" {
 		return nil, false
@@ -185,7 +184,7 @@ func isMarkdownTemplateName(name string) bool {
 	return strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".markdown")
 }
 
-// --- schema ----------------------------------------------------------------
+// schema
 
 // addRepositoryCommunityFields installs the git-content-backed members of
 // Repository.
@@ -193,7 +192,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 	repoType := types.repository
 	uri := s.graphQLStringScalar("URI")
 
-	// --- CONTRIBUTING ------------------------------------------------------
+	// CONTRIBUTING
 	contributing := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ContributingGuidelines",
 		Fields: graphql.Fields{
@@ -222,7 +221,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- CODE_OF_CONDUCT ---------------------------------------------------
+	// CODE_OF_CONDUCT
 	repoType.AddFieldConfig("codeOfConduct", &graphql.Field{
 		Type: s.gqlCodeOfConductType(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -247,7 +246,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- FUNDING.yml -------------------------------------------------------
+	// FUNDING.yml
 	fundingLink := graphql.NewObject(graphql.ObjectConfig{
 		Name: "FundingLink",
 		Fields: graphql.Fields{
@@ -274,7 +273,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- issue-template config contact links -------------------------------
+	// issue-template config contact links
 	contactLink := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryContactLink",
 		Fields: graphql.Fields{
@@ -307,7 +306,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- issue templates ---------------------------------------------------
+	// issue templates
 	issueTemplate := graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueTemplate",
 		Fields: graphql.Fields{
@@ -397,7 +396,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- pull-request templates -------------------------------------------
+	// pull-request templates
 	pullRequestTemplate := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PullRequestTemplate",
 		Fields: graphql.Fields{
@@ -443,7 +442,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- CODEOWNERS --------------------------------------------------------
+	// CODEOWNERS
 	codeownersError := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryCodeownersError",
 		Fields: graphql.Fields{
@@ -480,7 +479,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- .gitmodules -------------------------------------------------------
+	// .gitmodules
 	base64String := s.graphQLStringScalar("Base64String")
 	submodule := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Submodule",
@@ -539,7 +538,7 @@ func detectCodeOfConduct(content string) store.CodeOfConduct {
 	return store.CodeOfConduct{Key: "other", Name: "Other"}
 }
 
-// --- FUNDING.yml -----------------------------------------------------------
+// FUNDING.yml
 
 type fundingLink struct {
 	platform string
@@ -610,7 +609,7 @@ func fundingYAMLValues(value interface{}) []string {
 	return nil
 }
 
-// --- issue-template config -------------------------------------------------
+// issue-template config
 
 type issueTemplateConfig struct {
 	BlankIssuesEnabled *bool `yaml:"blank_issues_enabled"`
@@ -644,7 +643,7 @@ func (s *Resolver) repositoryAllowsBlankIssues(repo *store.Repo) bool {
 	return *config.BlankIssuesEnabled
 }
 
-// --- template front matter -------------------------------------------------
+// template front matter
 
 type templateMetadata struct {
 	Name      string
@@ -729,7 +728,7 @@ func splitCommaList(value string) []string {
 	return out
 }
 
-// --- CODEOWNERS ------------------------------------------------------------
+// CODEOWNERS
 
 // repositoryCodeownersFile finds the operative CODEOWNERS file, honoring refName.
 func (s *Resolver) repositoryCodeownersFile(repo *store.Repo, args map[string]interface{}) (string, []byte, bool) {
@@ -814,7 +813,7 @@ func (s *Resolver) classifyCodeownersToken(owner string) string {
 	return "Invalid owner"
 }
 
-// --- .gitmodules -----------------------------------------------------------
+// .gitmodules
 
 // repositorySubmoduleItems pairs each .gitmodules submodule with the commit the
 // default-branch tree records for its path.

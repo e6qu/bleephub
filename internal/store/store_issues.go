@@ -117,9 +117,8 @@ func cloneComment(comment *Comment) *Comment {
 
 // IssueEvent is an event in an issue's or PR's timeline. Event matches GitHub's
 // REST issue-event type names ("opened", "closed", "labeled", ...). ParentType
-// selects the ID space for IssueID — "issue" (st.Issues) or "pull_request"
-// (st.PullRequests): the two share a per-repo number sequence but have
-// independent global ID sequences.
+// selects IssueID's ID space — "issue" (st.Issues) or "pull_request"
+// (st.PullRequests); the two share a per-repo number sequence but independent global IDs.
 type IssueEvent struct {
 	ID                  int
 	NodeID              string
@@ -227,8 +226,7 @@ func (st *Store) RecordIssueEvent(repoID, issueID, actorID int, event string, pa
 // RecordIssueOrPREvent records a timeline event against whichever of the issue
 // or PR in repoID carries `number`, stamping the correct ParentType. Shared
 // issue+PR endpoints (lock/unlock) must use this, not RecordIssueEvent: a PR
-// event parented to "issue" is dropped from the PR timeline and can collide
-// into an unrelated issue's events.
+// event parented to "issue" is dropped from the PR timeline and can collide into an unrelated issue's.
 func (st *Store) RecordIssueOrPREvent(repoID, number, actorID int, event string, payload map[string]interface{}) *IssueEvent {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -355,7 +353,7 @@ func (st *Store) GetIssueEvent(id int) *IssueEvent {
 	return &clone
 }
 
-// --- Label CRUD ---
+// Label CRUD
 
 // defaultRepoLabel is one entry of GitHub's seeded-label set, using GitHub's own
 // name/color/description values.
@@ -536,7 +534,7 @@ func (st *Store) DeleteLabel(id int) bool {
 	return true
 }
 
-// --- Milestone CRUD ---
+// Milestone CRUD
 
 // CreateMilestone creates a milestone in the repo on behalf of creatorID.
 func (st *Store) CreateMilestone(repoID, creatorID int, title, description, state string, dueOn *time.Time) *Milestone {
@@ -667,7 +665,7 @@ func (st *Store) DeleteMilestone(id int) bool {
 	return true
 }
 
-// --- Issue CRUD ---
+// Issue CRUD
 
 func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs, assigneeIDs []int, milestoneID int) *Issue {
 	st.Mu.Lock()
@@ -1440,7 +1438,7 @@ func (ti timelineItem) Id() int {
 	return 0
 }
 
-// --- Comment CRUD ---
+// Comment CRUD
 
 // CreateComment creates a conversation comment on an issue; use CreateCommentFor for PRs.
 func (st *Store) CreateComment(issueID, authorID int, body string) *Comment {

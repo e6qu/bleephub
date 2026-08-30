@@ -1192,7 +1192,7 @@ func fullRepoJSONForViewer(repo *store.Repo, st *store.Store, baseURL string, vi
 	out["is_template"] = repo.IsTemplate
 	out["use_squash_pr_title_as_default"] = repo.UseSquashPRTitleAsDefault
 	// security_and_analysis is on full-repository but not the plain `repository`
-	// schema, so it is rendered here, not in store.RepoToJSON. dependabot_security_updates
+	// schema, so render it here, not in store.RepoToJSON. dependabot_security_updates
 	// mirrors the automated-security-fixes toggle, as on GitHub.
 	out["security_and_analysis"] = map[string]interface{}{
 		"advanced_security":                     securityStatusJSON(repo.AdvancedSecurityEnabled),

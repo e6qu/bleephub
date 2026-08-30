@@ -19,9 +19,8 @@ import (
 	"github.com/go-git/go-billy/v5"
 )
 
-// isImmutablePackKey reports whether a path names a content-addressed pack
-// artefact. Only these are read through ranges and cached, since only these
-// carry their content hash in their name and cannot change under a cached copy.
+// isImmutablePackKey reports whether a path names a content-addressed pack artefact. Only these are read through ranges
+// and cached, since only these carry their content hash in their name and cannot change under a cached copy.
 // `.pack`/`.idx` are git's; `.bfilter` is this package's membership filter.
 func isImmutablePackKey(name string) bool {
 	dir, base := path.Split(path.Clean(name))
@@ -39,10 +38,9 @@ func isImmutablePackKey(name string) bool {
 	}
 }
 
-// s3RangeFile reads one immutable object-store key through fixed-size chunks,
-// fetching each with a ranged GET on first touch and serving it from the local
-// disk cache after. This is the read-amplification fix: an object at a byte
-// offset inside a multi-gigabyte pack must cost its own bytes, not the pack's.
+// s3RangeFile reads one immutable object-store key through fixed-size chunks, fetching each with a ranged GET on first
+// touch and serving it from the local disk cache after. This is the read-amplification fix: an object at a byte offset
+// inside a multi-gigabyte pack must cost its own bytes, not the pack's.
 type s3RangeFile struct {
 	fs        *S3FS
 	name      string
@@ -53,8 +51,7 @@ type s3RangeFile struct {
 	pos   int64
 	size  int64
 	sized bool
-	// chunks memoizes this handle's own fetches, so decoding many objects out of
-	// one chunk does not re-read the disk cache each time.
+	// chunks memoizes this handle's own fetches, so decoding many objects out of one chunk does not re-read the disk cache each time.
 	chunks map[int64][]byte
 }
 
@@ -70,8 +67,7 @@ func newS3RangeFile(fs *S3FS, name string) *s3RangeFile {
 
 func (f *s3RangeFile) Name() string { return f.name }
 
-// open proves the key exists and fetches its leading chunk in one ranged GET,
-// keeping small artefacts to a single round trip.
+// open proves the key exists and fetches its leading chunk in one ranged GET, keeping small artefacts to a single round trip.
 func (f *s3RangeFile) open() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -81,8 +77,7 @@ func (f *s3RangeFile) open() error {
 	return nil
 }
 
-// lengthLocked reports the object's total size, known once any chunk has been
-// fetched because the ranged response carries it.
+// lengthLocked reports the object's total size, known once any chunk has been fetched because the ranged response carries it.
 func (f *s3RangeFile) lengthLocked() (int64, error) {
 	if f.sized {
 		return f.size, nil
@@ -97,8 +92,7 @@ func (f *s3RangeFile) lengthLocked() (int64, error) {
 	return f.size, nil
 }
 
-// chunkAtLocked returns one chunk, consulting this handle, the shared disk
-// cache, then the object store.
+// chunkAtLocked returns one chunk, consulting this handle, the shared disk cache, then the object store.
 func (f *s3RangeFile) chunkAtLocked(index int64) ([]byte, error) {
 	if data, ok := f.chunks[index]; ok {
 		return data, nil
@@ -117,9 +111,8 @@ func (f *s3RangeFile) chunkAtLocked(index int64) ([]byte, error) {
 		if f.sized {
 			return data, nil
 		}
-		// A chunk with no recorded length is unusable: reads are bounded by the
-		// object's length, and treating unknown as zero would truncate the pack.
-		// Fall through to the fetch, whose response reports the length.
+		// A chunk with no recorded length is unusable: reads are bounded by the object's length, and treating unknown as
+		// zero would truncate the pack. Fall through to the fetch, whose response reports the length.
 	}
 
 	start := index * f.chunkSize
@@ -146,8 +139,7 @@ func (f *s3RangeFile) chunkAtLocked(index int64) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("s3 ranged read %s: %w", f.key, err)
 	}
-	// The response states the object's total length, so size never needs its own
-	// request.
+	// The response states the object's total length, so size never needs its own request.
 	if total, ok := totalFromContentRange(aws.ToString(resp.ContentRange)); ok {
 		f.size, f.sized = total, true
 		f.fs.rememberObjectSize(f.key, total)
@@ -176,8 +168,7 @@ func totalFromContentRange(header string) (int64, bool) {
 	return parsed, true
 }
 
-// isRangeBeyondEnd recognises a request for bytes past the object's end, the
-// ordinary way a sequential read discovers it has finished.
+// isRangeBeyondEnd recognises a request for bytes past the object's end, the ordinary way a sequential read discovers it has finished.
 func isRangeBeyondEnd(err error) bool {
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
@@ -260,8 +251,7 @@ func (f *s3RangeFile) Seek(offset int64, whence int) (int64, error) {
 	return pos, nil
 }
 
-// Close releases this handle's memoized chunks; the bytes stay in the shared
-// cache, which carries them to the next handle.
+// Close releases this handle's memoized chunks; the bytes stay in the shared cache, which carries them to the next handle.
 func (f *s3RangeFile) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -277,17 +267,15 @@ func (f *s3RangeFile) Truncate(size int64) error {
 	return &os.PathError{Op: "truncate", Path: f.name, Err: os.ErrPermission}
 }
 
-// Lock and Unlock are no-ops: the keys served are immutable, so there is no
-// writer to exclude.
+// Lock and Unlock are no-ops: the keys served are immutable, so there is no writer to exclude.
 func (f *s3RangeFile) Lock() error   { return nil }
 func (f *s3RangeFile) Unlock() error { return nil }
 
 var _ billy.File = (*s3RangeFile)(nil)
 var _ io.ReaderAt = (*s3RangeFile)(nil)
 
-// translateS3NotFound maps only a definite absence to os.ErrNotExist; every
-// other failure stays an error, since go-git reads ErrNotExist as "pack does
-// not exist" and a transient outage would silently narrow a clone.
+// translateS3NotFound maps only a definite absence to os.ErrNotExist; every other failure stays an error, since go-git
+// reads ErrNotExist as "pack does not exist" and a transient outage would silently narrow a clone.
 func translateS3NotFound(err error, op, key string) error {
 	var noSuchKey *s3types.NoSuchKey
 	if errors.As(err, &noSuchKey) {

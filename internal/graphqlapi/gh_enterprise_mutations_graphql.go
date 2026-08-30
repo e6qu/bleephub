@@ -18,7 +18,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- authorization rules ---------------------------------------------------
+// authorization rules
 
 // enterpriseOwnerRule requires the viewer to own the enterprise named by idKey.
 type enterpriseOwnerRule struct {
@@ -268,7 +268,7 @@ func init() {
 	}
 }
 
-// --- audit -----------------------------------------------------------------
+// audit
 
 // recordEnterpriseAudit writes one enterprise audit-log entry.
 func (s *Resolver) recordEnterpriseAudit(p graphql.ResolveParams, e *store.Enterprise, action string, data map[string]interface{}) {
@@ -286,7 +286,7 @@ func (s *Resolver) recordEnterpriseAudit(p graphql.ResolveParams, e *store.Enter
 	s.store.RecordAuditEntry(action, actor, "", data)
 }
 
-// --- schema assembly -------------------------------------------------------
+// schema assembly
 
 func (s *Resolver) addEnterpriseMutationsToSchema(mutationType *graphql.Object) {
 	enterpriseType := s.graphqlTypes.enterprise
@@ -523,7 +523,7 @@ func (s *Resolver) addEnterpriseProfileMutation(mutationType, enterpriseType *gr
 	})
 }
 
-// --- membership, administrators and invitations ----------------------------
+// membership, administrators and invitations
 
 func (s *Resolver) addEnterpriseMembershipMutations(mutationType, enterpriseType, userType *graphql.Object) {
 	adminInvitationType := s.graphqlTypes.enterpriseAdminInvitation
@@ -896,7 +896,7 @@ func (s *Resolver) registerEnterpriseMigratorRoleMutation(mutationType *graphql.
 	})
 }
 
-// --- organizations ---------------------------------------------------------
+// organizations
 
 func (s *Resolver) addEnterpriseOrganizationMutations(mutationType, enterpriseType, orgType, userType *graphql.Object) {
 	// createEnterpriseOrganization
@@ -1158,7 +1158,7 @@ func stringListArg(value interface{}) []string {
 	return out
 }
 
-// --- identity provider -----------------------------------------------------
+// identity provider
 
 func (s *Resolver) addEnterpriseIdentityProviderMutations(mutationType *graphql.Object) {
 	identityProviderType := s.graphqlTypes.enterpriseIdentityProvide
@@ -1291,7 +1291,7 @@ func enterpriseRecoveryCodes() []string {
 	return codes
 }
 
-// --- IP allow list ---------------------------------------------------------
+// IP allow list
 
 func (s *Resolver) addIPAllowListMutations(mutationType *graphql.Object) {
 	entryType := s.graphqlTypes.ipAllowListEntry

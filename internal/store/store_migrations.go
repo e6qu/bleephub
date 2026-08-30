@@ -9,8 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// MigrationCommon holds the fields shared by user and org migrations; it is the
-// response payload for GitHub's Migration object.
+// MigrationCommon holds the fields shared by user and org migrations; it is the response payload for GitHub's Migration object.
 type MigrationCommon struct {
 	ID                   int       `json:"id"`
 	NodeID               string    `json:"node_id"`
@@ -31,12 +30,10 @@ type MigrationCommon struct {
 	UpdatedAt            time.Time `json:"updated_at"`
 	ExportedAt           time.Time `json:"exported_at"`
 
-	// FailureReason records why an export failed. GitHub's payload has no field
-	// for it, so it is served through the UI and audit log, not the REST object.
+	// FailureReason records why an export failed. GitHub's payload has no field for it, so it is served through the UI and audit log, not the REST object.
 	FailureReason string `json:"failure_reason,omitempty"`
-	// ArchiveKey names the byte-store object holding the export's bytes, empty
-	// until success; ArchiveSize/ArchiveSHA256 answer a download's Content-Length
-	// and integrity header without reading the object back into memory.
+	// ArchiveKey names the byte-store object holding the export's bytes, empty until success; ArchiveSize/ArchiveSHA256
+	// answer a download's Content-Length and integrity header without reading the object back into memory.
 	ArchiveKey    string `json:"archive_key,omitempty"`
 	ArchiveSize   int64  `json:"archive_size,omitempty"`
 	ArchiveSHA256 string `json:"archive_sha256,omitempty"`
@@ -46,8 +43,7 @@ type MigrationCommon struct {
 	ArchiveDeleted bool            `json:"-"`
 }
 
-// The states a GitHub export migration moves through: created pending, claimed
-// into exporting, ending in exactly one of exported or failed.
+// The states a GitHub export migration moves through: created pending, claimed into exporting, ending in exactly one of exported or failed.
 const (
 	MigrationStatePending   = "pending"
 	MigrationStateExporting = "exporting"
@@ -55,9 +51,8 @@ const (
 	MigrationStateFailed    = "failed"
 )
 
-// MigrationScope distinguishes the two migration families: separate id
-// sequences, buckets and authorization rules, so every entry point takes the
-// scope rather than guessing from the id.
+// MigrationScope distinguishes the two migration families: separate id sequences, buckets and authorization rules,
+// so every entry point takes the scope rather than guessing from the id.
 type MigrationScope string
 
 const (
@@ -111,8 +106,7 @@ func migrationNodeID(id int) string {
 	return fmt.Sprintf("M_kgDO%08d", id)
 }
 
-// userMigrationRecord is the persistence view of a UserMigration, keeping the
-// internal state fields that must survive a restart but stay out of the REST response.
+// userMigrationRecord is the persistence view of a UserMigration, keeping the internal state fields that must survive a restart but stay out of the REST response.
 type userMigrationRecord struct {
 	MigrationCommon
 	UserID         int             `json:"user_id"`
@@ -255,9 +249,8 @@ func (st *Store) UnlockUserMigrationRepo(id int, repoName string) bool {
 	return true
 }
 
-// UserMigrationLocksRepo reports whether a user migration still locks a repo. It
-// acquires st.Mu itself; the name avoids the "…Locked" suffix (which marks
-// caller-holds-the-lock helpers) to prevent a self-deadlock on the non-reentrant mutex.
+// UserMigrationLocksRepo reports whether a user migration still locks a repo. It acquires st.Mu itself; the name avoids
+// the "…Locked" suffix (which marks caller-holds-the-lock helpers) to prevent a self-deadlock on the non-reentrant mutex.
 func (st *Store) UserMigrationLocksRepo(id int, repoName string) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -357,9 +350,8 @@ func (st *Store) UnlockOrgMigrationRepo(id int, repoName string) bool {
 	return true
 }
 
-// OrgMigrationLocksRepo reports whether an org migration still locks a repo. It
-// acquires st.Mu itself; the name avoids the "…Locked" suffix (caller-holds-the-lock
-// helpers) to prevent a self-deadlock on the non-reentrant mutex.
+// OrgMigrationLocksRepo reports whether an org migration still locks a repo. It acquires st.Mu itself; the name avoids
+// the "…Locked" suffix (caller-holds-the-lock helpers) to prevent a self-deadlock on the non-reentrant mutex.
 func (st *Store) OrgMigrationLocksRepo(id int, repoName string) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

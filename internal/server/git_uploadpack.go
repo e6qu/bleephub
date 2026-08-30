@@ -44,8 +44,7 @@ var (
 	gitDoneLine   = []byte("done")
 )
 
-// setGitUploadPackCapabilities declares what this upload-pack honours. Every
-// entry is backed by working code in this package.
+// setGitUploadPackCapabilities declares what this upload-pack honours; every entry is backed by working code here.
 func setGitUploadPackCapabilities(caps *capability.List) error {
 	for _, entry := range []struct {
 		name   capability.Capability

@@ -23,7 +23,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- authorization rules ---------------------------------------------------
+// authorization rules
 
 // migrationOrgRule requires the viewer to be an owner of, or a granted
 // migrator on, the organization the input names through orgKey.
@@ -133,7 +133,7 @@ func init() {
 	}
 }
 
-// --- enums -----------------------------------------------------------------
+// enums
 
 func (s *Resolver) migrationSourceTypeEnum() *graphql.Enum {
 	return s.sharedEnum("MigrationSourceType",
@@ -163,7 +163,7 @@ func (s *Resolver) actorTypeEnum() *graphql.Enum {
 	return s.sharedEnum("ActorType", "TEAM", "USER")
 }
 
-// --- projections ------------------------------------------------------------
+// projections
 
 // migrationSourceToGQL renders a source. Credentials are deliberately omitted:
 // no MigrationSource field serves them, so a migrator cannot read back the
@@ -236,7 +236,7 @@ func nilOrGQLInt(value *int) interface{} {
 	return *value
 }
 
-// --- schema ----------------------------------------------------------------
+// schema
 
 // addMigrationFieldsToSchema installs the migration types, the organization's
 // migration connection and the mutations. Runs after the organization and
@@ -422,7 +422,7 @@ func repositoryMigrationOrderIsDescending(args map[string]interface{}) bool {
 	return direction == "DESC"
 }
 
-// --- mutations --------------------------------------------------------------
+// mutations
 
 func (s *Resolver) addMigrationMutations(mutationType, sourceType, repositoryMigrationType, orgMigrationType *graphql.Object) {
 	s.addCreateMigrationSourceMutation(mutationType, sourceType)
@@ -731,7 +731,7 @@ func boolInputOrDefault(input map[string]interface{}, key string, fallback bool)
 	return fallback
 }
 
-// --- node resolution --------------------------------------------------------
+// node resolution
 
 // migrationNodeByID resolves the three migration global ids for `node(id:)`,
 // each gated on migrator standing so guessing an id reveals nothing.

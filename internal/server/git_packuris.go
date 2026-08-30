@@ -31,11 +31,10 @@ import (
 // otherwise.
 
 // gitPackURIExpiry is how long a presigned pack URL stays usable. It must
-// outlast the response (git fetches URIs after reading the reply, covering the
-// remainder stream, retries, and a slow link) but not much more, since it is a
-// bearer credential the object store honors even after the caller's session
-// ends or access is revoked. Ten minutes covers an ordinary fetch and is far
-// short of the credential it stands in for.
+// outlast the response (git fetches URIs after reading the reply — remainder
+// stream, retries, slow link) but not much more: it is a bearer credential the
+// object store honors even after the caller's session ends or access is
+// revoked. Ten minutes covers an ordinary fetch.
 const gitPackURIExpiry = 10 * time.Minute
 
 // gitPackURIObjectIDLength is the width of the object id opening each

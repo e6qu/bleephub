@@ -6,8 +6,7 @@ import (
 	"time"
 )
 
-// Per-type notification preferences. GitHub has no REST API for these, so the
-// simulator stores them per user and serves them from /ui-data.
+// Per-type notification preferences. GitHub has no REST API for these, so the simulator stores them per user and serves them from /ui-data.
 
 // NotificationChannels is the delivery selection: email, the web inbox, or both.
 type NotificationChannels struct {
@@ -15,8 +14,7 @@ type NotificationChannels struct {
 	Web   bool `json:"web"`
 }
 
-// Notification event types. Only issue and pull_request raise threads today;
-// the rest are stored so the settings page round-trips.
+// Notification event types. Only issue and pull_request raise threads today; the rest are stored so the settings page round-trips.
 const (
 	NotificationEventIssue       = "issue"
 	NotificationEventPullRequest = "pull_request"
@@ -27,8 +25,7 @@ const (
 	NotificationEventDependabot  = "dependabot"
 )
 
-// NotificationEventTypes is the ordered set of accepted event types; an unknown
-// key in a payload is dropped.
+// NotificationEventTypes is the ordered set of accepted event types; an unknown key in a payload is dropped.
 var NotificationEventTypes = []string{
 	NotificationEventIssue,
 	NotificationEventPullRequest,
@@ -41,27 +38,22 @@ var NotificationEventTypes = []string{
 
 // NotificationPreferences is one account's full notification configuration.
 type NotificationPreferences struct {
-	// Participating: threads the user authored, is assigned, review-requested,
-	// commented on, or @-mentioned in.
+	// Participating: threads the user authored, is assigned, review-requested, commented on, or @-mentioned in.
 	Participating NotificationChannels `json:"participating"`
 	// Watching: everything else from a watched repo or thread subscription.
 	Watching                       NotificationChannels `json:"watching"`
 	AutomaticallyWatchRepositories bool                 `json:"automatically_watch_repositories"`
 	AutomaticallyWatchTeams        bool                 `json:"automatically_watch_teams"`
-	// Events keys delivery by event type; a type absent from the map inherits
-	// DefaultNotificationChannels.
+	// Events keys delivery by event type; a type absent from the map inherits DefaultNotificationChannels.
 	Events                     map[string]NotificationChannels `json:"events"`
 	IncludeOwnUpdates          bool                            `json:"include_own_updates"`
 	ActionsFailedWorkflowsOnly bool                            `json:"actions_failed_workflows_only"`
 	DependabotWeeklyDigest     bool                            `json:"dependabot_weekly_digest"`
-	// EmailDeliveryRestricted is computed on every read (normalize clears it),
-	// never persisted: the enterprise policy bars this address, so every email
-	// channel above reads false.
+	// EmailDeliveryRestricted is computed on every read (normalize clears it), never persisted: the enterprise policy bars this address, so every email channel above reads false.
 	EmailDeliveryRestricted bool `json:"email_delivery_restricted,omitempty"`
 }
 
-// DefaultNotificationChannels is the delivery for an event type the user has no
-// opinion about.
+// DefaultNotificationChannels is the delivery for an event type the user has no opinion about.
 func DefaultNotificationChannels() NotificationChannels {
 	return NotificationChannels{Email: true, Web: true}
 }
@@ -94,8 +86,7 @@ func (p NotificationPreferences) clone() NotificationPreferences {
 	return copied
 }
 
-// normalize drops undefined event keys and fills in omitted ones, so the
-// persisted shape is always the full bounded set.
+// normalize drops undefined event keys and fills in omitted ones, so the persisted shape is always the full bounded set.
 func (p NotificationPreferences) normalize() NotificationPreferences {
 	normalized := p
 	normalized.EmailDeliveryRestricted = false
@@ -143,9 +134,8 @@ func NotificationEventTypeForThread(subjectType string) string {
 // participatingReasons make the viewer a participant; everything else is watching.
 var participatingReasons = []string{"author", "assign", "comment", "mention", "review_requested", "team_mention", "manual"}
 
-// NotificationDeliversWeb reports whether a thread of this subject type and
-// reason reaches the web inbox. Both the subscription class and the event type
-// must permit web delivery.
+// NotificationDeliversWeb reports whether a thread of this subject type and reason reaches the web inbox.
+// Both the subscription class and the event type must permit web delivery.
 func (p NotificationPreferences) NotificationDeliversWeb(subjectType, reason string) bool {
 	class := p.Watching
 	if slices.Contains(participatingReasons, reason) {
@@ -162,8 +152,7 @@ func (p NotificationPreferences) NotificationDeliversWeb(subjectType, reason str
 	return p.channelsFor(event).Web
 }
 
-// withoutEmailDelivery clears every email channel and raises the restriction
-// flag, for an account whose address the enterprise will not deliver to.
+// withoutEmailDelivery clears every email channel and raises the restriction flag, for an account whose address the enterprise will not deliver to.
 func (p NotificationPreferences) withoutEmailDelivery() NotificationPreferences {
 	cleared := p.clone()
 	cleared.Participating.Email = false
@@ -177,9 +166,8 @@ func (p NotificationPreferences) withoutEmailDelivery() NotificationPreferences 
 	return cleared
 }
 
-// SelectsEmailDelivery reports whether the document requests email delivery
-// anywhere. The write refuses it when the enterprise will not deliver to the
-// address.
+// SelectsEmailDelivery reports whether the document requests email delivery anywhere.
+// The write refuses it when the enterprise will not deliver to the address.
 func (p NotificationPreferences) SelectsEmailDelivery() bool {
 	if p.Participating.Email || p.Watching.Email || p.DependabotWeeklyDigest {
 		return true
@@ -192,8 +180,7 @@ func (p NotificationPreferences) SelectsEmailDelivery() bool {
 	return false
 }
 
-// primaryEmailLocked is the delivery address: the account's primary address,
-// or the profile address when none is flagged primary. Caller holds st.Mu.
+// primaryEmailLocked is the delivery address: the account's primary address, or the profile address when none is flagged primary. Caller holds st.Mu.
 func primaryEmailLocked(user *User) string {
 	for _, address := range user.Emails {
 		if address.Primary {
@@ -203,11 +190,9 @@ func primaryEmailLocked(user *User) string {
 	return user.Email
 }
 
-// NotificationEmailDeliveryAllowed reports whether email delivery to this
-// account is permitted and whether a restriction is in force. Under the
-// restriction only an address in a verified domain is deliverable — a property
-// of the address, not the account's authority, so an enterprise owner outside
-// the domains is undeliverable too.
+// NotificationEmailDeliveryAllowed reports whether email delivery to this account is permitted and whether a restriction is
+// in force. Under the restriction only an address in a verified domain is deliverable — a property of the address, not the
+// account's authority, so an enterprise owner outside the domains is undeliverable too.
 func (st *Store) NotificationEmailDeliveryAllowed(userID int) (allowed, restricted bool) {
 	enabled, domains := st.NotificationDeliveryRestriction()
 	if !enabled {
@@ -223,9 +208,7 @@ func (st *Store) NotificationEmailDeliveryAllowed(userID int) (allowed, restrict
 	return EmailInVerifiedDomain(address, domains), true
 }
 
-// EffectiveNotificationPreferences applies the enterprise delivery restriction:
-// the saved document with every email channel cleared when the address is
-// undeliverable.
+// EffectiveNotificationPreferences applies the enterprise delivery restriction: the saved document with every email channel cleared when the address is undeliverable.
 func (st *Store) EffectiveNotificationPreferences(userID int) (NotificationPreferences, bool) {
 	preferences, ok := st.GetNotificationPreferences(userID)
 	if !ok {
@@ -237,8 +220,7 @@ func (st *Store) EffectiveNotificationPreferences(userID int) (NotificationPrefe
 	return preferences, true
 }
 
-// notificationPreferencesLocked resolves the account's preferences, defaulting
-// for a user who has saved none. Caller holds st.Mu.
+// notificationPreferencesLocked resolves the account's preferences, defaulting for a user who has saved none. Caller holds st.Mu.
 func notificationPreferencesLocked(user *User) NotificationPreferences {
 	if user == nil || user.NotificationPreferences == nil {
 		return DefaultNotificationPreferences()
@@ -246,8 +228,7 @@ func notificationPreferencesLocked(user *User) NotificationPreferences {
 	return user.NotificationPreferences.normalize()
 }
 
-// GetNotificationPreferences returns a detached copy of the user's preferences
-// (defaults when unset); false if the user does not exist.
+// GetNotificationPreferences returns a detached copy of the user's preferences (defaults when unset); false if the user does not exist.
 func (st *Store) GetNotificationPreferences(userID int) (NotificationPreferences, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -258,8 +239,7 @@ func (st *Store) GetNotificationPreferences(userID int) (NotificationPreferences
 	return notificationPreferencesLocked(user).clone(), true
 }
 
-// SetNotificationPreferences replaces the user's preferences and persists them.
-// Returns false if the user does not exist.
+// SetNotificationPreferences replaces the user's preferences and persists them. Returns false if the user does not exist.
 func (st *Store) SetNotificationPreferences(userID int, preferences NotificationPreferences, now time.Time) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

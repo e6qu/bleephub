@@ -248,7 +248,7 @@ func TestGraphQLUpdateTeamReviewAssignment(t *testing.T) {
 	}
 }
 
-// --- behavioural ------------------------------------------------------------
+// behavioural
 
 func TestGraphQLReviewCommentMutationsWriteTheStore(t *testing.T) {
 	t.Parallel()

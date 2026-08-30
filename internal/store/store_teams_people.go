@@ -326,10 +326,9 @@ func (st *Store) ListPendingOrgInvitationsForTeam(orgLogin string, teamID int) [
 	return snapshotOrgInvitations(out)
 }
 
-// --- organization user blocks ---
+// organization user blocks
 
-// BlockUserForOrg records a block of the user by the organization.
-// Idempotent.
+// BlockUserForOrg records a block of the user by the organization. Idempotent.
 func (st *Store) BlockUserForOrg(orgLogin string, userID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -345,8 +344,7 @@ func (st *Store) BlockUserForOrg(orgLogin string, userID int) {
 	}
 }
 
-// UnblockUserForOrg removes an organization's block of the user.
-// Idempotent.
+// UnblockUserForOrg removes an organization's block of the user. Idempotent.
 func (st *Store) UnblockUserForOrg(orgLogin string, userID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -388,7 +386,7 @@ func (st *Store) ListOrgBlockedUsers(orgLogin string) []*User {
 	return snapshotUsers(out)
 }
 
-// --- organization interaction limits ---
+// organization interaction limits
 
 // GetOrgInteractionLimit returns the org's active interaction limit, or nil. An
 // expired limit is removed on read, matching GitHub's automatic lapse.
@@ -425,8 +423,7 @@ func (st *Store) SetOrgInteractionLimit(orgLogin, limit string, expiresAt time.T
 	return lim
 }
 
-// DeleteOrgInteractionLimit removes the org's interaction limit.
-// Idempotent.
+// DeleteOrgInteractionLimit removes the org's interaction limit. Idempotent.
 func (st *Store) DeleteOrgInteractionLimit(orgLogin string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -437,7 +434,7 @@ func (st *Store) DeleteOrgInteractionLimit(orgLogin string) {
 	}
 }
 
-// --- organization role assignments ---
+// organization role assignments
 
 // AssignOrgRoleToTeam grants an organization role to a team. Idempotent.
 func (st *Store) AssignOrgRoleToTeam(orgLogin string, roleID, teamID int) {
@@ -456,8 +453,7 @@ func (st *Store) AssignOrgRoleToTeam(orgLogin string, roleID, teamID int) {
 	}
 }
 
-// UnassignOrgRoleFromTeam revokes one organization role from a team.
-// Idempotent.
+// UnassignOrgRoleFromTeam revokes one organization role from a team. Idempotent.
 func (st *Store) UnassignOrgRoleFromTeam(orgLogin string, roleID, teamID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -488,8 +484,7 @@ func (st *Store) UnassignAllOrgRolesFromTeam(orgLogin string, teamID int) {
 	}
 }
 
-// AssignOrgRoleToUser grants an organization role to a user directly.
-// Idempotent.
+// AssignOrgRoleToUser grants an organization role to a user directly. Idempotent.
 func (st *Store) AssignOrgRoleToUser(orgLogin string, roleID, userID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -506,8 +501,7 @@ func (st *Store) AssignOrgRoleToUser(orgLogin string, roleID, userID int) {
 	}
 }
 
-// UnassignOrgRoleFromUser revokes one organization role from a user.
-// Idempotent.
+// UnassignOrgRoleFromUser revokes one organization role from a user. Idempotent.
 func (st *Store) UnassignOrgRoleFromUser(orgLogin string, roleID, userID int) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -602,7 +596,7 @@ func (st *Store) ListUsersWithOrgRole(orgLogin string, roleID int) map[int]strin
 	return out
 }
 
-// --- outside collaborators ---
+// outside collaborators
 
 // ListOutsideCollaborators returns users who collaborate on at least one of the
 // org's repositories without an active org membership, sorted by user ID.

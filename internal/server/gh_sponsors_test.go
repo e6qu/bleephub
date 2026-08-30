@@ -91,7 +91,6 @@ func mustCreateSponsorsTier(t *testing.T, s *isolatedServer, listingID, cents in
 	return tier
 }
 
-// ---------------------------------------------------------------------------
 // store: the billing state machine
 
 func TestSponsorshipBillingLifecycle(t *testing.T) {
@@ -121,9 +120,8 @@ func TestSponsorshipBillingLifecycle(t *testing.T) {
 		t.Fatalf("monthly estimated income = %d cents, want 500", got)
 	}
 
-	// Upgrade: effective immediately, and the difference is billed prorated
-	// over the days left in the period. The sponsorship has just started, so
-	// essentially the whole difference is due.
+	// Upgrade: effective immediately, the difference billed prorated over the
+	// days left in the period. Just started, so nearly the whole difference is due.
 	upgrade, err := sponsors.ChangeSponsorshipTier(sponsorship.ID, f.tenDollarTier.ID)
 	if err != nil {
 		t.Fatalf("upgrade tier: %v", err)
@@ -335,7 +333,6 @@ func TestSponsorsStoreGettersReturnDetachedSnapshots(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // the /ui-data browser surface
 
 func TestSponsorsBrowserSurfaceLifecycle(t *testing.T) {
@@ -475,7 +472,6 @@ func TestSponsorshipNewslettersRequireSponsorshipOrOwnership(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // webhooks
 
 func TestSponsorshipWebhookDeliversTheActionSequence(t *testing.T) {
@@ -599,7 +595,6 @@ func newSponsorsWebhookReceiver(t *testing.T, sink *sponsorshipWebhookSink) stri
 	return url
 }
 
-// ---------------------------------------------------------------------------
 // GraphQL
 
 func TestSponsorableGraphQLSurface(t *testing.T) {
@@ -824,7 +819,6 @@ func TestSponsorsNodeIDsResolveThroughQueryNode(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // test helpers
 
 func sponsorsGraphQLAs(t *testing.T, s *isolatedServer, token, query string, variables map[string]interface{}) map[string]interface{} {
@@ -879,7 +873,7 @@ func assertSponsorsStatus(t *testing.T, resp *http.Response, want int) {
 	}
 }
 
-// --- the Sponsors mutation authorization table -----------------------------
+// the Sponsors mutation authorization table
 //
 // Every Sponsors mutation names an account rather than a repository or a
 // project, so the repository and project refusal tables say nothing about

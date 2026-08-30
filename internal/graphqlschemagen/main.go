@@ -130,7 +130,7 @@ func readSchema(path string) ([]byte, error) {
 	return io.ReadAll(reader)
 }
 
-// --- SDL normalization -----------------------------------------------------
+// SDL normalization
 
 type rewriteCounts struct {
 	leadingPipes int
@@ -261,7 +261,7 @@ func trimTrailingSpace(out []byte) []byte {
 	return out
 }
 
-// --- definition model ------------------------------------------------------
+// definition model
 
 type definition struct {
 	name string
@@ -333,7 +333,7 @@ func collect(document *ast.Document) ([]definition, error) {
 
 func methodName(typeName string) string { return "define" + typeName }
 
-// --- emission --------------------------------------------------------------
+// emission
 
 func emit(definitions []definition) (map[string][]byte, stats, error) {
 	var total stats

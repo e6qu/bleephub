@@ -12,7 +12,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- shared fixtures for the secrets/variables suites ---
+// shared fixtures for the secrets/variables suites
 
 func mustStatus(t *testing.T, resp *http.Response, want int, what string) {
 	t.Helper()
@@ -23,7 +23,7 @@ func mustStatus(t *testing.T, resp *http.Response, want int, what string) {
 	}
 }
 
-// --- repository secrets ---
+// repository secrets
 
 func TestSecretsPublicKey(t *testing.T) {
 	t.Parallel()
@@ -246,7 +246,7 @@ func TestSecretsMissingSecret404(t *testing.T) {
 	mustStatus(t, s.get(t, "/api/v3/repos/nonexist/repo/actions/secrets/NOPE", defaultToken), 404, "missing secret")
 }
 
-// --- organization secrets ---
+// organization secrets
 
 func TestOrgSecretsMissingOrg404(t *testing.T) {
 	t.Parallel()
@@ -469,7 +469,7 @@ func TestOrgSecretReposListPagination(t *testing.T) {
 	}
 }
 
-// --- environment secrets ---
+// environment secrets
 
 func TestEnvSecretsMissingEnv404(t *testing.T) {
 	t.Parallel()
@@ -570,7 +570,7 @@ func TestEnvSecretsListPagination(t *testing.T) {
 	}
 }
 
-// --- repo-visible organization secrets ---
+// repo-visible organization secrets
 
 func TestRepoOrganizationSecretsList(t *testing.T) {
 	t.Parallel()

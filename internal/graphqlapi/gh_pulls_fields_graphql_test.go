@@ -21,8 +21,8 @@ func TestPullRequestSurfaceFieldsAuthorization(t *testing.T) {
 		}
 	}`
 
-	// --- private repository: the stranger is refused at the repository
-	// boundary, so the PR and every new field are unreachable. ---
+	// private repository: the stranger is refused at the repository
+	// boundary, so the PR and every new field are unreachable.
 	priv := h.store.CreateRepo(owner, "secret", "", true)
 	if priv == nil {
 		t.Fatal("private repo not created")
@@ -47,8 +47,8 @@ func TestPullRequestSurfaceFieldsAuthorization(t *testing.T) {
 		t.Fatalf("private repository leaked to a stranger through the pull-request surface: %v", repo)
 	}
 
-	// --- public repository: fields are readable, but viewerCan* still reflect
-	// the stranger's real (absent) write/admin/authorship standing. ---
+	// public repository: fields are readable, but viewerCan* still reflect
+	// the stranger's real (absent) write/admin/authorship standing.
 	pub := h.store.CreateRepo(owner, "open", "", false)
 	if pub == nil {
 		t.Fatal("public repo not created")

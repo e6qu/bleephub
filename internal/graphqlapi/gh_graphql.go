@@ -16,17 +16,15 @@ import (
 	"github.com/graphql-go/graphql/language/source"
 )
 
-// ghNotFoundError surfaces as a GitHub-shaped errors[] entry carrying
-// `"type": "NOT_FOUND"` — a non-standard, GitHub-specific key that gh CLI /
-// go-gh discriminate on to tell "no such resource" from transport errors.
+// ghNotFoundError surfaces as a GitHub-shaped errors[] entry carrying `"type": "NOT_FOUND"` — a non-standard, GitHub-specific
+// key that gh CLI / go-gh discriminate on to tell "no such resource" from transport errors.
 type ghNotFoundError struct {
 	message string
 }
 
 func (e *ghNotFoundError) Error() string { return e.message }
 
-// ErrorIsNotFound unwraps graphql-go's error layering looking for a
-// ghNotFoundError.
+// ErrorIsNotFound unwraps graphql-go's error layering looking for a ghNotFoundError.
 func ErrorIsNotFound(err error) bool {
 	for err != nil {
 		if _, ok := err.(*ghNotFoundError); ok {
@@ -46,18 +44,15 @@ func ErrorIsNotFound(err error) bool {
 	return false
 }
 
-// ghForbiddenError surfaces as a GitHub-shaped errors[] entry carrying
-// `"type": "FORBIDDEN"` — the sibling of ghNotFoundError, returned when the
-// viewer can read the resource but lacks write/admin standing (distinct from
-// NOT_FOUND masking used when it can't be read at all).
+// ghForbiddenError surfaces as a GitHub-shaped errors[] entry carrying `"type": "FORBIDDEN"` — the sibling of ghNotFoundError,
+// returned when the viewer can read the resource but lacks write/admin standing (distinct from NOT_FOUND masking used when it can't be read at all).
 type ghForbiddenError struct {
 	message string
 }
 
 func (e *ghForbiddenError) Error() string { return e.message }
 
-// ErrorIsForbidden unwraps graphql-go's error layering looking for a
-// ghForbiddenError (mirrors ErrorIsNotFound).
+// ErrorIsForbidden unwraps graphql-go's error layering looking for a ghForbiddenError (mirrors ErrorIsNotFound).
 func ErrorIsForbidden(err error) bool {
 	for err != nil {
 		if _, ok := err.(*ghForbiddenError); ok {
@@ -155,8 +150,7 @@ func (s *Resolver) initGraphQLSchema() {
 			case strings.HasPrefix(nodeID, "REF_"):
 				return nodeTypes["Ref"]
 			}
-			// A git object's global id carries its type prefix, so dispatch
-			// off the store's codec.
+			// A git object's global id carries its type prefix, so dispatch off the store's codec.
 			if prefix, _, _, ok := store.ParseGitObjectNodeID(nodeID); ok {
 				switch prefix {
 				case store.GitCommitNodeIDPrefix:
@@ -177,9 +171,8 @@ func (s *Resolver) initGraphQLSchema() {
 	s.graphqlTypes.node = nodeInterface
 	userType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "User",
-		// graphql-go memoizes an object's interface list at construction, so
-		// every interface User implements must be declared here — an interface
-		// not claimed now can never be added later.
+		// graphql-go memoizes an object's interface list at construction, so every interface User implements must be
+		// declared here — an interface not claimed now can never be added later.
 		Interfaces: []*graphql.Interface{
 			nodeInterface, actorInterface, repositoryOwnerInterface,
 			s.projectV2OwnerInterfaceType(),
@@ -230,8 +223,7 @@ func (s *Resolver) initGraphQLSchema() {
 					return userToGraphQL(user), nil
 				},
 			},
-			// `gh org list` resolves a target user's organizations through
-			// this root field rather than viewer.
+			// `gh org list` resolves a target user's organizations through this root field rather than viewer.
 			"user": &graphql.Field{
 				Type: userType,
 				Args: graphql.FieldConfigArgument{
@@ -252,14 +244,12 @@ func (s *Resolver) initGraphQLSchema() {
 	})
 	s.addMetaFieldsToSchema(queryType)
 
-	// Build the shared reaction types before any concrete subject type so
-	// those can declare they implement Reactable at config time.
+	// Build the shared reaction types before any concrete subject type so those can declare they implement Reactable at config time.
 	s.initReactionGraphQLTypes(userType)
 
 	repoType, mutationType, ownerRepositoriesField, ownerRepositoryField := s.addRepoFieldsToSchema(userType, queryType, nodeInterface)
 	nodeTypes["Repository"] = repoType
-	// The git object graph is assembled with the repository fields; register
-	// its types for Node dispatch.
+	// The git object graph is assembled with the repository fields; register its types for Node dispatch.
 	nodeTypes["Commit"] = s.graphqlTypes.commit
 	nodeTypes["Tree"] = s.graphqlTypes.tree
 	nodeTypes["Blob"] = s.graphqlTypes.blob
@@ -272,8 +262,7 @@ func (s *Resolver) initGraphQLSchema() {
 	nodeTypes["Organization"] = orgType
 	repositoryOwnerTypes["Organization"] = orgType
 
-	// Rulesets go after the org family: a ruleset's `source` union needs both
-	// the repository and organization concrete types.
+	// Rulesets go after the org family: a ruleset's `source` union needs both the repository and organization concrete types.
 	s.addRulesetFieldsToSchema(repoType, orgType)
 
 	issueType, milestoneType := s.addIssueFieldsToSchema(userType, repoType, mutationType, queryType, nodeInterface)
@@ -289,15 +278,13 @@ func (s *Resolver) initGraphQLSchema() {
 	s.addDiscussionFieldsToSchema(userType, repoType, mutationType)
 	s.addModerationMutationsToSchema(mutationType)
 
-	// Labelable mutations go after the issue and PR families because their
-	// payloads render whichever the subject turns out to be.
+	// Labelable mutations go after the issue and PR families because their payloads render whichever the subject turns out to be.
 	s.addLabelMutationsToSchema(mutationType)
 	s.addGitWriteMutationsToSchema(mutationType)
 	s.addAdminMutationsToSchema(mutationType)
 	s.addEMUMutationsToSchema(mutationType)
 
-	// Projects v2 read surface first: the mutation payloads reuse these same
-	// ProjectV2/ProjectV2Item objects and must reference finished ones.
+	// Projects v2 read surface first: the mutation payloads reuse these same ProjectV2/ProjectV2Item objects and must reference finished ones.
 	s.enrichProjectV2Types(repoType, nodeTypes)
 	s.addProjectV2OwnerFields(orgType, userType, repoType)
 	nodeTypes["ProjectV2"] = s.graphqlTypes.projectV2Type
@@ -308,25 +295,20 @@ func (s *Resolver) initGraphQLSchema() {
 	nodeTypes["ProjectV2IterationField"] = s.graphqlTypes.projectV2IterationFieldMemo
 	nodeTypes["ProjectV2StatusUpdate"] = s.graphqlTypes.projectV2StatusUpdateType
 	nodeTypes["ProjectV2Workflow"] = s.graphqlTypes.projectV2WorkflowType
-	// Query.resource turns a pasted web URL into its node — how `gh project
-	// item-add --url` reaches an issue or pull request.
+	// Query.resource turns a pasted web URL into its node — how `gh project item-add --url` reaches an issue or pull request.
 	s.addResourceFieldToSchema(queryType, nodeTypes)
 	s.addProjectV2MutationsToSchema(mutationType)
 
-	// Timelines go here: the two unions name issue, PR, discussion and
-	// Projects v2 types, all now assembled.
+	// Timelines go here: the two unions name issue, PR, discussion and Projects v2 types, all now assembled.
 	s.addTimelineFieldsToSchema(nodeInterface, nodeTypes)
 
-	// Conversation/metadata fields run last so every type they name (ProjectV2,
-	// timeline, IssueComment, Repository) is assembled.
+	// Conversation/metadata fields run last so every type they name (ProjectV2, timeline, IssueComment, Repository) is assembled.
 	s.enrichConversationTypes(userType, repoType)
 
-	// Advisories/Dependabot: after the PR family (DependabotUpdate names
-	// PullRequest) and repository family (four types name Repository).
+	// Advisories/Dependabot: after the PR family (DependabotUpdate names PullRequest) and repository family (four types name Repository).
 	s.addAdvisoryFieldsToSchema(userType, repoType, mutationType, queryType, nodeInterface, nodeTypes)
 
-	// Enterprise family: after the org types, whose Organization its
-	// organizations, policy-override connections and IP-allow-list union name.
+	// Enterprise family: after the org types, whose Organization its organizations, policy-override connections and IP-allow-list union name.
 	enterpriseType := s.addEnterpriseFieldsToSchema(userType, orgType, queryType, nodeInterface, actorInterface)
 	nodeTypes["Enterprise"] = enterpriseType
 	nodeTypes["EnterpriseUserAccount"] = s.graphqlTypes.enterpriseUserAccount
@@ -341,8 +323,7 @@ func (s *Resolver) initGraphQLSchema() {
 	s.addGistFieldsToSchema(userType)
 	s.addReactionMutationsToSchema(mutationType)
 
-	// Sponsors last among read families: its Sponsorable fields name Repository
-	// (featured items) and the mutation type, which must be assembled first.
+	// Sponsors last among read families: its Sponsorable fields name Repository (featured items) and the mutation type, which must be assembled first.
 	s.addSponsorsFieldsToSchema(userType, orgType, queryType, mutationType, nodeTypes)
 
 	// Marketplace follows Sponsors, reusing that family's connection builder.
@@ -350,87 +331,70 @@ func (s *Resolver) initGraphQLSchema() {
 
 	s.addCopilotFieldsToSchema(userType)
 
-	// Migrations: after the org and enterprise families, whose Organization and
-	// Enterprise types Organization.repositoryMigrations and
-	// startOrganizationMigration name.
+	// Migrations: after the org and enterprise families, whose Organization and Enterprise types
+	// Organization.repositoryMigrations and startOrganizationMigration name.
 	s.addMigrationFieldsToSchema(orgType, mutationType, nodeInterface, nodeTypes)
 
-	// The account surface's remaining members on Repository/User/Organization
-	// name almost every type above, so it is installed once all are assembled.
+	// The account surface's remaining members on Repository/User/Organization name almost every type above, so it is installed once all are assembled.
 	s.addAccountSurfaceFieldsToSchema(userType, orgType, repoType)
 
 	// Query.topic needs the queryType handed to this builder.
 	s.addQueryTopicField(queryType)
 
-	// Projects classic: after the account surface, since a card's content names
-	// the assembled Issue and PullRequest types.
+	// Projects classic: after the account surface, since a card's content names the assembled Issue and PullRequest types.
 	s.addProjectsClassicToSchema(userType, orgType, repoType, mutationType, nodeTypes)
 
-	// Branch protection: after the account surface so the rule's
-	// repository/creator members name finished types.
+	// Branch protection: after the account surface so the rule's repository/creator members name finished types.
 	s.addBranchProtectionFieldsToSchema(repoType, mutationType)
 
-	// Ruleset/custom-property/domain writes: after the enterprise family, since
-	// each subject may be enterprise-scoped.
+	// Ruleset/custom-property/domain writes: after the enterprise family, since each subject may be enterprise-scoped.
 	s.addRulesetMutationsToSchema(mutationType)
 	s.addCustomPropertyMutationsToSchema(mutationType)
 	s.addVerifiableDomainMutationsToSchema(mutationType)
 
-	// The mutation-surface remainder goes last: every payload it registers
-	// returns an object one of the families above defines.
+	// The mutation-surface remainder goes last: every payload it registers returns an object one of the families above defines.
 	s.addGitHubMutationSurface(mutationType)
 
-	// Checks and deployment mutations: their payloads name the CheckRun/
-	// CheckSuite and Deployment/Environment types the account surface builds.
+	// Checks and deployment mutations: their payloads name the CheckRun/CheckSuite and Deployment/Environment types the account surface builds.
 	s.addChecksMutationsToSchema(mutationType)
 	s.addDeploymentsMutationsToSchema(mutationType)
 
-	// Commit.deployments and Repository.pinnedEnvironments name types the two
-	// families above just assembled.
+	// Commit.deployments and Repository.pinnedEnvironments name types the two families above just assembled.
 	s.addLateGitResidualFields()
 
-	// Residual Commit/Release/status-rollup members, after every type they
-	// hang off is assembled.
+	// Residual Commit/Release/status-rollup members, after every type they hang off is assembled.
 	s.addAccountActionsFields()
 
-	// Actions run graph and residual Checks members, after every type they name
-	// is assembled.
+	// Actions run graph and residual Checks members, after every type they name is assembled.
 	s.addActionsFamilyFields()
 
-	// Shared Comment-trait/back-reference/viewer-permission fields on
-	// CommitComment, IssueComment and PullRequestReviewComment, added last since
-	// they name the now-assembled repository/issue/PR/review/commit types.
+	// Shared Comment-trait/back-reference/viewer-permission fields on CommitComment, IssueComment and PullRequestReviewComment,
+	// added last since they name the now-assembled repository/issue/PR/review/commit types.
 	s.enrichCommentTypes()
 
-	// The tail of GitHub fields whose subject bleephub does not model (ruleset
-	// conditions, bypass-actor union, permissionSources, pinnedDiscussions).
-	// Runs last — its types are now assembled and every field resolves a
-	// truthful null/empty.
+	// The tail of GitHub fields whose subject bleephub does not model (ruleset conditions, bypass-actor union, permissionSources,
+	// pinnedDiscussions). Runs last — its types are now assembled and every field resolves a truthful null/empty.
 	s.addResidueTailFields()
 
-	// Assert authorization coverage over the fully-assembled type, so a mutation
-	// reaching the store without a policy row halts startup rather than shipping
-	// open to any signed-in account.
+	// Assert authorization coverage over the fully-assembled type, so a mutation reaching the store without a policy row
+	// halts startup rather than shipping open to any signed-in account.
 	assertMutationsAuthorized(mutationType)
 
 	s.addSchemaFidelityShells()
 
-	// Schema-fidelity shells for data this instance does not produce, each
-	// registered via registerExtraSchemaType.
+	// Schema-fidelity shells for data this instance does not produce, each registered via registerExtraSchemaType.
 	schemaTypes := append([]graphql.Type{
 		s.graphqlTypes.commitComment,
 		s.graphqlTypes.blob,
 		s.graphqlTypes.tree,
 		s.graphqlTypes.tag,
 		s.graphqlTypes.commit,
-		// GitSignature members are reachable only via Commit.signature's
-		// interface; register them so `... on GpgSignature` fragments validate.
+		// GitSignature members are reachable only via Commit.signature's interface; register them so `... on GpgSignature` fragments validate.
 		s.namedObject("GpgSignature"),
 		s.namedObject("SshSignature"),
 		s.namedObject("SmimeSignature"),
 		s.namedObject("UnknownSignature"),
-		// The six agent-triage events are reachable only via the
-		// IssueEventWithRationale union; register them so their fragments validate.
+		// The six agent-triage events are reachable only via the IssueEventWithRationale union; register them so their fragments validate.
 		s.namedObject("IssueFieldAddedEvent"),
 		s.namedObject("IssueFieldChangedEvent"),
 		s.namedObject("IssueFieldRemovedEvent"),
@@ -482,8 +446,7 @@ func (s *Resolver) graphQLNodeByID(ctx context.Context, nodeID string) interface
 	if user := store.FindUserByNodeID(s.store, nodeID); user != nil {
 		return userToGraphQL(user)
 	}
-	// enterpriseNodeByID resolves enterprise/invitation/IP-allow-list nodes and
-	// applies each one's visibility rule.
+	// enterpriseNodeByID resolves enterprise/invitation/IP-allow-list nodes and applies each one's visibility rule.
 	if node := s.enterpriseNodeByID(ctx, nodeID); node != nil {
 		return node
 	}
@@ -567,12 +530,10 @@ func PrepareDocument(schema graphql.Schema, query string) (document *ast.Documen
 	return document, nil, nil
 }
 
-// githubCompatibleValidationErrors drops the one overlap error GitHub is
-// deliberately permissive about: same-response-name fields with different leaf
-// enum types below mutually exclusive concrete-object fragments (gh's issue
-// lookup selects state below `... on Issue` and `... on PullRequest` unaliased;
-// graphql-go rejects it, GitHub executes it). A narrow post-validation
-// exception — branches that can coincide keep their errors.
+// githubCompatibleValidationErrors drops the one overlap error GitHub is deliberately permissive about: same-response-name
+// fields with different leaf enum types below mutually exclusive concrete-object fragments (gh's issue lookup selects state
+// below `... on Issue` and `... on PullRequest` unaliased; graphql-go rejects it, GitHub executes it). A narrow
+// post-validation exception — branches that can coincide keep their errors.
 func githubCompatibleValidationErrors(schema graphql.Schema, document *ast.Document, errors []gqlerrors.FormattedError) []gqlerrors.FormattedError {
 	if len(errors) == 0 {
 		return nil
@@ -617,10 +578,8 @@ func isExclusiveLeafTypeConflict(validationError gqlerrors.FormattedError, conte
 	return true
 }
 
-// concreteFieldContexts maps each selected field to the concrete object type
-// condition that makes it reachable. A location has multiple contexts when a
-// fragment is spread more than once; the exception is safe only when every
-// left/right pairing is disjoint.
+// concreteFieldContexts maps each selected field to the concrete object type condition that makes it reachable. A location
+// has multiple contexts when a fragment is spread more than once; the exception is safe only when every left/right pairing is disjoint.
 func concreteFieldContexts(schema graphql.Schema, document *ast.Document) map[graphqlSourcePosition]map[string]struct{} {
 	fragments := map[string]*ast.FragmentDefinition{}
 	for _, definition := range document.Definitions {
@@ -722,9 +681,8 @@ func CheckDocumentLimits(document *ast.Document, variables map[string]interface{
 							continue
 						}
 						size, ok := graphqlIntegerValue(value, variables)
-						// Zero is legal: it asks for connection metadata without
-						// nodes, and gh relies on it (`gh project create` selects
-						// `items(first: 0)`). Rejecting zero refused the command.
+						// Zero is legal: it asks for connection metadata without nodes, and gh relies on it
+						// (`gh project create` selects `items(first: 0)`). Rejecting zero refused the command.
 						if !ok || size < 0 || size > 100 {
 							return fmt.Errorf("%s must be between 0 and 100", name)
 						}

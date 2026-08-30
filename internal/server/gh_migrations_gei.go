@@ -1,14 +1,14 @@
 package bleephub
 
 // GitHub Enterprise Importer workers. Migration state reflects work that
-// actually happened, not a timer: a repository migration leaves IN_PROGRESS
-// only once the git graph and content have landed.
+// happened, not a timer: a repository migration leaves IN_PROGRESS only once the
+// git graph and content have landed.
 //
 // Workers mirror the export worker (gh_migrations_export.go): supervised by
-// goBackground, every step under a context from s.lifetime, and claim-before
-// -work so racing replicas cannot double-run. Shutdown leaves work recorded
-// IN_PROGRESS; resumeGEIMigrations requeues and re-runs it, safe because every
-// step is idempotent.
+// goBackground, every step under a context from s.lifetime, claim-before-work so
+// racing replicas can't double-run. Shutdown leaves work IN_PROGRESS;
+// resumeGEIMigrations requeues and re-runs it, safe because every step is
+// idempotent.
 
 import (
 	"archive/tar"
@@ -54,7 +54,7 @@ const (
 // survive to where the state is recorded.
 var errGEIValidation = errors.New("migration validation failed")
 
-// --- supervision -----------------------------------------------------------
+// supervision
 
 func (s *Server) startGEIRepositoryMigration(id int) {
 	s.goBackground(func() { s.runGEIRepositoryMigration(id) })
@@ -65,10 +65,10 @@ func (s *Server) startGEIOrganizationMigration(id int) {
 }
 
 // resumeGEIMigrations re-runs migrations a previous process left unfinished.
-// It runs once at boot before the listener opens, so anything still IN_PROGRESS
-// belongs to a process that is gone. A repository migration owned by an org
-// migration is skipped here; its org migration is resumed and re-drives it, so
-// the fan-out's progress accounting stays with one worker.
+// Runs once at boot before the listener opens, so anything still IN_PROGRESS
+// belongs to a gone process. A repository migration owned by an org migration is
+// skipped: its org migration is resumed and re-drives it, keeping the fan-out's
+// progress accounting with one worker.
 func (s *Server) resumeGEIMigrations() {
 	for _, id := range s.store.ListUnfinishedOrganizationMigrations() {
 		s.store.RequeueOrganizationMigration(id)
@@ -84,7 +84,7 @@ func (s *Server) resumeGEIMigrations() {
 	}
 }
 
-// --- the repository migration worker ---------------------------------------
+// the repository migration worker
 
 func (s *Server) runGEIRepositoryMigration(id int) {
 	if !s.store.ClaimRepositoryMigration(id) {
@@ -105,9 +105,9 @@ func (s *Server) runGEIRepositoryMigration(id int) {
 }
 
 // recordGEIRepositoryMigrationOutcome stores the log, then lands the terminal
-// state. Log first, since it is the only account of a failed run. State second
-// and may be refused: SetRepositoryMigrationState will not move a migration out
-// of a terminal state, so a worker finishing after an abort cannot overwrite it.
+// state. Log first: it is the only account of a failed run. State second, and
+// may be refused: SetRepositoryMigrationState won't move a migration out of a
+// terminal state, so a worker finishing after an abort can't overwrite it.
 func (s *Server) recordGEIRepositoryMigrationOutcome(ctx context.Context, migration *store.RepositoryMigration, log *migrationLog, err error) {
 	if err != nil {
 		log.printf("migration failed: %v", err)
@@ -387,7 +387,7 @@ func migrationSourceAuth(source *store.MigrationSource) transport.AuthMethod {
 	return &gitHTTP.BasicAuth{Username: "x-access-token", Password: source.AccessToken}
 }
 
-// --- content ---------------------------------------------------------------
+// content
 
 // ingestGEIRepositoryContent materialises the non-git records: issues, pull
 // requests and releases. A declared metadata archive is streamed and applied;
@@ -577,7 +577,7 @@ func decodeGEIArchiveEntry(reader io.Reader, out interface{}) error {
 	return json.NewDecoder(io.LimitReader(reader, geiArchiveEntryMaxBytes)).Decode(out)
 }
 
-// --- the organization migration worker --------------------------------------
+// the organization migration worker
 
 func (s *Server) runGEIOrganizationMigration(id int) {
 	if !s.store.ClaimOrganizationMigration(id) {
@@ -847,7 +847,7 @@ func (s *Server) migrationSourceHTTPClient() *http.Client {
 	}
 }
 
-// --- shared helpers ---------------------------------------------------------
+// shared helpers
 
 // repoFromMigrationSourceURL resolves a source URL to a repository on this
 // instance, or nil when it names somewhere else. lockSource and the in-instance
@@ -902,7 +902,7 @@ func (l *migrationLog) reader() io.Reader {
 	return strings.NewReader(strings.Join(l.lines, "\n") + "\n")
 }
 
-// --- the browser surface ----------------------------------------------------
+// the browser surface
 //
 // GitHub exposes GEI entities only over GraphQL, so the web UI's migration
 // status is served under /ui-data rather than invented under /api/v3. Every

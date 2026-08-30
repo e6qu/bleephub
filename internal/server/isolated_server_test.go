@@ -30,8 +30,8 @@ type isolatedServer struct {
 }
 
 // repoRef carries owner and name separately so the compiler rejects
-// concatenating it into a URL — the TEST-008 migration's silent 404s and
-// "admin/admin/<name>" bugs came from hand-built paths and misplaced full names.
+// concatenating it into a URL — TEST-008's silent 404s and "admin/admin/<name>"
+// bugs came from hand-built paths and misplaced full names.
 type repoRef struct {
 	owner, name string
 }

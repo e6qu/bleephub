@@ -161,7 +161,7 @@ func (s *Resolver) addOrganizationProfileFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- viewer standing ---------------------------------------------------
+	// viewer standing
 	orgBool := func(decide func(p graphql.ResolveParams, org *store.Org) bool) *graphql.Field {
 		return &graphql.Field{
 			Type: graphql.NewNonNull(graphql.Boolean),
@@ -497,7 +497,7 @@ func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 		})
 	}
 
-	// --- repository custom properties -------------------------------------
+	// repository custom properties
 	customProperty := s.gqlRepositoryCustomPropertyType()
 	orgType.AddFieldConfig("repositoryCustomProperties", &graphql.Field{
 		Type: s.accountConnectionType(types, "RepositoryCustomProperty", customProperty, false, nil),

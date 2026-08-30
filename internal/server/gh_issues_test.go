@@ -10,10 +10,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// mustPost asserts a setup/precondition request returned a 2xx status, then
-// closes its body. Setup helpers that discarded the status let a broken
-// precondition surface later as a misleading assertion failure in the code
-// under test; routing them through mustPost fails loudly at the setup point.
+// mustPost asserts a setup request returned 2xx, then closes its body — so a
+// broken precondition fails loudly here instead of surfacing later as a
+// misleading assertion failure in the code under test.
 func mustPost(t *testing.T, resp *http.Response) {
 	t.Helper()
 	defer resp.Body.Close()
@@ -32,7 +31,7 @@ func createTestIssueRepo(t *testing.T, name string) {
 	}))
 }
 
-// --- Label tests ---
+// Label tests
 
 func TestCreateLabel(t *testing.T) {
 	createTestIssueRepo(t, "label-test")
@@ -170,7 +169,7 @@ func TestDeleteLabel(t *testing.T) {
 	}
 }
 
-// --- Milestone tests ---
+// Milestone tests
 
 func TestCreateMilestone(t *testing.T) {
 	createTestIssueRepo(t, "ms-test")
@@ -268,7 +267,7 @@ func TestDeleteMilestone(t *testing.T) {
 	}
 }
 
-// --- Issue REST tests ---
+// Issue REST tests
 
 func TestCreateIssueREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-create")
@@ -467,7 +466,7 @@ func TestUpdateIssueMilestoneLabelsAssigneesREST(t *testing.T) {
 	}
 }
 
-// --- Comment REST tests ---
+// Comment REST tests
 
 func TestCreateCommentREST(t *testing.T) {
 	createTestIssueRepo(t, "comment-create")
@@ -511,7 +510,7 @@ func TestListCommentsREST(t *testing.T) {
 	}
 }
 
-// --- Issue label management tests ---
+// Issue label management tests
 
 func TestAddIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-addlabels")
@@ -557,7 +556,7 @@ func TestRemoveIssueLabelREST(t *testing.T) {
 	}
 }
 
-// --- Issue label set/clear tests ---
+// Issue label set/clear tests
 
 func TestSetIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-setlabels")
@@ -611,7 +610,7 @@ func TestClearIssueLabelsREST(t *testing.T) {
 	}
 }
 
-// --- Issue assignee tests ---
+// Issue assignee tests
 
 func TestAddIssueAssigneesREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-addassignees")
@@ -649,7 +648,7 @@ func TestRemoveIssueAssigneesREST(t *testing.T) {
 	}
 }
 
-// --- Repo-level comment tests ---
+// Repo-level comment tests
 
 func TestListRepoIssueCommentsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-repo-comments")
@@ -711,7 +710,7 @@ func TestPinIssueCommentREST(t *testing.T) {
 	}
 }
 
-// --- Issue timeline + events tests ---
+// Issue timeline + events tests
 
 func TestListIssueTimelineREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-timeline")
@@ -845,7 +844,7 @@ func TestGetIssueEventREST(t *testing.T) {
 	}
 }
 
-// --- Sub-issues / dependencies ---
+// Sub-issues / dependencies
 
 func TestSubIssuesREST_EmptyList(t *testing.T) {
 	createTestIssueRepo(t, "issue-subissues")
@@ -864,7 +863,7 @@ func TestSubIssuesREST_EmptyList(t *testing.T) {
 	}
 }
 
-// --- GraphQL tests ---
+// GraphQL tests
 
 func TestGraphQLCreateIssue(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{

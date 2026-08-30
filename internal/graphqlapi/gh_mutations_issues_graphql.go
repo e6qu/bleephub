@@ -25,7 +25,7 @@ func (s *Resolver) addIssueSurfaceMutations(mutationType *graphql.Object) {
 	issueFieldValueUnion := s.graphqlTypes.issueFieldValueUnion
 	confidence := s.sharedEnum("IssueEventConfidenceLevel", "HIGH", "LOW", "MEDIUM")
 
-	// --- issue comments -----------------------------------------------------
+	// issue comments
 
 	s.registerMutation(mutationType, "updateIssueComment", &graphql.Field{
 		Type: s.mutationPayload("UpdateIssueCommentPayload", graphql.Fields{
@@ -68,7 +68,7 @@ func (s *Resolver) addIssueSurfaceMutations(mutationType *graphql.Object) {
 	pinComment("pinIssueComment", "PinIssueCommentPayload", "PinIssueCommentInput", true)
 	pinComment("unpinIssueComment", "UnpinIssueCommentPayload", "UnpinIssueCommentInput", false)
 
-	// --- assignment ---------------------------------------------------------
+	// assignment
 
 	agentAssignment := s.mutationInput("AgentAssignmentInput", graphql.InputObjectConfigFieldMap{
 		"baseRef":            gqlString(),
@@ -133,7 +133,7 @@ func (s *Resolver) addIssueSurfaceMutations(mutationType *graphql.Object) {
 		},
 	})
 
-	// --- sub-issues and dependencies ---------------------------------------
+	// sub-issues and dependencies
 
 	s.registerMutation(mutationType, "addSubIssue", &graphql.Field{
 		Type: s.mutationPayload("AddSubIssuePayload", graphql.Fields{
@@ -200,7 +200,7 @@ func (s *Resolver) addIssueSurfaceMutations(mutationType *graphql.Object) {
 	blockedBy("addBlockedBy", "AddBlockedByPayload", "AddBlockedByInput", true)
 	blockedBy("removeBlockedBy", "RemoveBlockedByPayload", "RemoveBlockedByInput", false)
 
-	// --- the duplicate relation --------------------------------------------
+	// the duplicate relation
 
 	s.registerMutation(mutationType, "unmarkIssueAsDuplicate", &graphql.Field{
 		Type: s.mutationPayload("UnmarkIssueAsDuplicatePayload", graphql.Fields{
@@ -215,7 +215,7 @@ func (s *Resolver) addIssueSurfaceMutations(mutationType *graphql.Object) {
 		Resolve: s.resolveUnmarkIssueAsDuplicate,
 	})
 
-	// --- issue types --------------------------------------------------------
+	// issue types
 
 	issueTypeColor := s.sharedEnum("IssueTypeColor",
 		"BLUE", "GRAY", "GREEN", "ORANGE", "PINK", "PURPLE", "RED", "YELLOW")
@@ -277,7 +277,7 @@ func (s *Resolver) addIssueSurfaceMutations(mutationType *graphql.Object) {
 		Resolve: s.resolveUpdateIssueIssueType,
 	})
 
-	// --- custom issue fields ------------------------------------------------
+	// custom issue fields
 
 	optionInput := s.mutationInput("IssueFieldSingleSelectOptionInput", graphql.InputObjectConfigFieldMap{
 		"name":        gqlNonNullString(),
@@ -393,7 +393,7 @@ func (s *Resolver) addIssueSurfaceMutations(mutationType *graphql.Object) {
 		Resolve: s.resolveDeleteIssueFieldValue,
 	})
 
-	// --- the pending-suggestion queue ---------------------------------------
+	// the pending-suggestion queue
 
 	suggestionRef := s.mutationInput("PendingIssueSuggestionRef", graphql.InputObjectConfigFieldMap{
 		"kind": gqlNonNullInputOf(s.sharedEnum("PendingIssueSuggestionKind",
@@ -427,7 +427,7 @@ func (s *Resolver) addIssueSurfaceMutations(mutationType *graphql.Object) {
 		"RejectPendingIssueSuggestionsInput", false)
 }
 
-// --- issue comments ---------------------------------------------------------
+// issue comments
 
 func (s *Resolver) resolveUpdateIssueComment(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -525,7 +525,7 @@ func (s *Resolver) commentSubject(comment *store.Comment) (*store.Repo, interfac
 	return s.store.GetRepoByID(issue.RepoID), issue
 }
 
-// --- assignment -------------------------------------------------------------
+// assignment
 
 type assigneeChangeMode int
 
@@ -693,7 +693,7 @@ func dedupeInts(values []int) []int {
 	return out
 }
 
-// --- sub-issues and dependencies --------------------------------------------
+// sub-issues and dependencies
 
 func (s *Resolver) resolveAddSubIssue(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -784,7 +784,7 @@ func (s *Resolver) resolveBlockedBy(p graphql.ResolveParams, add bool) (interfac
 	}, nil
 }
 
-// --- the duplicate relation --------------------------------------------------
+// the duplicate relation
 
 func (s *Resolver) resolveUnmarkIssueAsDuplicate(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -816,7 +816,7 @@ func (s *Resolver) resolveUnmarkIssueAsDuplicate(p graphql.ResolveParams) (inter
 	return map[string]interface{}{"duplicate": issueToGQL(updated, s.store)}, nil
 }
 
-// --- issue types --------------------------------------------------------------
+// issue types
 
 func (s *Resolver) resolveCreateIssueType(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -916,7 +916,7 @@ func (s *Resolver) resolveUpdateIssueIssueType(p graphql.ResolveParams) (interfa
 	return map[string]interface{}{"issue": issueToGQL(updated, s.store)}, nil
 }
 
-// --- custom issue fields ------------------------------------------------------
+// custom issue fields
 
 func (s *Resolver) resolveCreateIssueField(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -1238,7 +1238,7 @@ func (s *Resolver) issueFieldValueToGQL(field *store.IssueField, issueID int, va
 	return issueFieldValueToGQLLocked(field, issueID, value)
 }
 
-// --- the pending-suggestion queue ---------------------------------------------
+// the pending-suggestion queue
 
 func (s *Resolver) resolvePendingIssueSuggestions(p graphql.ResolveParams, apply bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})

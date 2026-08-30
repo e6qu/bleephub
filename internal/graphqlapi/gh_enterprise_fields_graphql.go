@@ -55,7 +55,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 
 	extras := &enterpriseExtraTypes{}
 
-	// --- EnterpriseTeam (real: store-backed) --------------------------------
+	// EnterpriseTeam (real: store-backed)
 	teamType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "EnterpriseTeam",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -83,13 +83,13 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 	s.stashNamedObject(teamType)
 	extras.enterpriseTeamConnection = advisoryConnectionType("EnterpriseTeam", teamType, pageInfo)
 
-	// --- RepositoryCustomProperty (real: enterprise schema) -----------------
+	// RepositoryCustomProperty (real: enterprise schema)
 	// Shared (memoized) with the organization read surface.
 	extras.repositoryCustomPropertyType = s.gqlRepositoryCustomPropertyType()
 	extras.repositoryCustomPropertyConnection = s.accountConnectionType(
 		s.accountSurfaceRegistry(), "RepositoryCustomProperty", extras.repositoryCustomPropertyType, false, nil)
 
-	// --- UserNamespaceRepository (EMU only; empty here) ---------------------
+	// UserNamespaceRepository (EMU only; empty here)
 	userNamespaceRepoType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "UserNamespaceRepository",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -102,16 +102,16 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 	})
 	extras.userNamespaceRepositoryConnection = advisoryConnectionType("UserNamespaceRepository", userNamespaceRepoType, pageInfo)
 
-	// --- RepositoryRuleset (shared with the account surface) ----------------
+	// RepositoryRuleset (shared with the account surface)
 	extras.rulesetType = s.accountSurfaceRegistry().ruleset
 	extras.rulesetConnection = s.accountSurfaceRegistry().rulesetConnection
 
-	// --- VerifiableDomain (real: store-backed) ------------------------------
+	// VerifiableDomain (real: store-backed)
 	// Reuse the organization surface's memoized VerifiableDomainConnection.
 	extras.domainConnection = s.accountConnectionType(
 		s.accountSurfaceRegistry(), "VerifiableDomain", s.gqlVerifiableDomainType(), false, nil)
 
-	// --- EnterpriseServerInstallation (no GHES here; empty) -----------------
+	// EnterpriseServerInstallation (no GHES here; empty)
 	serverInstallationType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "EnterpriseServerInstallation",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -146,7 +146,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 		},
 	})
 
-	// --- OrganizationInvitation (node of the two invitation connections) ----
+	// OrganizationInvitation (node of the two invitation connections)
 	orgInvitationType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "OrganizationInvitation",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -162,7 +162,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 	extras.pendingMemberInvitationConnection = uniqueUserInvitationConnection(
 		"EnterprisePendingMemberInvitation", orgInvitationType, pageInfo)
 
-	// --- RepositoryInvitation (node of pendingCollaboratorInvitations) ------
+	// RepositoryInvitation (node of pendingCollaboratorInvitations)
 	repoInvitationType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "RepositoryInvitation",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -189,7 +189,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 	})
 	extras.repositoryInvitationConnection = advisoryConnectionType("RepositoryInvitation", repoInvitationType, pageInfo)
 
-	// --- ExternalIdentity (SCIM/SAML provisioning; empty here) --------------
+	// ExternalIdentity (SCIM/SAML provisioning; empty here)
 	externalIdentityType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "ExternalIdentity",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -202,7 +202,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 	extras.externalIdentityType = externalIdentityType
 	extras.externalIdentityConnection = advisoryConnectionType("ExternalIdentity", externalIdentityType, pageInfo)
 
-	// --- EnterpriseRepositoryInfo (outside-collaborator edge) ---------------
+	// EnterpriseRepositoryInfo (outside-collaborator edge)
 	enterpriseRepositoryInfoType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "EnterpriseRepositoryInfo",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -215,7 +215,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 	})
 	extras.enterpriseRepositoryInfoConnection = advisoryConnectionType("EnterpriseRepositoryInfo", enterpriseRepositoryInfoType, pageInfo)
 
-	// --- OIDCProvider (external SSO; null here) -----------------------------
+	// OIDCProvider (external SSO; null here)
 	extras.oidcProviderType = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "OIDCProvider",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -227,7 +227,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 		},
 	})
 
-	// --- AnnouncementBanner (shared with the organization surface) ----------
+	// AnnouncementBanner (shared with the organization surface)
 	extras.announcementBannerType = s.gqlAnnouncementBannerType(dateTime)
 
 	return extras
@@ -268,7 +268,7 @@ func (s *Resolver) addEnterpriseExtraFields(
 	enterpriseType, ownerInfoType, identityProviderType, userAccountType *graphql.Object,
 	extras *enterpriseExtraTypes,
 ) {
-	// ----- Enterprise -------------------------------------------------------
+	// Enterprise
 
 	enterpriseType.AddFieldConfig("announcementBanner", &graphql.Field{
 		Type: extras.announcementBannerType,
@@ -414,7 +414,7 @@ func (s *Resolver) addEnterpriseExtraFields(
 		},
 	})
 
-	// ----- EnterpriseOwnerInfo ---------------------------------------------
+	// EnterpriseOwnerInfo
 
 	ownerInfoType.AddFieldConfig("domains", &graphql.Field{
 		Type: graphql.NewNonNull(extras.domainConnection),
@@ -500,7 +500,7 @@ func (s *Resolver) addEnterpriseExtraFields(
 		},
 	})
 
-	// ----- EnterpriseIdentityProvider --------------------------------------
+	// EnterpriseIdentityProvider
 
 	identityProviderType.AddFieldConfig("externalIdentities", &graphql.Field{
 		Type: graphql.NewNonNull(extras.externalIdentityConnection),
@@ -515,7 +515,7 @@ func (s *Resolver) addEnterpriseExtraFields(
 		},
 	})
 
-	// ----- EnterpriseUserAccount -------------------------------------------
+	// EnterpriseUserAccount
 
 	userAccountType.AddFieldConfig("enterpriseInstallations", &graphql.Field{
 		Type: graphql.NewNonNull(extras.serverInstallationMembershipConn),

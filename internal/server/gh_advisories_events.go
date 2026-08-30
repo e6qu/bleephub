@@ -138,7 +138,7 @@ func alertKey(manifestPath, ecosystem, packageName, ghsaID string) string {
 	}, "\x1f")
 }
 
-// --- security-access gating -------------------------------------------------
+// security-access gating
 
 // viewerHasRepoSecurityAccess reports whether the request may read a repository's
 // security findings (alerts and embargoed advisories).
@@ -164,7 +164,7 @@ func (s *Server) lookupSecurityReadableRepo(w http.ResponseWriter, r *http.Reque
 	return repo
 }
 
-// --- repository_advisory and security_advisory ------------------------------
+// repository_advisory and security_advisory
 
 // announceAdvisoryPublication decides, from the advisory's state and whether it was
 // already public, which transition happened and emits its events. A still-draft

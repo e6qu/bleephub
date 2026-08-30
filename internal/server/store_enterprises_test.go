@@ -15,7 +15,7 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	// --- session 1: create enterprise state, then close ---
+	// session 1: create enterprise state, then close
 	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -202,7 +202,7 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	// --- session 2: reload and assert every surface came back ---
+	// session 2: reload and assert every surface came back
 	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)

@@ -94,10 +94,9 @@ func ExprContainsAnyStatusFunction(expr string) bool {
 	return functions["always"] || functions["failure"] || functions["success"] || functions["cancelled"]
 }
 
-// ExprGatesOnCancellation reports whether an `if:` calls always() or
-// cancelled(), so its job still runs after cancellation. Token inspection keeps
-// a string literal or longer identifier (`contains(msg, 'cancelled()')`) from
-// reading as a gate.
+// ExprGatesOnCancellation reports whether an `if:` calls always() or cancelled(),
+// so its job still runs after cancellation. Token inspection keeps a string literal
+// or longer identifier (`contains(msg, 'cancelled()')`) from reading as a gate.
 func ExprGatesOnCancellation(expr string) bool {
 	functions := expressionFunctionCalls(expr)
 	return functions["always"] || functions["cancelled"]

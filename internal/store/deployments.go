@@ -446,7 +446,7 @@ func (ds *DeploymentStore) DeleteEnvironment(repoID int, name string) bool {
 	return true
 }
 
-// --- pinned environments -----------------------------------------------------
+// pinned environments
 
 // GetDeploymentByNodeID returns a detached snapshot (STORE-021), or nil.
 func (ds *DeploymentStore) GetDeploymentByNodeID(nodeID string) *Deployment {

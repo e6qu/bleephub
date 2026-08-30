@@ -1,7 +1,6 @@
 package graphqlapi
 
-// Repository.deployments / environments / environment, over the same
-// deployment store the REST routes write.
+// Repository.deployments / environments / environment, over the same deployment store the REST routes write.
 
 import (
 	"encoding/json"
@@ -93,7 +92,7 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// --- protection rules --------------------------------------------------
+	// protection rules
 	deploymentReviewer := graphql.NewUnion(graphql.UnionConfig{
 		Name:  "DeploymentReviewer",
 		Types: []*graphql.Object{types.user, s.graphqlTypes.team},
@@ -189,7 +188,7 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 	// DeploymentReview.environments reuses this exact object.
 	s.graphqlTypes.environmentConnection = s.accountConnectionType(types, "Environment", environmentType, false, nil)
 
-	// --- Repository fields -------------------------------------------------
+	// Repository fields
 	deploymentConnection := s.accountConnectionType(types, "Deployment", deploymentType, false, nil)
 	// Commit.deployments (assembled later) serves this same connection instance.
 	s.stashNamedObject(deploymentConnection)

@@ -165,7 +165,7 @@ func TestGraphQLSurfaceMutationsStillServeTheirEntitledCaller(t *testing.T) {
 	}
 }
 
-// --- behavioural: labels ----------------------------------------------------
+// behavioural: labels
 
 func TestGraphQLLabelMutationsWriteTheStore(t *testing.T) {
 	t.Parallel()
@@ -244,7 +244,7 @@ func TestGraphQLLabelMutationsWriteTheStore(t *testing.T) {
 	}
 }
 
-// --- behavioural: topics ----------------------------------------------------
+// behavioural: topics
 
 func TestGraphQLUpdateTopicsWritesValidNamesAndReportsTheRest(t *testing.T) {
 	t.Parallel()
@@ -312,7 +312,7 @@ func TestGraphQLTopicSuggestionMutationsRecordTheDecision(t *testing.T) {
 	}
 }
 
-// --- behavioural: repository settings ---------------------------------------
+// behavioural: repository settings
 
 func TestGraphQLUpdateRepositoryWritesEverySettingItAccepts(t *testing.T) {
 	t.Parallel()

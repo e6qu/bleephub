@@ -364,8 +364,8 @@ func (s *Server) handleGetPullRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 // applyChecksToMergeability folds the head commit's check runs into
-// mergeable_state: unmet required status checks block ("blocked"); failing or
-// pending non-required checks mark it "unstable".
+// mergeable_state: unmet required checks → "blocked"; failing or pending
+// non-required checks → "unstable".
 func (s *Server) applyChecksToMergeability(out map[string]interface{}, repo *store.Repo, pr *store.PullRequest) {
 	if pr.State != "OPEN" || out["mergeable_state"] != "clean" {
 		return
@@ -1588,7 +1588,7 @@ func requestedTeamJSONLocked(st *store.Store, team *store.Team, org *store.Org, 
 	return out
 }
 
-// --- JSON converters ---
+// JSON converters
 
 func pullRequestHeadSHA(pr *store.PullRequest, st *store.Store) string {
 	if pr == nil {

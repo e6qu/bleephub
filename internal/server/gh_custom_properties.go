@@ -369,4 +369,4 @@ func (s *Server) customPropertyJSONForOrg(p *store.CustomProperty, org, baseURL 
 	return customPropertyJSON(p, org, baseURL)
 }
 
-// --- store ---
+// store

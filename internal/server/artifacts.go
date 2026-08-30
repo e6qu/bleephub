@@ -22,8 +22,7 @@ import (
 // maxCacheEntryBytes is GitHub's per-entry Actions cache limit.
 const maxCacheEntryBytes = 10 << 30
 
-// maxArtifactChunkBytes is GitHub's per-artifact size limit, bounding a single
-// upload body.
+// maxArtifactChunkBytes is GitHub's per-artifact size limit, bounding a single upload body.
 const maxArtifactChunkBytes = 10 << 30
 
 // artifactByIDForCaller returns an artifact's metadata (no Data) for the access
@@ -270,7 +269,7 @@ func (s *Server) removeCacheBytes(ctx context.Context, id int64) error {
 	return nil
 }
 
-// --- Artifact Twirp handlers ---
+// Artifact Twirp handlers
 
 // runArtifactScope resolves the named workflow run and checks it against the
 // caller's job scope. An absent or unknown run id is an error, never a widening
@@ -608,7 +607,7 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request) 
 	_, _ = w.Write(data)
 }
 
-// --- Actions cache ---
+// Actions cache
 
 func (s *Server) handleCacheReserve(w http.ResponseWriter, r *http.Request) {
 	repo, ok := s.cacheScopeRepo(w, r)

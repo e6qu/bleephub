@@ -1,11 +1,9 @@
 package graphqlapi
 
-// The account-scoped mutation surface: the follow graph, the profile status,
-// the stars-page repository lists, and the notification-delivery restriction.
+// The account-scoped mutation surface: the follow graph, profile status, stars-page repository lists, and the notification-delivery restriction.
 //
-// These name no repository, so their policy rows bypass repoRule. Each is
-// entitled either by the credential's grant over the viewer's own account or
-// by ownership of the named organization/enterprise.
+// These name no repository, so their policy rows bypass repoRule. Each is entitled either by the credential's grant over
+// the viewer's own account or by ownership of the named organization/enterprise.
 
 import (
 	"fmt"
@@ -17,11 +15,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- authorization rules ----------------------------------------------------
-
-// viewerAccountRule is the policy for a mutation on the viewer's own account.
-// The registrar checks authentication; this checks the credential's grant, so a
-// foreign or nowhere-installed token is refused where the bearer's session is served.
+// viewerAccountRule is the policy for a mutation on the viewer's own account. The registrar checks authentication; this
+// checks the credential's grant, so a foreign or nowhere-installed token is refused where the bearer's session is served.
 type viewerAccountRule struct {
 	scope store.PermScope
 }
@@ -44,8 +39,7 @@ func (r viewerAccountRule) authorize(s *Resolver, p graphql.ResolveParams, _ map
 	return nil
 }
 
-// userListRule requires the named list to be the viewer's own. Another user's
-// list is answered as absent, so the mutation cannot reveal a private list exists.
+// userListRule requires the named list to be the viewer's own. Another user's list is answered as absent, so the mutation cannot reveal a private list exists.
 type userListRule struct {
 	idKey string
 }
@@ -73,8 +67,7 @@ func (r userListRule) authorize(s *Resolver, p graphql.ResolveParams, input map[
 	return nil
 }
 
-// notificationRestrictionRule is the policy for
-// updateNotificationRestrictionSetting: ownership of the named enterprise or
+// notificationRestrictionRule is the policy for updateNotificationRestrictionSetting: ownership of the named enterprise or
 // organization, so owning one never authorizes a write against another.
 type notificationRestrictionRule struct{}
 
@@ -102,7 +95,7 @@ func (notificationRestrictionRule) authorize(s *Resolver, p graphql.ResolveParam
 	return nil
 }
 
-// --- schema -----------------------------------------------------------------
+// schema
 
 func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 	userType := s.graphqlTypes.user
@@ -111,7 +104,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 	userListType := s.gqlUserListType()
 	dateTime := s.graphQLStringScalar("DateTime")
 
-	// --- the follow graph --------------------------------------------------
+	// the follow graph
 
 	follow := func(name, payloadName, inputName, idKey string, payloadField string, payloadType *graphql.Object, following bool) {
 		s.registerMutation(mutationType, name, &graphql.Field{
@@ -133,7 +126,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 	follow("followOrganization", "FollowOrganizationPayload", "FollowOrganizationInput", "organizationId", "organization", orgType, true)
 	follow("unfollowOrganization", "UnfollowOrganizationPayload", "UnfollowOrganizationInput", "organizationId", "organization", orgType, false)
 
-	// --- the profile status ------------------------------------------------
+	// the profile status
 
 	s.registerMutation(mutationType, "changeUserStatus", &graphql.Field{
 		Type: s.mutationPayload("ChangeUserStatusPayload", graphql.Fields{
@@ -151,7 +144,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 		Resolve: s.resolveChangeUserStatus,
 	})
 
-	// --- the stars-page lists ----------------------------------------------
+	// the stars-page lists
 
 	s.registerMutation(mutationType, "createUserList", &graphql.Field{
 		Type: s.mutationPayload("CreateUserListPayload", graphql.Fields{
@@ -211,7 +204,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 		Resolve: s.resolveUpdateUserListsForItem,
 	})
 
-	// --- notification delivery ---------------------------------------------
+	// notification delivery
 
 	s.registerMutation(mutationType, "updateNotificationRestrictionSetting", &graphql.Field{
 		Type: s.mutationPayload("UpdateNotificationRestrictionSettingPayload", graphql.Fields{
@@ -228,7 +221,7 @@ func (s *Resolver) addAccountActivityMutations(mutationType *graphql.Object) {
 	})
 }
 
-// --- types ------------------------------------------------------------------
+// types
 
 func (s *Resolver) gqlUserStatusType() *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
@@ -327,8 +320,7 @@ func (s *Resolver) gqlUserListItemsConnectionType() *graphql.Object {
 	})
 }
 
-// gqlVerifiableDomainOwnerUnion is the Enterprise | Organization union the
-// verifiable-domain and notification-restriction payloads return.
+// gqlVerifiableDomainOwnerUnion is the Enterprise | Organization union the verifiable-domain and notification-restriction payloads return.
 func (s *Resolver) gqlVerifiableDomainOwnerUnion() *graphql.Union {
 	return s.mutationUnion("VerifiableDomainOwner",
 		func() []*graphql.Object {
@@ -374,7 +366,7 @@ func (s *Resolver) userListToGQL(list *store.UserList) map[string]interface{} {
 	}
 }
 
-// --- resolvers --------------------------------------------------------------
+// resolvers
 
 func (s *Resolver) resolveFollow(p graphql.ResolveParams, idKey, payloadField string, following bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})

@@ -5,16 +5,13 @@ import (
 	"time"
 )
 
-// MaxHookDeliveries caps retained per-hook delivery history, mirroring
-// GitHub's ≈30-day window and bounding unbounded growth.
+// MaxHookDeliveries caps retained per-hook delivery history, mirroring GitHub's ≈30-day window and bounding unbounded growth.
 const MaxHookDeliveries = 500
 
 // Webhook represents a GitHub repository webhook.
 //
-// Secret is persisted (deliveries must keep signing X-Hub-Signature-256 after
-// a restart) but never marshaled to clients (hookToJSON omits it). RepoKey
-// stays json:"-": it equals the persistence bucket key ("owner/name"), which
-// the loader backfills on reload.
+// Secret is persisted (deliveries must keep signing X-Hub-Signature-256 after a restart) but never marshaled to clients
+// (hookToJSON omits it). RepoKey stays json:"-": it equals the persistence bucket key ("owner/name"), which the loader backfills on reload.
 type Webhook struct {
 	ID          int      `json:"id"`
 	URL         string   `json:"config_url"`
@@ -24,17 +21,14 @@ type Webhook struct {
 	Events      []string `json:"events"`
 	Active      bool     `json:"active"`
 	RepoKey     string   `json:"-"`
-	// OrgLogin marks an org-level hook; like RepoKey it equals the bucket key
-	// and the loader backfills it. Exactly one of RepoKey/OrgLogin is set (both
-	// empty = app-level pseudo-hook).
+	// OrgLogin marks an org-level hook; like RepoKey it equals the bucket key and the loader backfills it.
+	// Exactly one of RepoKey/OrgLogin is set (both empty = app-level pseudo-hook).
 	OrgLogin string `json:"-"`
-	// MarketplaceSlug marks a Marketplace webhook; listing persistence owns its
-	// configuration.
+	// MarketplaceSlug marks a Marketplace webhook; listing persistence owns its configuration.
 	MarketplaceSlug string `json:"-"`
 	// Global marks an appliance-wide GHES webhook owned by EnterpriseSettings.
 	Global bool `json:"-"`
-	// LastResponse is the outcome of the most recent delivery; nil until one
-	// occurs (rendered "unused").
+	// LastResponse is the outcome of the most recent delivery; nil until one occurs (rendered "unused").
 	LastResponse *HookLastResponse `json:"last_response,omitempty"`
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at"`
@@ -47,8 +41,7 @@ type HookLastResponse struct {
 	Message string `json:"message"`
 }
 
-// CloneWebhook detaches every mutable child from the store-owned hook.
-// Callers must hold st.Mu when cloning a Store-owned hook.
+// CloneWebhook detaches every mutable child from the store-owned hook. Callers must hold st.Mu when cloning a Store-owned hook.
 func CloneWebhook(h *Webhook) *Webhook {
 	if h == nil {
 		return nil
@@ -225,9 +218,8 @@ func (st *Store) AddDelivery(delivery *WebhookDelivery) {
 	}
 }
 
-// HookLastResp reads the hook's last_response under the lock. A direct
-// h.LastResponse read races SetHookLastResponse on the async deliverWebhook
-// goroutine, so every JSON-rendering path must use this.
+// HookLastResp reads the hook's last_response under the lock. A direct h.LastResponse read races SetHookLastResponse
+// on the async deliverWebhook goroutine, so every JSON-rendering path must use this.
 func (st *Store) HookLastResp(h *Webhook) *HookLastResponse {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
@@ -250,9 +242,8 @@ func (st *Store) SetHookLastResponse(repoKey string, hookID int, lr *HookLastRes
 	}
 }
 
-// ListDeliveries returns the hook's deliveries newest-first. Rows are shared
-// live, not cloned: they are write-once and carry large payloads (STORE-021
-// exception, as for ListAppDeliveries).
+// ListDeliveries returns the hook's deliveries newest-first. Rows are shared live, not cloned: they are write-once and
+// carry large payloads (STORE-021 exception, as for ListAppDeliveries).
 func (st *Store) ListDeliveries(hookID int) []*WebhookDelivery {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

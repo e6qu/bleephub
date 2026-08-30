@@ -2,9 +2,9 @@ package graphqlapi
 
 // Organization.auditLog and its OrganizationAuditEntry union, served from
 // store.AuditEntry rows. GitHub models ~60 concrete entry types; only the few
-// whose action the store actually produces are built here. An entry whose
-// action has no modeled type is omitted from the connection rather than
-// rendered as the wrong type.
+// whose action the store actually produces are built here. An entry whose action
+// has no modeled type is omitted from the connection, not rendered as the wrong
+// type.
 
 import (
 	"strconv"
@@ -113,8 +113,8 @@ func (s *Resolver) gqlOperationTypeEnum() *graphql.Enum {
 		"ACCESS", "AUTHENTICATION", "CREATE", "MODIFY", "REMOVE", "RESTORE", "TRANSFER")
 }
 
-// gqlBotType returns the shared Bot object the review-request union mints;
-// reused because graphql-go refuses two objects of one name.
+// gqlBotType returns the shared Bot object the review-request union mints; reused
+// because graphql-go refuses two objects of one name.
 func (s *Resolver) gqlBotType() *graphql.Object {
 	if union := s.graphqlTypes.requestedReviewerUnion; union != nil {
 		for _, t := range union.Types() {
@@ -305,8 +305,8 @@ func (s *Resolver) gqlOrganizationAuditEntryConnectionType() *graphql.Object {
 }
 
 // organizationAuditLogConnection paginates the org's stored audit events.
-// auditLog is owner-only, so a non-admin viewer gets an empty connection (never
-// an error, so a broader query is not aborted).
+// auditLog is owner-only, so a non-admin viewer gets an empty connection (not an
+// error, so a broader query is not aborted).
 func (s *Resolver) organizationAuditLogConnection(p graphql.ResolveParams, org *store.Org) (interface{}, error) {
 	if org == nil || !s.viewerCanAdminAccount(p.Context, org.Login) {
 		return paginateGQLItems(nil, nil), nil
@@ -384,9 +384,9 @@ func auditOperationType(action string) interface{} {
 	return nil
 }
 
-// auditEntryBaseSource renders the members shared by every modeled type.
-// Optional object members are held as an absent key, not a typed-nil map, per
-// the connection typed-nil contract.
+// auditEntryBaseSource renders the members shared by every modeled type. Optional
+// object members are held as an absent key, not a typed-nil map, per the
+// connection typed-nil contract.
 func (s *Resolver) auditEntryBaseSource(typeName string, e *store.AuditEntry) map[string]interface{} {
 	m := map[string]interface{}{
 		"_auditType":    typeName,
@@ -412,7 +412,7 @@ func (s *Resolver) auditEntryBaseSource(typeName string, e *store.AuditEntry) ma
 	}
 
 	// Attribute to the entry's own org, or — for repo-scoped entries recorded
-	// with no org — the owner of the repository the data names.
+	// with no org — the owner of the repo the data names.
 	orgLogin := e.Org
 	if orgLogin == "" {
 		if full := auditDataString(e, "repo"); full != "" {
@@ -478,7 +478,7 @@ func (s *Resolver) renderAuditEntry(typeName string, e *store.AuditEntry) map[st
 }
 
 // fillRepositoryAuditData renders the RepositoryAuditEntryData members and
-// visibility from the repository the entry's data names.
+// visibility from the repo the entry's data names.
 func (s *Resolver) fillRepositoryAuditData(m map[string]interface{}, e *store.AuditEntry) {
 	full := auditDataString(e, "repo")
 	if full == "" {

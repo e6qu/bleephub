@@ -136,8 +136,8 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 	writeJSONCreated(w, jsonStringField(checkRunJSON, "url"), checkRunJSON)
 }
 
-// checkRunInRepo resolves {id}, answering 404 unless it belongs to the path
-// repository. Check run ids are global, so the path repo is the only tenant tie.
+// checkRunInRepo resolves {id}, answering 404 unless it belongs to the path repo.
+// Check run ids are global, so the path repo is the only tenant tie.
 func (s *Server) checkRunInRepo(w http.ResponseWriter, r *http.Request) *store.CheckRun {
 	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -308,8 +308,8 @@ func filterCheckRuns(runs []*store.CheckRun, name, status string) []*store.Check
 }
 
 // latestCheckRuns implements the default filter=latest: keep only the newest run
-// per (suite, name). A check is identified by its name within its suite, so a
-// rerun supersedes the earlier run; keying on suite alone would collapse every
+// per (suite, name). A check is identified by name within its suite, so a rerun
+// supersedes the earlier run; keying on suite alone would collapse every
 // differently-named sibling check into one.
 func latestCheckRuns(runs []*store.CheckRun) []*store.CheckRun {
 	type checkKey struct {
@@ -542,7 +542,7 @@ func (s *Server) checkSuiteToJSON(suite *store.CheckSuite, base string) map[stri
 		}
 	}
 	// head_commit is required and non-nullable; synthesize a minimal simple-commit
-	// from the head SHA when the commit object can't be loaded.
+	// from the head SHA when the commit object cannot be loaded.
 	if headCommit == nil {
 		headCommit = map[string]interface{}{
 			"id":        suite.HeadSHA,

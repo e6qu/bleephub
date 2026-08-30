@@ -46,7 +46,7 @@ func readAllBody(t *testing.T, resp *http.Response) string {
 	return string(raw)
 }
 
-// --- Default labels -------------------------------------------------------
+// Default labels
 
 // wantDefaultLabels is GitHub's default label set, read off a live repository's
 // GET /repos/{owner}/{repo}/labels (the rows reported with default:true), in
@@ -153,7 +153,7 @@ func TestDefaultLabelNameIsTakenOnANewRepository(t *testing.T) {
 	}
 }
 
-// --- Search pagination Link header ---------------------------------------
+// Search pagination Link header
 
 // linkRels parses an RFC 5988 Link header into rel → URL.
 func linkRels(t *testing.T, header string) map[string]string {
@@ -338,7 +338,7 @@ func newSearchLinkRecorder(t *testing.T, total, perPage int) string {
 	return recorder.Header().Get("Link")
 }
 
-// --- Pull request diff and patch media types ------------------------------
+// Pull request diff and patch media types
 
 // seedDiffablePullRequest opens a pull request whose head branch modifies one
 // file and adds another, and returns the repository's API path.
@@ -472,7 +472,7 @@ func TestCommitAndCompareAcceptTheVersionedDiffMediaType(t *testing.T) {
 	}
 }
 
-// --- Contents API media types ---------------------------------------------
+// Contents API media types
 
 // TestContentsRawMediaTypeIsText pins the Content-Type of the contents API's
 // raw representation. octokit decides from it whether to hand the caller a
@@ -583,7 +583,7 @@ func TestRepoRawRouteStillServesTextPlainWithNosniff(t *testing.T) {
 	}
 }
 
-// --- Gist URLs -------------------------------------------------------------
+// Gist URLs
 
 // TestGistURLsAreKeyedByGistID pins every URL field on a gist. bleephub emitted
 // an owner-scoped /{owner}/{id} html_url and an owner-scoped clone URL; both
@@ -635,7 +635,7 @@ func TestGistURLsAreKeyedByGistID(t *testing.T) {
 	}
 }
 
-// --- Git LFS without object storage ---------------------------------------
+// Git LFS without object storage
 
 // TestLFSWorksWithoutConfiguredObjectStorage pins that Git LFS is usable on a
 // deployment that never set BLEEPHUB_OBJECT_S3_BUCKET. `git lfs push` used to

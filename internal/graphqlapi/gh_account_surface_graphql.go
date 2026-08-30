@@ -80,7 +80,7 @@ func (s *Resolver) addAccountSurfaceFieldsToSchema(userType, orgType, repoType *
 	s.addFinalResidueFields(types)
 }
 
-// --- source helpers --------------------------------------------------------
+// source helpers
 
 func graphQLSourceMap(source interface{}) (map[string]interface{}, error) {
 	src, ok := source.(map[string]interface{})
@@ -137,7 +137,7 @@ func (s *Resolver) orgFromSource(source interface{}) (*store.Org, error) {
 	return org, nil
 }
 
-// --- field builders --------------------------------------------------------
+// field builders
 
 func (s *Resolver) repoBoolField(read func(*store.Repo) bool) *graphql.Field {
 	return &graphql.Field{
@@ -308,7 +308,7 @@ func orderField(args map[string]interface{}, key, fallback string) string {
 	return field
 }
 
-// --- rendering helpers -----------------------------------------------------
+// rendering helpers
 
 // renderAccountMarkdown renders a profile/settings string through the shared
 // markdown pipeline so a *HTML field is never a second renderer's opinion.

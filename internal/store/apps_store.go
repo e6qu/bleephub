@@ -15,9 +15,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// App is a registered GitHub App. The credential/webhook-config json names
-// are the persisted form; client responses go through appToJSON /
-// appHookConfigJSON, never this struct directly.
+// App is a registered GitHub App. The credential/webhook-config json names are
+// the persisted form; client responses go through appToJSON / appHookConfigJSON.
 type App struct {
 	ID                 int               `json:"id"`
 	NodeID             string            `json:"node_id"`

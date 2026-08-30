@@ -1,11 +1,11 @@
 package graphqlapi
 
 // The RepositoryRule / RepositoryRuleset detail surface: the rule parameter
-// union, the ruleset conditions object and the bypass-actor connection,
-// rendered from the same store.Ruleset the REST routes serve. Rule parameters
-// are stored as snake_case maps; the union renderer lowers each into the
-// camelCase member GraphQL declares, returning null when a rule carries no
-// parameters of a shape it can name.
+// union, the ruleset conditions object and the bypass-actor connection, rendered
+// from the same store.Ruleset the REST routes serve. Rule parameters are stored
+// as snake_case maps; the union renderer lowers each into the camelCase member
+// GraphQL declares, returning null when a rule carries no parameters of a shape
+// it can name.
 
 import (
 	"fmt"
@@ -23,7 +23,7 @@ func gqlNonNullFieldListOf(t graphql.Output) *graphql.Field {
 
 // installRuleDetailTypes wires parameters, repositoryRuleset, edges, conditions
 // and bypassActors onto the three ruleset objects the read surface created. The
-// rule↔ruleset cross-references are closed with AddFieldConfig so the cycle is
+// rule↔ruleset cross-references are closed with AddFieldConfig to make the cycle
 // legal.
 func (s *Resolver) installRuleDetailTypes(ruleType, ruleConnection, rulesetType *graphql.Object) {
 	ruleEdge := graphql.NewObject(graphql.ObjectConfig{
@@ -49,10 +49,10 @@ func (s *Resolver) installRuleDetailTypes(ruleType, ruleConnection, rulesetType 
 		},
 	})
 
-	// Each rendered rule back-references its ruleset under the private
-	// "_ruleset" key (set in rulesetToGraphQL). The map is self-referential,
-	// bounded by query depth; the typed-nil audit is keyed by field name so it
-	// never follows the private key.
+	// Each rendered rule back-references its ruleset under the private "_ruleset"
+	// key (set in rulesetToGraphQL). The map is self-referential, bounded by query
+	// depth; the typed-nil audit is keyed by field name so it never follows the
+	// private key.
 	ruleType.AddFieldConfig("repositoryRuleset", &graphql.Field{
 		Type: rulesetType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -105,7 +105,7 @@ func (s *Resolver) installRuleDetailTypes(ruleType, ruleConnection, rulesetType 
 
 // repositoryRuleConditionsType is RepositoryRuleConditions. bleephub models only
 // the ref_name condition; the unstored property and id/name conditions are
-// omitted rather than rendered empty.
+// omitted, not rendered empty.
 func (s *Resolver) repositoryRuleConditionsType() *graphql.Object {
 	refNameTarget := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RefNameConditionTarget",
@@ -121,7 +121,7 @@ func (s *Resolver) repositoryRuleConditionsType() *graphql.Object {
 		},
 	})
 	// Stashed so addResidueTailFields (after the enterprise family mints
-	// EnterpriseTeam) can hang the property and id/name targets off this instance.
+	// EnterpriseTeam) can hang the property and id/name targets off this one.
 	s.stashNamedObject(conditions)
 	return conditions
 }
@@ -184,7 +184,7 @@ func bypassActorSource(rulesetNodeID string, index int, actor store.RulesetBypas
 }
 
 // ruleParametersUnion is RuleParameters: the union of every per-rule parameter
-// object, each rendered from the stored snake_case parameter map.
+// object, each rendered from the stored snake_case map.
 func (s *Resolver) ruleParametersUnion() *graphql.Union {
 	patternFields := func() graphql.Fields {
 		return graphql.Fields{
@@ -343,7 +343,7 @@ func (s *Resolver) ruleParametersUnion() *graphql.Union {
 
 // ruleParametersSource lowers a rule's snake_case parameter map into its
 // camelCase RuleParameters union member. A rule with no parameters — or whose
-// type has no parameter object — yields nil (a null RepositoryRule.parameters).
+// type has no parameter object — yields nil (null RepositoryRule.parameters).
 func ruleParametersSource(ruleType string, params map[string]interface{}) map[string]interface{} {
 	if len(params) == 0 {
 		return nil
@@ -519,9 +519,9 @@ func pullRequestParametersSource(params map[string]interface{}) map[string]inter
 }
 
 // Stored-parameter accessors. Rule parameters round-trip through JSON, so
-// numbers arrive as float64 and containers as []interface{}/map. These readers
-// return the concrete Go types, with zero values for absent keys so a non-null
-// scalar field never resolves to null.
+// numbers arrive as float64 and containers as []interface{}/map. These return
+// concrete Go types, with zero values for absent keys so a non-null scalar field
+// never resolves to null.
 
 func rpString(m map[string]interface{}, key string) string {
 	value, _ := m[key].(string)

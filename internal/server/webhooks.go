@@ -45,8 +45,8 @@ func computeHMACSignatureSHA1(secret string, payload []byte) string {
 }
 
 const (
-	// webhookDeliveryWorkers bounds in-flight deliveries so a hanging target
-	// costs one worker, not a goroutine per event.
+	// webhookDeliveryWorkers bounds in-flight deliveries: a hanging target costs
+	// one worker, not a goroutine per event.
 	webhookDeliveryWorkers = 16
 	webhookDialTimeout     = 5 * time.Second
 	webhookRequestTimeout  = 10 * time.Second
@@ -55,8 +55,8 @@ const (
 
 // webhookAddrBlocked reports whether a server-initiated fetch must never reach
 // this IP. Loopback is the one permitted non-public range (on-prem/dev
-// receivers); every other non-public address — metadata endpoint, link-local,
-// RFC1918, IPv6 ULA, CGNAT, multicast, unspecified, broadcast — is refused
+// receivers); every other non-public address (metadata endpoint, link-local,
+// RFC1918, IPv6 ULA, CGNAT, multicast, unspecified, broadcast) is refused
 // unconditionally, with no operator switch to relax it.
 func webhookAddrBlocked(ip net.IP) bool {
 	if ip == nil {
@@ -68,8 +68,8 @@ func webhookAddrBlocked(ip net.IP) bool {
 	if nonPublicIP(ip) {
 		return true
 	}
-	// An IPv6 form tunnelling IPv4 reaches whatever that address reaches, so
-	// check the embedded address on its own terms.
+	// An IPv6 form tunnelling IPv4 reaches whatever that address reaches; check
+	// the embedded address on its own terms.
 	if v4 := tunnelledIPv4(ip); v4 != nil {
 		if v4.IsLoopback() {
 			return false
@@ -124,9 +124,9 @@ func isZeroBytes(b []byte) bool {
 	return true
 }
 
-// parseWebhookTargetURL checks the resolution-free parts of a target URL —
-// scheme, host presence, literal IP — and returns the parsed URL. Cheap enough
-// to repeat on every delivery attempt.
+// parseWebhookTargetURL checks the resolution-free parts of a target URL
+// (scheme, host presence, literal IP) and returns it. Cheap enough to repeat on
+// every delivery attempt.
 func parseWebhookTargetURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -212,8 +212,8 @@ func newWebhookClientWithTimeout(insecureTLS bool, timeout time.Duration) *http.
 }
 
 // newAddressCheckedHTTPTransport is the shared server-side request boundary for
-// URL fetchers; keeping it shared keeps webhook and source-import SSRF policy
-// from drifting apart. Only Dialer.Control sees the address actually reached.
+// URL fetchers; sharing it keeps webhook and source-import SSRF policy from
+// drifting apart. Only Dialer.Control sees the address actually reached.
 func newAddressCheckedHTTPTransport(insecureTLS bool) *http.Transport {
 	dialer := &net.Dialer{
 		Timeout:   webhookDialTimeout,

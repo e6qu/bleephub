@@ -49,7 +49,7 @@ func mutationTargetBranchProtectionRule(key string) func(*Resolver, map[string]i
 	}
 }
 
-// --- types ------------------------------------------------------------------
+// types
 
 // gqlAppType returns the App object the allowance unions and
 // RequiredStatusCheckDescription name (memoized).
@@ -322,7 +322,7 @@ func (s *Resolver) resolveBranchProtectionMatchingRefs(p graphql.ResolveParams) 
 	return paginateGQLItems(items, p.Args), nil
 }
 
-// --- rendering --------------------------------------------------------------
+// rendering
 
 // branchProtectionRuleForPR renders baseRef.branchProtectionRule: the exact-name
 // rule protecting the pull request's base branch.
@@ -460,7 +460,7 @@ func (s *Resolver) bpActorSource(repo *store.Repo, actor store.BPActor) interfac
 	return nil
 }
 
-// --- Repository.branchProtectionRules ---------------------------------------
+// Repository.branchProtectionRules
 
 // addBranchProtectionFieldsToSchema installs Repository.branchProtectionRules
 // and the branch-protection mutations.
@@ -566,7 +566,7 @@ func (s *Resolver) addAppResidueFields() {
 	}
 }
 
-// --- mutations ---------------------------------------------------------------
+// mutations
 
 func (s *Resolver) addBranchProtectionMutations(mutationType *graphql.Object) {
 	ruleType := s.gqlBranchProtectionRuleType()

@@ -45,8 +45,7 @@ func (s *Server) registerGHActionsExtrasRoutes() {
 		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleReviewPendingDeployments))
 }
 
-// handleRepositoryDispatch fires a workflow's on:repository_dispatch trigger.
-// GitHub answers 204; the webhook event is emitted for downstream automation.
+// handleRepositoryDispatch fires a workflow's on:repository_dispatch trigger. GitHub answers 204; the webhook event is emitted for downstream automation.
 func (s *Server) handleRepositoryDispatch(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
@@ -67,8 +66,7 @@ func (s *Server) handleRepositoryDispatch(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// repositoryDispatchPayload builds the repository_dispatch webhook body.
-// GitHub includes a top-level `branch` (the repo's default branch).
+// repositoryDispatchPayload builds the repository_dispatch webhook body. GitHub includes a top-level `branch` (the repo's default branch).
 func repositoryDispatchPayload(repo *store.Repo, user *store.User, eventType string, clientPayload map[string]interface{}, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":         eventType,
@@ -80,8 +78,7 @@ func repositoryDispatchPayload(repo *store.Repo, user *store.User, eventType str
 	}
 }
 
-// handleRunLogs returns the run's log archive. GitHub redirects to a signed
-// URL; bleephub returns the zip directly, which curl and gh both accept.
+// handleRunLogs returns the run's log archive. GitHub redirects to a signed URL; bleephub returns the zip directly, which curl and gh both accept.
 func (s *Server) handleRunLogs(w http.ResponseWriter, r *http.Request) {
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
@@ -96,9 +93,8 @@ func (s *Server) handleRunLogs(w http.ResponseWriter, r *http.Request) {
 	s.writeRunLogsZip(r.Context(), w, wf, runID)
 }
 
-// writeRunLogsZip writes the run's log archive in GitHub's layout: per job a
-// top-level "0_<jobname>.txt" full log plus a "<jobname>/" folder of per-step
-// files. Shared by the run-level and attempt-level log endpoints.
+// writeRunLogsZip writes the run's log archive in GitHub's layout: per job a top-level "0_<jobname>.txt" full log plus a
+// "<jobname>/" folder of per-step files. Shared by the run-level and attempt-level log endpoints.
 func (s *Server) writeRunLogsZip(ctx context.Context, w http.ResponseWriter, wf *store.Workflow, runID int) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -192,8 +188,7 @@ func zipSafeName(name string) string {
 	return strings.ReplaceAll(name, "/", "_")
 }
 
-// handleRerunFailedJobs re-runs only the failed/cancelled jobs; jobs that
-// succeeded or were skipped carry their prior results over as completed.
+// handleRerunFailedJobs re-runs only the failed/cancelled jobs; jobs that succeeded or were skipped carry their prior results over as completed.
 func (s *Server) handleRerunFailedJobs(w http.ResponseWriter, r *http.Request) {
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
@@ -255,14 +250,12 @@ func (s *Server) handleRunTiming(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// No real timing instrumentation: report wall-clock from creation to now
-	// (or completion if known).
+	// No real timing instrumentation: report wall-clock from creation to now (or completion if known).
 	durationMs := int64(0)
 	if !wf.CreatedAt.IsZero() {
 		durationMs = time.Since(wf.CreatedAt).Milliseconds()
 	}
-	// GitHub reports a per-job breakdown under billable.{OS}.job_runs (an
-	// array of {job_id, duration_ms}), not just a count.
+	// GitHub reports a per-job breakdown under billable.{OS}.job_runs (an array of {job_id, duration_ms}), not just a count.
 	jobRuns := make([]map[string]interface{}, 0, len(wf.Jobs))
 	for _, j := range wf.Jobs {
 		jobMs := int64(0)
@@ -492,9 +485,8 @@ func (s *Server) findWorkflowByBackendID(backendID string) *store.Workflow {
 	}
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	// Workflows is keyed by wf.ID; the run-id index resolves the
-	// strconv.Itoa(wf.RunID) form the toolkit sometimes sends. The linear scan
-	// is a fallback for directly-seeded stores.
+	// Workflows is keyed by wf.ID; the run-id index resolves the strconv.Itoa(wf.RunID) form the toolkit sometimes sends.
+	// The linear scan is a fallback for directly-seeded stores.
 	if wf := s.store.Workflows[backendID]; wf != nil {
 		return wf
 	}
@@ -520,8 +512,7 @@ func (s *Server) repoIDByFullName(fullName string) int {
 	return 0
 }
 
-// handleRunApprovals lists the deployment reviews already submitted for a run;
-// pending reviews live on /pending_deployments.
+// handleRunApprovals lists the deployment reviews already submitted for a run; pending reviews live on /pending_deployments.
 func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 	repo, wf := s.lookupRunFromPath(r)
 	if wf == nil {
@@ -536,8 +527,7 @@ func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 	for _, a := range approvals {
 		envs := []map[string]interface{}{}
 		for _, id := range a.EnvIDs {
-			// The approvals schema nests the slim environment shape (no
-			// protection_rules / deployment_branch_policy).
+			// The approvals schema nests the slim environment shape (no protection_rules / deployment_branch_policy).
 			if env := s.store.Deployments.GetEnvironmentByID(id); env != nil {
 				envs = append(envs, map[string]interface{}{
 					"id":         env.ID,
@@ -566,8 +556,7 @@ func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleGetPendingDeployments lists the reviewer-protected environments a run
-// is waiting on.
+// handleGetPendingDeployments lists the reviewer-protected environments a run is waiting on.
 func (s *Server) handleGetPendingDeployments(w http.ResponseWriter, r *http.Request) {
 	repo, wf := s.lookupRunFromPath(r)
 	if wf == nil {
@@ -601,9 +590,8 @@ func (s *Server) handleGetPendingDeployments(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleReviewPendingDeployments approves or rejects a run's pending
-// deployments. Approval releases the waiting jobs and creates the deployments
-// the response returns (matching GitHub); rejection fails them.
+// handleReviewPendingDeployments approves or rejects a run's pending deployments. Approval releases the waiting jobs and
+// creates the deployments the response returns (matching GitHub); rejection fails them.
 func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.Request) {
 	repo, wf := s.lookupRunFromPath(r)
 	if wf == nil {
@@ -663,10 +651,8 @@ func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, deployments)
 }
 
-// reviewPendingDeployments is the shared review path for the REST
-// pending_deployments route and the GraphQL approve/rejectDeployments
-// mutations. It refuses a self-review on an environment with
-// prevent_self_review set, then hands the review to the actions engine.
+// reviewPendingDeployments is the shared review path for the REST pending_deployments route and the GraphQL
+// approve/rejectDeployments mutations. It refuses a self-review on an environment with prevent_self_review set, then hands the review to the actions engine.
 func (s *Server) reviewPendingDeployments(ctx context.Context, wf *store.Workflow, envIDs []int, state, comment string, reviewer *store.User) ([]string, error) {
 	if reviewer != nil {
 		if sender := s.workflowSender(wf); sender != nil && sender.ID == reviewer.ID {

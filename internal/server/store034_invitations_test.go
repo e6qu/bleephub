@@ -224,8 +224,8 @@ func TestOrgInvitationAndInteractionLimitGetsAreDetached(t *testing.T) {
 // the invitation list/get endpoints used to take the exclusive lock and run the
 // reconcile state machine — durable deletes and MustPut writes — on a GET, so a
 // read was non-idempotent and a persist blip faulted it. Reads are now pure; the
-// state machine (including the durable membership side effects) runs on the
-// background reconciler instead.
+// state machine (durable membership side effects included) runs on the background
+// reconciler instead.
 func TestOrgInvitationReadsAreNonMutating(t *testing.T) {
 	s := newTestServer()
 	st := s.store

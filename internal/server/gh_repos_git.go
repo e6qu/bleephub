@@ -1123,7 +1123,7 @@ func gitCommitToJSON(baseURL, fullName, sha string, c *object.Commit) map[string
 	}
 }
 
-// --- signature verification ---------------------------------------------
+// signature verification
 //
 // bleephub keeps no GPG/SSH keyring, so a signed object is reported as
 // "unknown_key" (well-formed signature, no key on file) — "unsigned" would be

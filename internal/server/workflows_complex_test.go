@@ -14,7 +14,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- P57-001c: continue-on-error tests ---
+// P57-001c: continue-on-error tests
 
 func TestContinueOnErrorDepStillRuns(t *testing.T) {
 	s := newTestServer()
@@ -77,7 +77,7 @@ func TestContinueOnErrorNeedsContextShowsFailure(t *testing.T) {
 		t.Fatalf("needs entries = %v", dict["d"])
 	}
 
-	// The result should still report failure even though continue-on-error is set
+	// The result still reports failure even with continue-on-error set.
 	depDict := entries[0]["v"].(map[string]interface{})
 	depEntries := depDict["d"].([]map[string]interface{})
 	for _, e := range depEntries {
@@ -87,7 +87,7 @@ func TestContinueOnErrorNeedsContextShowsFailure(t *testing.T) {
 	}
 }
 
-// --- P57-001d: max-parallel tests ---
+// P57-001d: max-parallel tests
 
 func TestMaxParallelLimitsDispatch(t *testing.T) {
 	s := newTestServer()
@@ -177,7 +177,7 @@ func TestMaxParallelZeroMeansUnlimited(t *testing.T) {
 	}
 }
 
-// --- P57-001e: timeout enforcement test ---
+// P57-001e: timeout enforcement test
 
 func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 	s := newTestServer()
@@ -216,7 +216,7 @@ func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 	}
 }
 
-// --- P57-002: Concurrency tests ---
+// P57-002: Concurrency tests
 
 func TestQueuedJobsSpreadAcrossPollingRunners(t *testing.T) {
 	s := newTestServer()
@@ -231,8 +231,8 @@ func TestQueuedJobsSpreadAcrossPollingRunners(t *testing.T) {
 	s1 := mk("s1", 11)
 	s2 := mk("s2", 12)
 
-	// Queue two jobs; each runner's poll pulls one, and the pulled job's
-	// agent association marks the runner busy so it can't take the second.
+	// Queue two jobs; each runner's poll pulls one, and the pulled job's agent
+	// association marks the runner busy so it can't take the second.
 	s.store.Mu.Lock()
 	s.store.Jobs["j1"] = &store.Job{ID: "j1", Status: "queued"}
 	s.store.Jobs["j2"] = &store.Job{ID: "j2", Status: "queued"}
@@ -298,9 +298,8 @@ func TestConcurrentWorkflowLimit(t *testing.T) {
 		t.Fatalf("first workflow: status %d, want 200", resp1.StatusCode)
 	}
 
-	// The server from TestMain does NOT have maxConcurrentWorkflows set to 1,
-	// so this test verifies the code path exists but uses the unit-level approach instead.
-	// Use a direct server instance for proper limit testing.
+	// The server from TestMain does NOT have maxConcurrentWorkflows set to 1, so
+	// use a direct server instance for proper limit testing.
 	s2 := newTestServer()
 	s2.maxConcurrentWorkflows = 1
 
@@ -323,7 +322,7 @@ func TestConcurrentWorkflowLimit(t *testing.T) {
 	}
 }
 
-// --- P57-003: Metrics and observability tests ---
+// P57-003: Metrics and observability tests
 
 func TestMetricsEndpoint(t *testing.T) {
 	resp := authedGet(t, "/internal/metrics")
@@ -362,7 +361,7 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 }
 
-// --- P57-004b: Complex workflow patterns ---
+// P57-004b: Complex workflow patterns
 
 func TestThreeStagePipeline(t *testing.T) {
 	s := newTestServer()
@@ -433,8 +432,8 @@ jobs:
 		t.Fatalf("expanded jobs = %d, want 4", len(expanded.Jobs))
 	}
 
-	// Matrix values stay in their typed context and never leak into the shell
-	// environment under internal __matrix_* names.
+	// Matrix values stay in their typed context and never leak into the shell env
+	// under internal __matrix_* names.
 	sawNumber := false
 	sawBoolean := false
 	for key, jd := range expanded.Jobs {
@@ -594,7 +593,7 @@ func TestRootFailureCascadesSkipAll(t *testing.T) {
 	}
 }
 
-// --- P59-004: Matrix fail-fast tests ---
+// P59-004: Matrix fail-fast tests
 
 func TestFailFastCancelsSiblings(t *testing.T) {
 	s := newTestServer()
@@ -786,7 +785,7 @@ func TestFailFastOnlySameGroup(t *testing.T) {
 
 func boolPtr(b bool) *bool { return &b }
 
-// --- P59-003: Job-level if: tests ---
+// P59-003: Job-level if: tests
 
 func TestJobIfSkipsOnFalse(t *testing.T) {
 	s := newTestServer()
@@ -862,7 +861,7 @@ func TestJobIfFailureRunsAfterFailure(t *testing.T) {
 	}
 }
 
-// --- P59-006: Cancellation tests ---
+// P59-006: Cancellation tests
 
 func TestCancelRunningWorkflow(t *testing.T) {
 	s := newTestServer()
@@ -911,8 +910,8 @@ func TestCancelWorkflowHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	// The workflow lives on the test-global server, not this local one; just
-	// confirm the endpoint exists, and cancel the local copy directly.
+	// The workflow lives on the test-global server, not this local one; confirm
+	// the endpoint exists, and cancel the local copy directly.
 	if resp.StatusCode == 404 {
 		s.actions.CancelWorkflow(workflow)
 		if workflow.Status != "completed" {

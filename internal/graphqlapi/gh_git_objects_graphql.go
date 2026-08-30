@@ -21,7 +21,7 @@ import (
 // (object, ref, refs). All resolve out of git storage through internal/store,
 // so this surface and the REST one answer the same revisions.
 
-// --- source maps -----------------------------------------------------------
+// source maps
 
 // gitObjectSourceFields are the GitObject members every implementation carries.
 // The graph is walked lazily so selecting one blob does not read the whole tree.
@@ -127,7 +127,7 @@ func splitGitRefName(qualifiedName string) (string, string) {
 	return "", qualifiedName
 }
 
-// --- storage access --------------------------------------------------------
+// storage access
 
 // gitSourceRepo resolves the repository a git-object source belongs to. A
 // private repo the viewer cannot read resolves to nothing rather than leaking
@@ -176,7 +176,7 @@ func (s *Resolver) gitSourceCommit(p graphql.ResolveParams) (*store.Repo, gitSto
 	return repo, stor, commit, nil
 }
 
-// --- shared leaf types -----------------------------------------------------
+// shared leaf types
 
 // gqlGitActorType returns the shared GitActor object type (memoized).
 func (s *Resolver) gqlGitActorType() *graphql.Object {
@@ -255,7 +255,7 @@ func (s *Resolver) gqlLanguageType() *graphql.Object {
 	return s.graphqlTypes.language
 }
 
-// --- the GitObject interface and its implementations -----------------------
+// the GitObject interface and its implementations
 
 // gqlGitObjectInterface returns the GitObject interface (memoized). ResolveType
 // reads the type registry lazily so the four implementations may build after it.
@@ -1150,7 +1150,7 @@ func (s *Resolver) gqlTagType() *graphql.Object {
 	return tagType
 }
 
-// --- Ref -------------------------------------------------------------------
+// Ref
 
 // addGitRefFields installs the Ref members reaching into the object graph: id,
 // repository, and target.
@@ -1246,7 +1246,7 @@ func (s *Resolver) gqlRefConnectionType() *graphql.Object {
 	return s.graphqlTypes.refConnection
 }
 
-// --- Repository entry points ----------------------------------------------
+// Repository entry points
 
 // addGitObjectFieldsToRepository installs Repository.object, .ref and .refs.
 func (s *Resolver) addGitObjectFieldsToRepository(repoType *graphql.Object) {

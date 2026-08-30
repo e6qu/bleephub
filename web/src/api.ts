@@ -170,10 +170,9 @@ import type {
 } from "./types.js";
 import { encodeContentsBase64 } from "./utils/contents.js";
 
-// One module-wide AbortController so sign-out (queryClient.cancelQueries) can
-// actually abort in-flight polls; otherwise they land after the token clears,
-// 401, and log a console error the e2e suite treats as a failure. Deliberately
-// coarse — one controller for the whole module, not per-query plumbing.
+// Module-wide AbortController so sign-out (queryClient.cancelQueries) aborts
+// in-flight polls; else they land after the token clears, 401, and log a console
+// error the e2e suite treats as failure. Coarse by design — one per module.
 let pendingRequests = new AbortController();
 
 /** Aborts every request this module currently has in flight. */
@@ -182,11 +181,9 @@ export function abortPendingRequests(): void {
   pendingRequests = new AbortController();
 }
 
-/**
- * The single network exit point. A caller signal is combined with the
- * module-wide abort signal, never replacing it, so a per-request deadline never
- * costs the request its sign-out cancellation.
- */
+/** The single network exit point. A caller signal is combined with the module-wide
+ * abort signal, never replacing it, so a per-request deadline never costs the
+ * request its sign-out cancellation. */
 type ApiFetchInit = Omit<RequestInit, "signal" | "body"> & {
   signal?: AbortSignal | null | undefined;
   body?: BodyInit | null | undefined;
@@ -199,11 +196,9 @@ function apiFetch(input: RequestInfo | URL, init?: ApiFetchInit): Promise<Respon
   return fetch(input, { ...init, signal } as RequestInit);
 }
 
-/**
- * Default per-request deadline, bounding a hung socket. Applied by the JSON read
+/** Default per-request deadline, bounding a hung socket. Applied by the JSON read
  * helpers only; long-poll and download paths (job logs, blob exports) call
- * apiFetch directly and stay unbounded.
- */
+ * apiFetch directly and stay unbounded. */
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 /** Combines the caller's queryFn signal with the default timeout; apiFetch then
@@ -236,11 +231,9 @@ export function isLoggedIn(): boolean {
 /** How long the cookie-session probe may take before it is treated as failed. */
 export const SESSION_PROBE_TIMEOUT_MS = 5000;
 
-/**
- * Reports whether the browser holds a valid cookie session. `/auth/session`
+/** Reports whether the browser holds a valid cookie session. `/auth/session`
  * answers 200 `{authenticated: false}` for anonymous, so any rejection here is a
- * transport/server fault and is thrown, never folded into `false`.
- */
+ * transport/server fault and is thrown, never folded into `false`. */
 export async function fetchBrowserSession(
   timeoutMs: number = SESSION_PROBE_TIMEOUT_MS,
   signal?: AbortSignal,
@@ -276,13 +269,11 @@ export async function createTokenBrowserSession(token: string): Promise<void> {
 
 export const UNAUTHORIZED_EVENT = "bleephub:unauthorized";
 
-// A 401 dispatches the signed-out event rather than navigating from a
-// background request, so the router keeps the return location and concurrent
-// polls collapse into one idempotent transition.
-//
-// A 403 with a spent budget (Retry-After or X-RateLimit-Remaining: 0) is a
-// throttle, thrown here as an ApiError with retryAfterSeconds so callers can
-// tell it apart (isRateLimited) and back off instead of hot-looping.
+// A 401 dispatches the signed-out event rather than navigating from a background
+// request, so the router keeps the return location and concurrent polls collapse
+// into one idempotent transition. A 403 with a spent budget (Retry-After or
+// X-RateLimit-Remaining: 0) is a throttle, thrown as an ApiError with
+// retryAfterSeconds so callers tell it apart (isRateLimited) and back off.
 function handleUnauthorized(res: Response): void {
   if (res.status === 401) {
     clearToken();
@@ -419,12 +410,10 @@ function mapWorkflowRun(repoFullName: string, run: GithubWorkflowRun, jobs: Gith
   };
 }
 
-/**
- * Most recent workflow runs across every repo the viewer can see. There is no
+/** Most recent workflow runs across every repo the viewer can see. There is no
  * cross-repo runs route, so the repo list plus one runs page per repo is
- * irreducible, and per-run job counts cost one request per run. Runs are merged
- * and trimmed to `limit` before fetching jobs, so job requests match what renders.
- */
+ * irreducible, and per-run job counts cost one request per run. Runs are merged and
+ * trimmed to `limit` before fetching jobs, so job requests match what renders. */
 export async function fetchWorkflows(limit: number, signal?: AbortSignal): Promise<BleephubWorkflow[]> {
   const repos = await fetchAllUserRepos(signal);
   const perRepo = await Promise.all(
@@ -474,10 +463,8 @@ export async function fetchWorkflowLogs(id: string, signal?: AbortSignal): Promi
 export const fetchRepos = () =>
   fetchAllUserRepos();
 
-/**
- * Wire shape of `GET /internal/metrics` (MetricsSnapshot) and
- * `GET /internal/status`. Both are site-admin only.
- */
+/** Wire shape of `GET /internal/metrics` (MetricsSnapshot) and `GET /internal/status`.
+ * Both are site-admin only. */
 interface WireInternalMetrics {
   workflow_submissions: number;
   job_dispatches: number;
@@ -497,10 +484,8 @@ interface WireInternalStatus {
   connected_runners: number;
 }
 
-/**
- * Reads the server's own counters. `jobs_by_status` and `connected_runners`
- * live on /internal/status; the rest on /internal/metrics.
- */
+/** Reads the server's own counters. `jobs_by_status` and `connected_runners`
+ * live on /internal/status; the rest on /internal/metrics. */
 export async function fetchMetrics(signal?: AbortSignal): Promise<BleephubMetrics> {
   const [metrics, status] = await Promise.all([
     fetchJSON<WireInternalMetrics>("/internal/metrics", signal),
@@ -1042,10 +1027,8 @@ export const fetchRepoFile = (
   );
 };
 
-/**
- * Create or update a file via the contents API. `content` is raw text,
- * base64-encoded here. Pass `sha` (the blob sha) to update; omit it to create.
- */
+/** Create or update a file via the contents API. `content` is raw text,
+ * base64-encoded here. Pass `sha` (the blob sha) to update; omit it to create. */
 export const putFile = (
   owner: string,
   repo: string,
@@ -1070,10 +1053,8 @@ export const putFile = (
   );
 };
 
-/**
- * Upload a file whose `contentBase64` is ALREADY base64 (raw File bytes) — the
- * drag/drop flow, where re-encoding would corrupt binary content.
- */
+/** Upload a file whose `contentBase64` is ALREADY base64 (raw File bytes) — the
+ * drag/drop flow, where re-encoding would corrupt binary content. */
 export const uploadFile = (
   owner: string,
   repo: string,
@@ -1892,10 +1873,8 @@ export async function deleteReleaseAsset(owner: string, repo: string, assetId: n
 
 // ─── GitHub Actions Representational State Transfer ─────────────────────
 
-/**
- * One page of a GitHub envelope list ({total_count, <key>: [...]}) plus the Link
- * rel="next" URL. total_count is the full filtered count, not the page size.
- */
+/** One page of a GitHub envelope list ({total_count, <key>: [...]}) plus the Link
+ * rel="next" URL. total_count is the full filtered count, not the page size. */
 export interface EnvelopePage<T> {
   items: T[];
   totalCount: number;
@@ -1988,10 +1967,8 @@ export function fetchWorkflowRunsPage(
 export const fetchWorkflowRun = (owner: string, repo: string, runId: number, signal?: AbortSignal) =>
   ghFetch<GithubWorkflowRun>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}`, signal);
 
-/**
- * Run shape for a specific attempt. 404s on servers that don't model
- * attempts — the caller treats that as "hide the attempt selector".
- */
+/** Run shape for a specific attempt. 404s on servers that don't model attempts —
+ * the caller treats that as "hide the attempt selector". */
 export const fetchWorkflowRunAttempt = (
   owner: string,
   repo: string,
@@ -3934,10 +3911,8 @@ import type {
   GithubPagesHealth,
 } from "./types.js";
 
-/**
- * Full environment objects (protection rules + branch-policy config) from
- * the same envelope endpoint fetchEnvironments unwraps into slim rows.
- */
+/** Full environment objects (protection rules + branch-policy config) from the
+ * same envelope endpoint fetchEnvironments unwraps into slim rows. */
 export const putEnvironment = (
   owner: string,
   repo: string,
@@ -4148,10 +4123,8 @@ export const requestPagesBuild = (
 ): Promise<{ status: string; url: string }> =>
   ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages/builds`, {});
 
-/**
- * Pages custom-domain health check. Surfaces the response body's message — the
- * endpoint answers 400 with an explanation the panel must show.
- */
+/** Pages custom-domain health check. Surfaces the response body's message — the
+ * endpoint answers 400 with an explanation the panel must show. */
 export async function fetchPagesHealth(owner: string, repo: string, signal?: AbortSignal): Promise<GithubPagesHealth> {
   const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pages/health`, {
     headers: authHeaders(),
@@ -4665,11 +4638,9 @@ export const searchTopics = (q: string, page = 1) =>
 export const fetchRepoCollaborators = (owner: string, repo: string) =>
   ghFetch<GithubCollaborator[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators`);
 
-/**
- * PUT /collaborators/{username}: inviting a new user answers 201 with the
- * pending invitation; naming an existing collaborator updates the
- * permission in place and answers 204 (returned here as null).
- */
+/** PUT /collaborators/{username}: inviting a new user answers 201 with the pending
+ * invitation; naming an existing collaborator updates the permission in place and
+ * answers 204 (returned here as null). */
 export async function inviteRepoCollaborator(
   owner: string,
   repo: string,
@@ -4826,10 +4797,8 @@ export const fetchUserReposByLoginPage = (
 export const fetchUserOrgsByLogin = (login: string) =>
   ghFetch<GithubOrgSummary[]>(`/api/v3/users/${encodeURIComponent(login)}/orgs`);
 
-/**
- * A user's pinned repositories (profile Overview grid), served from /ui-data.
- * `setPinnedRepos` replaces the ordered list (max 6) on your own account only.
- */
+/** A user's pinned repositories (profile Overview grid), served from /ui-data.
+ * `setPinnedRepos` replaces the ordered list (max 6) on your own account only. */
 export const fetchPinnedRepos = (login: string) =>
   ghFetch<BleephubRepo[]>(`/ui-data/users/${encodeURIComponent(login)}/pinned`);
 

@@ -10,12 +10,11 @@ import (
 
 // The refusal and entitled halves for the account-scoped mutations.
 //
-// These name no repository, so the refusal that matters is a different one:
-// for the mutations that change the viewer's own account it is a credential
-// that does not carry a grant over that account (a fine-grained token
-// belonging to somebody else), and for the ones that name an existing list or
-// an organization it is an account with no standing over it. Both refusals are
-// exercised here; the entitled half is the account's own session.
+// These name no repository, so the refusal that matters differs: a mutation
+// changing the viewer's own account is refused by a credential without a grant
+// over it (a fine-grained token belonging to somebody else); one naming an
+// existing list or organization is refused by an account with no standing over
+// it. Both refusals are exercised here; the entitled half is the account's own session.
 
 // gqlAccountFixture is an account with a list and an organization, plus a
 // second account with no relationship to either and a fine-grained token that
@@ -228,7 +227,7 @@ func TestGraphQLAccountMutationsStillServeTheirEntitledCaller(t *testing.T) {
 	}
 }
 
-// --- behavioural ------------------------------------------------------------
+// behavioural
 
 func TestGraphQLFollowMutationsWriteTheFollowGraph(t *testing.T) {
 	t.Parallel()

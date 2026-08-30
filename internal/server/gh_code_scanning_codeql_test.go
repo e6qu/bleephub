@@ -113,7 +113,7 @@ func assertNoInternalURL(t *testing.T, value any) {
 	walk(value, "$")
 }
 
-// --- organization code scanning alerts ---
+// organization code scanning alerts
 
 func TestCodeScanningOrgAlerts_List(t *testing.T) {
 	t.Parallel()
@@ -156,7 +156,7 @@ func TestCodeScanningOrgAlerts_List(t *testing.T) {
 	mustStatus(t, s.get(t, "/api/v3/orgs/no-such-org/code-scanning/alerts", defaultToken), 404, "unknown org alerts")
 }
 
-// --- Copilot Autofix ---
+// Copilot Autofix
 
 func TestCodeScanningAutofix_GenerateAndCommit(t *testing.T) {
 	t.Parallel()
@@ -272,7 +272,7 @@ func TestCodeScanningAutofix_NotEligible(t *testing.T) {
 	mustStatus(t, s.post(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/alerts/99999/autofix", defaultToken, nil), 404, "autofix for unknown alert")
 }
 
-// --- CodeQL databases ---
+// CodeQL databases
 
 func TestCodeQLDatabases_RoundTrip(t *testing.T) {
 	t.Parallel()
@@ -744,7 +744,7 @@ func TestCodeQLArtifacts_PrivateRepositoryDownloadsRequireAccess(t *testing.T) {
 	}
 }
 
-// --- CodeQL variant analyses ---
+// CodeQL variant analyses
 
 func TestCodeQLVariantAnalyses_CreateAndReadBack(t *testing.T) {
 	t.Parallel()

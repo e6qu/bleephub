@@ -12,7 +12,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- GitHub Copilot coding agent repository secrets ---
+// GitHub Copilot coding agent repository secrets
 
 func TestAgentsRepoSecrets_RoundTrip(t *testing.T) {
 	t.Parallel()
@@ -125,7 +125,7 @@ func TestAgentsRepoSecrets_Validation(t *testing.T) {
 	mustStatus(t, s.get(t, "/api/v3/repos/admin/no-such-repo/agents/secrets", defaultToken), 404, "unknown repo list")
 }
 
-// --- GitHub Copilot coding agent organization secrets ---
+// GitHub Copilot coding agent organization secrets
 
 func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 	t.Parallel()
@@ -210,7 +210,7 @@ func TestAgentsOrgSecrets_VisibilityAndSelectedRepos(t *testing.T) {
 	mustStatus(t, s.get(t, base+"/ORG_AGENT_SECRET", defaultToken), 404, "get deleted org secret")
 }
 
-// --- GitHub Copilot coding agent repository variables ---
+// GitHub Copilot coding agent repository variables
 
 func TestAgentsRepoVariables_CRUD(t *testing.T) {
 	t.Parallel()
@@ -266,7 +266,7 @@ func TestAgentsRepoVariables_CRUD(t *testing.T) {
 	mustStatus(t, s.get(t, base+"/AGENT_SPEED", defaultToken), 404, "get deleted variable")
 }
 
-// --- GitHub Copilot coding agent organization variables ---
+// GitHub Copilot coding agent organization variables
 
 func TestAgentsOrgVariables_CRUDAndSelectedRepos(t *testing.T) {
 	t.Parallel()

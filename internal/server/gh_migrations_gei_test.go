@@ -16,7 +16,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- fixture ----------------------------------------------------------------
+// fixture
 
 // geiFixture is one organization with a migration source, a repository to
 // migrate from, an owner, a granted migrator, and a stranger who owns a
@@ -30,9 +30,8 @@ type geiFixture struct {
 	migrator      *store.User
 	migratorToken string
 	// stranger owns otherOrg and holds the migrator role on it, and nothing at
-	// all on org. Every refusal case is driven as this account, which is what
-	// makes the refusals evidence of tenant isolation rather than of
-	// authentication.
+	// all on org. Every refusal case is driven as this account, making the
+	// refusals evidence of tenant isolation rather than of authentication.
 	stranger      *store.User
 	strangerToken string
 	otherOrg      *store.Org
@@ -95,7 +94,7 @@ func (f *geiFixture) sourceRepositoryURL(s *isolatedServer) string {
 	return s.baseURL + "/admin/" + f.sourceRepo + ".git"
 }
 
-// --- the authorization table -------------------------------------------------
+// the authorization table
 
 // gqlMigrationMutationCase is one row of the migration mutation surface.
 type gqlMigrationMutationCase struct {

@@ -1,9 +1,9 @@
 package graphqlapi
 
 // GitHub Sponsors mutation surface: the nine mutations, their authorization
-// policy, and their payloads. Each has a row in sponsorsMutationAuthz, so it
-// cannot reach the store without standing over the account whose money or
-// profile it touches.
+// policy, and their payloads. Each has a row in sponsorsMutationAuthz, so none
+// reaches the store without standing over the account whose money or profile it
+// touches.
 
 import (
 	"fmt"
@@ -12,10 +12,10 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// sponsorsRule authorizes a mutation over the account it acts for, requiring
-// the caller may administer it.
+// sponsorsRule authorizes a mutation over the account it acts for, requiring the
+// caller may administer it.
 //
-// The sponsor pays, so money/payment mutations authorize over the sponsor; the
+// The sponsor pays, so money mutations authorize over the sponsor; the
 // sponsorable owns the profile, so listing/tier mutations authorize over the
 // sponsorable. Reversing either would let any account spend another's money or
 // rewrite another's profile.
@@ -192,9 +192,9 @@ func (s *Resolver) sponsorsAccount(login string) (SponsorsAccount, bool) {
 	return SponsorsAccount{}, false
 }
 
-// sponsorsTierForSponsorable resolves the tier a sponsorship names, or — when
-// it names an amount instead — the custom-amount tier, else the dearest
-// published tier the amount covers.
+// sponsorsTierForSponsorable resolves the tier a sponsorship names, or — when it
+// names an amount instead — the custom-amount tier, else the dearest published
+// tier the amount covers.
 func (s *Resolver) sponsorsTierForSponsorable(input map[string]interface{}, sponsorableLogin string, recurring bool) (*store.SponsorsTier, int, error) {
 	listing := s.store.Sponsors.GetSponsorsListingForAccount(sponsorableLogin)
 	if listing == nil {

@@ -44,8 +44,8 @@ func useFixedTestClock(server *Server) {
 	server.replaceClockNow(clockNow)
 }
 
-// authedGet issues a GET against the live test server with the admin
-// token, the way the bleephub UI authenticates against /internal/*.
+// authedGet issues a GET against the live test server with the admin token, the
+// way the bleephub UI authenticates against /internal/*.
 func authedGet(t *testing.T, path string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest("GET", testBaseURL+path, nil)
@@ -78,8 +78,8 @@ func authedPost(path, contentType string, body io.Reader) (*http.Response, error
 // serveTestRequest is the single request-building core the package's various
 // do*Req helpers adapt to their own signatures (TEST-018): it builds a request
 // (JSON Content-Type when body is non-nil), applies authHeader if given, serves
-// it through the full middleware chain, and returns the recorder. It is distinct
-// from authedGet/authedPost, which drive the live httptest listener over HTTP.
+// it through the full middleware chain, and returns the recorder. Distinct from
+// authedGet/authedPost, which drive the live httptest listener over HTTP.
 func serveTestRequest(s *Server, authHeader, method, path string, body []byte) *httptest.ResponseRecorder {
 	var req *http.Request
 	if body != nil {
@@ -118,27 +118,27 @@ func TestMain(m *testing.M) {
 	// The fuzz targets build isolated in-memory servers when they need one.
 	// Starting the package-wide HTTP/SSH harness in the coordinator and every
 	// fuzz worker both wastes a listener per process and can prevent baseline
-	// collection from ever completing. Keep the one environment value those
-	// isolated fixtures require, then leave fuzz processes to m.Run.
+	// collection from completing. Keep the one environment value those isolated
+	// fixtures require, then leave fuzz processes to m.Run.
 	os.Setenv("BLEEPHUB_ADMIN_TOKEN", defaultToken)
 	os.Setenv("BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 	if fuzzProcess(os.Args[1:]) {
 		os.Exit(m.Run())
 	}
 
-	// Clear MinIO containers left by a suite that did not reach its own
-	// cleanup — a timeout panic, an interrupt, a kill. This runs on every
-	// ordinary suite, including one whose S3 tests are filtered out, because a
-	// run that never starts a server is exactly the run that would otherwise
-	// let abandoned ones accumulate unnoticed. Fuzz workers were returned
-	// above because they must not coordinate shared external state.
+	// Clear MinIO containers left by a suite that did not reach its own cleanup —
+	// a timeout panic, an interrupt, a kill. Runs on every ordinary suite,
+	// including one whose S3 tests are filtered out, because a run that never
+	// starts a server is exactly the run that would otherwise let abandoned ones
+	// accumulate unnoticed. Fuzz workers were returned above because they must not
+	// coordinate shared external state.
 	reapAbandonedS3Servers()
 
 	// The admin token has no default — every consumer (incl. the test harness)
 	// must set it explicitly. defaultToken is the non-PAT value the tests use.
 	// Webhook delivery accepts http and https; many tests still use TLS
-	// httptest.NewTLSServer receivers, so trust the shared certificate here to
-	// let those loopback receivers verify without insecure_ssl.
+	// httptest.NewTLSServer receivers, so trust the shared certificate here so
+	// those loopback receivers verify without insecure_ssl.
 	installWebhookTestTLSRoots()
 	_, hostKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -167,7 +167,7 @@ func TestMain(m *testing.M) {
 
 	// Individual logging tests construct their own captured logger. The
 	// package-wide fixture serves thousands of requests, and debug access logs
-	// otherwise bury the actual failing assertion in hundreds of kilobytes.
+	// otherwise bury the failing assertion in hundreds of kilobytes.
 	logger := zerolog.Nop()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -183,14 +183,14 @@ func TestMain(m *testing.M) {
 	srv := NewServer(addr, logger)
 	testServer = srv
 	useFixedTestClock(testServer)
-	// Typed-nil source ratchet (see graphql_source_audit_test.go): every
-	// GraphQL request the suite makes doubles as an audit of the source maps
-	// the resolvers build.
+	// Typed-nil source ratchet (see graphql_source_audit_test.go): every GraphQL
+	// request the suite makes doubles as an audit of the source maps the resolvers
+	// build.
 	instrumentGraphQLSourceAudit(srv.graphql.Schema())
 	// The package-wide fixture intentionally reuses one credential across
-	// thousands of otherwise independent tests. Keep that synthetic principal
-	// from coupling late tests to early request volume; dedicated rate-limit
-	// tests use isolated servers and the production 5,000-request budget.
+	// thousands of otherwise independent tests. Keep that synthetic principal from
+	// coupling late tests to early request volume; dedicated rate-limit tests use
+	// isolated servers and the production 5,000-request budget.
 	rateRequest, err := http.NewRequest(http.MethodGet, testBaseURL+"/api/v3/user", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "build test rate-limit request: %v\n", err)
@@ -226,9 +226,9 @@ func TestMain(m *testing.M) {
 	}
 	testServer.store.PackageDataDir = packageDataDir
 
-	// Response-shape validation against the vendored GitHub OpenAPI
-	// description rides the shared server; the ratchet runs after m.Run()
-	// (see openapi_shape_validator_test.go).
+	// Response-shape validation against the vendored GitHub OpenAPI description
+	// rides the shared server; the ratchet runs after m.Run() (see
+	// openapi_shape_validator_test.go).
 	validator, err := newShapeValidator()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "openapi shape validator: %v\n", err)
@@ -238,11 +238,11 @@ func TestMain(m *testing.M) {
 	srv.responseObserver = validator.Observe
 
 	// The shared harness server lives for the whole run; shutdown is exercised
-	// against its own server in lifecycle_test.go rather than here.
+	// against its own server in lifecycle_test.go, not here.
 	go srv.ListenAndServe(context.Background())
 
-	// Wait for server to be ready without coupling correctness to one fixed
-	// sleep that is either unnecessarily slow or too short on a loaded host.
+	// Wait for the server without coupling correctness to one fixed sleep that is
+	// either unnecessarily slow or too short on a loaded host.
 	ready := testutil.TestEventually(2500*time.Millisecond, 50*time.Millisecond, func() bool {
 		resp, err := http.Get(testBaseURL + "/health")
 		if err == nil {
@@ -271,13 +271,13 @@ func TestMain(m *testing.M) {
 	// Coverage floor (PAR-011): on a full run the shape-parity gate must have
 	// validated a substantial number of /api/v3 responses. A collapse toward
 	// zero — the observer unwired, or nearly every exchange skipped — makes a
-	// green ratchet meaningless, so fail loudly instead. Only on a full run: a
-	// `-run <subset>` (or the `-run ^$` fuzz pass) legitimately observes few.
+	// green ratchet meaningless, so fail loudly. Only on a full run: a `-run
+	// <subset>` (or the `-run ^$` fuzz pass) legitimately observes few.
 	if isFullTestRun() {
 		validated, exchanges := apiShapeValidator.coverage()
 		// Always report the count so a near-floor result is diagnosable from any
 		// run's log (a floor breach is otherwise the only time the number is
-		// visible, which makes an intermittent dip look like a mystery).
+		// visible, making an intermittent dip look like a mystery).
 		fmt.Fprintf(os.Stderr, "openapi-shape coverage: %d/%d /api/v3 responses validated (floor %d)\n", validated, exchanges, minShapeCoverage)
 		if validated < minShapeCoverage {
 			fmt.Fprintf(os.Stderr, "openapi-shape coverage floor: only %d /api/v3 response(s) validated against the OpenAPI description (floor %d) — the parity gate has gone vacuous\n", validated, minShapeCoverage)
@@ -308,7 +308,7 @@ func TestMain(m *testing.M) {
 	// Dead-entry sweep (PAR-022): on a full run every allowlisted deviation
 	// should have been triggered by the endpoint it cites. An entry no observed
 	// violation matched is a dead suppression that only inflates the ledger, so
-	// fail and name it for removal. Guarded to full runs — a subset legitimately
+	// fail and name it for removal. Full runs only — a subset legitimately
 	// exercises few of the cited endpoints.
 	if isFullTestRun() {
 		if unused, err := apiShapeValidator.unusedAllowlistEntries(); err != nil {
@@ -382,8 +382,8 @@ func TestOAuthToken(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	// Register a runner with an RSA public key, then exchange a signed
-	// client_assertion JWT for an access token — the real Azure DevOps
-	// agent OAuth2 jwt-bearer flow the actions/runner uses.
+	// client_assertion JWT for an access token — the Azure DevOps agent OAuth2
+	// jwt-bearer flow the actions/runner uses.
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
@@ -498,7 +498,7 @@ func signTestAssertionWithAlgorithm(t *testing.T, key *rsa.PrivateKey, clientID,
 
 // runnerTokenExchangeForm is the body the runner posts to its authorizationUrl:
 // the client credentials grant, with the client authenticated by an RSA
-// assertion rather than a secret.
+// assertion, not a secret.
 func runnerTokenExchangeForm(assertion string) url.Values {
 	form := url.Values{}
 	form.Set("grant_type", "client_credentials")
@@ -581,8 +581,8 @@ func TestAgentLifecycle(t *testing.T) {
 		t.Fatalf("unexpected name: %v", agent.Name)
 	}
 
-	// From here the runner holds the session token its client_assertion
-	// exchange returns.
+	// From here the runner holds the session token its client_assertion exchange
+	// returns.
 	sessionToken := makeJWT(agent.Authorization.ClientID, runnerAudSession)
 
 	resp2 := runnerDo(t, "GET", s.baseURL+"/_apis/v1/Agent/1", sessionToken, "")
@@ -609,8 +609,7 @@ func TestAgentLifecycle(t *testing.T) {
 	}
 
 	// Verify deleted. The deleted runner's own token no longer resolves to an
-	// agent, so the check runs as another runner registered for the same
-	// scope.
+	// agent, so the check runs as another runner registered for the same scope.
 	observerToken, _ := testAgentSession(t, s.Server, store.RunnerScope{Repo: "life-owner/life-repo"})
 	resp5 := runnerDo(t, "GET", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", s.baseURL, agentID), observerToken, "")
 	defer resp5.Body.Close()

@@ -51,7 +51,7 @@ func (s *Server) registerGHReleasesRoutes() {
 	// Go 1.22's mux refuses to register /releases/tags/{tag} and
 	// /releases/{release_id}/assets directly (they overlap without either being
 	// more specific), so one dispatcher handles the prefix and routeDispatch
-	// records the real endpoints so RegisteredRoutes() enumerates them.
+	// records the real endpoints for RegisteredRoutes() to enumerate.
 	s.routeDispatch("GET /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
 		s.handleReleaseTwoSegDispatch("GET"),
 		"GET /api/v3/repos/{owner}/{repo}/releases/tags/{tag}",
@@ -153,8 +153,8 @@ func (s *Server) lookupRepoFromPath(r *http.Request) *store.Repo {
 
 // lookupReadableRepoFromPath resolves {owner}/{repo} and enforces private-repo
 // visibility: a private repo the caller cannot read returns nil and a 404 (never
-// 403, so existence stays hidden). Use on GET handlers returning repo-scoped
-// content; lookupRepoFromPath stays for write handlers gated by requirePerm.
+// 403, so existence stays hidden). Use on repo-scoped GET handlers;
+// lookupRepoFromPath stays for write handlers gated by requirePerm.
 func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
@@ -169,11 +169,10 @@ func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Reque
 }
 
 // enforceRepoReadable applies the private-repo visibility gate without requiring
-// a Repo record to exist: it returns false (404) only for a KNOWN private repo
-// the caller cannot read. Paths whose repo has no Store record (workflow-run
-// state keyed by RepoFullName alone) pass through to handlers with their own
-// not-found semantics. Use on repo-scoped read handlers over non-Repo-keyed
-// state.
+// a Repo record to exist: returns false (404) only for a KNOWN private repo the
+// caller cannot read. Paths whose repo has no Store record (workflow-run state
+// keyed by RepoFullName alone) pass through to handlers with their own not-found
+// semantics. Use on repo-scoped read handlers over non-Repo-keyed state.
 func (s *Server) enforceRepoReadable(w http.ResponseWriter, r *http.Request) bool {
 	if !repoNamedInRequest(r) {
 		return true
@@ -301,7 +300,7 @@ func (s *Server) handleGetLatestRelease(w http.ResponseWriter, r *http.Request) 
 
 // releaseVisibleTo reports whether a release may be shown to the caller. A draft
 // is served only to users with push access (404 otherwise); applying the list
-// endpoint's draft filter to every by-id/by-tag read keeps a direct fetch from
+// endpoint's draft filter to every by-id/by-tag read stops a direct fetch
 // bypassing it.
 func (s *Server) releaseVisibleTo(r *http.Request, repo *store.Repo, rel *store.Release) bool {
 	if rel == nil || repo == nil || rel.RepoID != repo.ID {

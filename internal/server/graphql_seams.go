@@ -42,7 +42,7 @@ func (s *Server) newGraphQLResolver() *graphqlapi.Resolver {
 	})
 }
 
-// --- graphqlapi.Authz ------------------------------------------------------
+// graphqlapi.Authz
 
 func (a graphqlSeams) ViewerCanReadRepo(ctx context.Context, repo *store.Repo) bool {
 	return a.s.viewerCanReadRepo(ctx, repo)
@@ -84,8 +84,7 @@ func (a graphqlSeams) ViewerCanAdminAccount(ctx context.Context, login string) b
 	return a.s.viewerCanAdminAccount(ctx, login)
 }
 
-// ViewerMayMigrateOrg reuses the REST migration predicate so both surfaces admit
-// the same principals.
+// ViewerMayMigrateOrg reuses the REST migration predicate so both surfaces admit the same principals.
 func (a graphqlSeams) ViewerMayMigrateOrg(ctx context.Context, org *store.Org) bool {
 	return a.s.viewerMayMigrateOrg(ctx, org)
 }
@@ -102,7 +101,7 @@ func (a graphqlSeams) CanWriteProjectV2(ctx context.Context, user *store.User, o
 	return a.s.canWriteProjectV2(ctx, user, owner)
 }
 
-// --- graphqlapi.Events -----------------------------------------------------
+// graphqlapi.Events
 
 func (a graphqlSeams) EmitWebhookEvent(repoKey, eventType, action string, payload interface{}) {
 	a.s.emitWebhookEvent(repoKey, eventType, action, payload)
@@ -140,8 +139,7 @@ func (a graphqlSeams) EmitPullRequestChanges(repo *store.Repo, pr *store.PullReq
 	a.s.pullRequestEmitter(repo, pr, sender).emitChanges(change)
 }
 
-// EmitCheckRunEvent / EmitCheckSuiteEvent reuse the REST checks emitters, so a
-// GraphQL rerequest fires the identical payload.
+// EmitCheckRunEvent / EmitCheckSuiteEvent reuse the REST checks emitters, so a GraphQL rerequest fires the identical payload.
 func (a graphqlSeams) EmitCheckRunEvent(repoKey string, checkRunID int64, action string) {
 	a.s.CheckRunEvent(repoKey, checkRunID, action)
 }
@@ -162,7 +160,7 @@ func (a graphqlSeams) EmitDeploymentStatusEvent(repo *store.Repo, d *store.Deplo
 		buildDeploymentStatusEventPayload(repo, d, status, sender, a.s.publicOrigin()))
 }
 
-// --- graphqlapi.Pulls ------------------------------------------------------
+// graphqlapi.Pulls
 
 func (a graphqlSeams) PRHeadSha(repo *store.Repo, pr *store.PullRequest) string {
 	return a.s.prHeadSha(repo, pr)
@@ -194,8 +192,7 @@ func (a graphqlSeams) ChangedFiles(repo *store.Repo, pr *store.PullRequest, base
 	return pullRequestChangedFiles(a.s.store, repo, pr, baseURL)
 }
 
-// UpdatePullRequestBranch brings a PR's head branch up to date with its base
-// through the same helper PUT /pulls/{n}/update-branch uses.
+// UpdatePullRequestBranch brings a PR's head branch up to date with its base through the same helper PUT /pulls/{n}/update-branch uses.
 func (a graphqlSeams) UpdatePullRequestBranch(repo *store.Repo, pr *store.PullRequest, user *store.User, expectedHeadOid, method string) error {
 	return a.s.updatePullRequestBranch(repo, pr, user, expectedHeadOid, method, a.s.externalURL)
 }
@@ -204,8 +201,7 @@ func (a graphqlSeams) MaybeAutoMerge(prID int) {
 	a.s.maybeAutoMergePR(prID)
 }
 
-// MaybeAutoMergeHeadSHA releases any armed auto-merge waiting on this commit,
-// through the same helper the REST checks routes call.
+// MaybeAutoMergeHeadSHA releases any armed auto-merge waiting on this commit, through the same helper the REST checks routes call.
 func (a graphqlSeams) MaybeAutoMergeHeadSHA(repo *store.Repo, headSha string) {
 	a.s.maybeAutoMergeHeadSHA(repo, headSha)
 }
@@ -214,7 +210,7 @@ func (a graphqlSeams) AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequ
 	a.s.autoRequestCodeOwners(repo, pr, sender)
 }
 
-// --- graphqlapi.Migrations --------------------------------------------------
+// graphqlapi.Migrations
 
 // StartRepositoryMigration and StartOrganizationMigration hand a recorded
 // migration to the workers that perform it. The resolver layer may not dial a
@@ -241,7 +237,7 @@ func (a graphqlSeams) RepositoryMigrationLogURL(m *store.RepositoryMigration) st
 	return a.s.externalURL + fmt.Sprintf("/ui-data/orgs/%s/migrations/repositories/%d/log", org.Login, m.ID)
 }
 
-// --- graphqlapi.Repos -------------------------------------------------------
+// graphqlapi.Repos
 
 // RenameRepository renames through the same helper PATCH /repos/{owner}/{repo}
 // uses, so full-name-embedding metadata moves either way.

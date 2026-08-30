@@ -14,7 +14,7 @@ func init() {
 }
 
 func (s *Resolver) addMiscShells() {
-	// --- shared scalars and enums ------------------------------------------
+	// shared scalars and enums
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 
@@ -22,7 +22,7 @@ func (s *Resolver) addMiscShells() {
 	diffSide := s.sharedEnum("DiffSide", "LEFT", "RIGHT")
 	prReviewThreadSubjectType := s.sharedEnum("PullRequestReviewThreadSubjectType", "FILE", "LINE")
 
-	// --- existing read-surface types referenced read-only ------------------
+	// existing read-surface types referenced read-only
 	commit := s.graphqlTypes.commit
 	repository := s.graphqlTypes.repository
 	pullRequest := s.graphqlTypes.pullRequest
@@ -95,7 +95,7 @@ func (s *Resolver) addMiscShells() {
 		})
 	}
 
-	// --- comment-thread objects (implements Node & RepositoryNode) ---------
+	// comment-thread objects (implements Node & RepositoryNode)
 	commitCommentThread := s.mutationObject("CommitCommentThread", graphql.Fields{
 		"comments":   &graphql.Field{Type: graphql.NewNonNull(commitCommentConnection), Args: connectionArgs(nil)},
 		"commit":     gqlField(commit),
@@ -115,7 +115,7 @@ func (s *Resolver) addMiscShells() {
 		"repository":  gqlNonNull(repository),
 	})
 
-	// --- hovercard-context objects (HovercardContext: message/octicon) -----
+	// hovercard-context objects (HovercardContext: message/octicon)
 	genericHovercardContext := s.mutationObject("GenericHovercardContext", graphql.Fields{
 		"message": gqlNonNull(graphql.String),
 		"octicon": gqlNonNull(graphql.String),
@@ -154,7 +154,7 @@ func (s *Resolver) addMiscShells() {
 		"viewer":  gqlNonNull(user),
 	})
 
-	// --- pending-suggestion objects ----------------------------------------
+	// pending-suggestion objects
 	pendingAssigneeSuggestion := s.mutationObject("PendingAssigneeSuggestion", graphql.Fields{
 		"actor":     gqlField(actor),
 		"assignee":  gqlField(assignee),
@@ -189,7 +189,7 @@ func (s *Resolver) addMiscShells() {
 		"updatedAt": gqlField(dateTime),
 	})
 
-	// --- remaining standalone objects --------------------------------------
+	// remaining standalone objects
 	memberFeatureRequestNotification := s.mutationObject("MemberFeatureRequestNotification", graphql.Fields{
 		"body":      gqlNonNull(graphql.String),
 		"id":        gqlNonNull(graphql.ID),
@@ -239,7 +239,7 @@ func (s *Resolver) addMiscShells() {
 		"viewerCanUnresolve": gqlNonNull(graphql.Boolean),
 	})
 
-	// --- publish -----------------------------------------------------------
+	// publish
 	s.registerExtraSchemaType(
 		issueStateReason,
 		diffSide,

@@ -22,7 +22,7 @@ type commentAuthz struct {
 	isGist      bool
 }
 
-// ---- shared enums -----------------------------------------------------------
+// shared enums
 
 func (s *Resolver) commentAuthorAssociationEnum() *graphql.Enum {
 	return s.graphQLEnum(
@@ -40,7 +40,7 @@ func (s *Resolver) gqlCommentCannotUpdateReasonEnum() *graphql.Enum {
 	)
 }
 
-// ---- viewer permission logic ------------------------------------------------
+// viewer permission logic
 
 func (s *Resolver) commentViewerIsAuthor(ctx context.Context, az commentAuthz) bool {
 	v := s.ghUserFromContext(ctx)
@@ -79,7 +79,7 @@ func (s *Resolver) repoCommentAssociation(repoID, authorID int) string {
 	return authorAssociationForRepoLocked(s.store, repoID, authorID)
 }
 
-// ---- source helpers ---------------------------------------------------------
+// source helpers
 
 func commentSourceMap(source interface{}) map[string]interface{} {
 	m, _ := source.(map[string]interface{})
@@ -91,7 +91,7 @@ func commentSourceString(source interface{}, key string) string {
 	return v
 }
 
-// ---- content-trait field constructors --------------------------------------
+// content-trait field constructors
 
 func (s *Resolver) commentBodyHTMLField() *graphql.Field {
 	return &graphql.Field{

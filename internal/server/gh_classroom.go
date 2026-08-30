@@ -215,7 +215,7 @@ func (s *Server) classroomAssignmentJSON(a *store.ClassroomAssignment, baseURL s
 	return out
 }
 
-// --- Read handlers ---
+// Read handlers
 
 func (s *Server) handleListClassrooms(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())

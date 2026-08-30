@@ -11,7 +11,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- additional / refined App-management endpoints
+// additional / refined App-management endpoints
 
 func TestGetAppBySlug_AnonReadable(t *testing.T) {
 	s := newTestServer()

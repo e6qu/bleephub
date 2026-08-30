@@ -13,17 +13,16 @@ import (
 
 // A user-to-server (`ghu_`) token is the intersection of two things: what its
 // bearer can reach, and what the app behind it was installed on. Handlers that
-// asked only the user-shaped question saw the bearer and nothing else, so an
-// app holding zero permissions and installed nowhere read a stranger's private
-// repository and planted an organization webhook — through a token it had
-// obtained legitimately, on routes where the same app's `ghs_` token is
-// refused. A credential that can be exchanged for a broader one is not a
-// narrower credential.
+// asked only the user-shaped question saw the bearer and nothing else, so an app
+// holding zero permissions and installed nowhere read a stranger's private repo
+// and planted an org webhook — through a legitimately obtained token, on routes
+// where the same app's `ghs_` token is refused. A credential that can be
+// exchanged for a broader one is not a narrower credential.
 //
 // Both directions matter. Over-blocking has been the recurring regression when
 // this was tightened before, so every case below is paired: the app installed
-// nowhere must be refused, and the app installed on the target, whose bearer
-// does hold access, must still be served.
+// nowhere must be refused, and the app installed on the target, whose bearer does
+// hold access, must still be served.
 
 type ghuFixture struct {
 	victim      *store.User
@@ -66,9 +65,9 @@ func (s *isolatedServer) newGhuFixture(t *testing.T, tag string) *ghuFixture {
 	if f.victimRepo == nil || !f.victimRepo.Private {
 		t.Fatalf("could not create the victim's private repository")
 	}
-	// The bearer legitimately holds pull on the victim's private repository.
-	// That is what makes the borrowed access plausible: the user really can
-	// read it, the app really cannot.
+	// The bearer legitimately holds pull on the victim's private repo. That is
+	// what makes the borrowed access plausible: the user really can read it, the
+	// app really cannot.
 	if !st.AddRepoCollaborator(f.victim.Login, "ghu-private", f.bearer.Login, "pull") {
 		t.Fatalf("could not make the bearer a collaborator")
 	}
@@ -97,7 +96,7 @@ func (s *isolatedServer) newGhuFixture(t *testing.T, tag string) *ghuFixture {
 	}
 	f.outsideGhu = outsideGhu.Token
 	// A ghs_ for an app with no installation: installation id 0 resolves to
-	// nothing, which is exactly the "installed nowhere" shape.
+	// nothing — exactly the "installed nowhere" shape.
 	f.outsideGhs = st.CreateInstallationToken(0, outside.ID, nil, nil).Token
 
 	perms := map[string]string{
@@ -242,9 +241,8 @@ func TestGhuTokenOfAnInstalledAppIsStillServed(t *testing.T) {
 		if !served(status) {
 			t.Errorf("%s with a ghu_ of an app installed on the owner: status = %d, want 2xx: %s", route.path, status, body)
 		}
-		// The ghs_ baseline for the same installation: the ghu_ above is
-		// meant to be the intersection of that and its bearer, not something
-		// narrower.
+		// The ghs_ baseline for the same installation: the ghu_ above is meant to
+		// be the intersection of that and its bearer, not something narrower.
 		if status, body := s.ghuRequest(t, route.method, route.path, f.insideGhs, route.body); !served(status) {
 			t.Errorf("%s with the installed app's ghs_: status = %d, want 2xx: %s", route.path, status, body)
 		}
@@ -258,10 +256,10 @@ func TestGhuTokenOfAnInstalledAppIsStillServed(t *testing.T) {
 	}
 }
 
-// The organization half had no choke point at all: orgHookGate asked only
-// whether the bearer was an org admin, so a webhook pointing anywhere the
-// attacker chose received every event the organization ever emits. This pins
-// the specific exfiltration rather than the generic comparison above.
+// The org half had no choke point at all: orgHookGate asked only whether the
+// bearer was an org admin, so a webhook pointing anywhere the attacker chose
+// received every event the org ever emits. This pins the specific exfiltration
+// rather than the generic comparison above.
 func TestOrgWebhookCannotBePlantedByAnAppInstalledNowhere(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -280,8 +278,8 @@ func TestOrgWebhookCannotBePlantedByAnAppInstalledNowhere(t *testing.T) {
 	}
 }
 
-// A path naming a repository or an organization that does not exist used to
-// pass the resource gate entirely, because "no repository named" and "the named
+// A path naming a repository or an organization that does not exist used to pass
+// the resource gate entirely, because "no repository named" and "the named
 // repository is not there" both reduced to a nil lookup. Handlers keyed off the
 // raw path values then acted under a fabricated key.
 func TestNamedButAbsentTargetsAreNeverServed(t *testing.T) {
@@ -327,9 +325,9 @@ func TestNamedButAbsentTargetsAreNeverServed(t *testing.T) {
 }
 
 // Positive control for the check above: a path that names no repository at all,
-// and one that names an organization which does exist, are served exactly as
-// before. Denying those would break most of the API, which is why the gate
-// cannot simply default to refusing a nil lookup.
+// and one that names an org which does exist, are served exactly as before.
+// Denying those would break most of the API, which is why the gate cannot simply
+// default to refusing a nil lookup.
 func TestRoutesNamingNoRepositoryAreUnaffected(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -351,15 +349,14 @@ func TestRoutesNamingNoRepositoryAreUnaffected(t *testing.T) {
 }
 
 // The check above names a handful of routes by hand. This one is the whole
-// table: every registered route that names a repository must refuse a
-// repository that does not exist, whatever gate it happens to use. Picking
-// routes by hand is how the previous rounds kept missing some.
+// table: every registered route naming a repository must refuse a repository
+// that does not exist, whatever gate it uses. Picking routes by hand is how the
+// previous rounds kept missing some.
 var ghuPathPlaceholder = regexp.MustCompile(`\{[^}]+\}`)
 
 // These two are served by artifacts.go, which is owned elsewhere and cannot be
-// edited from here; both answer 200 with an empty cache listing for a
-// repository that does not exist. Remove the entry when the handler resolves
-// the repository.
+// edited from here; both answer 200 with an empty cache listing for a repository
+// that does not exist. Remove the entry when the handler resolves the repo.
 var fabricatedRepoRoutesStillServed = map[string]bool{}
 
 func TestNoRegisteredRouteServesAFabricatedRepository(t *testing.T) {
@@ -401,18 +398,17 @@ func TestNoRegisteredRouteServesAFabricatedRepository(t *testing.T) {
 	}
 }
 
-// TestNoRepoWriteServesAGhuBroaderThanItsGhs re-drives the whole
-// repository-write sweep that AUTH-081 was sized against, rather than the
-// handful of routes the comparison above names by hand. For every registered
-// mutating route under /repos/{owner}/{repo}, it drives the outside app's
-// ghu_ and ghs_ tokens against the victim's real private repository and
-// asserts the ghu_ is never served where the same app's ghs_ is refused — the
-// exact asymmetry AUTH-081 tracked. It also pins that the ghs_ of an app
-// installed nowhere is refused everywhere, so "both refused" cannot mask a
-// hole. The write chokepoint (only rbac.go and gh_apps_perms.go may ask the
-// bearer-only question) is enforced structurally by the AST ratchet in
-// authz_chokepoint_test.go; this is its behavioural counterpart across the
-// full route table.
+// TestNoRepoWriteServesAGhuBroaderThanItsGhs re-drives the whole repository-write
+// sweep that AUTH-081 was sized against, rather than the handful of routes the
+// comparison above names by hand. For every registered mutating route under
+// /repos/{owner}/{repo}, it drives the outside app's ghu_ and ghs_ tokens against
+// the victim's real private repo and asserts the ghu_ is never served where the
+// same app's ghs_ is refused — the exact asymmetry AUTH-081 tracked. It also pins
+// that the ghs_ of an app installed nowhere is refused everywhere, so "both
+// refused" cannot mask a hole. The write chokepoint (only rbac.go and
+// gh_apps_perms.go may ask the bearer-only question) is enforced structurally by
+// the AST ratchet in authz_chokepoint_test.go; this is its behavioural
+// counterpart across the full route table.
 func TestNoRepoWriteServesAGhuBroaderThanItsGhs(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

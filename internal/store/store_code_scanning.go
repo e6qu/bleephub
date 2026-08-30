@@ -956,7 +956,7 @@ func (st *Store) CreateCodeScanningAutofix(a *CodeScanningAlert) (*CodeScanningA
 	return fix, true
 }
 
-// --- CodeQL databases ---
+// CodeQL databases
 
 // CodeQLDatabase is a CodeQL database for one repo + language pair. StoragePath
 // points at the durable archive bytes; Content is used only by non-persistent
@@ -1135,7 +1135,7 @@ func (st *Store) deleteCodeQLDatabaseDataLocked(db *CodeQLDatabase) error {
 	return nil
 }
 
-// --- CodeQL variant analyses ---
+// CodeQL variant analyses
 
 // CodeScanningAnalysisStatus is a CodeQL variant-analysis repo task's status;
 // GitHub emits only these six values.

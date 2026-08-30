@@ -12,10 +12,10 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// Browser-only pull request operations. GitHub serves both from its web UI
-// only ("Commit suggestion" has no REST operation, hiding whitespace is the
-// web diff's `w=1` toggle), so they live under /ui-data. The files endpoint
-// with ignore_whitespace=1 recomputes each patch whitespace-insensitively;
+// Browser-only pull request operations, served from GitHub's web UI only
+// ("Commit suggestion" has no REST operation, hiding whitespace is the web
+// diff's `w=1` toggle), so they live under /ui-data. The files endpoint with
+// ignore_whitespace=1 recomputes each patch whitespace-insensitively;
 // apply-suggestion commits the first ```suggestion fence onto the PR head
 // branch, co-authored by the comment author.
 func (s *Server) registerGHPullsUIDataRoutes() {
@@ -23,7 +23,7 @@ func (s *Server) registerGHPullsUIDataRoutes() {
 	s.route("POST /ui-data/repos/{owner}/{repo}/pulls/{number}/review-comments/{comment_id}/apply-suggestion", s.handleUIApplySuggestion)
 }
 
-// --- whitespace-ignoring PR files ---
+// whitespace-ignoring PR files
 
 func (s *Server) handleUIPullFiles(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
@@ -398,7 +398,7 @@ func hunkRange(start, length int) string {
 	return strconv.Itoa(start) + "," + strconv.Itoa(length)
 }
 
-// --- apply suggestion ---
+// apply suggestion
 
 // firstSuggestionBlock extracts the body of the first ```suggestion fence;
 // ok=false when there is no terminated fence.

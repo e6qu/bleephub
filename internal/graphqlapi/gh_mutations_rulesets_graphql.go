@@ -107,7 +107,7 @@ func (r rulesetOwnerRule) authorizeEnterprise(s *Resolver, p graphql.ResolvePara
 	return nil
 }
 
-// --- schema -----------------------------------------------------------------
+// schema
 
 // addRulesetMutationsToSchema installs the three ruleset write mutations. It
 // runs after the ruleset read surface, whose RepositoryRuleset the payloads return.
@@ -306,7 +306,7 @@ func (s *Resolver) gqlRuleParametersInput() *graphql.InputObject {
 	})
 }
 
-// --- input conversion --------------------------------------------------------
+// input conversion
 
 // rulesetConditionsFromInput reads the refName condition into the store shape.
 func rulesetConditionsFromInput(input map[string]interface{}) (store.RulesetConditions, bool) {
@@ -436,7 +436,7 @@ func boolMember(input map[string]interface{}, key string) bool {
 	return value
 }
 
-// --- resolvers ---------------------------------------------------------------
+// resolvers
 
 func (s *Resolver) resolveCreateRepositoryRuleset(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})

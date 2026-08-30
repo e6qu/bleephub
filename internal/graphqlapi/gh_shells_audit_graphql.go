@@ -11,7 +11,7 @@ func init() {
 	schemaShellBuilders = append(schemaShellBuilders, (*Resolver).addAuditEntryShells)
 }
 
-// --- mixin field sets the new interfaces and their implementers share ---------
+// mixin field sets the new interfaces and their implementers share
 
 func (s *Resolver) enterpriseAuditDataFields() graphql.Fields {
 	uri := s.graphQLStringScalar("URI")
@@ -71,7 +71,7 @@ func (s *Resolver) auditShellObject(name string, parts ...graphql.Fields) *graph
 func (s *Resolver) addAuditEntryShells() {
 	uri := s.graphQLStringScalar("URI")
 
-	// --- mixin interfaces (zero-implementer: the shells are plain objects) ---
+	// mixin interfaces (zero-implementer: the shells are plain objects)
 	nilResolve := func(graphql.ResolveTypeParams) *graphql.Object { return nil }
 	enterpriseData := s.mutationInterface("EnterpriseAuditEntryData",
 		func() graphql.Fields { return s.enterpriseAuditDataFields() }, nilResolve)
@@ -83,7 +83,7 @@ func (s *Resolver) addAuditEntryShells() {
 		func() graphql.Fields { return s.topicAuditDataFields() }, nilResolve)
 	s.registerExtraSchemaType(enterpriseData, oauthAppData, teamData, topicData)
 
-	// --- sub-enums ----------------------------------------------------------
+	// sub-enums
 	oauthAppCreateState := s.sharedEnum("OauthApplicationCreateAuditEntryState",
 		"ACTIVE", "PENDING_DELETION", "SUSPENDED")
 	orgAddMemberPermission := s.sharedEnum("OrgAddMemberAuditEntryPermission",
@@ -119,7 +119,7 @@ func (s *Resolver) addAuditEntryShells() {
 		repoAddMemberVisibility, repoArchivedVisibility, repoChangeMergeSettingMergeType,
 		repoRemoveMemberVisibility)
 
-	// --- OrgRestoreMember membership data objects + union -------------------
+	// OrgRestoreMember membership data objects + union
 	restoreOrgData := s.mutationObject("OrgRestoreMemberMembershipOrganizationAuditEntryData",
 		s.orgAuditDataFields())
 	restoreRepoData := s.mutationObject("OrgRestoreMemberMembershipRepositoryAuditEntryData",
@@ -132,7 +132,7 @@ func (s *Resolver) addAuditEntryShells() {
 		}, nilResolve)
 	s.registerExtraSchemaType(restoreOrgData, restoreRepoData, restoreTeamData, restoreMembership)
 
-	// --- concrete member objects -------------------------------------------
+	// concrete member objects
 	// Shared mixin sets, rebuilt per object (the field builders return fresh maps).
 	base := func() graphql.Fields { return s.auditEntryBaseFields() }
 	org := func() graphql.Fields { return s.orgAuditDataFields() }

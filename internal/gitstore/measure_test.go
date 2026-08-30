@@ -12,18 +12,12 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
-// The benchmarks in this file are the measurement the design is argued from.
-// They run the two storage shapes — the loose tier alone, which is what this
-// package had, and the loose tier with the pack tier under it, which is what it
-// has now — against one in-process object store that counts every request and
-// every byte. Both shapes are built in the same binary from the same code, so
-// the numbers are a comparison rather than a recollection.
+// The benchmarks here are the measurement the design is argued from. They run the two storage shapes — loose tier alone
+// (what this package had) and loose tier with the pack tier under it (what it has now) — against one in-process object
+// store that counts every request and byte, both built in the same binary from the same code, so the numbers compare.
 //
-// Each benchmark reports three metrics beside the usual per-operation time: the
-// object store requests one clone or one push costs, the same figure per
-// object, and the bytes transferred. Request count is the quantity of interest,
-// because the cost being removed is a network round trip, and each one of those
-// is a fixed toll that no amount of local speed pays off.
+// Each reports three metrics beside per-operation time: the object store requests one clone/push costs, the same per
+// object, and bytes transferred. Request count is the quantity of interest: the cost removed is a network round trip, a fixed toll no local speed pays off.
 //
 // Environment:
 //
@@ -59,18 +53,15 @@ func report(b *testing.B, counts s3Counts, objects int) {
 	b.Logf("objects=%d %s", objects, counts)
 }
 
-// benchSetup turns off the automatic compaction trigger, so a background
-// compaction cannot fire in the middle of a phase and be charged to it, and
-// points the pack cache at a directory of this benchmark's own.
+// benchSetup turns off the automatic compaction trigger, so a background compaction cannot fire mid-phase and be charged to it,
+// and points the pack cache at a directory of this benchmark's own.
 func benchSetup(b *testing.B) {
 	b.Helper()
 	b.Setenv(compactionTriggerEnv, "0")
 	b.Setenv(packCacheDirEnv, b.TempDir())
 }
 
-// BenchmarkPushLoose measures writing objects into the loose tier, which is
-// what a push costs and is unchanged by the pack tier: an object still arrives
-// as one key.
+// BenchmarkPushLoose measures writing objects into the loose tier, which is what a push costs and is unchanged by the pack tier: an object still arrives as one key.
 func BenchmarkPushLoose(b *testing.B) {
 	benchSetup(b)
 	objects := benchObjects(b)
@@ -97,8 +88,7 @@ func BenchmarkPushLoose(b *testing.B) {
 	report(b, counts, seeded)
 }
 
-// BenchmarkCloneLoose is the baseline: a clone served entirely out of the loose
-// tier, where every object is one whole-object GET.
+// BenchmarkCloneLoose is the baseline: a clone served entirely out of the loose tier, where every object is one whole-object GET.
 func BenchmarkCloneLoose(b *testing.B) {
 	benchSetup(b)
 	fake := newFakeS3(b)
@@ -111,9 +101,7 @@ func BenchmarkCloneLoose(b *testing.B) {
 	var counts s3Counts
 	for b.Loop() {
 		b.StopTimer()
-		// A clone is served by a storer opened for the request, so the writing
-		// handle's warm in-process object cache must not be counted as a
-		// saving the read path actually has.
+		// A clone is served by a storer opened for the request, so the writing handle's warm in-process object cache must not be counted as a saving the read path actually has.
 		readStor, err := looseStorage(fake, benchRepo)
 		if err != nil {
 			b.Fatalf("storage: %v", err)
@@ -132,9 +120,7 @@ func BenchmarkCloneLoose(b *testing.B) {
 	report(b, counts, len(hashes))
 }
 
-// BenchmarkCompaction measures moving a repository's loose tier into a pack. It
-// is the cost the read path's saving is bought with, and it is paid once per
-// batch of objects rather than once per clone.
+// BenchmarkCompaction measures moving a repository's loose tier into a pack. It is the cost the read path's saving is bought with, paid once per batch of objects rather than once per clone.
 func BenchmarkCompaction(b *testing.B) {
 	benchSetup(b)
 	objects := benchObjects(b)
@@ -169,9 +155,8 @@ func BenchmarkCompaction(b *testing.B) {
 	report(b, counts, packed)
 }
 
-// BenchmarkClonePackedColdCache is the number the design exists to move: a
-// clone of a packed repository served by a replica that has never seen it, so
-// every byte comes from the object store through ranged reads.
+// BenchmarkClonePackedColdCache is the number the design exists to move: a clone of a packed repository served by a
+// replica that has never seen it, so every byte comes from the object store through ranged reads.
 func BenchmarkClonePackedColdCache(b *testing.B) {
 	benchSetup(b)
 	fake, hashes := benchPackedRepository(b)
@@ -198,8 +183,7 @@ func BenchmarkClonePackedColdCache(b *testing.B) {
 	report(b, counts, len(hashes))
 }
 
-// BenchmarkClonePackedWarmCache is the steady state: a replica serving a
-// repository whose pack it already holds locally.
+// BenchmarkClonePackedWarmCache is the steady state: a replica serving a repository whose pack it already holds locally.
 func BenchmarkClonePackedWarmCache(b *testing.B) {
 	benchSetup(b)
 	fake, hashes := benchPackedRepository(b)
@@ -230,9 +214,8 @@ func BenchmarkClonePackedWarmCache(b *testing.B) {
 	report(b, counts, len(hashes))
 }
 
-// BenchmarkHasEncodedObjectAbsent measures the question a fetch negotiation
-// asks about objects the repository does not have. Before the membership index
-// each one was an object store GET that returned a 404.
+// BenchmarkHasEncodedObjectAbsent measures the question a fetch negotiation asks about objects the repository does not have.
+// Before the membership index each one was an object store GET that returned a 404.
 func BenchmarkHasEncodedObjectAbsent(b *testing.B) {
 	benchSetup(b)
 	fake, _ := benchPackedRepository(b)
@@ -258,8 +241,7 @@ func BenchmarkHasEncodedObjectAbsent(b *testing.B) {
 	report(b, fake.snapshot().sub(before), max(probes, 1))
 }
 
-// benchPackedRepository seeds and compacts a repository, returning the store it
-// lives in and every object in it.
+// benchPackedRepository seeds and compacts a repository, returning the store it lives in and every object in it.
 func benchPackedRepository(b *testing.B) (*fakeS3, []plumbing.Hash) {
 	b.Helper()
 	fake := newFakeS3(b)
@@ -278,8 +260,7 @@ func benchPackedRepository(b *testing.B) (*fakeS3, []plumbing.Hash) {
 	return fake, hashes
 }
 
-// clearPackCache empties the local pack cache so a measurement starts from the
-// state of a replica that has never served this repository.
+// clearPackCache empties the local pack cache so a measurement starts from the state of a replica that has never served this repository.
 func clearPackCache(tb testing.TB, dir string) {
 	tb.Helper()
 	entries, err := os.ReadDir(dir)

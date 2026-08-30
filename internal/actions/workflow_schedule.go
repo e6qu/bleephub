@@ -71,12 +71,11 @@ func (s *Engine) FireSchedulesThrough(lastFired, now time.Time) time.Time {
 	return current
 }
 
-// scheduleIndex caches the parsed `on: schedule:` timetable for each
-// repository's default branch, keyed by that branch's tip commit. Workflow
-// content at a given tip is immutable, so invalidating on tip movement reduces
-// the per-minute scan to cron-matching against pre-parsed schedules. Only
-// schedule-bearing workflows are retained; parse and cron validation happen at
-// build time, not every tick.
+// scheduleIndex caches the parsed `on: schedule:` timetable for each repo's
+// default branch, keyed by that branch's tip commit. Workflow content at a tip
+// is immutable, so invalidating on tip movement cuts the per-minute scan to
+// cron-matching pre-parsed schedules. Only schedule-bearing workflows are kept;
+// parse and cron validation happen at build time, not every tick.
 type scheduleIndex struct {
 	mu       sync.Mutex
 	entries  map[string]*scheduleIndexEntry

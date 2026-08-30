@@ -8,15 +8,13 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// --- ProjectV2 mutation authorization ---
+// ProjectV2 mutation authorization
 //
-// A project belongs to a user or organization, so the entitlement is the
-// owner-scoped pair the REST surface enforces: canReadProjectV2 for visibility,
-// canWriteProjectV2 for change.
+// A project belongs to a user or organization, so the entitlement is the owner-scoped pair the REST surface enforces:
+// canReadProjectV2 for visibility, canWriteProjectV2 for change.
 
-// projectMutationTarget is what a ProjectV2 mutation acts on: the owning account
-// (whose membership decides write access) and the project itself when the input
-// names one rather than creating it.
+// projectMutationTarget is what a ProjectV2 mutation acts on: the owning account (whose membership decides write access)
+// and the project itself when the input names one rather than creating it.
 type projectMutationTarget struct {
 	owner   *store.ProjectV2Owner
 	project *store.ProjectV2
@@ -24,9 +22,8 @@ type projectMutationTarget struct {
 	missing error
 }
 
-// projectRule is the policy for a mutation whose subject belongs to a project.
-// Projects v2 has one write capability, held by the owning user or any active
-// member of the owning organization.
+// projectRule is the policy for a mutation whose subject belongs to a project. Projects v2 has one write capability,
+// held by the owning user or any active member of the owning organization.
 type projectRule struct {
 	target func(s *Resolver, input map[string]interface{}) projectMutationTarget
 }
@@ -53,9 +50,7 @@ func (r projectRule) authorize(s *Resolver, p graphql.ResolveParams, input map[s
 	return nil
 }
 
-// projectTargetOwner reads the owner from the input, for createProjectV2 which
-// has no project yet: the entitlement is over the account the project would
-// belong to.
+// projectTargetOwner reads the owner from the input, for createProjectV2 which has no project yet: the entitlement is over the account the project would belong to.
 func projectTargetOwner(key string) func(*Resolver, map[string]interface{}) projectMutationTarget {
 	return func(s *Resolver, input map[string]interface{}) projectMutationTarget {
 		nodeID, _ := input[key].(string)
@@ -88,10 +83,8 @@ func projectTargetProject(key string) func(*Resolver, map[string]interface{}) pr
 	}
 }
 
-// projectTargetItem, projectTargetField, projectTargetView,
-// projectTargetStatusUpdate and projectTargetWorkflow resolve a mutation keyed
-// on a subject inside a project. Each walks from the subject to its project so
-// the entitlement stays the owner-scoped write on that project.
+// projectTargetItem, projectTargetField, projectTargetView, projectTargetStatusUpdate and projectTargetWorkflow resolve a
+// mutation keyed on a subject inside a project. Each walks from the subject to its project so the entitlement stays the owner-scoped write on that project.
 func projectTargetItem(key string) func(*Resolver, map[string]interface{}) projectMutationTarget {
 	return projectTargetVia(key, "node", func(s *Resolver, nodeID string) (int, bool) {
 		if item := s.store.ProjectsV2.LookupItemByNodeID(nodeID); item != nil {
@@ -137,8 +130,7 @@ func projectTargetWorkflow(key string) func(*Resolver, map[string]interface{}) p
 	})
 }
 
-// projectTargetVia builds a target lookup for a subject that resolves to a
-// project id. subject names the thing in the refusal message.
+// projectTargetVia builds a target lookup for a subject that resolves to a project id. subject names the thing in the refusal message.
 func projectTargetVia(key, subject string, projectIDOf func(*Resolver, string) (int, bool)) func(*Resolver, map[string]interface{}) projectMutationTarget {
 	return func(s *Resolver, input map[string]interface{}) projectMutationTarget {
 		nodeID, _ := input[key].(string)
@@ -159,9 +151,7 @@ func projectTargetVia(key, subject string, projectIDOf func(*Resolver, string) (
 	}
 }
 
-// projectV2OwnerByID builds the owner record the access predicates take from a
-// project's stored owner. An owner that no longer resolves yields nil, so the
-// caller denies.
+// projectV2OwnerByID builds the owner record the access predicates take from a project's stored owner. An owner that no longer resolves yields nil, so the caller denies.
 func (s *Resolver) projectV2OwnerByID(ownerID int, ownerType string) *store.ProjectV2Owner {
 	if ownerType == "Organization" {
 		org := s.store.GetOrgByID(ownerID)
@@ -177,10 +167,8 @@ func (s *Resolver) projectV2OwnerByID(ownerID int, ownerType string) *store.Proj
 	return &store.ProjectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}
 }
 
-// viewerCanReadProjectContent reports whether the request may read the issue or
-// pull request a project item would point at. Adding content republishes its
-// title and state to everyone who can see the project, so a caller who cannot
-// read the content cannot add it.
+// viewerCanReadProjectContent reports whether the request may read the issue or pull request a project item would point at.
+// Adding content republishes its title and state to everyone who can see the project, so a caller who cannot read the content cannot add it.
 func (s *Resolver) viewerCanReadProjectContent(ctx context.Context, contentType string, contentID int) bool {
 	repoID := 0
 	switch contentType {
@@ -197,8 +185,7 @@ func (s *Resolver) viewerCanReadProjectContent(ctx context.Context, contentType 
 	return repo != nil && s.viewerCanReadRepo(ctx, repo)
 }
 
-// addProjectV2MutationsToSchema registers the ProjectV2 create/add/field/value
-// mutations `gh project` uses.
+// addProjectV2MutationsToSchema registers the ProjectV2 create/add/field/value mutations `gh project` uses.
 func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 	projectV2Type := s.projectV2GraphQLTypes()
 
@@ -239,8 +226,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			}
 			proj := s.store.ProjectsV2.CreateProject(ownerID, ownerType, title, user.ID)
 
-			// An optional repositoryId links a readable repository; an
-			// unresolvable one is ignored rather than failing the create.
+			// An optional repositoryId links a readable repository; an unresolvable one is ignored rather than failing the create.
 			if repoNodeID, _ := input["repositoryId"].(string); repoNodeID != "" {
 				if repo := store.FindRepoByNodeID(s.store, repoNodeID); repo != nil && s.viewerCanReadRepo(p.Context, repo) {
 					if linked := s.store.ProjectsV2.LinkRepository(proj.ID, repo.ID); linked != nil {
@@ -248,8 +234,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 					}
 				}
 			}
-			// An optional teamId grants a team in the owning organization
-			// read access.
+			// An optional teamId grants a team in the owning organization read access.
 			if teamNodeID, _ := input["teamId"].(string); teamNodeID != "" {
 				if team := s.projectV2TeamByNodeID(teamNodeID); team != nil &&
 					proj.OwnerType == "Organization" && team.OrgID == proj.OwnerID {
@@ -296,8 +281,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			if proj == nil {
 				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a project with the global id of '%s'.", projectNodeID)}
 			}
-			// Write access to the project is not read access to its content;
-			// unreadable content answers as if absent.
+			// Write access to the project is not read access to its content; unreadable content answers as if absent.
 			contentType, contentID, ok := resolveContentByNodeID(s.store, contentNodeID)
 			if !ok || !s.viewerCanReadProjectContent(p.Context, contentType, contentID) {
 				return nil, &ghNotFoundError{
@@ -350,8 +334,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a project with the global id of '%s'.", projectNodeID)}
 			}
 			item := s.store.ProjectsV2.LookupItemByNodeID(itemNodeID)
-			// An item outside this project is not this project's item;
-			// answer as if absent.
+			// An item outside this project is not this project's item; answer as if absent.
 			if item == nil || item.ProjectID != proj.ID {
 				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a node with the global id of '%s'.", itemNodeID)}
 			}
@@ -366,7 +349,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	// --- createProjectV2Field ---
+	// createProjectV2Field
 
 	dataTypeEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "ProjectV2CustomFieldType",
@@ -419,8 +402,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 				rawOptions = multi
 			}
 			rawIteration, _ := input["iterationConfiguration"].(map[string]interface{})
-			// The option input carries colour and description too; reading
-			// only the name discarded both.
+			// The option input carries colour and description too; reading only the name discarded both.
 			options := projectV2OptionsFromInput(rawOptions)
 			iteration, err := projectV2IterationFromInput(rawIteration)
 			if err != nil {
@@ -445,7 +427,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	// --- updateProjectV2ItemFieldValue ---
+	// updateProjectV2ItemFieldValue
 
 	fieldValueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "ProjectV2FieldValue",
@@ -509,8 +491,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			if err != nil {
 				return nil, err
 			}
-			// A multi-select value is an ordered set, so it takes the store's
-			// list writer.
+			// A multi-select value is an ordered set, so it takes the store's list writer.
 			if optionIDs, ok := fieldValue.([]string); ok {
 				if err := s.store.ProjectsV2.SetMultiSelectValue(item.ID, field.ID, optionIDs); err != nil {
 					return nil, err
@@ -598,8 +579,7 @@ func projectV2GraphQLFieldValueInput(field *store.ProjectV2Field, value map[stri
 	return got.value, nil
 }
 
-// resolveProjectOwner maps a node ID to (ownerID, ownerType) for User and
-// Organization nodes.
+// resolveProjectOwner maps a node ID to (ownerID, ownerType) for User and Organization nodes.
 func resolveProjectOwner(st *store.Store, nodeID string) (int, string, bool) {
 	if nodeID == "" {
 		return 0, "", false

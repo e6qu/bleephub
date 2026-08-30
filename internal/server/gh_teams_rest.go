@@ -34,8 +34,7 @@ func (s *Server) registerGHTeamRoutes() {
 	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleRemoveTeamRepo))
 }
 
-// validTeamEnums checks the privacy/permission/notification_setting enums
-// ("" = absent, allowed), returning the offending field name.
+// validTeamEnums checks the privacy/permission/notification_setting enums ("" = absent, allowed), returning the offending field name.
 func validTeamEnums(privacy, permission, notification string) (string, bool) {
 	switch store.TeamPrivacy(privacy) {
 	case "", store.TeamPrivacyClosed, store.TeamPrivacySecret:
@@ -103,8 +102,8 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Resolve seeded maintainers and repos before creating the team, so an
-	// unknown entry rejects the request instead of leaving a half-built team.
+	// Resolve seeded maintainers and repos before creating the team, so an unknown
+	// entry rejects the request instead of leaving a half-built team.
 	maintainerIDs := make([]int, 0, len(req.Maintainers))
 	for _, login := range req.Maintainers {
 		maintainer := s.store.LookupUserByLogin(login)
@@ -686,8 +685,7 @@ func (s *Server) handleListTeamRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// handleCheckTeamRepo answers 204 when the team manages the repo, 200 with the
-// repository body under the repository media type, 404 otherwise.
+// handleCheckTeamRepo answers 204 when the team manages the repo, 200 with the repository body under the repository media type, 404 otherwise.
 func (s *Server) handleCheckTeamRepo(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -834,8 +832,7 @@ func (s *Server) handleRemoveTeamRepo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// teamRepoPermissionsJSON expands a permission level into the boolean
-// permissions object plus role_name.
+// teamRepoPermissionsJSON expands a permission level into the boolean permissions object plus role_name.
 func teamRepoPermissionsJSON(perm store.TeamPermission) (map[string]interface{}, string) {
 	perms := map[string]interface{}{
 		"pull":     true,

@@ -38,8 +38,7 @@ type Discussion struct {
 	PublishedAt  *time.Time `json:"published_at"`
 	Deleted      bool       `json:"deleted"`
 	UpvoterIDs   []int      `json:"upvoter_ids"`
-	// StateReason is github's close reason: RESOLVED, OUTDATED, DUPLICATE, or
-	// REOPENED.
+	// StateReason is github's close reason: RESOLVED, OUTDATED, DUPLICATE, REOPENED.
 	Closed      bool       `json:"closed"`
 	ClosedAt    *time.Time `json:"closed_at"`
 	StateReason string     `json:"state_reason"`
@@ -534,7 +533,7 @@ func (st *Store) SetPinnedDiscussions(repoID int, ids []int) []int {
 	return append([]int(nil), stored...)
 }
 
-// --- Persistence helpers ---
+// Persistence helpers
 
 func (st *Store) persistDiscussionCategory(cat *DiscussionCategory) {
 	if st.Persist != nil {

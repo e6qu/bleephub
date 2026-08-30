@@ -28,7 +28,7 @@ func (s *Resolver) addRepoGitResidualFields(types *accountSurfaceTypes) {
 	s.addRepositoryConnectionResidualFields()
 }
 
-// --- reach helpers ----------------------------------------------------------
+// reach helpers
 
 // namedUnionFromField unwraps a field's output type to the named union under it.
 func namedUnionFromField(obj *graphql.Object, field string) *graphql.Union {
@@ -63,7 +63,7 @@ func residualSourceString(source interface{}, key string) string {
 	return v
 }
 
-// --- Repository -------------------------------------------------------------
+// Repository
 
 func (s *Resolver) addRepositoryGitResidualFields(types *accountSurfaceTypes) {
 	repoType := types.repository
@@ -494,7 +494,7 @@ func (s *Resolver) addRepositoryVulnerabilityAlertField(repoType *graphql.Object
 	})
 }
 
-// --- Commit -----------------------------------------------------------------
+// Commit
 
 func (s *Resolver) addCommitGitResidualFields(types *accountSurfaceTypes) {
 	commitType := s.graphqlTypes.commit
@@ -1063,7 +1063,7 @@ func (s *Resolver) viewerRepoSubscriptionState(ctx context.Context, repo *store.
 	}
 }
 
-// --- Ref --------------------------------------------------------------------
+// Ref
 
 func (s *Resolver) addRefGitResidualFields() {
 	refType := s.graphqlTypes.ref
@@ -1255,8 +1255,7 @@ func (s *Resolver) buildComparison(ctx context.Context, repoFullName string, sto
 			if src := s.commitSourceForRepoSHA(ctx, repoFullName, h.String()); src != nil {
 				aheadCommits = append(aheadCommits, src.(map[string]interface{}))
 			}
-			// authorCount is the distinct authors and co-authors across the
-			// commits ahead.
+			// authorCount: distinct authors and co-authors across the commits ahead.
 			if commit, err := object.GetCommit(stor, h); err == nil {
 				if email := strings.ToLower(strings.TrimSpace(commit.Author.Email)); email != "" {
 					authors[email] = struct{}{}
@@ -1419,7 +1418,7 @@ func refUpdateRuleSource(bp *store.BranchProtection, pattern string, viewerCanPu
 	}
 }
 
-// --- TreeEntry --------------------------------------------------------------
+// TreeEntry
 
 func (s *Resolver) addTreeEntryResidualFields() {
 	entryType := s.graphqlTypes.treeEntry
@@ -1469,7 +1468,7 @@ func (s *Resolver) addTreeEntryResidualFields() {
 	})
 }
 
-// --- RepositoryConnection ---------------------------------------------------
+// RepositoryConnection
 
 // addRepositoryConnectionResidualFields installs totalDiskUsage, the summed
 // on-disk size of the connection's repositories.

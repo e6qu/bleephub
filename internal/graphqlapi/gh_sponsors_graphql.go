@@ -759,7 +759,7 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 }
 
 // gqlStripeConnectAccountType is GitHub's StripeConnectAccount object
-// (memoized). It is never populated, but must exist for
+// (memoized). Never populated, but must exist for
 // SponsorsListing.activeStripeConnectAccount to name it; the back-reference to
 // SponsorsListing needs the thunk.
 func (s *Resolver) gqlStripeConnectAccountType() *graphql.Object {

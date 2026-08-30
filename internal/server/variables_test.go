@@ -8,7 +8,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- repository variables ---
+// repository variables
 
 func TestRepoVariablesCRUD(t *testing.T) {
 	t.Parallel()
@@ -91,7 +91,7 @@ func TestRepoVariablesMissingRepo404(t *testing.T) {
 		map[string]interface{}{"name": "X", "value": "v"}), 404, "create")
 }
 
-// --- organization variables ---
+// organization variables
 
 func TestOrgVariablesLifecycle(t *testing.T) {
 	t.Parallel()
@@ -170,7 +170,7 @@ func TestOrgVariablesLifecycle(t *testing.T) {
 	mustStatus(t, s.get(t, "/api/v3/orgs/no-such-org/actions/variables", defaultToken), 404, "missing org")
 }
 
-// --- environment variables ---
+// environment variables
 
 func TestEnvVariablesMissingEnv404(t *testing.T) {
 	t.Parallel()
@@ -212,7 +212,7 @@ func TestEnvVariablesCRUD(t *testing.T) {
 	mustStatus(t, s.get(t, base+"/ENV_VAR", defaultToken), 404, "get after delete")
 }
 
-// --- repo-visible organization variables ---
+// repo-visible organization variables
 
 func TestRepoOrganizationVariablesList(t *testing.T) {
 	t.Parallel()
@@ -257,7 +257,7 @@ func TestRepoOrganizationVariablesList(t *testing.T) {
 	}
 }
 
-// --- persistence round-trip for every new bucket ---
+// persistence round-trip for every new bucket
 
 // TestSecretsVariablesPersistenceReload follows the
 // persistence_reload_test.go session pattern: write through the same
@@ -272,7 +272,7 @@ func TestSecretsVariablesPersistenceReload(t *testing.T) {
 	repoKey := "o/r"
 	envKey := store.EnvScopeKey(repoKey, "production")
 
-	// --- session 1 ---
+	// session 1
 	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -316,7 +316,7 @@ func TestSecretsVariablesPersistenceReload(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	// --- session 2 ---
+	// session 2
 	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)

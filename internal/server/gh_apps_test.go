@@ -24,7 +24,7 @@ func newAppTestStore() *store.Store {
 	return st
 }
 
-// --- Unit tests (store + JSON Web Token) ---
+// Unit tests (store + JSON Web Token)
 
 func TestAppStoreCreateAndGet(t *testing.T) {
 	st := newAppTestStore()
@@ -368,7 +368,7 @@ func TestDeleteInstallation(t *testing.T) {
 	}
 }
 
-// --- Integration tests (HTTP) ---
+// Integration tests (HTTP)
 
 func TestCreateAppViaManifest(t *testing.T) {
 	t.Parallel()
@@ -828,7 +828,7 @@ func TestExistingPersonalAccessTokenAuthUnaffected(t *testing.T) {
 	resp2.Body.Close()
 }
 
-// --- Helpers for JSON Web Token lifetime tests ---
+// Helpers for JSON Web Token lifetime tests
 
 func pemDecode(pemStr string) (*pem.Block, []byte) {
 	return pem.Decode([]byte(pemStr))

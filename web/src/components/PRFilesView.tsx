@@ -66,8 +66,7 @@ export function parseDiffLines(patch: string): ParsedDiffLine[] {
     if (text.startsWith("\\ No newline")) {
       return { text, oldLine: null, newLine: null, commentLine: null, side: null };
     }
-    // A trailing-newline patch yields one empty sentinel; real empty source
-    // lines still carry the diff marker.
+    // A trailing-newline patch yields one empty sentinel; real empty source lines still carry the diff marker.
     if (text === "") {
       return { text, oldLine: null, newLine: null, commentLine: null, side: null };
     }
@@ -416,8 +415,7 @@ function FileDiff({
     </div>
   );
 
-  // Threads/drafts whose anchor line is absent from the current diff (outdated
-  // position, file-level, binary) still need a home.
+  // Threads/drafts whose anchor line is absent from the diff (outdated position, file-level, binary) still need a home.
   const unmatchedThreads = threads.filter((g) => !matchedIds.has(g.root.id));
   const unmatchedDrafts = drafts.filter((d) => !matchedIds.has(d.id));
 
@@ -740,8 +738,7 @@ export function PRFilesView({
   }
 
   // Comments attached to a PENDING review are private drafts, not public
-  // conversation — exclude them here; the viewer's drafts render through the
-  // pending-review UI instead.
+  // conversation — exclude them here; the viewer's drafts render through the pending-review UI instead.
   const pendingReviewIds = new Set(
     asArray<GithubPRReview>(reviewsQ.data)
       .filter((r) => r.state === "PENDING")

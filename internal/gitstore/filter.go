@@ -10,11 +10,11 @@ import (
 
 // Two approximate membership structures for the object index.
 //
-// FILTER INVARIANT: a filter here may only be believed when it says NO. Both
-// are one-sided — "absent" is a proof, "present" a hint — so a "present" answer
-// only ever triggers the exact lookup the caller would have done anyway, and no
-// filter result decides the outcome of a git operation. A false "absent" is the
-// only way a filter can do harm, so the absent answer must be a proof.
+// FILTER INVARIANT: a filter here may only be believed when it says NO. Both are
+// one-sided — "absent" is a proof, "present" a hint — so a "present" answer only
+// triggers the exact lookup the caller would have done anyway, and no filter
+// result decides a git operation's outcome. A false "absent" is the only way a
+// filter can do harm, so the absent answer must be a proof.
 //
 // Object ids are already uniform cryptographic hashes, so both structures draw
 // probe positions straight from the id's bytes rather than re-hashing.
@@ -39,8 +39,8 @@ func (k oidKey) fingerprintWord() uint64 { return binary.LittleEndian.Uint64(k[8
 // Binary fuse filter, used for the immutable per-pack object sets.
 
 // binaryFuseFilter is a binary fuse filter with 8-bit fingerprints, used only
-// for packs: it is static (the full key set must be known at construction, with
-// no add or remove afterward), which is exactly a packfile — written once and
+// for packs: it is static (the full key set must be known at construction, no
+// add or remove afterward), which is exactly a packfile — written once and
 // discarded whole when compaction supersedes it. Chosen over a Bloom filter on
 // space (~9 bits/key vs ~11.5 for 2^-8) and cache behavior (three slots in a
 // window of three segments vs six scattered words). A ribbon filter saves under
@@ -95,7 +95,7 @@ func (f *binaryFuseFilter) positions(hash uint64) (uint32, uint32, uint32) {
 	h1 := h0 + f.segmentLength
 	h2 := h1 + f.segmentLength
 	// Each offset draws from a different 32-bit window of the hash; the segment
-	// mask narrows it to a position inside one segment.
+	// mask narrows it to a position within one segment.
 	h1 ^= uint32(hash>>18&math.MaxUint32) & f.segmentLengthMask
 	h2 ^= uint32(hash&math.MaxUint32) & f.segmentLengthMask
 	return h0, h1, h2
@@ -176,8 +176,8 @@ func newBinaryFuseFilter(keys []oidKey) (*binaryFuseFilter, error) {
 	}
 
 	// Peeling scratch: reverseOrder records the peel order and reverseH the slot
-	// each key peeled at; replaying it backwards makes every key's three slots
-	// XOR to its fingerprint.
+	// each key peeled at; replaying backwards makes every key's three slots XOR
+	// to its fingerprint.
 	alone := make([]uint32, arrayLength)
 	t2count := make([]uint8, arrayLength)
 	t2hash := make([]uint64, arrayLength)
@@ -199,8 +199,8 @@ func newBinaryFuseFilter(keys []oidKey) (*binaryFuseFilter, error) {
 				t2hash[h] ^= hash
 			}
 			// The low two bits of t2count XOR-accumulate which slot a surviving
-			// key occupies, so a slot down to one key recovers its index without
-			// a list.
+			// key occupies, so a slot down to one key recovers its index without a
+			// list.
 			t2count[h1] ^= 1
 			t2count[h2] ^= 2
 		}
@@ -337,8 +337,8 @@ const (
 // stored in one of two candidate buckets.
 //
 // Deleting a fingerprint that was never inserted could clear a colliding key's
-// slot, a false negative the invariant forbids; remove is therefore only ever
-// called for a key this process just deleted from the object store.
+// slot, a false negative the invariant forbids; remove is therefore only called
+// for a key this process just deleted from the object store.
 type cuckooFilter struct {
 	buckets [][cuckooSlotsPerBucket]uint16
 	mask    uint32
@@ -357,8 +357,8 @@ type cuckooFilter struct {
 const cuckooLoadHeadroom = 2
 
 // cuckooMaxBuckets is the largest addressable table: a bucket index is a uint32
-// masked with buckets-1, so the count must be a power of two fitting a uint32,
-// and 2^31 is the last. A larger capacity saturates the filter instead.
+// masked with buckets-1, so the count must be a power of two fitting a uint32 —
+// 2^31 is the last. A larger capacity saturates the filter instead.
 const cuckooMaxBuckets = 1 << 31
 
 func newCuckooFilter(capacity int) *cuckooFilter {
@@ -388,7 +388,7 @@ func (c *cuckooFilter) index1(key oidKey) uint32 {
 
 // altIndex derives the other candidate bucket from the fingerprint alone, so
 // either bucket recovers the pair — the filter never stores the key, so
-// relocating an occupant must work from its fingerprint.
+// relocating an occupant works from its fingerprint.
 func (c *cuckooFilter) altIndex(index uint32, fingerprint uint16) uint32 {
 	mixed := uint32(fingerprint) * 0x5bd1e995
 	mixed ^= mixed >> 15

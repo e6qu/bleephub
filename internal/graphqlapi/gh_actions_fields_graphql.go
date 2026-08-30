@@ -58,7 +58,7 @@ func (s *Resolver) buildActionsSupportTypes() {
 
 	t := &actionsFamilyTypes{}
 
-	// --- Check annotations -------------------------------------------------
+	// Check annotations
 	positionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "CheckAnnotationPosition",
 		Fields: graphql.Fields{
@@ -89,7 +89,7 @@ func (s *Resolver) buildActionsSupportTypes() {
 	})
 	t.checkAnnotationConnection = s.gqlConnectionType("CheckAnnotation", annotationType)
 
-	// --- Check steps (bleephub models steps on jobs, not check runs) -------
+	// Check steps (bleephub models steps on jobs, not check runs)
 	stepType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "CheckStep",
 		Fields: graphql.Fields{
@@ -105,11 +105,11 @@ func (s *Resolver) buildActionsSupportTypes() {
 	})
 	t.checkStepConnection = s.gqlConnectionType("CheckStep", stepType)
 
-	// --- Check-run / workflow-run connections ------------------------------
+	// Check-run / workflow-run connections
 	t.checkRunConnection = s.gqlConnectionType("CheckRun", s.graphqlTypes.checkRun)
 	t.workflowRunConnection = s.gqlConnectionType("WorkflowRun", s.graphqlTypes.workflowRun)
 
-	// --- Push (a run's originating git push; not modeled — always null) ----
+	// Push (a run's originating git push; not modeled — always null)
 	t.push = graphql.NewObject(graphql.ObjectConfig{
 		Name: "Push",
 		Fields: graphql.Fields{
@@ -122,7 +122,7 @@ func (s *Resolver) buildActionsSupportTypes() {
 		},
 	})
 
-	// --- WorkflowRunFile (the workflow file, from the run's perspective) ---
+	// WorkflowRunFile (the workflow file, from the run's perspective)
 	t.workflowRunFile = graphql.NewObject(graphql.ObjectConfig{
 		Name: "WorkflowRunFile",
 		Fields: graphql.Fields{
@@ -158,7 +158,7 @@ func (s *Resolver) buildActionsSupportTypes() {
 	t.deploymentReviewerConnection = s.graphqlTypes.deploymentReviewerConnection
 	t.environmentConnection = s.graphqlTypes.environmentConnection
 
-	// --- DeploymentRequest -------------------------------------------------
+	// DeploymentRequest
 	t.deploymentRequest = graphql.NewObject(graphql.ObjectConfig{
 		Name: "DeploymentRequest",
 		Fields: graphql.Fields{
@@ -184,7 +184,7 @@ func (s *Resolver) buildActionsSupportTypes() {
 	})
 	t.deploymentRequestConnection = s.gqlConnectionType("DeploymentRequest", t.deploymentRequest)
 
-	// --- DeploymentReview --------------------------------------------------
+	// DeploymentReview
 	t.deploymentReview = graphql.NewObject(graphql.ObjectConfig{
 		Name: "DeploymentReview",
 		Fields: graphql.Fields{
@@ -208,7 +208,7 @@ func (s *Resolver) buildActionsSupportTypes() {
 	s.actionsTypes = t
 }
 
-// --- WorkflowRun -----------------------------------------------------------
+// WorkflowRun
 
 func (s *Resolver) addWorkflowRunFields() {
 	runType := s.graphqlTypes.workflowRun
@@ -329,7 +329,7 @@ func workflowRunGQLSourceLocked(st *store.Store, wf *store.Workflow) map[string]
 	return source
 }
 
-// --- Workflow (the file) ---------------------------------------------------
+// Workflow (the file)
 
 func (s *Resolver) addWorkflowFileFields() {
 	fileType := s.graphqlTypes.workflow
@@ -435,7 +435,7 @@ func workflowRunFileGQLSource(file *store.WorkflowFile, runSource map[string]int
 	}
 }
 
-// --- CheckSuite residue ----------------------------------------------------
+// CheckSuite residue
 
 func (s *Resolver) addCheckSuiteResidueFields() {
 	suiteType := s.graphqlTypes.checkSuite
@@ -562,7 +562,7 @@ func checkSuiteResourcePath(source interface{}) string {
 	return "/" + repoKey + "/commit/" + sha + "/checks"
 }
 
-// --- CheckRun residue ------------------------------------------------------
+// CheckRun residue
 
 func (s *Resolver) addCheckRunResidueFields() {
 	runType := s.graphqlTypes.checkRun
@@ -667,7 +667,7 @@ func checkAnnotationGQLSource(a *store.CheckAnnotation, repoKey, sha string) map
 	}
 }
 
-// --- deployment review / request wiring ------------------------------------
+// deployment review / request wiring
 
 func (s *Resolver) workflowRunDeploymentReviews(source interface{}) []map[string]interface{} {
 	approvals, _ := sourceMap(source)["_envApprovals"].([]*store.EnvApproval)
@@ -750,7 +750,7 @@ func deploymentReviewNodeID(repoFullName string, runID, index int) string {
 	return "DREV_" + base64.RawURLEncoding.EncodeToString([]byte(repoFullName+":"+strconv.Itoa(runID)+":"+strconv.Itoa(index)))
 }
 
-// --- App source ------------------------------------------------------------
+// App source
 
 func appGQLSource(app *store.App) map[string]interface{} {
 	return map[string]interface{}{
@@ -765,7 +765,7 @@ func appGQLSource(app *store.App) map[string]interface{} {
 	}
 }
 
-// --- small source helpers --------------------------------------------------
+// small source helpers
 
 func sourceMap(source interface{}) map[string]interface{} {
 	m, _ := source.(map[string]interface{})

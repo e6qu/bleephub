@@ -52,10 +52,9 @@ func (st *Store) ReserveRunID() int {
 }
 
 // ReserveGlobalID hands out the next durable global-entity ID. Routing through
-// AllocateCounterValue makes the sequence agree across dqlite replicas, which
-// minting from the in-memory NextX alone did not (two replicas could mint the
-// same ID and silently overwrite). NextX (max+1 on load) supplies the minimum.
-// Caller holds st.Mu.
+// AllocateCounterValue makes the sequence agree across dqlite replicas (minting
+// from in-memory NextX alone let two replicas mint the same ID and overwrite).
+// NextX (max+1 on load) supplies the minimum. Caller holds st.Mu.
 func (st *Store) ReserveGlobalID(name string, next *int) int {
 	id := *next
 	if st.Persist != nil {
@@ -766,8 +765,8 @@ type Store struct {
 	NextCodeQLDatabaseID        int
 	NextCodeQLVariantAnalysisID int
 	// teams-people
-	OrgInvitations         map[int]*OrgInvitation          // id → org invitation
-	NextOrgInvitationID    int                             //
+	OrgInvitations         map[int]*OrgInvitation // id → org invitation
+	NextOrgInvitationID    int
 	OrgBlocks              map[string]map[int]time.Time    // orgLogin → blocked userID → blocked-at
 	OrgInteractionLimits   map[string]*OrgInteractionLimit // orgLogin → active interaction limit
 	OrgRoleTeamAssignments map[string]map[int][]int        // orgLogin → roleID → team IDs
@@ -835,7 +834,7 @@ type Store struct {
 	NextRepoActivity int                           // next RepoActivity ID
 	RepoCloneTraffic map[string]*RepoTrafficBucket // "repoID:YYYY-MM-DD" → clone counters
 
-	// --- Actions hot-path indexes (actions_indexes.go) ---
+	// Actions hot-path indexes (actions_indexes.go)
 	//
 	// Unexported on purpose: the replica-refresh field copy skips unexported
 	// fields, so a snapshot swap can never smuggle stale pointers through them.

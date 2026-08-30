@@ -76,8 +76,7 @@ func (s *Server) registerGHMiscEndpoints() {
 	s.route("GET /api/v3/user/starred/{owner}/{repo}", s.handleCheckMyStarredRepo)
 	s.route("GET /api/v3/user/subscriptions", s.handleListMySubscriptions)
 
-	// Actions OIDC — the token is minted for the requesting job, so gate it on
-	// that job's runtime token.
+	// Actions OIDC — minted for the requesting job, so gate it on that job's runtime token.
 	s.route("GET /token", s.requireJobToken(s.handleActionsOIDCToken))
 	s.route("GET /.well-known/openid-configuration", s.handleOIDCDiscovery)
 	s.route("GET /.well-known/jwks", s.handleJWKS)
@@ -104,8 +103,7 @@ func (s *Server) registerGHMiscEndpoints() {
 
 	s.route("GET /api/v3/orgs/{org}/audit-log", s.handleOrgAuditLog)
 
-	// Marketplace; the stubbed variants serve the same plan/purchase state as
-	// the production routes.
+	// Marketplace; the stubbed variants serve the same plan/purchase state as the production routes.
 	s.route("GET /api/v3/marketplace_listing/plans", s.handleMarketplacePlans)
 	s.route("GET /api/v3/marketplace_listing/accounts/{account_id}", s.handleMarketplaceAccount)
 	s.route("GET /api/v3/marketplace_listing/plans/{plan_id}/accounts", s.handleMarketplacePlanAccounts)
@@ -113,8 +111,7 @@ func (s *Server) registerGHMiscEndpoints() {
 	s.route("GET /api/v3/marketplace_listing/stubbed/plans/{plan_id}/accounts", s.handleMarketplacePlanAccounts)
 	s.route("GET /api/v3/marketplace_listing/stubbed/accounts/{account_id}", s.handleMarketplaceAccount)
 
-	// Meta — gh resolves the host version from installed_version to gate its
-	// GHES feature detection.
+	// Meta — gh resolves the host version from installed_version to gate its GHES feature detection.
 	s.route("GET /api/v3/meta", s.handleMeta)
 }
 
@@ -135,7 +132,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- User keys ---
+// User keys
 
 func (s *Server) handleListUserKeys(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -527,7 +524,7 @@ func (s *Server) handleUnfollowUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Actions OIDC ---
+// Actions OIDC
 
 func (s *Server) handleActionsOIDCToken(w http.ResponseWriter, r *http.Request) {
 	audience := r.URL.Query().Get("audience")
@@ -840,7 +837,7 @@ func signRS256JWT(payload map[string]interface{}, key *rsa.PrivateKey, kid strin
 	return signing + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-// --- Pages ---
+// Pages
 
 func (s *Server) handlePagesGet(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
@@ -1176,7 +1173,7 @@ func (s *Server) handlePagesGetBuild(w http.ResponseWriter, r *http.Request) {
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
-// --- Orgs depth ---
+// Orgs depth
 
 func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 	orgName := r.PathValue("org")
@@ -1248,8 +1245,7 @@ func (s *Server) recordAuditEvent(action, actor, org string, data map[string]int
 	s.store.RecordAuditEntry(action, actor, org, data)
 }
 
-// maxAuditLogEntries bounds the in-memory audit log, keeping the newest
-// entries so the prepend-only slice cannot grow without limit.
+// maxAuditLogEntries bounds the in-memory audit log, keeping the newest entries so the prepend-only slice cannot grow without limit.
 const maxAuditLogEntries = 5000
 
 func marketplacePlanToJSON(p *store.MarketplacePlan, baseURL string) map[string]interface{} {
@@ -1425,7 +1421,7 @@ func (s *Server) handleMarketplacePlanAccounts(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, out)
 }
 
-// --- Helpers ---
+// Helpers
 
 func userKeyToJSON(k *store.UserKey, baseURL string) map[string]interface{} {
 	return map[string]interface{}{

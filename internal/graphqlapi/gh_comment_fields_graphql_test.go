@@ -20,7 +20,7 @@ func TestIssueCommentTraitFieldsBackingAndAuthorization(t *testing.T) {
 	author := h.user("amelia")
 	stranger := h.user("stan")
 
-	// --- a private repository: a stranger must get nothing --------------------
+	// a private repository: a stranger must get nothing
 	priv := h.store.CreateRepo(author, "sealed", "", true)
 	privIssue := h.store.CreateIssue(priv.ID, author.ID, "sealed issue", "", nil, nil, 0)
 	if privIssue == nil {
@@ -85,7 +85,7 @@ func TestIssueCommentTraitFieldsBackingAndAuthorization(t *testing.T) {
 		t.Errorf("stranger saw repository = %v, want null", repo)
 	}
 
-	// --- a public repository: fields answer from real permission --------------
+	// a public repository: fields answer from real permission
 	pub := h.store.CreateRepo(author, "open", "", false)
 	pubIssue := h.store.CreateIssue(pub.ID, author.ID, "open issue", "", nil, nil, 0)
 	if pubIssue == nil {

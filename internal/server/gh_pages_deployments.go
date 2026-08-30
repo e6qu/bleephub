@@ -314,7 +314,7 @@ func (s *Server) repoOwnsFinalizedArtifact(repoFullName string, artifactID int64
 	return false
 }
 
-// --- Pages health check ---
+// Pages health check
 
 func (s *Server) handlePagesHealthCheck(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)

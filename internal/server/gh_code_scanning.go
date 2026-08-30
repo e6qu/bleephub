@@ -639,7 +639,7 @@ func codeScanningInstanceToJSON(inst store.CodeScanningAlertInstance) map[string
 	}
 }
 
-// --- organization alerts ---
+// organization alerts
 
 func (s *Server) handleListOrgCodeScanningAlerts(w http.ResponseWriter, r *http.Request) {
 	org := s.store.GetOrg(r.PathValue("org"))
@@ -665,7 +665,7 @@ func (s *Server) handleListOrgCodeScanningAlerts(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, out)
 }
 
-// --- Copilot Autofix ---
+// Copilot Autofix
 
 func codeScanningAutofixJSON(fix *store.CodeScanningAutofix) map[string]interface{} {
 	return map[string]interface{}{
@@ -867,7 +867,7 @@ func applyAutofixEdit(content string, inst store.CodeScanningAlertInstance, desc
 	return strings.Join(fixed, "\n")
 }
 
-// --- CodeQL databases ---
+// CodeQL databases
 
 // codeQLLanguages is the code-scanning-variant-analysis-language enum.
 var codeQLLanguages = map[string]bool{
@@ -1119,7 +1119,7 @@ func (s *Server) handleDownloadCodeQLDatabase(w http.ResponseWriter, r *http.Req
 	_, _ = w.Write(data)
 }
 
-// --- CodeQL variant analyses ---
+// CodeQL variant analyses
 
 // variantAnalysisRepoIdentifierJSON renders the compact
 // code-scanning-variant-analysis-repository shape.

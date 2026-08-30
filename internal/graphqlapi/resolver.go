@@ -50,9 +50,9 @@ type Events interface {
 	BuildPullRequestPayload(repo *store.Repo, pr *store.PullRequest, sender *store.User, action string) map[string]interface{}
 	RepoPayload(repo *store.Repo) map[string]interface{}
 	SenderPayload(user *store.User) map[string]interface{}
-	// EmitIssueChanges / EmitPullRequestChanges fan one mutation out into
-	// GitHub's per-change actions (edited, labeled, assigned, milestoned, …),
-	// behind the seam so REST and GraphQL cannot drift on the derivation.
+	// EmitIssueChanges / EmitPullRequestChanges fan one mutation out into GitHub's
+	// per-change actions (edited, labeled, assigned, milestoned, …), behind the
+	// seam so REST and GraphQL cannot drift on the derivation.
 	EmitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange)
 	EmitPullRequestChanges(repo *store.Repo, pr *store.PullRequest, sender *store.User, change store.SubjectChange)
 	// EmitProjectV2Event / EmitSponsorshipEvent deliver families whose subject
@@ -189,10 +189,10 @@ type Resolver struct {
 	graphqlTypes  graphQLTypeRegistry
 	graphqlSchema graphql.Schema
 
-	// extraSchemaTypes holds schema-fidelity shells only reachable through an
-	// interface/union possible-type or not at all; spread into
-	// graphql.NewSchema's Types so introspection lists them.
-	// registerExtraSchemaType appends here from any family builder.
+	// extraSchemaTypes holds schema-fidelity shells reachable only through an
+	// interface/union possible-type or not at all, spread into graphql.NewSchema's
+	// Types so introspection lists them. registerExtraSchemaType appends here from
+	// any family builder.
 	extraSchemaTypes []graphql.Type
 
 	actionsTypes *actionsFamilyTypes
@@ -200,9 +200,9 @@ type Resolver struct {
 	enterpriseOrgMembershipConnMemo *graphql.Object
 	enterpriseOrderInputs           map[string]*graphql.InputObject
 
-	// graphql-go rejects two objects of one name, so mutation types more than
-	// one family names (CheckRunOutput, ProjectColumn, …) are minted once
-	// through these memos and looked up by GitHub's spelling.
+	// graphql-go rejects two objects of one name, so mutation types more than one
+	// family names (CheckRunOutput, ProjectColumn, …) are minted once through
+	// these memos and looked up by GitHub's spelling.
 	mutationObjects    map[string]*graphql.Object
 	mutationInputs     map[string]*graphql.InputObject
 	mutationInterfaces map[string]*graphql.Interface
@@ -270,7 +270,7 @@ func EncodeCursor(idx int) string { return encodeCursor(idx) }
 // DecodeCursor decodes a connection cursor to its index (zero when invalid).
 func DecodeCursor(s string) int { return decodeCursor(s) }
 
-// --- seam delegators -------------------------------------------------------
+// seam delegators
 //
 // Each unexported method forwards to the injected seam under the resolver
 // code's historical spelling.

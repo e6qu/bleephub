@@ -150,7 +150,7 @@ func NewStringScalar(name, description string) *graphql.Scalar {
 	})
 }
 
-// --- registration seams used by the generated definitions -----------------
+// registration seams used by the generated definitions
 
 func (r *Registry) register(name string, typ graphql.Type) {
 	if _, duplicate := r.types[name]; duplicate {

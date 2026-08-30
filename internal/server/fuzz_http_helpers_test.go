@@ -150,7 +150,7 @@ func seedGitContent(tb testing.TB, s *Server, repoFullName string, files map[str
 	}
 }
 
-// --- deterministic byte reader ------------------------------------------------
+// deterministic byte reader
 
 type fuzzReader struct {
 	b []byte
@@ -172,9 +172,8 @@ func (r *fuzzReader) pick(n int) int {
 		return 0
 	}
 	if n > 256 {
-		// The API route inventory is much larger than one byte. The old
-		// selector used u8()%n, making every route at index 256+ mathematically
-		// unreachable no matter how long the fuzzer ran.
+		// The route inventory exceeds one byte; a u8()%n selector left every route
+		// at index 256+ unreachable however long the fuzzer ran.
 		return ((r.u8() << 8) | r.u8()) % n
 	}
 	return r.u8() % n
@@ -359,14 +358,11 @@ func serveAndCheck(t *testing.T, handler http.Handler, req *http.Request) {
 		t.Fatalf("HTTP 500 for %s %s\nbody: %s", req.Method, req.URL.Path, truncate(w.Body.Bytes(), 512))
 	}
 
-	// Authentication invariant: a request that presents a definitively invalid
-	// credential must be rejected with 401 on the authenticated API surface and
-	// must never be served. The old check only asserted "not 500", so an
-	// invalid-credential request that leaked a 200 (or any 2xx) passed silently.
-	// The wrapped chain rejects invalid credentials in ghHeadersMiddleware
-	// before routing, so 401 holds regardless of which route the fuzzer landed
-	// on. (Anonymous requests — variant 4 — are intentionally not asserted here:
-	// public endpoints may legitimately answer them 2xx.)
+	// Authentication invariant: a request presenting a definitively invalid
+	// credential must be rejected with 401 on the authenticated API surface, never
+	// served. ghHeadersMiddleware rejects invalid credentials before routing, so
+	// 401 holds regardless of the route landed on. (Anonymous requests — variant 4
+	// — are not asserted here: public endpoints may legitimately answer them 2xx.)
 	if presentsInvalidCredential(req) && isAuthenticatedAPIPath(req.URL.Path) {
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("invalid credential must be rejected with 401 for %s %s, got %d\nbody: %s",

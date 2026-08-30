@@ -143,7 +143,7 @@ func (s *Resolver) authorizeEnterpriseSchemaOwner(p graphql.ResolveParams) error
 	return enterpriseOwnerRequired()
 }
 
-// --- schema -----------------------------------------------------------------
+// schema
 
 var graphQLCustomPropertyValueTypes = map[string]bool{
 	"string": true, "single_select": true, "multi_select": true, "true_false": true, "url": true,
@@ -258,7 +258,7 @@ func (s *Resolver) gqlCustomPropertySourceUnion() *graphql.Union {
 		})
 }
 
-// --- input assembly ----------------------------------------------------------
+// input assembly
 
 // validGraphQLCustomPropertyName mirrors the REST name rule: no whitespace, no
 // control characters (the name is a URL path segment on the REST schema routes).
@@ -326,7 +326,7 @@ func applyCustomPropertyDefinitionInput(def *store.CustomProperty, input map[str
 	}
 }
 
-// --- resolvers ---------------------------------------------------------------
+// resolvers
 
 func (s *Resolver) resolveCreateRepositoryCustomProperty(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})

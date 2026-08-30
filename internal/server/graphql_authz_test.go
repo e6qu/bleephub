@@ -193,10 +193,9 @@ type gqlMutationCase struct {
 	name  string
 	doc   string
 	input func(f *gqlAuthzFixture) map[string]interface{}
-	// setup, when set, arranges preconditions the mutation's own semantics
-	// demand beyond the plain fixture (e.g. enablePullRequestAutoMerge is
-	// only legal while something blocks the merge). It runs before the
-	// request in both the refusal and the entitled table.
+	// setup, when set, arranges preconditions the mutation's semantics demand
+	// beyond the plain fixture (e.g. enablePullRequestAutoMerge is legal only
+	// while something blocks the merge). Runs before the request in both tables.
 	setup func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture)
 }
 
@@ -817,7 +816,7 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 
-	// --- checks -------------------------------------------------------------
+	// checks
 	{
 		name: "createCheckRun",
 		doc:  `mutation($input:CreateCheckRunInput!){createCheckRun(input:$input){checkRun{name status}}}`,
@@ -875,7 +874,7 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 
-	// --- deployments --------------------------------------------------------
+	// deployments
 	{
 		name: "createDeployment",
 		doc:  `mutation($input:CreateDeploymentInput!){createDeployment(input:$input){autoMerged deployment{environment commitOid}}}`,
@@ -943,7 +942,7 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 
-	// --- environments -------------------------------------------------------
+	// environments
 	{
 		name: "createEnvironment",
 		doc:  `mutation($input:CreateEnvironmentInput!){createEnvironment(input:$input){environment{name}}}`,
@@ -997,7 +996,7 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 
-	// --- classic projects ---------------------------------------------------
+	// classic projects
 	{
 		name: "createProject",
 		doc:  `mutation($input:CreateProjectInput!){createProject(input:$input){project{id name}}}`,
@@ -1141,7 +1140,7 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 
-	// --- branch protection ---------------------------------------------------
+	// branch protection
 	{
 		name: "createBranchProtectionRule",
 		doc:  `mutation($input:CreateBranchProtectionRuleInput!){createBranchProtectionRule(input:$input){branchProtectionRule{pattern requiresApprovingReviews requiredApprovingReviewCount}}}`,
@@ -1184,7 +1183,7 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 
-	// --- repository rulesets -------------------------------------------------
+	// repository rulesets
 	{
 		name: "createRepositoryRuleset",
 		doc:  `mutation($input:CreateRepositoryRulesetInput!){createRepositoryRuleset(input:$input){ruleset{name enforcement}}}`,
@@ -1228,7 +1227,7 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 
-	// --- repository custom properties ----------------------------------------
+	// repository custom properties
 	//
 	// These records belong to org/enterprise accounts, so the rows seed an org
 	// owned by the fixture owner and widen both tokens to admin:org; the
@@ -1309,7 +1308,7 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 
-	// --- verifiable domains --------------------------------------------------
+	// verifiable domains
 	{
 		name: "addVerifiableDomain",
 		doc:  `mutation($input:AddVerifiableDomainInput!){addVerifiableDomain(input:$input){domain{domain isVerified}}}`,
@@ -1881,7 +1880,7 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 	}
 }
 
-// --- Projects v2 ---
+// Projects v2
 //
 // A project is owned by a user or org, so repository predicates say nothing
 // about it. These mutations authenticated then acted: any signed-in account

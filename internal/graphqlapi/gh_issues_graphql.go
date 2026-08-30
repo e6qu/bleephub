@@ -32,10 +32,10 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			"CLOSED": &graphql.EnumValueConfig{Value: "CLOSED"},
 		},
 	})
-	// --- Label types (shared with PullRequest via the registry) ---
+	// Label types (shared with PullRequest via the registry)
 	labelConnectionType := s.gqlLabelConnectionType()
 
-	// --- Milestone type ---
+	// Milestone type
 	issueMilestoneType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Milestone",
 		Fields: graphql.Fields{
@@ -75,20 +75,19 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Reaction group type (shared via the registry) ---
+	// Reaction group type (shared via the registry)
 	reactionGroupType := s.gqlReactionGroupType()
 
-	// --- Comment types (shared with PullRequest via the registry) ---
+	// Comment types (shared with PullRequest via the registry)
 	issueCommentType := s.gqlIssueCommentType()
 	commentConnectionType := s.gqlIssueCommentConnectionType()
 
-	// --- Assignee connection (shared UserConnection via the registry) ---
+	// Assignee connection (shared UserConnection via the registry)
 
 	assigneeConnectionType := s.gqlUserConnectionType(userType)
 
-	// --- Issue-type and sub-issue support types ---
-	// Memoized: the issue-type and issue-field mutations return these same
-	// objects, and graphql-go refuses a schema holding two types of one name.
+	// Memoized: issue-type and issue-field mutations return these same objects,
+	// and graphql-go refuses a schema holding two types of one name.
 	issueTypeMetaType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueType",
 		Fields: graphql.Fields{
@@ -115,12 +114,11 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 	issueFieldValueConnectionType := s.issueFieldValueGraphQLConnectionType()
 
-	// --- Issue type ---
+	// Issue type
 	issueType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Issue",
-		// Every interface must be claimed at construction: graphql-go memoizes
-		// the interface list once, so one added later can never gain Issue as a
-		// possible type.
+		// Claim every interface at construction: graphql-go memoizes the interface
+		// list once, so one added later can never gain Issue as a possible type.
 		Interfaces: []*graphql.Interface{
 			nodeInterface, s.gqlLockableInterface(), s.gqlLabelableInterface(),
 			s.graphqlTypes.reactable, s.uniformResourceLocatableInterface(),
@@ -207,8 +205,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					}
 					m, ok := i["milestone"].(map[string]interface{})
 					if !ok || m == nil {
-						// Return untyped nil: graphql-go's NonNull checks fire even
-						// on a nil-valued map[string]interface{}.
+						// Untyped nil: graphql-go's NonNull checks fire even on a
+						// nil-valued map[string]interface{}.
 						return nil, nil
 					}
 					return m, nil
@@ -299,9 +297,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	s.graphqlTypes.issue = issueType
 	s.addReactableFields(issueType, "issue")
 
-	// parent / subIssues are self-referential, so they are added after issueType
-	// exists and resolve lazily from the sub-issue store — embedding full issue
-	// maps eagerly would recurse parent↔child forever.
+	// parent / subIssues are self-referential: added after issueType exists and
+	// resolved lazily from the sub-issue store — embedding full issue maps
+	// eagerly would recurse parent↔child forever.
 	issueType.AddFieldConfig("parent", &graphql.Field{
 		Type: issueType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -364,10 +362,10 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Issue connection (shared with PullRequest via the registry) ---
+	// Issue connection (shared with PullRequest via the registry)
 	issueConnectionType := s.gqlIssueConnectionType(issueType)
 
-	// --- Issue filters input ---
+	// Issue filters input
 	issueFieldValueFilterInput := s.mutationInput("IssueFieldValueFilter", graphql.InputObjectConfigFieldMap{
 		"dateValue":               gqlString(),
 		"fieldId":                 gqlID(),
@@ -396,7 +394,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Add fields to Repository type ---
+	// Add fields to Repository type
 
 	repoType.AddFieldConfig("hasIssuesEnabled", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
@@ -416,8 +414,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	repoType.AddFieldConfig("viewerPermission", &graphql.Field{
 		Type: s.graphQLEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE"),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// bleephub models pull/push/admin only, never MAINTAIN/TRIAGE; null
-			// for no access.
+			// bleephub models pull/push/admin only, never MAINTAIN/TRIAGE; null for no access.
 			src, _ := p.Source.(map[string]interface{})
 			fullName, _ := src["nameWithOwner"].(string)
 			parts := strings.SplitN(fullName, "/", 2)
@@ -563,8 +560,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 							}
 						}
 					}
-					// An unresolved login matches no issue (keeping the old list
-					// would silently widen a typo to every issue).
+					// An unresolved login matches no issue; keeping the old list
+					// would silently widen a typo to every issue.
 					issues = filtered
 				}
 				if creator, ok := filterBy["createdBy"].(string); ok && creator != "" {
@@ -857,7 +854,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				users = filtered
 			}
 
-			// Sort by ID: the map iteration above is nondeterministic and cursor
+			// Sort by ID: map iteration above is nondeterministic; cursor
 			// pagination must be stable across pages.
 			sort.Slice(users, func(a, b int) bool { return users[a].ID < users[b].ID })
 
@@ -870,7 +867,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Mutations ---
+	// Mutations
 
 	createIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "CreateIssueInput",
@@ -1085,7 +1082,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- Pinned issues (pinIssue / unpinIssue, Repository.pinnedIssues) ---
+	// Pinned issues (pinIssue / unpinIssue, Repository.pinnedIssues)
 
 	pinnedIssueType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "PinnedIssue",
@@ -1255,7 +1252,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// --- transferIssue / deleteIssue ---
+	// transferIssue / deleteIssue
 
 	transferIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "TransferIssueInput",
@@ -1300,8 +1297,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			if target.ID == source.ID {
 				return nil, fmt.Errorf("issue is already in %s", target.FullName)
 			}
-			// An issue only transfers between repositories owned by the same
-			// user or organization.
+			// An issue transfers only between repos owned by the same user or org.
 			if target.OwnerID != source.OwnerID {
 				return nil, fmt.Errorf("issues can only be transferred between repositories owned by the same user or organization")
 			}
@@ -1530,8 +1526,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					issueTypeID = &cleared
 				}
 			}
-			// Triage — labels, assignees, milestone — needs push even for the
-			// issue's own author.
+			// Triage — labels, assignees, milestone — needs push even for the author.
 			triage := false
 			for _, key := range []string{"labelIds", "assigneeIds", "milestoneId"} {
 				if _, present := input[key]; present {
@@ -1642,7 +1637,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	return issueType, issueMilestoneType
 }
 
-// --- GraphQL converter helpers ---
+// GraphQL converter helpers
 
 func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
 	// Shared enums: the issue-field mutations name the same three on their inputs.
@@ -2398,8 +2393,8 @@ func issueFieldValuesConnectionLocked(st *store.Store, issue *store.Issue) map[s
 		nodes = append(nodes, issueFieldValueToGQLLocked(field, issue.ID, values[fieldID]))
 	}
 	// Return the full node set; the field resolver windows it via
-	// repaginateConnection. Pre-paginating here clamped totalCount to 100 and
-	// hid the remainder (GQL-022).
+	// repaginateConnection. Pre-paginating here clamped totalCount to 100 and hid
+	// the remainder (GQL-022).
 	return map[string]interface{}{
 		"nodes":      nodes,
 		"totalCount": len(nodes),
@@ -2750,7 +2745,7 @@ func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parent
 	return out
 }
 
-// --- Node ID lookup helpers ---
+// Node ID lookup helpers
 
 // resolveGQLLabelIDs maps a mutation's labelIds onto store ids. A nil argument
 // leaves the labels alone; an id naming no label of repoID is refused, not

@@ -248,7 +248,7 @@ func TestGraphQLIssueMutationsStillServeTheirEntitledCaller(t *testing.T) {
 	}
 }
 
-// --- organization-scoped: issue types and custom issue fields ---------------
+// organization-scoped: issue types and custom issue fields
 
 // gqlIssueOrgFixture is an organization with a repository and an issue,
 // alongside an account that owns a different organization — the caller whose
@@ -449,7 +449,7 @@ func TestGraphQLIssueOrgMutationsStillServeTheOrganizationOwner(t *testing.T) {
 	}
 }
 
-// --- behavioural ------------------------------------------------------------
+// behavioural
 
 func TestGraphQLIssueCommentMutationsWriteTheStore(t *testing.T) {
 	t.Parallel()

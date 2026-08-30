@@ -121,10 +121,9 @@ type RepositoryMigration struct {
 	OrgMigrationID int `json:"org_migration_id,omitempty"`
 	// StartedByUserID owns everything the migration creates in the target.
 	StartedByUserID int `json:"started_by_user_id,omitempty"`
-	// TargetRepoID is the repository this migration created. A resumed
-	// migration continues into that repo by ID, not by name: name-matching
-	// would let someone pre-plant a repo under a queued migration's name and
-	// receive its contents.
+	// TargetRepoID is the repository this migration created. A resumed migration
+	// continues by ID, not name: name-matching would let someone pre-plant a repo
+	// under a queued migration's name and receive its contents.
 	TargetRepoID int `json:"target_repo_id,omitempty"`
 	// SourceRepoLock is the full name of the repo on *this* instance that
 	// lock_source froze, or "" when the source is elsewhere. Held until the
@@ -173,7 +172,7 @@ func OrgMigratorRoleKey(orgID int, actorType, actor string) string {
 	return strconv.Itoa(orgID) + "/" + strings.ToUpper(actorType) + "/" + strings.ToLower(actor)
 }
 
-// --- clones (STORE-021) ---
+// clones (STORE-021)
 
 func cloneMigrationSource(src *MigrationSource) *MigrationSource {
 	if src == nil {
@@ -218,7 +217,7 @@ func cloneOrgMigratorRole(r *OrgMigratorRole) *OrgMigratorRole {
 	return &c
 }
 
-// --- persistence ---
+// persistence
 
 func (st *Store) persistMigrationSourceLocked(src *MigrationSource) {
 	if st.Persist != nil {
@@ -244,7 +243,7 @@ func (st *Store) persistOrgMigratorRoleLocked(r *OrgMigratorRole) {
 	}
 }
 
-// --- migration sources ---
+// migration sources
 
 // CreateMigrationSource records a place to migrate from and returns a detached
 // snapshot.
@@ -305,7 +304,7 @@ func (st *Store) ListMigrationSources(ownerOrgID int) []*MigrationSource {
 	return out
 }
 
-// --- repository migrations ---
+// repository migrations
 
 // NewRepositoryMigration is the create input for a repository migration.
 type NewRepositoryMigration struct {
@@ -550,7 +549,7 @@ func (st *Store) RequeueRepositoryMigration(id int) bool {
 	return true
 }
 
-// --- organization migrations ---
+// organization migrations
 
 // CreateOrganizationMigration queues an organization migration and returns a
 // detached snapshot.
@@ -673,7 +672,7 @@ func (st *Store) RequeueOrganizationMigration(id int) bool {
 	return true
 }
 
-// --- the organization migrator role ---
+// the organization migrator role
 
 // SetOrgMigratorRole grants or revokes the migrator role for one actor on one
 // organization. It reports whether the grant set changed.
@@ -770,7 +769,7 @@ func (st *Store) UserHoldsOrgMigratorRole(orgID int, user *User) bool {
 	return false
 }
 
-// --- persistence load ---
+// persistence load
 
 // loadGEIMigrationBuckets restores the GEI layer during construction (no lock:
 // the store is not yet reachable).

@@ -28,8 +28,7 @@ import (
 // Two conditions, both checked against the enumeration plan, not the request:
 //   - Nothing leaks: every object of every reused pack is in the plan, so a
 //     filtered/shallow/partial clone is never handed objects it did not ask for.
-//   - Nothing is missing: objects the reused packs do not supply are written
-//     after them.
+//   - Nothing is missing: objects the reused packs do not supply are written after them.
 //
 // Self-containment needs no check: go-git resolves a delta base within its own
 // packfile, so a pack with an external base would already fail every read.
@@ -57,7 +56,7 @@ const (
 
 // gitPackReuseStorer pairs a repository's storer with its pack directory, so the
 // fetch path reaches the stored bytes through the value it already carries. The
-// storer is embedded because every method a fetch calls is the storage layer's.
+// storer is embedded because every method a fetch calls belongs to it.
 type gitPackReuseStorer struct {
 	storer.Storer
 	packDir billy.Filesystem
@@ -117,7 +116,7 @@ type gitStoredPack struct {
 // gitReusablePacks reads a repository's pack directory and returns the packs
 // this answer can be built from, or nothing. Two passes because the index is the
 // expensive part: the fanout table gives an index's object count from its first
-// kilobyte, ruling out packs larger than the whole answer without reading a
+// kilobyte, ruling out packs larger than the answer without reading a
 // repository-sized index.
 func gitReusablePacks(fs billy.Filesystem, plan *gitPackPlan) ([]*gitStoredPack, error) {
 	entries, err := fs.ReadDir(gitPackDirectory)

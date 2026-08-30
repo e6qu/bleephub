@@ -26,7 +26,7 @@ import (
 
 func (s *Server) registerAuthRoutes() {
 	// Resolve the runner signing key at startup so a misconfigured key fails
-	// fast rather than on the first runner connection.
+	// fast, not on the first runner connection.
 	if _, err := runnerSigningKey(); err != nil {
 		s.logger.Fatal().Err(err).Msg("failed to initialize the runner protocol signing key")
 	}
@@ -42,9 +42,9 @@ func (s *Server) registerAuthRoutes() {
 	// registration token config.sh holds, or an unguessable signed blob URL) or
 	// no tenant state at all. The other three are registered next to their
 	// handlers (agents.go, artifacts.go).
-	// TestRunnerProtocolRejectsUnauthenticatedCalls fails if any other /_apis/
-	// or /twirp/ route answers an unauthenticated call with anything but 401, so
-	// a sixth cannot be added by accident.
+	// TestRunnerProtocolRejectsUnauthenticatedCalls fails if any other /_apis/ or
+	// /twirp/ route answers an unauthenticated call with anything but 401, so a
+	// sixth cannot be added by accident.
 
 	// Service discovery, read before the runner holds any credential; the
 	// response carries no tenant state.
@@ -76,8 +76,8 @@ func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// The tenant credential may carry only the operation the presented token was
-	// minted for: a removal token must not be exchangeable for a registering one.
+	// The tenant credential may carry only the operation its token was minted
+	// for: a removal token must not be exchangeable for a registering one.
 	purpose, err := runnerPurposeForEvent(req.RunnerEvent)
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, err.Error())
@@ -99,7 +99,7 @@ func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request
 	serverURL := s.baseURL(r)
 
 	// Preserve any path on the original --url (e.g. /owner/repo); the runner
-	// extracts org/repo from the tenant URL for display.
+	// extracts org/repo from the tenant URL to display.
 	if req.URL != "" {
 		if parsed, err := url.Parse(req.URL); err == nil && parsed.Path != "" {
 			serverURL += parsed.Path
@@ -116,8 +116,8 @@ func (s *Server) handleRunnerRegistration(w http.ResponseWriter, r *http.Request
 }
 
 // runnerSetupCredential verifies the config-time token config.sh holds before it
-// has exchanged its client_assertion, accepting the RemoteAuth, bearer, and token
-// schemes. A token whose purpose is not among those the caller accepts is an error.
+// has exchanged its client_assertion, accepting the RemoteAuth, bearer and token
+// schemes. A token whose purpose the caller does not accept is an error.
 func runnerSetupCredential(r *http.Request, purposes []string) (runnerRegistrationClaims, error) {
 	scheme, cred := authScheme(r.Header.Get("Authorization"))
 	switch scheme {
@@ -211,7 +211,7 @@ func (s *Server) handleConnectionData(w http.ResponseWriter, r *http.Request) {
 }
 
 // The runner performs an OAuth 2.0 client-credentials grant with an RSA
-// client_assertion rather than a secret, so grant_type is client_credentials and
+// client_assertion rather than a secret: grant_type is client_credentials and
 // the assertion travels in client_assertion.
 const (
 	runnerGrantType           = "client_credentials"
@@ -368,13 +368,13 @@ func base64url(data []byte) string {
 	return strings.TrimRight(s, "=")
 }
 
-// --- runner protocol credentials ---
+// runner protocol credentials
 //
 // Three credentials carry runner identity, all signed with one process key: the
-// registration token config.sh presents, the agent client id the client_assertion
-// names as iss, and the bearer token (agent session or per-job runtime token).
-// Each carries the repo/org scope it may act for, so no route trusts an
-// unverifiable claim.
+// registration token config.sh presents, the agent client id the
+// client_assertion names as iss, and the bearer token (agent session or per-job
+// runtime token). Each carries the repo/org scope it may act for, so no route
+// trusts an unverifiable claim.
 
 const (
 	// runnerTokenTTL bounds a bearer credential to the longest a GitHub Actions
@@ -414,8 +414,8 @@ var (
 
 // runnerSigningKey resolves the HMAC key backing every runner credential.
 // BLEEPHUB_RUNNER_TOKEN_KEY (base64, >=32 bytes) pins it; otherwise it is
-// generated once per process, which is correct because runner sessions and job
-// tokens only mean anything against dispatch state that does not survive a restart.
+// generated once per process — correct, since runner sessions and job tokens
+// only mean anything against dispatch state that does not survive a restart.
 var runnerSigningKey = sync.OnceValues(loadRunnerSigningKey)
 
 func loadRunnerSigningKey() ([]byte, error) {
@@ -465,8 +465,8 @@ func (s *Server) runnerScopeFromRequest(r *http.Request) (store.RunnerScope, err
 		if resolved == nil {
 			return store.RunnerScope{}, fmt.Errorf("organization %s not found", org)
 		}
-		// Scope by the canonical login: a scope carrying the request's casing
-		// would not match later canonical-name comparisons.
+		// Scope by the canonical login: the request's casing would not match
+		// later canonical-name comparisons.
 		return store.RunnerScope{Org: resolved.Login}, nil
 	}
 	if enterprise := r.PathValue("enterprise"); enterprise != "" {
@@ -517,7 +517,7 @@ func parseSignedBlob(prefix, token string, out any) error {
 }
 
 // runnerRegistrationClaims is the payload of the opaque one-shot token config.sh
-// presents; it carries its own scope and expiry so registration needs no
+// presents; it carries its own scope and expiry, so registration needs no
 // server-side token registry.
 type runnerRegistrationClaims struct {
 	Scope   store.RunnerScope `json:"scope"`
@@ -563,9 +563,9 @@ func parseRunnerRegistrationToken(token string, purposes []string) (runnerRegist
 }
 
 // newAgentClientID mints the clientId the runner stores and echoes as the
-// client_assertion issuer. It is a bare GUID because that is what the runner
+// client_assertion issuer. A bare GUID because that is what the runner
 // deserializes it into; the GUID only names which agent's public key to verify
-// against — the RSA signature is what authenticates, so guessability is harmless.
+// against — the RSA signature authenticates, so guessability is harmless.
 func newAgentClientID(scope store.RunnerScope) (string, error) {
 	if scope.Empty() {
 		return "", fmt.Errorf("agent clientId needs a repository, organization, or enterprise scope")
@@ -584,7 +584,7 @@ type runnerTokenClaims struct {
 	Scp string `json:"scp"`
 	// Repo and Perms are carried only by a per-job runtime token (aud=="actions"),
 	// binding it to one repo and the workflow's least-privilege permission set so
-	// the REST gate can scope its /api/v3 access (ACT-014). Absent on session tokens.
+	// the REST gate can scope its /api/v3 access (ACT-014); absent on session tokens.
 	Repo  string            `json:"repo,omitempty"`
 	Perms map[string]string `json:"perms,omitempty"`
 }
@@ -702,7 +702,7 @@ func runnerFromContext(ctx context.Context) *runnerPrincipal {
 
 // callerRunner resolves the verified runner behind a request: the context
 // principal, or the request's own credential when a handler is reached without
-// one, so authorization never depends on the route's decorator.
+// one, so authz never depends on the route's decorator.
 func (s *Server) callerRunner(r *http.Request) (*runnerPrincipal, error) {
 	if p := runnerFromContext(r.Context()); p != nil {
 		return p, nil
@@ -722,8 +722,8 @@ func bearerCredential(r *http.Request) (string, bool) {
 // to download an action archive; the token travels as the password.
 const actionArchiveUser = "x-access-token"
 
-// actionArchiveCredential reads the token off an action archive download, made by
-// a plain HTTP client that sends whatever the download-info response named.
+// actionArchiveCredential reads the token off an action archive download, made
+// by a plain HTTP client that sends whatever the download-info response named.
 func actionArchiveCredential(r *http.Request) (string, bool) {
 	scheme, cred := authScheme(r.Header.Get("Authorization"))
 	if scheme != "basic" || cred == "" {
@@ -786,9 +786,9 @@ func (s *Server) runnerPrincipalForToken(token string) (*runnerPrincipal, error)
 }
 
 // challengeRunnerAuth refuses a runner request that carries no usable credential.
-// The WWW-Authenticate: Bearer header is what drives the runner's token exchange —
-// it opens every session with no credential and acquires one only from a 401 whose
-// WWW-Authenticate contains "Bearer"; a bare 401 is read as the route's own answer.
+// The WWW-Authenticate: Bearer header drives the runner's token exchange — it
+// opens every session with no credential and acquires one only from a 401 whose
+// WWW-Authenticate contains "Bearer"; a bare 401 is read as the route's answer.
 func (s *Server) challengeRunnerAuth(w http.ResponseWriter, r *http.Request, err error) {
 	s.logger.Debug().Err(err).Str("path", r.URL.Path).Msg("runner protocol request rejected")
 	w.Header().Set("WWW-Authenticate", fmt.Sprintf("Bearer authorization_uri=%q", s.agentAuthorizationURL(r)))
@@ -796,8 +796,8 @@ func (s *Server) challengeRunnerAuth(w http.ResponseWriter, r *http.Request, err
 }
 
 // requireRunnerAuth gates a runner protocol route on a verified credential and
-// hands the principal to the handler via context. Every /_apis/ and /twirp/ route
-// outside the five-entry allowlist (see registerAuthRoutes) passes through here.
+// hands the principal to the handler via context. Every /_apis/ and /twirp/
+// route outside the five-entry allowlist (registerAuthRoutes) passes through here.
 func (s *Server) requireRunnerAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, err := s.authenticateRunner(r)
@@ -822,9 +822,10 @@ func (s *Server) requireJobToken(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // requireActionArchiveToken gates an action archive download on the job runtime
-// token the ActionDownloadInfo response handed the runner. The archive is fetched
-// by a plain HTTP client sending the token as basic auth under x-access-token, so
-// that shape is read here; the entitlement is the same job token verified the same way.
+// token the ActionDownloadInfo response handed the runner. A plain HTTP client
+// fetches the archive sending the token as basic auth under x-access-token, so
+// that shape is read here; the entitlement is the same job token, verified the
+// same way.
 func (s *Server) requireActionArchiveToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, ok := actionArchiveCredential(r)
@@ -848,8 +849,8 @@ func (s *Server) requireActionArchiveToken(next http.HandlerFunc) http.HandlerFu
 
 // requireRunnerSetupCredential gates a route the runner reaches during config.sh,
 // before it has exchanged its client_assertion: the config-time token is accepted
-// for the named purposes, as is a configured runner's agent session. Both paths
-// hand the handler a principal carrying the verified scope.
+// for the named purposes, as is a configured runner's agent session. Both hand
+// the handler a principal carrying the verified scope.
 func (s *Server) requireRunnerSetupCredential(purposes []string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, err := runnerSetupCredential(r, purposes)

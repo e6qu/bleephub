@@ -129,7 +129,7 @@ func (s *Resolver) addPullRequestSurfaceFields(d prSurfaceDeps) {
 	s.addPullRequestReviewThreadFields(d, diffSideEnum, subjectTypeEnum)
 }
 
-// --- PullRequest node fields -------------------------------------------------
+// PullRequest node fields
 
 func (s *Resolver) addPullRequestNodeFields(
 	d prSurfaceDeps,
@@ -525,7 +525,7 @@ func (s *Resolver) resolvePullRequestTimeline(p graphql.ResolveParams) (interfac
 	}, nil
 }
 
-// --- PullRequestReview fields ------------------------------------------------
+// PullRequestReview fields
 
 func (s *Resolver) addPullRequestReviewFields(d prSurfaceDeps, cannotUpdateEnum *graphql.Enum) {
 	rv := d.review
@@ -652,7 +652,7 @@ func (s *Resolver) resolveReviewComments(p graphql.ResolveParams) (interface{}, 
 	return repaginateConnection(map[string]interface{}{"nodes": nodes, "totalCount": len(nodes)}, p.Args), nil
 }
 
-// --- PullRequestReviewThread fields ------------------------------------------
+// PullRequestReviewThread fields
 
 func (s *Resolver) addPullRequestReviewThreadFields(d prSurfaceDeps, diffSideEnum, subjectTypeEnum *graphql.Enum) {
 	th := d.thread
@@ -683,7 +683,7 @@ func (s *Resolver) addPullRequestReviewThreadFields(d prSurfaceDeps, diffSideEnu
 	}))
 }
 
-// --- shared lazy lookups -----------------------------------------------------
+// shared lazy lookups
 
 func (s *Resolver) prFromID(raw interface{}) (interface{}, error) {
 	id, _ := raw.(int)
@@ -750,7 +750,7 @@ func prReviewThreadCommentCount(threads []map[string]interface{}) int {
 	return total
 }
 
-// --- supporting types --------------------------------------------------------
+// supporting types
 
 func (s *Resolver) prAssigneeConnectionType(userType *graphql.Object) *graphql.Object {
 	// AssigneeConnection is shared with Issue via sharedAssigneeConnectionType.

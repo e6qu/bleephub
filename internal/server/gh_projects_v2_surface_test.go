@@ -20,7 +20,7 @@ import (
 // family, exercised the way an SDK reaches them: from the owner rather than
 // from an issue that happens to already be on a project.
 
-// --- Query entry points ----------------------------------------------------
+// Query entry points
 
 // TestProjectsV2GraphQL_OwnerEntryPoints covers the owner fields `gh project
 // list`/`gh project view` start from — before them a project was reachable
@@ -163,7 +163,7 @@ func TestProjectsV2GraphQL_PrivateProjectsAreNotListedToStrangers(t *testing.T) 
 	}
 }
 
-// --- Item content and field values -----------------------------------------
+// Item content and field values
 
 // TestProjectsV2GraphQL_ItemContentAndFieldValues covers what
 // `gh project item-list` reads: the content union that carries the title, and
@@ -250,7 +250,7 @@ func TestProjectsV2GraphQL_ItemContentAndFieldValues(t *testing.T) {
 	}
 }
 
-// --- Mutations -------------------------------------------------------------
+// Mutations
 
 // TestProjectsV2GraphQL_ProjectLifecycleMutations walks a project through the
 // metadata, template and delete mutations and checks each is reflected in the
@@ -625,13 +625,12 @@ func TestProjectsV2GraphQL_LinksAndCollaborators(t *testing.T) {
 	}
 }
 
-// --- Webhooks --------------------------------------------------------------
+// Webhooks
 
 // TestProjectsV2Webhooks_DeliverTheEventFamily pins that the three event names
 // are delivered to the owning organization's hooks with GitHub's payload
 // shapes. A hook subscriber is the only way to observe a project change from
-// outside, so an event that is not emitted is a feature that silently is not
-// there.
+// outside, so an unemitted event is a silently-missing feature.
 func TestProjectsV2Webhooks_DeliverTheEventFamily(t *testing.T) {
 	t.Parallel()
 
@@ -794,7 +793,7 @@ func TestProjectsV2Webhooks_RESTAndGraphQLAgree(t *testing.T) {
 	}
 }
 
-// --- helpers ---------------------------------------------------------------
+// helpers
 
 func itemNodeIDs(items []*store.ProjectV2Item) []string {
 	out := make([]string, 0, len(items))

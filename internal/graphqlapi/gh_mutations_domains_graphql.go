@@ -86,7 +86,7 @@ func (r verifiableDomainOwnerRule) resolveOwner(s *Resolver, input map[string]in
 	return "", 0, nodeID, gqlMissingNode("VerifiableDomainOwner", nodeID)
 }
 
-// --- type and rendering ------------------------------------------------------
+// type and rendering
 
 // gqlVerifiableDomainType returns the VerifiableDomain object (memoized).
 func (s *Resolver) gqlVerifiableDomainType() *graphql.Object {
@@ -176,7 +176,7 @@ func (s *Resolver) verifiableDomainRequiredForPolicy(domain *store.VerifiableDom
 	return false
 }
 
-// --- schema -----------------------------------------------------------------
+// schema
 
 // addVerifiableDomainMutationsToSchema installs the five domain mutations.
 func (s *Resolver) addVerifiableDomainMutationsToSchema(mutationType *graphql.Object) {
@@ -245,7 +245,7 @@ func (s *Resolver) addVerifiableDomainMutationsToSchema(mutationType *graphql.Ob
 	})
 }
 
-// --- resolvers ---------------------------------------------------------------
+// resolvers
 
 func (s *Resolver) resolveAddVerifiableDomain(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})

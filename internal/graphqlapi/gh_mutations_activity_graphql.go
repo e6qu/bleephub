@@ -23,7 +23,7 @@ func (s *Resolver) addActivityMutations(mutationType *graphql.Object) {
 	expiryEnum := s.sharedEnum("RepositoryInteractionLimitExpiry",
 		"ONE_DAY", "ONE_MONTH", "ONE_WEEK", "SIX_MONTHS", "THREE_DAYS")
 
-	// --- starring ----------------------------------------------------------
+	// starring
 
 	s.registerMutation(mutationType, "addStar", &graphql.Field{
 		Type: s.mutationPayload("AddStarPayload", graphql.Fields{
@@ -53,7 +53,7 @@ func (s *Resolver) addActivityMutations(mutationType *graphql.Object) {
 		},
 	})
 
-	// --- watching ----------------------------------------------------------
+	// watching
 
 	s.registerMutation(mutationType, "updateSubscription", &graphql.Field{
 		Type: s.mutationPayload("UpdateSubscriptionPayload", graphql.Fields{
@@ -68,7 +68,7 @@ func (s *Resolver) addActivityMutations(mutationType *graphql.Object) {
 		Resolve: s.resolveUpdateSubscription,
 	})
 
-	// --- interaction limits ------------------------------------------------
+	// interaction limits
 
 	s.registerMutation(mutationType, "setRepositoryInteractionLimit", &graphql.Field{
 		Type: s.mutationPayload("SetRepositoryInteractionLimitPayload", graphql.Fields{
@@ -112,7 +112,7 @@ func (s *Resolver) addActivityMutations(mutationType *graphql.Object) {
 		Resolve: s.resolveSetUserInteractionLimit,
 	})
 
-	// --- organization membership and settings ------------------------------
+	// organization membership and settings
 
 	s.registerMutation(mutationType, "removeOutsideCollaborator", &graphql.Field{
 		Type: s.mutationPayload("RemoveOutsideCollaboratorPayload", graphql.Fields{
@@ -163,7 +163,7 @@ func (s *Resolver) repositoryInteractionLimitEnum() *graphql.Enum {
 		"COLLABORATORS_ONLY", "CONTRIBUTORS_ONLY", "EXISTING_USERS", "NO_LIMIT")
 }
 
-// --- Starrable and Subscribable ---------------------------------------------
+// Starrable and Subscribable
 
 // starrableInterface is the payload interface for the star mutations.
 // Repository is the only implementation bleephub's star store records
@@ -272,7 +272,7 @@ func (s *Resolver) stargazerConnectionSource(repo *store.Repo) map[string]interf
 	return gqlConnectionSource(nodes)
 }
 
-// --- star resolvers ---------------------------------------------------------
+// star resolvers
 
 func (s *Resolver) resolveStar(p graphql.ResolveParams, star bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -318,7 +318,7 @@ func (s *Resolver) resolveStar(p graphql.ResolveParams, star bool) (interface{},
 	return map[string]interface{}{"starrable": optionalObject(repoToGraphQL(s.store, updated))}, nil
 }
 
-// --- subscription resolver --------------------------------------------------
+// subscription resolver
 
 func (s *Resolver) resolveUpdateSubscription(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -345,7 +345,7 @@ func (s *Resolver) resolveUpdateSubscription(p graphql.ResolveParams) (interface
 	return map[string]interface{}{"subscribable": optionalObject(repoToGraphQL(s.store, updated))}, nil
 }
 
-// --- interaction-limit resolvers --------------------------------------------
+// interaction-limit resolvers
 
 func (s *Resolver) resolveSetRepositoryInteractionLimit(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
@@ -430,7 +430,7 @@ func (s *Resolver) interactionLimitFromInput(input map[string]interface{}) (stri
 	return stored, &expiresAt, nil
 }
 
-// --- organization resolvers -------------------------------------------------
+// organization resolvers
 
 func (s *Resolver) resolveRemoveOutsideCollaborator(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})

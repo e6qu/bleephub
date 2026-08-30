@@ -16,10 +16,9 @@ import (
 // FuzzGitRefUpdate fuzzes the PATCH .../git/refs/{ref...} body (sha/force)
 // and the {ref...} path against a git-backed repo.
 //
-// useHead asks the execution to substitute the real head SHA of the repository
-// it just created. A SHA captured once at seeding time cannot serve here: git
-// hashes the commit timestamps, so a SHA taken from a seeding repository never
-// matches the head of the repository an execution builds, and the
+// useHead substitutes the real head SHA of the repository the execution just
+// created. A SHA captured at seeding time cannot serve: git hashes the commit
+// timestamps, so a seeding-repo SHA never matches an execution's head, and the
 // "update a ref to an existing commit" path is never reached.
 //
 // Invariant: never a 5xx or panic; a 200 response is a well-formed ref object

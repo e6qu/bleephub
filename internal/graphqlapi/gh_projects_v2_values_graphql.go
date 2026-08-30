@@ -15,9 +15,8 @@ import (
 // the query is validated against the whole schema before any resolver runs.
 
 // projectV2FieldValueTypes builds every union member and the union itself.
-// graphql-go fixes a union's members and an object's interfaces at
-// construction, so all twelve members and the common interface are made here in
-// one pass.
+// graphql-go fixes union members and object interfaces at construction, so all
+// twelve members and the common interface are made here in one pass.
 func (s *Resolver) projectV2FieldValueTypes() *graphql.Union {
 	if s.graphqlTypes.projectV2ItemFieldValueUnionMemo != nil {
 		return s.graphqlTypes.projectV2ItemFieldValueUnionMemo

@@ -51,7 +51,7 @@ func (s *Server) environmentFromPath(w http.ResponseWriter, r *http.Request) (*s
 	return repo, env
 }
 
-// --- Handlers: deployment branch policies ---
+// Handlers: deployment branch policies
 
 func branchPolicyToJSON(p *store.DeploymentBranchPolicyRule) map[string]interface{} {
 	return map[string]interface{}{
@@ -178,7 +178,7 @@ func (s *Server) handleDeleteDeploymentBranchPolicy(w http.ResponseWriter, r *ht
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Handlers: custom deployment protection rules ---
+// Handlers: custom deployment protection rules
 
 func (s *Server) envProtectionRuleJSON(rule *store.EnvCustomProtectionRule, baseURL string) map[string]interface{} {
 	s.store.Mu.RLock()

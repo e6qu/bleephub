@@ -401,9 +401,9 @@ func TestWikiPushEmitsGollum(t *testing.T) {
 	}
 }
 
-// TestWikiTitleFilenameMapping pins the title↔filename mapping both lanes
-// depend on: it is what makes a page's identity the same fact in git and in the
-// browser, so the two cannot name different pages.
+// TestWikiTitleFilenameMapping pins the title↔filename mapping both lanes depend
+// on: it makes a page's identity the same fact in git and in the browser, so the
+// two cannot name different pages.
 func TestWikiTitleFilenameMapping(t *testing.T) {
 	t.Parallel()
 	for title, file := range map[string]string{

@@ -16,7 +16,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// --- shared fixtures ---
+// shared fixtures
 
 var authflowSeq int64
 
@@ -24,8 +24,7 @@ func authflowName(prefix string) string {
 	return fmt.Sprintf("%s-%d-%d", prefix, int64(testutil.NextTestID()), atomic.AddInt64(&authflowSeq, 1))
 }
 
-// authflowStranger seeds a user with no relationship to anything and returns
-// the user together with a classic token for it.
+// authflowStranger seeds a user with no relationship to anything and returns the user together with a classic token for it.
 func authflowStranger(t *testing.T, s *Server, login string) (*store.User, string) {
 	t.Helper()
 	s.store.Mu.Lock()
@@ -38,15 +37,13 @@ func authflowStranger(t *testing.T, s *Server, login string) (*store.User, strin
 	return user, s.store.CreateToken(user.ID, "repo,workflow").Value
 }
 
-// withUser attaches a resolved user to a request the way the auth middleware
-// does, so a handler can be exercised without its route decorator. Several of
-// the fixes below are deliberately redundant with the route gate; calling the
-// handler directly is the only way to show the handler itself refuses.
+// withUser attaches a resolved user to a request the way the auth middleware does, so a handler can be exercised without
+// its route decorator. Several fixes below are deliberately redundant with the route gate; calling the handler directly is the only way to show the handler itself refuses.
 func withUser(r *http.Request, user *store.User) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ctxUser, user))
 }
 
-// --- redirect_uri must match the client's registration ---
+// redirect_uri must match the client's registration
 
 func TestOAuthAuthorizeRefusesUnregisteredRedirectURI(t *testing.T) {
 	s := newTestServer()
@@ -81,9 +78,8 @@ func TestOAuthAuthorizeRefusesUnregisteredRedirectURI(t *testing.T) {
 	}
 }
 
-// TestOAuthApproveRefusesUnregisteredRedirectURI covers the leg that actually
-// mints the code: a consent form is fetched honestly and the hidden field is
-// then rewritten, which is exactly what an interception attempt looks like.
+// TestOAuthApproveRefusesUnregisteredRedirectURI covers the leg that actually mints the code: a consent form is fetched
+// honestly and the hidden field is then rewritten, which is exactly what an interception attempt looks like.
 func TestOAuthApproveRefusesUnregisteredRedirectURI(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -113,11 +109,10 @@ func TestOAuthApproveRefusesUnregisteredRedirectURI(t *testing.T) {
 	}
 }
 
-// --- a GitHub App's registered callback ---
+// a GitHub App's registered callback
 
-// registerGitHubAppViaManifest submits the app manifest the way the browser
-// form does and returns the created app. callbackURLs is passed through
-// verbatim so a malformed registration can be exercised too.
+// registerGitHubAppViaManifest submits the app manifest the way the browser form does and returns the created app.
+// callbackURLs is passed through verbatim so a malformed registration can be exercised too.
 func registerGitHubAppViaManifest(t *testing.T, s *Server, name string, callbackURLs []string) (*store.App, int, string) {
 	t.Helper()
 	manifest := map[string]interface{}{
@@ -220,9 +215,8 @@ func TestGitHubAppWebFlowUsesItsRegisteredCallback(t *testing.T) {
 	}
 }
 
-// TestGitHubAppWithoutARegisteredCallbackIsStillRefused is the half of the fix
-// that must not regress: an App may now have a callback, and one without a
-// callback is still refused rather than tolerated.
+// TestGitHubAppWithoutARegisteredCallbackIsStillRefused is the half of the fix that must not regress: an App may now have a
+// callback, and one without a callback is still refused rather than tolerated.
 func TestGitHubAppWithoutARegisteredCallbackIsStillRefused(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -306,7 +300,7 @@ func TestGitHubAppCallbackSurvivesAReload(t *testing.T) {
 	}
 }
 
-// --- the consent token is not the session cookie ---
+// the consent token is not the session cookie
 
 func TestOAuthConsentTokenIsNotTheSessionCookie(t *testing.T) {
 	s := newTestServer()
@@ -314,8 +308,7 @@ func TestOAuthConsentTokenIsNotTheSessionCookie(t *testing.T) {
 	app := createOAuthTestApp(t, s, "https://app.test/callback")
 	s.registerGHOAuthRoutes()
 
-	// The session is established the way the identity provider establishes
-	// one, which is the factory that used the cookie value as the CSRF token.
+	// The session is established the way the identity provider establishes one, which is the factory that used the cookie value as the CSRF token.
 	sessionRecorder := httptest.NewRecorder()
 	if err := s.createBrowserSession(sessionRecorder, httptest.NewRequest(http.MethodGet, "/", nil), s.store.LookupUserByLogin("admin")); err != nil {
 		t.Fatalf("createBrowserSession: %v", err)
@@ -376,8 +369,7 @@ func TestOAuthConsentTokenIsSingleUse(t *testing.T) {
 	}
 }
 
-// TestBrowserSessionCSRFTokenIsIndependent covers the other session factory:
-// the identity/OIDC one, which set the CSRF token to the cookie value itself.
+// TestBrowserSessionCSRFTokenIsIndependent covers the other session factory: the identity/OIDC one, which set the CSRF token to the cookie value itself.
 func TestBrowserSessionCSRFTokenIsIndependent(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -439,7 +431,7 @@ func TestTokenLoginExchangesUserCredentialForHttpOnlySession(t *testing.T) {
 	}
 }
 
-// --- repository secrets: resolved scope, administrator only ---
+// repository secrets: resolved scope, administrator only
 
 func TestRepositorySecretWriteRefusesAStranger(t *testing.T) {
 	s := newTestServer()
@@ -464,8 +456,7 @@ func TestRepositorySecretWriteRefusesAStranger(t *testing.T) {
 		t.Errorf("stranger PUT repository secret status = %d, want a denial", w.Code)
 	}
 
-	// And directly at the handler, which must refuse on its own rather than
-	// relying on whatever decorator happens to be wrapped around it.
+	// And directly at the handler, which must refuse on its own rather than relying on whatever decorator happens to be wrapped around it.
 	direct := httptest.NewRequest("PUT", "/api/v3/repos/"+repo.FullName+"/actions/secrets/PROD", strings.NewReader(string(payload)))
 	direct.Header.Set("Content-Type", "application/json")
 	direct.SetPathValue("owner", admin.Login)
@@ -485,11 +476,9 @@ func TestRepositorySecretWriteRefusesAStranger(t *testing.T) {
 	}
 }
 
-// TestRepositorySecretRejectsCaseVariantScope pins the shadow-scope failure
-// mode: a path spelling the repository differently must never key a scope map
-// nobody reads. Since case-insensitive resolution (GitHub parity), the
-// variant path resolves to the canonical repository, so the write must land
-// under the canonical key — the one the job injector reads — and succeed.
+// TestRepositorySecretRejectsCaseVariantScope pins the shadow-scope failure mode: a path spelling the repository differently
+// must never key a scope map nobody reads. Since case-insensitive resolution (GitHub parity), the variant path resolves to
+// the canonical repository, so the write must land under the canonical key — the one the job injector reads — and succeed.
 func TestRepositorySecretRejectsCaseVariantScope(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -528,9 +517,7 @@ func TestRepositorySecretRejectsCaseVariantScope(t *testing.T) {
 	}
 }
 
-// TestRepositorySecretHandlersKeyOffTheResolvedRepository shows the accepted
-// path stores under the repository's own full name, which is the key the job
-// injector reads.
+// TestRepositorySecretHandlersKeyOffTheResolvedRepository shows the accepted path stores under the repository's own full name, which is the key the job injector reads.
 func TestRepositorySecretHandlersKeyOffTheResolvedRepository(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -561,11 +548,9 @@ func TestRepositorySecretHandlersKeyOffTheResolvedRepository(t *testing.T) {
 	}
 }
 
-// --- destructive ref writes ---
+// destructive ref writes
 
-// authflowProtectedRepo creates an auto-initialised repository on the shared
-// harness, protects main, and returns the repository name plus a pushing
-// collaborator's token.
+// authflowProtectedRepo creates an auto-initialised repository on the shared harness, protects main, and returns the repository name plus a pushing collaborator's token.
 func (s *isolatedServer) authflowProtectedRepo(t *testing.T) (repoName string, pushToken string) {
 	t.Helper()
 	repoName = s.createRepoWriteRepo(t, true)
@@ -630,8 +615,7 @@ func TestProtectedBranchRefusesDeletionWithoutAdmin(t *testing.T) {
 	requireStatus(t, s.get(t, base+"/git/refs/heads/main", defaultToken), 200)
 }
 
-// TestProtectedBranchAllowanceIsHonoured keeps the gate from becoming a blanket
-// refusal: allow_deletions is exactly the setting that permits the deletion.
+// TestProtectedBranchAllowanceIsHonoured keeps the gate from becoming a blanket refusal: allow_deletions is exactly the setting that permits the deletion.
 func TestProtectedBranchAllowanceIsHonoured(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -643,7 +627,7 @@ func TestProtectedBranchAllowanceIsHonoured(t *testing.T) {
 	requireStatus(t, s.delete(t, "/api/v3/repos/admin/"+repoName+"/git/refs/heads/main", pushToken), 204)
 }
 
-// --- branch protection is administrator-only ---
+// branch protection is administrator-only
 
 func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 	t.Parallel()
@@ -689,12 +673,11 @@ func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	// The owner is still served, so the denials above are a gate and not an
-	// endpoint that refuses everyone.
+	// The owner is still served, so the denials above are a gate and not an endpoint that refuses everyone.
 	requireStatus(t, s.get(t, base, defaultToken), 200)
 }
 
-// --- source import must not fetch private address space ---
+// source import must not fetch private address space
 
 func TestSourceImportRefusesNonPublicSources(t *testing.T) {
 	s := newTestServer()
@@ -703,9 +686,8 @@ func TestSourceImportRefusesNonPublicSources(t *testing.T) {
 	admin := s.store.LookupUserByLogin("admin")
 	repo := s.store.CreateRepo(admin, authflowName("import-ssrf"), "", false)
 
-	// Loopback is a permitted delivery/fetch target (see the sibling test); every
-	// OTHER non-public address is refused, as are non-http(s) schemes. The cloud
-	// metadata endpoint, RFC1918, and IPv6 unique-local space must never resolve.
+	// Loopback is a permitted delivery/fetch target (see the sibling test); every OTHER non-public address is refused, as are
+	// non-http(s) schemes. The cloud metadata endpoint, RFC1918, and IPv6 unique-local space must never resolve.
 	for _, hostile := range []string{
 		"http://169.254.169.254/latest/meta-data/",
 		"http://[::ffff:169.254.169.254]/latest/meta-data/",
@@ -729,10 +711,8 @@ func TestSourceImportRefusesNonPublicSources(t *testing.T) {
 	}
 }
 
-// TestLoopbackDeliveryPermittedNonPublicRefused pins the fixed outbound policy:
-// loopback is a legitimate delivery target for both server-initiated transports,
-// while the scheme rule and the block on every other non-public address still
-// hold. There is no switch to relax any of it.
+// TestLoopbackDeliveryPermittedNonPublicRefused pins the fixed outbound policy: loopback is a legitimate delivery target for
+// both server-initiated transports, while the scheme rule and the block on every other non-public address still hold. There is no switch to relax any of it.
 func TestLoopbackDeliveryPermittedNonPublicRefused(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -750,8 +730,7 @@ func TestLoopbackDeliveryPermittedNonPublicRefused(t *testing.T) {
 		return w.Code
 	}
 
-	// A loopback source is admitted past the address gate (the fetch itself then
-	// fails honestly, which is a 201 carrying an error status).
+	// A loopback source is admitted past the address gate (the fetch itself then fails honestly, which is a 201 carrying an error status).
 	if got := importSource("http://127.0.0.1:1/repo.git"); got != http.StatusCreated {
 		t.Errorf("loopback import status = %d, want 201", got)
 	}
@@ -773,7 +752,7 @@ func TestLoopbackDeliveryPermittedNonPublicRefused(t *testing.T) {
 	}
 }
 
-// --- the invented per-username codespaces route is gone ---
+// the invented per-username codespaces route is gone
 
 func TestUserCodespacesByLoginRouteIsNotRegistered(t *testing.T) {
 	t.Parallel()
@@ -789,7 +768,7 @@ func TestUserCodespacesByLoginRouteIsNotRegistered(t *testing.T) {
 	}
 }
 
-// --- gist sub-resources honour visibility ---
+// gist sub-resources honour visibility
 
 func TestSecretGistSubResourcesRefuseAnonymousCallers(t *testing.T) {
 	t.Parallel()
