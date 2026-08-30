@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path"
@@ -27,9 +28,11 @@ type ActionsByteStore interface {
 	// PutStream stores everything read from r; implementations must not buffer
 	// the entire stream in memory.
 	PutStream(ctx context.Context, key string, r io.Reader) error
-	// GetStream returns the object as a stream the caller must Close. It does
-	// not verify the stored checksum: a mid-stream body cannot be rejected once
-	// its first byte reaches the client.
+	// GetStream returns the object as a stream the caller must Close. The stored
+	// SHA-256 cannot be checked before the first byte reaches the client, but the
+	// stream recomputes it and fails the final Read (a non-EOF error) on mismatch,
+	// so corruption surfaces as a truncated/failed response rather than silently
+	// served bad bytes. Objects predating checksummed writes stream unverified.
 	GetStream(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, key string) error
 }
@@ -115,12 +118,47 @@ func (s *S3ActionsByteStore) GetStream(ctx context.Context, key string) (io.Read
 	// minio defers the request until the first read, so force it here to surface
 	// a missing object (and any other failure) as an error the caller can handle
 	// rather than a mid-stream body it has already begun serving.
-	if _, err := obj.Stat(); err != nil {
+	info, err := obj.Stat()
+	if err != nil {
 		_ = obj.Close()
 		return nil, fmt.Errorf("s3 get %s: %w", s.Key(key), err)
 	}
-	return obj, nil
+	var expected []byte
+	if encoded := objectUserMetadata(info)[ObjectChecksumMetadataKey]; encoded != "" {
+		if want, decErr := base64.RawStdEncoding.DecodeString(encoded); decErr == nil && len(want) == sha256.Size {
+			expected = want
+		}
+	}
+	return &verifyingReadCloser{rc: obj, hasher: sha256.New(), expected: expected, key: s.Key(key)}, nil
 }
+
+// verifyingReadCloser recomputes the stored SHA-256 as the object streams and
+// converts the terminating io.EOF into a checksum error when the bytes don't
+// match, so a streamed read never silently serves corruption. A nil expected
+// (legacy, un-checksummed object) passes the stream through unverified.
+type verifyingReadCloser struct {
+	rc       io.ReadCloser
+	hasher   hash.Hash
+	expected []byte
+	key      string
+	checked  bool
+}
+
+func (v *verifyingReadCloser) Read(p []byte) (int, error) {
+	n, err := v.rc.Read(p)
+	if n > 0 && v.expected != nil {
+		v.hasher.Write(p[:n])
+	}
+	if err == io.EOF && v.expected != nil && !v.checked {
+		v.checked = true
+		if !hmac.Equal(v.expected, v.hasher.Sum(nil)) {
+			return n, fmt.Errorf("s3 get %s: stored SHA-256 checksum does not match object bytes", v.key)
+		}
+	}
+	return n, err
+}
+
+func (v *verifyingReadCloser) Close() error { return v.rc.Close() }
 
 func (s *S3ActionsByteStore) Get(ctx context.Context, key string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
