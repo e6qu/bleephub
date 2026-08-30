@@ -489,6 +489,7 @@
       "internal/graphqlapi/gh_repos_people_graphql_test.go",
       "internal/graphqlapi/gh_repos_settings_graphql_test.go",
       "internal/graphqlapi/gh_users_surface_graphql_test.go",
+      "internal/server/fuzz_graphql_exec_test.go",
       "internal/server/gh_advisories_graphql_test.go",
       "internal/server/gh_discussions_graphql_test.go",
       "internal/server/gh_enterprise_graphql_test.go",
