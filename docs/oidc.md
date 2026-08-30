@@ -155,3 +155,39 @@ The issuer runs on loopback there, so the compose sets
 the webhook SSRF gate, so a loopback issuer needs no private-address opt-out.)
 Production deployments use an HTTPS, publicly-resolvable issuer and leave the
 flag unset.
+
+## SAML 2.0
+
+For identity providers that speak SAML rather than OpenID Connect, bleephub acts
+as a SAML service provider. It reuses the same session and identity machinery as
+the OIDC flow — only the assertion transport differs.
+
+Configure three settings together:
+
+- `BLEEPHUB_SAML_IDP_SSO_URL` — the identity provider's single-sign-on endpoint.
+- `BLEEPHUB_SAML_IDP_ENTITY_ID` — the identity provider's entityID, which must
+  match the `Issuer` on every assertion.
+- `BLEEPHUB_SAML_IDP_CERTIFICATE` — the identity provider's X.509 signing
+  certificate (PEM, or the bare base64 form found in IdP metadata).
+
+`BLEEPHUB_SAML_SP_ENTITY_ID` optionally overrides the service-provider entityID,
+which otherwise defaults to the instance origin (`BLEEPHUB_EXTERNAL_URL`).
+
+The flow:
+
+- `GET /auth/saml` — builds a signed-assertion-expecting `AuthnRequest`,
+  deflate-encodes it (HTTP-Redirect binding), and redirects to the IdP. A signed
+  state cookie carries the CSRF `RelayState` and the return target.
+- `POST /saml/consume` — the assertion consumer service. It validates the
+  enveloped XML-DSig signature on the response or its assertion against the
+  configured certificate, checks the issuer, audience, recipient, `InResponseTo`,
+  and time conditions, maps the attributes to an account, and establishes the
+  session. Both service-provider-initiated and identity-provider-initiated flows
+  are accepted; the signed assertion is the trust anchor either way.
+- `GET /saml/metadata` — publishes the service-provider descriptor for the IdP.
+
+Attribute mapping mirrors GitHub's: the `NameID` is the login unless a
+`username` attribute overrides it; `full_name`/`name`, `email`/`emails`, and an
+`administrator` attribute set the display name, email, and site-admin flag.
+Register `<external-url>/saml/consume` as the assertion consumer service URL at
+the identity provider.

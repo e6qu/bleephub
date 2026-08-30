@@ -210,6 +210,10 @@ func (a graphqlSeams) AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequ
 	a.s.autoRequestCodeOwners(repo, pr, sender)
 }
 
+func (a graphqlSeams) AdvanceMergeQueue(repo *store.Repo, baseBranch string) {
+	a.s.advanceMergeQueue(repo, baseBranch)
+}
+
 // graphqlapi.Migrations
 
 // StartRepositoryMigration and StartOrganizationMigration hand a recorded

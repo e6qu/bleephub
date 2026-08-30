@@ -923,6 +923,9 @@ func (s *Resolver) resolveEnqueuePullRequest(p graphql.ResolveParams) (interface
 	}
 	entry := s.mergeQueueEntryToGQL(repo, queued, true)
 	entry["jump"] = jump
+	// Process the queue: form a merge group for the front entry, fire the
+	// merge_group event, and merge entries whose required checks already pass.
+	s.pulls.AdvanceMergeQueue(repo, queued.BaseRefName)
 	return map[string]interface{}{"mergeQueueEntry": optionalObject(entry)}, nil
 }
 
@@ -936,6 +939,8 @@ func (s *Resolver) resolveDequeuePullRequest(p graphql.ResolveParams) (interface
 	if removed == nil {
 		return nil, fmt.Errorf("the pull request is not queued")
 	}
+	// The new front entry (if any) may now form its merge group.
+	s.pulls.AdvanceMergeQueue(repo, removed.BaseRefName)
 	return map[string]interface{}{
 		"mergeQueueEntry": optionalObject(s.mergeQueueEntryToGQL(repo, removed, true)),
 	}, nil

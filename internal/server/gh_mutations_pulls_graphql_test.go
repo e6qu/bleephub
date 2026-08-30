@@ -438,6 +438,14 @@ func TestGraphQLMergeQueueOrdersItsEntries(t *testing.T) {
 	if second == nil {
 		t.Fatalf("could not seed the second pull request")
 	}
+	// Require a status check so the queue holds its entries (enqueuing now forms a
+	// merge group and only merges once required checks pass); this test observes
+	// ordering, not merging.
+	s.store.Mu.Lock()
+	s.store.Misc.BranchProtection[store.BpKey(f.repo.ID, "main")] = &store.BranchProtection{
+		RequiredStatusChecks: &store.BPStatusChecks{Contexts: []string{"ci"}},
+	}
+	s.store.Mu.Unlock()
 
 	post := func(doc string, input map[string]interface{}) map[string]interface{} {
 		t.Helper()

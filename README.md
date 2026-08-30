@@ -15,37 +15,26 @@ Essentially all of GitHub's server-side surface: the REST and GraphQL APIs, the 
 
 ## What it does not implement
 
-These are the notable GitHub behaviours Bleephub does not reproduce. They are not "deferred" — a client that depends on one will not work, and calling that a design decision would be dishonest. The exact parity boundary, per route and per field, is audited in [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md).
-
-**Whole surfaces**
-
-- **SAML single sign-on.** The enterprise SAML *settings* fields are served, but
-  there is no SAML authentication flow. Sign-in is by token or OpenID Connect
-  (see [SSO](#sso-optional)). SCIM user provisioning, by contrast, *is*
-  implemented, at both organization and enterprise scope.
-- **The Actions merge queue.** `on: merge_group`, the merge-queue API, and
-  queued-pull-request evaluation are absent; a pull request carries a
-  merge-queue position field but nothing advances it.
-- **Most organization billing endpoints.** Billing *usage* reports are served,
-  but the per-product organization billing and seat/plan endpoints are not.
-
-**A minor scheduling difference**
+Bleephub aims to reproduce GitHub Enterprise's server-side behaviour exactly; the exact parity boundary, per route and per field, is audited in [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md). One deliberate, client-visible difference remains:
 
 - `on: schedule` enforces GitHub's five-minute floor by *dropping* a cron whose
   interval is shorter, where GitHub accepts the schedule and simply runs it no
   more often than every five minutes. A `*/1 * * * *` schedule therefore never
   fires on Bleephub rather than firing every five minutes.
 
-Everything else in the Actions surface behaves as GitHub does: every documented
-`on:` event other than `merge_group` dispatches workflows (including
-`pull_request_target`, `workflow_run`, `issues`, `issue_comment`, and
-`discussion`); `permissions:`, `defaults:`,
-`run-name:`, job-level `concurrency:`, and step-level `env`/`shell` are honored;
-pull requests appear in the issues endpoints with a `pull_request` member; and a
-workflow that fails to start emits a check suite with the `startup_failure`
-conclusion. Workflow runs advance as a connected `actions/runner` executes them,
-which is what `gh run watch` polls — Bleephub has no GitHub-hosted runners, so
-bring your own (see [How it works](#how-it-works)).
+Everything else behaves as GitHub does. Every documented `on:` event dispatches
+workflows — including `pull_request_target`, `workflow_run`, `issues`,
+`issue_comment`, `discussion`, and `merge_group`; the merge queue forms merge
+groups on a `gh-readonly-queue` ref and merges entries once their required checks
+pass; `permissions:`, `defaults:`, `run-name:`, job-level `concurrency:`, and
+step-level `env`/`shell` are honored; pull requests appear in every issues
+endpoint with a `pull_request` member; and a workflow that fails to start emits a
+check suite with the `startup_failure` conclusion. Sign-in supports token,
+OpenID Connect, and SAML 2.0 (see [SSO](#sso-optional)), with SCIM user
+provisioning at organization and enterprise scope. Workflow runs advance as a
+connected `actions/runner` executes them, which is what `gh run watch` polls —
+Bleephub has no GitHub-hosted runners, so bring your own (see
+[How it works](#how-it-works)).
 
 ## Quick start
 
@@ -135,7 +124,9 @@ To iterate on the UI without rebuilding the Go binary, run the Vite dev server (
 
 SSO is optional. Leave the `BLEEPHUB_SHAUTH_*` variables unset and Bleephub runs standalone with token authentication.
 
-To enable it, Bleephub integrates with [shauth](https://github.com/e6qu/shauth), a custom OpenID Connect provider: set `BLEEPHUB_SHAUTH_ISSUER`, `BLEEPHUB_SHAUTH_CLIENT_ID`, `BLEEPHUB_SHAUTH_CLIENT_SECRET`, and `BLEEPHUB_SHAUTH_POST_LOGOUT_URL` together, and register the deployment's redirect and front/back-channel logout URIs with the provider. The full configuration, verification flow, session model, and logout contract are documented in [docs/oidc.md](docs/oidc.md).
+To enable it, Bleephub integrates with [shauth](https://github.com/e6qu/shauth), a custom OpenID Connect provider: set `BLEEPHUB_SHAUTH_ISSUER`, `BLEEPHUB_SHAUTH_CLIENT_ID`, `BLEEPHUB_SHAUTH_CLIENT_SECRET`, and `BLEEPHUB_SHAUTH_POST_LOGOUT_URL` together, and register the deployment's redirect and front/back-channel logout URIs with the provider. Any standard OpenID Connect provider works through the same mechanism.
+
+Bleephub also supports **SAML 2.0** as a service provider: set `BLEEPHUB_SAML_IDP_SSO_URL`, `BLEEPHUB_SAML_IDP_ENTITY_ID`, and `BLEEPHUB_SAML_IDP_CERTIFICATE` (the identity provider's signing certificate), and register `<external-url>/saml/consume` as the assertion consumer service — its metadata is published at `/saml/metadata`. The full configuration, verification flow, session model, and logout contract are documented in [docs/oidc.md](docs/oidc.md).
 
 ### Outbound request safety
 
@@ -222,6 +213,7 @@ Database persistence **requires** durable git storage and `BLEEPHUB_OBJECT_S3_BU
 
 - `BLEEPHUB_GITHUB_OAUTH_CLIENT_ID` / `BLEEPHUB_GITHUB_OAUTH_CLIENT_SECRET` — sign in with a real github.com OAuth app.
 - `BLEEPHUB_SHAUTH_ISSUER` / `BLEEPHUB_SHAUTH_CLIENT_ID` / `BLEEPHUB_SHAUTH_CLIENT_SECRET` / `BLEEPHUB_SHAUTH_POST_LOGOUT_URL` — sign in through a shauth OpenID Connect provider. `BLEEPHUB_ALLOW_INSECURE_OIDC=true` permits an `http://` issuer for loopback tests only.
+- `BLEEPHUB_SAML_IDP_SSO_URL` / `BLEEPHUB_SAML_IDP_ENTITY_ID` / `BLEEPHUB_SAML_IDP_CERTIFICATE` — sign in through a SAML 2.0 identity provider (the three configure together). `BLEEPHUB_SAML_SP_ENTITY_ID` overrides the service-provider entityID, which otherwise defaults to the instance origin.
 
 **Seeding** — `BLEEPHUB_SEED_APPS_FILE` (path to a JSON file of GitHub App seed specs) and `BLEEPHUB_SEED_APPS` (the same JSON inline); both may be set and concatenate, invalid JSON is a startup error.
 

@@ -152,6 +152,13 @@ type identityConfig struct {
 	shauthPostLogoutURL string
 	allowInsecureOIDC   bool
 	allowedLogins       map[string]struct{}
+	// SAML 2.0 service-provider settings. The identity provider is described by
+	// its single-sign-on URL, its entityID (the assertion Issuer), and its X.509
+	// signing certificate; the SP entityID defaults to the instance origin.
+	samlIDPSSOURL   string
+	samlIDPEntityID string
+	samlIDPCertPEM  string
+	samlSPEntityID  string
 }
 
 type identityState struct {
@@ -173,6 +180,10 @@ func identityConfigFromEnv() identityConfig {
 		shauthPostLogoutURL: strings.TrimSpace(os.Getenv("BLEEPHUB_SHAUTH_POST_LOGOUT_URL")),
 		allowInsecureOIDC:   strings.EqualFold(strings.TrimSpace(os.Getenv("BLEEPHUB_ALLOW_INSECURE_OIDC")), "true"),
 		allowedLogins:       parseAllowedLogins(os.Getenv("BLEEPHUB_ALLOWED_LOGINS")),
+		samlIDPSSOURL:       strings.TrimSpace(os.Getenv("BLEEPHUB_SAML_IDP_SSO_URL")),
+		samlIDPEntityID:     strings.TrimSpace(os.Getenv("BLEEPHUB_SAML_IDP_ENTITY_ID")),
+		samlIDPCertPEM:      strings.TrimSpace(os.Getenv("BLEEPHUB_SAML_IDP_CERTIFICATE")),
+		samlSPEntityID:      strings.TrimSpace(os.Getenv("BLEEPHUB_SAML_SP_ENTITY_ID")),
 	}
 }
 
@@ -254,6 +265,9 @@ func (s *Server) registerExternalIdentityRoutes() {
 	s.route("GET /auth/shauth/frontchannel-logout", s.handleShauthFrontChannelLogout)
 	s.route("POST /auth/shauth/frontchannel-logout", s.handleShauthFrontChannelLogout)
 	s.route("GET /auth/shauth/logout/complete", s.handleShauthLogoutComplete)
+	s.route("GET /auth/saml", s.handleSAMLLogin)
+	s.route("POST /saml/consume", s.handleSAMLConsume)
+	s.route("GET /saml/metadata", s.handleSAMLMetadata)
 	s.route("GET /ui/signed-out", s.handleIdentitySignedOut)
 	s.route("POST /ui/signed-out", s.handleIdentitySignedOut)
 	s.route("POST /auth/local", s.rateLimitAuthFlow(s.handleLocalLogin))
@@ -266,6 +280,7 @@ func (s *Server) handleIdentityProviders(w http.ResponseWriter, _ *http.Request)
 	writeJSON(w, http.StatusOK, map[string]bool{
 		"github": s.identity.githubClientID != "" && s.identity.githubClientSecret != "",
 		"shauth": s.identity.shauthConfigured(),
+		"saml":   s.identity.samlConfigured(),
 		"entra":  false,
 		"local":  true,
 	})
@@ -273,6 +288,10 @@ func (s *Server) handleIdentityProviders(w http.ResponseWriter, _ *http.Request)
 
 func (c identityConfig) shauthConfigured() bool {
 	return c.shauthIssuer != "" && c.shauthClientID != "" && c.shauthClientSecret != "" && c.shauthPostLogoutURL != ""
+}
+
+func (c identityConfig) samlConfigured() bool {
+	return c.samlIDPSSOURL != "" && c.samlIDPEntityID != "" && c.samlIDPCertPEM != ""
 }
 
 func (c identityConfig) validate() error {
@@ -296,6 +315,27 @@ func (c identityConfig) validate() error {
 		postLogoutURL, err := url.Parse(c.shauthPostLogoutURL)
 		if err != nil || !validIdentityURL(postLogoutURL, c.allowInsecureOIDC) {
 			return fmt.Errorf("BLEEPHUB_SHAUTH_POST_LOGOUT_URL must be an absolute HTTPS URL")
+		}
+	}
+	samlValues := []string{c.samlIDPSSOURL, c.samlIDPEntityID, c.samlIDPCertPEM}
+	samlSet := 0
+	for _, value := range samlValues {
+		if value != "" {
+			samlSet++
+		}
+	}
+	if samlSet != 0 && samlSet != len(samlValues) {
+		return fmt.Errorf("BLEEPHUB_SAML_IDP_SSO_URL, BLEEPHUB_SAML_IDP_ENTITY_ID, and BLEEPHUB_SAML_IDP_CERTIFICATE must be configured together")
+	}
+	if c.samlIDPSSOURL != "" {
+		ssoURL, err := url.Parse(c.samlIDPSSOURL)
+		if err != nil || !validIdentityURL(ssoURL, c.allowInsecureOIDC) {
+			return fmt.Errorf("BLEEPHUB_SAML_IDP_SSO_URL must be an absolute HTTPS URL")
+		}
+	}
+	if c.samlIDPCertPEM != "" {
+		if _, err := c.samlIDPCertificate(); err != nil {
+			return fmt.Errorf("BLEEPHUB_SAML_IDP_CERTIFICATE must be a PEM or base64 X.509 certificate: %w", err)
 		}
 	}
 	return nil

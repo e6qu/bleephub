@@ -72,6 +72,9 @@ func (s *Server) CheckRunEvent(repoKey string, checkRunID int64, action string) 
 		"sender":     ghostSenderPayload(s.publicOrigin()),
 	}
 	s.emitWebhookEvent(repoKey, "check_run", action, payload)
+	if action == "completed" {
+		s.advanceMergeQueuesForRepo(repo)
+	}
 }
 
 func (s *Server) CheckSuiteEvent(repoKey string, suiteID int64, action string) {
@@ -90,6 +93,9 @@ func (s *Server) CheckSuiteEvent(repoKey string, suiteID int64, action string) {
 		"sender":      ghostSenderPayload(s.publicOrigin()),
 	}
 	s.emitWebhookEvent(repoKey, "check_suite", action, payload)
+	if action == "completed" {
+		s.advanceMergeQueuesForRepo(repo)
+	}
 }
 
 func (s *Server) workflowSender(wf *store.Workflow) *store.User {
@@ -113,6 +119,7 @@ type checksState struct {
 	MissingRequired []string // required contexts not green (absent/pending/failed)
 	AnyPending      bool
 	AnyFailing      bool
+	RequiredFailing bool // a required context has a terminal failure (not merely pending)
 }
 
 func (s *Server) evaluateChecksForMerge(repo *store.Repo, baseBranch, headSha string) checksState {
@@ -153,9 +160,15 @@ func (s *Server) evaluateChecksForMerge(repo *store.Repo, baseBranch, headSha st
 		if statusByCtx[ctx] == "success" {
 			continue
 		}
+		if statusByCtx[ctx] == "failure" || statusByCtx[ctx] == "error" {
+			state.RequiredFailing = true
+		}
 		cr, ok := byName[ctx]
 		if !ok || cr.Status != "completed" || (cr.Conclusion != "success" && cr.Conclusion != "neutral" && cr.Conclusion != "skipped") {
 			state.MissingRequired = append(state.MissingRequired, ctx)
+			if ok && cr.Status == "completed" && (cr.Conclusion == "failure" || cr.Conclusion == "timed_out" || cr.Conclusion == "startup_failure") {
+				state.RequiredFailing = true
+			}
 		}
 	}
 	return state
