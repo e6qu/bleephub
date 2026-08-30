@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -27,13 +29,62 @@ type corpusConfig struct {
 }
 
 func defaultCorpus() corpusConfig {
-	return corpusConfig{
+	return scaleCorpus(corpusConfig{
 		repos:          200,
 		issuesPerRepo:  20,
 		prsPerRepo:     10,
 		commentsPerPR:  3,
 		reviewsPerPR:   2,
 		gitCommitsRepo: 60,
+	})
+}
+
+// scaleCorpus lets a scaling run grow the fixture without editing code, via
+// BLEEPHUB_BENCH_REPOS / _ISSUES / _PRS (each overriding the matching dimension).
+// A scaling sweep sets these to chart how a handler's ns/op grows with data.
+func scaleCorpus(cfg corpusConfig) corpusConfig {
+	if v := envInt("BLEEPHUB_BENCH_REPOS"); v > 0 {
+		cfg.repos = v
+	}
+	if v := envInt("BLEEPHUB_BENCH_ISSUES"); v >= 0 && os.Getenv("BLEEPHUB_BENCH_ISSUES") != "" {
+		cfg.issuesPerRepo = v
+	}
+	if v := envInt("BLEEPHUB_BENCH_PRS"); v >= 0 && os.Getenv("BLEEPHUB_BENCH_PRS") != "" {
+		cfg.prsPerRepo = v
+	}
+	return cfg
+}
+
+func envInt(name string) int {
+	if v := os.Getenv(name); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return -1
+}
+
+// seedUnboundedRateLimits marks every rate-limit window for the default token
+// (and the anonymous loopback identity) unbounded, so a benchmark or load run
+// that exceeds the 5000/hr core limit is not silently answered with 403s —
+// which benchDo does not catch (it fails only on 5xx/404). Mirrors the shared
+// test server's setup in TestMain.
+func seedUnboundedRateLimits(s *Server) {
+	if s.rateLimits == nil {
+		s.rateLimits = map[string]*apiRateWindow{}
+	}
+	authed := httptest.NewRequest(http.MethodGet, "/api/v3/user", nil)
+	authed.Header.Set("Authorization", "Bearer "+defaultToken)
+	anon := httptest.NewRequest(http.MethodGet, "/api/v3/user", nil)
+	anon.RemoteAddr = "127.0.0.1:1"
+	for _, identity := range []string{apiRateIdentity(authed), apiRateIdentity(anon)} {
+		for resource := range apiRateResourceLimits {
+			s.rateLimits[identity+"\x1f"+resource] = &apiRateWindow{
+				Limit:     apiRateResourceLimits[resource],
+				Reset:     testRateLimitReset,
+				unbounded: true,
+			}
+		}
 	}
 }
 
@@ -47,6 +98,7 @@ func benchServer(tb testing.TB, cfg corpusConfig) (*Server, http.Handler, string
 	logger := zerolog.Nop()
 	s := NewServer("127.0.0.1:0", logger)
 
+	seedUnboundedRateLimits(s)
 	admin := s.store.LookupUserByLogin("admin")
 	if admin == nil {
 		tb.Fatal("admin user not seeded")
