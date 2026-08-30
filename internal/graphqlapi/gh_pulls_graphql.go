@@ -3764,6 +3764,20 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlCon
 		}
 	}
 
+	// Gather candidates from the per-repo indexes rather than scanning every issue
+	// and PR in the instance; repoSet already holds exactly the readable candidate
+	// repos (those named by repo:, or all repos when the query is unqualified).
+	var candidateIssues []*store.Issue
+	var candidatePRs []*store.PullRequest
+	for repoID := range repoSet {
+		for _, issue := range s.store.IssuesByRepo[repoID] {
+			candidateIssues = append(candidateIssues, issue)
+		}
+		for _, pr := range s.store.PullsByRepo[repoID] {
+			candidatePRs = append(candidatePRs, pr)
+		}
+	}
+
 	loginOf := func(userID int) string {
 		if u, ok := s.store.Users[userID]; ok {
 			return u.Login
@@ -3835,7 +3849,7 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlCon
 	var matchedPRs []*store.PullRequest
 
 	if (spec.entity == "" || spec.entity == "issue") && spec.draft == nil {
-		for _, issue := range s.store.Issues {
+		for _, issue := range candidateIssues {
 			if !repoSet[issue.RepoID] || !stateMatches(issue.State) {
 				continue
 			}
@@ -3861,7 +3875,7 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlCon
 		}
 	}
 	if spec.entity == "" || spec.entity == "pr" {
-		for _, pr := range s.store.PullRequests {
+		for _, pr := range candidatePRs {
 			if !repoSet[pr.RepoID] || !stateMatches(pr.State) {
 				continue
 			}

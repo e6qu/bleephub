@@ -208,6 +208,37 @@ func TestSearchIssuesInComments(t *testing.T) {
 	}
 }
 
+// TestSearchIssuesRepoScopeIndexed pins the per-repo scan scoping: a repo:
+// qualifier resolves the repository (case-insensitively) and searches only its
+// issues, an unknown repo yields nothing, and a match in another repo is not
+// leaked into a scoped search.
+func TestSearchIssuesRepoScopeIndexed(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	a := s.store.CreateRepo(admin, "alpha", "", false)
+	b := s.store.CreateRepo(admin, "beta", "", false)
+	s.store.CreateIssue(a.ID, admin.ID, "uniquemarker in alpha", "body", nil, nil, 0)
+	s.store.CreateIssue(b.ID, admin.ID, "uniquemarker in beta", "body", nil, nil, 0)
+
+	// Exact-case scope returns only alpha's match.
+	if got := searchIssueTitles(t, s, "uniquemarker repo:admin/alpha"); len(got) != 1 || got[0] != "uniquemarker in alpha" {
+		t.Errorf("scoped search = %v, want [uniquemarker in alpha]", got)
+	}
+	// Case-insensitive repo name resolves via the folded index.
+	if got := searchIssueTitles(t, s, "uniquemarker repo:Admin/Alpha"); len(got) != 1 || got[0] != "uniquemarker in alpha" {
+		t.Errorf("case-insensitive scoped search = %v, want [uniquemarker in alpha]", got)
+	}
+	// An unknown repo yields no results (not a global scan).
+	if got := searchIssueTitles(t, s, "uniquemarker repo:admin/nope"); len(got) != 0 {
+		t.Errorf("unknown-repo search = %v, want none", got)
+	}
+	// Unscoped search still finds both matches across repos.
+	if got := searchIssueTitles(t, s, "uniquemarker"); len(got) != 2 {
+		t.Errorf("unscoped search found %d, want 2", len(got))
+	}
+}
+
 // TestSearchIssuesReviewQualifiers covers the review-scoped qualifiers review:/
 // reviewed-by:/review-requested: (REST-180), applied per pull request via the
 // post-lock pass over review + requested-reviewer data.

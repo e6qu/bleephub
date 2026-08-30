@@ -53,6 +53,42 @@ func (s *Server) searchAccessibleRepoIDs(ctx context.Context) map[int]struct{} {
 	return accessible
 }
 
+// searchAccessibleRepoIDForScope resolves reachability for a single repo:-scoped
+// search without cloning and access-checking every repository in the instance.
+// Returns an empty set when the repo is unknown or unreadable.
+func (s *Server) searchAccessibleRepoIDForScope(ctx context.Context, fullName string) map[int]struct{} {
+	s.store.Mu.RLock()
+	var snapshot *store.Repo
+	if repo := s.store.RepoByNameLocked(fullName); repo != nil {
+		clone := *repo
+		snapshot = &clone
+	}
+	s.store.Mu.RUnlock()
+
+	accessible := map[int]struct{}{}
+	if snapshot != nil && s.viewerCanReadRepo(ctx, snapshot) {
+		accessible[snapshot.ID] = struct{}{}
+	}
+	return accessible
+}
+
+// searchCandidateReposLocked returns the repositories a search must consider: the
+// single repository named by a repo: qualifier (or none, if unknown) instead of
+// every repo in the instance, else all repos. Callers hold the store read lock.
+func (s *Server) searchCandidateReposLocked(repoQualifier string) []*store.Repo {
+	if repoQualifier != "" {
+		if repo := s.store.RepoByNameLocked(repoQualifier); repo != nil {
+			return []*store.Repo{repo}
+		}
+		return nil
+	}
+	out := make([]*store.Repo, 0, len(s.store.Repos))
+	for _, repo := range s.store.Repos {
+		out = append(out, repo)
+	}
+	return out
+}
+
 // searchQuery holds the parsed pieces of a GitHub search query.
 type searchQuery struct {
 	Terms         []string
@@ -418,7 +454,14 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
+	// A repo:-scoped search only needs that one repository's reachability, not a
+	// clone-and-check of every repo in the instance.
+	var accessibleRepoIDs map[int]struct{}
+	if q.Repo != "" {
+		accessibleRepoIDs = s.searchAccessibleRepoIDForScope(r.Context(), q.Repo)
+	} else {
+		accessibleRepoIDs = s.searchAccessibleRepoIDs(r.Context())
+	}
 
 	// Rows are gathered under the read lock, then rendered after release (the
 	// JSON builders re-lock). The fields the scorer and sorter read directly
@@ -447,14 +490,48 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 
 	s.store.Mu.RLock()
 
+	// A repo: qualifier (the common case) scopes the scan to one repository's
+	// issues/PRs via the per-repo indexes, so search does not walk every issue and
+	// PR in the instance. An unknown repo name yields no results.
+	issuesToScan := s.store.Issues
+	prsToScan := s.store.PullRequests
+	var scopedRepoID int
+	scopedComments := true
+	if q.Repo != "" {
+		if repo := s.store.RepoByNameLocked(q.Repo); repo != nil {
+			scopedRepoID = repo.ID
+			issuesToScan = s.store.IssuesByRepo[repo.ID]
+			prsToScan = s.store.PullsByRepo[repo.ID]
+		} else {
+			issuesToScan = nil
+			prsToScan = nil
+			scopedComments = false
+		}
+	}
+
 	// in:comments needs comment bodies concatenated per subject, keyed by
-	// "parentType:id"; build it once, only when the query asks.
+	// "parentType:id"; build it once, only when the query asks. When the search is
+	// scoped to one repo, restrict the pass to that repo's parents.
 	var commentBodies map[string]string
-	if q.InComments {
+	if q.InComments && scopedComments {
 		commentBodies = map[string]string{}
-		for _, c := range s.store.Comments {
-			key := c.ParentType + ":" + strconv.Itoa(c.IssueID)
-			commentBodies[key] += " " + c.Body
+		addComments := func(parentType string, id int) {
+			for _, c := range s.store.CommentsByParent[store.CommentCountKey(parentType, id)] {
+				commentBodies[parentType+":"+strconv.Itoa(id)] += " " + c.Body
+			}
+		}
+		if scopedRepoID != 0 {
+			for _, issue := range issuesToScan {
+				addComments("issue", issue.ID)
+			}
+			for _, pr := range prsToScan {
+				addComments("pull_request", pr.ID)
+			}
+		} else {
+			for _, c := range s.store.Comments {
+				key := c.ParentType + ":" + strconv.Itoa(c.IssueID)
+				commentBodies[key] += " " + c.Body
+			}
 		}
 	}
 	commentBodyFor := func(parentType string, id int) string {
@@ -464,7 +541,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		return commentBodies[parentType+":"+strconv.Itoa(id)]
 	}
 
-	for _, issue := range s.store.Issues {
+	for _, issue := range issuesToScan {
 		repo := s.store.Repos[issue.RepoID]
 		if repo == nil {
 			continue
@@ -541,7 +618,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		issueRows = append(issueRows, issueRow{issue, repo, store.AuthorAssociationLocked(s.store, issue.AuthorID, repo), issue.Title, issue.Body, issue.CreatedAt, issue.UpdatedAt})
 	}
 
-	for _, pr := range s.store.PullRequests {
+	for _, pr := range prsToScan {
 		repo := s.store.Repos[pr.RepoID]
 		if repo == nil {
 			continue
@@ -1437,9 +1514,14 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		stor gitStorage.Storer
 	}
 	var searchRepos []codeSearchRepo
-	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
+	var accessibleRepoIDs map[int]struct{}
+	if q.Repo != "" {
+		accessibleRepoIDs = s.searchAccessibleRepoIDForScope(r.Context(), q.Repo)
+	} else {
+		accessibleRepoIDs = s.searchAccessibleRepoIDs(r.Context())
+	}
 	s.store.Mu.RLock()
-	for _, repo := range s.store.Repos {
+	for _, repo := range s.searchCandidateReposLocked(q.Repo) {
 		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
@@ -2057,9 +2139,14 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		stor gitStorage.Storer
 	}
 	var searchRepos []commitSearchRepo
-	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
+	var accessibleRepoIDs map[int]struct{}
+	if q.Repo != "" {
+		accessibleRepoIDs = s.searchAccessibleRepoIDForScope(r.Context(), q.Repo)
+	} else {
+		accessibleRepoIDs = s.searchAccessibleRepoIDs(r.Context())
+	}
 	s.store.Mu.RLock()
-	for _, repo := range s.store.Repos {
+	for _, repo := range s.searchCandidateReposLocked(q.Repo) {
 		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
 		}
