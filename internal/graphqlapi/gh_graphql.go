@@ -652,9 +652,17 @@ func CheckDocumentLimits(document *ast.Document, variables map[string]interface{
 			fragments[fragment.Name.Value] = fragment
 		}
 	}
+	// graphqlMaxNodes bounds the total nodes a query may resolve, the way GitHub
+	// does (its published limit is 500,000). The static field cap does not bound
+	// this: a query with a handful of nested connections at first:100 each is a
+	// few fields but resolves up to 100^depth nodes. Rejecting it before
+	// execution is the difference between a cheap validation error and one
+	// request pinning a CPU and the global read lock.
+	const graphqlMaxNodes = 500_000
 	fields := 0
-	var walk func(*ast.SelectionSet, int, map[string]bool) error
-	walk = func(selectionSet *ast.SelectionSet, depth int, stack map[string]bool) error {
+	nodes := 0
+	var walk func(*ast.SelectionSet, int, int, map[string]bool) error
+	walk = func(selectionSet *ast.SelectionSet, depth, multiplier int, stack map[string]bool) error {
 		if selectionSet == nil {
 			return nil
 		}
@@ -706,11 +714,33 @@ func CheckDocumentLimits(document *ast.Document, variables map[string]interface{
 				if fields > maxFields {
 					return fmt.Errorf("query exceeds maximum field count of %d", maxFields)
 				}
-				if err := walk(node.SelectionSet, depth+1, stack); err != nil {
+				// Node-cost budget: a connection with first/last=n resolves up to
+				// n nodes here, multiplied by every ancestor connection's size.
+				childMultiplier := multiplier
+				for _, name := range []string{"first", "last"} {
+					value := arguments[name]
+					if value == nil || graphqlVariableIsNull(value, variables) {
+						continue
+					}
+					size, ok := graphqlIntegerValue(value, variables)
+					if !ok || size <= 0 {
+						continue
+					}
+					contribution := multiplier * size
+					nodes += contribution
+					if nodes > graphqlMaxNodes {
+						return fmt.Errorf("requesting %d total nodes exceeds the maximum of %d total nodes", nodes, graphqlMaxNodes)
+					}
+					childMultiplier = contribution
+					if childMultiplier > graphqlMaxNodes {
+						childMultiplier = graphqlMaxNodes + 1 // saturate to avoid overflow; the limit trips first anyway
+					}
+				}
+				if err := walk(node.SelectionSet, depth+1, childMultiplier, stack); err != nil {
 					return err
 				}
 			case *ast.InlineFragment:
-				if err := walk(node.SelectionSet, depth, stack); err != nil {
+				if err := walk(node.SelectionSet, depth, multiplier, stack); err != nil {
 					return err
 				}
 			case *ast.FragmentSpread:
@@ -726,7 +756,7 @@ func CheckDocumentLimits(document *ast.Document, variables map[string]interface{
 					next[name] = true
 				}
 				next[node.Name.Value] = true
-				if err := walk(fragment.SelectionSet, depth, next); err != nil {
+				if err := walk(fragment.SelectionSet, depth, multiplier, next); err != nil {
 					return err
 				}
 			}
@@ -735,7 +765,7 @@ func CheckDocumentLimits(document *ast.Document, variables map[string]interface{
 	}
 	for _, definition := range document.Definitions {
 		if operation, ok := definition.(*ast.OperationDefinition); ok {
-			if err := walk(operation.SelectionSet, 1, map[string]bool{}); err != nil {
+			if err := walk(operation.SelectionSet, 1, 1, map[string]bool{}); err != nil {
 				return err
 			}
 		}

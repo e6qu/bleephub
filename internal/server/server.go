@@ -44,6 +44,12 @@ type Server struct {
 	artifactStore          *store.ArtifactStore
 	metrics                *Metrics
 	maxConcurrentWorkflows int
+	// inFlightSlots caps concurrent non-byte-transfer requests when
+	// BLEEPHUB_MAX_INFLIGHT is set; nil (the default) means unlimited. Provides
+	// backpressure — a 503 with Retry-After — under a request flood instead of
+	// unbounded goroutines piling onto the global store lock. Git/artifact
+	// byte-transfer routes are exempt so long transfers never consume a slot.
+	inFlightSlots chan struct{}
 	// injectedByteStore, set by a ServerOption before persistence wiring,
 	// overrides the env-derived object byte store so a test can run a persistent
 	// server with an in-memory store instead of a live S3/MinIO endpoint.
@@ -340,6 +346,13 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		identity:               identityConfigFromEnv(),
 		build:                  BuildInfo{Version: "development", Commit: "none", PublishedAt: "not-yet-published"},
 	})
+	if v := os.Getenv("BLEEPHUB_MAX_INFLIGHT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			s.inFlightSlots = make(chan struct{}, n)
+		} else {
+			logger.Warn().Str("value", v).Msg("ignoring invalid BLEEPHUB_MAX_INFLIGHT (want a positive integer)")
+		}
+	}
 	for _, option := range options {
 		option(s)
 	}
@@ -870,7 +883,47 @@ func (s *Server) requestHandler() http.Handler {
 	// base net/http writer (whose SetReadDeadline coordinates with connection
 	// management) without relying on every inner wrapper implementing Unwrap.
 	return slowBodyGuard(bodyReadInactivityTimeout,
-		otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(secured))), "bleephub"))
+		otelhttp.NewHandler(s.recoverMiddleware(s.loggingMiddleware(s.adminHostMiddleware(s.inFlightLimitMiddleware(secured)))), "bleephub"))
+}
+
+// inFlightLimitMiddleware bounds concurrent non-byte-transfer requests to the
+// BLEEPHUB_MAX_INFLIGHT slots (a no-op when unset). Under saturation it sheds
+// load with a 503 + Retry-After rather than admitting unbounded goroutines that
+// would queue on the global store lock. Git and artifact byte transfers are
+// exempt so a long clone or upload never holds a slot.
+func (s *Server) inFlightLimitMiddleware(next http.Handler) http.Handler {
+	if s.inFlightSlots == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isByteTransferRoute(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		select {
+		case s.inFlightSlots <- struct{}{}:
+			defer func() { <-s.inFlightSlots }()
+			next.ServeHTTP(w, r)
+		default:
+			w.Header().Set("Retry-After", "1")
+			writeGHError(w, http.StatusServiceUnavailable, "Server is at capacity; retry shortly")
+		}
+	})
+}
+
+// isByteTransferRoute reports whether a path streams bytes (git smart-HTTP, LFS,
+// the runner artifact/cache protocol, release-asset up/download). These are
+// long-lived and exempt from the in-flight cap.
+func isByteTransferRoute(path string) bool {
+	for _, marker := range []string{
+		"/info/refs", "git-upload-pack", "git-receive-pack", ".git/",
+		"/info/lfs", "/_apis/", "/releases/assets/", "/releases/download/",
+	} {
+		if strings.Contains(path, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // bodyReadInactivityTimeout is a sliding per-read deadline (reset before every

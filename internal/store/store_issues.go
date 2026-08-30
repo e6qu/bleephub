@@ -1574,15 +1574,11 @@ func (st *Store) CountCommentsForLocked(parentType string, parentID int) int {
 func (st *Store) ResolveCommentParent(repoID, number int) (parentType string, parentID, parentNumber int, locked, found bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	for _, i := range st.Issues {
-		if i.RepoID == repoID && i.Number == number {
-			return "issue", i.ID, i.Number, i.Locked, true
-		}
+	if i := st.IssuesByRepo[repoID][number]; i != nil {
+		return "issue", i.ID, i.Number, i.Locked, true
 	}
-	for _, pr := range st.PullRequests {
-		if pr.RepoID == repoID && pr.Number == number {
-			return "pull_request", pr.ID, pr.Number, pr.Locked, true
-		}
+	if pr := st.PullsByRepo[repoID][number]; pr != nil {
+		return "pull_request", pr.ID, pr.Number, pr.Locked, true
 	}
 	return "", 0, 0, false, false
 }
@@ -1592,33 +1588,29 @@ func (st *Store) ResolveCommentParent(repoID, number int) (parentType string, pa
 func (st *Store) SetIssueOrPRLock(repoID, number int, locked bool, reason string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	for _, i := range st.Issues {
-		if i.RepoID == repoID && i.Number == number {
-			i.Locked = locked
-			if locked {
-				i.ActiveLockReason = LockReason(reason)
-			} else {
-				i.ActiveLockReason = ""
-			}
-			if st.Persist != nil {
-				st.Persist.MustPut("issues", strconv.Itoa(i.ID), i)
-			}
-			return true
+	if i := st.IssuesByRepo[repoID][number]; i != nil {
+		i.Locked = locked
+		if locked {
+			i.ActiveLockReason = LockReason(reason)
+		} else {
+			i.ActiveLockReason = ""
 		}
+		if st.Persist != nil {
+			st.Persist.MustPut("issues", strconv.Itoa(i.ID), i)
+		}
+		return true
 	}
-	for _, pr := range st.PullRequests {
-		if pr.RepoID == repoID && pr.Number == number {
-			pr.Locked = locked
-			if locked {
-				pr.ActiveLockReason = LockReason(reason)
-			} else {
-				pr.ActiveLockReason = ""
-			}
-			if st.Persist != nil {
-				st.Persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
-			}
-			return true
+	if pr := st.PullsByRepo[repoID][number]; pr != nil {
+		pr.Locked = locked
+		if locked {
+			pr.ActiveLockReason = LockReason(reason)
+		} else {
+			pr.ActiveLockReason = ""
 		}
+		if st.Persist != nil {
+			st.Persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+		}
+		return true
 	}
 	return false
 }
