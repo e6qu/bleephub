@@ -602,11 +602,9 @@ func (s *Server) handleListWorkflowRuns(w http.ResponseWriter, r *http.Request) 
 	eventFilter := r.URL.Query().Get("event")
 
 	s.store.Mu.RLock()
-	matching := []*store.Workflow{}
-	for _, wf := range s.store.Workflows {
-		if wf.RepoFullName != "" && wf.RepoFullName != repo {
-			continue
-		}
+	candidates := s.store.WorkflowsForRepoLocked(repo)
+	matching := make([]*store.Workflow, 0, len(candidates))
+	for _, wf := range candidates {
 		if statusFilter != "" && !runMatchesStatusFilter(wf, statusFilter) {
 			continue
 		}

@@ -82,6 +82,14 @@ func (st *Store) SyncWorkflowIndexesLocked(wf *Workflow) {
 	if wf.RunID != 0 {
 		st.WorkflowsByRunID[wf.RunID] = wf
 	}
+	if st.workflowsByRepo != nil {
+		byID := st.workflowsByRepo[wf.RepoFullName]
+		if byID == nil {
+			byID = make(map[string]*Workflow)
+			st.workflowsByRepo[wf.RepoFullName] = byID
+		}
+		byID[wf.ID] = wf
+	}
 	if wf.ConcurrencyGroup != "" {
 		if wf.Status == WorkflowStatusCompleted {
 			st.removeWorkflowGroupEntryLocked(wf)
@@ -140,6 +148,12 @@ func (st *Store) UnindexWorkflowLocked(wf *Workflow) {
 	if st.WorkflowsByRunID[wf.RunID] == wf {
 		delete(st.WorkflowsByRunID, wf.RunID)
 	}
+	if byID := st.workflowsByRepo[wf.RepoFullName]; byID != nil && byID[wf.ID] == wf {
+		delete(byID, wf.ID)
+		if len(byID) == 0 {
+			delete(st.workflowsByRepo, wf.RepoFullName)
+		}
+	}
 	if wf.ConcurrencyGroup != "" {
 		st.removeWorkflowGroupEntryLocked(wf)
 	}
@@ -162,9 +176,28 @@ func (st *Store) rebuildWorkflowIndexesLocked() {
 	st.WorkflowsByRunID = make(map[int]*Workflow, len(st.Workflows))
 	st.workflowsByConcurrencyGroup = make(map[string]map[string]*Workflow)
 	st.jobsByConcurrencyGroup = make(map[string]map[*WorkflowJob]*Workflow)
+	st.workflowsByRepo = make(map[string]map[string]*Workflow)
 	for _, wf := range st.Workflows {
 		st.SyncWorkflowIndexesLocked(wf)
 	}
+}
+
+// WorkflowsForRepoLocked returns the workflow runs belonging to a repository —
+// the per-repo run-listing index instead of a scan of every run in the instance.
+// Operator-submitted runs (empty RepoFullName) match every repository, matching
+// the handler's historical filter, so they are folded in. Callers hold the lock;
+// the returned slice is a fresh list of the live pointers.
+func (st *Store) WorkflowsForRepoLocked(repoFullName string) []*Workflow {
+	out := make([]*Workflow, 0, len(st.workflowsByRepo[repoFullName])+len(st.workflowsByRepo[""]))
+	for _, wf := range st.workflowsByRepo[repoFullName] {
+		out = append(out, wf)
+	}
+	if repoFullName != "" {
+		for _, wf := range st.workflowsByRepo[""] {
+			out = append(out, wf)
+		}
+	}
+	return out
 }
 
 // WorkflowConcurrencyPeersLocked snapshots the non-completed workflows in a

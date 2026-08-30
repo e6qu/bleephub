@@ -37,9 +37,7 @@ func seedWorkflowRuns(s *Server, org string, repos, n int) {
 			Jobs:         map[string]*store.WorkflowJob{},
 		}
 		s.store.Workflows[wf.ID] = wf
-		if s.store.WorkflowsByRunID != nil {
-			s.store.WorkflowsByRunID[wf.RunID] = wf
-		}
+		s.store.SyncWorkflowIndexesLocked(wf)
 	}
 }
 

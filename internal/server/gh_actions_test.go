@@ -79,6 +79,7 @@ func seedRun(t *testing.T, s *Server, repo string, status, result string) (*stor
 	}
 	wf.Jobs["build"] = wfJob
 	s.store.Workflows[wf.ID] = wf
+	s.store.SyncWorkflowIndexesLocked(wf)
 	s.store.LogLines[jobID] = []string{"line one", "line two\n"}
 	s.store.Mu.Unlock()
 	return wf, wfJob

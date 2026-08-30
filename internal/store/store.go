@@ -846,6 +846,7 @@ type Store struct {
 	PlanIDByScope               map[string]string                     `json:"-"` // plan scopeIdentifier → Job.PlanID
 	WorkflowsByRunID            map[int]*Workflow                     `json:"-"` // Workflow.RunID → workflow
 	workflowsByConcurrencyGroup map[string]map[string]*Workflow       // group → Workflow.ID → non-completed workflow
+	workflowsByRepo             map[string]map[string]*Workflow       // RepoFullName → Workflow.ID → workflow (run-listing index; "" bucket = operator-submitted)
 	jobsByConcurrencyGroup      map[string]map[*WorkflowJob]*Workflow // group → non-terminal job → owning workflow
 }
 
@@ -1111,6 +1112,7 @@ func NewStore() *Store {
 		PlanIDByScope:                make(map[string]string),
 		WorkflowsByRunID:             make(map[int]*Workflow),
 		workflowsByConcurrencyGroup:  make(map[string]map[string]*Workflow),
+		workflowsByRepo:              make(map[string]map[string]*Workflow),
 		jobsByConcurrencyGroup:       make(map[string]map[*WorkflowJob]*Workflow),
 		NextAgent:                    1,
 		NextSecretScanningAlertID:    1,
