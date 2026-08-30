@@ -27,13 +27,16 @@ measures, and the knobs that move them.
 
 ## The ceilings
 
-1. **The global write lock.** Every mutation takes `Store.Mu.Lock()` and holds it
-   across the persistence commit, so writers fully serialize; concurrent creates
-   on unrelated repositories still contend. `BenchmarkConcurrentIssueCreate` and
-   the ramp's `write`/`mixed` profiles show throughput plateau as workers climb —
-   that plateau is this lock. With persistence on (below) the ceiling drops to one
-   fsync (or one Raft round-trip) per mutation, since there is no cross-writer
-   commit batching.
+1. **The global write lock.** Every mutation takes `Store.Mu.Lock()`, so writers
+   fully serialize; concurrent creates on unrelated repositories still contend.
+   `BenchmarkConcurrentIssueCreate` and the ramp's `write`/`mixed` profiles show
+   throughput plateau as workers climb — that plateau is this lock. With
+   persistence on and group commit **off**, the ceiling drops further to one fsync
+   (or one Raft round-trip) per mutation. `BLEEPHUB_GROUP_COMMIT` (below) removes
+   the per-mutation-fsync half of this on single-node SQLite by committing many
+   writers' changes in one fsync; the in-memory lock itself remains the ultimate
+   serialization point (in-memory writes already scale cleanly to dozens of
+   concurrent clients, so it is not the acute limit).
 
 2. **Resident memory.** All objects live in RAM; memory scales linearly with
    total repos × issues × PRs × runs × comments and every long-tail surface. There
@@ -62,6 +65,23 @@ measures, and the knobs that move them.
   500,000-node budget before execution.
 - **Workflow-parser panic.** A null job body (`jobs:\n  build:`) nil-panicked the
   parser; fuzzing found it, and it now returns an error like GitHub.
+- **Shorter global-lock hold on hot reads.** `GET /issues?filter=mentioned` re-scanned
+  every comment per row (O(issues×comments)); it now precomputes the mentioned-parent
+  set in one pass (the notifications pattern), so the lock is held far less. The
+  GraphQL `search` `involves:` matcher memoizes its commenter set the same way, and
+  the merge-queue scans, open-PR cap, `AuthorAssociation`, timeline-event recording,
+  and issue-comment listings now use existing per-repo / per-parent indexes instead
+  of scanning global maps.
+- **Group commit (opt-in, single-node SQLite).** With `BLEEPHUB_GROUP_COMMIT=true`,
+  durable writes no longer fsync one-at-a-time inside `Store.Mu`: `apply` and counter
+  allocation enqueue and a background committer fsyncs many writers' ops in one
+  transaction, while an HTTP durability barrier withholds each mutating response
+  until its writes are durable. An acknowledged write is exactly as durable as
+  before; a crash can only drop writes no client was told about. ~4.8× concurrent
+  durable-write throughput at 32 writers on SSD (`BenchmarkDurableWriteThroughput`),
+  more on slower disks. Gated to exclusively-owned SQLite (`OwnedExclusively`); the
+  dqlite/Raft path is unchanged. Default **off** because it trades the synchronous
+  memory-and-disk atomicity the store otherwise guarantees for throughput.
 
 ## Tuning knobs
 
@@ -70,6 +90,7 @@ measures, and the knobs that move them.
 | `BLEEPHUB_MAX_INFLIGHT` | Cap concurrent non-byte-transfer requests; excess gets 503 + Retry-After (git/artifact transfers exempt). Unset = unlimited (default). |
 | `BLEEPHUB_MAX_WORKFLOWS` | Concurrent workflow-run admission cap (default 10). |
 | `BLEEPHUB_PERSIST` | Write-through SQLite; each mutation fsyncs (throughput ≈ 1/fsync). Off = in-memory only. |
+| `BLEEPHUB_GROUP_COMMIT` | Single-node SQLite only: batch many writers' fsyncs into one via a background committer + HTTP durability barrier (acked writes stay durable). ~4.8× concurrent durable-write throughput. Trades synchronous atomicity for throughput; default off. Ignored on a dqlite quorum. |
 | `BLEEPHUB_GITSTORE_CHUNK_BYTES` | S3 pack-cache extent size (default 4 MiB). |
 | `BLEEPHUB_GITSTORE_COMPACT_AFTER` | Loose-object count that triggers compaction (default 4096); lower to keep clone/fetch S3-request counts down under heavy push churn. |
 | `BLEEPHUB_GITSTORE_INDEX_FRESHNESS` | Object-index negative-answer freshness window (default 250 ms). |
