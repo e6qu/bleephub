@@ -2,13 +2,13 @@ package bleephub
 
 import (
 	"archive/zip"
-	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -1005,17 +1005,21 @@ func (s *Server) handleUploadCodeQLDatabase(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/zip")
 		return
 	}
-	content, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxUploadBytes))
+	staged, size, sum, err := store.StageUpload(http.MaxBytesReader(w, r.Body, maxUploadBytes))
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "Unable to read CodeQL database bundle")
 		return
 	}
-	if err := validateCodeQLDatabaseBundle(content, language); err != nil {
+	defer func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }()
+	if err := validateCodeQLDatabaseBundle(staged, size, language); err != nil {
 		store.WriteGHValidationError(w, "CodeQLDatabase", "data", "invalid")
 		return
 	}
-
-	_, err = s.store.UpsertCodeQLDatabase(repo.FullName, language, name, "application/zip", commitOID, content, user.ID)
+	if _, err := staged.Seek(0, io.SeekStart); err != nil {
+		writeGHError(w, http.StatusInternalServerError, "stage CodeQL database bundle")
+		return
+	}
+	_, err = s.store.UpsertCodeQLDatabaseStream(repo.FullName, language, name, "application/zip", commitOID, staged, size, sum, user.ID)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1027,8 +1031,8 @@ func (s *Server) handleUploadCodeQLDatabase(w http.ResponseWriter, r *http.Reque
 // database bundle`: one database root holding codeql-database.yml (or legacy
 // .dbinfo) and a non-empty db-{language} dataset. Validates paths and entry
 // types without extracting attacker-controlled content to disk.
-func validateCodeQLDatabaseBundle(content []byte, language string) error {
-	zr, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+func validateCodeQLDatabaseBundle(ra io.ReaderAt, size int64, language string) error {
+	zr, err := zip.NewReader(ra, size)
 	if err != nil {
 		return fmt.Errorf("open CodeQL database ZIP: %w", err)
 	}

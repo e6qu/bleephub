@@ -310,7 +310,13 @@ func LFSObjectDataKey(oid string) string {
 
 func CodeQLDatabaseDataKey(id int, content []byte) string {
 	digest := sha256.Sum256(content)
-	return fmt.Sprintf("code-scanning/codeql/databases/%d/%x.zip", id, digest)
+	return CodeQLDatabaseDataKeyHashed(id, digest[:])
+}
+
+// CodeQLDatabaseDataKeyHashed builds the key from an already-computed SHA-256, so
+// a streamed upload never has to hold the whole database in memory to hash it.
+func CodeQLDatabaseDataKeyHashed(id int, sha256Sum []byte) string {
+	return fmt.Sprintf("code-scanning/codeql/databases/%d/%x.zip", id, sha256Sum)
 }
 
 func CodeQLVariantAnalysisQueryPackDataKey(id int) string {
