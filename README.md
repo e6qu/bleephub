@@ -11,30 +11,9 @@ Bleephub is a faithful, self-contained Go reimplementation of GitHub Enterprise'
 
 ## What it implements
 
-Essentially all of GitHub's server-side surface: the REST and GraphQL APIs, the Actions runner protocol and a real workflow engine, smart-HTTP and SSH git, webhooks, GitHub Apps and OAuth Apps, Packages and the container registry, Pages, code scanning and CodeQL, artifact attestations, deployments and environments, and organization/team administration. The exact parity boundary — per route and per field — is audited in [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md); the remaining gaps are listed below, and [`BUGS.md`](BUGS.md) records the audited non-defects (findings whose premise is wrong).
+Essentially all of GitHub's server-side surface: the REST and GraphQL APIs, the Actions runner protocol and a real workflow engine (including the merge queue and scheduled workflows), smart-HTTP and SSH git, webhooks, GitHub Apps and OAuth Apps, Packages and the container registry, Pages, code scanning and CodeQL, artifact attestations, deployments and environments, and organization/team administration. Sign-in supports token, OpenID Connect, and SAML 2.0, with SCIM provisioning at organization and enterprise scope. The exact parity boundary — per route and per field — is audited in [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md), and [`BUGS.md`](BUGS.md) records the audited non-defects (findings whose premise is wrong).
 
-## What it does not implement
-
-Bleephub aims to reproduce GitHub Enterprise's server-side behaviour exactly; the exact parity boundary, per route and per field, is audited in [`specs/BLEEPHUB_GITHUB_API_PARITY.md`](specs/BLEEPHUB_GITHUB_API_PARITY.md). One deliberate, client-visible difference remains:
-
-- `on: schedule` enforces GitHub's five-minute floor by *dropping* a cron whose
-  interval is shorter, where GitHub accepts the schedule and simply runs it no
-  more often than every five minutes. A `*/1 * * * *` schedule therefore never
-  fires on Bleephub rather than firing every five minutes.
-
-Everything else behaves as GitHub does. Every documented `on:` event dispatches
-workflows — including `pull_request_target`, `workflow_run`, `issues`,
-`issue_comment`, `discussion`, and `merge_group`; the merge queue forms merge
-groups on a `gh-readonly-queue` ref and merges entries once their required checks
-pass; `permissions:`, `defaults:`, `run-name:`, job-level `concurrency:`, and
-step-level `env`/`shell` are honored; pull requests appear in every issues
-endpoint with a `pull_request` member; and a workflow that fails to start emits a
-check suite with the `startup_failure` conclusion. Sign-in supports token,
-OpenID Connect, and SAML 2.0 (see [SSO](#sso-optional)), with SCIM user
-provisioning at organization and enterprise scope. Workflow runs advance as a
-connected `actions/runner` executes them, which is what `gh run watch` polls —
-Bleephub has no GitHub-hosted runners, so bring your own (see
-[How it works](#how-it-works)).
+The one thing to bring yourself is a runner: Bleephub has no GitHub-hosted runners, so a connected `actions/runner` executes workflow jobs (which is what `gh run watch` polls).
 
 ## Quick start
 
@@ -158,19 +137,6 @@ For day-to-day hacking, the convenience script wraps the build/run steps:
 
 `start` serves HTTP on `:5555` with the embedded UI; `start --dev` adds the Vite UI on `:5173` with hot module replacement; `start --tls` serves HTTPS on `:8443` with a self-signed cert; `clean` removes the local data, logs, and PID files. It compiles the current source, starts the server and UI, and prints the endpoints, admin token, data directory, and log paths. Data, git storage, logs, and the PID file live under `.local/bleephub/` by default (override with `BLEEPHUB_DATA_DIR` / `BLEEPHUB_GIT_DIR`).
 
-## How it works
-
-```
-┌──────────────────┐     internal surface  ┌───────────┐
-│  actions/runner  │ ◄──────────────────► │  bleephub │
-│  (C# binary)     │                      │  (Go)     │
-└──────────────────┘                      └───────────┘
-```
-
-For local end-to-end workflow runs, the runner calls `config.sh --url http://bleephub/owner/repo --token ...`; Bleephub returns registration data, pool, and credentials; the runner starts `run.sh` and long-polls `/_apis/v1/Message/`. A job is submitted via `POST /internal/exec/submit` (simplified JSON, operator-only, not a GitHub API path), Bleephub converts it to the internal message format and delivers it, and the runner executes it in its own environment and reports step status back.
-
-For ad-hoc REST / GraphQL clients (Probot, Octokit, `gh`), point `GH_HOST` at the server and use a token the middleware recognises — the `BLEEPHUB_ADMIN_TOKEN` value works everywhere, or mint your own via the OAuth flow for stricter testing.
-
 ## Configuration
 
 ```bash
@@ -197,7 +163,7 @@ BLEEPHUB_ADMIN_TOKEN=<token> ./bleephub-server --addr :80 --log-level info
 - `BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY` — **required when persistence is enabled.** A stable base64-encoded 32-byte key for AES-256-GCM encryption of credentials at rest; a missing or wrong key fails startup loudly. Terraform injects it via AWS Secrets Manager.
 - `BLEEPHUB_DATA_DIR` — directory for the SQLite database and local development metadata (default `.`).
 - `BLEEPHUB_GIT_DIR` — store git repos on the local filesystem (default: in-memory).
-- `BLEEPHUB_S3_BUCKET` / `BLEEPHUB_S3_ENDPOINT` / `BLEEPHUB_S3_PREFIX` / `BLEEPHUB_S3_REGION` — store git repos in S3-compatible object storage (bucket set ⇒ S3 wins over `BLEEPHUB_GIT_DIR`).
+- `BLEEPHUB_S3_BUCKET` / `BLEEPHUB_S3_ENDPOINT` / `BLEEPHUB_S3_PREFIX` / `BLEEPHUB_S3_REGION` — store git repos in S3-compatible object storage (bucket set ⇒ S3 wins over `BLEEPHUB_GIT_DIR`). How bleephub drives real git over each of these backends — in-memory, filesystem, and object store — through go-git and the go-billy filesystem abstraction is described in [docs/git-storage.md](docs/git-storage.md).
 - `BLEEPHUB_OBJECT_S3_BUCKET` / `BLEEPHUB_OBJECT_S3_ENDPOINT` / `BLEEPHUB_OBJECT_S3_PREFIX` — store Actions artifacts, caches, runner logs, release assets, package files, container-registry blobs, CodeQL archives/query-packs, and attestation bundles in object storage.
 - `BLEEPHUB_PAGES_JEKYLL_EXECUTABLE` — the Pages build binary (default `bleephub-pages-jekyll`).
 
@@ -272,7 +238,8 @@ Two hermetic unit-test gates validate Bleephub against the vendored GitHub OpenA
 
 - [specs/BLEEPHUB_GITHUB_API_PARITY.md](specs/BLEEPHUB_GITHUB_API_PARITY.md) — per-endpoint parity audit + acceptance criteria.
 - [docs/BLEEPHUB_GH_CLI.md](docs/BLEEPHUB_GH_CLI.md) — the full `gh` CLI walkthrough.
-- [docs/oidc.md](docs/oidc.md) — OIDC / SSO integration (any compliant provider, or shauth).
+- [docs/oidc.md](docs/oidc.md) — SSO integration: OpenID Connect (any compliant provider, or shauth) and SAML 2.0.
+- [docs/git-storage.md](docs/git-storage.md) — how bleephub drives real git in-process over memory, filesystem, and S3 through go-git and go-billy.
 - [docs/private-api.md](docs/private-api.md) — bleephub's own non-GitHub management and data-plane routes (`/ui-data`, `/manage`, `/internal`, `/_apis`).
 - [BUGS.md](BUGS.md) — audited non-defects (false-positive findings); the fixed-defect history is in git.
 
