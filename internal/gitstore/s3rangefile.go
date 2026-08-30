@@ -12,11 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/smithy-go"
 	"github.com/go-git/go-billy/v5"
+	minio "github.com/minio/minio-go/v7"
 )
 
 // isImmutablePackKey reports whether a path names a content-addressed pack artefact. Only these are read through ranges
@@ -123,24 +120,25 @@ func (f *s3RangeFile) chunkAtLocked(index int64) ([]byte, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	resp, err := f.fs.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(f.fs.bucket),
-		Key:    aws.String(f.key),
-		Range:  aws.String("bytes=" + strconv.FormatInt(start, 10) + "-" + strconv.FormatInt(end-1, 10)),
-	})
+	opts := minio.GetObjectOptions{}
+	// SetRange takes an inclusive end offset, matching the old bytes=start-(end-1).
+	if err := opts.SetRange(start, end-1); err != nil {
+		return nil, fmt.Errorf("s3 ranged get %s: %w", f.key, err)
+	}
+	body, _, headers, err := f.fs.client.GetObject(ctx, f.fs.bucket, f.key, opts)
 	if err != nil {
 		if isRangeBeyondEnd(err) {
 			return nil, io.EOF
 		}
 		return nil, translateS3NotFound(err, "s3 ranged get", f.key)
 	}
-	data, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
+	data, err := io.ReadAll(body)
+	_ = body.Close()
 	if err != nil {
 		return nil, fmt.Errorf("s3 ranged read %s: %w", f.key, err)
 	}
 	// The response states the object's total length, so size never needs its own request.
-	if total, ok := totalFromContentRange(aws.ToString(resp.ContentRange)); ok {
+	if total, ok := totalFromContentRange(headers.Get("Content-Range")); ok {
 		f.size, f.sized = total, true
 		f.fs.rememberObjectSize(f.key, total)
 	} else if !f.sized {
@@ -170,11 +168,7 @@ func totalFromContentRange(header string) (int64, bool) {
 
 // isRangeBeyondEnd recognises a request for bytes past the object's end, the ordinary way a sequential read discovers it has finished.
 func isRangeBeyondEnd(err error) bool {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.ErrorCode() == "InvalidRange"
-	}
-	return false
+	return minio.ToErrorResponse(err).Code == "InvalidRange"
 }
 
 func (f *s3RangeFile) readAtLocked(p []byte, off int64) (int, error) {
@@ -277,12 +271,7 @@ var _ io.ReaderAt = (*s3RangeFile)(nil)
 // translateS3NotFound maps only a definite absence to os.ErrNotExist; every other failure stays an error, since go-git
 // reads ErrNotExist as "pack does not exist" and a transient outage would silently narrow a clone.
 func translateS3NotFound(err error, op, key string) error {
-	var noSuchKey *s3types.NoSuchKey
-	if errors.As(err, &noSuchKey) {
-		return os.ErrNotExist
-	}
-	var notFound *s3types.NotFound
-	if errors.As(err, &notFound) {
+	if isNotFound(err) {
 		return os.ErrNotExist
 	}
 	return fmt.Errorf("%s %s: %w", op, key, err)

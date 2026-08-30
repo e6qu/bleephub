@@ -15,13 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	minio "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 // fakeS3 is an in-process object store that speaks enough of the S3 REST API
-// for the aws-sdk-go-v2 client, and counts every request and every byte that
+// for the minio-go client, and counts every request and every byte that
 // crosses it. Counting is the entire point: the cost this package exists to
 // reduce is measured in S3 requests, and a request counter that lives inside
 // the test binary is exact, whereas a counter derived from a real endpoint's
@@ -106,17 +105,28 @@ func newFakeS3(tb testing.TB) *fakeS3 {
 	return f
 }
 
-// client builds an S3 client wired to this fake. Credentials are static
-// literals so nothing consults an credential file, an instance metadata
-// endpoint or an operating system credential store.
-func (f *fakeS3) client() *s3.Client {
-	return s3.New(s3.Options{
-		Region:           "us-east-1",
-		BaseEndpoint:     aws.String(f.server.URL),
-		UsePathStyle:     true,
-		Credentials:      credentials.NewStaticCredentialsProvider("fake", "fake", ""),
-		RetryMaxAttempts: 1,
+// client builds an object-store client wired to this fake. Credentials are
+// static literals so nothing consults a credential file, an instance metadata
+// endpoint or an operating system credential store; path-style addressing and a
+// pinned region keep the client from ever issuing a bucket-location lookup that
+// would pollute the request counters. Retries are disabled so an injected
+// failure is observed exactly once.
+func (f *fakeS3) client() *minio.Core {
+	u, err := url.Parse(f.server.URL)
+	if err != nil {
+		panic(err)
+	}
+	core, err := minio.NewCore(u.Host, &minio.Options{
+		Creds:        credentials.NewStaticV4("fake", "fake", ""),
+		Secure:       false,
+		Region:       "us-east-1",
+		BucketLookup: minio.BucketLookupPath,
+		MaxRetries:   1,
 	})
+	if err != nil {
+		panic(err)
+	}
+	return core
 }
 
 func (f *fakeS3) fs(bucket, prefix string) *S3FS {
@@ -250,6 +260,57 @@ func (f *fakeS3) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// readObjectBody reads a request body, transparently decoding the
+// aws-chunked streaming-signature framing minio-go wraps PutObject and
+// PutObjectPart payloads in when talking to a non-TLS endpoint (the framing a
+// real S3/MinIO server unwraps). Other requests carry an unframed body.
+func readObjectBody(r *http.Request) ([]byte, error) {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(r.Header.Get("X-Amz-Content-Sha256"), "STREAMING") &&
+		!strings.Contains(r.Header.Get("Content-Encoding"), "aws-chunked") {
+		return raw, nil
+	}
+	return decodeAWSChunked(raw)
+}
+
+// decodeAWSChunked concatenates the data of every chunk in a
+// STREAMING-AWS4-HMAC-SHA256-PAYLOAD body, dropping the per-chunk
+// "<hexsize>;chunk-signature=..." headers, the CRLFs, and any trailer.
+func decodeAWSChunked(raw []byte) ([]byte, error) {
+	var out []byte
+	for len(raw) > 0 {
+		idx := bytes.Index(raw, []byte("\r\n"))
+		if idx < 0 {
+			break
+		}
+		header := raw[:idx]
+		raw = raw[idx+2:]
+		sizeField := header
+		if semi := bytes.IndexByte(header, ';'); semi >= 0 {
+			sizeField = header[:semi]
+		}
+		size, err := strconv.ParseInt(strings.TrimSpace(string(sizeField)), 16, 64)
+		if err != nil {
+			return nil, fmt.Errorf("aws-chunked size %q: %w", sizeField, err)
+		}
+		if size == 0 {
+			break
+		}
+		if int64(len(raw)) < size {
+			return nil, fmt.Errorf("aws-chunked short chunk: want %d, have %d", size, len(raw))
+		}
+		out = append(out, raw[:size]...)
+		raw = raw[size:]
+		if len(raw) >= 2 && raw[0] == '\r' && raw[1] == '\n' {
+			raw = raw[2:]
+		}
+	}
+	return out, nil
+}
+
 func writeS3Error(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)
@@ -343,7 +404,7 @@ func (f *fakeS3) serveHead(w http.ResponseWriter, key string) {
 }
 
 func (f *fakeS3) servePut(w http.ResponseWriter, r *http.Request, key string) {
-	body, err := io.ReadAll(r.Body)
+	body, err := readObjectBody(r)
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error())
 		return
@@ -514,7 +575,7 @@ func (f *fakeS3) serveCreateMultipart(w http.ResponseWriter, key string) {
 }
 
 func (f *fakeS3) serveUploadPart(w http.ResponseWriter, r *http.Request, uploadID, partNumber string) {
-	body, err := io.ReadAll(r.Body)
+	body, err := readObjectBody(r)
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error())
 		return

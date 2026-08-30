@@ -1,6 +1,7 @@
 package gitstore
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,9 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	minio "github.com/minio/minio-go/v7"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -347,36 +347,24 @@ func (s *atomicRefStorer) listLooseObjects(ctx context.Context) ([]looseObject, 
 	packPrefix := prefix + "pack/"
 
 	var objects []looseObject
-	var continuation *string
-	for {
-		resp, err := s.fs.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(s.fs.bucket),
-			Prefix:            aws.String(prefix),
-			ContinuationToken: continuation,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("list loose objects of %s: %w", s.repo, err)
+	for entry := range s.fs.client.Client.ListObjects(ctx, s.fs.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if entry.Err != nil {
+			return nil, fmt.Errorf("list loose objects of %s: %w", s.repo, entry.Err)
 		}
-		for _, entry := range resp.Contents {
-			key := aws.ToString(entry.Key)
-			if strings.HasPrefix(key, packPrefix) {
-				continue
-			}
-			rest := strings.TrimPrefix(key, prefix)
-			fanout, base, found := strings.Cut(rest, "/")
-			if !found || len(fanout) != 2 || strings.Contains(base, "/") {
-				continue
-			}
-			hash := plumbing.NewHash(fanout + base)
-			if hash.IsZero() {
-				continue
-			}
-			objects = append(objects, looseObject{hash: hash, key: key})
+		key := entry.Key
+		if strings.HasPrefix(key, packPrefix) {
+			continue
 		}
-		if !aws.ToBool(resp.IsTruncated) {
-			break
+		rest := strings.TrimPrefix(key, prefix)
+		fanout, base, found := strings.Cut(rest, "/")
+		if !found || len(fanout) != 2 || strings.Contains(base, "/") {
+			continue
 		}
-		continuation = resp.NextContinuationToken
+		hash := plumbing.NewHash(fanout + base)
+		if hash.IsZero() {
+			continue
+		}
+		objects = append(objects, looseObject{hash: hash, key: key})
 	}
 	return objects, nil
 }
@@ -402,24 +390,13 @@ func (s *atomicRefStorer) listPublishedPacks(ctx context.Context) ([]string, err
 func (s *atomicRefStorer) listPackDirectory(ctx context.Context) (map[string]time.Time, error) {
 	prefix := s.fs.key(path.Join("objects", "pack")) + "/"
 	entries := map[string]time.Time{}
-	var continuation *string
-	for {
-		resp, err := s.fs.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(s.fs.bucket),
-			Prefix:            aws.String(prefix),
-			ContinuationToken: continuation,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("list packs of %s: %w", s.repo, err)
+	for entry := range s.fs.client.Client.ListObjects(ctx, s.fs.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if entry.Err != nil {
+			return nil, fmt.Errorf("list packs of %s: %w", s.repo, entry.Err)
 		}
-		for _, entry := range resp.Contents {
-			entries[aws.ToString(entry.Key)] = aws.ToTime(entry.LastModified)
-		}
-		if !aws.ToBool(resp.IsTruncated) {
-			return entries, nil
-		}
-		continuation = resp.NextContinuationToken
+		entries[entry.Key] = entry.LastModified
 	}
+	return entries, nil
 }
 
 // hashesInPacks reads the object ids from the existing packs' indexes, the set
@@ -636,11 +613,7 @@ func (s *atomicRefStorer) publishPack(ctx context.Context, built *builtPack) err
 
 func (s *atomicRefStorer) putObject(ctx context.Context, name string, body []byte) error {
 	key := s.fs.key(name)
-	_, err := s.fs.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.fs.bucket),
-		Key:    aws.String(key),
-		Body:   strings.NewReader(string(body)),
-	})
+	_, err := s.fs.client.Client.PutObject(ctx, s.fs.bucket, key, bytes.NewReader(body), int64(len(body)), minio.PutObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("s3 put %s: %w", key, err)
 	}
@@ -660,29 +633,20 @@ func (s *atomicRefStorer) uploadPackFile(ctx context.Context, name string, built
 	defer func() { _ = file.Close() }()
 
 	if size <= multipartThreshold() {
-		if _, err := s.fs.client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket:        aws.String(s.fs.bucket),
-			Key:           aws.String(key),
-			Body:          file,
-			ContentLength: aws.Int64(size),
-		}); err != nil {
+		if _, err := s.fs.client.Client.PutObject(ctx, s.fs.bucket, key, file, size, minio.PutObjectOptions{}); err != nil {
 			return fmt.Errorf("s3 put %s: %w", key, err)
 		}
 		return nil
 	}
 
-	created, err := s.fs.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-		Bucket: aws.String(s.fs.bucket),
-		Key:    aws.String(key),
-	})
+	uploadID, err := s.fs.client.NewMultipartUpload(ctx, s.fs.bucket, key, minio.PutObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("s3 multipart create %s: %w", key, err)
 	}
-	uploadID := aws.ToString(created.UploadId)
 
-	var parts []s3types.CompletedPart
+	var parts []minio.CompletePart
 	buffer := make([]byte, min(int64(multipartPartSize), max(size/2+1, 1)))
-	for number := int32(1); ; number++ {
+	for number := 1; ; number++ {
 		read, err := io.ReadFull(file, buffer)
 		if read == 0 {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
@@ -698,30 +662,18 @@ func (s *atomicRefStorer) uploadPackFile(ctx context.Context, name string, built
 			s.abortMultipart(ctx, key, uploadID)
 			return fmt.Errorf("read staged pack: %w", err)
 		}
-		uploaded, uploadErr := s.fs.client.UploadPart(ctx, &s3.UploadPartInput{
-			Bucket:        aws.String(s.fs.bucket),
-			Key:           aws.String(key),
-			UploadId:      aws.String(uploadID),
-			PartNumber:    aws.Int32(number),
-			Body:          strings.NewReader(string(buffer[:read])),
-			ContentLength: aws.Int64(int64(read)),
-		})
+		uploaded, uploadErr := s.fs.client.PutObjectPart(ctx, s.fs.bucket, key, uploadID, number, bytes.NewReader(buffer[:read]), int64(read), minio.PutObjectPartOptions{})
 		if uploadErr != nil {
 			s.abortMultipart(ctx, key, uploadID)
 			return fmt.Errorf("s3 upload part %d of %s: %w", number, key, uploadErr)
 		}
-		parts = append(parts, s3types.CompletedPart{ETag: uploaded.ETag, PartNumber: aws.Int32(number)})
+		parts = append(parts, minio.CompletePart{ETag: uploaded.ETag, PartNumber: number})
 		if read < len(buffer) {
 			break
 		}
 	}
 
-	if _, err := s.fs.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
-		Bucket:          aws.String(s.fs.bucket),
-		Key:             aws.String(key),
-		UploadId:        aws.String(uploadID),
-		MultipartUpload: &s3types.CompletedMultipartUpload{Parts: parts},
-	}); err != nil {
+	if _, err := s.fs.client.CompleteMultipartUpload(ctx, s.fs.bucket, key, uploadID, parts, minio.PutObjectOptions{}); err != nil {
 		s.abortMultipart(ctx, key, uploadID)
 		return fmt.Errorf("s3 multipart complete %s: %w", key, err)
 	}
@@ -729,11 +681,7 @@ func (s *atomicRefStorer) uploadPackFile(ctx context.Context, name string, built
 }
 
 func (s *atomicRefStorer) abortMultipart(ctx context.Context, key, uploadID string) {
-	_, _ = s.fs.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
-		Bucket:   aws.String(s.fs.bucket),
-		Key:      aws.String(key),
-		UploadId: aws.String(uploadID),
-	})
+	_ = s.fs.client.AbortMultipartUpload(ctx, s.fs.bucket, key, uploadID)
 }
 
 func (s *atomicRefStorer) seedPackCache(name string, built *builtPack) {
@@ -786,28 +734,12 @@ func (s *atomicRefStorer) adoptPack() {
 // deleteLooseObjects removes the keys that went into the published pack, a
 // thousand at a time.
 func (s *atomicRefStorer) deleteLooseObjects(ctx context.Context, objects []looseObject) error {
-	const batch = 1000
 	keys := make([]string, 0, len(objects))
 	for _, object := range objects {
 		keys = append(keys, object.key)
 	}
-	for start := 0; start < len(keys); start += batch {
-		end := min(start+batch, len(keys))
-		identifiers := make([]s3types.ObjectIdentifier, 0, end-start)
-		for _, key := range keys[start:end] {
-			identifiers = append(identifiers, s3types.ObjectIdentifier{Key: aws.String(key)})
-		}
-		resp, err := s.fs.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
-			Bucket: aws.String(s.fs.bucket),
-			Delete: &s3types.Delete{Objects: identifiers, Quiet: aws.Bool(true)},
-		})
-		if err != nil {
-			return fmt.Errorf("delete %d packed loose objects: %w", len(identifiers), err)
-		}
-		if len(resp.Errors) > 0 {
-			first := resp.Errors[0]
-			return fmt.Errorf("delete %s: %s", aws.ToString(first.Key), aws.ToString(first.Message))
-		}
+	if err := s.fs.deleteObjectKeys(ctx, keys); err != nil {
+		return fmt.Errorf("delete %d packed loose objects: %w", len(keys), err)
 	}
 	for _, object := range objects {
 		s.fs.noteLooseRemoved(strings.TrimPrefix(object.key, s.fs.prefix+"/"))
@@ -875,10 +807,7 @@ func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context) ([]string, 
 		return strings.HasSuffix(doomed[i], ".pack") && !strings.HasSuffix(doomed[j], ".pack")
 	})
 	for _, key := range doomed {
-		if _, err := s.fs.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: aws.String(s.fs.bucket),
-			Key:    aws.String(key),
-		}); err != nil {
+		if err := s.fs.client.Client.RemoveObject(ctx, s.fs.bucket, key, minio.RemoveObjectOptions{}); err != nil {
 			return retired, fmt.Errorf("retire %s: %w", key, err)
 		}
 		s.fs.forgetObjectSize(key)

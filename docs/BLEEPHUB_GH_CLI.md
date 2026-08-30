@@ -15,9 +15,65 @@ Run `gh auth login --hostname localhost --with-token` and `gh` writes a record t
 
 Three consequences:
 
-- **`gh` is HTTPS-only against any non-`github.com` host.** Plain HTTP on `:5555` will not work. Run Bleephub with `BPH_TLS_CERT` + `BPH_TLS_KEY` (the Docker harness and the [bare-metal recipe](../README.md#quick-start--bleephub--gh-command-line-interface-in-5-steps) both do this).
+- **`gh` is HTTPS-only against any non-`github.com` host.** Plain HTTP on `:5555`/`:8080` will not work — `gh` (verified on 2.97.0) forces `https://` and refuses a plain-HTTP server. Front bleephub with a locally-trusted TLS endpoint (see [Giving `gh` HTTPS](#giving-gh-https), and the [README quick start](../README.md#using-the-gh-cli)).
 - **`gh auth login --hostname` accepts a bare hostname only.** Current `gh` (verified on 2.92.0) rejects `host:port` with `error parsing hostname: invalid hostname`, so the login flow requires bleephub on `:443`. To avoid binding 443, skip `gh auth login`: `export GH_HOST=localhost:8443` + `export GH_ENTERPRISE_TOKEN=<token>` — the runtime accepts a port in `GH_HOST` and the env token replaces the hosts.yml entry. Use `GH_ENTERPRISE_TOKEN`, not `GH_TOKEN`: gh reads `GH_TOKEN` only for `github.com` and sends nothing to other hosts when only `GH_TOKEN` is set (bleephub answers `401 Bad credentials`).
-- **macOS trust comes only from the keychain.** `gh` is a Go binary, and Go on darwin ignores `SSL_CERT_FILE`/`SSL_CERT_DIR` — add the self-signed cert to the system keychain (`sudo security add-trusted-cert …`, see the quick start). On Linux the usual CA-store mechanisms work.
+- **Trust must reach the system store, and it differs by OS.** `gh` is a Go binary; Go on darwin reads trust only from the keychain (it ignores `SSL_CERT_FILE`/`SSL_CERT_DIR`), while Linux uses `/usr/local/share/ca-certificates` + `update-ca-certificates`. The Caddy recipe below papers over that difference — `caddy trust` installs its CA into the right store on both.
+
+## Giving `gh` HTTPS
+
+### Recommended: Caddy reverse proxy (macOS + Linux)
+
+[Caddy](https://caddyserver.com) mints a certificate from a local CA and installs
+that CA into the system trust store on both macOS and Linux, so the same three
+commands work everywhere. Run bleephub on plain HTTP and let Caddy terminate
+HTTPS in front of it:
+
+```bash
+# 1. bleephub on plain HTTP.
+BLEEPHUB_ADMIN_TOKEN="$TOKEN" ./bleephub-server --addr :8080 &
+
+# 2. Trust Caddy's local CA (system keychain on macOS, ca-certificates on
+#    Linux), then reverse-proxy HTTPS :8443 → bleephub :8080.
+caddy trust
+caddy reverse-proxy --from localhost:8443 --to localhost:8080 &
+
+# 3. Point gh at the HTTPS front door.
+export GH_HOST=localhost:8443
+export GH_ENTERPRISE_TOKEN="$TOKEN"
+gh repo create demo --public
+```
+
+Teardown: stop the two background processes and run `caddy untrust` to remove the
+local CA from the system store.
+
+### Manual alternative: self-signed cert + system trust
+
+If you would rather not run Caddy, bleephub serves TLS directly from
+`BPH_TLS_CERT` + `BPH_TLS_KEY`. Mint a `localhost` cert and trust it yourself —
+the trust step is OS-specific:
+
+```bash
+BPH_TLS_DIR="$HOME/.bleephub/tls"; mkdir -p "$BPH_TLS_DIR"
+openssl req -x509 -newkey rsa:2048 -days 825 -nodes \
+  -keyout "$BPH_TLS_DIR/bph.key" -out "$BPH_TLS_DIR/bph.crt" \
+  -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+
+# macOS — Go reads trust ONLY from the keychain:
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain "$BPH_TLS_DIR/bph.crt"
+# Linux (Debian/Ubuntu):
+# sudo cp "$BPH_TLS_DIR/bph.crt" /usr/local/share/ca-certificates/bleephub.crt && sudo update-ca-certificates
+
+BLEEPHUB_ADMIN_TOKEN="$TOKEN" \
+  BPH_TLS_CERT="$BPH_TLS_DIR/bph.crt" BPH_TLS_KEY="$BPH_TLS_DIR/bph.key" \
+  ./bleephub-server --addr :8443 &
+export GH_HOST=localhost:8443
+export GH_ENTERPRISE_TOKEN="$TOKEN"
+```
+
+The Docker `make gh-test` harness uses this self-signed + trust path internally.
+As a last resort for one-off `gh api` calls, `gh api --insecure` skips
+verification entirely.
 
 ## One-time auth
 
@@ -44,10 +100,9 @@ Mint other tokens (OAuth user, installation server-to-server) via the OAuth flow
 
 `gh` is now authenticated against bleephub.
 
-Setup and full teardown (server, cert material, keychain trust, gh wiring) are
-idempotent shell blocks in the quick start — see
-[`README.md`](../README.md#quick-start--bleephub--gh-command-line-interface-in-5-steps)
-and its **Teardown** section.
+Setup and teardown (server, TLS front end, trust, gh wiring) are covered by the
+[Caddy and manual recipes above](#giving-gh-https) and the condensed
+[README quick start](../README.md#using-the-gh-cli).
 
 ## Supported commands
 

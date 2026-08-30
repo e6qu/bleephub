@@ -17,8 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	minio "github.com/minio/minio-go/v7"
 
 	"github.com/e6qu/bleephub/internal/gitstore"
 	"github.com/e6qu/bleephub/internal/server/testutil"
@@ -141,8 +140,8 @@ func newS3FSForTest(t *testing.T) *gitstore.S3FS {
 	if err != nil {
 		t.Fatalf("newS3FS: %v", err)
 	}
-	if _, err := fs.Client().CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(fs.Bucket())}); err != nil {
-		t.Fatalf("CreateBucket: %v", err)
+	if err := fs.Client().Client.MakeBucket(ctx, fs.Bucket(), minio.MakeBucketOptions{Region: "us-east-1"}); err != nil {
+		t.Fatalf("MakeBucket: %v", err)
 	}
 	return fs
 }
@@ -205,11 +204,7 @@ func putS3RawObject(t *testing.T, fs *gitstore.S3FS, key string, content []byte)
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if _, err := fs.Client().PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(fs.Bucket()),
-		Key:    aws.String(key),
-		Body:   bytes.NewReader(content),
-	}); err != nil {
+	if _, err := fs.Client().Client.PutObject(ctx, fs.Bucket(), key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{}); err != nil {
 		t.Fatalf("PutObject %s: %v", key, err)
 	}
 }
@@ -219,24 +214,13 @@ func listS3RawKeys(t *testing.T, fs *gitstore.S3FS, prefix string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	var keys []string
-	var continuation *string
-	for {
-		resp, err := fs.Client().ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(fs.Bucket()),
-			Prefix:            aws.String(prefix),
-			ContinuationToken: continuation,
-		})
-		if err != nil {
-			t.Fatalf("ListObjectsV2 %s: %v", prefix, err)
+	for object := range fs.Client().Client.ListObjects(ctx, fs.Bucket(), minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if object.Err != nil {
+			t.Fatalf("ListObjects %s: %v", prefix, object.Err)
 		}
-		for _, obj := range resp.Contents {
-			keys = append(keys, aws.ToString(obj.Key))
-		}
-		if !aws.ToBool(resp.IsTruncated) {
-			return keys
-		}
-		continuation = resp.NextContinuationToken
+		keys = append(keys, object.Key)
 	}
+	return keys
 }
 
 func writeS3TestFile(t *testing.T, fs *gitstore.S3FS, name string, content []byte) {
