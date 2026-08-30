@@ -424,6 +424,8 @@ func (s *Server) writeRegistryBlobStream(digest string, r io.Reader, size int64,
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
+	// #nosec G304 -- registryBlobPath accepts only a decoded SHA-256 digest and
+	// joins it beneath the configured package root.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err

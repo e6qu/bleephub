@@ -31,12 +31,14 @@ func TestObjectReaperReclaimsOrphansSafely(t *testing.T) {
 	// An orphan under a NON-reapable prefix (logs — live-set not enumerable).
 	mustPut(t, byteStore, store.LogDataKey(5), "logbytes")
 
-	// Freeze "now" 48h ahead so every object is comfortably past a 24h grace.
-	future := time.Now().Add(48 * time.Hour).UTC()
+	// Freeze "now" at a fixed far-future instant (no wall clock in tests). Objects
+	// the fake store wrote during the test are decades "old" relative to it, so a
+	// grace larger than that gap protects everything, and a 24h grace does not.
+	future := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
 	s.store.ClockNow = func() time.Time { return future }
 
-	// Grace protects everything when nothing is old enough yet.
-	young, err := s.store.ReapOrphanObjects(ctx, store.ReapOptions{Delete: true, GracePeriod: 72 * time.Hour})
+	// A grace wider than the age of every object protects them all.
+	young, err := s.store.ReapOrphanObjects(ctx, store.ReapOptions{Delete: true, GracePeriod: 1_000_000 * time.Hour})
 	if err != nil {
 		t.Fatalf("reap (young): %v", err)
 	}
@@ -44,7 +46,7 @@ func TestObjectReaperReclaimsOrphansSafely(t *testing.T) {
 		t.Fatalf("grace should protect all objects, deleted %d", young.DeletedCount)
 	}
 
-	// With a 24h grace and now 48h ahead, the reapable orphan is swept.
+	// With a 24h grace, the reapable orphan is well past it and is swept.
 	report, err := s.store.ReapOrphanObjects(ctx, store.ReapOptions{Delete: true, GracePeriod: 24 * time.Hour})
 	if err != nil {
 		t.Fatalf("reap: %v", err)
