@@ -23,8 +23,10 @@ var samlFuzzCertPEM = func() string {
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: "fuzz-idp"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
+		// A fixed, very wide validity window — spanning any test or wall clock —
+		// so the fixture needs no live time read (test-clock gate).
+		NotBefore: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:  time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
