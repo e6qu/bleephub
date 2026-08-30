@@ -175,15 +175,15 @@ func (s *Server) handleSAMLConsume(w http.ResponseWriter, r *http.Request) {
 	// The state cookie is present for a service-provider-initiated flow on a
 	// same-site POST; a cross-site IdP POST (SameSite=Lax) or an IdP-initiated
 	// flow arrives without it. When present it binds InResponseTo and carries the
-	// return target; when absent the signed assertion stands on its own and
-	// RelayState is the (sanitized) return target.
+	// return target, laundered across the request boundary by the signed cookie.
+	// When absent, the signed assertion still stands on its own, but the return
+	// target falls back to the dashboard: RelayState is raw request input and must
+	// not steer the post-login redirect (open-redirect guard).
 	returnTo := "/ui/"
 	expectedInResponseTo := ""
 	if pending, stateErr := s.consumeIdentityState(w, r, "saml", relayState); stateErr == nil {
 		returnTo = pending.ReturnTo
 		expectedInResponseTo = samlRequestID(pending.State)
-	} else if relayState != "" {
-		returnTo = safeIdentityReturnTo(relayState)
 	}
 
 	assertion, err := s.samlValidatedAssertion(responseXML)
