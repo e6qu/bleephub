@@ -302,6 +302,17 @@ jobs:
       # for compilation and worker startup.
       - name: Mutate every fuzz target
         run: ./scripts/fuzz.sh
+      # Smoke the scale/concurrency benchmarks and one ramp step on a tiny corpus
+      # so they cannot rot at runtime (they compile in the race job but never run
+      # there). Bounded, not a measurement — real numbers come from `make bench`
+      # / `make scale`.
+      - name: Smoke scale benchmarks
+        run: |
+          BLEEPHUB_BENCH_REPOS=20 GOWORK=off go test -tags noui -run '^$' \
+            -bench 'Concurrent|WorkflowRunListingScale|GraphQLNestedConnections|GlobalIssuesMentionScan' \
+            -benchtime 1x ./internal/server/
+          BLEEPHUB_SCALE=1 BLEEPHUB_SCALE_STEPS=1,4 BLEEPHUB_SCALE_SECONDS=1 BLEEPHUB_BENCH_REPOS=20 \
+            GOWORK=off go test -tags noui -run TestScalingRamp ./internal/server/
 
   modules:
     name: Nested Go modules

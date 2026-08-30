@@ -18,6 +18,22 @@ web-build:
 test:
 	GOWORK=off go test -tags noui -count=1 -timeout 20m ./...
 
+# Runs the Go scale/concurrency micro-benchmarks (contention, workflow-run
+# listing, GraphQL cost, global scans, git storage). Grow the corpus with
+# BLEEPHUB_BENCH_REPOS/_ISSUES/_PRS/_RUNS; add -cpu 1,2,4,8 to see lock scaling.
+bench:
+	GOWORK=off go test -tags noui -run '^$$' -bench . -benchmem -benchtime 5x \
+		./internal/server/ ./internal/gitstore/ ./internal/graphqlapi/
+
+# Runs the opt-in scaling ramp: concurrency vs latency percentiles + the knee.
+# Tune with BLEEPHUB_SCALE_* (see internal/server/scaling_ramp_test.go).
+scale:
+	BLEEPHUB_SCALE=1 GOWORK=off go test -tags noui -run TestScalingRamp -v -timeout 30m ./internal/server/
+
+# Bursts every fuzz target (all packages) for FUZZTIME each (default 15s).
+fuzz:
+	./scripts/fuzz.sh
+
 # Boots a throwaway server, seeds it, and prints the API latency table from
 # scripts/perf/bench.mjs. Requires the embedded binary (`make build`) and node.
 perf: build

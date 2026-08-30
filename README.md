@@ -240,6 +240,7 @@ Two hermetic unit-test gates validate Bleephub against the vendored GitHub OpenA
 - [docs/BLEEPHUB_GH_CLI.md](docs/BLEEPHUB_GH_CLI.md) — the full `gh` CLI walkthrough.
 - [docs/oidc.md](docs/oidc.md) — SSO integration: OpenID Connect (any compliant provider, or shauth) and SAML 2.0.
 - [docs/git-storage.md](docs/git-storage.md) — how bleephub drives real git in-process over memory, filesystem, and S3 through go-git and go-billy.
+- [docs/scaling.md](docs/scaling.md) — the scaling limits, the fuzz/benchmark/ramp suite, and the tuning knobs (`make bench` / `make scale` / `make fuzz`).
 - [docs/private-api.md](docs/private-api.md) — bleephub's own non-GitHub management and data-plane routes (`/ui-data`, `/manage`, `/internal`, `/_apis`).
 - [BUGS.md](BUGS.md) — audited non-defects (false-positive findings); the fixed-defect history is in git.
 
