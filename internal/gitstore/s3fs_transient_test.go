@@ -1,42 +1,30 @@
 package gitstore
 
 import (
-	"context"
 	"errors"
-	"net/http"
 	"os"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
+	minio "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// transientS3Client returns an *s3.Client whose every request short-circuits
-// with a retryable HTTP 500 before it is ever signed or sent, standing in for a
-// transient S3 outage (throttle, 5xx, network blip).
-func transientS3Client() *s3.Client {
-	return s3.New(s3.Options{
-		Region:           "us-east-1",
-		BaseEndpoint:     aws.String("http://127.0.0.1:1"),
-		Credentials:      credentials.NewStaticCredentialsProvider("x", "y", ""),
-		RetryMaxAttempts: 1,
-		APIOptions: []func(*middleware.Stack) error{
-			func(stack *middleware.Stack) error {
-				return stack.Finalize.Add(
-					middleware.FinalizeMiddlewareFunc("STORE037InjectTransient",
-						func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (middleware.FinalizeOutput, middleware.Metadata, error) {
-							return middleware.FinalizeOutput{}, middleware.Metadata{}, &smithyhttp.ResponseError{
-								Response: &smithyhttp.Response{Response: &http.Response{StatusCode: 500, Body: http.NoBody}},
-								Err:      errors.New("transient S3 failure"),
-							}
-						}),
-					middleware.Before)
-			},
-		},
+// transientS3Client returns a *minio.Core whose every request fails to reach a
+// server (the endpoint refuses connections), standing in for a transient S3
+// outage (throttle, 5xx, network blip). The point is that the failure is not an
+// HTTP 404, so it must never be mistaken for a definite absence.
+func transientS3Client() *minio.Core {
+	core, err := minio.NewCore("127.0.0.1:1", &minio.Options{
+		Creds:        credentials.NewStaticV4("x", "y", ""),
+		Secure:       false,
+		Region:       "us-east-1",
+		BucketLookup: minio.BucketLookupPath,
+		MaxRetries:   1,
 	})
+	if err != nil {
+		panic(err)
+	}
+	return core
 }
 
 // TestS3TransientErrorIsNotMistakenForNotExist covers STORE-037: a transient S3

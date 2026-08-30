@@ -25,16 +25,35 @@ ENV GOTOOLCHAIN=auto
 
 WORKDIR /src
 
-# --- Install the cloud simulators (job containers run as sim cloud tasks) ---
+# --- Install the cloud simulators from sockerless-cloud release artifacts ---
 # One image serves multiple backends; run-integration.sh picks via
-# BLEEPHUB_BACKEND (ecs → AWS sim, aca → Azure sim, …). The simulators live
-# in github.com/e6qu/sockerless-cloud, pinned at a release commit (go install
-# of a subdirectory module needs a commit-ish, not the repository-root
-# release tag). This is the v0.2.0 release commit.
-ARG SOCKERLESS_CLOUD_VERSION=3e333cfb3cbd2d0b9fe141365543c8b25544aa30
-RUN GOBIN=/out go install -tags noui github.com/e6qu/sockerless-cloud/simulator-aws@${SOCKERLESS_CLOUD_VERSION} && \
-    GOBIN=/out go install -tags noui github.com/e6qu/sockerless-cloud/simulator-azure@${SOCKERLESS_CLOUD_VERSION} && \
-    GOBIN=/out go install -tags noui github.com/e6qu/sockerless-cloud/simulator-gcp@${SOCKERLESS_CLOUD_VERSION}
+# BLEEPHUB_BACKEND (ecs → AWS sim, aca → Azure sim, …). Download the prebuilt
+# simulator binaries from the github.com/e6qu/sockerless-cloud release rather
+# than compiling them here — building the simulators would drag the AWS, Azure
+# and GCP SDKs into this image. Pin every tarball by SHA-256 per architecture.
+ARG TARGETARCH
+ARG SOCKERLESS_CLOUD_VERSION=v0.28.2
+RUN set -eux; \
+    base="https://github.com/e6qu/sockerless-cloud/releases/download/${SOCKERLESS_CLOUD_VERSION}"; \
+    case "${TARGETARCH}" in \
+      amd64) aws=a8dc79a1d211690973461e02777fc405f0d0e5be7702c625647e6554eff5fec3; \
+             azure=183aa2907e2f08e72faa5998f6f8de2e851611d89ea332f5ae8d26da9ad2f730; \
+             gcp=41527bcedb6d5367ee90dad1cf895b25b2ed06c078dbd4f155fb7e5529bf7ecb ;; \
+      arm64) aws=7a147eb01c69d5b40f4e981a894a93fd358bc95906fbee0c375df5a5dfd9ebaf; \
+             azure=159a91b4fb19f4b2818eddcbd6ef658c3e671a5fd3440ce2b852e75efb6cb041; \
+             gcp=58b046826be28b888713e304e6412d5d4ee647d0eab0d29a964ec88faceef45d ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /out; \
+    for entry in "aws:${aws}" "azure:${azure}" "gcp:${gcp}"; do \
+      name="${entry%%:*}"; want="${entry##*:}"; \
+      tarball="/tmp/simulator-${name}.tar.gz"; \
+      curl -fsSL -o "${tarball}" "${base}/simulator-${name}_${SOCKERLESS_CLOUD_VERSION}_linux_${TARGETARCH}.tar.gz"; \
+      echo "${want}  ${tarball}" | sha256sum -c -; \
+      tar -xzf "${tarball}" -C /out "simulator-${name}"; \
+      chmod +x "/out/simulator-${name}"; \
+      rm -f "${tarball}"; \
+    done
 
 # --- Build the backends + agent (the runner's DOCKER_HOST target) ---
 COPY --from=sockerless api/ api/

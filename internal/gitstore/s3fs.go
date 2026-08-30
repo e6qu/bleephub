@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"slices"
@@ -13,22 +15,32 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/uuid"
+	minio "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type S3FS struct {
-	client   *s3.Client
+	client   *minio.Core
 	bucket   string
 	prefix   string
 	activeMu sync.Mutex
 	active   *s3ActiveFiles
 	locks    *s3KeyLocks
 	sharedV  *s3Shared
+}
+
+// isNotFound reports whether an object-store error is a definite 404 (the key or
+// bucket does not exist), the only failure that may map to os.ErrNotExist. Every
+// other error — a transient outage, a throttle — must propagate, since go-git
+// reads os.ErrNotExist as proof of absence.
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	resp := minio.ToErrorResponse(err)
+	return resp.StatusCode == http.StatusNotFound || resp.Code == "NoSuchKey" || resp.Code == "NotFound"
 }
 
 // s3Shared is state one filesystem and every chroot derived from it hold in common, alongside the staging namespace and the key locks.
@@ -82,8 +94,8 @@ func (f *S3FS) forgetObjectSize(key string) {
 	delete(shared.sizes, key)
 }
 
-// Client exposes the underlying S3 client to object-byte stores sharing this filesystem's connection.
-func (f *S3FS) Client() *s3.Client { return f.client }
+// Client exposes the underlying object-store client to object-byte stores sharing this filesystem's connection.
+func (f *S3FS) Client() *minio.Core { return f.client }
 
 // Bucket reports the bucket this filesystem stores objects in.
 func (f *S3FS) Bucket() string { return f.bucket }
@@ -192,21 +204,40 @@ func (l *s3KeyLocks) drop(key string) {
 }
 
 func NewS3FS(ctx context.Context, endpoint, bucket, prefix string) (*S3FS, error) {
-	var opts []func(*awsconfig.LoadOptions) error
-	opts = append(opts, awsconfig.WithRegion(bleephubS3Region()))
-	cfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("s3 config: %w", err)
+	region := bleephubS3Region()
+
+	// minio-go wants the endpoint as host[:port] without a scheme, and derives
+	// TLS from a separate Secure flag rather than the scheme. An explicit
+	// endpoint (a local simulator, a non-Amazon store) is addressed path-style,
+	// matching the old UsePathStyle=true; an empty endpoint targets real AWS S3.
+	host := fmt.Sprintf("s3.%s.amazonaws.com", region)
+	secure := true
+	pathStyle := false
+	if endpoint != "" {
+		host = endpoint
+		if strings.Contains(endpoint, "://") {
+			parsed, err := url.Parse(endpoint)
+			if err != nil {
+				return nil, fmt.Errorf("s3 endpoint %q: %w", endpoint, err)
+			}
+			secure = parsed.Scheme == "https"
+			host = parsed.Host
+		}
+		pathStyle = true
 	}
 
-	clientOpts := []func(*s3.Options){}
-	if endpoint != "" {
-		clientOpts = append(clientOpts, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(endpoint)
-			o.UsePathStyle = true
-		})
+	opts := &minio.Options{
+		Creds:  credentials.NewEnvAWS(),
+		Secure: secure,
+		Region: region,
 	}
-	client := s3.NewFromConfig(cfg, clientOpts...)
+	if pathStyle {
+		opts.BucketLookup = minio.BucketLookupPath
+	}
+	client, err := minio.NewCore(host, opts)
+	if err != nil {
+		return nil, fmt.Errorf("s3 client: %w", err)
+	}
 
 	return &S3FS{
 		client: client,
@@ -256,21 +287,20 @@ func (f *S3FS) Open(filename string) (billy.File, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	resp, err := f.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(f.bucket),
-		Key:    aws.String(key),
-	})
+	obj, err := f.client.Client.GetObject(ctx, f.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
-		var nsk *s3types.NoSuchKey
-		if errors.As(err, &nsk) {
+		if isNotFound(err) {
 			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("s3 get %s: %w", key, err)
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
+	data, err := io.ReadAll(obj)
+	_ = obj.Close()
 	if err != nil {
+		if isNotFound(err) {
+			return nil, os.ErrNotExist
+		}
 		return nil, fmt.Errorf("s3 read %s: %w", key, err)
 	}
 
@@ -373,23 +403,15 @@ func (f *S3FS) Stat(filename string) (os.FileInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	resp, err := f.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(f.bucket),
-		Key:    aws.String(key),
-	})
+	info, err := f.client.Client.StatObject(ctx, f.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
-		var nsk *s3types.NoSuchKey
-		if errors.As(err, &nsk) {
-			return nil, os.ErrNotExist
-		}
-		var nfe *s3types.NotFound
-		if errors.As(err, &nfe) {
+		if isNotFound(err) {
 			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("s3 head %s: %w", key, err)
 	}
 
-	size := aws.ToInt64(resp.ContentLength)
+	size := info.Size
 	if isImmutablePackKey(filename) {
 		f.rememberObjectSize(key, size)
 	}
@@ -397,7 +419,7 @@ func (f *S3FS) Stat(filename string) (os.FileInfo, error) {
 		name:    path.Base(filename),
 		size:    size,
 		mode:    0o644,
-		modTime: aws.ToTime(resp.LastModified),
+		modTime: info.LastModified,
 		isDir:   false,
 	}, nil
 }
@@ -408,19 +430,14 @@ func (f *S3FS) Rename(oldpath, newpath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err := f.client.CopyObject(ctx, &s3.CopyObjectInput{
-		Bucket:     aws.String(f.bucket),
-		Key:        aws.String(dstKey),
-		CopySource: aws.String(f.bucket + "/" + srcKey),
-	})
+	_, err := f.client.Client.CopyObject(ctx,
+		minio.CopyDestOptions{Bucket: f.bucket, Object: dstKey},
+		minio.CopySrcOptions{Bucket: f.bucket, Object: srcKey})
 	if err != nil {
 		return fmt.Errorf("s3 copy %s -> %s: %w", srcKey, dstKey, err)
 	}
 
-	_, err = f.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(f.bucket),
-		Key:    aws.String(srcKey),
-	})
+	err = f.client.Client.RemoveObject(ctx, f.bucket, srcKey, minio.RemoveObjectOptions{})
 	if err == nil {
 		// dotgit lands a loose object by renaming a temp file onto its final name, so the object index learns of the write here.
 		f.noteLooseRemoved(oldpath)
@@ -429,10 +446,7 @@ func (f *S3FS) Rename(oldpath, newpath string) error {
 	if err != nil {
 		// A failed rename must leave the destination absent, or a retry sees two names and may treat the copy as a committed
 		// move. Report both failures if compensation also fails.
-		_, rollbackErr := f.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: aws.String(f.bucket),
-			Key:    aws.String(dstKey),
-		})
+		rollbackErr := f.client.Client.RemoveObject(ctx, f.bucket, dstKey, minio.RemoveObjectOptions{})
 		if rollbackErr != nil {
 			return fmt.Errorf("s3 delete %s after copy: %w (rollback destination %s: %v)", srcKey, err, dstKey, rollbackErr)
 		}
@@ -447,10 +461,7 @@ func (f *S3FS) Remove(filename string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	_, err := f.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(f.bucket),
-		Key:    aws.String(key),
-	})
+	err := f.client.Client.RemoveObject(ctx, f.bucket, key, minio.RemoveObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("s3 delete %s: %w", key, err)
 	}
@@ -477,61 +488,41 @@ func (f *S3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	var contents []s3types.Object
-	var commonPrefixes []s3types.CommonPrefix
-	var continuation *string
-	for {
-		resp, err := f.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(f.bucket),
-			Prefix:            aws.String(prefix),
-			Delimiter:         aws.String("/"),
-			ContinuationToken: continuation,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("s3 list %s: %w", prefix, err)
-		}
-		contents = append(contents, resp.Contents...)
-		commonPrefixes = append(commonPrefixes, resp.CommonPrefixes...)
-		if !aws.ToBool(resp.IsTruncated) {
-			break
-		}
-		continuation = resp.NextContinuationToken
-	}
-
 	entriesByName := map[string]os.FileInfo{}
 	baseLen := len(f.prefix)
 	if f.prefix != "" {
 		baseLen++
 	}
 
-	for _, obj := range contents {
-		key := aws.ToString(obj.Key)
+	// A non-recursive listing yields a directory as an ObjectInfo whose Key ends
+	// in "/" (the delimiter's common prefix) and a file as an ObjectInfo
+	// otherwise; ObjectInfo.Err flags a mid-stream listing failure.
+	for object := range f.client.Client.ListObjects(ctx, f.bucket, minio.ListObjectsOptions{Prefix: prefix}) {
+		if object.Err != nil {
+			return nil, fmt.Errorf("s3 list %s: %w", prefix, object.Err)
+		}
+		key := object.Key
 		if len(key) <= baseLen {
 			continue
 		}
 		relKey := key[baseLen:]
-		info := &s3FileInfo{
-			name:    path.Base(relKey),
-			size:    aws.ToInt64(obj.Size),
-			mode:    0o644,
-			modTime: aws.ToTime(obj.LastModified),
-			isDir:   false,
-		}
-		entriesByName[info.name] = info
-	}
-
-	for _, cp := range commonPrefixes {
-		p := aws.ToString(cp.Prefix)
-		if len(p) <= baseLen {
+		if strings.HasSuffix(key, "/") {
+			info := &s3FileInfo{
+				name:    path.Base(relKey),
+				size:    0,
+				mode:    0o755 | os.ModeDir,
+				modTime: time.Time{},
+				isDir:   true,
+			}
+			entriesByName[info.name] = info
 			continue
 		}
-		relKey := p[baseLen:]
 		info := &s3FileInfo{
 			name:    path.Base(relKey),
-			size:    0,
-			mode:    0o755 | os.ModeDir,
-			modTime: time.Time{},
-			isDir:   true,
+			size:    object.Size,
+			mode:    0o644,
+			modTime: object.LastModified,
+			isDir:   false,
 		}
 		entriesByName[info.name] = info
 	}
@@ -624,33 +615,19 @@ func (f *S3FS) CopyRepoPrefix(oldFull, newFull string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	var continuation *string
 	var oldKeys []string
-	for {
-		resp, err := f.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(f.bucket),
-			Prefix:            aws.String(oldPrefix),
-			ContinuationToken: continuation,
-		})
-		if err != nil {
-			return fmt.Errorf("s3 list %s: %w", oldPrefix, err)
+	for object := range f.client.Client.ListObjects(ctx, f.bucket, minio.ListObjectsOptions{Prefix: oldPrefix, Recursive: true}) {
+		if object.Err != nil {
+			return fmt.Errorf("s3 list %s: %w", oldPrefix, object.Err)
 		}
-		for _, obj := range resp.Contents {
-			oldKeys = append(oldKeys, aws.ToString(obj.Key))
-		}
-		if !aws.ToBool(resp.IsTruncated) {
-			break
-		}
-		continuation = resp.NextContinuationToken
+		oldKeys = append(oldKeys, object.Key)
 	}
 	for _, oldKey := range oldKeys {
 		rel := strings.TrimPrefix(oldKey, oldPrefix)
 		newKey := newPrefix + rel
-		if _, err := f.client.CopyObject(ctx, &s3.CopyObjectInput{
-			Bucket:     aws.String(f.bucket),
-			CopySource: aws.String(f.bucket + "/" + oldKey),
-			Key:        aws.String(newKey),
-		}); err != nil {
+		if _, err := f.client.Client.CopyObject(ctx,
+			minio.CopyDestOptions{Bucket: f.bucket, Object: newKey},
+			minio.CopySrcOptions{Bucket: f.bucket, Object: oldKey}); err != nil {
 			return fmt.Errorf("s3 copy %s -> %s: %w", oldKey, newKey, err)
 		}
 	}
@@ -672,16 +649,12 @@ func (f *S3FS) DeleteRepoPrefix(fullName string) error {
 	defer cancel()
 
 	for {
-		resp, err := f.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket: aws.String(f.bucket),
-			Prefix: aws.String(prefix),
-		})
-		if err != nil {
-			return fmt.Errorf("s3 list %s: %w", prefix, err)
-		}
-		keys := make([]string, 0, len(resp.Contents))
-		for _, obj := range resp.Contents {
-			keys = append(keys, aws.ToString(obj.Key))
+		var keys []string
+		for object := range f.client.Client.ListObjects(ctx, f.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+			if object.Err != nil {
+				return fmt.Errorf("s3 list %s: %w", prefix, object.Err)
+			}
+			keys = append(keys, object.Key)
 		}
 		if len(keys) == 0 {
 			return nil
@@ -692,24 +665,24 @@ func (f *S3FS) DeleteRepoPrefix(fullName string) error {
 	}
 }
 
+// deleteObjectKeys removes many keys in one batched multi-delete. minio-go
+// batches the channel it drains into thousand-key requests internally, matching
+// the old explicit batching, and reports the first failure via its error channel.
 func (f *S3FS) deleteObjectKeys(ctx context.Context, keys []string) error {
-	const maxDeleteObjects = 1000
-	for start := 0; start < len(keys); start += maxDeleteObjects {
-		end := min(start+maxDeleteObjects, len(keys))
-		objects := make([]s3types.ObjectIdentifier, 0, end-start)
-		for _, key := range keys[start:end] {
-			objects = append(objects, s3types.ObjectIdentifier{Key: aws.String(key)})
+	objectsCh := make(chan minio.ObjectInfo)
+	go func() {
+		defer close(objectsCh)
+		for _, key := range keys {
+			select {
+			case objectsCh <- minio.ObjectInfo{Key: key}:
+			case <-ctx.Done():
+				return
+			}
 		}
-		response, err := f.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
-			Bucket: aws.String(f.bucket),
-			Delete: &s3types.Delete{Objects: objects, Quiet: aws.Bool(true)},
-		})
-		if err != nil {
-			return fmt.Errorf("s3 delete %d objects: %w", len(objects), err)
-		}
-		if len(response.Errors) > 0 {
-			first := response.Errors[0]
-			return fmt.Errorf("s3 delete %s: %s", aws.ToString(first.Key), aws.ToString(first.Message))
+	}()
+	for removeErr := range f.client.Client.RemoveObjects(ctx, f.bucket, objectsCh, minio.RemoveObjectsOptions{}) {
+		if removeErr.Err != nil {
+			return fmt.Errorf("s3 delete %s: %w", removeErr.ObjectName, removeErr.Err)
 		}
 	}
 	return nil
@@ -853,11 +826,7 @@ func (sf *s3File) flush() error {
 	if !dirty {
 		return nil
 	}
-	_, err := sf.fs.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(sf.fs.bucket),
-		Key:    aws.String(key),
-		Body:   bytes.NewReader(data),
-	})
+	_, err := sf.fs.client.Client.PutObject(ctx, sf.fs.bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("s3 put %s: %w", key, err)
 	}

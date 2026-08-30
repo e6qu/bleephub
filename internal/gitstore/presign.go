@@ -6,11 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	minio "github.com/minio/minio-go/v7"
 )
 
 // PresignedGetURL returns a URL that fetches one object directly from the
@@ -25,14 +24,11 @@ func (f *S3FS) PresignedGetURL(ctx context.Context, name string, expiry time.Dur
 		return "", fmt.Errorf("presign %s: expiry %s is not in the future", name, expiry)
 	}
 	key := f.key(name)
-	signed, err := s3.NewPresignClient(f.client).PresignGetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(f.bucket),
-		Key:    aws.String(key),
-	}, s3.WithPresignExpires(expiry))
+	signed, err := f.client.Client.PresignedGetObject(ctx, f.bucket, key, expiry, url.Values{})
 	if err != nil {
 		return "", fmt.Errorf("presign %s: %w", key, err)
 	}
-	return signed.URL, nil
+	return signed.String(), nil
 }
 
 // s3StreamPartSize is one multipart part's size; S3 requires every part but
@@ -54,12 +50,7 @@ func (f *S3FS) PutStream(ctx context.Context, name string, source io.Reader) err
 		return fmt.Errorf("read %s: %w", name, err)
 	}
 	if read < len(buffer) {
-		if _, err := f.client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket:        aws.String(f.bucket),
-			Key:           aws.String(key),
-			Body:          bytes.NewReader(buffer[:read]),
-			ContentLength: aws.Int64(int64(read)),
-		}); err != nil {
+		if _, err := f.client.Client.PutObject(ctx, f.bucket, key, bytes.NewReader(buffer[:read]), int64(read), minio.PutObjectOptions{}); err != nil {
 			return fmt.Errorf("s3 put %s: %w", key, err)
 		}
 		return nil
@@ -69,38 +60,23 @@ func (f *S3FS) PutStream(ctx context.Context, name string, source io.Reader) err
 
 // putStreamMultipart finishes a PutStream whose source outgrew one part.
 func (f *S3FS) putStreamMultipart(ctx context.Context, key string, first []byte, source io.Reader) error {
-	created, err := f.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-		Bucket: aws.String(f.bucket),
-		Key:    aws.String(key),
-	})
+	uploadID, err := f.client.NewMultipartUpload(ctx, f.bucket, key, minio.PutObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("s3 multipart create %s: %w", key, err)
 	}
-	uploadID := aws.ToString(created.UploadId)
 	abort := func() {
-		_, _ = f.client.AbortMultipartUpload(context.WithoutCancel(ctx), &s3.AbortMultipartUploadInput{
-			Bucket:   aws.String(f.bucket),
-			Key:      aws.String(key),
-			UploadId: aws.String(uploadID),
-		})
+		_ = f.client.AbortMultipartUpload(context.WithoutCancel(ctx), f.bucket, key, uploadID)
 	}
 
-	var parts []s3types.CompletedPart
+	var parts []minio.CompletePart
 	part := first
-	for number := int32(1); ; number++ {
-		uploaded, err := f.client.UploadPart(ctx, &s3.UploadPartInput{
-			Bucket:        aws.String(f.bucket),
-			Key:           aws.String(key),
-			UploadId:      aws.String(uploadID),
-			PartNumber:    aws.Int32(number),
-			Body:          bytes.NewReader(part),
-			ContentLength: aws.Int64(int64(len(part))),
-		})
+	for number := 1; ; number++ {
+		uploaded, err := f.client.PutObjectPart(ctx, f.bucket, key, uploadID, number, bytes.NewReader(part), int64(len(part)), minio.PutObjectPartOptions{})
 		if err != nil {
 			abort()
 			return fmt.Errorf("s3 multipart upload %s part %d: %w", key, number, err)
 		}
-		parts = append(parts, s3types.CompletedPart{ETag: uploaded.ETag, PartNumber: aws.Int32(number)})
+		parts = append(parts, minio.CompletePart{ETag: uploaded.ETag, PartNumber: number})
 		if len(part) < s3StreamPartSize {
 			break
 		}
@@ -115,12 +91,7 @@ func (f *S3FS) putStreamMultipart(ctx context.Context, key string, first []byte,
 		}
 		part = next[:read]
 	}
-	if _, err := f.client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
-		Bucket:          aws.String(f.bucket),
-		Key:             aws.String(key),
-		UploadId:        aws.String(uploadID),
-		MultipartUpload: &s3types.CompletedMultipartUpload{Parts: parts},
-	}); err != nil {
+	if _, err := f.client.CompleteMultipartUpload(ctx, f.bucket, key, uploadID, parts, minio.PutObjectOptions{}); err != nil {
 		abort()
 		return fmt.Errorf("s3 multipart complete %s: %w", key, err)
 	}

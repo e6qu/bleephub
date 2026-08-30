@@ -11,8 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	minio "github.com/minio/minio-go/v7"
 )
 
 // The freshness window bounds how stale a cross-replica negative answer may be:
@@ -376,25 +375,17 @@ func listCommonPrefixes(fs *S3FS, prefix string) ([]string, error) {
 	defer cancel()
 
 	var prefixes []string
-	var continuation *string
-	for {
-		resp, err := fs.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(fs.bucket),
-			Prefix:            aws.String(prefix),
-			Delimiter:         aws.String("/"),
-			ContinuationToken: continuation,
-		})
-		if err != nil {
-			return nil, err
+	// A non-recursive listing returns each immediate subdirectory as an
+	// ObjectInfo whose Key ends in the delimiter "/".
+	for object := range fs.client.Client.ListObjects(ctx, fs.bucket, minio.ListObjectsOptions{Prefix: prefix}) {
+		if object.Err != nil {
+			return nil, object.Err
 		}
-		for _, common := range resp.CommonPrefixes {
-			prefixes = append(prefixes, aws.ToString(common.Prefix))
+		if strings.HasSuffix(object.Key, "/") {
+			prefixes = append(prefixes, object.Key)
 		}
-		if !aws.ToBool(resp.IsTruncated) {
-			return prefixes, nil
-		}
-		continuation = resp.NextContinuationToken
 	}
+	return prefixes, nil
 }
 
 // listKeys enumerates every key directly under a bucket-absolute prefix,
@@ -404,23 +395,17 @@ func listKeys(fs *S3FS, prefix string) ([]string, error) {
 	defer cancel()
 
 	var keys []string
-	var continuation *string
-	for {
-		resp, err := fs.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(fs.bucket),
-			Prefix:            aws.String(prefix),
-			Delimiter:         aws.String("/"),
-			ContinuationToken: continuation,
-		})
-		if err != nil {
-			return nil, err
+	// Delimited (non-recursive) listing: file entries only, directory common
+	// prefixes (Key ending "/") are skipped since callers want the keys directly
+	// under prefix.
+	for object := range fs.client.Client.ListObjects(ctx, fs.bucket, minio.ListObjectsOptions{Prefix: prefix}) {
+		if object.Err != nil {
+			return nil, object.Err
 		}
-		for _, obj := range resp.Contents {
-			keys = append(keys, aws.ToString(obj.Key))
+		if strings.HasSuffix(object.Key, "/") {
+			continue
 		}
-		if !aws.ToBool(resp.IsTruncated) {
-			return keys, nil
-		}
-		continuation = resp.NextContinuationToken
+		keys = append(keys, object.Key)
 	}
+	return keys, nil
 }
