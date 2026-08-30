@@ -67,6 +67,32 @@ func TestGraphQLDocumentCostLimitsDepthAndFields(t *testing.T) {
 	}
 }
 
+// TestGraphQLNodeCostLimit pins the resolved-node budget: a query that is small
+// in static fields and under the depth cap but nests connections at first:100
+// (resolving ~10^6 nodes) is rejected before execution, while a modest nested
+// query passes.
+func TestGraphQLNodeCostLimit(t *testing.T) {
+	t.Parallel()
+	parse := func(query string) *ast.Document {
+		t.Helper()
+		document, err := parser.Parse(parser.ParseParams{Source: source.NewSource(&source.Source{Body: []byte(query)})})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return document
+	}
+
+	overBudget := `{ organization(login:"x") { repositories(first:100) { nodes { issues(first:100) { nodes { comments(first:100) { nodes { id } } } } } } } }`
+	if err := graphqlapi.CheckDocumentLimits(parse(overBudget), nil, 20, 5000); err == nil {
+		t.Fatal("nested first:100 query (~1e6 nodes) passed the node-cost limit")
+	}
+
+	modest := `{ organization(login:"x") { repositories(first:10) { nodes { issues(first:10) { nodes { title } } } } } }`
+	if err := graphqlapi.CheckDocumentLimits(parse(modest), nil, 20, 5000); err != nil {
+		t.Fatalf("modest nested query rejected by the node-cost limit: %v", err)
+	}
+}
+
 func TestGraphQLSchemasBuildWithServerLocalTypeRegistries(t *testing.T) {
 	t.Parallel()
 	servers := []*Server{newTestServer(), newTestServer()}
