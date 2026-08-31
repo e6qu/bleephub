@@ -643,7 +643,8 @@ func (s *ProjectV2Store) UpdateProject(id int, title *string, closed, public *bo
 	return p
 }
 
-// DeleteProject removes a project and its fields/items/views.
+// DeleteProject removes a project and every entity it owns: fields, items,
+// views, status updates and workflows.
 func (s *ProjectV2Store) DeleteProject(id int) bool {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -675,6 +676,24 @@ func (s *ProjectV2Store) DeleteProject(id int) bool {
 			batch.Delete("project_v2_views", strconv.Itoa(vid))
 		}
 	}
+	// Status updates and workflows are also project-owned (SeedProjectDefaults
+	// creates workflows for every project); cascade them too, or their in-memory
+	// index entries leak and their durable rows reload orphaned to a nonexistent
+	// project on restart.
+	for sid, upd := range s.statusUpdates {
+		if upd.ProjectID == id {
+			delete(s.statusUpdates, sid)
+			batch.Delete("project_v2_status_updates", strconv.Itoa(sid))
+		}
+	}
+	delete(s.statusByProj, id)
+	for wid, w := range s.workflows {
+		if w.ProjectID == id {
+			delete(s.workflows, wid)
+			batch.Delete("project_v2_workflows", strconv.Itoa(wid))
+		}
+	}
+	delete(s.workflowsByProj, id)
 	batch.Delete("projects_v2", strconv.Itoa(id))
 	if err := batch.Commit(); err != nil {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "projects_v2", Err: err})
