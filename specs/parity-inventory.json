@@ -32,10 +32,22 @@
         "source": "internal/server/gh_git_ref_writes.go"
       },
       {
+        "event": "create",
+        "line": 691,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/git_receivepack.go"
+      },
+      {
         "event": "delete",
         "line": 158,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_git_ref_writes.go"
+      },
+      {
+        "event": "delete",
+        "line": 693,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/git_receivepack.go"
       },
       {
         "event": "dependabot_alert",
@@ -237,7 +249,7 @@
       },
       {
         "event": "pull_request",
-        "line": 28,
+        "line": 32,
         "producer": "emitWebhookEvent",
         "source": "internal/server/workflow_triggers.go"
       },
