@@ -21,9 +21,11 @@ const (
 	actionsConcurrencyLockPoll = 25 * time.Millisecond
 )
 
-// ActionsConcurrencyLockName names the shared-database lock for one workflow concurrency group. Groups are user-controlled and unbounded, so digest them.
-func ActionsConcurrencyLockName(group string) string {
-	digest := sha256.Sum256([]byte(group))
+// ActionsConcurrencyLockName names the shared-database lock for one repository's
+// workflow concurrency group. Groups are repo-scoped on GitHub, so the repo is
+// part of the key; groups are user-controlled and unbounded, so digest them.
+func ActionsConcurrencyLockName(repoFullName, group string) string {
+	digest := sha256.Sum256([]byte(repoFullName + "\x00" + group))
 	return "actions/concurrency/" + hex.EncodeToString(digest[:])
 }
 

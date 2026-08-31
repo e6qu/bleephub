@@ -362,7 +362,7 @@ func (s *Resolver) userListToGQL(list *store.UserList) map[string]interface{} {
 		"updatedAt":   list.UpdatedAt.Format(time.RFC3339),
 		"lastAddedAt": lastAdded.Format(time.RFC3339),
 		"user":        optionalRendered(s.store.GetUserByID(list.UserID), userToGraphQL),
-		"items":       gqlConnectionSource(items),
+		"items":       gqlUnpagedSource(items),
 	}
 }
 

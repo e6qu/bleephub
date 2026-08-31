@@ -150,7 +150,14 @@ func (i *repoObjectIndex) looseAbsent(fs *S3FS, fanout string, key oidKey) (bool
 		if err != nil {
 			return false, false
 		}
-		if !roots[fanout] {
+		// refreshRoots returns the shared i.roots map (singleflight result),
+		// which noteLooseWrite mutates under i.mu — read it under the lock too,
+		// else a concurrent push racing a clone triggers a fatal concurrent
+		// map read/write.
+		i.mu.Lock()
+		rootExists := roots[fanout]
+		i.mu.Unlock()
+		if !rootExists {
 			return true, true
 		}
 	}
@@ -160,7 +167,13 @@ func (i *repoObjectIndex) looseAbsent(fs *S3FS, fanout string, key oidKey) (bool
 		// A failed listing is not evidence of absence; fall through to the read.
 		return false, false
 	}
-	return !refreshed.contains(key), true
+	// refreshed is the shared *cuckooFilter that noteLooseWrite/noteLooseRemoved
+	// mutate under i.mu — probe it under the lock, else a torn read can report a
+	// present object as absent (dropping it from a clone) or race the detector.
+	i.mu.Lock()
+	present := refreshed.contains(key)
+	i.mu.Unlock()
+	return !present, true
 }
 
 // refreshRoots lists objects/ with a delimiter, yielding one entry per

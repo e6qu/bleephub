@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/store"
 )
 
@@ -63,6 +64,21 @@ func (s *Server) resolveJobTokenPermissions(wf *store.Workflow, jd *store.JobDef
 				}
 				// YAML permission keys are hyphenated; permScope values are underscored.
 				perms[strings.ReplaceAll(k, "-", "_")] = v
+			}
+		}
+	}
+	// A fork-authored pull_request run receives a read-only GITHUB_TOKEN by
+	// default: the workflow is authored by an outside contributor, so a
+	// write-capable token (from the repo default or a `permissions:` block) must
+	// not be handed to it. GitHub's "Send write tokens to workflows from fork
+	// pull requests" setting (default off) is the sole opt-out.
+	if wf != nil && actions.IsForkPullRequestRun(wf) {
+		fork := s.store.GetRepoActionsPermissions(wf.RepoFullName).ForkPRWorkflowsPrivateRepos
+		if fork == nil || !fork.SendWriteTokensToWorkflows {
+			for k, v := range perms {
+				if v == "write" || v == "admin" {
+					perms[k] = "read"
+				}
 			}
 		}
 	}

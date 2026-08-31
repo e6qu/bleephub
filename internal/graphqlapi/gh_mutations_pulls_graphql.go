@@ -433,7 +433,7 @@ func (s *Resolver) mergeQueueToGQL(repo *store.Repo, baseRef string) map[string]
 		// bleephub merges an entry as soon as its own checks pass; no batch
 		// wait to estimate.
 		"nextEntryEstimatedTimeToMerge": nil,
-		"entries":                       gqlConnectionSource(entries),
+		"entries":                       gqlUnpagedSource(entries),
 	}
 }
 

@@ -400,6 +400,13 @@ func forkPullRequestWithholdsSecrets(wf *store.Workflow) bool {
 	return wf.EventName == "pull_request" && pullRequestIsFromFork(wf.EventPayload, wf.RepoFullName)
 }
 
+// IsForkPullRequestRun reports whether wf is a fork-authored pull_request run —
+// the runs that must receive a read-only GITHUB_TOKEN (and no secrets) by
+// default. Exported for the token-permission resolver in the server package.
+func IsForkPullRequestRun(wf *store.Workflow) bool {
+	return forkPullRequestWithholdsSecrets(wf)
+}
+
 // EffectiveCallSecrets resolves the secrets a job inside a reusable-workflow
 // call receives, narrowing the repository's set once per call from the
 // outermost inwards. `secrets: inherit` inherits the CALLING workflow's

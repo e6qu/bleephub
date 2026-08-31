@@ -273,8 +273,11 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
 			return
 		}
-		for _, c := range commitObjs {
-			commits = append(commits, commitToJSON(c, repo, s.store, s.baseURL(r)))
+		// CommitsBetween walks head→parents (newest first); GitHub's compare
+		// lists commits oldest first, so reverse (the .patch builder below does
+		// the same).
+		for i := len(commitObjs) - 1; i >= 0; i-- {
+			commits = append(commits, commitToJSON(commitObjs[i], repo, s.store, s.baseURL(r)))
 		}
 	}
 
@@ -422,17 +425,16 @@ func threeWayMergePaths(base, ours, theirs map[string]object.TreeEntry) (map[str
 
 		switch {
 		case !hasOurs && !hasTheirs:
-			result[p] = b
+			// Both sides deleted p → git drops it (omit from the merged tree).
 		case !hasOurs:
-			if sameEntry(b, t) {
-				result[p] = b
-			} else {
+			// ours deleted p. If theirs left it unchanged the deletion wins and p
+			// is dropped; if theirs modified it, that's a delete/modify conflict.
+			if !sameEntry(b, t) {
 				return nil, fmt.Errorf("merge conflict: %s", p)
 			}
 		case !hasTheirs:
-			if sameEntry(b, o) {
-				result[p] = b
-			} else {
+			// theirs deleted p; symmetric to the case above.
+			if !sameEntry(b, o) {
 				return nil, fmt.Errorf("merge conflict: %s", p)
 			}
 		case sameEntry(o, t):

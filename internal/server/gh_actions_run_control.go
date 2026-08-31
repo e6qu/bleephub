@@ -54,7 +54,10 @@ func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request
 	var activeWf *store.Workflow
 	if wf.ConcurrencyGroup != "" {
 		for _, existing := range s.store.Workflows {
-			if existing.ID != wf.ID && existing.ConcurrencyGroup == wf.ConcurrencyGroup &&
+			// Concurrency groups are repo-scoped: only a run in the SAME repo with
+			// the same evaluated group name contends.
+			if existing.ID != wf.ID && existing.RepoFullName == wf.RepoFullName &&
+				existing.ConcurrencyGroup == wf.ConcurrencyGroup &&
 				existing.Status == store.WorkflowStatusRunning {
 				activeWf = existing
 				break

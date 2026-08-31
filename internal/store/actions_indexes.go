@@ -94,10 +94,11 @@ func (st *Store) SyncWorkflowIndexesLocked(wf *Workflow) {
 		if wf.Status == WorkflowStatusCompleted {
 			st.removeWorkflowGroupEntryLocked(wf)
 		} else {
-			group := st.workflowsByConcurrencyGroup[wf.ConcurrencyGroup]
+			key := concurrencyIndexKey(wf.RepoFullName, wf.ConcurrencyGroup)
+			group := st.workflowsByConcurrencyGroup[key]
 			if group == nil {
 				group = make(map[string]*Workflow)
-				st.workflowsByConcurrencyGroup[wf.ConcurrencyGroup] = group
+				st.workflowsByConcurrencyGroup[key] = group
 			}
 			group[wf.ID] = wf
 		}
@@ -113,28 +114,30 @@ func (st *Store) SyncJobConcurrencyEntryLocked(wf *Workflow, wfJob *WorkflowJob)
 	if wfJob == nil || wfJob.ConcurrencyGroup == "" || st.jobsByConcurrencyGroup == nil {
 		return
 	}
+	key := concurrencyIndexKey(wf.RepoFullName, wfJob.ConcurrencyGroup)
 	if wfJob.Status == JobStatusCompleted || wfJob.Status == JobStatusSkipped {
-		if group := st.jobsByConcurrencyGroup[wfJob.ConcurrencyGroup]; group != nil {
+		if group := st.jobsByConcurrencyGroup[key]; group != nil {
 			delete(group, wfJob)
 			if len(group) == 0 {
-				delete(st.jobsByConcurrencyGroup, wfJob.ConcurrencyGroup)
+				delete(st.jobsByConcurrencyGroup, key)
 			}
 		}
 		return
 	}
-	group := st.jobsByConcurrencyGroup[wfJob.ConcurrencyGroup]
+	group := st.jobsByConcurrencyGroup[key]
 	if group == nil {
 		group = make(map[*WorkflowJob]*Workflow)
-		st.jobsByConcurrencyGroup[wfJob.ConcurrencyGroup] = group
+		st.jobsByConcurrencyGroup[key] = group
 	}
 	group[wfJob] = wf
 }
 
 func (st *Store) removeWorkflowGroupEntryLocked(wf *Workflow) {
-	if group := st.workflowsByConcurrencyGroup[wf.ConcurrencyGroup]; group != nil {
+	key := concurrencyIndexKey(wf.RepoFullName, wf.ConcurrencyGroup)
+	if group := st.workflowsByConcurrencyGroup[key]; group != nil {
 		delete(group, wf.ID)
 		if len(group) == 0 {
-			delete(st.workflowsByConcurrencyGroup, wf.ConcurrencyGroup)
+			delete(st.workflowsByConcurrencyGroup, key)
 		}
 	}
 }
@@ -161,10 +164,11 @@ func (st *Store) UnindexWorkflowLocked(wf *Workflow) {
 		if wfJob.ConcurrencyGroup == "" {
 			continue
 		}
-		if group := st.jobsByConcurrencyGroup[wfJob.ConcurrencyGroup]; group != nil {
+		key := concurrencyIndexKey(wf.RepoFullName, wfJob.ConcurrencyGroup)
+		if group := st.jobsByConcurrencyGroup[key]; group != nil {
 			delete(group, wfJob)
 			if len(group) == 0 {
-				delete(st.jobsByConcurrencyGroup, wfJob.ConcurrencyGroup)
+				delete(st.jobsByConcurrencyGroup, key)
 			}
 		}
 	}
@@ -203,8 +207,9 @@ func (st *Store) WorkflowsForRepoLocked(repoFullName string) []*Workflow {
 // WorkflowConcurrencyPeersLocked snapshots the non-completed workflows in a
 // concurrency group, lazily pruning entries completed since indexing. Callers
 // hold the write lock.
-func (st *Store) WorkflowConcurrencyPeersLocked(group string) []*Workflow {
-	entries := st.workflowsByConcurrencyGroup[group]
+func (st *Store) WorkflowConcurrencyPeersLocked(repoFullName, group string) []*Workflow {
+	key := concurrencyIndexKey(repoFullName, group)
+	entries := st.workflowsByConcurrencyGroup[key]
 	if len(entries) == 0 {
 		return nil
 	}
@@ -217,7 +222,7 @@ func (st *Store) WorkflowConcurrencyPeersLocked(group string) []*Workflow {
 		peers = append(peers, wf)
 	}
 	if len(entries) == 0 {
-		delete(st.workflowsByConcurrencyGroup, group)
+		delete(st.workflowsByConcurrencyGroup, key)
 	}
 	return peers
 }
@@ -225,8 +230,9 @@ func (st *Store) WorkflowConcurrencyPeersLocked(group string) []*Workflow {
 // JobConcurrencyPeersLocked snapshots the non-terminal jobs in a job
 // concurrency group, lazily pruning entries gone terminal since indexing.
 // Callers hold the write lock.
-func (st *Store) JobConcurrencyPeersLocked(group string) []jobConcurrencyPeer {
-	entries := st.jobsByConcurrencyGroup[group]
+func (st *Store) JobConcurrencyPeersLocked(repoFullName, group string) []jobConcurrencyPeer {
+	key := concurrencyIndexKey(repoFullName, group)
+	entries := st.jobsByConcurrencyGroup[key]
 	if len(entries) == 0 {
 		return nil
 	}
@@ -239,9 +245,18 @@ func (st *Store) JobConcurrencyPeersLocked(group string) []jobConcurrencyPeer {
 		peers = append(peers, jobConcurrencyPeer{Job: wfJob, Wf: wf})
 	}
 	if len(entries) == 0 {
-		delete(st.jobsByConcurrencyGroup, group)
+		delete(st.jobsByConcurrencyGroup, key)
 	}
 	return peers
+}
+
+// concurrencyIndexKey namespaces a concurrency group by repository so two
+// repositories that evaluate the same group name (e.g. `ci-refs/heads/main`)
+// never share a scheduling namespace — on GitHub a concurrency group is
+// repo-scoped. Operator-submitted runs (empty RepoFullName) keep their own
+// bare namespace. The NUL separator cannot appear in a repo full-name.
+func concurrencyIndexKey(repoFullName, group string) string {
+	return repoFullName + "\x00" + group
 }
 
 // ClearRunJobMessagesLocked drops the secret-bearing job messages of a

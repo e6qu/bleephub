@@ -206,11 +206,11 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *store
 	// On a shared database the section runs under the group's database lock so two replicas cannot both admit (ACT-012).
 	var cancelForConcurrency []*store.Workflow
 	if workflow.ConcurrencyGroup != "" {
-		releaseGroupLock := s.acquireConcurrencyAdmissionLock(ActionsConcurrencyLockName(workflow.ConcurrencyGroup))
+		releaseGroupLock := s.acquireConcurrencyAdmissionLock(ActionsConcurrencyLockName(workflow.RepoFullName, workflow.ConcurrencyGroup))
 		s.workflowConcurrencyMu.Lock()
 		s.store.Mu.Lock()
 		var active bool
-		for _, existing := range s.store.WorkflowConcurrencyPeersLocked(workflow.ConcurrencyGroup) {
+		for _, existing := range s.store.WorkflowConcurrencyPeersLocked(workflow.RepoFullName, workflow.ConcurrencyGroup) {
 			switch existing.Status {
 			case store.WorkflowStatusRunning, store.WorkflowStatusWaiting:
 				active = true
@@ -434,7 +434,7 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 					s.store.SyncJobConcurrencyEntryLocked(wf, wfJob)
 				}
 				blocked := false
-				for _, peer := range s.store.JobConcurrencyPeersLocked(wfJob.ConcurrencyGroup) {
+				for _, peer := range s.store.JobConcurrencyPeersLocked(wf.RepoFullName, wfJob.ConcurrencyGroup) {
 					other, otherWorkflow := peer.Job, peer.Wf
 					if other == wfJob {
 						continue
@@ -744,7 +744,7 @@ func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
 		}
 	}
 	if foundJob.ConcurrencyGroup != "" {
-		s.startPendingJobConcurrency(ctx, foundJob.ConcurrencyGroup)
+		s.startPendingJobConcurrency(ctx, foundWf.RepoFullName, foundJob.ConcurrencyGroup)
 	}
 
 	s.store.Mu.Lock()
@@ -787,16 +787,16 @@ func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
 			Msg("workflow completed")
 
 		if concurrencyGroup != "" {
-			s.startPendingConcurrencyWorkflow(concurrencyGroup)
+			s.startPendingConcurrencyWorkflow(foundWf.RepoFullName, concurrencyGroup)
 		}
 	}
 }
 
-func (s *Engine) startPendingJobConcurrency(ctx context.Context, group string) {
+func (s *Engine) startPendingJobConcurrency(ctx context.Context, repoFullName, group string) {
 	s.store.Mu.Lock()
 	pending := make([]*store.Workflow, 0)
 	seen := map[*store.Workflow]bool{}
-	for _, peer := range s.store.JobConcurrencyPeersLocked(group) {
+	for _, peer := range s.store.JobConcurrencyPeersLocked(repoFullName, group) {
 		if peer.Job.Status == store.JobStatusPending && !seen[peer.Wf] {
 			seen[peer.Wf] = true
 			pending = append(pending, peer.Wf)
@@ -971,7 +971,7 @@ func (s *Engine) FinalizeWorkflowIfDone(wf *store.Workflow) {
 		s.StopTimeoutWatcher(wf)
 		s.QueueEvent(EvRunCompleted, wf, nil)
 		if concurrencyGroup != "" {
-			s.startPendingConcurrencyWorkflow(concurrencyGroup)
+			s.startPendingConcurrencyWorkflow(wf.RepoFullName, concurrencyGroup)
 		}
 	}
 }
@@ -1051,14 +1051,14 @@ func (s *Engine) CancelWorkflow(wf *store.Workflow) {
 
 // startPendingConcurrencyWorkflow promotes the next pending run in the group. On a shared database the promotion
 // runs under the group's database lock so a peer cannot double-admit (ACT-012).
-func (s *Engine) startPendingConcurrencyWorkflow(group string) {
+func (s *Engine) startPendingConcurrencyWorkflow(repoFullName, group string) {
 	// Release the lock once the promotion is committed, before stale-run cancellation, which can recurse here for the same group.
-	releaseGroupLock := s.acquireConcurrencyAdmissionLock(ActionsConcurrencyLockName(group))
+	releaseGroupLock := s.acquireConcurrencyAdmissionLock(ActionsConcurrencyLockName(repoFullName, group))
 	s.workflowConcurrencyMu.Lock()
 	s.store.Mu.Lock()
 	var pendingWf *store.Workflow
 	var stale []*store.Workflow
-	for _, wf := range s.store.WorkflowConcurrencyPeersLocked(group) {
+	for _, wf := range s.store.WorkflowConcurrencyPeersLocked(repoFullName, group) {
 		if wf.Status == store.WorkflowStatusRunning || wf.Status == store.WorkflowStatusWaiting {
 			s.store.Mu.Unlock()
 			s.workflowConcurrencyMu.Unlock()

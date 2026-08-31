@@ -249,7 +249,7 @@ func (s *Resolver) gqlStargazerEdgeType() *graphql.Object {
 func (s *Resolver) stargazerConnectionSource(repo *store.Repo) map[string]interface{} {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
-		return gqlConnectionSource(nil)
+		return gqlUnpagedSource(nil)
 	}
 	starredAt := s.store.RepoStargazersAt(owner, name)
 	ids := s.store.ListRepoStargazers(owner, name)
@@ -269,7 +269,7 @@ func (s *Resolver) stargazerConnectionSource(repo *store.Repo) map[string]interf
 		node["starredAt"] = at.UTC().Format(time.RFC3339)
 		nodes = append(nodes, node)
 	}
-	return gqlConnectionSource(nodes)
+	return gqlUnpagedSource(nodes)
 }
 
 // star resolvers
