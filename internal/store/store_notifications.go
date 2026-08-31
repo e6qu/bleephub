@@ -294,13 +294,25 @@ func notificationReason(st *Store, user *User, src notificationThreadSource) str
 	if bodyMentions(src.Body, user.Login) {
 		return "mention"
 	}
-	parentType := strings.ToLower(src.Type)
+	parentType := subjectParentType(src.Type)
 	for _, c := range st.Comments {
 		if c.AuthorID == user.ID && c.IssueID == src.ID && strings.ToLower(c.ParentType) == parentType {
 			return "comment"
 		}
 	}
 	return "subscribed"
+}
+
+// subjectParentType maps a notification subject's Type ("Issue" / "PullRequest")
+// to the ParentType spelling comment rows store ("issue" / "pull_request"). A
+// PR's Type lower-cases to "pullrequest", which never equals a comment's
+// "pull_request", so keying comment lookups on it silently dropped every PR
+// comment/mention reason (and latest_comment_url).
+func subjectParentType(subjectType string) string {
+	if subjectType == "PullRequest" {
+		return "pull_request"
+	}
+	return strings.ToLower(subjectType)
 }
 
 // bodyMentions reports whether body @-mentions login at a word boundary (so
@@ -347,7 +359,7 @@ func notificationReasonWithComments(user *User, src notificationThreadSource, co
 			return "review_requested"
 		}
 	}
-	key := strings.ToLower(src.Type) + "\x1f" + strconv.Itoa(src.ID)
+	key := subjectParentType(src.Type) + "\x1f" + strconv.Itoa(src.ID)
 	if bodyMentions(src.Body, user.Login) {
 		return "mention"
 	}
@@ -422,8 +434,8 @@ func (st *Store) buildThread(row NotificationThreadRow, baseURL string) *Notific
 	var latestCommentID int
 	var latestCommentAt time.Time
 	st.Mu.RLock()
+	parentType := subjectParentType(src.Type)
 	for _, c := range st.Comments {
-		parentType := strings.ToLower(src.Type)
 		if c.ParentType == parentType && c.IssueID == src.ID {
 			if latestCommentID == 0 || c.CreatedAt.After(latestCommentAt) {
 				latestCommentID = c.ID

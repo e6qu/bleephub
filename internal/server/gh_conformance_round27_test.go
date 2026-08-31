@@ -84,3 +84,45 @@ func TestNotificationReasonsReviewRequestedAndMention(t *testing.T) {
 		t.Error("mentioned user bob has no mention notification")
 	}
 }
+
+// A user who comments on a pull request — without watching the repo — must get
+// a thread with reason "comment", and a user @-mentioned in a PR comment must
+// get reason "mention". A PR's subject Type is "PullRequest", which lower-cases
+// to "pullrequest" and never equalled a comment row's "pull_request"
+// ParentType, so both reasons silently collapsed to "subscribed" and were then
+// gated out entirely (the commenter/mentioned user saw no thread at all).
+func TestPullRequestCommentNotificationReasons(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	carol := s.createTestUser(t, "carol")
+	dan := s.createTestUser(t, "dan")
+	carolTok := s.store.CreateToken(carol.ID, "repo")
+	danTok := s.store.CreateToken(dan.ID, "repo")
+
+	s.createTestPRRepo(t, "notif-pr-comment")
+	repo := s.store.GetRepo("admin", "notif-pr-comment")
+	s.post(t, "/api/v3/repos/admin/notif-pr-comment/pulls", defaultToken, map[string]interface{}{
+		"title": "review me", "head": "feature", "base": "main",
+	}).Body.Close()
+	pr := s.store.GetPullRequestByNumber(repo.ID, 1)
+	if pr == nil {
+		t.Fatal("PR #1 not created")
+	}
+
+	// carol comments on the PR: reason "comment", surfaced without watching.
+	if s.store.CreateCommentFor("pull_request", pr.ID, carol.ID, "looks good") == nil {
+		t.Fatal("CreateCommentFor(pull_request) failed")
+	}
+	if !notificationReasonsFor(t, s, carolTok.Value)["comment"] {
+		t.Error("PR commenter carol has no comment notification")
+	}
+
+	// dan is @-mentioned in a PR comment: reason "mention".
+	if s.store.CreateCommentFor("pull_request", pr.ID, admin.ID, "cc @dan") == nil {
+		t.Fatal("CreateCommentFor(pull_request) mention failed")
+	}
+	if !notificationReasonsFor(t, s, danTok.Value)["mention"] {
+		t.Error("PR-comment-mentioned user dan has no mention notification")
+	}
+}
