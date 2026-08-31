@@ -124,7 +124,13 @@ func TestStoreClockControlsIndependentStoreModules(t *testing.T) {
 	if advisory == nil || !advisory.CreatedAt.Equal(want) {
 		t.Fatalf("advisory time = %v, want %v", advisory, want)
 	}
-	if ok := st.RequestCVE(advisory.ID); !ok || !strings.HasPrefix(advisory.CVEID, "CVE-2077-") {
+	if ok := st.RequestCVE(advisory.ID); !ok {
+		t.Fatal("RequestCVE failed")
+	}
+	// CreateSecurityAdvisory returns a detached snapshot (STORE-021), so re-fetch
+	// to observe the CVE ID that RequestCVE assigned to the stored row.
+	assigned := st.GetSecurityAdvisoryByGHSA(repo.ID, advisory.GHSAID)
+	if assigned == nil || !strings.HasPrefix(assigned.CVEID, "CVE-2077-") {
 		t.Fatalf("CVE ID = %q, want injected year", advisory.CVEID)
 	}
 }
