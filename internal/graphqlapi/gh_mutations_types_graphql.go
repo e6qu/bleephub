@@ -220,10 +220,21 @@ func gqlFieldListOf(t graphql.Output) *graphql.Field {
 	return &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(t))}
 }
 
-// gqlConnectionSource materialises a rendered node list into the standard
-// connection source shape (nodes, edges, pageInfo, totalCount).
+// gqlConnectionSource materialises a rendered node list into a terminal
+// connection (nodes, edges, pageInfo, totalCount), windowed to the default 30.
+// Use it only where the result is returned directly; a connection that is later
+// re-paged by repaginateConnection must use gqlUnpagedSource instead — feeding a
+// pre-windowed source into repaginateConnection caps it at 30 and dead-ends
+// paging past the first page.
 func gqlConnectionSource(nodes []map[string]interface{}) map[string]interface{} {
 	return paginateGQLMaps(nodes, nil)
+}
+
+// gqlUnpagedSource wraps the FULL rendered node list as a repaginate-ready
+// source (no window applied). It is only valid when fed through
+// repaginateConnection, which applies the caller's Relay window.
+func gqlUnpagedSource(nodes []map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{"nodes": nodes, "totalCount": len(nodes)}
 }
 
 // input readers

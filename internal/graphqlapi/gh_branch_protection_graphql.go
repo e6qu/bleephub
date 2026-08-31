@@ -425,8 +425,9 @@ func flattenBPActors(groups ...[]store.BPActor) []store.BPActor {
 	return out
 }
 
-// allowanceConnectionSource renders one allowance list as a pre-paginated
-// connection source. Each node's synthetic id (rule/kind/actor) is stable across reads.
+// allowanceConnectionSource renders one allowance list as a repaginate-ready
+// connection source (all nodes retained; the field re-pages via
+// repaginatedField). Each node's synthetic id (rule/kind/actor) is stable across reads.
 func (s *Resolver) allowanceConnectionSource(repo *store.Repo, pattern, kind string, actors []store.BPActor) map[string]interface{} {
 	nodes := make([]map[string]interface{}, 0, len(actors))
 	for _, actor := range actors {
@@ -437,7 +438,7 @@ func (s *Resolver) allowanceConnectionSource(repo *store.Repo, pattern, kind str
 			"_pattern": pattern,
 		})
 	}
-	return paginateGQLMaps(nodes, nil)
+	return gqlUnpagedSource(nodes)
 }
 
 // bpActorSource renders a restriction actor as its union member. An unresolvable

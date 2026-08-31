@@ -38,7 +38,9 @@ func TestConcurrencyAdmissionSerializesAcrossReplicas(t *testing.T) {
 		}
 		return wd
 	}
-	lockName := actions.ActionsConcurrencyLockName("deploy")
+	// The submitted runs carry no repository (no eventMeta), so their concurrency
+	// group is keyed under the empty repo namespace.
+	lockName := actions.ActionsConcurrencyLockName("", "deploy")
 
 	// Exclusively owned (sqlite): a held database lock is irrelevant — the
 	// single-process path must skip the lock entirely.

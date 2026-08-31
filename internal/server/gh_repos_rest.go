@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1443,13 +1444,22 @@ func (s *Server) handleListCollaborators(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	collabs := s.store.ListRepoCollaborators(owner, name)
+	// ListRepoCollaborators returns a map; range order is randomized per call,
+	// so paginating it directly duplicates/drops collaborators across pages.
+	// Emit the owner first (always the admin collaborator), then a login-sorted
+	// stable order.
+	logins := make([]string, 0, len(collabs))
+	for login := range collabs {
+		logins = append(logins, login)
+	}
+	sort.Strings(logins)
 	out := make([]map[string]interface{}, 0, len(collabs)+1)
 	if repo.Owner != nil {
 		out = append(out, collaboratorJSON(repo.Owner, "admin", s.baseURL(r)))
 	}
-	for login, perm := range collabs {
+	for _, login := range logins {
 		if u := s.store.LookupUserByLogin(login); u != nil {
-			out = append(out, collaboratorJSON(u, perm, s.baseURL(r)))
+			out = append(out, collaboratorJSON(u, collabs[login], s.baseURL(r)))
 		}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -1580,7 +1590,10 @@ func (s *Server) handleRemoveCollaborator(w http.ResponseWriter, r *http.Request
 func collaboratorJSON(u *store.User, perm, baseURL string) map[string]interface{} {
 	json := store.UserToJSON(u, baseURL)
 	json["permissions"] = collaboratorPermsJSON(perm)
-	json["role_name"] = perm
+	// role_name uses GitHub's vocabulary (read/write/admin), not the internal
+	// pull/push/admin store perm — matching the sibling permission/invitation
+	// renderers.
+	json["role_name"] = githubRoleName(perm)
 	return json
 }
 
