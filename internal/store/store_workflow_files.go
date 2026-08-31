@@ -113,6 +113,14 @@ func (st *Store) SetWorkflowFileState(repoFullName, path, state string) bool {
 func (st *Store) GetWorkflowFile(repoFullName string, id int64) *WorkflowFile {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	return st.GetWorkflowFileLocked(repoFullName, id)
+}
+
+// GetWorkflowFileLocked is GetWorkflowFile for callers that already hold st.Mu.
+// Calling the locking GetWorkflowFile from a `...Locked` render path recursively
+// read-locks st.Mu, which deadlocks the moment a writer is queued (Go's RWMutex
+// gives writers priority over new readers).
+func (st *Store) GetWorkflowFileLocked(repoFullName string, id int64) *WorkflowFile {
 	wf, ok := st.WorkflowFiles[id]
 	if !ok {
 		return nil

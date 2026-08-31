@@ -120,8 +120,13 @@ func paginateGQLItems(items []gqlConnItem, args map[string]interface{}) map[stri
 		}
 	}
 	// first: 0 is valid (metadata, no nodes); it must not fold into the
-	// unspecified default-page path below.
-	if first, ok := intArg(args, "first"); ok && first >= 0 {
+	// unspecified default-page path below. A negative first is malformed; clamp
+	// it to 0 (empty page) so it cannot skip this cap and dump the whole
+	// connection unbounded.
+	if first, ok := intArg(args, "first"); ok {
+		if first < 0 {
+			first = 0
+		}
 		if first > 100 {
 			first = 100
 		}
@@ -224,7 +229,15 @@ func paginateGQL[T any](items []T, first int, after string, toGQL func(T) map[st
 
 	startIdx := 0
 	if after != "" {
-		startIdx = resolveItemCursorIndex(items, after, identity, decodeCursor(after)) + 1
+		// Saturate before +1 so a malformed/foreign cursor (fallback MaxInt)
+		// describes an empty window rather than overflowing negative and
+		// re-serving page one (mirrors paginateGQLItems).
+		afterIdx := resolveItemCursorIndex(items, after, identity, decodeCursor(after))
+		if afterIdx >= total {
+			startIdx = total
+		} else {
+			startIdx = afterIdx + 1
+		}
 	}
 	if startIdx < 0 {
 		startIdx = 0

@@ -333,7 +333,12 @@ func paginateTimelineEntries(entries []timelineEntry, args map[string]interface{
 			start = end - last
 		}
 	}
-	if first, ok := intArg(args, "first"); ok && first >= 0 {
+	// A negative first is malformed; clamp to 0 (empty page) so it cannot skip
+	// this cap and dump the whole connection unbounded.
+	if first, ok := intArg(args, "first"); ok {
+		if first < 0 {
+			first = 0
+		}
 		if first > 100 {
 			first = 100
 		}
