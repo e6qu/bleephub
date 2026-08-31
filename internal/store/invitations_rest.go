@@ -62,7 +62,14 @@ func (st *Store) GetRepoInvitation(repoKey string, id int) *RepoInvitation {
 	if st.RepoInvitations[repoKey] == nil {
 		return nil
 	}
-	return st.RepoInvitations[repoKey][id]
+	inv := st.RepoInvitations[repoKey][id]
+	if inv == nil {
+		return nil
+	}
+	// All-value struct: shallow copy detaches it (STORE-021); UpdateRepoInvitation
+	// rewrites Permissions in place.
+	cp := *inv
+	return &cp
 }
 
 // UpdateRepoInvitation changes the permission on a pending invitation, or

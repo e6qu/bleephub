@@ -439,7 +439,13 @@ func (s *Server) handleSecurityAdvisoryReportsDispatch(w http.ResponseWriter, r 
 		VulnerableVersionRange: adv.VulnerableVersionRange,
 		CreatedAt:              time.Now().UTC(),
 	})
-	adv.SubmissionAccepted = true
+	// Persist submission acceptance through the store mutator (under the lock)
+	// rather than writing the returned snapshot: the getter now detaches, and the
+	// old in-place write both raced the store and never persisted the flag.
+	s.store.UpdateSecurityAdvisory(adv.ID, func(a *store.SecurityAdvisory) {
+		a.SubmissionAccepted = true
+	})
+	adv.SubmissionAccepted = true // reflect it on the local copy for the event + JSON
 	// A private vulnerability report is the one draft-stage transition that emits an event, so maintainers learn one was filed.
 	s.emitRepositoryAdvisoryEvent(repo, adv, user, "reported")
 	advJSON := securityAdvisoryToJSON(adv, repo, s.baseURL(r), s.store)

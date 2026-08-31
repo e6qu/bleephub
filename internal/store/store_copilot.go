@@ -60,6 +60,31 @@ func (st *Store) persistCopilotSeatBatchLocked(batch *PersistBatch, seat *Copilo
 	batch.Put("copilot_seats", copilotSeatKey(seat.OrgLogin, seat.UserID), seat)
 }
 
+// cloneCopilotSeat detaches a seat (STORE-021); it is all-value, so a shallow
+// copy is a full snapshot. Seat writes mutate PendingCancellationDate/UpdatedAt
+// in place, so a reader must not hold the live row.
+func cloneCopilotSeat(s *CopilotSeat) *CopilotSeat {
+	if s == nil {
+		return nil
+	}
+	cp := *s
+	return &cp
+}
+
+// cloneCopilotCodingAgentPermissions detaches the policy; SelectedRepositoryIDs
+// is compacted in place by RemoveCopilotCodingAgentSelectedRepo, so the slice
+// needs its own backing array.
+func cloneCopilotCodingAgentPermissions(p *CopilotCodingAgentPermissions) *CopilotCodingAgentPermissions {
+	if p == nil {
+		return nil
+	}
+	cp := *p
+	if p.SelectedRepositoryIDs != nil {
+		cp.SelectedRepositoryIDs = append([]int(nil), p.SelectedRepositoryIDs...)
+	}
+	return &cp
+}
+
 // GetCopilotSeat returns the org's seat for the user, or nil. An expired seat
 // reads as absent; its durable removal happens on the next seat write.
 func (st *Store) GetCopilotSeat(orgLogin string, userID int) *CopilotSeat {
@@ -69,7 +94,7 @@ func (st *Store) GetCopilotSeat(orgLogin string, userID int) *CopilotSeat {
 	if seat == nil || copilotSeatExpired(seat, st.CurrentTime()) {
 		return nil
 	}
-	return seat
+	return cloneCopilotSeat(seat)
 }
 
 // ListCopilotSeats returns the org's seats by creation time (user ID tie-break)
@@ -273,7 +298,7 @@ func (st *Store) persistCopilotCodingAgentPermsLocked(p *CopilotCodingAgentPermi
 func (st *Store) GetCopilotCodingAgentPermissions(orgLogin string) *CopilotCodingAgentPermissions {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.copilotCodingAgentPermsReadLocked(orgLogin)
+	return cloneCopilotCodingAgentPermissions(st.copilotCodingAgentPermsReadLocked(orgLogin))
 }
 
 // copilotCodingAgentPermsReadLocked returns the org's stored policy or the
