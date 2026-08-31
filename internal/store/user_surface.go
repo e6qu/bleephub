@@ -377,7 +377,7 @@ func (st *Store) ListUserFilteredIssues(user *User, filter string) []IssueWithRe
 			continue
 		}
 		if matches(issue, repo) {
-			out = append(out, IssueWithRepo{Issue: issue, Repo: repo})
+			out = append(out, IssueWithRepo{Issue: cloneIssue(issue), Repo: cloneRepo(repo)})
 		}
 	}
 	return out
@@ -428,7 +428,7 @@ func (st *Store) ListUserFilteredPulls(user *User, filter string) []PullWithRepo
 			continue
 		}
 		if matches(pr, repo) {
-			out = append(out, PullWithRepo{Pull: clonePullRequest(pr), Repo: repo})
+			out = append(out, PullWithRepo{Pull: clonePullRequest(pr), Repo: cloneRepo(repo)})
 		}
 	}
 	return out

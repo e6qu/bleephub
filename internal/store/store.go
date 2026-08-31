@@ -4773,7 +4773,13 @@ func (st *Store) UpdateGistE(id string, description *string, files map[string]*G
 	}
 	for name, f := range files {
 		if _, existed := g.Files[name]; existed {
+			// Editing a file rewrites its content: the old bytes are removed and
+			// the new bytes added. Counting only the deletion (the prior bug) left
+			// change_status with zero additions on every edit.
 			deletions += len(g.Files[name].Content)
+			if f != nil {
+				additions += len(f.Content)
+			}
 		} else {
 			additions += len(f.Content)
 		}
