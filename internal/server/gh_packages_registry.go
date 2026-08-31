@@ -16,12 +16,20 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
 const containerRegistryAPIVersion = "registry/2.0"
+
+// registryUploadIdleTTL bounds how long an in-progress blob upload may sit idle
+// (no PATCH/PUT) before the reaper closes its temp file and drops the session.
+// Each chunk refreshes the session's activity, so even a multi-hour push
+// survives as long as chunks keep arriving inside this window; only genuinely
+// abandoned pushes (POST, then the client vanishes) are reclaimed.
+const registryUploadIdleTTL = time.Hour
 
 // containerRegistryUpload is one in-progress blob upload session. The bytes
 // stream to a temp file across the POST → PATCH* → PUT lifecycle (hashed as they
@@ -34,15 +42,61 @@ type containerRegistryUpload struct {
 	tmp  *os.File
 	hash hash.Hash
 	size int64
+	// lastActivity is refreshed (under mu) on every chunk so the abandoned-upload
+	// reaper can distinguish an idle-and-abandoned session from a slow-but-live
+	// push. Stamped from the server's injectable clock.
+	lastActivity time.Time
 }
 
-// discard closes and removes the session's temp file. Safe to call more than once.
+// discard closes and removes the session's temp file. Takes mu so it cannot
+// race a concurrent PATCH/PUT still writing tmp (or another discard). Safe to
+// call more than once; a finalized session has tmp == nil.
 func (u *containerRegistryUpload) discard() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	if u.tmp != nil {
 		name := u.tmp.Name()
 		_ = u.tmp.Close()
 		_ = os.Remove(name)
 		u.tmp = nil
+	}
+}
+
+// dropRegistryUpload removes a session from the map and discards its temp file.
+// The identity guard avoids deleting a slot a newer upload might occupy.
+func (s *Server) dropRegistryUpload(uploadID string, upload *containerRegistryUpload) {
+	s.registryUploadsMu.Lock()
+	if s.registryUploads[uploadID] == upload {
+		delete(s.registryUploads, uploadID)
+	}
+	s.registryUploadsMu.Unlock()
+	upload.discard()
+}
+
+// reapAbandonedRegistryUploads runs on the engine's minute tick and reclaims
+// blob-upload sessions idle past registryUploadIdleTTL (temp file + fd + map
+// slot). A client that POSTs an upload and then vanishes would otherwise leak
+// all three for the process's lifetime. The two mutexes are never held nested:
+// snapshot the sessions under registryUploadsMu, then inspect each under its own
+// mu, then drop the stale ones.
+func (s *Server) reapAbandonedRegistryUploads(now time.Time) {
+	type entry struct {
+		id string
+		u  *containerRegistryUpload
+	}
+	var all []entry
+	s.registryUploadsMu.Lock()
+	for id, u := range s.registryUploads {
+		all = append(all, entry{id, u})
+	}
+	s.registryUploadsMu.Unlock()
+	for _, e := range all {
+		e.u.mu.Lock()
+		idle := now.Sub(e.u.lastActivity) >= registryUploadIdleTTL
+		e.u.mu.Unlock()
+		if idle {
+			s.dropRegistryUpload(e.id, e.u)
+		}
 	}
 }
 
@@ -107,7 +161,9 @@ func (s *Server) handleContainerRegistryStartBlobUpload(w http.ResponseWriter, r
 	}
 	uploadID := uuid.NewString()
 	s.registryUploadsMu.Lock()
-	s.registryUploads[uploadID] = &containerRegistryUpload{Name: name, tmp: tmp, hash: sha256.New()}
+	s.registryUploads[uploadID] = &containerRegistryUpload{
+		Name: name, tmp: tmp, hash: sha256.New(), lastActivity: s.currentTime(),
+	}
 	s.registryUploadsMu.Unlock()
 	w.Header().Set("Docker-Upload-UUID", uploadID)
 	w.Header().Set("Location", s.containerRegistryUploadLocation(name, uploadID))
@@ -127,12 +183,26 @@ func (s *Server) handleContainerRegistryPatchBlobUpload(w http.ResponseWriter, r
 		return
 	}
 	upload.mu.Lock()
+	if upload.tmp == nil { // finalized or reaped out from under a late chunk
+		upload.mu.Unlock()
+		s.writeRegistryError(w, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "blob upload unknown")
+		return
+	}
 	n, err := io.Copy(io.MultiWriter(upload.tmp, upload.hash), http.MaxBytesReader(w, r.Body, maxUploadBytes))
 	upload.size += n
 	size := int(upload.size)
+	over := upload.size > maxUploadBytes
+	upload.lastActivity = s.currentTime()
 	upload.mu.Unlock()
 	if err != nil {
 		s.writeRegistryError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", "read upload body: "+err.Error())
+		return
+	}
+	// MaxBytesReader caps each chunk; this caps the blob's cumulative size across
+	// chunks so a stream of PATCHes cannot fill the disk unbounded.
+	if over {
+		s.dropRegistryUpload(uploadID, upload)
+		s.writeRegistryError(w, http.StatusRequestEntityTooLarge, "BLOB_UPLOAD_INVALID", "blob exceeds maximum size")
 		return
 	}
 	w.Header().Set("Docker-Upload-UUID", uploadID)
@@ -168,13 +238,23 @@ func (s *Server) handleContainerRegistryPutBlobUpload(w http.ResponseWriter, r *
 
 	// Append the (optional) final chunk carried on the PUT, then finalize.
 	upload.mu.Lock()
+	if upload.tmp == nil { // reaped between the map delete and here
+		upload.mu.Unlock()
+		s.writeRegistryError(w, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "blob upload unknown")
+		return
+	}
 	n, copyErr := io.Copy(io.MultiWriter(upload.tmp, upload.hash), http.MaxBytesReader(w, r.Body, maxUploadBytes))
 	upload.size += n
 	sum := upload.hash.Sum(nil)
 	size := upload.size
+	over := upload.size > maxUploadBytes
 	upload.mu.Unlock()
 	if copyErr != nil {
 		s.writeRegistryError(w, http.StatusBadRequest, "BLOB_UPLOAD_INVALID", "read upload body: "+copyErr.Error())
+		return
+	}
+	if over {
+		s.writeRegistryError(w, http.StatusRequestEntityTooLarge, "BLOB_UPLOAD_INVALID", "blob exceeds maximum size")
 		return
 	}
 	if got := "sha256:" + hex.EncodeToString(sum); got != digest {
