@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -86,6 +86,14 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
   const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // Reset accumulated pages when the repo changes; the tab instance is reused
+  // across repo navigations, so the previous repo's later pages would linger.
+  useEffect(() => {
+    setExtra([]);
+    setNextUrl(null);
+    setPageError(null);
+  }, [owner, repo]);
 
   const firstPage = useQuery({
     queryKey: ["deployments", owner, repo],
