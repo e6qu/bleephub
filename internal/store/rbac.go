@@ -106,9 +106,6 @@ func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName st
 		if team.OrgID != org.ID {
 			continue
 		}
-		if !PermissionAtLeast(team.Permission, minPermission) {
-			continue
-		}
 		repoFound := false
 		for _, rn := range team.RepoNames {
 			if rn == repoFullName {
@@ -117,6 +114,17 @@ func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName st
 			}
 		}
 		if !repoFound {
+			continue
+		}
+		// The team's permission on THIS repo is the per-repo override when set,
+		// else the team default. Using the default alone would grant a member the
+		// team's baseline even where the repo was explicitly downgraded (privilege
+		// escalation) — or deny where it was upgraded.
+		effective := team.Permission
+		if override, ok := team.RepoPermissions[repoFullName]; ok {
+			effective = override
+		}
+		if !PermissionAtLeast(effective, minPermission) {
 			continue
 		}
 		for _, mid := range team.MemberIDs {
