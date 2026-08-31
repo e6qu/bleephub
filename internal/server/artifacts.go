@@ -3,7 +3,6 @@ package bleephub
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -381,24 +380,26 @@ func (s *Server) handleUploadArtifact(w http.ResponseWriter, r *http.Request) {
 	s.artifactStore.Mu.Lock()
 	art, ok = s.artifactStore.Artifacts[id]
 	if ok {
-		if int64(len(art.Data))+int64(len(data)) > maxArtifactChunkBytes {
+		if art.Size+int64(len(data)) > maxArtifactChunkBytes {
 			s.artifactStore.Mu.Unlock()
 			writeGHError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("artifact exceeds the %d byte limit", int64(maxArtifactChunkBytes)))
 			return
 		}
-		previousSize := len(art.Data)
-		art.Data = append(art.Data, data...)
-		art.Size = int64(len(art.Data))
-		if err := s.artifactStore.WriteArtifactData(r.Context(), art); err != nil {
-			art.Data = art.Data[:previousSize]
-			art.Size = int64(previousSize)
+		// Append the chunk to a staging file (O(chunk)); the assembled artifact is
+		// written to its durable home once, at finalize — never rewritten per chunk.
+		previousSize := art.Size
+		if previousSize == 0 {
+			// First chunk: clear any scratch a prior interrupted upload of this id left.
+			s.artifactStore.DiscardArtifactStaging(id)
+		}
+		if err := s.artifactStore.AppendArtifactChunk(id, data); err != nil {
 			s.artifactStore.Mu.Unlock()
-			http.Error(w, "artifact byte-store write: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "artifact staging write: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		art.Size += int64(len(data))
 		if err := s.artifactStore.PersistMeta(art); err != nil {
-			art.Data = art.Data[:previousSize]
-			art.Size = int64(previousSize)
+			art.Size = previousSize
 			s.artifactStore.Mu.Unlock()
 			writeGHError(w, http.StatusInternalServerError, "persist artifact upload metadata: "+err.Error())
 			return
@@ -440,20 +441,19 @@ func (s *Server) handleFinalizeArtifact(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		found.Finalized = true
-		digest := sha256.Sum256(found.Data)
-		found.Digest = fmt.Sprintf("sha256:%x", digest)
+		// Write the staged upload to its durable home once (object store or data
+		// dir), computing the digest; object-backed artifacts keep no bytes in RAM.
+		if err := s.artifactStore.FinalizeArtifactUpload(r.Context(), found); err != nil {
+			found.Finalized = false
+			s.artifactStore.Mu.Unlock()
+			writeGHError(w, http.StatusInternalServerError, "finalize artifact: "+err.Error())
+			return
+		}
 		if err := s.artifactStore.PersistMeta(found); err != nil {
 			found.Finalized = false
 			s.artifactStore.Mu.Unlock()
 			writeGHError(w, http.StatusInternalServerError, "persist artifact metadata: "+err.Error())
 			return
-		}
-		// The payload is durable in the object store; drop the in-memory copy so a
-		// finalized artifact does not pin its whole (up to 10 GiB) payload in RAM.
-		// Reads re-fetch from the store — the download streams it and
-		// PopulateArtifactDigest reloads on demand.
-		if s.artifactStore.ByteStore != nil {
-			found.Data = nil
 		}
 	}
 	s.artifactStore.Mu.Unlock()

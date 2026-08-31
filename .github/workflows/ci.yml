@@ -297,11 +297,26 @@ jobs:
           cache: true
       # An ordinary `go test` only replays the seed corpus; it never asks the
       # fuzz engine to mutate an input. Run every discovered target separately
-      # because Go permits one -fuzz match per process. At 28 targets × 15s the
-      # mutation budget is seven minutes, with the remaining job time reserved
-      # for compilation and worker startup.
+      # because Go permits one -fuzz match per process. ~32 targets × 10s is a
+      # ~five-minute mutation budget; the rest of the wall clock covers the heavy
+      # internal/server compile, worker startup, and a one-shot retry on a
+      # coordinator deadline. FUZZTIME stays short on purpose — this gate is a
+      # fast regression catch, not a campaign — so the job clears its limit
+      # without a retry. (The smoke benchmarks moved to their own job so two heavy
+      # steps no longer share this budget.)
       - name: Mutate every fuzz target
-        run: ./scripts/fuzz.sh
+        run: FUZZTIME=10s ./scripts/fuzz.sh
+
+  bench-smoke:
+    name: Benchmark smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - *checkout
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
       # Smoke the scale/concurrency benchmarks and one ramp step on a tiny corpus
       # so they cannot rot at runtime (they compile in the race job but never run
       # there). Bounded, not a measurement — real numbers come from `make bench`
