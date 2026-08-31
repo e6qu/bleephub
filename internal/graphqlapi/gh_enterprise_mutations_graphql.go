@@ -1427,16 +1427,13 @@ func (s *Resolver) registerIPAllowListSettingMutation(mutationType *graphql.Obje
 			}
 			value, _ := input["settingValue"].(string)
 			if ownerType != "Enterprise" {
-				// bleephub stores the toggle on the enterprise that owns the org.
-				org := s.store.GetOrgByID(ownerID)
-				if org == nil {
-					return nil, gqlMissingNode("IpAllowListOwner", nodeID)
-				}
-				enterpriseID := s.store.EnterpriseIDForOrg(org.ID)
-				if enterpriseID == 0 {
-					return nil, fmt.Errorf("%s does not belong to an enterprise", org.Login)
-				}
-				ownerID = enterpriseID
+				// These settings are modeled at the enterprise level (the org read,
+				// Organization.ipAllowListEnabledSetting, derives from the enterprise
+				// policy) — bleephub has no per-org store for them. Remapping an org
+				// owner onto UpdateEnterprisePolicy let a mere org admin flip the flag
+				// for EVERY org in the enterprise (a cross-boundary escalation) and
+				// returned an Enterprise node for an Organization owner. Refuse it.
+				return nil, fmt.Errorf("this IP allow list setting is managed at the enterprise level, not per organization")
 			}
 			updated := s.store.UpdateEnterprisePolicy(ownerID, func(policy *store.EnterprisePolicy) { apply(policy, value) })
 			if updated == nil {
