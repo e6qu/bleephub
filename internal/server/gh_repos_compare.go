@@ -122,8 +122,12 @@ func compareFiles(baseTree, headTree *object.Tree, headCommit *object.Commit, re
 		if name == "" {
 			name = ch.From.Name
 		}
+		// plumbing.Hash is a [20]byte, so .String() is always 40 hex chars —
+		// never "". For a removed file ch.To is the zero hash, so we must
+		// branch on the removal explicitly and report the base-side blob sha
+		// (matching GitHub and the commit-diff entries).
 		sha := ch.To.TreeEntry.Hash.String()
-		if sha == "" {
+		if status == "removed" {
 			sha = ch.From.TreeEntry.Hash.String()
 		}
 		files = append(files, map[string]interface{}{

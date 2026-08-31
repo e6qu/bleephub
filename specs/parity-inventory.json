@@ -14164,7 +14164,7 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 25,
+        "line": 29,
         "method": "DELETE",
         "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
         "source": "internal/server/gh_org_scim.go"
@@ -18430,13 +18430,13 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 20,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/scim/v2/organizations/{org}/Users",
         "source": "internal/server/gh_org_scim.go"
       },
       {
-        "line": 22,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
         "source": "internal/server/gh_org_scim.go"
@@ -19738,7 +19738,7 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 24,
+        "line": 28,
         "method": "PATCH",
         "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
         "source": "internal/server/gh_org_scim.go"
@@ -21088,7 +21088,7 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 21,
+        "line": 23,
         "method": "POST",
         "path": "/api/v3/scim/v2/organizations/{org}/Users",
         "source": "internal/server/gh_org_scim.go"
@@ -22150,7 +22150,7 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 23,
+        "line": 27,
         "method": "PUT",
         "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
         "source": "internal/server/gh_org_scim.go"

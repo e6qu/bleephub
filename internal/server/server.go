@@ -220,6 +220,8 @@ func (s *Server) newActionsEngine() *actions.Engine {
 				}
 			},
 			s.reapAbandonedRegistryUploads,
+			s.reapExpiredRateLimitWindows,
+			s.reapExpiredEnterpriseCopilotSeats,
 			s.reconcileOrgInvitationsSafely,
 		},
 		CompletedJobRetention: runnerTokenTTL,
