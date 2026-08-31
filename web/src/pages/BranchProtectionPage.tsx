@@ -181,15 +181,22 @@ function formToProtectionPayload(next: FormState, inlineRestrictionActors: boole
           } as unknown as GithubBranchProtectionRestrictions)
         : { users: [], teams: [], apps: [] }
       : null,
-    enforce_admins: { enabled: next.enforceAdmins },
-    allow_force_pushes: { enabled: next.allowForcePushes },
-    allow_deletions: { enabled: next.allowDeletions },
-    required_linear_history: { enabled: next.requiredLinearHistory },
-    required_conversation_resolution: { enabled: next.requiredConversationResolution },
-    block_creations: { enabled: next.blockCreations },
-    required_signatures: { enabled: next.requiredSignatures },
-    lock_branch: { enabled: next.lockBranch },
-    allow_fork_syncing: { enabled: next.allowForkSyncing },
+    // GitHub's PUT request takes bare booleans for these toggles; the
+    // { enabled: bool } shape is the GET *response* only. Sending the object
+    // form makes the server's *flexBool decode fail with 400, so every save
+    // through the UI was rejected. Spread as bare bools (cast because the
+    // response type models them as objects).
+    ...({
+      enforce_admins: next.enforceAdmins,
+      allow_force_pushes: next.allowForcePushes,
+      allow_deletions: next.allowDeletions,
+      required_linear_history: next.requiredLinearHistory,
+      required_conversation_resolution: next.requiredConversationResolution,
+      block_creations: next.blockCreations,
+      required_signatures: next.requiredSignatures,
+      lock_branch: next.lockBranch,
+      allow_fork_syncing: next.allowForkSyncing,
+    } as unknown as Partial<GithubBranchProtection>),
   };
 }
 

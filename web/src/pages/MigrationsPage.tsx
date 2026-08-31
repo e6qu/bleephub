@@ -9,7 +9,6 @@ import {
   deleteMigrationArchive,
   downloadMigrationArchive,
   fetchAuthenticatedUserOrgs,
-  fetchOrgMigrationLockStatus,
   fetchOrgMigrations,
   fetchRepos,
   fetchUserMigrations,
@@ -1051,8 +1050,6 @@ function MigrationDetailDialog({
           <RepoLockRow
             key={repo.id}
             repo={repo}
-            scope={scope}
-            migrationId={migration.id}
             unlocked={unlocked.has(repo.name)}
             onUnlock={() => unlockMut.mutate(repo.name)}
             isPending={unlockMut.isPending}
@@ -1079,30 +1076,19 @@ function MigrationDetailDialog({
 
 function RepoLockRow({
   repo,
-  scope,
-  migrationId,
   unlocked,
   onUnlock,
   isPending,
 }: {
   repo: BleephubRepo;
-  scope: Scope;
-  migrationId: number;
   unlocked: boolean;
   onUnlock: () => void;
   isPending: boolean;
 }) {
-  const lockQ = useQuery({
-    queryKey: ["migration-lock", scope.kind === "org" ? scope.org : "user", migrationId, repo.name],
-    queryFn: () =>
-      scope.kind === "org"
-        ? fetchOrgMigrationLockStatus(scope.org, migrationId, repo.name)
-        : Promise.resolve({ locked: !unlocked }),
-    enabled: scope.kind === "org",
-    staleTime: 5000,
-  });
-
-  const locked = scope.kind === "org" ? lockQ.data?.locked ?? !unlocked : !unlocked;
+  // GitHub has no "get repo lock status" endpoint — a GET on the unlock route
+  // 405s (and trips the e2e console-error guard). The parent already tracks the
+  // lock state and passes it as `unlocked`.
+  const locked = !unlocked;
 
   return (
     <div

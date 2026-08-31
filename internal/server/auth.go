@@ -304,7 +304,14 @@ func (s *Server) verifyAgentClientAssertion(token string) (*store.Agent, error) 
 	if payload.Iss == "" {
 		return nil, fmt.Errorf("missing iss claim")
 	}
-	if exp := int64(payload.Exp); exp > 0 && time.Now().Unix() > exp {
+	// Require a positive, unexpired exp. Accepting an assertion with no exp (or
+	// exp<=0) skipped the expiry check entirely, so a captured assertion was
+	// replayable forever regardless of any declared lifetime.
+	exp := int64(payload.Exp)
+	if exp <= 0 {
+		return nil, fmt.Errorf("missing or non-positive exp claim")
+	}
+	if time.Now().Unix() > exp {
 		return nil, fmt.Errorf("JWT expired")
 	}
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -54,6 +54,17 @@ function DeliveriesList({ scope, hookId }: { scope: HookScope; hookId: number })
   const [extra, setExtra] = useState<GithubHookDelivery[]>([]);
   const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // React Router reuses this component across hookId/scope changes, so the
+  // accumulated pages must be cleared or the new hook's first page is followed
+  // by the previous hook's later pages.
+  const scopeId = scopeKey(scope);
+  useEffect(() => {
+    setExtra([]);
+    setNextUrl(null);
+    setPageError(null);
+  }, [hookId, scopeId]);
 
   const firstPage = useQuery({
     queryKey: ["hook-deliveries", scopeKey(scope), hookId],
@@ -75,7 +86,8 @@ function DeliveriesList({ scope, hookId }: { scope: HookScope; hookId: number })
     );
 
   const loadMore = async () => {
-    if (!followUrl) return;
+    if (!followUrl || loadingMore) return;
+    setLoadingMore(true);
     try {
       const page = await fetchHookDeliveriesPage(scope, hookId, followUrl);
       setExtra((prev) => [...prev, ...page.items]);
@@ -83,6 +95,8 @@ function DeliveriesList({ scope, hookId }: { scope: HookScope; hookId: number })
       setPageError(null);
     } catch (err) {
       setPageError(String(err));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -102,8 +116,8 @@ function DeliveriesList({ scope, hookId }: { scope: HookScope; hookId: number })
       </Box>
       {followUrl && (
         <div className="flex justify-center">
-          <Button variant="secondary" size="sm" onClick={() => void loadMore()}>
-            Load more
+          <Button variant="secondary" size="sm" onClick={() => void loadMore()} disabled={loadingMore}>
+            {loadingMore ? "Loading…" : "Load more"}
           </Button>
         </div>
       )}

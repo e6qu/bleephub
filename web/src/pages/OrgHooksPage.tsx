@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -49,9 +49,18 @@ export function OrgHooksPage() {
   const [extra, setExtra] = useState<GithubOrgWebhook[]>([]);
   const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<GithubOrgWebhook | null>(null);
+
+  // Clear accumulated pages when the org changes; the component instance is
+  // reused across org navigations, so stale pages would otherwise append.
+  useEffect(() => {
+    setExtra([]);
+    setNextUrl(null);
+    setPageError(null);
+  }, [org]);
 
   const firstPage = useQuery({
     queryKey: ["org-hooks", org],
@@ -104,7 +113,8 @@ export function OrgHooksPage() {
   const followUrl = nextUrl ?? firstPage.data?.nextUrl ?? null;
 
   const loadMore = async () => {
-    if (!followUrl) return;
+    if (!followUrl || loadingMore) return;
+    setLoadingMore(true);
     try {
       const page = await fetchOrgHooksPage(org, followUrl);
       setExtra((prev) => [...prev, ...page.items]);
@@ -112,6 +122,8 @@ export function OrgHooksPage() {
       setPageError(null);
     } catch (err) {
       setPageError(String(err));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -257,7 +269,7 @@ export function OrgHooksPage() {
           </Box>
           {followUrl && (
             <div className="flex justify-center">
-              <Button variant="secondary" size="sm" onClick={() => void loadMore()}>
+              <Button variant="secondary" size="sm" onClick={() => void loadMore()} disabled={loadingMore}>
                 Load more
               </Button>
             </div>

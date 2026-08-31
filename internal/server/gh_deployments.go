@@ -196,7 +196,7 @@ func (s *Server) handleCreateDeploymentStatus(w http.ResponseWriter, r *http.Req
 		env = d.Environment
 	}
 	status, autoInactivated := s.store.Deployments.AddStatus(id, user.ID, req.State, req.Description, "", req.LogURL, req.EnvironmentURL, env, bool(req.AutoInactive))
-	s.emitWebhookEvent(repo.FullName, "deployment_status", req.State, buildDeploymentStatusEventPayload(repo, d, status, user, s.baseURL(r)))
+	s.emitWebhookEvent(repo.FullName, "deployment_status", "created", buildDeploymentStatusEventPayload(repo, d, status, user, s.baseURL(r)))
 	for _, ai := range autoInactivated {
 		priorDep := s.store.Deployments.GetDeployment(ai.DeploymentID)
 		if priorDep == nil {
@@ -206,7 +206,7 @@ func (s *Server) handleCreateDeploymentStatus(w http.ResponseWriter, r *http.Req
 		if priorRepo == nil {
 			continue
 		}
-		s.emitWebhookEvent(priorRepo.FullName, "deployment_status", "inactive", buildDeploymentStatusEventPayload(priorRepo, priorDep, ai.Status, user, s.baseURL(r)))
+		s.emitWebhookEvent(priorRepo.FullName, "deployment_status", "created", buildDeploymentStatusEventPayload(priorRepo, priorDep, ai.Status, user, s.baseURL(r)))
 	}
 	statusJSON := deploymentStatusToJSON(status, s.store, s.baseURL(r), repo)
 	writeJSONCreated(w, jsonStringField(statusJSON, "url"), statusJSON)
@@ -512,7 +512,9 @@ func buildDeploymentEventPayload(repo *store.Repo, d *store.Deployment, sender *
 
 func buildDeploymentStatusEventPayload(repo *store.Repo, d *store.Deployment, status *store.DeploymentStatus, sender *store.User, baseURL string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
-		"action": status.State,
+		// GitHub's deployment_status event has exactly one action, "created"; the
+		// state (success/failure/inactive/…) lives only in deployment_status.state.
+		"action": "created",
 		"deployment_status": map[string]interface{}{
 			"id":          status.ID,
 			"state":       status.State,

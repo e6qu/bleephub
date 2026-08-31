@@ -232,8 +232,8 @@ describe("security journey fidelity", () => {
     expect(JSON.parse(String(topLevel?.[1]?.body))).toMatchObject({
       required_pull_request_reviews: { required_approving_review_count: 0 },
       restrictions: { users: [], teams: [], apps: [] },
-      enforce_admins: { enabled: false },
-      required_signatures: { enabled: true },
+      enforce_admins: false,
+      required_signatures: true,
     });
     const userWrite = writes.find(([input]) => String(input).endsWith("/restrictions/users"));
     const teamWrite = writes.find(([input]) => String(input).endsWith("/restrictions/teams"));

@@ -360,7 +360,7 @@ jobs:
 		t.Fatal("PR not created")
 	}
 
-	s.firePullRequestSynchronize(repo, repoKey, "feature-x")
+	s.firePullRequestSynchronize(repo, repoKey, "feature-x", user, "", "")
 
 	var found *store.Workflow
 	ok := testutil.TestEventually(2*time.Second, 20*time.Millisecond, func() bool {

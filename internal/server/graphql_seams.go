@@ -156,7 +156,7 @@ func (a graphqlSeams) EmitDeploymentEvent(repo *store.Repo, d *store.Deployment,
 }
 
 func (a graphqlSeams) EmitDeploymentStatusEvent(repo *store.Repo, d *store.Deployment, status *store.DeploymentStatus, sender *store.User) {
-	a.s.emitWebhookEvent(repo.FullName, "deployment_status", string(status.State),
+	a.s.emitWebhookEvent(repo.FullName, "deployment_status", "created",
 		buildDeploymentStatusEventPayload(repo, d, status, sender, a.s.publicOrigin()))
 }
 

@@ -2885,11 +2885,6 @@ export const deleteMigrationArchive = (scope: MigrationScope, id: number) =>
 export const unlockMigrationRepo = (scope: MigrationScope, id: number, repoName: string) =>
   ghDeleteJSON<void>(`${migrationBase(scope)}/${id}/repos/${encodeURIComponent(repoName)}/lock`, {});
 
-export const fetchOrgMigrationLockStatus = (org: string, id: number, repoName: string) =>
-  ghFetch<{ locked: boolean }>(
-    `/api/v3/orgs/${encodeURIComponent(org)}/migrations/${id}/repos/${encodeURIComponent(repoName)}/lock`,
-  );
-
 /** Fetch a migration archive and trigger a browser save-as. */
 export async function downloadMigrationArchive(
   scope: MigrationScope,

@@ -48,6 +48,13 @@ export function ProjectsClassicPage() {
     enabled: !!owner && !!repo,
   });
 
+  // Clear the selection when the repo changes; otherwise the auto-select below
+  // (which only fires when selectedProject is null) keeps showing the previous
+  // repo's project after navigating to a different repo.
+  useEffect(() => {
+    setSelectedProject(null);
+  }, [owner, repo]);
+
   useEffect(() => {
     if (projects.length > 0 && !selectedProject) {
       setSelectedProject(projects[0]!);
