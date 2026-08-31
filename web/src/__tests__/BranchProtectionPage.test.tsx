@@ -212,8 +212,8 @@ describe("BranchProtectionPage", () => {
       );
       expect(put).toBeTruthy();
       const body = JSON.parse(String(put![1].body));
-      expect(body.lock_branch).toEqual({ enabled: false });
-      expect(body.allow_fork_syncing).toEqual({ enabled: true });
+      expect(body.lock_branch).toBe(false);
+      expect(body.allow_fork_syncing).toBe(true);
       expect(body.required_pull_request_reviews.require_last_push_approval).toBe(true);
     });
   });
@@ -256,7 +256,7 @@ describe("BranchProtectionPage", () => {
     const body = patternPuts[0] as { pattern: string; protection: Record<string, unknown> }[];
     expect(body).toHaveLength(1);
     expect(body[0]!.pattern).toBe("release/*");
-    expect(body[0]!.protection.enforce_admins).toEqual({ enabled: true });
+    expect(body[0]!.protection.enforce_admins).toBe(true);
     expect(String(mockFetch.mock.calls.find((c) => c[1]?.method === "PUT")![0])).toBe(patternsURL);
 
     // No REST protection call was made for the wildcard name.
