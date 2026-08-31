@@ -55,7 +55,7 @@ func (st *Store) ListNetworkConfigurations(orgLogin string) []*NetworkConfigurat
 func (st *Store) GetNetworkConfiguration(orgLogin, id string) *NetworkConfiguration {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.OrgNetworkConfigurations[orgLogin][id]
+	return cloneNetworkConfiguration(st.OrgNetworkConfigurations[orgLogin][id])
 }
 
 // relinkNetworkSettingsLocked points referenced settings resources back at the

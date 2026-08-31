@@ -49,7 +49,7 @@ func (st *Store) ListIssueFields(orgLogin string) []*IssueField {
 func (st *Store) GetIssueField(orgLogin string, id int) *IssueField {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.OrgIssueFields[orgLogin][id]
+	return cloneIssueField(st.OrgIssueFields[orgLogin][id])
 }
 
 // buildIssueFieldOptionsLocked materializes option rows from a request,

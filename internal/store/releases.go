@@ -513,7 +513,7 @@ func (rs *ReleaseStore) UpdateReleaseAsset(id int, name, label string) *ReleaseA
 	if rs.Persist != nil {
 		rs.Persist.MustPut("release_assets", strconv.Itoa(id), a)
 	}
-	return a
+	return cloneReleaseAsset(a)
 }
 
 func (rs *ReleaseStore) DeleteReleaseAsset(id int) (bool, error) {

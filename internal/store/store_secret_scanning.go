@@ -111,7 +111,7 @@ func (st *Store) CreateSecretScanningAlertLocked(repoKey, secretType string, loc
 	st.SecretScanningAlerts[a.ID] = a
 	st.SecretScanningAlertsByRepo[repoKey][number] = a
 	st.persistSecretScanningAlert(a)
-	return a
+	return cloneSecretScanningAlert(a)
 }
 
 // CreateSecretScanningAlertIfNew records an alert unless the repo already has
@@ -125,7 +125,7 @@ func (st *Store) CreateSecretScanningAlertIfNew(repoKey, secretType string, loca
 			continue
 		}
 		if slices.EqualFunc(existing.Locations, locations, sameSecretScanningLocation) {
-			return existing
+			return cloneSecretScanningAlert(existing)
 		}
 	}
 	return st.CreateSecretScanningAlertLocked(repoKey, secretType, locations)

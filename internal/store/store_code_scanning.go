@@ -153,7 +153,7 @@ func (st *Store) CreateCodeScanningAlert(repoKey, ruleID, severity, description,
 	st.CodeScanningAlerts[alert.ID] = alert
 	st.CodeScanningAlertsByRepo[repoKey][number] = alert
 	st.persistCodeScanningAlert(alert)
-	return alert
+	return cloneCodeScanningAlert(alert)
 }
 
 // cloneCodeScanningAlert returns a deep copy safe to hand outside the store lock
