@@ -313,20 +313,25 @@ func (s *Server) parseSAMLAssertion(r *http.Request, assertion *etree.Element, e
 		}
 	}
 
-	if conditions := childByLocal(assertion, "Conditions"); conditions != nil {
-		if notBefore := parseSAMLTime(conditions.SelectAttrValue("NotBefore", "")); !notBefore.IsZero() && now.Add(samlClockSkew).Before(notBefore) {
-			return claims, errors.New("assertion is not yet valid")
+	// A signed assertion with no <Conditions> would otherwise skip the audience
+	// restriction and validity-window checks entirely, letting a captured
+	// assertion (for any SP, without expiry) be replayed. Require the element.
+	conditions := childByLocal(assertion, "Conditions")
+	if conditions == nil {
+		return claims, errors.New("assertion is missing a Conditions element (audience restriction / validity window)")
+	}
+	if notBefore := parseSAMLTime(conditions.SelectAttrValue("NotBefore", "")); !notBefore.IsZero() && now.Add(samlClockSkew).Before(notBefore) {
+		return claims, errors.New("assertion is not yet valid")
+	}
+	notOnOrAfter := parseSAMLTime(conditions.SelectAttrValue("NotOnOrAfter", ""))
+	if !notOnOrAfter.IsZero() {
+		if !now.Add(-samlClockSkew).Before(notOnOrAfter) {
+			return claims, errors.New("assertion has expired")
 		}
-		notOnOrAfter := parseSAMLTime(conditions.SelectAttrValue("NotOnOrAfter", ""))
-		if !notOnOrAfter.IsZero() {
-			if !now.Add(-samlClockSkew).Before(notOnOrAfter) {
-				return claims, errors.New("assertion has expired")
-			}
-			claims.notOnOrAfter = notOnOrAfter
-		}
-		if !s.samlAudienceMatches(r, conditions) {
-			return claims, errors.New("assertion audience does not include this service provider")
-		}
+		claims.notOnOrAfter = notOnOrAfter
+	}
+	if !s.samlAudienceMatches(r, conditions) {
+		return claims, errors.New("assertion audience does not include this service provider")
 	}
 
 	if authn := childByLocal(assertion, "AuthnStatement"); authn != nil {
