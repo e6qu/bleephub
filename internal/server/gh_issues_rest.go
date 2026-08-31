@@ -60,9 +60,13 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	var milestoneID int
 	if req.Milestone > 0 {
 		ms := s.store.GetMilestoneByNumber(repo.ID, req.Milestone)
-		if ms != nil {
-			milestoneID = ms.ID
+		if ms == nil {
+			// GitHub 422s an unknown milestone on create, as the PATCH path does;
+			// dropping it silently and returning 201 with milestone:null diverges.
+			store.WriteGHValidationError(w, "Issue", "milestone", "invalid")
+			return
 		}
+		milestoneID = ms.ID
 	}
 
 	var issueTypeID int
@@ -1792,6 +1796,7 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, crossRepoIssueRow{
 			number: issue.Number, commentCount: s.store.CountCommentsForLocked("issue", issue.ID),
 			issue: issue, repo: repo,
+			createdAtVal: issue.CreatedAt, updatedAtVal: issue.UpdatedAt,
 		})
 	}
 	for _, pr := range s.store.PullRequests {
@@ -1814,6 +1819,7 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, crossRepoIssueRow{
 			number: pr.Number, commentCount: s.store.CountCommentsForLocked("pull_request", pr.ID),
 			pr: pr, repo: repo,
+			createdAtVal: pr.CreatedAt, updatedAtVal: pr.UpdatedAt,
 		})
 	}
 	s.store.Mu.RUnlock()

@@ -530,6 +530,7 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 		rows = append(rows, crossRepoIssueRow{
 			number: p.Issue.Number, commentCount: s.store.CountCommentsFor("issue", p.Issue.ID),
 			issue: p.Issue, repo: p.Repo,
+			createdAtVal: p.Issue.CreatedAt, updatedAtVal: p.Issue.UpdatedAt,
 		})
 	}
 	for _, p := range s.store.ListUserFilteredPulls(user, filter) {
@@ -548,6 +549,7 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 		rows = append(rows, crossRepoIssueRow{
 			number: p.Pull.Number, commentCount: s.store.CountCommentsFor("pull_request", p.Pull.ID),
 			pr: p.Pull, repo: p.Repo,
+			createdAtVal: p.Pull.CreatedAt, updatedAtVal: p.Pull.UpdatedAt,
 		})
 	}
 

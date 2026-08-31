@@ -433,6 +433,18 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Retargeting must name an existing base branch; GitHub 422s an unknown base.
+	// Resolve its head so BaseSHA (the commit-range anchor) tracks the new base
+	// instead of staying pinned to the old branch.
+	var newBaseSHA string
+	if v, ok := req["base"].(string); ok && v != pr.BaseRefName {
+		newBaseSHA = store.ResolveBranchSha(s.store.GetGitStorage(owner, repoName), v)
+		if newBaseSHA == "" {
+			store.WriteGHValidationError(w, "PullRequest", "base", "invalid")
+			return
+		}
+	}
+
 	priorState := pr.State
 	s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 		if v, ok := req["title"].(string); ok {
@@ -443,6 +455,9 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		}
 		if v, ok := req["base"].(string); ok {
 			p.BaseRefName = v
+			if newBaseSHA != "" {
+				p.BaseSHA = newBaseSHA
+			}
 		}
 		if v, ok := coerceBool(req["maintainer_can_modify"]); ok {
 			p.MaintainerCanModify = v
