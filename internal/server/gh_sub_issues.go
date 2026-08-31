@@ -12,11 +12,14 @@ import (
 // the other side.
 
 // issueFromNumberPath resolves {owner}/{repo} + "number" to the repo and issue,
-// writing a 404 when either is missing.
+// writing a 404 when either is missing. It enforces private-repo visibility:
+// the read routes that share it (sub-issues, parent, dependencies, label list,
+// assignee check) dispatch through an ungated GET, so without this gate a
+// private repo's issue data would leak to unauthorized viewers. Write callers
+// are already requirePerm(PermWrite)-gated, for which this read gate is a no-op.
 func (s *Server) issueFromNumberPath(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Issue) {
-	repo := s.lookupRepoFromPath(r)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil
 	}
 	number, err := strconv.Atoi(r.PathValue("number"))

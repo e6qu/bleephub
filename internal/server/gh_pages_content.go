@@ -212,15 +212,26 @@ func (s *Server) handlePagesContent(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Snapshot the site's gate fields under the lock: Public and Status are
+	// mutated in place by the pages-config PUT and the deploy publisher, so
+	// reading them off the live pointer after RUnlock both data-races and can
+	// observe a stale Public==true — serving private Pages bytes through the gate.
 	s.store.Misc.Mu.RLock()
 	site := s.store.Misc.PagesByRepo[repo.ID]
+	siteExists := site != nil
+	var sitePublic bool
+	var siteStatus string
+	if site != nil {
+		sitePublic = site.Public
+		siteStatus = site.Status
+	}
 	s.store.Misc.Mu.RUnlock()
-	if site != nil && !site.Public && !s.viewerCanReadRepo(r.Context(), repo) {
+	if siteExists && !sitePublic && !s.viewerCanReadRepo(r.Context(), repo) {
 		http.NotFound(w, r)
 		return
 	}
 	deployment := s.store.LatestPublishedPagesDeployment(repo.ID)
-	if site == nil || site.Status != "built" || deployment == nil || deployment.ArtifactKey == "" {
+	if !siteExists || siteStatus != "built" || deployment == nil || deployment.ArtifactKey == "" {
 		http.NotFound(w, r)
 		return
 	}
