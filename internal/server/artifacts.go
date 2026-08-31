@@ -612,7 +612,13 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request) 
 		defer rc.Close()
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", art.Size))
 		w.WriteHeader(http.StatusOK)
-		_, _ = io.Copy(w, rc)
+		if _, err := io.Copy(w, rc); err != nil {
+			// GetStream verifies the SHA-256 at EOF, so a mismatch surfaces here
+			// after Content-Length bytes are already written. Abort the connection
+			// rather than let the client accept a complete-looking corrupt object.
+			s.logger.Warn().Err(err).Int64("artifact_id", art.ID).Msg("artifact download stream failed; aborting connection")
+			panic(http.ErrAbortHandler)
+		}
 		return
 	}
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(art.Data)))
@@ -928,7 +934,12 @@ func (s *Server) handleCacheDownload(w http.ResponseWriter, r *http.Request) {
 		defer rc.Close()
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", entry.Size))
 		w.WriteHeader(http.StatusOK)
-		_, _ = io.Copy(w, rc)
+		if _, err := io.Copy(w, rc); err != nil {
+			// See the artifact download: a SHA-256 mismatch verified at EOF must
+			// abort the connection, not complete a corrupt-but-full-length body.
+			s.logger.Warn().Err(err).Int64("cache_id", entry.ID).Msg("cache download stream failed; aborting connection")
+			panic(http.ErrAbortHandler)
+		}
 		return
 	}
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(entry.Data)))
