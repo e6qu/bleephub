@@ -1118,6 +1118,15 @@ func (s *Server) internalTokenUser(r *http.Request) *store.User {
 	if t == nil {
 		return nil
 	}
+	// The internal operator surface confers appliance administration (incl.
+	// /internal/exec, which dispatches containers to the runner fleet). A
+	// fine-grained PAT must never confer that — matching credentialConveysSiteAdmin
+	// — even when its user record is a SiteAdmin. ghHeadersMiddleware, which
+	// records the credential shape those checks read, never runs for /internal/,
+	// so reject fine-grained tokens here where the credential is resolved.
+	if t.FineGrained {
+		return nil
+	}
 	return user
 }
 

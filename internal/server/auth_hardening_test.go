@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // unauthedRequest drives a route through the /api middleware chain WITHOUT
@@ -63,6 +65,42 @@ func TestActionsWriteEndpointsRequireAuth(t *testing.T) {
 // surface being served with no server-side token check (the UI login was a
 // client-side guard only). The middleware must 401 anonymous callers and
 // admit the admin token; /health stays open for liveness probes.
+// TestInternalSurfaceRejectsFineGrainedPAT pins that a fine-grained PAT — even
+// one belonging to a site admin — cannot reach the /internal/ operator surface
+// (which includes container execution), matching credentialConveysSiteAdmin.
+func TestInternalSurfaceRejectsFineGrainedPAT(t *testing.T) {
+	s := newTestServer()
+	s.metrics = NewMetrics()
+	s.mux.HandleFunc("GET /internal/status", s.handleInternalStatus)
+	handler := s.internalAuthMiddleware(s.mux)
+
+	admin := s.store.LookupUserByLogin("admin")
+	if admin == nil || !admin.SiteAdmin {
+		t.Fatal("admin is not a site admin")
+	}
+	fg, err := s.store.CreateUserFineGrainedPAT(admin.ID, store.CreatePersonalAccessTokenWebRequest{Name: "narrow-ci"})
+	if err != nil {
+		t.Fatalf("CreateUserFineGrainedPAT: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/internal/status", nil)
+	req.Header.Set("Authorization", "Bearer "+fg.Value)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("fine-grained PAT on /internal/status = %d, want 401 (rejected)", w.Code)
+	}
+
+	// The admin's classic token is still admitted.
+	req = httptest.NewRequest("GET", "/internal/status", nil)
+	req.Header.Set("Authorization", "Bearer "+defaultToken)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("admin classic token on /internal/status = %d, want 200", w.Code)
+	}
+}
+
 func TestInternalEndpointsRequireAuth(t *testing.T) {
 	s := newTestServer()
 	s.metrics = NewMetrics()
