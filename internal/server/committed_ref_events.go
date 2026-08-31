@@ -33,7 +33,7 @@ func (s *Server) afterCommittedRefUpdate(repo *store.Repo, sender *store.User, r
 	s.recordCommitIssueReferences(repo, actorID, payload)
 	if branch := strings.TrimPrefix(ref, "refs/heads/"); branch != ref {
 		s.recordPullRequestHeadRefLifecycle(repo, actorID, branch, before, after)
-		s.firePullRequestSynchronize(repo, repo.FullName, branch)
+		s.firePullRequestSynchronize(repo, repo.FullName, branch, sender, before, after)
 	}
 	s.triggerPagesBuildForRef(repo, sender, ref, baseURL)
 }

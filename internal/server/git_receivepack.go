@@ -679,6 +679,19 @@ func (s *Server) afterGitReceivePack(repo *store.Repo, user *store.User, applied
 			}
 		}
 		s.afterCommittedRefUpdate(repo, user, command.Name.String(), command.Old.String(), command.New.String(), baseURL)
+		// GitHub fires `create`/`delete` alongside `push` when a branch or tag is
+		// created or deleted by ANY means, including git push. The REST refs API
+		// emits these explicitly; the git path only emitted `push`, so consumers
+		// subscribed to create/delete missed every ref created/deleted over git.
+		switch {
+		case command.Old.IsZero():
+			payload := buildRefLifecyclePayload(repo, command.Name, user, baseURL)
+			payload["master_branch"] = repo.DefaultBranch
+			payload["description"] = repo.Description
+			s.emitWebhookEvent(repo.FullName, "create", "", payload)
+		case command.New.IsZero():
+			s.emitWebhookEvent(repo.FullName, "delete", "", buildRefLifecyclePayload(repo, command.Name, user, baseURL))
+		}
 	}
 }
 
