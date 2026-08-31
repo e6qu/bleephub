@@ -87,6 +87,22 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 		store.WriteGHValidationError(w, "PullRequest", "merge_method", "invalid")
 		return
 	}
+	// 405 an explicit merge method the repository has disabled — the async path
+	// must not accept a method the synchronous merge endpoint (and github.com)
+	// refuse.
+	var disallowed string
+	switch {
+	case req.MergeMethod == "merge" && !repo.AllowMergeCommit:
+		disallowed = "Merge commits are not allowed on this repository."
+	case req.MergeMethod == "squash" && !repo.AllowSquashMerge:
+		disallowed = "Squash merges are not allowed on this repository."
+	case req.MergeMethod == "rebase" && !repo.AllowRebaseMerge:
+		disallowed = "Rebase merges are not allowed on this repository."
+	}
+	if disallowed != "" {
+		writeGHError(w, http.StatusMethodNotAllowed, disallowed)
+		return
+	}
 	mergeMethod := req.MergeMethod
 	if mergeMethod == "" {
 		mergeMethod = "default"

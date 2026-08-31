@@ -338,7 +338,7 @@ func (s *ProjectV2Store) AddItem(projectID int, contentType string, contentID, c
 	if s.Persist != nil {
 		s.Persist.MustPut("project_v2_items", strconv.Itoa(id), it)
 	}
-	return it
+	return cloneProjectV2Item(it)
 }
 
 // AddDraftItem adds a draft issue to a project.
@@ -368,7 +368,7 @@ func (s *ProjectV2Store) AddDraftItem(projectID int, title, body string, creator
 	if s.Persist != nil {
 		s.Persist.MustPut("project_v2_items", strconv.Itoa(id), it)
 	}
-	return it
+	return cloneProjectV2Item(it)
 }
 
 // ListItemsForIssue returns every project item wrapping the issue with the
@@ -477,7 +477,7 @@ func (s *ProjectV2Store) CreateField(projectID int, name string, dataType Projec
 	if s.Persist != nil {
 		s.Persist.MustPut("project_v2_fields", strconv.Itoa(id), f)
 	}
-	return f
+	return cloneProjectV2Field(f)
 }
 
 // nextPositionLocked returns the position that places a new item at the end of
@@ -640,10 +640,11 @@ func (s *ProjectV2Store) UpdateProject(id int, title *string, closed, public *bo
 	if s.Persist != nil {
 		s.Persist.MustPut("projects_v2", strconv.Itoa(id), p)
 	}
-	return p
+	return cloneProjectV2(p)
 }
 
-// DeleteProject removes a project and its fields/items/views.
+// DeleteProject removes a project and every entity it owns: fields, items,
+// views, status updates and workflows.
 func (s *ProjectV2Store) DeleteProject(id int) bool {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
@@ -675,6 +676,24 @@ func (s *ProjectV2Store) DeleteProject(id int) bool {
 			batch.Delete("project_v2_views", strconv.Itoa(vid))
 		}
 	}
+	// Status updates and workflows are also project-owned (SeedProjectDefaults
+	// creates workflows for every project); cascade them too, or their in-memory
+	// index entries leak and their durable rows reload orphaned to a nonexistent
+	// project on restart.
+	for sid, upd := range s.statusUpdates {
+		if upd.ProjectID == id {
+			delete(s.statusUpdates, sid)
+			batch.Delete("project_v2_status_updates", strconv.Itoa(sid))
+		}
+	}
+	delete(s.statusByProj, id)
+	for wid, w := range s.workflows {
+		if w.ProjectID == id {
+			delete(s.workflows, wid)
+			batch.Delete("project_v2_workflows", strconv.Itoa(wid))
+		}
+	}
+	delete(s.workflowsByProj, id)
 	batch.Delete("projects_v2", strconv.Itoa(id))
 	if err := batch.Commit(); err != nil {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "projects_v2", Err: err})
@@ -746,7 +765,7 @@ func (s *ProjectV2Store) UpdateItem(id int, draftTitle, draftBody *string) *Proj
 	if s.Persist != nil {
 		s.Persist.MustPut("project_v2_items", strconv.Itoa(id), it)
 	}
-	return it
+	return cloneProjectV2Item(it)
 }
 
 // SetFieldValueAny writes a REST field value, dispatching on data type:
@@ -920,7 +939,7 @@ func (s *ProjectV2Store) UpdateField(id int, name *string, options []*ProjectV2S
 	if s.Persist != nil {
 		s.Persist.MustPut("project_v2_fields", strconv.Itoa(id), f)
 	}
-	return f
+	return cloneProjectV2Field(f)
 }
 
 // DeleteField removes a field from a project.
@@ -980,7 +999,7 @@ func (s *ProjectV2Store) CreateView(projectID int, name, layout string, filter *
 	if s.Persist != nil {
 		s.Persist.MustPut("project_v2_views", strconv.Itoa(id), v)
 	}
-	return v
+	return cloneProjectV2View(v)
 }
 
 // GetView returns a view by id.

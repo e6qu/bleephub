@@ -92,6 +92,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 		rows = append(rows, crossRepoIssueRow{
 			number: issue.Number, commentCount: s.store.CountCommentsForLocked("issue", issue.ID),
 			issue: issue, repo: repo,
+			createdAtVal: issue.CreatedAt, updatedAtVal: issue.UpdatedAt,
 		})
 	}
 	for _, pr := range s.store.PullRequests {
@@ -114,6 +115,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 		rows = append(rows, crossRepoIssueRow{
 			number: pr.Number, commentCount: s.store.CountCommentsForLocked("pull_request", pr.ID),
 			pr: pr, repo: repo,
+			createdAtVal: pr.CreatedAt, updatedAtVal: pr.UpdatedAt,
 		})
 	}
 	s.store.Mu.RUnlock()

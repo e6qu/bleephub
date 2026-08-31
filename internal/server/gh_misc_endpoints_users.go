@@ -434,6 +434,11 @@ func (s *Server) handleListUserSubscriptions(w http.ResponseWriter, r *http.Requ
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(repos))
 	for _, repo := range repos {
+		// Omit repos the viewer can't see, matching GitHub (and the starred-repos
+		// handler); ListRepoSubscriptionsForUser returns private repos unfiltered.
+		if !s.viewerCanReadRepo(r.Context(), repo) {
+			continue
+		}
 		out = append(out, store.RepoToJSON(repo, s.store, base))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -690,6 +695,11 @@ func (s *Server) handleListMySubscriptions(w http.ResponseWriter, r *http.Reques
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(repos))
 	for _, repo := range repos {
+		// Omit repos the viewer can't see, matching GitHub (and the starred-repos
+		// handler); ListRepoSubscriptionsForUser returns private repos unfiltered.
+		if !s.viewerCanReadRepo(r.Context(), repo) {
+			continue
+		}
 		out = append(out, store.RepoToJSON(repo, s.store, base))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))

@@ -1065,7 +1065,7 @@ func (s *isolatedServer) createTestPRRepo(t *testing.T, name string) {
 	if repo == nil {
 		t.Fatalf("repo %s not created", name)
 	}
-	seedPullRequestBranches(t, s.Server, repo, "feature", "feat", "feat1", "feat2", "fix", "branch", "r", "f", "a", "b", "draft-feat")
+	seedPullRequestBranches(t, s.Server, repo, "feature", "feat", "feat1", "feat2", "fix", "branch", "r", "f", "a", "b", "draft-feat", "spare")
 }
 
 // cancelRepoRunsCleanup mirrors the package helper (still used by six

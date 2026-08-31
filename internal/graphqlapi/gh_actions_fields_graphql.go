@@ -310,7 +310,9 @@ func workflowRunGQLSourceLocked(st *store.Store, wf *store.Workflow) map[string]
 	// WorkflowRun.workflow: resolve the backing file, else synthesize from the
 	// run's own name/path.
 	if wf.WorkflowFileID != 0 {
-		if file := st.GetWorkflowFile(wf.RepoFullName, wf.WorkflowFileID); file != nil {
+		// Caller holds st.Mu (this is a ...Locked renderer); use the lock-free
+		// lookup so we don't recursively read-lock and deadlock under a writer.
+		if file := st.GetWorkflowFileLocked(wf.RepoFullName, wf.WorkflowFileID); file != nil {
 			source["workflow"] = workflowFileGQLSource(file)
 		}
 	}

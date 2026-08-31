@@ -21,6 +21,11 @@ type crossRepoIssueRow struct {
 	issue        *store.Issue       // set for issue rows
 	pr           *store.PullRequest // set for pull-request rows
 	repo         *store.Repo
+	// Sort keys captured under the store lock at construction. Reading
+	// CreatedAt/UpdatedAt off the live issue/pr during the post-unlock sort would
+	// race the in-place UpdatedAt writes in UpdateIssue/UpdatePullRequest.
+	createdAtVal time.Time
+	updatedAtVal time.Time
 }
 
 // crossRepoRowLess orders rows by the requested sort key, tie-broken by the
@@ -53,19 +58,9 @@ func crossRepoRowLess(sortKey string, ascending bool) func(a, b crossRepoIssueRo
 	}
 }
 
-func (r crossRepoIssueRow) createdAt() time.Time {
-	if r.issue != nil {
-		return r.issue.CreatedAt
-	}
-	return r.pr.CreatedAt
-}
+func (r crossRepoIssueRow) createdAt() time.Time { return r.createdAtVal }
 
-func (r crossRepoIssueRow) updatedAt() time.Time {
-	if r.issue != nil {
-		return r.issue.UpdatedAt
-	}
-	return r.pr.UpdatedAt
-}
+func (r crossRepoIssueRow) updatedAt() time.Time { return r.updatedAtVal }
 
 // renderCrossRepoIssueRows paginates, then serializes each row — issues via
 // issueToJSON, pull requests via issueToJSONForPR (which sets the pull_request

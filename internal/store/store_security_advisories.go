@@ -240,7 +240,7 @@ func (st *Store) CreateSecurityAdvisoryE(repoID, authorID int, req CreateAdvisor
 	st.SecurityAdvisories[adv.ID] = adv
 
 	st.persistSecurityAdvisory(adv)
-	return adv, nil
+	return cloneSecurityAdvisory(adv), nil
 }
 
 // cloneSecurityAdvisory deep-copies an advisory for handing outside the store

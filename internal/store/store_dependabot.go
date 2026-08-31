@@ -72,7 +72,7 @@ func (st *Store) CreateDependabotAlertIfNew(repoKey, pkgName, ecosystem, manifes
 			strings.EqualFold(alert.PackageEcosystem, ecosystem) &&
 			alert.ManifestPath == manifest &&
 			alert.VulnerabilityID == vulnID {
-			return alert
+			return cloneDependabotAlert(alert)
 		}
 	}
 	return st.CreateDependabotAlertLocked(repoKey, pkgName, ecosystem, manifest, vulnID, cveID, severity, "open", summary, description, vulnRange, patched)
@@ -118,7 +118,7 @@ func (st *Store) CreateDependabotAlertLocked(repoKey, pkgName, ecosystem, manife
 	st.DependabotAlerts[a.ID] = a
 	st.DependabotAlertsByRepo[repoKey][number] = a
 	st.persistDependabotAlert(a)
-	return a
+	return cloneDependabotAlert(a)
 }
 
 // cloneDependabotAlert returns a detached copy safe outside the store lock

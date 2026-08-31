@@ -49,7 +49,7 @@ func (st *Store) GetAssignableIssueTypeForRepo(repo *Repo, id int) *IssueType {
 	if it == nil || !it.IsEnabled {
 		return nil
 	}
-	return it
+	return cloneIssueType(it)
 }
 
 // IssueTypeForIssueLocked resolves the issue's assigned type; call with st.Mu

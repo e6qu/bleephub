@@ -120,7 +120,7 @@ func (st *Store) ListPrivateRegistries(orgLogin string) []*PrivateRegistryConfig
 func (st *Store) GetPrivateRegistry(orgLogin, name string) *PrivateRegistryConfiguration {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.OrgPrivateRegistries[orgLogin][name]
+	return clonePrivateRegistryConfiguration(st.OrgPrivateRegistries[orgLogin][name])
 }
 
 // PersistPrivateRegistries saves the org's registry map via the persist shape,

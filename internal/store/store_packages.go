@@ -145,7 +145,7 @@ func (st *Store) CreatePackage(ownerType, ownerKey, pkgType, name, visibility st
 	}
 	key := PackageKey(pkgType, name)
 	if p := st.PackagesByOwnerKey[ownerKey][key]; p != nil {
-		return p, false
+		return clonePackage(p), false
 	}
 	now := st.CurrentTime()
 	id := st.NextPackageID
@@ -167,7 +167,7 @@ func (st *Store) CreatePackage(ownerType, ownerKey, pkgType, name, visibility st
 	st.PackagesByOwnerKey[ownerKey][key] = p
 	st.NextPackageID++
 	st.persistPackage(p)
-	return p, true
+	return clonePackage(p), true
 }
 
 // clonePackage detaches a package from the stored row (its only reference field
@@ -406,7 +406,7 @@ func (st *Store) CreatePackageVersion(ownerType, ownerKey, pkgType, pkgName, ver
 	if err := batch.Commit(); err != nil {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "package_versions", Key: strconv.Itoa(v.ID), Err: err})
 	}
-	return v, nil
+	return clonePackageVersion(v), nil
 }
 
 // PackageFileInput is the wire payload for an uploaded package file.

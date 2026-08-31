@@ -8,11 +8,14 @@ import "sort"
 // process-fatal map race (AUTH-043).
 func (st *Store) ListEveryRepo() []*Repo {
 	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	repos := make([]*Repo, 0, len(st.ReposByName))
 	for _, repo := range st.ReposByName {
 		repos = append(repos, repo)
 	}
-	st.Mu.RUnlock()
+	// Sort and clone under the lock: cloneRepo iterates repo.Stargazers, which
+	// StarRepo writes under the write lock, so snapshotting after RUnlock is a
+	// concurrent map iteration/write — a process-fatal crash, not a stale read.
 	sort.Slice(repos, func(i, j int) bool { return repos[i].FullName < repos[j].FullName })
 	return snapshotRepos(repos)
 }

@@ -55,7 +55,7 @@ func (st *Store) ListNetworkConfigurations(orgLogin string) []*NetworkConfigurat
 func (st *Store) GetNetworkConfiguration(orgLogin, id string) *NetworkConfiguration {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.OrgNetworkConfigurations[orgLogin][id]
+	return cloneNetworkConfiguration(st.OrgNetworkConfigurations[orgLogin][id])
 }
 
 // relinkNetworkSettingsLocked points referenced settings resources back at the
@@ -177,7 +177,13 @@ func (st *Store) DeleteNetworkConfiguration(orgLogin, id string) bool {
 func (st *Store) GetNetworkSettings(orgLogin, id string) *NetworkSettingsResource {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.OrgNetworkSettings[orgLogin][id]
+	s := st.OrgNetworkSettings[orgLogin][id]
+	if s == nil {
+		return nil
+	}
+	// All-value struct: a shallow copy is a full detached snapshot (STORE-021).
+	cp := *s
+	return &cp
 }
 
 // CreateNetworkSettings provisions a settings resource for the org.

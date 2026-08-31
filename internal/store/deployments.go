@@ -142,17 +142,57 @@ func (ds *DeploymentStore) CreateDeployment(repoID, creatorID int, ref, sha, tas
 	return d
 }
 
+// cloneDeployment detaches a deployment (STORE-021): AddStatus rewrites the
+// Statuses slice header (`d.Statuses = append(...)`) and UpdatedAt in place, so
+// a reader holding the live row races it. The status elements are append-only
+// and immutable, so copying the slice header (not each element) suffices.
+func cloneDeployment(d *Deployment) *Deployment {
+	if d == nil {
+		return nil
+	}
+	cp := *d
+	if d.Payload != nil {
+		cp.Payload = make(map[string]interface{}, len(d.Payload))
+		for k, v := range d.Payload {
+			cp.Payload[k] = v
+		}
+	}
+	if d.Statuses != nil {
+		cp.Statuses = make([]*DeploymentStatus, len(d.Statuses))
+		copy(cp.Statuses, d.Statuses)
+	}
+	return &cp
+}
+
+// cloneEnvironment detaches an environment (STORE-021); its Reviewers /
+// ProtectionRules slices are the mutated reference fields.
+func cloneEnvironment(e *Environment) *Environment {
+	if e == nil {
+		return nil
+	}
+	cp := *e
+	if e.Reviewers != nil {
+		cp.Reviewers = append([]map[string]interface{}(nil), e.Reviewers...)
+	}
+	if e.ProtectionRules != nil {
+		cp.ProtectionRules = append([]map[string]interface{}(nil), e.ProtectionRules...)
+	}
+	return &cp
+}
+
 func (ds *DeploymentStore) GetDeployment(id int) *Deployment {
 	ds.Mu.RLock()
 	defer ds.Mu.RUnlock()
-	return ds.deployments[id]
+	return cloneDeployment(ds.deployments[id])
 }
 
 func (ds *DeploymentStore) ListDeployments(repoID int) []*Deployment {
 	ds.Mu.RLock()
 	defer ds.Mu.RUnlock()
 	out := make([]*Deployment, len(ds.ByRepo[repoID]))
-	copy(out, ds.ByRepo[repoID])
+	for i, d := range ds.ByRepo[repoID] {
+		out[i] = cloneDeployment(d)
+	}
 	// Most-recent first. Reload repopulates ByRepo in map order, so without this
 	// sort pagination boundaries shift across restarts.
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
@@ -241,7 +281,10 @@ func (ds *DeploymentStore) AddStatus(deploymentID, creatorID int, state, descrip
 		batch.Put("deployments", strconv.Itoa(deploymentID), d)
 	}
 	var auto []autoInactiveDeployment
-	if autoInactive && isCompletingDeploymentState(state) {
+	// GitHub auto-inactivates prior deployments only when the new status is
+	// success — not on queued/pending/in_progress/failure/error, where the new
+	// deployment hasn't superseded the old ones.
+	if autoInactive && state == "success" {
 		for _, prior := range ds.ByRepo[d.RepoID] {
 			if prior.ID == d.ID {
 				continue
@@ -401,7 +444,7 @@ func (ds *DeploymentStore) SetEnvironmentPreventSelfReview(repoID int, name stri
 func (ds *DeploymentStore) GetEnvironment(repoID int, name string) *Environment {
 	ds.Mu.RLock()
 	defer ds.Mu.RUnlock()
-	return ds.environments[fmt.Sprintf("%d:%s", repoID, name)]
+	return cloneEnvironment(ds.environments[fmt.Sprintf("%d:%s", repoID, name)])
 }
 
 func (ds *DeploymentStore) GetEnvironmentByID(id int) *Environment {
@@ -409,7 +452,7 @@ func (ds *DeploymentStore) GetEnvironmentByID(id int) *Environment {
 	defer ds.Mu.RUnlock()
 	for _, env := range ds.environments {
 		if env.ID == id {
-			return env
+			return cloneEnvironment(env)
 		}
 	}
 	return nil
@@ -419,7 +462,9 @@ func (ds *DeploymentStore) ListEnvironments(repoID int) []*Environment {
 	ds.Mu.RLock()
 	defer ds.Mu.RUnlock()
 	out := make([]*Environment, len(ds.envsByRepo[repoID]))
-	copy(out, ds.envsByRepo[repoID])
+	for i, env := range ds.envsByRepo[repoID] {
+		out[i] = cloneEnvironment(env)
+	}
 	return out
 }
 
@@ -454,8 +499,7 @@ func (ds *DeploymentStore) GetDeploymentByNodeID(nodeID string) *Deployment {
 	defer ds.Mu.RUnlock()
 	for _, d := range ds.deployments {
 		if d.NodeID == nodeID {
-			cp := *d
-			return &cp
+			return cloneDeployment(d)
 		}
 	}
 	return nil
@@ -467,8 +511,7 @@ func (ds *DeploymentStore) GetEnvironmentByNodeID(nodeID string) *Environment {
 	defer ds.Mu.RUnlock()
 	for _, env := range ds.environments {
 		if env.NodeID == nodeID {
-			cp := *env
-			return &cp
+			return cloneEnvironment(env)
 		}
 	}
 	return nil
@@ -662,14 +705,6 @@ type DeploymentBranchPolicy struct {
 
 // DeploymentStatusState is one of the seven states GitHub emits.
 type DeploymentStatusState string
-
-func isCompletingDeploymentState(state string) bool {
-	switch state {
-	case "in_progress", "queued", "pending", "success", "failure", "error":
-		return true
-	}
-	return false
-}
 
 const (
 	DeploymentStateError      DeploymentStatusState = "error"

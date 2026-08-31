@@ -385,6 +385,11 @@ func (s *Server) projectV2ItemContentJSON(r *http.Request, it *store.ProjectV2It
 		if repo == nil {
 			return nil
 		}
+		// A public project can hold items whose content lives in a private repo;
+		// don't leak that issue's title/body to a viewer who can't read the repo.
+		if !s.viewerCanReadRepo(r.Context(), repo) {
+			return nil
+		}
 		return issueToJSON(issue, s.store, base, repo.FullName)
 	case "PullRequest":
 		pr := s.store.GetPullRequest(it.ContentID)
@@ -393,6 +398,9 @@ func (s *Server) projectV2ItemContentJSON(r *http.Request, it *store.ProjectV2It
 		}
 		repo := s.store.GetRepoByID(pr.RepoID)
 		if repo == nil {
+			return nil
+		}
+		if !s.viewerCanReadRepo(r.Context(), repo) {
 			return nil
 		}
 		return pullRequestToJSON(pr, s.store, base, repo.FullName)

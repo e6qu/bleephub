@@ -712,15 +712,19 @@ func (st *Store) RemoveMembership(orgLogin string, userID int) bool {
 	org := st.OrgByLoginLocked(orgLogin)
 	if org != nil {
 		for _, t := range st.TeamsBySlug {
-			if t.OrgID == org.ID {
-				for i, mid := range t.MemberIDs {
-					if mid == userID {
-						t.MemberIDs = append(t.MemberIDs[:i], t.MemberIDs[i+1:]...)
-						batch.Put("teams", strconv.Itoa(t.ID), t)
-						break
-					}
-				}
+			if t.OrgID != org.ID {
+				continue
 			}
+			// Drop the user from BOTH slices. Removing only MemberIDs left a stale
+			// MaintainerIDs entry that RoleOf ignores while the user is out — but
+			// silently re-grants maintainer if they later re-join and land back in
+			// MemberIDs (the sibling RemoveTeamMembership already clears both).
+			if !slices.Contains(t.MemberIDs, userID) && !slices.Contains(t.MaintainerIDs, userID) {
+				continue
+			}
+			t.MemberIDs = intSliceRemove(t.MemberIDs, userID)
+			t.MaintainerIDs = intSliceRemove(t.MaintainerIDs, userID)
+			batch.Put("teams", strconv.Itoa(t.ID), t)
 		}
 	}
 	if err := batch.Commit(); err != nil {

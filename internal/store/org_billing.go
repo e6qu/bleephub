@@ -77,7 +77,7 @@ func (st *Store) UpdateOrgBudget(orgLogin, id string, fn func(*OrgBudget)) *OrgB
 	}
 	fn(b)
 	st.persistOrgBudgetsLocked(orgLogin)
-	return b
+	return CloneBudget(b)
 }
 
 // DeleteOrgBudget removes a budget. Returns true if it existed.

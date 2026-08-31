@@ -62,10 +62,18 @@ func activityEventOrgJSON(org *store.Org, baseURL string) map[string]interface{}
 // themselves.
 func (s *Server) deriveActivityEvents(base string, repos map[int]*store.Repo, org *store.Org) []activityEvent {
 	s.store.Mu.RLock()
-	var issues []*store.Issue
+	// issueRow carries the live issue (its JSON builder re-locks) plus a snapshot
+	// of ClosedAt: unlike the write-once CreatedAt/RepoID/AuthorID read below,
+	// ClosedAt is mutated in place by close/reopen, so reading it after RUnlock
+	// both races and can nil-deref between the check and the dereference.
+	type issueRow struct {
+		issue    *store.Issue
+		closedAt *time.Time
+	}
+	var issues []issueRow
 	for _, issue := range s.store.Issues {
 		if repos[issue.RepoID] != nil {
-			issues = append(issues, issue)
+			issues = append(issues, issueRow{issue: issue, closedAt: issue.ClosedAt})
 		}
 	}
 	var pulls []*store.PullRequest
@@ -118,7 +126,8 @@ func (s *Server) deriveActivityEvents(base string, repos map[int]*store.Repo, or
 	}
 
 	var events []activityEvent
-	for _, issue := range issues {
+	for _, row := range issues {
+		issue := row.issue
 		repo := repos[issue.RepoID]
 		author := s.store.GetUserByID(issue.AuthorID)
 		if author == nil {
@@ -129,8 +138,8 @@ func (s *Server) deriveActivityEvents(base string, repos map[int]*store.Repo, or
 			"action": "opened",
 			"issue":  issueJSON,
 		}))
-		if issue.ClosedAt != nil {
-			events = append(events, event(activityEventKindIssueClosed, issue.ID, "IssuesEvent", author, repo, *issue.ClosedAt, map[string]interface{}{
+		if row.closedAt != nil {
+			events = append(events, event(activityEventKindIssueClosed, issue.ID, "IssuesEvent", author, repo, *row.closedAt, map[string]interface{}{
 				"action": "closed",
 				"issue":  issueJSON,
 			}))

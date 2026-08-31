@@ -199,13 +199,26 @@ func (st *Store) ClassroomAcceptedFor(assignmentID int) []*ClassroomAcceptedAssi
 func (st *Store) GetClassroom(id int) *Classroom {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.Classrooms[id]
+	c := st.Classrooms[id]
+	if c == nil {
+		return nil
+	}
+	// Detach (STORE-021): update mutates fields (and the roster) in place.
+	cp := *c
+	cp.Roster = append([]ClassroomStudent(nil), c.Roster...)
+	return &cp
 }
 
 func (st *Store) GetClassroomAssignment(id int) *ClassroomAssignment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.ClassroomAssignments[id]
+	a := st.ClassroomAssignments[id]
+	if a == nil {
+		return nil
+	}
+	cp := *a
+	cp.AutogradingTests = append([]ClassroomAutogradingTest(nil), a.AutogradingTests...)
+	return &cp
 }
 
 type ClassroomAutogradingTest struct {

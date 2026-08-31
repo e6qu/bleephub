@@ -17,7 +17,11 @@ func (st *Store) GetOrgImmutableReleasesSettings(orgLogin string) *OrgImmutableR
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	if s := st.OrgImmutableReleases[orgLogin]; s != nil {
-		return s
+		// Detach (STORE-021): the add/remove repo mutators compact
+		// SelectedRepositoryIDs in place.
+		cp := *s
+		cp.SelectedRepositoryIDs = append([]int(nil), s.SelectedRepositoryIDs...)
+		return &cp
 	}
 	return &OrgImmutableReleasesSettings{EnforcedRepositories: "none"}
 }
