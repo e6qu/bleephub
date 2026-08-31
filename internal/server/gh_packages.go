@@ -1343,7 +1343,12 @@ func (s *Server) servePackageFile(w http.ResponseWriter, r *http.Request, f *sto
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+f.Name+"\"")
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, body)
+	if _, err := io.Copy(w, body); err != nil {
+		// GetStream verifies the SHA-256 at EOF; abort rather than serve a
+		// complete-looking but corrupt package file.
+		s.logger.Warn().Err(err).Str("package_file", f.Name).Msg("package file download stream failed; aborting connection")
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func (s *Server) packageVersionURL(baseURL, scopePath string, p *store.Package, v *store.PackageVersion) string {

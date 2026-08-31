@@ -219,6 +219,7 @@ func (s *Server) newActionsEngine() *actions.Engine {
 					s.logger.Error().Err(err).Msg("expired login-session reap failed")
 				}
 			},
+			s.reapAbandonedRegistryUploads,
 			s.reconcileOrgInvitationsSafely,
 		},
 		CompletedJobRetention: runnerTokenTTL,

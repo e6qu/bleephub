@@ -13714,13 +13714,13 @@
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 67,
+        "line": 66,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 69,
+        "line": 68,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches/{cache_id}",
         "source": "internal/server/artifacts.go"
@@ -16804,7 +16804,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 71,
+        "line": 70,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/cache/usage",
         "source": "internal/server/artifacts.go"
@@ -16816,7 +16816,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 66,
+        "line": 65,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches",
         "source": "internal/server/artifacts.go"

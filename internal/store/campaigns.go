@@ -41,7 +41,7 @@ func (st *Store) ListCampaigns(orgLogin string) []*Campaign {
 func (st *Store) GetCampaign(orgLogin string, number int) *Campaign {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.OrgCampaigns[orgLogin][number]
+	return cloneCampaign(st.OrgCampaigns[orgLogin][number])
 }
 
 // CreateCampaign creates an open campaign with the next per-org number.

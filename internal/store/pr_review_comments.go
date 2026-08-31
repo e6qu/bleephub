@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -327,5 +328,9 @@ func (s *PRReviewCommentStore) ListThreads(prID int) []*ReviewThread {
 	for _, t := range threads {
 		out = append(out, t)
 	}
+	// Thread ID is the root comment's ID, so sorting by it yields stable
+	// creation order — a map range would otherwise reshuffle the reviewThreads
+	// connection (and its pagination cursors) on every call.
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }

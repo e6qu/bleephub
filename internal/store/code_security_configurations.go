@@ -307,7 +307,7 @@ func (st *Store) GetRepoCodeSecurityConfiguration(orgLogin string, repoID int) *
 	if !ok {
 		return nil
 	}
-	return st.CodeSecurityConfigs[orgLogin][configID]
+	return cloneCodeSecurityConfiguration(st.CodeSecurityConfigs[orgLogin][configID])
 }
 
 // CodeSecurityConfigurationRequest is the create/update wire shape. The

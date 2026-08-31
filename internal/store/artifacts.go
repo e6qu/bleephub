@@ -1,11 +1,14 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,10 +29,14 @@ type ArtifactStore struct {
 	NextCacheID int64                 `json:"-"`
 	logPlans    map[int]string        // logID → the plan that reserved it
 	DataDir     string                `json:"-"` // empty = in-memory mode
-	ByteStore   ActionsByteStore      `json:"-"`
-	Persist     *Persistence          `json:"-"`
-	revision    int64
-	refreshMu   sync.Mutex
+	// stageDir roots in-progress upload scratch files. It is DataDir when set, else
+	// a per-store temp dir so two stores (e.g. two test servers) reusing the same
+	// artifact id never collide on a shared os.TempDir path.
+	stageDir  string
+	ByteStore ActionsByteStore `json:"-"`
+	Persist   *Persistence     `json:"-"`
+	revision  int64
+	refreshMu sync.Mutex
 	// MaxRepoCacheBytes is the per-repo cache budget; finalizing over it evicts
 	// LRU finalized entries. A field so tests can drive eviction with small caches.
 	MaxRepoCacheBytes int64 `json:"-"`
@@ -64,6 +71,14 @@ func NewArtifactStoreWithByteStore(dataDir string, byteStore ActionsByteStore) *
 		DataDir:           dataDir,
 		ByteStore:         byteStore,
 		MaxRepoCacheBytes: defaultMaxRepoCacheBytes,
+	}
+	store.stageDir = dataDir
+	if dataDir == "" {
+		if tmp, err := os.MkdirTemp("", "bleephub-artifact-stage-"); err == nil {
+			store.stageDir = tmp
+		} else {
+			store.stageDir = os.TempDir()
+		}
 	}
 	if dataDir != "" {
 		store.recoverFromDisk()
@@ -425,6 +440,115 @@ func (as *ArtifactStore) PersistMeta(art *Artifact) error {
 
 func (as *ArtifactStore) WriteArtifactData(ctx context.Context, art *Artifact) error {
 	return as.writeBytes(ctx, ArtifactDataKey(art.ID), filepath.Join(as.DataDir, "artifacts", strconv.FormatInt(art.ID, 10), "data"), art.Data)
+}
+
+// artifactStagePath is the local scratch file an in-progress chunked upload
+// appends to. Staging first, then writing the assembled artifact to its durable
+// home exactly once at finalize, avoids rewriting the whole (growing) blob to the
+// object store on every chunk — the O(chunks²) byte amplification the naive
+// append-and-rewrite caused — and keeps the whole artifact off the heap.
+func (as *ArtifactStore) artifactStagePath(id int64) string {
+	dir := as.stageDir
+	if dir == "" {
+		dir = as.DataDir
+	}
+	if dir == "" {
+		dir = os.TempDir()
+	}
+	return filepath.Join(dir, "artifacts", strconv.FormatInt(id, 10), "upload.part")
+}
+
+// AppendArtifactChunk appends one upload chunk to the artifact's staging file
+// (O(chunk), not O(total)). Callers serialize on ArtifactStore.Mu.
+func (as *ArtifactStore) AppendArtifactChunk(id int64, chunk []byte) error {
+	path := as.artifactStagePath(id)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	// #nosec G304 -- path is the configured/temp root joined with a numeric ID.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(chunk); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// DiscardArtifactStaging removes a staging file for an upload that never
+// finalized. Best-effort.
+func (as *ArtifactStore) DiscardArtifactStaging(id int64) {
+	_ = os.Remove(as.artifactStagePath(id))
+}
+
+// FinalizeArtifactUpload moves the staged bytes to the artifact's durable home
+// (object store, else the data dir, else memory) exactly once, computing the
+// SHA-256 digest, and removes the staging file. It sets art.Size, art.Digest,
+// and — for object-backed stores — leaves art.Data nil so the finalized artifact
+// does not pin its payload in RAM. Callers hold ArtifactStore.Mu.
+func (as *ArtifactStore) FinalizeArtifactUpload(ctx context.Context, art *Artifact) error {
+	stage := as.artifactStagePath(art.ID)
+	if as.ByteStore != nil {
+		// #nosec G304 -- staging path is internal (numeric ID under a fixed root).
+		f, err := os.Open(stage)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return as.finalizeEmptyArtifact(ctx, art)
+			}
+			return err
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		hasher := sha256.New()
+		if _, err := io.Copy(hasher, f); err != nil {
+			return err
+		}
+		sum := hasher.Sum(nil)
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		if err := as.ByteStore.PutStreamHashed(ctx, ArtifactDataKey(art.ID), f, info.Size(), sum); err != nil {
+			return err
+		}
+		art.Data = nil
+		art.Size = info.Size()
+		art.Digest = "sha256:" + hex.EncodeToString(sum)
+		_ = os.Remove(stage)
+		return nil
+	}
+	// Filesystem / in-memory backends: load the staged bytes and write them to
+	// their home once (WriteArtifactData → data dir, or kept in art.Data for the
+	// memoryless dev server, which reads Data directly).
+	// #nosec G304 -- internal staging path.
+	data, err := os.ReadFile(stage)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	art.Data = data
+	art.Size = int64(len(data))
+	sum := sha256.Sum256(data)
+	art.Digest = "sha256:" + hex.EncodeToString(sum[:])
+	if err := as.WriteArtifactData(ctx, art); err != nil {
+		return err
+	}
+	_ = os.Remove(stage)
+	return nil
+}
+
+func (as *ArtifactStore) finalizeEmptyArtifact(ctx context.Context, art *Artifact) error {
+	sum := sha256.Sum256(nil)
+	if err := as.ByteStore.PutStreamHashed(ctx, ArtifactDataKey(art.ID), bytes.NewReader(nil), 0, sum[:]); err != nil {
+		return err
+	}
+	art.Data = nil
+	art.Size = 0
+	art.Digest = "sha256:" + hex.EncodeToString(sum[:])
+	return nil
 }
 
 func (as *ArtifactStore) writeCacheData(ctx context.Context, entry *CacheEntry) error {

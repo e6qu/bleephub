@@ -197,7 +197,8 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 		t.Fatalf("create status = %d, body=%s", w.Code, w.Body.String())
 	}
 
-	uploadReq := httptest.NewRequest("PUT", "/_apis/v1/artifacts/1/upload", bytes.NewBufferString("object-backed artifact"))
+	const body = "object-backed artifact"
+	uploadReq := httptest.NewRequest("PUT", "/_apis/v1/artifacts/1/upload", bytes.NewBufferString(body))
 	uploadReq.SetPathValue("artifactId", "1")
 	uploadReq.Header.Set("Authorization", "Bearer "+token)
 	uploadW := httptest.NewRecorder()
@@ -206,8 +207,18 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 		t.Fatalf("upload status = %d, body=%s", uploadW.Code, uploadW.Body.String())
 	}
 
+	// The assembled artifact is written to the object store once, at finalize —
+	// not rewritten per chunk.
+	fin := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact", bytes.NewBufferString(fmt.Sprintf(`{"name":"object-artifact","size":%d,"workflow_run_backend_id":"run-1"}`, len(body))))
+	fin.Header.Set("Authorization", "Bearer "+token)
+	fw := httptest.NewRecorder()
+	s.handleFinalizeArtifact(fw, fin)
+	if fw.Code != http.StatusOK {
+		t.Fatalf("finalize status = %d, body=%s", fw.Code, fw.Body.String())
+	}
+
 	got := readS3TestFile(t, objectFS, "actions/artifacts/1/data")
-	if string(got) != "object-backed artifact" {
+	if string(got) != body {
 		t.Fatalf("s3 artifact data = %q", string(got))
 	}
 }

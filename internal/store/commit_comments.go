@@ -23,6 +23,25 @@ type CommitComment struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// cloneCommitComment returns a detached copy so readers never alias a row the
+// store may mutate in place (Update rewrites Body/UpdatedAt). Position and Line
+// are write-once at creation, so sharing those *int is safe.
+func cloneCommitComment(c *CommitComment) *CommitComment {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	return &cp
+}
+
+func snapshotCommitComments(in []*CommitComment) []*CommitComment {
+	out := make([]*CommitComment, len(in))
+	for i, c := range in {
+		out[i] = cloneCommitComment(c)
+	}
+	return out
+}
+
 // CommitCommentStore holds commit comments keyed by id, repo, and commit.
 type CommitCommentStore struct {
 	Mu       sync.RWMutex             `json:"-"`
@@ -77,15 +96,14 @@ func (s *CommitCommentStore) Create(repoID int, commitID string, authorID int, b
 func (s *CommitCommentStore) Get(id int) *CommitComment {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
-	return s.ByID[id]
+	return cloneCommitComment(s.ByID[id])
 }
 
 // ListForRepo returns a repo's commit comments, newest first.
 func (s *CommitCommentStore) ListForRepo(repoID int) []*CommitComment {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
-	out := make([]*CommitComment, len(s.ByRepo[repoID]))
-	copy(out, s.ByRepo[repoID])
+	out := snapshotCommitComments(s.ByRepo[repoID])
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
@@ -97,8 +115,7 @@ func (s *CommitCommentStore) ListForCommit(repoID int, commitID string) []*Commi
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
 	ck := commitKey(repoID, commitID)
-	out := make([]*CommitComment, len(s.byCommit[ck]))
-	copy(out, s.byCommit[ck])
+	out := snapshotCommitComments(s.byCommit[ck])
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})

@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
 )
@@ -187,6 +189,58 @@ func TestDeleteRepoPurgesRepositoryPackageObjectBytes(t *testing.T) {
 	if err == nil {
 		_ = f.Close()
 		t.Fatalf("repository package object %s survived repository deletion", files[0].StoragePath)
+	}
+}
+
+// TestContainerRegistryReapsAbandonedUploads pins the abandoned-upload reaper:
+// a POSTed-then-abandoned blob upload leaves a temp file, an fd and a map slot,
+// all of which the reaper reclaims once the session is idle past its TTL — but
+// not before.
+func TestContainerRegistryReapsAbandonedUploads(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+
+	resp := s.registryRequest(t, http.MethodPost, "/v2/admin/reap-img/blobs/uploads/", nil)
+	requireStatusNoClose(t, resp, http.StatusAccepted)
+	uploadID := resp.Header.Get("Docker-Upload-UUID")
+	resp.Body.Close()
+	if uploadID == "" {
+		t.Fatal("start upload returned no Docker-Upload-UUID")
+	}
+
+	s.registryUploadsMu.Lock()
+	up := s.registryUploads[uploadID]
+	s.registryUploadsMu.Unlock()
+	if up == nil {
+		t.Fatal("upload session not registered")
+	}
+	up.mu.Lock()
+	tmpName := up.tmp.Name()
+	base := up.lastActivity
+	up.mu.Unlock()
+	if _, err := os.Stat(tmpName); err != nil {
+		t.Fatalf("temp file should exist after start: %v", err)
+	}
+
+	// Just inside the TTL: the session must survive (a slow push is not abandoned).
+	s.reapAbandonedRegistryUploads(base.Add(registryUploadIdleTTL - time.Minute))
+	s.registryUploadsMu.Lock()
+	stillThere := s.registryUploads[uploadID] != nil
+	s.registryUploadsMu.Unlock()
+	if !stillThere {
+		t.Fatal("reaper dropped a session still within its idle TTL")
+	}
+
+	// Past the TTL: the session, its map slot and its temp file are reclaimed.
+	s.reapAbandonedRegistryUploads(base.Add(registryUploadIdleTTL + time.Minute))
+	s.registryUploadsMu.Lock()
+	gone := s.registryUploads[uploadID] == nil
+	s.registryUploadsMu.Unlock()
+	if !gone {
+		t.Fatal("reaper did not drop an abandoned session past its TTL")
+	}
+	if _, err := os.Stat(tmpName); !os.IsNotExist(err) {
+		t.Fatalf("reaper left the temp file behind: stat err = %v", err)
 	}
 }
 
