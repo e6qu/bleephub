@@ -74,6 +74,28 @@ func (st *Store) UnindexRepoNameLocked(fullName string) {
 	}
 }
 
+// rebuildFoldedNameIndexesLocked recomputes the three folded case-insensitive
+// name indexes from the primary maps. The replica-refresh reflect copy replaces
+// the exported UsersByLogin/OrgsByLogin/ReposByName maps but skips these
+// unexported derived indexes, so they must be rebuilt from the merged primaries
+// (as the workflow indexes are) or case-insensitive lookups on a replica go
+// stale after a refresh — resolving a peer-created org/user/repo (or a case-only
+// rename) to a 404. Caller holds st.Mu.
+func (st *Store) rebuildFoldedNameIndexesLocked() {
+	st.foldedUserLogins = make(map[string]string, len(st.UsersByLogin))
+	for login := range st.UsersByLogin {
+		st.foldedUserLogins[FoldName(login)] = login
+	}
+	st.foldedOrgLogins = make(map[string]string, len(st.OrgsByLogin))
+	for login := range st.OrgsByLogin {
+		st.foldedOrgLogins[FoldName(login)] = login
+	}
+	st.foldedRepoNames = make(map[string]string, len(st.ReposByName))
+	for fullName := range st.ReposByName {
+		st.foldedRepoNames[FoldName(fullName)] = fullName
+	}
+}
+
 // UserByLoginLocked resolves a login case-insensitively to the live user row,
 // or nil. Caller holds st.Mu; the pointer is only valid under that lock.
 func (st *Store) UserByLoginLocked(login string) *User {

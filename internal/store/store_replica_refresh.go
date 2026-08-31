@@ -198,6 +198,10 @@ func (st *Store) RefreshFromPersistenceBeforeApply(force bool, beforeApply func(
 		// The reflect copy skipped the unexported run-id and concurrency-group
 		// indexes; recompute them from the merged Workflows map.
 		st.rebuildWorkflowIndexesLocked()
+		// It also skipped the unexported folded case-insensitive name indexes;
+		// rebuild them from the swapped-in primary maps so a replica resolves a
+		// peer-created org/user/repo case-insensitively after a refresh.
+		st.rebuildFoldedNameIndexesLocked()
 		st.actionsKeyPair = candidate.actionsKeyPair
 		st.persistenceRevision = candidate.persistenceRevision
 		persist.localRevision.Store(candidate.persistenceRevision)

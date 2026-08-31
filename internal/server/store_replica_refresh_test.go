@@ -261,6 +261,49 @@ func TestStoreReloadRollsBackUnpersistedMemoryMutation(t *testing.T) {
 	}
 }
 
+// TestReplicaRefreshRebuildsFoldedNameIndexes pins that a replica rebuilds the
+// unexported folded case-insensitive name indexes after a refresh: without it, a
+// peer-created org/user/repo resolves by exact case but 404s for a
+// different-case (GitHub-parity case-insensitive) lookup.
+func TestReplicaRefreshRebuildsFoldedNameIndexes(t *testing.T) {
+	t.Setenv("BLEEPHUB_PERSIST", "true")
+	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
+	firstPersistence, err := store.NewPersistence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstPersistence.Close()
+	firstPersistence.Dialect.Name = "dqlite"
+	first := store.NewStore()
+	if err := first.SetPersistence(firstPersistence); err != nil {
+		t.Fatal(err)
+	}
+	first.SeedDefaultUser()
+
+	secondPersistence, err := store.NewPersistence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondPersistence.Close()
+	secondPersistence.Dialect.Name = "dqlite"
+	second := store.NewStore()
+	if err := second.SetPersistence(secondPersistence); err != nil {
+		t.Fatal(err)
+	}
+
+	// Peer A creates a mixed-case org; replica B refreshes to observe it.
+	first.CreateOrg(first.LookupUserByLogin("admin"), "AcmeCorp", "", "")
+	if err := second.RefreshFromPersistenceIfStale(); err != nil {
+		t.Fatal(err)
+	}
+	if second.GetOrg("AcmeCorp") == nil {
+		t.Fatal("exact-case org lookup failed after refresh")
+	}
+	if second.GetOrg("acmecorp") == nil {
+		t.Fatal("case-insensitive org lookup failed after refresh: folded index not rebuilt")
+	}
+}
+
 func TestStoreRefreshCannotOverwriteCommitBetweenSnapshotAndApply(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
