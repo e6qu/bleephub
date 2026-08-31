@@ -428,7 +428,9 @@ func (s *Resolver) addAdvisoryRootFields(queryType *graphql.Object, types *advis
 			pairs := s.store.ListGlobalVulnerabilities(filter)
 			nodes := make([]map[string]interface{}, 0, len(pairs))
 			for _, pair := range pairs {
-				nodes = append(nodes, s.vulnerabilityToGQL(pair.Advisory, pair.Vulnerability))
+				if node := s.vulnerabilityToGQL(pair.Advisory, pair.Vulnerability); node != nil {
+					nodes = append(nodes, node)
+				}
 			}
 			return paginateGQLMaps(nodes, p.Args), nil
 		},
@@ -702,7 +704,9 @@ func (s *Resolver) advisoryToGQL(advisory *store.SecurityAdvisory) map[string]in
 
 	vulnerabilities := make([]map[string]interface{}, 0, len(advisory.Vulnerabilities))
 	for _, vulnerability := range advisory.Vulnerabilities {
-		vulnerabilities = append(vulnerabilities, advisoryVulnerabilityToGQL(advisory, vulnerability))
+		if node := advisoryVulnerabilityToGQL(advisory, vulnerability); node != nil {
+			vulnerabilities = append(vulnerabilities, node)
+		}
 	}
 	rendered["_vulnerabilities"] = vulnerabilities
 	return rendered
@@ -736,10 +740,14 @@ func advisoryVulnerabilityToGQL(advisory *store.SecurityAdvisory, vulnerability 
 	if vulnerability.FirstPatchedVersion != "" {
 		firstPatched = map[string]interface{}{"identifier": vulnerability.FirstPatchedVersion}
 	}
-	// ecosystem is carried privately (under _ecosystem) so a caller can drop a
-	// vulnerability whose ecosystem is outside the non-null enum rather than
-	// emit an invalid package member.
+	// SecurityVulnerability.package.ecosystem is a NonNull enum. An ecosystem
+	// outside the enum maps to "", which would null the NonNull field and error
+	// (discarding) the whole vulnerabilities result — so drop such a vulnerability
+	// entirely (the list builders nil-check this) rather than emit an invalid one.
 	ecosystem := store.AdvisoryEcosystemGraphQL(vulnerability.PackageEcosystem)
+	if ecosystem == "" {
+		return nil
+	}
 	return map[string]interface{}{
 		"_advisoryGHSA": advisory.GHSAID,
 		"package": map[string]interface{}{

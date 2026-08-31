@@ -18,10 +18,16 @@ func (s *Server) registerGHSecretScanningRoutes() {
 		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleDeleteRepoSecretScanningCustomPatterns))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns/{pattern_id}",
 		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleUpdateRepoSecretScanningCustomPattern))
-	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts", s.handleListSecretScanningAlerts)
-	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}", s.handleGetSecretScanningAlert)
+	// Alert reads carry the alert metadata (type, locations, resolution) GitHub
+	// restricts to security_events access; gate them like the sibling Dependabot
+	// alert reads rather than leaving them open to any repo reader.
+	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleListSecretScanningAlerts))
+	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetSecretScanningAlert))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}", s.handleUpdateSecretScanningAlert)
-	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations", s.handleListSecretScanningAlertLocations)
+	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleListSecretScanningAlertLocations))
 
 	// Organization-level alerts and pattern configurations
 	s.route("GET /api/v3/orgs/{org}/secret-scanning/alerts",
@@ -41,7 +47,8 @@ func (s *Server) registerGHSecretScanningRoutes() {
 
 	// Push protection bypasses + scan history
 	s.route("POST /api/v3/repos/{owner}/{repo}/secret-scanning/push-protection-bypasses", s.handleCreateSecretScanningPushProtectionBypass)
-	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/scan-history", s.handleGetSecretScanningScanHistory)
+	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/scan-history",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetSecretScanningScanHistory))
 }
 
 func (s *Server) handleListSecretScanningAlerts(w http.ResponseWriter, r *http.Request) {

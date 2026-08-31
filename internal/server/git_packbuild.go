@@ -364,7 +364,7 @@ func gitObjectsToSend(stor storer.Storer, boundary *gitFetchBoundary, request *g
 	for _, hash := range request.shallows {
 		stopAt[hash] = true
 	}
-	if err := collectGitHaveObjects(stor, request.haves, stopAt, seen, plan.clientAt); err != nil {
+	if err := collectGitHaveObjects(stor, request.haves, request.filter, stopAt, seen, plan.clientAt); err != nil {
 		return nil, err
 	}
 
@@ -425,7 +425,15 @@ func gitObjectsToSend(stor storer.Storer, boundary *gitFetchBoundary, request *g
 // It also records which object the client holds at each tree path, keeping the
 // first reached: the client's most recent version, the closest delta base. A
 // have naming an object this server lacks is ignored, not fatal.
-func collectGitHaveObjects(stor storer.EncodedObjectStorer, haves []plumbing.Hash, stopAt, seen map[plumbing.Hash]bool, at map[string]plumbing.Hash) error {
+// collectGitHaveObjects records, for each tree path, the object the client
+// already holds (in `at`, the thin-pack delta-base table) and marks those
+// objects `seen`. It must apply the request's partial-clone filter to the
+// have-walk: a `have` line does NOT imply the client holds a blob/tree its
+// clone filter omitted, so recording a filtered-out object as an available
+// delta base produces a REF_DELTA the client cannot resolve. Under-recording a
+// filtered object only costs a redundant whole object; over-recording corrupts
+// the pack.
+func collectGitHaveObjects(stor storer.EncodedObjectStorer, haves []plumbing.Hash, filter gitObjectFilter, stopAt, seen map[plumbing.Hash]bool, at map[string]plumbing.Hash) error {
 	visited := make(map[plumbing.Hash]bool, len(haves))
 	queue := append([]plumbing.Hash(nil), haves...)
 	record := func(hash plumbing.Hash, path string) {
@@ -445,7 +453,7 @@ func collectGitHaveObjects(stor storer.EncodedObjectStorer, haves []plumbing.Has
 			continue
 		}
 		seen[hash] = true
-		if err := collectGitTree(stor, commit.TreeHash, gitObjectFilter{}, nil, seen, record); err != nil {
+		if err := collectGitTree(stor, commit.TreeHash, filter, nil, seen, record); err != nil {
 			return err
 		}
 		if stopAt[hash] {

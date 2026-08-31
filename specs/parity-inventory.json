@@ -13648,7 +13648,7 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 37,
+        "line": 43,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/secret-scanning/custom-patterns",
         "source": "internal/server/gh_secret_scanning.go"
@@ -13870,13 +13870,13 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 32,
+        "line": 39,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 56,
+        "line": 65,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/codeql/databases/{language}",
         "source": "internal/server/gh_code_scanning.go"
@@ -15922,7 +15922,7 @@
         "source": "internal/server/gh_campaigns.go"
       },
       {
-        "line": 67,
+        "line": 76,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/code-scanning/alerts",
         "source": "internal/server/gh_code_scanning.go"
@@ -16618,19 +16618,19 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 27,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/secret-scanning/alerts",
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 33,
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/secret-scanning/custom-patterns",
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 29,
+        "line": 35,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/secret-scanning/pattern-configurations",
         "source": "internal/server/gh_secret_scanning.go"
@@ -17290,73 +17290,73 @@
         "source": "internal/server/gh_code_quality.go"
       },
       {
-        "line": 24,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/alerts",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 25,
+        "line": 28,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 45,
+        "line": 53,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 27,
+        "line": 31,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 30,
+        "line": 35,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/analyses",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 31,
+        "line": 37,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 52,
+        "line": 61,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/codeql/databases",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 54,
+        "line": 63,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/codeql/databases/{language}",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 62,
+        "line": 71,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/codeql/variant-analyses/{codeql_variant_analysis_id}",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 63,
+        "line": 72,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/codeql/variant-analyses/{codeql_variant_analysis_id}/repos/{repo_owner}/{repo_name}",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 41,
+        "line": 48,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/default-setup",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 37,
+        "line": 44,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/sarifs/{sarif_id}",
         "source": "internal/server/gh_code_scanning.go"
@@ -18214,19 +18214,19 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 21,
+        "line": 24,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/secret-scanning/alerts",
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 22,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}",
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 24,
+        "line": 29,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations",
         "source": "internal/server/gh_secret_scanning.go"
@@ -18238,7 +18238,7 @@
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 44,
+        "line": 50,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/secret-scanning/scan-history",
         "source": "internal/server/gh_secret_scanning.go"
@@ -19432,13 +19432,13 @@
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 39,
+        "line": 45,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/secret-scanning/custom-patterns/{pattern_id}",
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 31,
+        "line": 37,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/secret-scanning/pattern-configurations",
         "source": "internal/server/gh_secret_scanning.go"
@@ -19546,13 +19546,13 @@
         "source": "internal/server/gh_code_quality.go"
       },
       {
-        "line": 26,
+        "line": 30,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 42,
+        "line": 50,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/default-setup",
         "source": "internal/server/gh_code_scanning.go"
@@ -19708,7 +19708,7 @@
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 23,
+        "line": 28,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}",
         "source": "internal/server/gh_secret_scanning.go"
@@ -20434,7 +20434,7 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 35,
+        "line": 41,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/secret-scanning/custom-patterns",
         "source": "internal/server/gh_secret_scanning.go"
@@ -20650,25 +20650,25 @@
         "source": "internal/server/gh_checks_rest.go"
       },
       {
-        "line": 46,
+        "line": 55,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 47,
+        "line": 56,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix/commits",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 61,
+        "line": 70,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/codeql/variant-analyses",
         "source": "internal/server/gh_code_scanning.go"
       },
       {
-        "line": 35,
+        "line": 42,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/code-scanning/sarifs",
         "source": "internal/server/gh_code_scanning.go"
@@ -21010,7 +21010,7 @@
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 43,
+        "line": 49,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/secret-scanning/push-protection-bypasses",
         "source": "internal/server/gh_secret_scanning.go"

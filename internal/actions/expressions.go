@@ -553,8 +553,12 @@ func (p *exprParser) callFunction(name string, args []interface{}) (interface{},
 		if p.ctx.WorkflowCancelled {
 			return false, nil
 		}
+		// A skipped dependency does not satisfy success(): GitHub skips a job whose
+		// need was skipped unless its if uses a continue-conditional (always()/
+		// !failure()...), and this must agree with the engine's default needs
+		// gating (workflows.go), which already treats a skipped dep as non-success.
 		for _, r := range p.ctx.DepResults {
-			if r != "success" && r != "skipped" {
+			if r != "success" {
 				return false, nil
 			}
 		}

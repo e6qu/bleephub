@@ -682,6 +682,7 @@ func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
 
 	// Matrix fail-fast cancels siblings on a job failure. A continue-on-error job is excluded: the roll-up excludes its
 	// tolerated failure but counts a cancellation, so cancelling siblings would turn the run red anyway.
+	var cancelRunningSiblings []string
 	if foundJob.Result == store.ResultFailure && foundJob.MatrixGroup != "" && !foundJob.ContinueOnError {
 		if foundJob.Def.FailFast() {
 			for _, sibling := range foundWf.Jobs {
@@ -691,7 +692,8 @@ func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
 				if sibling.MatrixGroup != foundJob.MatrixGroup {
 					continue
 				}
-				if sibling.Status == store.JobStatusPending || sibling.Status == store.JobStatusQueued {
+				switch sibling.Status {
+				case store.JobStatusPending, store.JobStatusQueued, store.JobStatusWaiting:
 					sibling.Status = store.JobStatusCompleted
 					sibling.Result = store.ResultCancelled
 					sibling.CompletedAt = time.Now()
@@ -700,12 +702,27 @@ func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
 						Str("job", sibling.Key).
 						Str("reason", "fail-fast").
 						Msg("cancelling matrix sibling")
+				case store.JobStatusRunning:
+					// In-progress on a runner: signal the runner to cancel (it reports
+					// the cancelled completion). GitHub fail-fast cancels in-progress
+					// siblings too, not just queued/pending ones.
+					cancelRunningSiblings = append(cancelRunningSiblings, sibling.JobID)
+					s.logger.Info().
+						Str("job", sibling.Key).
+						Str("reason", "fail-fast").
+						Msg("cancelling in-progress matrix sibling")
 				}
 			}
 		}
 	}
 	s.store.PersistWorkflowRecord(foundWf)
 	s.store.Mu.Unlock()
+
+	// Deliver runner cancellations outside the store lock (SendJobCancellation
+	// takes its own locks), mirroring the normal cancel path.
+	for _, jobID := range cancelRunningSiblings {
+		s.SendJobCancellation(jobID)
+	}
 
 	if s.metrics != nil {
 		s.metrics.RecordJobCompletion(foundJob)

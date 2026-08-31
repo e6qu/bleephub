@@ -673,7 +673,7 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 				"activeGoal": &graphql.Field{
 					Type: s.sponsorsGoalType(),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						return s.sponsorsGoalGQL(s.store.Sponsors.GetSponsorsListing(sponsorsSourceInt(p.Source, "_listingID"))), nil
+						return optionalObject(s.sponsorsGoalGQL(s.store.Sponsors.GetSponsorsListing(sponsorsSourceInt(p.Source, "_listingID")))), nil
 					},
 				},
 				"sponsorable": &graphql.Field{
@@ -811,7 +811,7 @@ func (s *Resolver) sponsorshipType() *graphql.Object {
 				"tier": &graphql.Field{
 					Type: s.sponsorsTierType(),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						return s.sponsorsTierGQL(s.store.Sponsors.GetSponsorsTier(sponsorsSourceInt(p.Source, "_tierID"))), nil
+						return optionalObject(s.sponsorsTierGQL(s.store.Sponsors.GetSponsorsTier(sponsorsSourceInt(p.Source, "_tierID")))), nil
 					},
 				},
 				"sponsorEntity": &graphql.Field{
@@ -894,13 +894,13 @@ func (s *Resolver) sponsorsActivityType() *graphql.Object {
 				"sponsorsTier": &graphql.Field{
 					Type: s.sponsorsTierType(),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						return s.sponsorsTierGQL(s.store.Sponsors.GetSponsorsTier(sponsorsSourceInt(p.Source, "_tierID"))), nil
+						return optionalObject(s.sponsorsTierGQL(s.store.Sponsors.GetSponsorsTier(sponsorsSourceInt(p.Source, "_tierID")))), nil
 					},
 				},
 				"previousSponsorsTier": &graphql.Field{
 					Type: s.sponsorsTierType(),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						return s.sponsorsTierGQL(s.store.Sponsors.GetSponsorsTier(sponsorsSourceInt(p.Source, "_previousTierID"))), nil
+						return optionalObject(s.sponsorsTierGQL(s.store.Sponsors.GetSponsorsTier(sponsorsSourceInt(p.Source, "_previousTierID")))), nil
 					},
 				},
 			}
@@ -1147,7 +1147,7 @@ func (s *Resolver) sponsorableFields() graphql.Fields {
 					return nil, nil
 				}
 				activeOnly, _ := p.Args["activeOnly"].(bool)
-				return s.sponsorshipGQL(s.store.Sponsors.GetSponsorshipBetween(viewer.Login, sponsorsAccountLogin(p.Source), activeOnly)), nil
+				return optionalObject(s.sponsorshipGQL(s.store.Sponsors.GetSponsorshipBetween(viewer.Login, sponsorsAccountLogin(p.Source), activeOnly))), nil
 			},
 		},
 		"sponsorshipForViewerAsSponsorable": &graphql.Field{
@@ -1161,7 +1161,7 @@ func (s *Resolver) sponsorableFields() graphql.Fields {
 					return nil, nil
 				}
 				activeOnly, _ := p.Args["activeOnly"].(bool)
-				return s.sponsorshipGQL(s.store.Sponsors.GetSponsorshipBetween(sponsorsAccountLogin(p.Source), viewer.Login, activeOnly)), nil
+				return optionalObject(s.sponsorshipGQL(s.store.Sponsors.GetSponsorshipBetween(sponsorsAccountLogin(p.Source), viewer.Login, activeOnly))), nil
 			},
 		},
 		"sponsors": &graphql.Field{
