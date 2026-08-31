@@ -34,13 +34,19 @@ var apiRateResourceLimits = map[string]int{
 	"code_scanning_autofix":       10,
 	"code_scanning_upload":        500,
 	"code_search":                 10,
-	"core":                        5000,
-	"dependency_snapshots":        100,
-	"graphql":                     5000,
-	"integration_manifest":        5000,
-	"scim":                        15000,
-	"search":                      30,
-	"source_import":               100,
+	// copilot_usage_records and dependency_sbom are reported buckets in their own
+	// right (GitHub's general-purpose 5000/hour default). Without their own entry
+	// here rateWindowKeyAndLimit collapses them onto the core key, so /rate_limit
+	// reports their used/remaining bleeding from unrelated core traffic.
+	"copilot_usage_records": 5000,
+	"core":                  5000,
+	"dependency_sbom":       5000,
+	"dependency_snapshots":  100,
+	"graphql":               5000,
+	"integration_manifest":  5000,
+	"scim":                  15000,
+	"search":                30,
+	"source_import":         100,
 	// auth: internal IP-scoped per-minute anti-brute-force budget for the sign-in
 	// endpoints. Not GitHub-exposed; never appears in /rate_limit.
 	"auth": authFlowRateLimit,
@@ -101,6 +107,10 @@ func apiRateResource(path string) string {
 		return "source_import"
 	case containsPathSegments(path, "/dependency-graph/snapshots"):
 		return "dependency_snapshots"
+	case containsPathSegments(path, "/dependency-graph/sbom"):
+		return "dependency_sbom"
+	case containsPathSegments(path, "/copilot/usage-records"):
+		return "copilot_usage_records"
 	case containsPathSegments(path, "/code-scanning/sarifs"):
 		return "code_scanning_upload"
 	case strings.Contains(path, "/code-scanning/alerts/") && strings.HasSuffix(path, "/autofix"):
@@ -254,6 +264,22 @@ func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume boo
 	}
 	s.rateLimitsMu.Unlock()
 	return snapshot
+}
+
+// reapExpiredRateLimitWindows deletes per-identity rate windows whose reset has
+// passed. Without it s.rateLimits grows one permanent entry per
+// identity×resource forever — every distinct token, session, or client IP
+// (and a scanner rotating either) leaks memory that is never reclaimed. A
+// past-reset window is already recreated fresh on next access (same condition
+// as the snapshot/refund paths), so deleting it here loses nothing.
+func (s *Server) reapExpiredRateLimitWindows(now time.Time) {
+	s.rateLimitsMu.Lock()
+	defer s.rateLimitsMu.Unlock()
+	for key, window := range s.rateLimits {
+		if window == nil || !now.Before(window.Reset) {
+			delete(s.rateLimits, key)
+		}
+	}
 }
 
 // rateLimitAuthFlow throttles the sign-in endpoints per client IP against

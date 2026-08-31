@@ -57,7 +57,10 @@ func (s *Server) handleRenderMarkdown(w http.ResponseWriter, r *http.Request) {
 		Mode    string  `json:"mode"`
 		Context string  `json:"context"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// Bound the request body: the rendered pipeline (goldmark + bluemonday)
+	// buffers and processes the whole input, so an unbounded body is a DoS
+	// vector. The raw sibling caps identically.
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)).Decode(&req); err != nil {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}

@@ -81,6 +81,39 @@ func (s *Server) expireEnterpriseCopilotSeatsLocked() {
 	}
 }
 
+// reapExpiredEnterpriseCopilotSeats deletes and persists seats whose
+// cancellation has taken effect on the engine's minute tick, so read paths
+// never have to persist (STORE-034). A durable write failure panics through
+// MustPut; this goroutine has no recover middleware, so catch it, reload
+// durable state, and continue — mirroring reconcileOrgInvitationsSafely.
+func (s *Server) reapExpiredEnterpriseCopilotSeats(now time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			if pf, ok := r.(*store.PersistenceFailure); ok {
+				s.logger.Error().Err(pf).Msg("enterprise copilot seat reap persist failed; reloading")
+				if err := s.store.ReloadFromPersistence(); err != nil {
+					s.logger.Error().Err(err).Msg("reload after enterprise copilot seat reap failure")
+				}
+				return
+			}
+			panic(r)
+		}
+	}()
+	today := now.Format("2006-01-02")
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
+	changed := false
+	for key, seat := range s.store.EnterpriseSettings.EnterpriseCopilotSeats {
+		if seat.PendingCancellationDate != "" && seat.PendingCancellationDate <= today {
+			delete(s.store.EnterpriseSettings.EnterpriseCopilotSeats, key)
+			changed = true
+		}
+	}
+	if changed {
+		s.store.PersistEnterpriseSettings()
+	}
+}
+
 func (s *Server) addEnterpriseCopilotSeatLocked(userID int, team *store.EnterpriseTeam) bool {
 	teamID, teamSlug := 0, ""
 	if team != nil {
@@ -127,10 +160,17 @@ func (s *Server) enterpriseCopilotSeatJSON(seat *store.CopilotSeat, baseURL stri
 }
 
 func (s *Server) enterpriseCopilotSeatRows() []*store.CopilotSeat {
+	today := s.store.CurrentTime().Format("2006-01-02")
 	s.store.Mu.Lock()
-	s.expireEnterpriseCopilotSeatsLocked()
 	rows := make([]*store.CopilotSeat, 0, len(s.store.EnterpriseSettings.EnterpriseCopilotSeats))
 	for _, seat := range s.store.EnterpriseSettings.EnterpriseCopilotSeats {
+		// Skip seats whose cancellation has already taken effect. The durable
+		// delete is owned by the background reaper — a GET must never persist
+		// (STORE-034); expiring in-memory here without persisting left the store
+		// diverged (expired seats reappeared after a restart).
+		if seat.PendingCancellationDate != "" && seat.PendingCancellationDate <= today {
+			continue
+		}
 		copy := *seat
 		rows = append(rows, &copy)
 	}

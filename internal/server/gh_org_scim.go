@@ -13,13 +13,17 @@ import (
 )
 
 func (s *Server) registerGHOrganizationSCIMRoutes() {
-	read := s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListOrganizationSCIMUsers)
+	read := func(handler http.HandlerFunc) http.HandlerFunc {
+		return s.requirePerm(store.ScopeMembers, store.PermRead, handler)
+	}
 	write := func(handler http.HandlerFunc) http.HandlerFunc {
 		return s.requirePerm(store.ScopeMembers, store.PermWrite, handler)
 	}
-	s.route("GET /api/v3/scim/v2/organizations/{org}/Users", read)
+	s.route("GET /api/v3/scim/v2/organizations/{org}/Users", read(s.handleListOrganizationSCIMUsers))
 	s.route("POST /api/v3/scim/v2/organizations/{org}/Users", write(s.handleCreateOrganizationSCIMUser))
-	s.route("GET /api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}", write(s.handleGetOrganizationSCIMUser))
+	// A single-user GET reads, matching the collection GET and GitHub — it was
+	// over-restrictively gated on Members:write.
+	s.route("GET /api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}", read(s.handleGetOrganizationSCIMUser))
 	s.route("PUT /api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}", write(s.handleReplaceOrganizationSCIMUser))
 	s.route("PATCH /api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}", write(s.handlePatchOrganizationSCIMUser))
 	s.route("DELETE /api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}", write(s.handleDeleteOrganizationSCIMUser))

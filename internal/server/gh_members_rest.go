@@ -89,6 +89,14 @@ func (s *Server) handleGetOrgMembership(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// Only org members may read another user's membership (role + state); the
+	// requirePerm(Members:read) gate does not enforce membership at read level,
+	// so a non-member would otherwise get a private-membership existence oracle.
+	// Every sibling read handler enforces this in-handler.
+	if !s.viewerIsOrgMember(r.Context(), orgLogin) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 
 	username := r.PathValue("username")
 	target := s.store.LookupUserByLogin(username)
