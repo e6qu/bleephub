@@ -20,15 +20,22 @@ import (
 )
 
 func (s *Server) registerGHCodeScanningRoutes() {
-	// Alerts
-	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts", s.handleListCodeScanningAlerts)
-	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}", s.handleGetCodeScanningAlert)
+	// Alerts. The reads carry rule/location detail GitHub restricts to
+	// security_events access (mutations already enforce write in-handler); gate
+	// them like the SARIF-upload GET below and the Dependabot alert reads.
+	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleListCodeScanningAlerts))
+	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetCodeScanningAlert))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}", s.handleUpdateCodeScanningAlert)
-	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances", s.handleListCodeScanningAlertInstances)
+	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleListCodeScanningAlertInstances))
 
 	// Analyses
-	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/analyses", s.handleListCodeScanningAnalyses)
-	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}", s.handleGetCodeScanningAnalysis)
+	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/analyses",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleListCodeScanningAnalyses))
+	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetCodeScanningAnalysis))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/code-scanning/analyses/{analysis_id}", s.handleDeleteCodeScanningAnalysis)
 
 	// SARIF upload
@@ -38,11 +45,13 @@ func (s *Server) registerGHCodeScanningRoutes() {
 		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetSARIFUpload))
 
 	// Default setup
-	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/default-setup", s.handleGetCodeScanningDefaultSetup)
+	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/default-setup",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetCodeScanningDefaultSetup))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/code-scanning/default-setup", s.handleUpdateCodeScanningDefaultSetup)
 
 	// Copilot Autofix
-	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix", s.handleGetCodeScanningAutofix)
+	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix",
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetCodeScanningAutofix))
 	s.route("POST /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix", s.handleCreateCodeScanningAutofix)
 	s.route("POST /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix/commits", s.handleCommitCodeScanningAutofix)
 

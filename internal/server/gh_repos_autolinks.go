@@ -23,7 +23,9 @@ func (s *Server) handleListAutolinks(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
+	// Autolink info is available only to repository administrators on GitHub
+	// (on any repo, public or private); hide it from non-admins with a 404.
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -82,7 +84,9 @@ func (s *Server) handleGetAutolink(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if repo.Private && !s.viewerCanReadRepo(r.Context(), repo) {
+	// Autolink info is available only to repository administrators on GitHub
+	// (on any repo, public or private); hide it from non-admins with a 404.
+	if !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
