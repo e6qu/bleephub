@@ -281,7 +281,10 @@ func (ds *DeploymentStore) AddStatus(deploymentID, creatorID int, state, descrip
 		batch.Put("deployments", strconv.Itoa(deploymentID), d)
 	}
 	var auto []autoInactiveDeployment
-	if autoInactive && isCompletingDeploymentState(state) {
+	// GitHub auto-inactivates prior deployments only when the new status is
+	// success — not on queued/pending/in_progress/failure/error, where the new
+	// deployment hasn't superseded the old ones.
+	if autoInactive && state == "success" {
 		for _, prior := range ds.ByRepo[d.RepoID] {
 			if prior.ID == d.ID {
 				continue
@@ -702,14 +705,6 @@ type DeploymentBranchPolicy struct {
 
 // DeploymentStatusState is one of the seven states GitHub emits.
 type DeploymentStatusState string
-
-func isCompletingDeploymentState(state string) bool {
-	switch state {
-	case "in_progress", "queued", "pending", "success", "failure", "error":
-		return true
-	}
-	return false
-}
 
 const (
 	DeploymentStateError      DeploymentStatusState = "error"
