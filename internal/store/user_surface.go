@@ -334,49 +334,57 @@ func (st *Store) GetUserInteractionLimit(userID int) (string, time.Time) {
 	return u.InteractionLimit, *u.InteractionLimitExpiry
 }
 
+// userSurfaceSubscribed builds the repo-subscription predicate the /user/issues
+// and /user/pulls filters share. Callers hold st.Mu.
+func (st *Store) userSurfaceSubscribed(userID int) func(repoID int) bool {
+	return func(repoID int) bool {
+		sub := st.RepoSubscriptions[RepoSubscriptionKey(userID, repoID)]
+		return sub != nil && sub.Subscribed
+	}
+}
+
+// userSurfaceFilterMatch reports whether an issue-or-PR with these fields is
+// visible under a GET /user/issues (or /pulls) filter. Every PR is an issue, so
+// both listings share one predicate rather than two near-identical copies.
+func userSurfaceFilterMatch(filter string, user *User, repo *Repo, assigneeIDs []int, authorID int, body string, subscribed func(int) bool) bool {
+	assigned := false
+	for _, aid := range assigneeIDs {
+		if aid == user.ID {
+			assigned = true
+			break
+		}
+	}
+	created := authorID == user.ID
+	mentioned := strings.Contains(body, "@"+user.Login)
+	switch filter {
+	case "created":
+		return created
+	case "mentioned":
+		return mentioned
+	case "subscribed":
+		return subscribed(repo.ID)
+	case "repos":
+		return repo.OwnerID == user.ID
+	case "all":
+		return assigned || created || mentioned || subscribed(repo.ID)
+	default: // "assigned"
+		return assigned
+	}
+}
+
 // ListUserFilteredIssues returns issues visible through GET /user/issues for the
 // given filter. Repository read access is checked by the caller.
 func (st *Store) ListUserFilteredIssues(user *User, filter string) []IssueWithRepo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-
-	subscribed := func(repoID int) bool {
-		sub := st.RepoSubscriptions[RepoSubscriptionKey(user.ID, repoID)]
-		return sub != nil && sub.Subscribed
-	}
-	matches := func(issue *Issue, repo *Repo) bool {
-		assigned := false
-		for _, aid := range issue.AssigneeIDs {
-			if aid == user.ID {
-				assigned = true
-				break
-			}
-		}
-		created := issue.AuthorID == user.ID
-		mentioned := strings.Contains(issue.Body, "@"+user.Login)
-		switch filter {
-		case "created":
-			return created
-		case "mentioned":
-			return mentioned
-		case "subscribed":
-			return subscribed(repo.ID)
-		case "repos":
-			return repo.OwnerID == user.ID
-		case "all":
-			return assigned || created || mentioned || subscribed(repo.ID)
-		default: // "assigned"
-			return assigned
-		}
-	}
-
+	subscribed := st.userSurfaceSubscribed(user.ID)
 	var out []IssueWithRepo
 	for _, issue := range st.Issues {
 		repo := st.Repos[issue.RepoID]
 		if repo == nil {
 			continue
 		}
-		if matches(issue, repo) {
+		if userSurfaceFilterMatch(filter, user, repo, issue.AssigneeIDs, issue.AuthorID, issue.Body, subscribed) {
 			out = append(out, IssueWithRepo{Issue: cloneIssue(issue), Repo: cloneRepo(repo)})
 		}
 	}
@@ -390,44 +398,14 @@ func (st *Store) ListUserFilteredIssues(user *User, filter string) []IssueWithRe
 func (st *Store) ListUserFilteredPulls(user *User, filter string) []PullWithRepo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-
-	subscribed := func(repoID int) bool {
-		sub := st.RepoSubscriptions[RepoSubscriptionKey(user.ID, repoID)]
-		return sub != nil && sub.Subscribed
-	}
-	matches := func(pr *PullRequest, repo *Repo) bool {
-		assigned := false
-		for _, aid := range pr.AssigneeIDs {
-			if aid == user.ID {
-				assigned = true
-				break
-			}
-		}
-		created := pr.AuthorID == user.ID
-		mentioned := strings.Contains(pr.Body, "@"+user.Login)
-		switch filter {
-		case "created":
-			return created
-		case "mentioned":
-			return mentioned
-		case "subscribed":
-			return subscribed(repo.ID)
-		case "repos":
-			return repo.OwnerID == user.ID
-		case "all":
-			return assigned || created || mentioned || subscribed(repo.ID)
-		default: // "assigned"
-			return assigned
-		}
-	}
-
+	subscribed := st.userSurfaceSubscribed(user.ID)
 	var out []PullWithRepo
 	for _, pr := range st.PullRequests {
 		repo := st.Repos[pr.RepoID]
 		if repo == nil {
 			continue
 		}
-		if matches(pr, repo) {
+		if userSurfaceFilterMatch(filter, user, repo, pr.AssigneeIDs, pr.AuthorID, pr.Body, subscribed) {
 			out = append(out, PullWithRepo{Pull: clonePullRequest(pr), Repo: cloneRepo(repo)})
 		}
 	}
