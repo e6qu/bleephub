@@ -171,8 +171,8 @@ func TestExprStatusFunctions(t *testing.T) {
 		t.Error("failure() should be true when a dep failed")
 	}
 	skippedDep := &ExprContext{DepResults: map[string]string{"build": "skipped"}}
-	if !evalBool("success()", skippedDep) {
-		t.Error("success() should treat skipped deps as non-failures")
+	if evalBool("success()", skippedDep) {
+		t.Error("success() should be false when a dep was skipped (GitHub skips the dependent)")
 	}
 	cancelled := &ExprContext{WorkflowCancelled: true}
 	if !evalBool("cancelled()", cancelled) {
