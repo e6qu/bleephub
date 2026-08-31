@@ -147,6 +147,12 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 	branchFilter := r.URL.Query().Get("branch")
 	eventFilter := r.URL.Query().Get("event")
 
+	// Resolve the lock-taking repo JSON first, then hold the read lock across
+	// filter/sort/render: the engine mutates a run's Status/Result in place under
+	// store.Mu, so rendering off released pointers races it.
+	base := s.baseURL(r)
+	runRepoJSON := s.runRepoJSON(repo, base)
+
 	s.store.Mu.RLock()
 	matching := []*store.Workflow{}
 	for _, run := range s.store.Workflows {
@@ -174,18 +180,17 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 		}
 		matching = append(matching, run)
 	}
-	s.store.Mu.RUnlock()
-
 	sortRunsNewestFirst(matching)
 	page := paginateAndLink(w, r, matching)
-	base := s.baseURL(r)
-	runRepoJSON := s.runRepoJSON(repo, base)
+	total := len(matching)
 	runs := make([]map[string]any, 0, len(page))
 	for _, run := range page {
 		runs = append(runs, workflowRunJSON(run, base, repo, runRepoJSON))
 	}
+	s.store.Mu.RUnlock()
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"total_count":   len(matching),
+		"total_count":   total,
 		"workflow_runs": runs,
 	})
 }

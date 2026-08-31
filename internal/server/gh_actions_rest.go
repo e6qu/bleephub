@@ -601,6 +601,14 @@ func (s *Server) handleListWorkflowRuns(w http.ResponseWriter, r *http.Request) 
 	branchFilter := r.URL.Query().Get("branch")
 	eventFilter := r.URL.Query().Get("event")
 
+	// Resolve the (lock-taking) repo JSON before acquiring the store lock, then
+	// hold the read lock across filtering, sorting and rendering. The engine
+	// mutates a run's Status/Result/jobs in place under store.Mu (workflows.go),
+	// so reading those fields after RUnlock — as this handler used to — races the
+	// engine. This mirrors workflowJobJSON's documented lock-across-render rule.
+	base := s.baseURL(r)
+	runRepoJSON := s.runRepoJSON(repo, base)
+
 	s.store.Mu.RLock()
 	candidates := s.store.WorkflowsForRepoLocked(repo)
 	matching := make([]*store.Workflow, 0, len(candidates))
@@ -616,18 +624,17 @@ func (s *Server) handleListWorkflowRuns(w http.ResponseWriter, r *http.Request) 
 		}
 		matching = append(matching, wf)
 	}
-	s.store.Mu.RUnlock()
-
 	sortRunsNewestFirst(matching)
 	page := paginateAndLink(w, r, matching)
-	base := s.baseURL(r)
-	runRepoJSON := s.runRepoJSON(repo, base)
+	total := len(matching)
 	runs := make([]map[string]any, 0, len(page))
 	for _, wf := range page {
 		runs = append(runs, workflowRunJSON(wf, base, repo, runRepoJSON))
 	}
+	s.store.Mu.RUnlock()
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"total_count":   len(matching),
+		"total_count":   total,
 		"workflow_runs": runs,
 	})
 }
@@ -647,7 +654,14 @@ func (s *Server) handleGetWorkflowRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := s.baseURL(r)
-	writeJSON(w, http.StatusOK, workflowRunJSON(wf, base, repoFullName(r), s.runRepoJSON(repoFullName(r), base)))
+	repo := repoFullName(r)
+	runRepoJSON := s.runRepoJSON(repo, base)
+	// The engine mutates the run's Status/Result in place under store.Mu, so
+	// render under the read lock rather than off a released pointer.
+	s.store.Mu.RLock()
+	out := workflowRunJSON(wf, base, repo, runRepoJSON)
+	s.store.Mu.RUnlock()
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleListWorkflowRunJobs serves GET .../actions/runs/{run_id}/jobs. The
@@ -1012,7 +1026,12 @@ func (s *Server) handleGetRunAttempt(w http.ResponseWriter, r *http.Request) {
 	}
 	base := s.baseURL(r)
 	repo := repoFullName(r)
-	writeJSON(w, http.StatusOK, workflowRunJSON(wf, base, repo, s.runRepoJSON(repo, base)))
+	runRepoJSON := s.runRepoJSON(repo, base)
+	// See handleGetWorkflowRun: render the run under the read lock.
+	s.store.Mu.RLock()
+	out := workflowRunJSON(wf, base, repo, runRepoJSON)
+	s.store.Mu.RUnlock()
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleListRunAttemptJobs(w http.ResponseWriter, r *http.Request) {
