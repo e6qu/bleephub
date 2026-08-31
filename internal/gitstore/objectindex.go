@@ -12,6 +12,7 @@ import (
 	"time"
 
 	minio "github.com/minio/minio-go/v7"
+	"golang.org/x/sync/singleflight"
 )
 
 // The freshness window bounds how stale a cross-replica negative answer may be:
@@ -50,6 +51,9 @@ type repoObjectIndex struct {
 	// environment.
 	freshness time.Duration
 
+	// sf coalesces concurrent refreshes of the same fanout / roots / pack set so a
+	// cold-index thundering herd fires one ListObjects, not one per probe.
+	sf      singleflight.Group
 	mu      sync.Mutex
 	fanouts map[string]*fanoutSnapshot
 	// packs maps a published pack to its membership filter. A nil filter means
@@ -162,45 +166,57 @@ func (i *repoObjectIndex) looseAbsent(fs *S3FS, fanout string, key oidKey) (bool
 // refreshRoots lists objects/ with a delimiter, yielding one entry per
 // non-empty fanout directory rather than one per object.
 func (i *repoObjectIndex) refreshRoots(fs *S3FS) (map[string]bool, error) {
-	prefix := fs.key("objects") + "/"
-	names, err := listCommonPrefixes(fs, prefix)
+	v, err, _ := i.sf.Do("roots", func() (any, error) {
+		prefix := fs.key("objects") + "/"
+		names, err := listCommonPrefixes(fs, prefix)
+		if err != nil {
+			return nil, err
+		}
+		roots := make(map[string]bool, len(names))
+		for _, name := range names {
+			trimmed := strings.TrimSuffix(strings.TrimPrefix(name, prefix), "/")
+			if len(trimmed) == 2 {
+				roots[trimmed] = true
+			}
+		}
+		i.mu.Lock()
+		i.roots = roots
+		i.rootsAt = time.Now()
+		i.mu.Unlock()
+		return roots, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	roots := make(map[string]bool, len(names))
-	for _, name := range names {
-		trimmed := strings.TrimSuffix(strings.TrimPrefix(name, prefix), "/")
-		if len(trimmed) == 2 {
-			roots[trimmed] = true
-		}
-	}
-	i.mu.Lock()
-	i.roots = roots
-	i.rootsAt = time.Now()
-	i.mu.Unlock()
-	return roots, nil
+	return v.(map[string]bool), nil
 }
 
 // refreshFanout re-lists one objects/XX/ directory and rebuilds its filter.
 func (i *repoObjectIndex) refreshFanout(fs *S3FS, fanout string) (*cuckooFilter, error) {
-	prefix := fs.key(path.Join("objects", fanout)) + "/"
-	names, err := listKeys(fs, prefix)
+	v, err, _ := i.sf.Do("fanout:"+fanout, func() (any, error) {
+		prefix := fs.key(path.Join("objects", fanout)) + "/"
+		names, err := listKeys(fs, prefix)
+		if err != nil {
+			return nil, err
+		}
+		filter := newCuckooFilter(max(len(names), 16))
+		for _, name := range names {
+			base := path.Base(name)
+			raw, err := hex.DecodeString(fanout + base)
+			if err != nil || (len(raw) != 20 && len(raw) != 32) {
+				continue
+			}
+			filter.insert(oidKeyFrom(raw))
+		}
+		i.mu.Lock()
+		i.fanouts[fanout] = &fanoutSnapshot{filter: filter, takenT: time.Now()}
+		i.mu.Unlock()
+		return filter, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	filter := newCuckooFilter(max(len(names), 16))
-	for _, name := range names {
-		base := path.Base(name)
-		raw, err := hex.DecodeString(fanout + base)
-		if err != nil || (len(raw) != 20 && len(raw) != 32) {
-			continue
-		}
-		filter.insert(oidKeyFrom(raw))
-	}
-	i.mu.Lock()
-	i.fanouts[fanout] = &fanoutSnapshot{filter: filter, takenT: time.Now()}
-	i.mu.Unlock()
-	return filter, nil
+	return v.(*cuckooFilter), nil
 }
 
 // noteLooseWrite records an object this process just wrote, keeping a single
@@ -300,6 +316,13 @@ func (i *repoObjectIndex) anyPackMayHoldLocked(key oidKey) bool {
 // pack not yet resident. A pack with no filter beside it is treated as possibly
 // containing everything: a real index lookup, never a wrong answer.
 func (i *repoObjectIndex) refreshPacks(fs *S3FS) error {
+	_, err, _ := i.sf.Do("packs", func() (any, error) {
+		return nil, i.refreshPacksInner(fs)
+	})
+	return err
+}
+
+func (i *repoObjectIndex) refreshPacksInner(fs *S3FS) error {
 	prefix := fs.key(path.Join("objects", "pack")) + "/"
 	names, err := listKeys(fs, prefix)
 	if err != nil {

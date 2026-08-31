@@ -50,6 +50,10 @@ func (m *lfsMemoryByteStore) Get(_ context.Context, key string) ([]byte, error) 
 	return append([]byte(nil), data...), nil
 }
 
+func (m *lfsMemoryByteStore) PutStreamHashed(ctx context.Context, key string, r io.Reader, _ int64, _ []byte) error {
+	return m.PutStream(ctx, key, r)
+}
+
 func (m *lfsMemoryByteStore) PutStream(ctx context.Context, key string, r io.Reader) error {
 	data, err := io.ReadAll(r)
 	if err != nil {

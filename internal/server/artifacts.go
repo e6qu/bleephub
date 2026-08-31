@@ -448,6 +448,13 @@ func (s *Server) handleFinalizeArtifact(w http.ResponseWriter, r *http.Request) 
 			writeGHError(w, http.StatusInternalServerError, "persist artifact metadata: "+err.Error())
 			return
 		}
+		// The payload is durable in the object store; drop the in-memory copy so a
+		// finalized artifact does not pin its whole (up to 10 GiB) payload in RAM.
+		// Reads re-fetch from the store — the download streams it and
+		// PopulateArtifactDigest reloads on demand.
+		if s.artifactStore.ByteStore != nil {
+			found.Data = nil
+		}
 	}
 	s.artifactStore.Mu.Unlock()
 
@@ -593,18 +600,24 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	data := art.Data
-	if len(data) == 0 && art.Size > 0 && s.artifactStore.ByteStore != nil {
-		var err error
-		data, err = s.artifactStore.ByteStore.Get(r.Context(), store.ArtifactDataKey(art.ID))
+	// Stream from the object store rather than buffering the whole (up to 10 GiB)
+	// artifact into RAM. The in-memory Data is only present for the in-memory dev
+	// server; a finalized object-backed artifact carries none.
+	if len(art.Data) == 0 && art.Size > 0 && s.artifactStore.ByteStore != nil {
+		rc, err := s.artifactStore.ByteStore.GetStream(r.Context(), store.ArtifactDataKey(art.ID))
 		if err != nil {
 			http.Error(w, "artifact byte-store read: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		defer rc.Close()
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", art.Size))
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, rc)
+		return
 	}
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(art.Data)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	_, _ = w.Write(art.Data)
 }
 
 // Actions cache
@@ -870,6 +883,11 @@ func (s *Server) handleCacheFinalize(w http.ResponseWriter, r *http.Request) {
 			writeGHError(w, http.StatusInternalServerError, "persist cache metadata: "+err.Error())
 			return
 		}
+		// Durable in the object store now; drop the in-memory copy (reads and
+		// restart recovery reload from the store).
+		if s.artifactStore.ByteStore != nil {
+			entry.Data = nil
+		}
 	}
 	s.artifactStore.Mu.Unlock()
 
@@ -901,18 +919,21 @@ func (s *Server) handleCacheDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	data := entry.Data
-	if len(data) == 0 && entry.Size > 0 && s.artifactStore.ByteStore != nil {
-		var err error
-		data, err = s.artifactStore.ByteStore.Get(r.Context(), store.CacheDataKey(entry.ID))
+	if len(entry.Data) == 0 && entry.Size > 0 && s.artifactStore.ByteStore != nil {
+		rc, err := s.artifactStore.ByteStore.GetStream(r.Context(), store.CacheDataKey(entry.ID))
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "cache byte-store read: "+err.Error())
 			return
 		}
+		defer rc.Close()
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", entry.Size))
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, rc)
+		return
 	}
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(entry.Data)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	_, _ = w.Write(entry.Data)
 }
 
 // assembleCacheChunks lays the received chunks into one buffer of exactly size

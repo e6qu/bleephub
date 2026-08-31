@@ -39,6 +39,9 @@ func (m *flakyByteStore) PutStream(ctx context.Context, key string, r io.Reader)
 	}
 	return m.Put(ctx, key, data)
 }
+func (m *flakyByteStore) PutStreamHashed(ctx context.Context, key string, r io.Reader, _ int64, _ []byte) error {
+	return m.PutStream(ctx, key, r)
+}
 func (m *flakyByteStore) GetStream(_ context.Context, key string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(m.blobs[key])), nil
 }

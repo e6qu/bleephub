@@ -212,6 +212,65 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 	}
 }
 
+// TestArtifactFinalizeClearsMemoryAndStreamsDownload pins the object-backed
+// memory model: once an artifact is finalized its bytes are durable in the
+// object store and are NOT pinned in RAM, and the download streams them back
+// from the store.
+func TestArtifactFinalizeClearsMemoryAndStreamsDownload(t *testing.T) {
+	fs := newS3FSForTest(t)
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
+	s := newTestServer()
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
+	token := seedRunJobToken(t, s, "octo/repo", "run-1")
+	const payload = "object-backed artifact payload"
+
+	create := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", bytes.NewBufferString(`{"name":"art","version":4,"workflow_run_backend_id":"run-1"}`))
+	create.Header.Set("Authorization", "Bearer "+token)
+	cw := httptest.NewRecorder()
+	s.handleCreateArtifact(cw, create)
+	if cw.Code != http.StatusOK {
+		t.Fatalf("create status = %d, body=%s", cw.Code, cw.Body.String())
+	}
+
+	up := httptest.NewRequest("PUT", "/_apis/v1/artifacts/1/upload", bytes.NewBufferString(payload))
+	up.SetPathValue("artifactId", "1")
+	up.Header.Set("Authorization", "Bearer "+token)
+	uw := httptest.NewRecorder()
+	s.handleUploadArtifact(uw, up)
+	if uw.Code != http.StatusOK {
+		t.Fatalf("upload status = %d, body=%s", uw.Code, uw.Body.String())
+	}
+
+	fin := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/FinalizeArtifact", bytes.NewBufferString(fmt.Sprintf(`{"name":"art","size":%d,"workflow_run_backend_id":"run-1"}`, len(payload))))
+	fin.Header.Set("Authorization", "Bearer "+token)
+	fw := httptest.NewRecorder()
+	s.handleFinalizeArtifact(fw, fin)
+	if fw.Code != http.StatusOK {
+		t.Fatalf("finalize status = %d, body=%s", fw.Code, fw.Body.String())
+	}
+
+	// The finalized artifact must not pin its bytes in memory.
+	s.artifactStore.Mu.RLock()
+	inMemory := s.artifactStore.Artifacts[1].Data
+	s.artifactStore.Mu.RUnlock()
+	if inMemory != nil {
+		t.Fatalf("finalized object-backed artifact still holds %d bytes in RAM", len(inMemory))
+	}
+
+	// Download must stream the bytes back from the object store.
+	dl := httptest.NewRequest("GET", "/_apis/v1/artifacts/1/download", nil)
+	dl.SetPathValue("artifactId", "1")
+	dl.Header.Set("Authorization", "Bearer "+token)
+	dw := httptest.NewRecorder()
+	s.handleDownloadArtifact(dw, dl)
+	if dw.Code != http.StatusOK {
+		t.Fatalf("download status = %d, body=%s", dw.Code, dw.Body.String())
+	}
+	if dw.Body.String() != payload {
+		t.Fatalf("downloaded %q, want %q", dw.Body.String(), payload)
+	}
+}
+
 func TestArtifactListReturnsFinalized(t *testing.T) {
 	s := newTestServer()
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")

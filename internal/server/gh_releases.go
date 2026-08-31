@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -556,7 +556,7 @@ func (s *Server) emitReleaseEvents(repo *store.Repo, release *store.Release, sen
 	}
 }
 
-func readUploadAssetBody(r *http.Request) (name, label, contentType string, data []byte, ok bool, err error) {
+func uploadAssetParams(r *http.Request) (name, label, contentType string, ok bool) {
 	q := r.URL.Query()
 	name = q.Get("name")
 	label = q.Get("label")
@@ -565,13 +565,9 @@ func readUploadAssetBody(r *http.Request) (name, label, contentType string, data
 		contentType = "application/octet-stream"
 	}
 	if name == "" {
-		return "", "", "", nil, false, nil
+		return "", "", "", false
 	}
-	data, err = io.ReadAll(http.MaxBytesReader(nil, r.Body, maxUploadBytes))
-	if err != nil {
-		return "", "", "", nil, false, err
-	}
-	return name, label, contentType, data, true, nil
+	return name, label, contentType, true
 }
 
 func (s *Server) handleUploadReleaseAsset(w http.ResponseWriter, r *http.Request) {
@@ -591,16 +587,18 @@ func (s *Server) handleUploadReleaseAsset(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	name, label, contentType, data, ok, err := readUploadAssetBody(r)
-	if err != nil {
-		writeGHError(w, http.StatusBadRequest, "Bad Request")
-		return
-	}
+	name, label, contentType, ok := uploadAssetParams(r)
 	if !ok {
 		store.WriteGHValidationError(w, "ReleaseAsset", "name", "missing_field")
 		return
 	}
-	asset, err := s.store.Releases.CreateReleaseAsset(releaseID, user.ID, name, label, contentType, data)
+	staged, size, sum, err := store.StageUpload(http.MaxBytesReader(w, r.Body, maxUploadBytes))
+	if err != nil {
+		writeGHError(w, http.StatusBadRequest, "Bad Request")
+		return
+	}
+	defer func() { _ = staged.Close(); _ = os.Remove(staged.Name()) }()
+	asset, err := s.store.Releases.CreateReleaseAssetStream(releaseID, user.ID, name, label, contentType, staged, size, sum)
 	if errors.Is(err, store.ErrReleaseAssetNameExists) {
 		store.WriteGHValidationError(w, "ReleaseAsset", "name", "already_exists")
 		return

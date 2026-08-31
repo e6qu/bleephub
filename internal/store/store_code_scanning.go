@@ -1,10 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -979,6 +982,15 @@ type CodeQLDatabase struct {
 // UpsertCodeQLDatabase creates or replaces the CodeQL database for a repo +
 // language, as a new upload supersedes the previous one on GitHub.
 func (st *Store) UpsertCodeQLDatabase(repoKey, language, name, contentType, commitOID string, content []byte, uploaderID int) (*CodeQLDatabase, error) {
+	sum := sha256.Sum256(content)
+	return st.UpsertCodeQLDatabaseStream(repoKey, language, name, contentType, commitOID, bytes.NewReader(content), int64(len(content)), sum[:], uploaderID)
+}
+
+// UpsertCodeQLDatabaseStream stores a CodeQL database from a reader whose size
+// and SHA-256 the caller already computed (a handler stages the ZIP to a temp
+// file and validates it there), so a multi-GB database never lands whole on the
+// heap. r must be positioned at the start.
+func (st *Store) UpsertCodeQLDatabaseStream(repoKey, language, name, contentType, commitOID string, r io.Reader, size int64, sum []byte, uploaderID int) (*CodeQLDatabase, error) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
@@ -997,11 +1009,19 @@ func (st *Store) UpsertCodeQLDatabase(repoKey, language, name, contentType, comm
 		id = previous.ID
 		createdAt = previous.CreatedAt
 	}
-	storagePath := CodeQLDatabaseDataKey(id, content)
+	storagePath := CodeQLDatabaseDataKeyHashed(id, sum)
+	var memContent []byte
 	if st.ObjectByteStore != nil {
-		if err := st.ObjectByteStore.Put(context.Background(), storagePath, content); err != nil {
+		if err := st.ObjectByteStore.PutStreamHashed(context.Background(), storagePath, r, size, sum); err != nil {
 			return nil, fmt.Errorf("write CodeQL database bytes: %w", err)
 		}
+	} else {
+		// No object store (in-memory dev server): keep the bytes with the record.
+		buffered, err := io.ReadAll(r)
+		if err != nil {
+			return nil, fmt.Errorf("read CodeQL database bytes: %w", err)
+		}
+		memContent = buffered
 	}
 	db := &CodeQLDatabase{
 		ID:          id,
@@ -1010,7 +1030,7 @@ func (st *Store) UpsertCodeQLDatabase(repoKey, language, name, contentType, comm
 		Language:    language,
 		UploaderID:  uploaderID,
 		ContentType: contentType,
-		Size:        int64(len(content)),
+		Size:        size,
 		StoragePath: storagePath,
 		CommitOID:   commitOID,
 		CreatedAt:   createdAt,
@@ -1019,7 +1039,7 @@ func (st *Store) UpsertCodeQLDatabase(repoKey, language, name, contentType, comm
 	if st.ObjectByteStore != nil {
 		db.Content = nil
 	} else {
-		db.Content = append([]byte(nil), content...)
+		db.Content = memContent
 	}
 	if st.Persist != nil {
 		if err := st.Persist.Put("codeql_databases", strconv.Itoa(db.ID), db); err != nil {

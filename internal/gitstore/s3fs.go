@@ -53,6 +53,13 @@ type s3Shared struct {
 	objects map[string]*repoObjectIndex
 	// chunkSize is the pack read path's extent size, resolved once.
 	chunkSize int64
+	// baseCtx is the server-lifetime context every per-call timeout derives from,
+	// so in-flight S3 I/O is cancelled on shutdown instead of detaching. nil until
+	// the server wires it; callers fall back to context.Background().
+	baseCtx context.Context
+	// breaker fast-fails S3 calls during an outage so a dead store returns quickly
+	// rather than every goroutine blocking the full per-call timeout under the lock.
+	breaker *s3Breaker
 }
 
 func newS3Shared() *s3Shared {
@@ -60,8 +67,31 @@ func newS3Shared() *s3Shared {
 		sizes:     map[string]int64{},
 		objects:   map[string]*repoObjectIndex{},
 		chunkSize: packChunkSize(),
+		breaker:   newS3Breaker(),
 	}
 }
+
+// baseContext returns the server-lifetime context per-call timeouts derive from.
+func (f *S3FS) baseContext() context.Context {
+	shared := f.shared()
+	shared.mu.Lock()
+	defer shared.mu.Unlock()
+	if shared.baseCtx != nil {
+		return shared.baseCtx
+	}
+	return context.Background()
+}
+
+// SetBaseContext installs the server-lifetime context (cancelled on shutdown) so
+// in-flight S3 I/O aborts when the process is draining. Shared across chroots.
+func (f *S3FS) SetBaseContext(ctx context.Context) {
+	shared := f.shared()
+	shared.mu.Lock()
+	shared.baseCtx = ctx
+	shared.mu.Unlock()
+}
+
+func (f *S3FS) breaker() *s3Breaker { return f.shared().breaker }
 
 func (f *S3FS) shared() *s3Shared {
 	f.activeMu.Lock()
@@ -284,11 +314,15 @@ func (f *S3FS) Open(filename string) (billy.File, error) {
 		return nil, os.ErrNotExist
 	}
 	key := f.key(filename)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if berr := f.breaker().check(); berr != nil {
+		return nil, berr
+	}
+	ctx, cancel := context.WithTimeout(f.baseContext(), 30*time.Second)
 	defer cancel()
 
 	obj, err := f.client.Client.GetObject(ctx, f.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
+		f.breaker().record(err)
 		if isNotFound(err) {
 			return nil, os.ErrNotExist
 		}
@@ -297,6 +331,7 @@ func (f *S3FS) Open(filename string) (billy.File, error) {
 
 	data, err := io.ReadAll(obj)
 	_ = obj.Close()
+	f.breaker().record(err)
 	if err != nil {
 		if isNotFound(err) {
 			return nil, os.ErrNotExist
@@ -400,10 +435,14 @@ func (f *S3FS) Stat(filename string) (os.FileInfo, error) {
 			return &s3FileInfo{name: path.Base(filename), size: size, mode: 0o644}, nil
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if berr := f.breaker().check(); berr != nil {
+		return nil, berr
+	}
+	ctx, cancel := context.WithTimeout(f.baseContext(), 15*time.Second)
 	defer cancel()
 
 	info, err := f.client.Client.StatObject(ctx, f.bucket, key, minio.StatObjectOptions{})
+	f.breaker().record(err)
 	if err != nil {
 		if isNotFound(err) {
 			return nil, os.ErrNotExist
@@ -427,7 +466,7 @@ func (f *S3FS) Stat(filename string) (os.FileInfo, error) {
 func (f *S3FS) Rename(oldpath, newpath string) error {
 	srcKey := f.key(oldpath)
 	dstKey := f.key(newpath)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(f.baseContext(), 30*time.Second)
 	defer cancel()
 
 	_, err := f.client.Client.CopyObject(ctx,
@@ -458,7 +497,7 @@ func (f *S3FS) Rename(oldpath, newpath string) error {
 
 func (f *S3FS) Remove(filename string) error {
 	key := f.key(filename)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(f.baseContext(), 15*time.Second)
 	defer cancel()
 
 	err := f.client.Client.RemoveObject(ctx, f.bucket, key, minio.RemoveObjectOptions{})
@@ -485,7 +524,7 @@ func (f *S3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 		prefix += "/"
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(f.baseContext(), 30*time.Second)
 	defer cancel()
 
 	entriesByName := map[string]os.FileInfo{}
@@ -612,7 +651,7 @@ func (f *S3FS) Root() string {
 func (f *S3FS) CopyRepoPrefix(oldFull, newFull string) error {
 	oldPrefix := f.key(oldFull) + "/"
 	newPrefix := f.key(newFull) + "/"
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(f.baseContext(), 120*time.Second)
 	defer cancel()
 
 	var oldKeys []string
@@ -645,7 +684,7 @@ func (f *S3FS) RenameRepoPrefix(oldFull, newFull string) error {
 
 func (f *S3FS) DeleteRepoPrefix(fullName string) error {
 	prefix := f.key(fullName) + "/"
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(f.baseContext(), 60*time.Second)
 	defer cancel()
 
 	for {
@@ -816,7 +855,7 @@ func (sf *s3File) Close() error {
 
 func (sf *s3File) flush() error {
 	key := sf.fs.key(sf.name)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(sf.fs.baseContext(), 60*time.Second)
 	defer cancel()
 
 	sf.state.mu.Lock()
@@ -826,7 +865,11 @@ func (sf *s3File) flush() error {
 	if !dirty {
 		return nil
 	}
+	if berr := sf.fs.breaker().check(); berr != nil {
+		return berr
+	}
 	_, err := sf.fs.client.Client.PutObject(ctx, sf.fs.bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{})
+	sf.fs.breaker().record(err)
 	if err != nil {
 		return fmt.Errorf("s3 put %s: %w", key, err)
 	}

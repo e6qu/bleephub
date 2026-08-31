@@ -1,11 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -314,15 +316,29 @@ func (rs *ReleaseStore) assetFilePath(id int) string {
 	return filepath.Join(rs.assetDataDir, strconv.Itoa(id))
 }
 
-func (rs *ReleaseStore) saveAssetDataLocked(id int, data []byte) error {
+// saveAssetDataStreamLocked stores an asset from a reader whose size and SHA-256
+// the caller already computed, so a large upload never lands whole on the heap.
+func (rs *ReleaseStore) saveAssetDataStreamLocked(id int, r io.Reader, size int64, sum []byte) error {
 	if rs.ByteStore != nil {
-		return rs.ByteStore.Put(context.Background(), ReleaseAssetDataKey(id), data)
+		return rs.ByteStore.PutStreamHashed(context.Background(), ReleaseAssetDataKey(id), r, size, sum)
 	}
 	if rs.assetDataDir != "" {
 		if err := os.MkdirAll(rs.assetDataDir, 0o750); err != nil {
 			return err
 		}
-		return os.WriteFile(rs.assetFilePath(id), data, 0o600)
+		f, err := os.OpenFile(rs.assetFilePath(id), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(f, r); err != nil {
+			_ = f.Close()
+			return err
+		}
+		return f.Close()
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
 	}
 	rs.assetData[id] = data
 	return nil
@@ -419,6 +435,14 @@ func (rs *ReleaseStore) deleteReleaseBatchLocked(r *Release, batch *PersistBatch
 }
 
 func (rs *ReleaseStore) CreateReleaseAsset(releaseID, uploaderID int, name, label, contentType string, data []byte) (*ReleaseAsset, error) {
+	sum := sha256.Sum256(data)
+	return rs.CreateReleaseAssetStream(releaseID, uploaderID, name, label, contentType, bytes.NewReader(data), int64(len(data)), sum[:])
+}
+
+// CreateReleaseAssetStream stores an asset from a reader whose size and SHA-256
+// are already known (a handler stages the upload to a temp file first), so the
+// bytes stream to the object store without ever residing whole on the heap.
+func (rs *ReleaseStore) CreateReleaseAssetStream(releaseID, uploaderID int, name, label, contentType string, r io.Reader, size int64, sum []byte) (*ReleaseAsset, error) {
 	if name == "" {
 		return nil, fmt.Errorf("name required")
 	}
@@ -436,7 +460,6 @@ func (rs *ReleaseStore) CreateReleaseAsset(releaseID, uploaderID int, name, labe
 	now := time.Now().UTC()
 	id := rs.nextAsset
 	rs.nextAsset++
-	sum := sha256.Sum256(data)
 	asset := &ReleaseAsset{
 		ID:          id,
 		NodeID:      fmt.Sprintf("RA_kgDO%08d", id),
@@ -445,15 +468,15 @@ func (rs *ReleaseStore) CreateReleaseAsset(releaseID, uploaderID int, name, labe
 		Label:       label,
 		State:       "uploaded",
 		ContentType: contentType,
-		Digest:      "sha256:" + hex.EncodeToString(sum[:]),
-		Size:        len(data),
+		Digest:      "sha256:" + hex.EncodeToString(sum),
+		Size:        int(size),
 		UploaderID:  uploaderID,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 	rs.assetByID[id] = asset
 	rs.ByID[releaseID].Assets = append(rs.ByID[releaseID].Assets, asset)
-	if err := rs.saveAssetDataLocked(id, data); err != nil {
+	if err := rs.saveAssetDataStreamLocked(id, r, size, sum); err != nil {
 		_ = rs.deleteAssetLocked(asset)
 		return nil, err
 	}

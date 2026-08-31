@@ -25,6 +25,9 @@ func (s *recordingDeleteByteStore) Get(context.Context, string) ([]byte, error) 
 	return nil, os.ErrNotExist
 }
 func (s *recordingDeleteByteStore) PutStream(context.Context, string, io.Reader) error { return nil }
+func (s *recordingDeleteByteStore) PutStreamHashed(context.Context, string, io.Reader, int64, []byte) error {
+	return nil
+}
 func (s *recordingDeleteByteStore) GetStream(context.Context, string) (io.ReadCloser, error) {
 	return nil, os.ErrNotExist
 }
@@ -38,6 +41,9 @@ func (s *blockingDeleteByteStore) Get(context.Context, string) ([]byte, error) {
 	return nil, os.ErrNotExist
 }
 func (s *blockingDeleteByteStore) PutStream(context.Context, string, io.Reader) error { return nil }
+func (s *blockingDeleteByteStore) PutStreamHashed(context.Context, string, io.Reader, int64, []byte) error {
+	return nil
+}
 func (s *blockingDeleteByteStore) GetStream(context.Context, string) (io.ReadCloser, error) {
 	return nil, os.ErrNotExist
 }
