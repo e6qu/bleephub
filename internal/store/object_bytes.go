@@ -336,6 +336,15 @@ func LFSObjectDataKey(oid string) string {
 	return path.Join("lfs/objects", oid[:2], oid[2:4], oid)
 }
 
+// LFSStagingKey names the temporary bytes of an in-progress LFS upload, keyed
+// by a unique per-upload id (NOT the oid). An upload streams here first and is
+// promoted to the content-addressed LFSObjectDataKey only after its SHA-256 is
+// verified, so a concurrent mismatched upload of the same oid can never
+// overwrite or delete a good object's committed bytes.
+func LFSStagingKey(uploadID string) string {
+	return path.Join("lfs/staging", uploadID)
+}
+
 // CodeQLDatabaseDataKeyHashed builds the key from an already-computed SHA-256, so
 // a streamed upload never has to hold the whole database in memory to hash it.
 func CodeQLDatabaseDataKeyHashed(id int, sha256Sum []byte) string {

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/e6qu/bleephub/internal/store"
+	"github.com/google/uuid"
 )
 
 // Git LFS server (the v1 batch API plus the file locking API).
@@ -433,20 +434,26 @@ func (s *Server) handleLFSUpload(w http.ResponseWriter, r *http.Request, owner, 
 			writeLFSError(w, http.StatusInternalServerError, "Failed to read the uploaded object")
 			return
 		}
-		if !s.finishLFSUpload(w, repo, oid, declared, counted, false) {
+		if !s.finishLFSUpload(w, repo, oid, declared, counted, "") {
 			return
 		}
 		writeLFSJSON(w, http.StatusOK, struct{}{})
 		return
 	}
 
-	key := store.LFSObjectDataKey(oid)
-	if err := s.lfsObjectStore().PutStream(r.Context(), key, counted); err != nil {
+	// First upload of this oid: stream to a unique staging key rather than the
+	// shared content-addressed key. Writing unverified bytes straight to
+	// LFSObjectDataKey(oid) let a concurrent mismatched upload of the same oid
+	// overwrite (and then delete on its verify failure) a good upload's bytes —
+	// a TOCTOU that left the object registered-but-byteless forever. The staged
+	// bytes are promoted to the final key only after they verify.
+	stagingKey := store.LFSStagingKey(uuid.NewString())
+	if err := s.lfsObjectStore().PutStream(r.Context(), stagingKey, counted); err != nil {
 		s.logger.Error().Err(err).Str("repo", repo.FullName).Msg("git lfs: object upload failed")
 		writeLFSError(w, http.StatusInternalServerError, "Failed to store the uploaded object")
 		return
 	}
-	if !s.finishLFSUpload(w, repo, oid, declared, counted, true) {
+	if !s.finishLFSUpload(w, repo, oid, declared, counted, stagingKey) {
 		return
 	}
 	writeLFSJSON(w, http.StatusOK, struct{}{})
@@ -455,23 +462,49 @@ func (s *Server) handleLFSUpload(w http.ResponseWriter, r *http.Request, owner, 
 // finishLFSUpload verifies the read bytes and only then registers the object.
 // Registration is the upload's commit point: unverified bytes are never
 // registered and nothing unregistered is served, so a rejected upload is
-// undownloadable. Mismatched bytes written under the key are deleted.
-func (s *Server) finishLFSUpload(w http.ResponseWriter, repo *store.Repo, oid string, declared int64, counted *lfsHashingReader, wrote bool) bool {
+// undownloadable. stagingKey is the upload's private temp key (empty on the
+// dedup path, where the bytes are already stored). On a verify failure only the
+// staging key is deleted — never the shared content-addressed key, which a
+// concurrent upload may legitimately own. On success the staged bytes are
+// promoted to the content-addressed key (skipped if a concurrent upload already
+// stored it) and the staging key is removed.
+func (s *Server) finishLFSUpload(w http.ResponseWriter, repo *store.Repo, oid string, declared int64, counted *lfsHashingReader, stagingKey string) bool {
 	digest := hex.EncodeToString(counted.hash.Sum(nil))
-	discard := func(status int, message string) bool {
-		if wrote {
-			if err := s.lfsObjectStore().Delete(context.Background(), store.LFSObjectDataKey(oid)); err != nil {
-				s.logger.Error().Err(err).Str("repo", repo.FullName).Msg("git lfs: discarding a rejected object failed")
-			}
+	deleteStaging := func() {
+		if stagingKey == "" {
+			return
 		}
+		if err := s.lfsObjectStore().Delete(context.Background(), stagingKey); err != nil {
+			s.logger.Error().Err(err).Str("repo", repo.FullName).Msg("git lfs: removing a staged object failed")
+		}
+	}
+	reject := func(status int, message string) bool {
+		deleteStaging()
 		writeLFSError(w, status, message)
 		return false
 	}
 	if declared >= 0 && counted.read != declared {
-		return discard(http.StatusUnprocessableEntity, "Object size does not match the size declared in the batch request")
+		return reject(http.StatusUnprocessableEntity, "Object size does not match the size declared in the batch request")
 	}
 	if digest != oid {
-		return discard(http.StatusUnprocessableEntity, "Object content does not match its oid")
+		return reject(http.StatusUnprocessableEntity, "Object content does not match its oid")
+	}
+	// Promote the verified staged bytes to the content-addressed key. A
+	// concurrent upload of the same oid may have already stored it; the key is
+	// content-addressed, so skipping the copy in that case is correct.
+	if stagingKey != "" {
+		if _, exists := s.store.LFSObjectStoredAnywhere(oid); !exists {
+			rc, err := s.lfsObjectStore().GetStream(context.Background(), stagingKey)
+			if err != nil {
+				return reject(http.StatusInternalServerError, "Failed to store the uploaded object")
+			}
+			err = s.lfsObjectStore().PutStream(context.Background(), store.LFSObjectDataKey(oid), rc)
+			_ = rc.Close()
+			if err != nil {
+				return reject(http.StatusInternalServerError, "Failed to store the uploaded object")
+			}
+		}
+		deleteStaging()
 	}
 	s.store.RegisterLFSObject(repo.FullName, oid, counted.read)
 	return true
