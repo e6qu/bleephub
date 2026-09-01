@@ -733,16 +733,21 @@ func (s *Server) handleCacheLookup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// lookupFinalizedCacheLocked resolves a cache restore, position-ordered like
+// GitHub: the PRIMARY key (keys[0]) is matched exactly, then each restore key in
+// order is matched as a prefix (most-recent wins). The primary key must NOT be
+// prefix-matched — doing so restored a stale entry under the primary's prefix
+// ahead of a restore key GitHub would have selected.
 func (s *Server) lookupFinalizedCacheLocked(repo string, keys []string, version string) *store.CacheEntry {
-	for _, key := range keys {
-		if id, ok := s.artifactStore.CacheIndex[store.CacheLookupKey(repo, key, version)]; ok {
-			entry := s.artifactStore.Caches[id]
-			if entry != nil && entry.Finalized {
-				return entry
-			}
+	if len(keys) == 0 {
+		return nil
+	}
+	if id, ok := s.artifactStore.CacheIndex[store.CacheLookupKey(repo, keys[0], version)]; ok {
+		if entry := s.artifactStore.Caches[id]; entry != nil && entry.Finalized {
+			return entry
 		}
 	}
-	for _, key := range keys {
+	for _, key := range keys[1:] {
 		var newest *store.CacheEntry
 		for _, entry := range s.artifactStore.Caches {
 			if entry.Repo != repo || entry.Version != version || !entry.Finalized || !strings.HasPrefix(entry.Key, key) {

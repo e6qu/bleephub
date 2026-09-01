@@ -109,33 +109,47 @@ func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName st
 		return false
 	}
 
-	for _, team := range st.TeamsBySlug {
+	// teamGrantsRepo reports whether one team's own grant on repoFullName meets
+	// minPermission. The team's permission on THIS repo is the per-repo override
+	// when set, else the team default — using the default alone would grant a
+	// member the team's baseline where the repo was explicitly downgraded
+	// (privilege escalation) or deny where it was upgraded.
+	teamGrantsRepo := func(team *Team) bool {
+		for _, rn := range team.RepoNames {
+			if rn != repoFullName {
+				continue
+			}
+			effective := team.Permission
+			if override, ok := team.RepoPermissions[repoFullName]; ok {
+				effective = override
+			}
+			return PermissionAtLeast(effective, minPermission)
+		}
+		return false
+	}
+
+	for _, team := range st.Teams {
 		if team.OrgID != org.ID {
 			continue
 		}
-		repoFound := false
-		for _, rn := range team.RepoNames {
-			if rn == repoFullName {
-				repoFound = true
+		member := false
+		for _, mid := range team.MemberIDs {
+			if mid == userID {
+				member = true
 				break
 			}
 		}
-		if !repoFound {
+		if !member {
 			continue
 		}
-		// The team's permission on THIS repo is the per-repo override when set,
-		// else the team default. Using the default alone would grant a member the
-		// team's baseline even where the repo was explicitly downgraded (privilege
-		// escalation) — or deny where it was upgraded.
-		effective := team.Permission
-		if override, ok := team.RepoPermissions[repoFullName]; ok {
-			effective = override
-		}
-		if !PermissionAtLeast(effective, minPermission) {
-			continue
-		}
-		for _, mid := range team.MemberIDs {
-			if mid == userID {
+		// A member of `team` inherits the repo grants of `team` AND all its
+		// ancestor teams: GitHub cascades repository access down the hierarchy,
+		// so a child team's members hold every grant the parent chain holds. Walk
+		// up via ParentID, guarding against a cycle.
+		visited := map[int]bool{}
+		for t := team; t != nil && !visited[t.ID]; t = st.Teams[t.ParentID] {
+			visited[t.ID] = true
+			if teamGrantsRepo(t) {
 				return true
 			}
 		}
