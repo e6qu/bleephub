@@ -5,6 +5,42 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineOrganizationMemberEdge() {
+	r.object("OrganizationMemberEdge", "Represents a user within an organization.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"hasTwoFactorEnabled": {
+				Type:        r.t("Boolean"),
+				Description: "Whether the organization member has two factor enabled or not. Returns null if information is not available to viewer.",
+			},
+			"node": {
+				Type:        r.t("User"),
+				Description: "The item at the end of the edge.",
+			},
+			"role": {
+				Type:        r.t("OrganizationMemberRole"),
+				Description: "The role this user has in the organization.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineOrganizationMemberRole() {
+	r.enum("OrganizationMemberRole", "The possible roles within an organization for its members.", graphql.EnumValueConfigMap{
+		"ADMIN": {
+			Value:       "ADMIN",
+			Description: "The user is an administrator of the organization.",
+		},
+		"MEMBER": {
+			Value:       "MEMBER",
+			Description: "The user is a member of the organization.",
+		},
+	})
+}
+
 func (r *Registry) defineOrganizationMembersCanCreateRepositoriesSettingValue() {
 	r.enum("OrganizationMembersCanCreateRepositoriesSettingValue", "The possible values for the members can create repositories setting on an organization.", graphql.EnumValueConfigMap{
 		"ALL": {
@@ -3722,94 +3758,6 @@ func (r *Registry) defineProjectV2ItemFieldDateValue() {
 			"updatedAt": {
 				Type:        graphql.NewNonNull(r.t("DateTime")),
 				Description: "Identifies the date and time when the object was last updated.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineProjectV2ItemFieldIterationValue() {
-	r.object("ProjectV2ItemFieldIterationValue", "The value of an iteration field in a Project item.", []string{"Node", "ProjectV2ItemFieldValueCommon"}, func() graphql.Fields {
-		return graphql.Fields{
-			"createdAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was created.",
-			},
-			"creator": {
-				Type:        r.t("Actor"),
-				Description: "The actor who created the item.",
-			},
-			"databaseId": {
-				Type:        r.t("Int"),
-				Description: "Identifies the primary key from the database.",
-			},
-			"duration": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "The duration of the iteration in days.",
-			},
-			"field": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
-				Description: "The project field that contains this value.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the ProjectV2ItemFieldIterationValue object",
-			},
-			"item": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2Item")),
-				Description: "The project item that contains this value.",
-			},
-			"iterationId": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The ID of the iteration.",
-			},
-			"startDate": {
-				Type:        graphql.NewNonNull(r.t("Date")),
-				Description: "The start date of the iteration.",
-			},
-			"title": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The title of the iteration.",
-			},
-			"titleHTML": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The title of the iteration, with HTML.",
-			},
-			"updatedAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was last updated.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineProjectV2ItemFieldLabelValue() {
-	r.object("ProjectV2ItemFieldLabelValue", "The value of the labels field in a Project item.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"field": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
-				Description: "The field that contains this value.",
-			},
-			"labels": {
-				Type:        r.t("LabelConnection"),
-				Description: "Labels value of a field",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-				},
 			},
 		}
 	})

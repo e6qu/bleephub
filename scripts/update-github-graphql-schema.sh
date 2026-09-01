@@ -2,19 +2,22 @@
 # Refresh GitHub's official public GraphQL schema behind an explicit digest pin.
 set -euo pipefail
 
-PIN_SHA256="e67fbf3cf655481ac815f53b0495efabed0f792a12a405577f74d6532e70b792"
+PIN_SHA256="ee878de9ade05f0b88be0c29ea461755c23c3fd541d86d875a10aade686bbbc3"
 # GitHub's rolling docs endpoint serves several reviewed feature-flag variants
 # from different CDN edges during the ProjectV2 multi-select/view rollout, so
 # which one a runner sees depends on its region. Keep the richer contract
 # vendored, while letting the drift check recognize the other official variants,
-# all observed from docs.github.com. The current pin (e67fbf3c) adds the
-# `IssueFieldUpdateInput` input, the `IssueFieldUpdateOperation` enum and the
-# `UpdateIssueInput.issueFieldUpdates` argument over the prior pin (30347e4f,
-# Enterprise.innersourceVulnerabilities), which some edges still serve from
-# cache and stays accepted through the rollout; b716c684 (IssueFieldValueFilter),
+# all observed from docs.github.com. The current pin (ee878de9) adds the
+# `AddCloseIssueReferences`/`RemoveCloseIssueReferences` mutations (their Input
+# and Payload types) and the `PullRequestReviewThreadResolutionReason` enum,
+# plus the CIDR `0.0.0.0/0`/`::/0` allow-list-entry restriction note, over the
+# prior pin (e67fbf3c, IssueFieldUpdateInput/IssueFieldUpdateOperation/
+# UpdateIssueInput.issueFieldUpdates), which some edges still serve from cache
+# and stays accepted through the rollout; 30347e4f
+# (Enterprise.innersourceVulnerabilities), b716c684 (IssueFieldValueFilter),
 # 86e8e001, c504a0ed, 0c5ad89a and fc99569d are earlier variants of the same
 # rollout. Any further digest remains blocking.
-ROLLOUT_SHA256="30347e4f3bb975195f982351e55636ca03c76969c279980ca515a96ea7b40c3d b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e 86e8e001eb3db2469348cefd25aacf22e623d3fbeed6affddef47ad98f12a9fc c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322 0c5ad89a426609cf1b79679155a17609cd04d7a09914eee9c56894eea18bb031 fc99569d6628bfe0176eded638b4797ee64ab50e0bf2b671a660ec717d085dae"
+ROLLOUT_SHA256="e67fbf3cf655481ac815f53b0495efabed0f792a12a405577f74d6532e70b792 30347e4f3bb975195f982351e55636ca03c76969c279980ca515a96ea7b40c3d b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e 86e8e001eb3db2469348cefd25aacf22e623d3fbeed6affddef47ad98f12a9fc c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322 0c5ad89a426609cf1b79679155a17609cd04d7a09914eee9c56894eea18bb031 fc99569d6628bfe0176eded638b4797ee64ab50e0bf2b671a660ec717d085dae"
 SOURCE_URL="https://docs.github.com/public/fpt/schema.docs.graphql"
 
 usage() {

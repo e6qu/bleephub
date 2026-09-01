@@ -6,12 +6,12 @@ package graphqlschema
 // Counts of the generated type universe, used to presize the registry's
 // maps and asserted by the completeness ratchet.
 const (
-	generatedTypeCount      = 1809
-	generatedObjectCount    = 1025
+	generatedTypeCount      = 1814
+	generatedObjectCount    = 1027
 	generatedInterfaceCount = 50
 	generatedUnionCount     = 49
-	generatedEnumCount      = 255
-	generatedInputCount     = 417
+	generatedEnumCount      = 256
+	generatedInputCount     = 419
 	generatedScalarCount    = 13
 	generatedAbstractCount  = 99
 )
@@ -41,6 +41,8 @@ func (r *Registry) defineAllTypes() {
 	r.defineAddAssigneesToAssignablePayload()
 	r.defineAddBlockedByInput()
 	r.defineAddBlockedByPayload()
+	r.defineAddCloseIssueReferencesInput()
+	r.defineAddCloseIssueReferencesPayload()
 	r.defineAddCommentInput()
 	r.defineAddCommentPayload()
 	r.defineAddDiscussionCommentInput()
@@ -1152,6 +1154,7 @@ func (r *Registry) defineAllTypes() {
 	r.definePullRequestReviewThread()
 	r.definePullRequestReviewThreadConnection()
 	r.definePullRequestReviewThreadEdge()
+	r.definePullRequestReviewThreadResolutionReason()
 	r.definePullRequestReviewThreadSubjectType()
 	r.definePullRequestRevisionMarker()
 	r.definePullRequestStack()
@@ -1221,6 +1224,8 @@ func (r *Registry) defineAllTypes() {
 	r.defineRemoveAssigneesFromAssignablePayload()
 	r.defineRemoveBlockedByInput()
 	r.defineRemoveBlockedByPayload()
+	r.defineRemoveCloseIssueReferencesInput()
+	r.defineRemoveCloseIssueReferencesPayload()
 	r.defineRemoveEnterpriseAdminInput()
 	r.defineRemoveEnterpriseAdminPayload()
 	r.defineRemoveEnterpriseIdentityProviderInput()

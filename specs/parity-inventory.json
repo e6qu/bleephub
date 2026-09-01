@@ -385,14 +385,14 @@
       "bleephub_types": 1816,
       "compatibility_gap_count": 9,
       "implemented_fields": 8365,
-      "official_fields": 8366,
-      "official_types": 1809,
+      "official_fields": 8379,
+      "official_types": 1814,
       "shared_types": 1809,
       "signature_exact_fields": 8364
     },
     "introspection_snapshot_sha256": "0ba26e8188dab475c1b1551832db7d3df1aee75565a7ba99b0f0d68b34736ffa",
     "official_schema": {
-      "content_sha256": "e67fbf3cf655481ac815f53b0495efabed0f792a12a405577f74d6532e70b792",
+      "content_sha256": "ee878de9ade05f0b88be0c29ea461755c23c3fd541d86d875a10aade686bbbc3",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
     },
     "resolver_files": [
