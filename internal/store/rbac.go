@@ -101,6 +101,13 @@ func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName st
 	if org == nil {
 		return false
 	}
+	// Team access requires an ACTIVE organization membership. A user added to a
+	// team while only invited (org membership state "pending") must not receive
+	// the team's repo grants until they accept — otherwise a pending invitee can
+	// read/push/admin the team's private repos, and may still decline the invite.
+	if m := st.Memberships[MembershipKey(orgLogin, userID)]; m == nil || m.State != MembershipStateActive {
+		return false
+	}
 
 	for _, team := range st.TeamsBySlug {
 		if team.OrgID != org.ID {
