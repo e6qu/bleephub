@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -56,7 +56,11 @@ export function OrgHooksPage() {
 
   // Clear accumulated pages when the org changes; the component instance is
   // reused across org navigations, so stale pages would otherwise append.
+  // scopeRef lets an in-flight loadMore detect an org change and discard its
+  // now-stale response instead of appending it to the new org's list.
+  const scopeRef = useRef(org);
   useEffect(() => {
+    scopeRef.current = org;
     setExtra([]);
     setNextUrl(null);
     setPageError(null);
@@ -114,16 +118,19 @@ export function OrgHooksPage() {
 
   const loadMore = async () => {
     if (!followUrl || loadingMore) return;
+    const scope = org;
     setLoadingMore(true);
     try {
       const page = await fetchOrgHooksPage(org, followUrl);
+      if (scopeRef.current !== scope) return; // navigated away; discard stale page
       setExtra((prev) => [...prev, ...page.items]);
       setNextUrl(page.nextUrl);
       setPageError(null);
     } catch (err) {
+      if (scopeRef.current !== scope) return;
       setPageError(String(err));
     } finally {
-      setLoadingMore(false);
+      if (scopeRef.current === scope) setLoadingMore(false);
     }
   };
 

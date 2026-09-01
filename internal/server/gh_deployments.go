@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
@@ -189,6 +190,14 @@ func (s *Server) handleCreateDeploymentStatus(w http.ResponseWriter, r *http.Req
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.State == "" {
 		store.WriteGHValidationError(w, "DeploymentStatus", "state", "missing_field")
+		return
+	}
+	// GitHub restricts the deployment status state to a fixed set; anything else
+	// is a 422 (the commit-status sibling validates its enum identically).
+	switch strings.ToLower(req.State) {
+	case "error", "failure", "inactive", "in_progress", "queued", "pending", "success":
+	default:
+		store.WriteGHValidationError(w, "DeploymentStatus", "state", "invalid")
 		return
 	}
 	env := req.Environment

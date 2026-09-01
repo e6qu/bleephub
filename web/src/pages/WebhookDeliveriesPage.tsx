@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -60,7 +60,11 @@ function DeliveriesList({ scope, hookId }: { scope: HookScope; hookId: number })
   // accumulated pages must be cleared or the new hook's first page is followed
   // by the previous hook's later pages.
   const scopeId = scopeKey(scope);
+  // scopeRef lets an in-flight loadMore detect a hook/scope change and discard
+  // its now-stale response instead of appending it to the new hook's list.
+  const scopeRef = useRef(`${scopeId}/${hookId}`);
   useEffect(() => {
+    scopeRef.current = `${scopeId}/${hookId}`;
     setExtra([]);
     setNextUrl(null);
     setPageError(null);
@@ -87,16 +91,19 @@ function DeliveriesList({ scope, hookId }: { scope: HookScope; hookId: number })
 
   const loadMore = async () => {
     if (!followUrl || loadingMore) return;
+    const key = `${scopeId}/${hookId}`;
     setLoadingMore(true);
     try {
       const page = await fetchHookDeliveriesPage(scope, hookId, followUrl);
+      if (scopeRef.current !== key) return; // navigated away; discard stale page
       setExtra((prev) => [...prev, ...page.items]);
       setNextUrl(page.nextUrl);
       setPageError(null);
     } catch (err) {
+      if (scopeRef.current !== key) return;
       setPageError(String(err));
     } finally {
-      setLoadingMore(false);
+      if (scopeRef.current === key) setLoadingMore(false);
     }
   };
 

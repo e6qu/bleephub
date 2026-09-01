@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, lazy, Suspense } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -37,6 +37,7 @@ import {
   ghPostJSON,
 } from "../api.js";
 import { Avatar } from "../components/Avatar.js";
+import { useDismiss } from "../hooks/useDismiss.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import {
@@ -943,20 +944,14 @@ function CloneButton({
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  // Canonical dismissal: Escape + outside-click + focus restore, matching every
+  // sibling popover (the hand-rolled version handled only outside-click, so a
+  // keyboard user could not close the dialog with Escape).
+  const wrapRef = useDismiss<HTMLDivElement>(open, () => setOpen(false));
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const httpsUrl = `${origin}/${owner}/${repo}.git`;
   const [transport, setTransport] = useState<"https" | "ssh">("https");
   const cloneUrl = transport === "ssh" ? (sshUrl ?? "") : httpsUrl;
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
 
   const copy = async () => {
     try {

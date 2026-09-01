@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -89,7 +89,11 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
 
   // Reset accumulated pages when the repo changes; the tab instance is reused
   // across repo navigations, so the previous repo's later pages would linger.
+  // scopeRef lets an in-flight loadMore detect a navigation and discard its
+  // now-stale response instead of appending it to the new repo's list.
+  const scopeRef = useRef(`${owner}/${repo}`);
   useEffect(() => {
+    scopeRef.current = `${owner}/${repo}`;
     setExtra([]);
     setNextUrl(null);
     setPageError(null);
@@ -106,16 +110,19 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
 
   const loadMore = async () => {
     if (!followUrl || loadingMore) return;
+    const scope = `${owner}/${repo}`;
     setLoadingMore(true);
     try {
       const page = await fetchDeploymentsPage(owner, repo, followUrl);
+      if (scopeRef.current !== scope) return; // navigated away; discard stale page
       setExtra((prev) => [...prev, ...page.items]);
       setNextUrl(page.nextUrl);
       setPageError(null);
     } catch (err) {
+      if (scopeRef.current !== scope) return;
       setPageError(String(err));
     } finally {
-      setLoadingMore(false);
+      if (scopeRef.current === scope) setLoadingMore(false);
     }
   };
 

@@ -944,15 +944,18 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	user := ghUserFromContext(ctx)
 	pat := ghPersonalAccessTokenFromContext(ctx)
-	isUserToken := ghUserToServerTokenFromContext(ctx) != nil
-	if user == nil || (pat == nil && !isUserToken) {
+	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "A user access token is required")
 		return
 	}
-	// A fine-grained PAT is narrow; a browser session carries full account
-	// authority. Refuse the exchange rather than silently widen the credential.
-	if pat != nil && pat.FineGrained {
-		writeGHError(w, http.StatusForbidden, "A fine-grained token cannot be exchanged for a browser session")
+	// A browser session carries full, unscoped account authority, so only a
+	// classic personal access token — which already conveys broad account
+	// authority — may be exchanged for one. Narrow credentials must not be
+	// silently widened into a full session: a fine-grained PAT, and equally a
+	// ghu_/gho_ user-to-server token bounded by its installation permissions or
+	// OAuth scopes, are refused.
+	if pat == nil || pat.FineGrained {
+		writeGHError(w, http.StatusForbidden, "Only a classic personal access token can be exchanged for a browser session")
 		return
 	}
 	// A token exchange mints a full session, so it clears the same second-factor
