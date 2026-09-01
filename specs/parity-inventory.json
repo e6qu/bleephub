@@ -213,7 +213,7 @@
       },
       {
         "event": "public",
-        "line": 952,
+        "line": 969,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -363,7 +363,7 @@
       },
       {
         "event": "watch",
-        "line": 1361,
+        "line": 1381,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },

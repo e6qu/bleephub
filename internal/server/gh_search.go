@@ -1314,71 +1314,51 @@ func searchIssueQualifiersMatchLocked(st *store.Store, q searchQuery, authorID i
 		return ""
 	}
 	for _, ql := range q.Qualifiers {
-		if ql.Negated {
-			continue
-		}
 		val := strings.Trim(ql.Value, `"`)
+		// Compute whether the subject matches this qualifier's value, then apply
+		// negation uniformly. Previously every negated qualifier was skipped, so
+		// `-author:x` / `-assignee:x` / `-milestone:x` / `-mentions:x` were
+		// silently ignored and returned issues GitHub would have excluded.
+		var matched bool
 		switch ql.Key {
 		case "author":
-			if !strings.EqualFold(loginOf(authorID), val) {
-				return false
-			}
+			matched = strings.EqualFold(loginOf(authorID), val)
 		case "assignee":
 			if val == "*" {
-				if len(assigneeIDs) == 0 {
-					return false
+				matched = len(assigneeIDs) > 0
+			} else {
+				for _, aid := range assigneeIDs {
+					if strings.EqualFold(loginOf(aid), val) {
+						matched = true
+						break
+					}
 				}
-				break
 			}
-			matched := false
-			for _, aid := range assigneeIDs {
-				if strings.EqualFold(loginOf(aid), val) {
+		case "milestone":
+			if val == "*" {
+				matched = milestoneID != 0
+			} else if ms := st.Milestones[milestoneID]; ms != nil {
+				matched = strings.EqualFold(ms.Title, val)
+			}
+		case "label":
+			for _, lid := range labelIDs {
+				if l := st.Labels[lid]; l != nil && strings.EqualFold(l.Name, val) {
 					matched = true
 					break
 				}
 			}
-			if !matched {
-				return false
-			}
-		case "milestone":
-			if val == "*" {
-				if milestoneID == 0 {
-					return false
-				}
-				break
-			}
-			if ms := st.Milestones[milestoneID]; ms == nil || !strings.EqualFold(ms.Title, val) {
-				return false
-			}
-		case "label":
-			found := false
-			for _, lid := range labelIDs {
-				if l := st.Labels[lid]; l != nil && strings.EqualFold(l.Name, val) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
 		case "mentions":
-			if !strings.Contains(strings.ToLower(text), "@"+strings.ToLower(val)) {
-				return false
-			}
+			matched = strings.Contains(strings.ToLower(text), "@"+strings.ToLower(val))
 		case "no":
 			switch strings.ToLower(val) {
 			case "label":
-				if len(labelIDs) > 0 {
-					return false
-				}
+				matched = len(labelIDs) == 0
 			case "assignee":
-				if len(assigneeIDs) > 0 {
-					return false
-				}
+				matched = len(assigneeIDs) == 0
 			case "milestone":
-				if milestoneID != 0 {
-					return false
-				}
+				matched = milestoneID == 0
+			default:
+				continue
 			}
 		case "created", "updated":
 			c, err := parseDateSearchConstraint(val)
@@ -1386,22 +1366,21 @@ func searchIssueQualifiersMatchLocked(st *store.Store, q searchQuery, authorID i
 			if ql.Key == "updated" {
 				at = subj.updatedAt
 			}
-			if err != nil || !c.matches(at) {
-				return false
-			}
+			matched = err == nil && c.matches(at)
 		case "closed":
 			c, err := parseDateSearchConstraint(val)
-			if err != nil || subj.closedAt == nil || !c.matches(*subj.closedAt) {
-				return false
-			}
+			matched = err == nil && subj.closedAt != nil && c.matches(*subj.closedAt)
 		case "draft":
-			if subj.isDraft != strings.EqualFold(val, "true") {
-				return false
-			}
+			matched = subj.isDraft == strings.EqualFold(val, "true")
 		case "archived":
-			if subj.archived != strings.EqualFold(val, "true") {
-				return false
-			}
+			matched = subj.archived == strings.EqualFold(val, "true")
+		default:
+			// Qualifiers handled elsewhere (repo/user/org/is/state/in/...); don't
+			// evaluate them here or a negated one would wrongly exclude everything.
+			continue
+		}
+		if matched == ql.Negated {
+			return false
 		}
 	}
 	return true
@@ -1460,7 +1439,12 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	for _, repo := range matched {
 		item := store.RepoToJSON(repo, s.store, base)
 		item["score"] = searchRelevanceScore(q.Terms, repo.Name, repo.Description)
-		item["_help_wanted_issues"] = repoIssueLabelCount(s.store, repo.ID, "help wanted")
+		// repoIssueLabelCount scans every issue in the instance, so compute it only
+		// when the caller sorts by it — otherwise a broad repo search was
+		// O(matched-repos × all-issues) for a value that was then discarded.
+		if q.Sort == "help-wanted-issues" {
+			item["_help_wanted_issues"] = repoIssueLabelCount(s.store, repo.ID, "help wanted")
+		}
 		if withTextMatches {
 			objectURL, _ := item["url"].(string)
 			item["text_matches"] = searchTextMatches(objectURL, "Repository", []searchTextMatchProperty{

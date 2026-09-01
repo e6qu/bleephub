@@ -583,7 +583,7 @@ func (s *Server) handleGetPendingDeployments(w http.ResponseWriter, r *http.Requ
 			},
 			"wait_timer":               env.WaitTimer,
 			"wait_timer_started_at":    p.WaitTimerStartedAt.UTC().Format(time.RFC3339),
-			"current_user_can_approve": true,
+			"current_user_can_approve": s.canReviewEnvironment(r.Context(), repo, env, ghUserFromContext(r.Context())),
 			"reviewers":                environmentReviewersJSON(env, s.store, base),
 		})
 	}
@@ -654,17 +654,68 @@ func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.R
 // reviewPendingDeployments is the shared review path for the REST pending_deployments route and the GraphQL
 // approve/rejectDeployments mutations. It refuses a self-review on an environment with prevent_self_review set, then hands the review to the actions engine.
 func (s *Server) reviewPendingDeployments(ctx context.Context, wf *store.Workflow, envIDs []int, state, comment string, reviewer *store.User) ([]string, error) {
-	if reviewer != nil {
-		if sender := s.workflowSender(wf); sender != nil && sender.ID == reviewer.ID {
-			for _, id := range envIDs {
-				env := s.store.Deployments.GetEnvironmentByID(id)
-				if env != nil && env.PreventSelfReview {
-					return nil, fmt.Errorf("environment %q does not allow deployments to be reviewed by the user who triggered them", env.Name)
-				}
-			}
+	var repo *store.Repo
+	if owner, name, ok := store.SplitRepoFullName(wf.RepoFullName); ok {
+		repo = s.store.GetRepo(owner, name)
+	}
+	sender := s.workflowSender(wf)
+	for _, id := range envIDs {
+		env := s.store.Deployments.GetEnvironmentByID(id)
+		if env == nil {
+			continue
+		}
+		if reviewer != nil && sender != nil && sender.ID == reviewer.ID && env.PreventSelfReview {
+			return nil, fmt.Errorf("environment %q does not allow deployments to be reviewed by the user who triggered them", env.Name)
+		}
+		// Only a designated reviewer may approve/reject a protected environment;
+		// the Actions:write route gate alone let any write collaborator release a
+		// deployment past the required-reviewers protection.
+		if !s.canReviewEnvironment(ctx, repo, env, reviewer) {
+			return nil, fmt.Errorf("you do not have permission to review deployments to the %q environment", env.Name)
 		}
 	}
 	return s.actions.ApplyDeploymentReview(ctx, wf, envIDs, state, comment, reviewer), nil
+}
+
+// canReviewEnvironment reports whether reviewer may approve or reject a pending
+// deployment to env. Only a designated reviewer counts: a repo admin, a user
+// listed directly in env.Reviewers, or a member of a listed reviewer team. An
+// environment with no required reviewers is not gated here (the Actions:write
+// route already authorizes it).
+func (s *Server) canReviewEnvironment(ctx context.Context, repo *store.Repo, env *store.Environment, reviewer *store.User) bool {
+	if reviewer == nil {
+		return false
+	}
+	if len(env.Reviewers) == 0 {
+		return true
+	}
+	if repo != nil && s.viewerCanAdminRepo(ctx, repo) {
+		return true
+	}
+	for _, rev := range env.Reviewers {
+		revType, _ := rev["type"].(string)
+		var id int
+		switch v := rev["id"].(type) {
+		case int:
+			id = v
+		case float64:
+			id = int(v)
+		}
+		if revType == "Team" {
+			if team := s.store.GetTeamByID(id); team != nil {
+				for _, mid := range team.MemberIDs {
+					if mid == reviewer.ID {
+						return true
+					}
+				}
+			}
+			continue
+		}
+		if id == reviewer.ID { // "User"
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) lookupRunFromPath(r *http.Request) (*store.Repo, *store.Workflow) {

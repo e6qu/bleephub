@@ -17,6 +17,9 @@ func TestTeamRepoPermissionOverrideEnforced(t *testing.T) {
 	org := s.seedTestOrg(t, "rbac-override-org")
 	repo := s.seedOrgRepo(t, org, "downgraded", true)
 	member := s.createTestUser(t, "rbac-override-member")
+	// Team members are active org members; team grants only apply once the org
+	// membership is active (a team member cannot be a mere pending invitee).
+	s.store.SetMembership(org.Login, member.ID, store.OrgRoleMember, store.MembershipStateActive)
 
 	team := s.store.CreateTeam(org.Login, "eng", store.TeamOptions{Permission: store.TeamPermission("admin")})
 	if team == nil {

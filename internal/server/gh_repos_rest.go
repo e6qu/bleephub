@@ -850,6 +850,23 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 				r.Visibility = "public"
 			}
 		}
+		// `visibility` is GitHub's modern field (public/private/internal) and the
+		// only way the UI changes visibility; it was silently ignored, so
+		// PATCH {"visibility":"private"} returned 200 with the repo still public.
+		// It takes precedence over the legacy `private` bool.
+		if v, ok := req["visibility"].(string); ok {
+			switch v {
+			case "public":
+				r.Private = false
+				r.Visibility = "public"
+			case "private":
+				r.Private = true
+				r.Visibility = "private"
+			case "internal":
+				r.Private = true
+				r.Visibility = "internal"
+			}
+		}
 		if v, ok := coerceBool(req["has_issues"]); ok {
 			r.HasIssues = v
 		}
@@ -1218,10 +1235,13 @@ func fullRepoJSONForViewer(repo *store.Repo, st *store.Store, baseURL string, vi
 		out["pull_request_creation_policy"] = repo.PullRequestCreationPolicy
 	}
 	if repo.Fork {
-		if parent := st.GetRepoByID(repo.ParentID); parent != nil {
+		// Only expose a parent/source the viewer may actually read: a fork of a
+		// repo that has since gone private must not leak the private parent's
+		// metadata to a viewer without access.
+		if parent := st.GetRepoByID(repo.ParentID); parent != nil && store.CanReadRepoAsUser(st, viewer, parent) {
 			out["parent"] = store.RepoToJSONForViewer(parent, st, baseURL, viewer)
 		}
-		if source := st.GetRepoByID(repo.SourceID); source != nil {
+		if source := st.GetRepoByID(repo.SourceID); source != nil && store.CanReadRepoAsUser(st, viewer, source) {
 			out["source"] = store.RepoToJSONForViewer(source, st, baseURL, viewer)
 		}
 	}
