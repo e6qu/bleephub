@@ -32,5 +32,37 @@ func (s *Server) firePullRequestSynchronize(repo *store.Repo, repoKey, branch st
 		s.emitWebhookEvent(baseRepo.FullName, "pull_request", "synchronize", payload)
 		// The push may add files whose code owners GitHub requests as on open.
 		s.autoRequestCodeOwners(baseRepo, pr, nil)
+		// A new commit makes prior approvals stale when the base branch enables
+		// dismiss_stale_reviews.
+		s.dismissStaleReviewsOnPush(baseRepo, pr, sender)
+	}
+}
+
+// dismissStaleReviewsOnPush dismisses a PR's current APPROVED / CHANGES_REQUESTED
+// reviews when a new commit is pushed to its head and the base branch enables
+// dismiss_stale_reviews. Without it a stale approval of an earlier commit lets
+// never-reviewed code merge onto a protected branch — the exact bypass the
+// setting exists to prevent. The dismissal drops the review from
+// countApprovingReviews so the merge gate re-blocks until re-approved.
+func (s *Server) dismissStaleReviewsOnPush(repo *store.Repo, pr *store.PullRequest, sender *store.User) {
+	bp := s.effectiveBranchProtectionFor(repo.ID, pr.BaseRefName)
+	if bp == nil || bp.RequiredPullRequestReviews == nil || !bp.RequiredPullRequestReviews.DismissStaleReviews {
+		return
+	}
+	actorID := 0
+	if sender != nil {
+		actorID = sender.ID
+	}
+	for _, review := range s.store.ListPullRequestReviews(repo.FullName, pr.Number) {
+		if review.State != "APPROVED" && review.State != "CHANGES_REQUESTED" {
+			continue
+		}
+		if !s.store.DismissPullRequestReview(review.ID, "Stale review dismissed because new commits were pushed.") {
+			continue
+		}
+		s.store.RecordPullRequestEvent(repo.ID, pr.ID, actorID, "review_dismissed", "", 0)
+		dismissed := s.store.GetPullRequestReview(review.ID)
+		s.emitWebhookEvent(repo.FullName, "pull_request_review", "dismissed",
+			buildPullRequestReviewPayload(s.store, repo, pr, dismissed, sender, "dismissed", s.publicOrigin()))
 	}
 }

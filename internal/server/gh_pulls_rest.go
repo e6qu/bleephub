@@ -370,6 +370,12 @@ func (s *Server) applyChecksToMergeability(out map[string]interface{}, repo *sto
 	if pr.State != "OPEN" || out["mergeable_state"] != "clean" {
 		return
 	}
+	// required_status_checks.strict: an out-of-date branch reports "behind" and
+	// cannot merge until it is updated with the base branch.
+	if bp := s.effectiveBranchProtectionFor(repo.ID, pr.BaseRefName); s.strictUpToDateRequired(bp, repo, pr) {
+		out["mergeable_state"] = "behind"
+		return
+	}
 	// Missing required code owner review is branch protection too; report the
 	// same "blocked" state as an unmet required status check.
 	if s.codeOwnerReviewMissing(repo, pr) {

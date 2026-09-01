@@ -1446,6 +1446,36 @@ func (s *Server) viewerIsRestrictedPusher(ctx context.Context, repo *store.Repo,
 
 // canMergePullRequest checks branch protection for a PR merge. ok==false with
 // an empty message means the caller falls back to its required-status-check message.
+// pullRequestBehindBase reports whether the PR's base-branch tip is NOT an
+// ancestor of the PR head — the head has not incorporated the latest base.
+// required_status_checks.strict ("require branches to be up to date before
+// merging") forbids merging in that state, because the required checks never ran
+// against the merged result. A git error or an unresolvable ref fails open (the
+// required-checks and review gates still apply), never blocking a legitimate merge.
+func (s *Server) pullRequestBehindBase(repo *store.Repo, pr *store.PullRequest) bool {
+	stor, _ := store.PullRequestGitStorage(s.store, repo, pr)
+	if stor == nil {
+		return false
+	}
+	baseTip := store.ResolveBranchSha(stor, pr.BaseRefName)
+	head := store.ResolveBranchSha(stor, pr.HeadRefName)
+	if baseTip == "" || head == "" || baseTip == head {
+		return false
+	}
+	upToDate, err := refUpdateIsFastForward(stor, plumbing.NewHash(baseTip), plumbing.NewHash(head))
+	if err != nil {
+		return false
+	}
+	return !upToDate
+}
+
+// strictUpToDateRequired reports whether the base branch requires the PR to be
+// up to date (required_status_checks.strict) and the PR is currently behind.
+func (s *Server) strictUpToDateRequired(bp *store.BranchProtection, repo *store.Repo, pr *store.PullRequest) bool {
+	return bp != nil && bp.RequiredStatusChecks != nil && bp.RequiredStatusChecks.Strict &&
+		s.pullRequestBehindBase(repo, pr)
+}
+
 func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string) {
 	bp := s.effectiveBranchProtectionFor(repo.ID, pr.BaseRefName)
 	if bp == nil {
@@ -1470,6 +1500,12 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 		if len(st.MissingRequired) > 0 {
 			return false, fmt.Sprintf("Required status check %q is expected.", st.MissingRequired[0])
 		}
+	}
+
+	// required_status_checks.strict: the branch must be up to date with its base
+	// before merging, so the required checks are validated against the merged result.
+	if s.strictUpToDateRequired(bp, repo, pr) {
+		return false, "Required status checks require the branch to be up to date with the base branch before merging."
 	}
 
 	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequiredApprovingReviewCount > 0 {

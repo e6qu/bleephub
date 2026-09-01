@@ -237,7 +237,7 @@
       },
       {
         "event": "pull_request",
-        "line": 635,
+        "line": 641,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -255,27 +255,33 @@
       },
       {
         "event": "pull_request_review",
-        "line": 820,
+        "line": 826,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 999,
+        "line": 1005,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1100,
+        "line": 1106,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1177,
+        "line": 1183,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request_review",
+        "line": 65,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/workflow_triggers.go"
       },
       {
         "event": "pull_request_review_comment",
