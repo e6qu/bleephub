@@ -33,7 +33,7 @@
       },
       {
         "event": "create",
-        "line": 691,
+        "line": 699,
         "producer": "emitWebhookEvent",
         "source": "internal/server/git_receivepack.go"
       },
@@ -45,7 +45,7 @@
       },
       {
         "event": "delete",
-        "line": 693,
+        "line": 701,
         "producer": "emitWebhookEvent",
         "source": "internal/server/git_receivepack.go"
       },
@@ -111,7 +111,7 @@
       },
       {
         "event": "issue_comment",
-        "line": 704,
+        "line": 710,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -123,7 +123,7 @@
       },
       {
         "event": "issues",
-        "line": 94,
+        "line": 97,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -225,19 +225,19 @@
       },
       {
         "event": "pull_request",
-        "line": 171,
+        "line": 174,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pull_merge_async.go"
       },
       {
         "event": "pull_request",
-        "line": 124,
+        "line": 127,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 641,
+        "line": 647,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -255,25 +255,25 @@
       },
       {
         "event": "pull_request_review",
-        "line": 826,
+        "line": 835,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1005,
+        "line": 1014,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1106,
+        "line": 1115,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1183,
+        "line": 1192,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -315,13 +315,13 @@
       },
       {
         "event": "release",
-        "line": 504,
+        "line": 516,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
       {
         "event": "release",
-        "line": 548,
+        "line": 560,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },

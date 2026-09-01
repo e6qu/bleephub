@@ -151,6 +151,18 @@ func (s *Server) lookupRepoFromPath(r *http.Request) *store.Repo {
 	return s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 }
 
+// rejectIfArchived writes GitHub's 403 for a content write to an archived
+// repository and reports whether it did, so the caller returns early. An
+// archived repo is read-only; only unarchiving (and repo-level settings/delete)
+// is exempt, which does not call this.
+func (s *Server) rejectIfArchived(w http.ResponseWriter, repo *store.Repo) bool {
+	if repo != nil && repo.Archived {
+		writeGHError(w, http.StatusForbidden, "Repository was archived so is read-only.")
+		return true
+	}
+	return false
+}
+
 // lookupReadableRepoFromPath resolves {owner}/{repo} and enforces private-repo
 // visibility: a private repo the caller cannot read returns nil and a 404 (never
 // 403, so existence stays hidden). Use on repo-scoped GET handlers;

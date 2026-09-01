@@ -71,6 +71,9 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 
 	var req struct {
 		CommitTitle   string `json:"commit_title"`

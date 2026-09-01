@@ -27,6 +27,9 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 
 	var req struct {
 		Title       string   `json:"title"`
@@ -663,6 +666,9 @@ func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request
 	repo := s.store.GetRepo(owner, repoName)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if s.rejectIfArchived(w, repo) {
 		return
 	}
 

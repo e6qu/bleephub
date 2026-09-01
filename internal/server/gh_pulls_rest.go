@@ -76,6 +76,9 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 
 	var req struct {
 		Title               string   `json:"title"`
@@ -551,6 +554,9 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 	// Merging writes the base branch; require push access (REST-123).
 	if !s.viewerCanPushRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have write access to the repository.")
@@ -744,6 +750,9 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if s.rejectIfArchived(w, repo) {
 		return
 	}
 
