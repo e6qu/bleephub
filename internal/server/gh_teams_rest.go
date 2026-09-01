@@ -550,6 +550,14 @@ func (s *Server) handleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 
 	orgMembership := s.store.GetMembership(orgLogin, target.ID)
 	if orgMembership == nil {
+		// Inviting an unaffiliated user into the org is an owner-only action; a
+		// team maintainer may only add existing active org members (GitHub 422s
+		// otherwise). Without this, a maintainer could mint org invitations.
+		if !s.viewerCanAdminOrg(r.Context(), org.Login) {
+			writeGHError(w, http.StatusUnprocessableEntity,
+				"Cannot add an organization member. The user must already be a member of the organization.")
+			return
+		}
 		orgMembership = s.store.SetMembership(orgLogin, target.ID, store.OrgRoleMember, store.MembershipStatePending)
 		s.emitOrgMembershipEvent(org, "member_invited", orgMembership, target, user)
 	}
