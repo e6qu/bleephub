@@ -527,7 +527,39 @@ func (st *Store) createPRReviewLocked(prID, authorID int, state, body string) *P
 	if st.Persist != nil {
 		st.Persist.MustPut("pr_reviews", strconv.Itoa(review.ID), review)
 	}
+	// Submitting a decision moves the author out of requested_reviewers (GitHub
+	// does this silently — no review_request_removed event).
+	if state == "APPROVED" || state == "CHANGES_REQUESTED" {
+		st.dropRequestedReviewerLocked(st.PullRequests[prID], authorID)
+	}
 	return review
+}
+
+// dropRequestedReviewerLocked removes a reviewer from a PR's requested set with
+// no review_request_removed event, for when the reviewer submits a review: on
+// GitHub a submitted review moves the author out of requested_reviewers without
+// the explicit un-request event. Callers hold st.Mu.
+func (st *Store) dropRequestedReviewerLocked(pr *PullRequest, userID int) {
+	if pr == nil || len(pr.RequestedReviewerIDs) == 0 {
+		return
+	}
+	kept := make([]int, 0, len(pr.RequestedReviewerIDs))
+	changed := false
+	for _, id := range pr.RequestedReviewerIDs {
+		if id == userID {
+			changed = true
+			continue
+		}
+		kept = append(kept, id)
+	}
+	if !changed {
+		return
+	}
+	pr.RequestedReviewerIDs = kept
+	pr.UpdatedAt = st.CurrentTime()
+	if st.Persist != nil {
+		st.Persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+	}
 }
 
 // CreatePullRequestReview creates a review addressed by repo key and PR number.
@@ -663,6 +695,10 @@ func (st *Store) SubmitPullRequestReview(id int, event string) bool {
 	r.UpdatedAt = now
 	if st.Persist != nil {
 		st.Persist.MustPut("pr_reviews", strconv.Itoa(r.ID), r)
+	}
+	// A submitted decision moves the author out of requested_reviewers.
+	if r.State == "APPROVED" || r.State == "CHANGES_REQUESTED" {
+		st.dropRequestedReviewerLocked(st.PullRequests[r.PRID], r.AuthorID)
 	}
 	return true
 }
