@@ -1,4 +1,4 @@
 # Direct static-analysis tools. security-requirements.txt locks and hashes the
 # complete transitive graph generated from this input.
 semgrep==1.175.0
-zizmor==1.29.0
+zizmor==1.30.0
