@@ -120,6 +120,10 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusUnprocessableEntity, "Pull Request is closed")
 		return
 	}
+	if pr.IsDraft {
+		writeGHError(w, http.StatusMethodNotAllowed, "Draft pull requests cannot be merged.")
+		return
+	}
 
 	// Merging against a stale head SHA is a 409.
 	if req.SHA != "" {

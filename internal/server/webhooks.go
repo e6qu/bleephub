@@ -553,14 +553,17 @@ func (s *Server) deliverWebhook(hook *store.Webhook, event, action string, paylo
 		backoffs = backoffs[:1]
 	}
 
+	// One X-GitHub-Delivery GUID for the whole event: automatic retries reuse it
+	// (flagged redelivery), so a receiver deduping on the GUID — the method
+	// GitHub documents — processes the event once. The app-webhook engine does
+	// the same; regenerating it per attempt made each retry look like a new
+	// delivery.
+	guid := uuid.New().String()
 	for attempt, backoff := range backoffs {
 		if attempt > 0 {
 			time.Sleep(backoff)
 		}
 
-		// Each attempt is its own delivery record with a unique GUID; a retry is
-		// a fresh delivery flagged as a redelivery.
-		guid := uuid.New().String()
 		delivery := s.doDeliverAttempt(hook, event, action, guid, payloadBytes, attempt > 0)
 		s.store.AddDelivery(delivery)
 		s.recordHookLastResponse(hook, delivery)
@@ -614,6 +617,7 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 	}
 	// Installation-target headers name the resource owning the hook: app-bound
 	// (HookID < 0) → integration, org → org id, repository → repo id.
+	var repoID int // stamped onto the delivery record for a repository webhook
 	switch {
 	case hook.MarketplaceSlug != "":
 		// Marketplace webhooks are listing-scoped and advertise no target.
@@ -631,6 +635,7 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 		if parts[1] != "" {
 			if repo := s.store.GetRepo(parts[0], parts[1]); repo != nil {
 				reqHeaders["X-GitHub-Hook-Installation-Target-ID"] = strconv.Itoa(repo.ID)
+				repoID = repo.ID
 			}
 		}
 	}
@@ -638,17 +643,18 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 	// undelivered records an attempt that never reached the network.
 	undelivered := func(err error) *store.WebhookDelivery {
 		return &store.WebhookDelivery{
-			HookID:      hook.ID,
-			TargetURL:   hook.URL,
-			GUID:        guid,
-			Event:       event,
-			Action:      action,
-			StatusCode:  0,
-			Duration:    time.Since(start).Seconds(),
-			Request:     &store.DeliveryRequest{Headers: reqHeaders, Payload: json.RawMessage(payloadBytes)},
-			Response:    &store.DeliveryResponse{StatusCode: 0, Body: err.Error()},
-			Redelivery:  redelivery,
-			DeliveredAt: time.Now(),
+			HookID:       hook.ID,
+			RepositoryID: repoID,
+			TargetURL:    hook.URL,
+			GUID:         guid,
+			Event:        event,
+			Action:       action,
+			StatusCode:   0,
+			Duration:     time.Since(start).Seconds(),
+			Request:      &store.DeliveryRequest{Headers: reqHeaders, Payload: json.RawMessage(payloadBytes)},
+			Response:     &store.DeliveryResponse{StatusCode: 0, Body: err.Error()},
+			Redelivery:   redelivery,
+			DeliveredAt:  time.Now(),
 		}
 	}
 
@@ -675,15 +681,16 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 	elapsed := time.Since(start).Seconds()
 
 	delivery := &store.WebhookDelivery{
-		HookID:      hook.ID,
-		TargetURL:   hook.URL,
-		GUID:        guid,
-		Event:       event,
-		Action:      action,
-		Redelivery:  redelivery,
-		DeliveredAt: time.Now(),
-		Duration:    elapsed,
-		Request:     &store.DeliveryRequest{Headers: reqHeaders, Payload: json.RawMessage(payloadBytes)},
+		HookID:       hook.ID,
+		RepositoryID: repoID,
+		TargetURL:    hook.URL,
+		GUID:         guid,
+		Event:        event,
+		Action:       action,
+		Redelivery:   redelivery,
+		DeliveredAt:  time.Now(),
+		Duration:     elapsed,
+		Request:      &store.DeliveryRequest{Headers: reqHeaders, Payload: json.RawMessage(payloadBytes)},
 	}
 
 	if err != nil {

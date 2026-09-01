@@ -413,6 +413,14 @@ func (s *Server) handleLFSUpload(w http.ResponseWriter, r *http.Request, owner, 
 		writeLFSError(w, http.StatusUnprocessableEntity, "Invalid object size")
 		return
 	}
+	// Enforce the 5 GB ceiling for a client-declared size too, before anything
+	// else: otherwise `limit = declared + 1` below streams an arbitrarily large
+	// body to the staging disk before verification (the ceiling was only applied
+	// to the no-declared-size path).
+	if declared > maxLFSObjectSize {
+		writeLFSError(w, http.StatusUnprocessableEntity, "Object exceeds the maximum size of 5 GB")
+		return
+	}
 	if declared >= 0 && r.ContentLength >= 0 && r.ContentLength != declared {
 		writeLFSError(w, http.StatusUnprocessableEntity, "Object size does not match the size declared in the batch request")
 		return

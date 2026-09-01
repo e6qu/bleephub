@@ -381,6 +381,8 @@ func (s *Server) orgPingPayload(org *store.Org, hook *store.Webhook, r *http.Req
 		"hook_id":      hook.ID,
 		"hook":         orgHookToJSON(hook, org, s.baseURL(r)),
 		"organization": orgWebhookPayload(org, s.baseURL(r)),
+		// GitHub's ping event always carries a top-level sender, like the repo variant.
+		"sender": senderPayload(ghUserFromContext(r.Context()), s.baseURL(r)),
 	}
 }
 
