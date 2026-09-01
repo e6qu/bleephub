@@ -57,7 +57,7 @@
       },
       {
         "event": "deployment",
-        "line": 74,
+        "line": 75,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
@@ -69,13 +69,13 @@
       },
       {
         "event": "deployment_status",
-        "line": 199,
+        "line": 208,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 209,
+        "line": 218,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
@@ -385,14 +385,14 @@
       "bleephub_types": 1816,
       "compatibility_gap_count": 9,
       "implemented_fields": 8365,
-      "official_fields": 8366,
-      "official_types": 1809,
+      "official_fields": 8379,
+      "official_types": 1814,
       "shared_types": 1809,
       "signature_exact_fields": 8364
     },
     "introspection_snapshot_sha256": "0ba26e8188dab475c1b1551832db7d3df1aee75565a7ba99b0f0d68b34736ffa",
     "official_schema": {
-      "content_sha256": "e67fbf3cf655481ac815f53b0495efabed0f792a12a405577f74d6532e70b792",
+      "content_sha256": "ee878de9ade05f0b88be0c29ea461755c23c3fd541d86d875a10aade686bbbc3",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
     },
     "resolver_files": [
@@ -13918,7 +13918,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
@@ -13930,7 +13930,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 38,
+        "line": 39,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -17596,25 +17596,25 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 27,
+        "line": 28,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 29,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}",
         "source": "internal/server/gh_deployments.go"
@@ -17656,13 +17656,13 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 32,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 34,
+        "line": 35,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -20698,13 +20698,13 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 17,
+        "line": 18,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 25,
+        "line": 26,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
@@ -21988,7 +21988,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 36,
+        "line": 37,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"

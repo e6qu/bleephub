@@ -54,6 +54,28 @@ type AccountTab = "profile" | "account" | "appearance" | "notifications" | "toke
 /** Sidebar keys: every tab plus two pure-navigation entries. */
 type AccountNavKey = AccountTab | "organizations" | "repositories";
 
+// CopyTokenButton copies a one-time token to the clipboard, surfacing success
+// and failure. navigator.clipboard.writeText rejects on a denied permission,
+// an insecure context, or missing focus; leaving that promise unhandled becomes
+// a console error (which fails the e2e console guard) and gives no feedback.
+function CopyTokenButton({ value, label }: { value: string; label: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setState("copied");
+      window.setTimeout(() => setState("idle"), 1500);
+    } catch {
+      setState("failed");
+    }
+  };
+  return (
+    <Button size="sm" onClick={copy} style={{ marginTop: ".65rem" }}>
+      {state === "copied" ? "Copied" : state === "failed" ? "Copy failed — select and copy manually" : label}
+    </Button>
+  );
+}
+
 const ACCOUNT_TABS: readonly AccountTab[] = [
   "profile", "account", "appearance", "notifications", "tokens", "ssh-keys", "gpg-keys",
   "signing-keys", "emails", "blocked", "interaction-limits", "authentication",
@@ -278,7 +300,7 @@ function FineGrainedTokensTab() {
     {credential && <div role="alert" style={{ padding: "1rem", borderRadius: 8, border: "1px solid var(--color-status-ok)", background: "color-mix(in srgb, var(--color-status-ok) 13%, var(--color-bg))" }}>
       <b>Your new token</b><p style={{ color: "var(--color-fg-muted)", margin: ".25rem 0 .65rem" }}>Copy it now. For your security, it will not be shown again.</p>
       <code style={{ display: "block", overflowWrap: "anywhere", padding: ".7rem", borderRadius: 6, background: "var(--color-bg-subtle)", border: "1px solid var(--color-border)" }}>{credential}</code>
-      <Button size="sm" onClick={() => navigator.clipboard.writeText(credential)} style={{ marginTop: ".65rem" }}>Copy token</Button>
+      <CopyTokenButton value={credential} label="Copy token" />
     </div>}
     {error && <ErrorBanner>{String(error)}</ErrorBanner>}
     <Box header={<span style={{ fontWeight: 650 }}>Generate new token</span>}>
@@ -438,7 +460,7 @@ function ClassicTokensSection() {
           <b>Your new classic token</b>
           <p style={{ color: "var(--color-fg-muted)", margin: ".25rem 0 .65rem" }}>Copy it now. For your security, it will not be shown again.</p>
           <code style={{ display: "block", overflowWrap: "anywhere", padding: ".7rem", borderRadius: 6, background: "var(--color-bg-subtle)", border: "1px solid var(--color-border)" }}>{credential}</code>
-          <Button size="sm" onClick={() => navigator.clipboard.writeText(credential)} style={{ marginTop: ".65rem" }}>Copy classic token</Button>
+          <CopyTokenButton value={credential} label="Copy classic token" />
         </div>
       )}
       {error && <ErrorBanner>{String(error)}</ErrorBanner>}

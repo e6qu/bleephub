@@ -631,7 +631,9 @@ func (s *Server) handleListReleaseAssets(w http.ResponseWriter, r *http.Request)
 	for _, a := range assets {
 		out = append(out, releaseAssetToJSON(a, s.store, s.baseURL(r), repo, rel))
 	}
-	writeJSON(w, http.StatusOK, out)
+	// GitHub paginates the release-assets list (30/page, Link header), like
+	// every sibling list in this file.
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleGetReleaseAsset(w http.ResponseWriter, r *http.Request) {

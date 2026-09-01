@@ -5,6 +5,30 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineEnterpriseMemberInvitationOrderField() {
+	r.enum("EnterpriseMemberInvitationOrderField", "Properties by which enterprise member invitation connections can be ordered.", graphql.EnumValueConfigMap{
+		"CREATED_AT": {
+			Value:       "CREATED_AT",
+			Description: "Order enterprise member invitations by creation time",
+		},
+	})
+}
+
+func (r *Registry) defineEnterpriseMemberOrder() {
+	r.input("EnterpriseMemberOrder", "Ordering options for enterprise member connections.", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"direction": {
+				Type:        graphql.NewNonNull(r.t("OrderDirection")),
+				Description: "The ordering direction.",
+			},
+			"field": {
+				Type:        graphql.NewNonNull(r.t("EnterpriseMemberOrderField")),
+				Description: "The field to order enterprise members by.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineEnterpriseMemberOrderField() {
 	r.enum("EnterpriseMemberOrderField", "Properties by which enterprise member connections can be ordered.", graphql.EnumValueConfigMap{
 		"CREATED_AT": {
@@ -4032,44 +4056,6 @@ func (r *Registry) defineIpAllowListEntry() {
 			"updatedAt": {
 				Type:        graphql.NewNonNull(r.t("DateTime")),
 				Description: "Identifies the date and time when the object was last updated.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineIpAllowListEntryConnection() {
-	r.object("IpAllowListEntryConnection", "The connection type for IpAllowListEntry.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"edges": {
-				Type:        graphql.NewList(r.t("IpAllowListEntryEdge")),
-				Description: "A list of edges.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("IpAllowListEntry")),
-				Description: "A list of nodes.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"totalCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the total count of items in the connection.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineIpAllowListEntryEdge() {
-	r.object("IpAllowListEntryEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("IpAllowListEntry"),
-				Description: "The item at the end of the edge.",
 			},
 		}
 	})

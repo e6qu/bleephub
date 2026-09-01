@@ -5,6 +5,151 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineRepositoryConnection() {
+	r.object("RepositoryConnection", "A list of repositories owned by the subject.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("RepositoryEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("Repository")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+			"totalDiskUsage": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "The total size in kilobytes of all repositories in the connection. Value will\nnever be larger than max 32-bit signed integer.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryContactLink() {
+	r.object("RepositoryContactLink", "A repository contact link.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"about": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The contact link purpose.",
+			},
+			"name": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The contact link name.",
+			},
+			"url": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The contact link URL.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryContributionType() {
+	r.enum("RepositoryContributionType", "The reason a repository is listed as 'contributed'.", graphql.EnumValueConfigMap{
+		"COMMIT": {
+			Value:       "COMMIT",
+			Description: "Created a commit",
+		},
+		"ISSUE": {
+			Value:       "ISSUE",
+			Description: "Created an issue",
+		},
+		"PULL_REQUEST": {
+			Value:       "PULL_REQUEST",
+			Description: "Created a pull request",
+		},
+		"PULL_REQUEST_REVIEW": {
+			Value:       "PULL_REQUEST_REVIEW",
+			Description: "Reviewed a pull request",
+		},
+		"REPOSITORY": {
+			Value:       "REPOSITORY",
+			Description: "Created the repository",
+		},
+	})
+}
+
+func (r *Registry) defineRepositoryCustomProperty() {
+	r.object("RepositoryCustomProperty", "A repository custom property.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"allowedValues": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("String"))),
+				Description: "The allowed values for the custom property. Required if `value_type` is `single_select` or `multi_select`.",
+			},
+			"defaultValue": {
+				Type:        r.t("CustomPropertyValue"),
+				Description: "The default value of the custom property, if the property is `required`.",
+			},
+			"description": {
+				Type:        r.t("String"),
+				Description: "The description of the custom property.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the RepositoryCustomProperty object",
+			},
+			"propertyName": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The name of the custom property.",
+			},
+			"regex": {
+				Type:        r.t("String"),
+				Description: "The regex pattern that the value of the custom property must match, if the `value_type` is `string`.",
+			},
+			"requireExplicitValues": {
+				Type:        r.t("Boolean"),
+				Description: "Whether this repository custom property requires explicit values.",
+			},
+			"required": {
+				Type:        r.t("Boolean"),
+				Description: "Whether the custom property is required.",
+			},
+			"source": {
+				Type:        graphql.NewNonNull(r.t("CustomPropertySource")),
+				Description: "The source type of the custom property.",
+			},
+			"valueType": {
+				Type:        graphql.NewNonNull(r.t("CustomPropertyValueType")),
+				Description: "The value type of the custom property.",
+			},
+			"valuesEditableBy": {
+				Type:        graphql.NewNonNull(r.t("RepositoryCustomPropertyValuesEditableBy")),
+				Description: "Who can edit the values of this repository custom property.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryCustomPropertyConnection() {
+	r.object("RepositoryCustomPropertyConnection", "The connection type for RepositoryCustomProperty.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("RepositoryCustomPropertyEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("RepositoryCustomProperty")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineRepositoryCustomPropertyEdge() {
 	r.object("RepositoryCustomPropertyEdge", "An edge in a connection.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -2465,6 +2610,10 @@ func (r *Registry) defineResolveReviewThreadInput() {
 				Type:        r.t("String"),
 				Description: "A unique identifier for the client performing the mutation.",
 			},
+			"resolutionReason": {
+				Type:        r.t("PullRequestReviewThreadResolutionReason"),
+				Description: "The reason a Copilot code review thread was resolved.",
+			},
 			"threadId": {
 				Type:        graphql.NewNonNull(r.t("ID")),
 				Description: "The ID of the thread to resolve",
@@ -3176,121 +3325,5 @@ func (r *Registry) defineSavedReplyOrder() {
 				Description: "The field to order saved replies by.",
 			},
 		}
-	})
-}
-
-func (r *Registry) defineSavedReplyOrderField() {
-	r.enum("SavedReplyOrderField", "Properties by which saved reply connections can be ordered.", graphql.EnumValueConfigMap{
-		"UPDATED_AT": {
-			Value:       "UPDATED_AT",
-			Description: "Order saved reply by when they were updated.",
-		},
-	})
-}
-
-func (r *Registry) defineSearchResultItem() {
-	r.union("SearchResultItem", "The results of a search.", []string{"App", "Discussion", "Issue", "MarketplaceListing", "Organization", "PullRequest", "Repository", "User"})
-}
-
-func (r *Registry) defineSearchResultItemConnection() {
-	r.object("SearchResultItemConnection", "A list of results that matched against a search query. Regardless of the number\nof matches, a maximum of 1,000 results will be available across all types,\npotentially split across many pages.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"codeCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "The total number of pieces of code that matched the search query. Regardless\nof the total number of matches, a maximum of 1,000 results will be available\nacross all types.",
-			},
-			"discussionCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "The total number of discussions that matched the search query. Regardless of\nthe total number of matches, a maximum of 1,000 results will be available\nacross all types.",
-			},
-			"edges": {
-				Type:        graphql.NewList(r.t("SearchResultItemEdge")),
-				Description: "A list of edges.",
-			},
-			"issueCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "The total number of issues that matched the search query. Regardless of the\ntotal number of matches, a maximum of 1,000 results will be available across all types.",
-			},
-			"issueSearchType": {
-				Type:        r.t("IssueSearchType"),
-				Description: "The type of search that was performed for issues (lexical, semantic, or hybrid)",
-			},
-			"lexicalFallbackReason": {
-				Type:        graphql.NewList(graphql.NewNonNull(r.t("LexicalFallbackReason"))),
-				Description: "When a semantic or hybrid search falls back to lexical, the reasons why the fallback occurred.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("SearchResultItem")),
-				Description: "A list of nodes.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"repositoryCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "The total number of repositories that matched the search query. Regardless of\nthe total number of matches, a maximum of 1,000 results will be available\nacross all types.",
-			},
-			"userCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "The total number of users that matched the search query. Regardless of the\ntotal number of matches, a maximum of 1,000 results will be available across all types.",
-			},
-			"wikiCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "The total number of wiki pages that matched the search query. Regardless of\nthe total number of matches, a maximum of 1,000 results will be available\nacross all types.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSearchResultItemEdge() {
-	r.object("SearchResultItemEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("SearchResultItem"),
-				Description: "The item at the end of the edge.",
-			},
-			"textMatches": {
-				Type:        graphql.NewList(r.t("TextMatch")),
-				Description: "Text matches on the result found.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSearchType() {
-	r.enum("SearchType", "Represents the individual results of a search.", graphql.EnumValueConfigMap{
-		"DISCUSSION": {
-			Value:       "DISCUSSION",
-			Description: "Returns matching discussions in repositories.",
-		},
-		"ISSUE": {
-			Value:       "ISSUE",
-			Description: "Returns results matching issues in repositories.",
-		},
-		"ISSUE_ADVANCED": {
-			Value:       "ISSUE_ADVANCED",
-			Description: "Returns results matching issues in repositories.",
-		},
-		"ISSUE_HYBRID": {
-			Value:       "ISSUE_HYBRID",
-			Description: "Returns results matching issues using hybrid (lexical + semantic) search.",
-		},
-		"ISSUE_SEMANTIC": {
-			Value:       "ISSUE_SEMANTIC",
-			Description: "Returns results matching issues using semantic search.",
-		},
-		"REPOSITORY": {
-			Value:       "REPOSITORY",
-			Description: "Returns results matching repositories.",
-		},
-		"USER": {
-			Value:       "USER",
-			Description: "Returns results matching users and organizations on GitHub.",
-		},
 	})
 }

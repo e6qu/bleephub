@@ -5,6 +5,94 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineProjectV2ItemFieldIterationValue() {
+	r.object("ProjectV2ItemFieldIterationValue", "The value of an iteration field in a Project item.", []string{"Node", "ProjectV2ItemFieldValueCommon"}, func() graphql.Fields {
+		return graphql.Fields{
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"creator": {
+				Type:        r.t("Actor"),
+				Description: "The actor who created the item.",
+			},
+			"databaseId": {
+				Type:        r.t("Int"),
+				Description: "Identifies the primary key from the database.",
+			},
+			"duration": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "The duration of the iteration in days.",
+			},
+			"field": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
+				Description: "The project field that contains this value.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the ProjectV2ItemFieldIterationValue object",
+			},
+			"item": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2Item")),
+				Description: "The project item that contains this value.",
+			},
+			"iterationId": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The ID of the iteration.",
+			},
+			"startDate": {
+				Type:        graphql.NewNonNull(r.t("Date")),
+				Description: "The start date of the iteration.",
+			},
+			"title": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The title of the iteration.",
+			},
+			"titleHTML": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The title of the iteration, with HTML.",
+			},
+			"updatedAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was last updated.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineProjectV2ItemFieldLabelValue() {
+	r.object("ProjectV2ItemFieldLabelValue", "The value of the labels field in a Project item.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"field": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
+				Description: "The field that contains this value.",
+			},
+			"labels": {
+				Type:        r.t("LabelConnection"),
+				Description: "Labels value of a field",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+		}
+	})
+}
+
 func (r *Registry) defineProjectV2ItemFieldMilestoneValue() {
 	r.object("ProjectV2ItemFieldMilestoneValue", "The value of a milestone field in a Project item.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -4254,6 +4342,23 @@ func (r *Registry) definePullRequestReviewThreadEdge() {
 	})
 }
 
+func (r *Registry) definePullRequestReviewThreadResolutionReason() {
+	r.enum("PullRequestReviewThreadResolutionReason", "The possible reasons a pull request review thread was resolved.", graphql.EnumValueConfigMap{
+		"ADDRESSED": {
+			Value:       "ADDRESSED",
+			Description: "The review comment was addressed.",
+		},
+		"INVALID": {
+			Value:       "INVALID",
+			Description: "The review comment is invalid.",
+		},
+		"WONT_FIX": {
+			Value:       "WONT_FIX",
+			Description: "The review comment will not be addressed.",
+		},
+	})
+}
+
 func (r *Registry) definePullRequestReviewThreadSubjectType() {
 	r.enum("PullRequestReviewThreadSubjectType", "The possible subject types of a pull request review comment.", graphql.EnumValueConfigMap{
 		"FILE": {
@@ -4957,58 +5062,4 @@ func (r *Registry) definePullRequestUpdateState() {
 			Description: "A pull request that is still open.",
 		},
 	})
-}
-
-func (r *Registry) definePush() {
-	r.object("Push", "A Git push.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the Push object",
-			},
-			"nextSha": {
-				Type:        r.t("GitObjectID"),
-				Description: "The SHA after the push",
-			},
-			"permalink": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The permalink for this push.",
-			},
-			"previousSha": {
-				Type:        r.t("GitObjectID"),
-				Description: "The SHA before the push",
-			},
-			"pusher": {
-				Type:        graphql.NewNonNull(r.t("Actor")),
-				Description: "The actor who pushed",
-			},
-			"repository": {
-				Type:        graphql.NewNonNull(r.t("Repository")),
-				Description: "The repository that was pushed to",
-			},
-		}
-	})
-}
-
-func (r *Registry) definePushAllowance() {
-	r.object("PushAllowance", "A team, user, or app who has the ability to push to a protected branch.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"actor": {
-				Type:        r.t("PushAllowanceActor"),
-				Description: "The actor that can push.",
-			},
-			"branchProtectionRule": {
-				Type:        r.t("BranchProtectionRule"),
-				Description: "Identifies the branch protection rule associated with the allowed user, team, or app.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the PushAllowance object",
-			},
-		}
-	})
-}
-
-func (r *Registry) definePushAllowanceActor() {
-	r.union("PushAllowanceActor", "Types that can be an actor.", []string{"App", "Team", "User"})
 }
