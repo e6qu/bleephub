@@ -559,6 +559,10 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnprocessableEntity, "Pull Request is closed")
 		return
 	}
+	if pr.IsDraft {
+		writeGHError(w, http.StatusMethodNotAllowed, "Draft pull requests cannot be merged.")
+		return
+	}
 
 	var req struct {
 		CommitTitle   string `json:"commit_title"`
@@ -1149,6 +1153,15 @@ func (s *Server) handleDismissPRReview(w http.ResponseWriter, r *http.Request) {
 	review := s.store.GetPullRequestReview(reviewID)
 	if review == nil || review.PRID != pr.ID {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	// Only a submitted APPROVED / CHANGES_REQUESTED review can be dismissed;
+	// GitHub 422s a commented/pending/already-dismissed review.
+	switch review.State {
+	case "APPROVED", "CHANGES_REQUESTED":
+	default:
+		word := strings.ToLower(strings.ReplaceAll(review.State, "_", " "))
+		writeGHError(w, http.StatusUnprocessableEntity, "Can not dismiss a "+word+" pull request review")
 		return
 	}
 
@@ -1866,6 +1879,12 @@ func pullRequestToJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFull
 	case "CONFLICTING":
 		mergeableState = "dirty"
 	}
+	// An open draft is not mergeable on GitHub regardless of conflicts; it reports
+	// mergeable_state "draft" and mergeable false, and PUT .../merge is a 405.
+	draftBlocked := pr.State == "OPEN" && pr.IsDraft
+	if draftBlocked {
+		mergeableState = "draft"
+	}
 
 	var mergedByJSON interface{}
 	if pr.MergedByID > 0 {
@@ -1882,6 +1901,9 @@ func pullRequestToJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFull
 	case "MERGEABLE":
 		mergeable = true
 	case "CONFLICTING":
+		mergeable = false
+	}
+	if draftBlocked {
 		mergeable = false
 	}
 	out["mergeable"] = mergeable

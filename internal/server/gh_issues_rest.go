@@ -524,6 +524,17 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// GitHub restricts state_reason to a fixed set (null clears it); anything
+	// else is a 422 rather than being stored verbatim.
+	if v, ok := req["state_reason"].(string); ok && v != "" {
+		switch strings.ToLower(v) {
+		case "completed", "not_planned", "reopened":
+		default:
+			store.WriteGHValidationError(w, "Issue", "state_reason", "invalid")
+			return
+		}
+	}
+
 	s.store.Mu.RLock()
 	previousState := issue.State
 	s.store.Mu.RUnlock()
@@ -558,7 +569,8 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 			case "open":
 				i.State = "OPEN"
 				i.ClosedAt = nil
-				i.StateReason = ""
+				// GitHub stamps state_reason "reopened" on reopen, not null.
+				i.StateReason = "REOPENED"
 			}
 		}
 		if v, ok := req["state_reason"].(string); ok {
