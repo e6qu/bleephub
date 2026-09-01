@@ -570,8 +570,11 @@ func milestoneToJSON(ms *store.Milestone, st *store.Store, baseURL, repoFullName
 	if u, ok := st.Users[ms.CreatorID]; ok {
 		creatorJSON = store.UserToJSON(u, baseURL)
 	}
+	// A milestone belongs to one repository, so its issues/PRs all live in that
+	// repo — scan only the per-repo indexes, not the global cross-repo maps
+	// (which made listing N milestones O(N × all-issues-in-the-instance)).
 	openIssues, closedIssues := 0, 0
-	for _, issue := range st.Issues {
+	for _, issue := range st.IssuesByRepo[ms.RepoID] {
 		if issue.MilestoneID != ms.ID {
 			continue
 		}
@@ -581,7 +584,7 @@ func milestoneToJSON(ms *store.Milestone, st *store.Store, baseURL, repoFullName
 			closedIssues++
 		}
 	}
-	for _, pr := range st.PullRequests {
+	for _, pr := range st.PullsByRepo[ms.RepoID] {
 		if pr.MilestoneID != ms.ID {
 			continue
 		}

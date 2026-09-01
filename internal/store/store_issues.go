@@ -855,6 +855,9 @@ func (st *Store) issueByRepoIDAndNumber(repoID, number int) *Issue {
 
 // AddIssueAssignees adds assignees (ignoring duplicates) with an "assigned"
 // event each. Returns true when the issue exists.
+// maxAssignees is GitHub's cap on the number of assignees on an issue or PR.
+const maxAssignees = 10
+
 func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -862,9 +865,17 @@ func (st *Store) AddIssueAssignees(repoID int, issueNumber int, assigneeIDs []in
 	if issue == nil {
 		return false
 	}
+	// GitHub silently drops non-assignable users and caps the total at 10.
+	assignable := st.assignableUserIDsLocked(st.Repos[repoID])
 	batch := NewPersistBatch(st.Persist)
 	added := false
 	for _, uid := range assigneeIDs {
+		if len(issue.AssigneeIDs) >= maxAssignees {
+			break
+		}
+		if !assignable[uid] {
+			continue
+		}
 		found := false
 		for _, existing := range issue.AssigneeIDs {
 			if existing == uid {

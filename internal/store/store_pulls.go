@@ -396,6 +396,80 @@ func (st *Store) SetPullRequestDiffStats(prID, changedFiles, additions, deletion
 	}
 }
 
+// AddPullRequestAssignees mirrors AddIssueAssignees for a pull request (a PR is
+// an issue on GitHub, served by the shared issues endpoint). Non-assignable
+// users are dropped and the total is capped at 10.
+func (st *Store) AddPullRequestAssignees(repoID, prNumber int, assigneeIDs []int, actorID int) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	pr := st.PullsByRepo[repoID][prNumber]
+	if pr == nil {
+		return false
+	}
+	assignable := st.assignableUserIDsLocked(st.Repos[repoID])
+	batch := NewPersistBatch(st.Persist)
+	added := false
+	for _, uid := range assigneeIDs {
+		if len(pr.AssigneeIDs) >= maxAssignees {
+			break
+		}
+		if !assignable[uid] {
+			continue
+		}
+		found := false
+		for _, existing := range pr.AssigneeIDs {
+			if existing == uid {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		pr.AssigneeIDs = append(pr.AssigneeIDs, uid)
+		st.recordPullRequestEventBatchLocked(batch, repoID, pr.ID, actorID, "assigned", "", uid)
+		added = true
+	}
+	if added {
+		pr.UpdatedAt = st.CurrentTime()
+		batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
+		if err := batch.Commit(); err != nil {
+			panic(&PersistenceFailure{Op: "batch", Bucket: "pull_requests", Err: err})
+		}
+	}
+	return true
+}
+
+// RemovePullRequestAssignees mirrors RemoveIssueAssignees for a pull request.
+func (st *Store) RemovePullRequestAssignees(repoID, prNumber int, assigneeIDs []int, actorID int) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	pr := st.PullsByRepo[repoID][prNumber]
+	if pr == nil {
+		return false
+	}
+	batch := NewPersistBatch(st.Persist)
+	removed := false
+	for _, uid := range assigneeIDs {
+		for idx, existing := range pr.AssigneeIDs {
+			if existing == uid {
+				pr.AssigneeIDs = append(pr.AssigneeIDs[:idx], pr.AssigneeIDs[idx+1:]...)
+				st.recordPullRequestEventBatchLocked(batch, repoID, pr.ID, actorID, "unassigned", "", uid)
+				removed = true
+				break
+			}
+		}
+	}
+	if removed {
+		pr.UpdatedAt = st.CurrentTime()
+		batch.Put("pull_requests", strconv.Itoa(pr.ID), pr)
+		if err := batch.Commit(); err != nil {
+			panic(&PersistenceFailure{Op: "batch", Bucket: "pull_requests", Err: err})
+		}
+	}
+	return true
+}
+
 func (st *Store) SetPullRequestLabels(repoID, prNumber int, labelIDs []int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

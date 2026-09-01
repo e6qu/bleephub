@@ -1576,7 +1576,12 @@ func reviewerIDsFromRequest(st *store.Store, reviewers []interface{}) []int {
 			}
 		case map[string]interface{}:
 			if id, ok := x["id"].(float64); ok {
-				ids = append(ids, int(id))
+				// Verify the id resolves to a real user; an unverified numeric id
+				// (e.g. {"id": 999999}) otherwise polluted RequestedReviewerIDs and
+				// emitted a review_requested event for a phantom reviewer.
+				if u := st.GetUserByID(int(id)); u != nil {
+					ids = append(ids, u.ID)
+				}
 			} else if login, ok := x["login"].(string); ok {
 				if u := st.LookupUserByLogin(login); u != nil {
 					ids = append(ids, u.ID)
