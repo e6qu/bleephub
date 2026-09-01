@@ -1079,8 +1079,14 @@ func (s *Server) handleClearIssueLabels(w http.ResponseWriter, r *http.Request) 
 // Issue assignee handlers
 
 func (s *Server) handleAddIssueAssignees(w http.ResponseWriter, r *http.Request) {
-	repo, issue, ok := s.resolveRepoIssue(w, r)
-	if !ok {
+	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	num, err := strconv.Atoi(r.PathValue("number"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	user := ghUserFromContext(r.Context())
@@ -1091,8 +1097,25 @@ func (s *Server) handleAddIssueAssignees(w http.ResponseWriter, r *http.Request)
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-
 	assigneeIDs := resolveUserIDs(s.store, req.Assignees)
+
+	issue := s.store.GetIssueByNumber(repo.ID, num)
+	if issue == nil {
+		// PRs share the issue number space and are assignable through the issues
+		// endpoint; the sibling label handler already falls back this way.
+		pr := s.store.GetPullRequestByNumber(repo.ID, num)
+		if pr == nil {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		s.store.AddPullRequestAssignees(repo.ID, pr.Number, assigneeIDs, user.ID)
+		updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
+		s.pullRequestEmitter(repo, updated, user).emitAssigneeDelta(pr.AssigneeIDs, updated.AssigneeIDs)
+		prJSON := issueToJSONForPR(updated, s.store, s.baseURL(r), repo.FullName)
+		writeJSONCreated(w, jsonStringField(prJSON, "url"), prJSON)
+		return
+	}
+
 	s.store.AddIssueAssignees(repo.ID, issue.Number, assigneeIDs, user.ID)
 	updated := s.store.GetIssue(issue.ID)
 	s.issueEmitter(repo, updated, user).emitAssigneeDelta(issue.AssigneeIDs, updated.AssigneeIDs)
@@ -1102,8 +1125,14 @@ func (s *Server) handleAddIssueAssignees(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleRemoveIssueAssignees(w http.ResponseWriter, r *http.Request) {
-	repo, issue, ok := s.resolveRepoIssue(w, r)
-	if !ok {
+	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	num, err := strconv.Atoi(r.PathValue("number"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	user := ghUserFromContext(r.Context())
@@ -1114,8 +1143,22 @@ func (s *Server) handleRemoveIssueAssignees(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-
 	assigneeIDs := resolveUserIDs(s.store, req.Assignees)
+
+	issue := s.store.GetIssueByNumber(repo.ID, num)
+	if issue == nil {
+		pr := s.store.GetPullRequestByNumber(repo.ID, num)
+		if pr == nil {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		s.store.RemovePullRequestAssignees(repo.ID, pr.Number, assigneeIDs, user.ID)
+		updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
+		s.pullRequestEmitter(repo, updated, user).emitAssigneeDelta(pr.AssigneeIDs, updated.AssigneeIDs)
+		writeJSON(w, http.StatusOK, issueToJSONForPR(updated, s.store, s.baseURL(r), repo.FullName))
+		return
+	}
+
 	s.store.RemoveIssueAssignees(repo.ID, issue.Number, assigneeIDs, user.ID)
 	updated := s.store.GetIssue(issue.ID)
 	s.issueEmitter(repo, updated, user).emitAssigneeDelta(issue.AssigneeIDs, updated.AssigneeIDs)
@@ -1144,32 +1187,6 @@ func (s *Server) handleUnpinIssueComment(w http.ResponseWriter, r *http.Request)
 	s.store.UnpinIssueComment(comment.ID)
 	parentNumber := commentParentNumber(s.store, comment)
 	writeJSON(w, http.StatusOK, store.CommentToJSON(s.store.GetIssueComment(comment.ID), s.store, s.baseURL(r), repo.FullName, parentNumber))
-}
-
-// resolveRepoIssue resolves owner/repo/{number}, writing the error response on
-// failure.
-func (s *Server) resolveRepoIssue(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Issue, bool) {
-	owner := r.PathValue("owner")
-	repoName := r.PathValue("repo")
-	numStr := r.PathValue("number")
-	repo := s.store.GetRepo(owner, repoName)
-	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return nil, nil, false
-	}
-
-	num, err := strconv.Atoi(numStr)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return nil, nil, false
-	}
-
-	issue := s.store.GetIssueByNumber(repo.ID, num)
-	if issue == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return nil, nil, false
-	}
-	return repo, issue, true
 }
 
 // resolveRepoIssueComment resolves owner/repo/{comment_id}, writing the error

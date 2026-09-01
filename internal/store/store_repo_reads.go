@@ -208,28 +208,44 @@ func (st *Store) ResolveUserBySignature(name, email string) *User {
 func (st *Store) ListAssignableUsers(repo *Repo) []*User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	seen := map[int]bool{}
 	out := []*User{}
-	add := func(u *User) {
-		if u != nil && !seen[u.ID] {
-			seen[u.ID] = true
+	for id := range st.assignableUserIDsLocked(repo) {
+		if u := st.Users[id]; u != nil {
 			out = append(out, u)
-		}
-	}
-	add(repo.Owner)
-	owner, name, ok := SplitRepoFullName(repo.FullName)
-	if ok {
-		for login := range st.RepoCollaborators[owner+"/"+name] {
-			add(st.UsersByLogin[login])
-		}
-		if org := st.OrgsByLogin[owner]; org != nil {
-			for _, m := range st.Memberships {
-				if m.OrgID == org.ID && m.State == MembershipStateActive {
-					add(st.Users[m.UserID])
-				}
-			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Login < out[j].Login })
 	return snapshotUsers(out)
+}
+
+// assignableUserIDsLocked is the set of users who may be assigned to an issue or
+// PR in the repo: the owner, its collaborators, and (for an org repo) active org
+// members. Callers hold st.Mu.
+func (st *Store) assignableUserIDsLocked(repo *Repo) map[int]bool {
+	ids := map[int]bool{}
+	if repo == nil {
+		return ids
+	}
+	if repo.Owner != nil {
+		ids[repo.Owner.ID] = true
+	}
+	owner, name, ok := SplitRepoFullName(repo.FullName)
+	if !ok {
+		return ids
+	}
+	for login := range st.RepoCollaborators[owner+"/"+name] {
+		if u := st.UsersByLogin[login]; u != nil {
+			ids[u.ID] = true
+		}
+	}
+	if org := st.OrgsByLogin[owner]; org != nil {
+		for _, m := range st.Memberships {
+			if m.OrgID == org.ID && m.State == MembershipStateActive {
+				if u := st.Users[m.UserID]; u != nil {
+					ids[u.ID] = true
+				}
+			}
+		}
+	}
+	return ids
 }
