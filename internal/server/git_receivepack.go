@@ -427,6 +427,14 @@ func (s *Server) applyGitReceivePack(ctx context.Context, target *gitTarget, req
 // possible: the refusal must be known before the first reference moves.
 func (s *Server) decideGitPushCommands(ctx context.Context, target *gitTarget, outcome *gitReceivePackOutcome) error {
 	repo, stor := target.repo, target.stor
+	// An archived repository (and its wiki) is read-only: refuse every ref
+	// update, matching GitHub.
+	if repo != nil && repo.Archived {
+		for _, status := range outcome.report.statuses {
+			status.status = gitStatusLine("This repository was archived so it is read-only.")
+		}
+		return nil
+	}
 	for _, status := range outcome.report.statuses {
 		command := status.command
 		kind, err := classifyPushedRefWrite(stor, command)

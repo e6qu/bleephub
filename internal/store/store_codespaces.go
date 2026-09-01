@@ -544,6 +544,15 @@ func (st *Store) SetCodespaceState(id int, state string, markUsed bool) {
 	if cs == nil {
 		return
 	}
+	// A codespace under deletion must not be resurrected by a slow lifecycle
+	// goroutine. Provisioning/start/stop run asynchronously, so under load one
+	// could land its state write ("Available") after DELETE set "Deleting" but
+	// before DeleteCodespace re-checks — flipping State out from under it and
+	// failing the delete with a 500. "Deleting" is terminal for state observers;
+	// only DeleteCodespace's own rollback restores the prior state (a direct write).
+	if cs.State == "Deleting" {
+		return
+	}
 	cs.State = state
 	if markUsed {
 		cs.LastUsedAt = st.CurrentTime()
