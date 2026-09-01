@@ -171,11 +171,17 @@ func (r viewerUserRule) authorize(s *Resolver, p graphql.ResolveParams, input ma
 // input, which names the pull request directly or through the pending review.
 func reviewSubjectMutationTarget() func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
-		if nodeID, _ := input["pullRequestId"].(string); nodeID != "" {
-			return mutationTargetPullRequest("pullRequestId")(s, input)
-		}
+		// Mirror resolveAddPullRequestReviewComment's precedence EXACTLY: it
+		// replies to inReplyTo's parent — posting onto that comment's repo —
+		// before it ever consults pullRequestId. If authz resolved pullRequestId
+		// first, a caller could pass an accessible pullRequestId to clear the gate
+		// while the write lands on the inReplyTo comment's (possibly private)
+		// repo. The key that decides the actual write must be the key authz gates.
 		if nodeID, _ := input["inReplyTo"].(string); nodeID != "" {
 			return mutationTargetReviewComment("inReplyTo")(s, input)
+		}
+		if nodeID, _ := input["pullRequestId"].(string); nodeID != "" {
+			return mutationTargetPullRequest("pullRequestId")(s, input)
 		}
 		return mutationTargetReview("pullRequestReviewId")(s, input)
 	}

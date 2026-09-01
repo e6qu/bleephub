@@ -506,6 +506,9 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 
 	var req struct {
 		Message string `json:"message"`
@@ -681,6 +684,9 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.viewerCanPushRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
+		return
+	}
+	if s.rejectIfArchived(w, repo) {
 		return
 	}
 

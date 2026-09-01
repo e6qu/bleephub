@@ -422,6 +422,9 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 	stor := s.store.GetGitStorage(r.PathValue("owner"), r.PathValue("repo"))
 	if stor == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
