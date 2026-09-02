@@ -3665,6 +3665,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orgs/{org}/actions/runners/deprecations/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get runner version end-of-life schedule for an organization
+         * @description Gets the end-of-life schedule for a specific runner version in an organization. Returns the runner version
+         *     and the dates when registration and runtime support will end.
+         *
+         *     Authenticated users must have admin access to the organization to use this endpoint.
+         *
+         *     OAuth app tokens and personal access tokens (classic) need the `admin:org` scope to use this endpoint.
+         */
+        get: operations["actions/get-runner-version-deprecation-for-org"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/orgs/{org}/actions/runners/downloads": {
         parameters: {
             query?: never;
@@ -9939,6 +9964,31 @@ export interface paths {
          *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint.
          */
         get: operations["actions/list-self-hosted-runners-for-repo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repos/{owner}/{repo}/actions/runners/deprecations/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get runner version end-of-life schedule for a repository
+         * @description Gets the end-of-life schedule for a specific runner version in a repository. Returns the runner version
+         *     and the dates when registration and runtime support will end.
+         *
+         *     Authenticated users must have admin access to the repository to use this endpoint.
+         *
+         *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint.
+         */
+        get: operations["actions/get-runner-version-deprecation-for-repo"];
         put?: never;
         post?: never;
         delete?: never;
@@ -40802,6 +40852,27 @@ export interface components {
              * @default false
              */
             start_private_fork: boolean;
+        };
+        /**
+         * Repository Advisory Description Validation Error
+         * @description The description does not answer the repository's report template.
+         */
+        "repository-advisory-description-validation-error": {
+            message: string;
+            documentation_url: string;
+            errors?: {
+                resource?: string;
+                field?: string;
+                message?: string;
+                /** @description A machine-readable identifier for the problem. `missing_section`, `empty_section`, `unchecked_required_option`, and `sections_out_of_order` come from validating the description against the repository's report template; other codes are shared with other validation failures on this endpoint. */
+                code: string;
+                index?: number;
+                value?: (string | null) | (number | null) | (string[] | null);
+                /** @description The report template section the violation concerns. */
+                section?: string;
+                /** @description The checkbox option left unticked. Only present when `code` is `unchecked_required_option`. */
+                option?: string;
+            }[];
         };
         "private-vulnerability-report-create": {
             /** @description A short summary of the advisory. */
@@ -107523,6 +107594,52 @@ export interface operations {
             };
         };
     };
+    "actions/get-runner-version-deprecation-for-org": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+                /**
+                 * @description The runner version to look up.
+                 * @example 2.300.0
+                 */
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description The runner version string.
+                         * @example 2.300.0
+                         */
+                        runner_version: string;
+                        /**
+                         * Format: date-time
+                         * @description The date after which this runner version can no longer register. Null if no schedule is set.
+                         * @example 2026-08-01T00:00:00Z
+                         */
+                        registration_deprecates_at?: string | null;
+                        /**
+                         * Format: date-time
+                         * @description The date after which jobs will no longer be dispatched to runners on this version.
+                         * @example 2026-09-01T00:00:00Z
+                         */
+                        runtime_deprecates_at?: string | null;
+                    };
+                };
+            };
+        };
+    };
     "actions/list-runner-applications-for-org": {
         parameters: {
             query?: never;
@@ -120423,6 +120540,54 @@ export interface operations {
                     "application/json": {
                         total_count: number;
                         runners: components["schemas"]["runner"][];
+                    };
+                };
+            };
+        };
+    };
+    "actions/get-runner-version-deprecation-for-repo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+                /**
+                 * @description The runner version to look up.
+                 * @example 2.300.0
+                 */
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description The runner version string.
+                         * @example 2.300.0
+                         */
+                        runner_version: string;
+                        /**
+                         * Format: date-time
+                         * @description The date after which this runner version can no longer register. Null if no schedule is set.
+                         * @example 2026-08-01T00:00:00Z
+                         */
+                        registration_deprecates_at?: string | null;
+                        /**
+                         * Format: date-time
+                         * @description The date after which jobs will no longer be dispatched to runners on this version.
+                         * @example 2026-09-01T00:00:00Z
+                         */
+                        runtime_deprecates_at?: string | null;
                     };
                 };
             };
@@ -136797,7 +136962,15 @@ export interface operations {
             };
             403: components["responses"]["forbidden"];
             404: components["responses"]["not_found"];
-            422: components["responses"]["validation_failed"];
+            /** @description Validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["repository-advisory-description-validation-error"];
+                };
+            };
         };
     };
     "security-advisories/create-private-vulnerability-report": {
@@ -136829,7 +137002,15 @@ export interface operations {
             };
             403: components["responses"]["forbidden"];
             404: components["responses"]["not_found"];
-            422: components["responses"]["validation_failed"];
+            /** @description Validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["repository-advisory-description-validation-error"];
+                };
+            };
         };
     };
     "security-advisories/get-repository-advisory": {

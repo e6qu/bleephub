@@ -31,7 +31,7 @@ func TestDismissStaleReviewsOnPush(t *testing.T) {
 		"event": "APPROVE", "body": "LGTM",
 	}).Body.Close()
 
-	if got := s.countApprovingReviews(pr.ID); got != 1 {
+	if got := s.countApprovingReviews(pr.ID, pr.AuthorID); got != 1 {
 		t.Fatalf("approving reviews before push = %d, want 1", got)
 	}
 
@@ -39,7 +39,7 @@ func TestDismissStaleReviewsOnPush(t *testing.T) {
 	admin := s.store.LookupUserByLogin("admin")
 	s.firePullRequestSynchronize(repo, repo.FullName, "feat", admin, "0000", "1111")
 
-	if got := s.countApprovingReviews(pr.ID); got != 0 {
+	if got := s.countApprovingReviews(pr.ID, pr.AuthorID); got != 0 {
 		t.Fatalf("approving reviews after push = %d, want 0 (stale approval must be dismissed)", got)
 	}
 	// The dismissed review is recorded as DISMISSED, not silently dropped.

@@ -153,7 +153,7 @@
       },
       {
         "event": "merge_group",
-        "line": 171,
+        "line": 181,
         "producer": "emitWebhookEvent",
         "source": "internal/server/merge_queue_processor.go"
       },
@@ -243,7 +243,7 @@
       },
       {
         "event": "pull_request",
-        "line": 140,
+        "line": 150,
         "producer": "emitWebhookEvent",
         "source": "internal/server/merge_queue_processor.go"
       },
@@ -2626,6 +2626,14 @@
         "method": "GET",
         "operation_id": "actions/list-self-hosted-runners-for-org",
         "path": "/orgs/{org}/actions/runners",
+        "statuses": [
+          "200"
+        ]
+      },
+      {
+        "method": "GET",
+        "operation_id": "actions/get-runner-version-deprecation-for-org",
+        "path": "/orgs/{org}/actions/runners/deprecations/{version}",
         "statuses": [
           "200"
         ]
@@ -6005,6 +6013,14 @@
         "method": "GET",
         "operation_id": "actions/list-self-hosted-runners-for-repo",
         "path": "/repos/{owner}/{repo}/actions/runners",
+        "statuses": [
+          "200"
+        ]
+      },
+      {
+        "method": "GET",
+        "operation_id": "actions/get-runner-version-deprecation-for-repo",
+        "path": "/repos/{owner}/{repo}/actions/runners/deprecations/{version}",
         "statuses": [
           "200"
         ]
@@ -12596,14 +12612,12 @@
           "missing_operations": [
             "DELETE /enterprises/{}/credential-authorizations",
             "GET /enterprises/{}/actions/runners/deprecations/{}",
-            "GET /orgs/{}/actions/runners/deprecations/{}",
-            "GET /repos/{}/{}/actions/runners/deprecations/{}",
             "POST /orgs/{}/credential-authorizations/revoke-all",
             "POST /orgs/{}/credential-authorizations/revoke-credential-type",
             "POST /orgs/{}/credential-authorizations/{}/revoke",
             "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type"
           ],
-          "represented_operations": 1464
+          "represented_operations": 1466
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -15748,6 +15762,12 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
+        "line": 0,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/actions/runners/deprecations/{version}",
+        "source": "runtime route table (programmatic registration)"
+      },
+      {
         "line": 50,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runners/downloads",
@@ -16928,6 +16948,12 @@
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners",
         "source": "internal/server/gh_actions_rest.go"
+      },
+      {
+        "line": 0,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/actions/runners/deprecations/{version}",
+        "source": "runtime route table (programmatic registration)"
       },
       {
         "line": 39,
@@ -22258,7 +22284,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "d0c9206fb92d51d1acde0699364ca06e489141e78cdee0081e4af4da013eeca0"
+    "vendored_openapi_sha256": "f279b177231838aa3826337e05a30eba201be7becd6e05767a05c2b5f39e5b04"
   },
   "schema_version": 1,
   "sources": {

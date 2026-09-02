@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -128,6 +129,15 @@ func (s *Server) processMergeQueueFront(repo *store.Repo, baseBranch string, pr 
 		enabler = s.store.GetUserByID(repo.OwnerID)
 	}
 	if enabler == nil {
+		return false
+	}
+	// Enforce the review-family branch-protection requirements (required reviews,
+	// code owners, changes-requested, draft) that the queue's check-only path does
+	// not — evaluated as the merge's attributed actor. GitHub keeps an ineligible
+	// PR queued rather than merging it, so skip (leave queued) until it qualifies.
+	if ok, msg := s.mergeQueueEligible(contextWithUser(context.Background(), enabler), repo, pr); !ok {
+		s.logger.Info().Str("repo", repo.FullName).Int("pr", pr.Number).
+			Msg("merge queue: entry not yet mergeable: " + msg)
 		return false
 	}
 	if _, errMsg := s.completePullRequestMerge(repo, pr, enabler, "merge", "", "", headSha); errMsg != "" {

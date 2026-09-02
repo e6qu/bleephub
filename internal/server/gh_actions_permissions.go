@@ -219,6 +219,54 @@ func (s *Server) registerGHActionsPermissionsRoutes() {
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRemoveRunnerLabel))
 	s.route("DELETE /api/v3/orgs/{org}/actions/runners/{runner_id}/labels/{name}",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleRemoveRunnerLabel)))
+
+	// Runner version end-of-life schedule (admin access to the org/repo). Its
+	// path .../runners/deprecations/{version} crosses the two-segment runner path
+	// space with .../runners/{runner_id}/labels, which Go's ServeMux refuses to
+	// register alongside it. The specific labels route wins for its own paths; a
+	// {p1}/{p2} dispatcher (a superset that never conflicts) serves the
+	// deprecation case.
+	s.routeDispatch("GET /api/v3/repos/{owner}/{repo}/actions/runners/{p1}/{p2}",
+		s.handleRunnerTwoSegDispatch(false),
+		"GET /api/v3/repos/{owner}/{repo}/actions/runners/deprecations/{version}")
+	s.routeDispatch("GET /api/v3/orgs/{org}/actions/runners/{p1}/{p2}",
+		s.handleRunnerTwoSegDispatch(true),
+		"GET /api/v3/orgs/{org}/actions/runners/deprecations/{version}")
+}
+
+// handleRunnerTwoSegDispatch serves the two-segment runner GET operation that
+// shares its path space with .../runners/{runner_id}/labels. Only the
+// deprecation schedule lives here; the more-specific labels route handles
+// .../{runner_id}/labels directly, so anything else is a 404.
+func (s *Server) handleRunnerTwoSegDispatch(orgScoped bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("p1") != "deprecations" {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		r.SetPathValue("version", r.PathValue("p2"))
+		handler := s.handleGetRunnerVersionDeprecation
+		if orgScoped {
+			handler = s.orgGated(handler)
+		}
+		s.requirePerm(store.ScopeAdministration, store.PermRead, handler)(w, r)
+	}
+}
+
+// handleGetRunnerVersionDeprecation serves the runner version end-of-life
+// schedule for an org or repo. Bleephub does not deprecate runner versions, so
+// both dates are null — the schema documents null as "no schedule is set".
+func (s *Server) handleGetRunnerVersionDeprecation(w http.ResponseWriter, r *http.Request) {
+	version := r.PathValue("version")
+	if version == "" {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"runner_version":             version,
+		"registration_deprecates_at": nil,
+		"runtime_deprecates_at":      nil,
+	})
 }
 
 // Org permissions handlers

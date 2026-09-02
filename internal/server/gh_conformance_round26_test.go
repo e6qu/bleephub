@@ -173,7 +173,7 @@ func TestLatestReviewStateByTimeNotMapOrder(t *testing.T) {
 	s.store.PRReviews[9002] = &store.PullRequestReview{ID: 9002, PRID: pr.ID, AuthorID: 42, State: "APPROVED", SubmittedAt: &early}
 	s.store.Mu.Unlock()
 
-	if s.countApprovingReviews(pr.ID) != 0 {
+	if s.countApprovingReviews(pr.ID, pr.AuthorID) != 0 {
 		t.Error("expected 0 approvals: the user's latest review is CHANGES_REQUESTED")
 	}
 	if !s.hasRequestedChanges(pr.ID) {

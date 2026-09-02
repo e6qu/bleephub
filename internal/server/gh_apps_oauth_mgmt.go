@@ -311,7 +311,11 @@ func (s *Server) scopeTargetAccessibleToUser(userID int, inst *store.Installatio
 
 func (s *Server) resolveScopedUserTokenRepositories(inst *store.Installation, source *store.UserToServerToken, names []string, ids []int) ([]int, bool) {
 	if names == nil && ids == nil {
-		return nil, true
+		// Omitted repositories inherit the source token's restriction, not the
+		// installation's full set — scoping only narrows. A source token already
+		// restricted to a subset must not widen to every repo (mirrors how omitted
+		// permissions fall back to the source token's permissions).
+		return appendOptionalInts(source.RepositoryIDs), true
 	}
 	accessible := installationAccessibleRepoIDs(s.store, inst)
 	allowedBySource := func(id int) bool {
