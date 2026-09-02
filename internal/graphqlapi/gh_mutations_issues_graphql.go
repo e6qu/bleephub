@@ -705,6 +705,13 @@ func (s *Resolver) resolveAddSubIssue(p graphql.ResolveParams) (interface{}, err
 	if err != nil {
 		return nil, err
 	}
+	// A sub-issue must live in the parent's repository (as the REST path
+	// enforces). Without this, a caller with push on the parent's repo could
+	// link — and read back the full title/body/comments of — an issue in a
+	// private repo they cannot access.
+	if child.RepoID != parent.RepoID {
+		return nil, gqlMissingNodeType("Issue")
+	}
 	replace, _ := gqlInputBool(input, "replaceParent")
 	if err := s.store.AddSubIssue(parent.ID, child.ID, replace); err != nil {
 		return nil, err
@@ -725,6 +732,9 @@ func (s *Resolver) resolveRemoveSubIssue(p graphql.ResolveParams) (interface{}, 
 	if err != nil {
 		return nil, err
 	}
+	if child.RepoID != parent.RepoID {
+		return nil, gqlMissingNodeType("Issue")
+	}
 	if err := s.store.RemoveSubIssue(parent.ID, child.ID); err != nil {
 		return nil, err
 	}
@@ -743,6 +753,9 @@ func (s *Resolver) resolveReprioritizeSubIssue(p graphql.ResolveParams) (interfa
 	child, err := s.issueFromInput(input, "subIssueId")
 	if err != nil {
 		return nil, err
+	}
+	if child.RepoID != parent.RepoID {
+		return nil, gqlMissingNodeType("Issue")
 	}
 	after, err := s.optionalIssueID(input, "afterId")
 	if err != nil {
@@ -769,6 +782,12 @@ func (s *Resolver) resolveBlockedBy(p graphql.ResolveParams, add bool) (interfac
 	blocker, err := s.issueFromInput(input, "blockingIssueId")
 	if err != nil {
 		return nil, err
+	}
+	// The blocking issue must live in the same repository (as the REST path
+	// enforces), so a caller cannot name — and read back — a private issue they
+	// have no access to.
+	if blocker.RepoID != issue.RepoID {
+		return nil, gqlMissingNodeType("Issue")
 	}
 	if issue.ID == blocker.ID {
 		return nil, fmt.Errorf("an issue cannot block itself")

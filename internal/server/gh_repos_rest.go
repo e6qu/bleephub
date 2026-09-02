@@ -1546,6 +1546,10 @@ func (s *Server) handleAddCollaborator(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// GitHub defaults an omitted collaborator permission to push (write), not pull.
+	if req.Permission == "" {
+		req.Permission = "push"
+	}
 	// A PUT naming an existing collaborator (or the owner) updates the permission
 	// in place and answers 204, as on GitHub.
 	isOwner := repo.Owner != nil && strings.EqualFold(repo.Owner.Login, username)

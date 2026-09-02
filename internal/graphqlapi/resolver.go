@@ -79,6 +79,11 @@ type Pulls interface {
 	// the same set the merge gate enforces.
 	RequiredStatusCheckContexts(repo *store.Repo, baseBranch string) []string
 	CanMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string)
+	// MergeQueueEligible reports whether a PR may enter the merge queue: not a
+	// draft and satisfying the review-family branch-protection requirements (the
+	// queue itself handles up-to-date/checks). GitHub refuses to enqueue a PR
+	// that fails these.
+	MergeQueueEligible(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string)
 	CompletePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string)
 	ChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error)
 	// MaybeAutoMerge / MaybeAutoMergeRepo / MaybeAutoMergeHeadSHA re-evaluate

@@ -76,6 +76,9 @@ func (stubPulls) RequiredStatusCheckContexts(*store.Repo, string) []string   { r
 func (stubPulls) CanMergePullRequest(context.Context, *store.Repo, *store.PullRequest) (bool, string) {
 	return false, "stubPulls refuses every merge"
 }
+func (stubPulls) MergeQueueEligible(context.Context, *store.Repo, *store.PullRequest) (bool, string) {
+	return true, ""
+}
 func (stubPulls) CompletePullRequestMerge(*store.Repo, *store.PullRequest, *store.User, string, string, string, string) (string, string) {
 	return "", ""
 }

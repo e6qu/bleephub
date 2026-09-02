@@ -910,6 +910,15 @@ func (s *Resolver) resolveEnqueuePullRequest(p graphql.ResolveParams) (interface
 	if pr.State != "OPEN" {
 		return nil, fmt.Errorf("only an open pull request can be queued")
 	}
+	// GitHub refuses to queue a PR that does not already satisfy its review-family
+	// merge requirements (approvals, code owners, no changes requested, not a
+	// draft); the queue only resolves being up to date and re-runs checks.
+	if ok, msg := s.pulls.MergeQueueEligible(p.Context, repo, pr); !ok {
+		if msg == "" {
+			msg = "Pull request is not eligible for the merge queue"
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
 	if expected, ok := gqlInputString(input, "expectedHeadOid"); ok && expected != "" {
 		if head := s.prHeadSha(repo, pr); head != "" && head != expected {
 			//lint:ignore ST1005 GitHub API parity requires this exact upstream message.

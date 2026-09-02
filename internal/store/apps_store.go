@@ -535,6 +535,17 @@ func (st *Store) DeleteInstallation(id int) bool {
 	if st.Persist != nil {
 		st.Persist.MustDelete("installations", strconv.Itoa(id))
 	}
+	// Uninstalling immediately invalidates the installation's access tokens
+	// (GitHub parity); otherwise a ghs_ token authenticates until its 1h expiry.
+	for token, installationToken := range st.InstallationTokens {
+		if installationToken.InstallationID != id {
+			continue
+		}
+		delete(st.InstallationTokens, token)
+		if st.Persist != nil {
+			st.Persist.MustDelete("installation_tokens", token)
+		}
+	}
 	return true
 }
 

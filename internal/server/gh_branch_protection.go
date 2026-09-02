@@ -1477,6 +1477,12 @@ func (s *Server) strictUpToDateRequired(bp *store.BranchProtection, repo *store.
 }
 
 func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string) {
+	// A draft PR is never mergeable, regardless of branch protection (GitHub
+	// refuses it on every merge path). Kept here so REST, GraphQL, auto-merge and
+	// the merge queue all inherit the guard.
+	if pr.IsDraft {
+		return false, "Draft pull requests cannot be merged."
+	}
 	bp := s.effectiveBranchProtectionFor(repo.ID, pr.BaseRefName)
 	if bp == nil {
 		return true, ""
@@ -1508,24 +1514,36 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 		return false, "Required status checks require the branch to be up to date with the base branch before merging."
 	}
 
+	if ok, msg := s.pullRequestReviewGatesSatisfied(repo, pr, bp); !ok {
+		return false, msg
+	}
+
+	return true, ""
+}
+
+// pullRequestReviewGatesSatisfied enforces the branch-protection requirements
+// that do NOT depend on the branch being up to date or on status checks:
+// required approving reviews (never counting the author's own approval),
+// code-owner reviews, last-push approval, and changes-requested. bp must be
+// non-nil and the admin bypass already decided against. Shared by
+// canMergePullRequest and mergeQueueEligible so the merge queue enforces the
+// same review requirements as a direct merge.
+func (s *Server) pullRequestReviewGatesSatisfied(repo *store.Repo, pr *store.PullRequest, bp *store.BranchProtection) (bool, string) {
 	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequiredApprovingReviewCount > 0 {
-		count := s.countApprovingReviews(pr.ID)
+		count := s.countApprovingReviews(pr.ID, pr.AuthorID)
 		if count < bp.RequiredPullRequestReviews.RequiredApprovingReviewCount {
 			return false, fmt.Sprintf("At least %d approving review is required by the branch protection rules.", bp.RequiredPullRequestReviews.RequiredApprovingReviewCount)
 		}
 	}
 
-	// require_code_owner_reviews: every code owner of a changed file must have
-	// approved. Enforced at the one gate REST merge, mergePullRequest and
-	// auto-merge all pass through.
+	// require_code_owner_reviews: every code owner of a changed file must have approved.
 	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequireCodeOwnerReviews {
 		if !s.codeOwnerApprovalsSatisfied(repo, pr) {
 			return false, "Review by a code owner of the changed files is required by the branch protection rules."
 		}
 	}
 
-	// require_last_push_approval: the most recent push must be approved by
-	// someone other than its pusher.
+	// require_last_push_approval: the most recent push must be approved by someone other than its pusher.
 	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequireLastPushApproval {
 		if !s.lastPushApproved(repo, pr) {
 			return false, "The most recent push must be approved by someone other than the person who pushed it."
@@ -1537,6 +1555,29 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 	}
 
 	return true, ""
+}
+
+// mergeQueueEligible reports whether a PR may sit in (and be merged from) the
+// merge queue: it must not be a draft and must satisfy the review-family
+// branch-protection requirements. It deliberately omits the up-to-date and
+// status-check requirements — the queue itself brings the branch up to date and
+// evaluates checks on the formed merge group. GitHub refuses to enqueue a PR
+// that fails these, so enqueue rejects and the processor skips.
+func (s *Server) mergeQueueEligible(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string) {
+	if pr.IsDraft {
+		return false, "Draft pull requests cannot be merged."
+	}
+	bp := s.effectiveBranchProtectionFor(repo.ID, pr.BaseRefName)
+	if bp == nil {
+		return true, ""
+	}
+	if bp.LockBranch != nil && bp.LockBranch.Enabled {
+		return false, "Cannot merge into locked branch " + pr.BaseRefName + "."
+	}
+	if s.viewerCanAdminRepo(ctx, repo) && (bp.EnforceAdmins == nil || !bp.EnforceAdmins.Enabled) {
+		return true, ""
+	}
+	return s.pullRequestReviewGatesSatisfied(repo, pr, bp)
 }
 
 // lastPushApproved reports whether someone other than the head's last pusher
@@ -1628,12 +1669,15 @@ func (s *Server) latestGateReviewStatesLocked(prID int) map[int]string {
 	return out
 }
 
-func (s *Server) countApprovingReviews(prID int) int {
+// countApprovingReviews counts the current APPROVED reviews that satisfy branch
+// protection. The PR author's own approval never counts (GitHub excludes it, and
+// forbids it at submission), so authorID is skipped.
+func (s *Server) countApprovingReviews(prID, authorID int) int {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	count := 0
-	for _, state := range s.latestGateReviewStatesLocked(prID) {
-		if state == "APPROVED" {
+	for userID, state := range s.latestGateReviewStatesLocked(prID) {
+		if state == "APPROVED" && userID != authorID {
 			count++
 		}
 	}

@@ -192,7 +192,23 @@ func TestBranchProtection_MergeEnforcesRequiredReviews(t *testing.T) {
 	require.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 	resp.Body.Close()
 
+	// The author's own approval is recorded but must NOT count toward the required
+	// review (GitHub never counts an author self-approval), so the merge stays blocked.
 	resp = s.post(t, "/api/v3/repos/admin/bp-merge-reviews/pulls/1/reviews", defaultToken, map[string]interface{}{
+		"body": "self-LGTM", "event": "APPROVE",
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	resp = s.put(t, "/api/v3/repos/admin/bp-merge-reviews/pulls/1/merge", defaultToken, map[string]interface{}{})
+	require.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode, "author self-approval must not satisfy required reviews")
+	resp.Body.Close()
+
+	// A non-author collaborator's approval satisfies the gate.
+	reviewer := s.createTestUser(t, "bp-merge-reviewer")
+	reviewerTok := s.store.CreateToken(reviewer.ID, "repo")
+	require.True(t, s.store.AddRepoCollaborator("admin", "bp-merge-reviews", "bp-merge-reviewer", "push"))
+	resp = s.post(t, "/api/v3/repos/admin/bp-merge-reviews/pulls/1/reviews", reviewerTok.Value, map[string]interface{}{
 		"body": "LGTM", "event": "APPROVE",
 	})
 	require.Equal(t, http.StatusOK, resp.StatusCode)

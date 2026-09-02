@@ -1404,6 +1404,10 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			// A PR is an issue, so subjectId may be either; resolve both.
 			if issue := store.FindIssueByNodeID(s.store, subjectNodeID); issue != nil {
+				if issue.Locked && !s.viewerCanPushRepo(p.Context, s.store.GetRepoByID(issue.RepoID)) {
+					//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
+					return nil, fmt.Errorf("Unable to create comment because issue is locked.")
+				}
 				comment := s.store.CreateComment(issue.ID, user.ID, body)
 				if comment == nil {
 					return nil, fmt.Errorf("comment creation failed")
@@ -1414,6 +1418,10 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				}, nil
 			}
 			if pr := store.FindPullRequestByNodeID(s.store, subjectNodeID); pr != nil {
+				if pr.Locked && !s.viewerCanPushRepo(p.Context, s.store.GetRepoByID(pr.RepoID)) {
+					//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
+					return nil, fmt.Errorf("Unable to create comment because issue is locked.")
+				}
 				comment := s.store.CreateCommentFor("pull_request", pr.ID, user.ID, body)
 				if comment == nil {
 					return nil, fmt.Errorf("comment creation failed")
