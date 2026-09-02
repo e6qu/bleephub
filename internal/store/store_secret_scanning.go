@@ -562,18 +562,30 @@ func (st *Store) UpdateSecretScanningPatternConfig(orgLogin string, expectedVers
 // SecretScanningPushProtectionEnabled reports whether the org has enabled push
 // protection for a provider pattern on this repo.
 func (st *Store) SecretScanningPushProtectionEnabled(repo *Repo, patternID string) bool {
+	if repo == nil {
+		return false
+	}
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	if repo == nil || repo.OwnerType != "Organization" {
-		return false
+	// The repository's own push-protection toggle
+	// (security_and_analysis.secret_scanning_push_protection) is the standard
+	// enablement path — for user- and org-owned repos alike. Previously this was
+	// ignored, so a repo with push protection enabled did not actually block
+	// secrets on push.
+	if repo.SecretScanningPushProtectionEnabled {
+		return true
 	}
-	org := st.Orgs[repo.OwnerID]
-	if org == nil {
-		return false
+	// An org may additionally enable push protection for a specific provider pattern.
+	if repo.OwnerType == "Organization" {
+		if org := st.Orgs[repo.OwnerID]; org != nil {
+			cfg := st.SecretScanningPatternConfigs[org.Login]
+			if cfg != nil && cfg.ProviderSettings[patternID] == "enabled" {
+				return true
+			}
+		}
 	}
-	cfg := st.SecretScanningPatternConfigs[org.Login]
-	return cfg != nil && cfg.ProviderSettings[patternID] == "enabled"
+	return false
 }
 
 // SecretScanningPushProtectionPlaceholder is the identity a pusher presents

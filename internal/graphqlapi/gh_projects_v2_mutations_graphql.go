@@ -641,7 +641,10 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 				return nil, err
 			}
 			issueFieldNodeID, _ := input["issueFieldId"].(string)
-			issueField := s.projectV2IssueFieldByNodeID(issueFieldNodeID)
+			// The issue field must belong to the project's OWNING organization;
+			// otherwise a member of one org's project could materialize another
+			// org's private issue-field name and option set as a readable column.
+			issueField := s.projectV2IssueFieldByNodeID(project, issueFieldNodeID)
 			if issueField == nil {
 				return nil, &ghNotFoundError{
 					message: fmt.Sprintf("Could not resolve to an issue field with the global id of '%s'.", issueFieldNodeID),
@@ -671,19 +674,22 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 	})
 }
 
-// projectV2IssueFieldByNodeID finds an org issue field by node id, scanning the
-// per-org buckets it is keyed in.
-func (s *Resolver) projectV2IssueFieldByNodeID(nodeID string) *store.IssueField {
-	if nodeID == "" {
+// projectV2IssueFieldByNodeID finds an org issue field by node id, scoped to the
+// project's OWNING organization — an org issue field is only visible within its
+// own org, so a project may only reference fields from the org that owns it.
+func (s *Resolver) projectV2IssueFieldByNodeID(project *store.ProjectV2, nodeID string) *store.IssueField {
+	if nodeID == "" || project == nil || project.OwnerType != "Organization" {
+		return nil
+	}
+	org := s.store.GetOrgByID(project.OwnerID)
+	if org == nil {
 		return nil
 	}
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	for _, fields := range s.store.OrgIssueFields {
-		for _, field := range fields {
-			if field.NodeID == nodeID {
-				return field
-			}
+	for _, field := range s.store.OrgIssueFields[org.Login] {
+		if field.NodeID == nodeID {
+			return field
 		}
 	}
 	return nil
