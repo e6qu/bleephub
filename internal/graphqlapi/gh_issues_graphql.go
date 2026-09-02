@@ -3073,7 +3073,12 @@ func (s *Resolver) ensureProjectV2ItemsField() {
 			items := projectV2ApplyItemFilters(s.store, s.store.ProjectsV2.ListItemsForProject(projectID), p.Args)
 			nodes := make([]map[string]interface{}, 0, len(items))
 			for _, it := range items {
-				nodes = append(nodes, projectV2ItemToGQL(it, s.store))
+				// A readable project can hold items whose content lives in a
+				// private repo; don't leak that issue/PR to a viewer who cannot
+				// read the repo (mirrors the REST projectV2ItemContentJSON gate).
+				redact := it.ContentType != "DraftIssue" &&
+					!s.viewerCanReadProjectContent(p.Context, it.ContentType, it.ContentID)
+				nodes = append(nodes, projectV2ItemNode(it, s.store, redact))
 			}
 			projectV2SortNodes(nodes, p.Args, nil)
 			return paginateGQLMaps(nodes, p.Args), nil
@@ -3438,6 +3443,16 @@ func (s *Resolver) projectV2ItemConnectionType() *graphql.Object {
 // projectV2ItemToGQL builds a project item's source map, embedding the parent
 // project's map and pre-resolving field values into fieldValuesByName.
 func projectV2ItemToGQL(it *store.ProjectV2Item, st *store.Store) map[string]interface{} {
+	return projectV2ItemNode(it, st, false)
+}
+
+// projectV2ItemNode renders a project item's source map. When redactContent is
+// true the item's content (the issue/PR) and every content-derived built-in
+// field value are hidden — for a viewer who may read the project but not the
+// private repository the content lives in. Only stored (custom) field values,
+// which are project metadata, survive. Mirrors the REST gate in
+// projectV2ItemContentJSON (gh_projects_v2_rest.go).
+func projectV2ItemNode(it *store.ProjectV2Item, st *store.Store, redactContent bool) map[string]interface{} {
 	if it == nil {
 		return nil
 	}
@@ -3455,6 +3470,9 @@ func projectV2ItemToGQL(it *store.ProjectV2Item, st *store.Store) map[string]int
 		if stored := it.FieldValues[field.ID]; stored != nil {
 			rendered = projectV2FieldValueToGQL(stored, field)
 			rendered["field"] = projectV2FieldToGQL(field)
+		} else if redactContent {
+			// A content-derived built-in value would leak the private issue/PR.
+			continue
 		} else {
 			rendered = projectV2BuiltInFieldValue(st, it, field)
 		}
@@ -3485,7 +3503,7 @@ func projectV2ItemToGQL(it *store.ProjectV2Item, st *store.Store) map[string]int
 		"isArchived":        it.ArchivedAt != nil,
 		"createdAt":         it.CreatedAt.UTC().Format(time.RFC3339),
 		"updatedAt":         it.UpdatedAt.UTC().Format(time.RFC3339),
-		"content":           optionalObject(projectV2ItemContentToGQL(st, it)),
+		"content":           redactableItemContent(st, it, redactContent),
 	}
 	out["creator"] = optionalRendered(st.GetUserByID(it.CreatorID), userToGraphQL)
 	return out
@@ -3500,6 +3518,16 @@ func projectV2ItemTypeEnum(contentType string) string {
 	default:
 		return "DRAFT_ISSUE"
 	}
+}
+
+// redactableItemContent renders the item's content, or null when redactContent
+// is set — the viewer may read the project but not the private repo the content
+// lives in, so the issue/PR is hidden.
+func redactableItemContent(st *store.Store, it *store.ProjectV2Item, redactContent bool) interface{} {
+	if redactContent {
+		return nil
+	}
+	return optionalObject(projectV2ItemContentToGQL(st, it))
 }
 
 // projectV2ItemContentToGQL renders the issue, PR or draft issue an item points

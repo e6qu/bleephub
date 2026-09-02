@@ -67,6 +67,32 @@ func (s *Server) handleRerequestCheckSuite(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
+// checkRunStatuses and checkRunConclusions are the values GitHub accepts on the
+// check-run create/update endpoints; anything else is a 422.
+var checkRunStatuses = map[string]bool{
+	"queued": true, "in_progress": true, "completed": true,
+	"waiting": true, "requested": true, "pending": true,
+}
+
+var checkRunConclusions = map[string]bool{
+	"action_required": true, "cancelled": true, "failure": true, "neutral": true,
+	"success": true, "skipped": true, "stale": true, "timed_out": true,
+}
+
+// validateCheckRunStateFields rejects an out-of-enum status or conclusion (422),
+// reporting whether the caller may proceed.
+func validateCheckRunStateFields(w http.ResponseWriter, status, conclusion string) bool {
+	if status != "" && !checkRunStatuses[status] {
+		store.WriteGHValidationError(w, "CheckRun", "status", "invalid")
+		return false
+	}
+	if conclusion != "" && !checkRunConclusions[conclusion] {
+		store.WriteGHValidationError(w, "CheckRun", "conclusion", "invalid")
+		return false
+	}
+	return true
+}
+
 func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
@@ -97,6 +123,9 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 		store.WriteGHValidationError(w, "CheckRun", "head_sha", "missing_field")
 		return
 	}
+	if !validateCheckRunStateFields(w, req.Status, req.Conclusion) {
+		return
+	}
 	appID := appIDFromContext(r.Context())
 	cr := s.store.CreateCheckRun(repoKey, req.HeadSHA, req.Name, appID, 0)
 	s.store.UpdateCheckRun(cr.ID, func(c *store.CheckRun) {
@@ -105,6 +134,8 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Conclusion != "" {
 			c.Conclusion = req.Conclusion
+			// A conclusion completes the run (GitHub couples the two).
+			c.Status = "completed"
 		}
 		c.ExternalID = req.ExternalID
 		c.DetailsURL = req.DetailsURL
@@ -113,6 +144,9 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.CompletedAt != nil {
 			c.CompletedAt = req.CompletedAt
+		} else if c.Status == "completed" && c.CompletedAt == nil {
+			now := s.store.CurrentTime()
+			c.CompletedAt = &now
 		}
 		if req.Output != nil {
 			c.Output = req.Output
@@ -198,6 +232,16 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	status, conclusion := "", ""
+	if req.Status != nil {
+		status = *req.Status
+	}
+	if req.Conclusion != nil {
+		conclusion = *req.Conclusion
+	}
+	if !validateCheckRunStateFields(w, status, conclusion) {
+		return
+	}
 	found := s.store.UpdateCheckRun(id, func(cr *store.CheckRun) {
 		if req.Name != nil {
 			cr.Name = *req.Name
@@ -207,6 +251,8 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Conclusion != nil {
 			cr.Conclusion = *req.Conclusion
+			// A conclusion completes the run (GitHub couples the two).
+			cr.Status = "completed"
 		}
 		if req.DetailsURL != nil {
 			cr.DetailsURL = *req.DetailsURL
@@ -219,6 +265,9 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.CompletedAt != nil {
 			cr.CompletedAt = req.CompletedAt
+		} else if cr.Status == "completed" && cr.CompletedAt == nil {
+			now := s.store.CurrentTime()
+			cr.CompletedAt = &now
 		}
 		if req.Output != nil {
 			cr.Output = req.Output

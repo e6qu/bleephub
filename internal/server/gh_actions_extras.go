@@ -80,6 +80,9 @@ func repositoryDispatchPayload(repo *store.Repo, user *store.User, eventType str
 
 // handleRunLogs returns the run's log archive. GitHub redirects to a signed URL; bleephub returns the zip directly, which curl and gh both accept.
 func (s *Server) handleRunLogs(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -240,6 +243,9 @@ func (s *Server) handleRerunFailedJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRunTiming(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -284,6 +290,9 @@ func (s *Server) handleRunTiming(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRunArtifacts(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "invalid run_id")
@@ -349,6 +358,9 @@ func (s *Server) handleDownloadArtifactArchive(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) getRepoArtifact(w http.ResponseWriter, r *http.Request) (*store.Artifact, bool) {
+	if !s.enforceRepoReadable(w, r) {
+		return nil, false
+	}
 	artifactID, err := strconv.ParseInt(r.PathValue("artifact_id"), 10, 64)
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "invalid artifact_id")
@@ -514,6 +526,9 @@ func (s *Server) repoIDByFullName(fullName string) int {
 
 // handleRunApprovals lists the deployment reviews already submitted for a run; pending reviews live on /pending_deployments.
 func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	repo, wf := s.lookupRunFromPath(r)
 	if wf == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -558,6 +573,9 @@ func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 
 // handleGetPendingDeployments lists the reviewer-protected environments a run is waiting on.
 func (s *Server) handleGetPendingDeployments(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	repo, wf := s.lookupRunFromPath(r)
 	if wf == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")

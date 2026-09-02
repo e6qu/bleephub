@@ -825,7 +825,12 @@ func (as *ArtifactStore) FinalizedRepoCaches(repo string) []*CacheEntry {
 	out := make([]*CacheEntry, 0)
 	for _, entry := range as.Caches {
 		if entry.Repo == repo && entry.Finalized {
-			out = append(out, entry)
+			// Detach the snapshot (STORE-021): callers read Key/Size/LastAccessedAt
+			// without the lock while cache lookup/upload mutate the live row.
+			c := *entry
+			c.Data = append([]byte(nil), entry.Data...)
+			c.Chunks = nil
+			out = append(out, &c)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
