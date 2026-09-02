@@ -389,10 +389,13 @@ func TestRemoveMembership(t *testing.T) {
 		"role": "admin",
 	})
 
+	// admin is the sole owner; removing them would orphan the org, so GitHub
+	// refuses it with 403 (the non-owner removal path is covered by an isolated
+	// test where a second member can be seeded without the shared harness).
 	resp := ghDelete(t, "/api/v3/orgs/testorg-rmmember/memberships/admin", defaultToken)
 	defer resp.Body.Close()
-	if resp.StatusCode != 204 {
-		t.Fatalf("expected 204, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 removing the last owner, got %d", resp.StatusCode)
 	}
 }
 

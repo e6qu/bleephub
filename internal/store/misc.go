@@ -113,12 +113,30 @@ func (st *Store) ListOrgAuditEntries(org string) []*AuditEntry {
 	defer st.Misc.Mu.RUnlock()
 	out := make([]*AuditEntry, 0, len(st.Misc.AuditLog))
 	for _, e := range st.Misc.AuditLog {
-		if e.Org != "" && e.Org != org {
+		if !AuditEntryVisibleInOrgLog(e, org) {
 			continue
 		}
 		out = append(out, cloneAuditEntry(e))
 	}
 	return out
+}
+
+// AuditEntryVisibleInOrgLog reports whether an audit entry belongs in org's
+// audit log. An org-scoped entry matches its org exactly. Repository events are
+// recorded without an org field (org=""); such an entry is included only when
+// the repository it names is owned by this org. Personal/user events (org="",
+// no repo) never appear in an org log — including every org-less entry
+// unconditionally leaked other tenants' private-repo names and user key/secret
+// events across org boundaries.
+func AuditEntryVisibleInOrgLog(e *AuditEntry, org string) bool {
+	if e.Org != "" {
+		return strings.EqualFold(e.Org, org)
+	}
+	if repoFull, ok := e.Data["repo"].(string); ok && repoFull != "" {
+		owner, _, found := strings.Cut(repoFull, "/")
+		return found && strings.EqualFold(owner, org)
+	}
+	return false
 }
 
 func cloneAuditEntry(e *AuditEntry) *AuditEntry {

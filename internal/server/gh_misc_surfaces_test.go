@@ -761,34 +761,38 @@ func TestAuditLogRecords(t *testing.T) {
 func TestAuditLogFromRepoCreate(t *testing.T) {
 	s := newTestServer()
 	s.registerGHMiscEndpoints()
-	s.registerGHRepoRoutes()
 
 	// Audit-log reads require org-owner rights; make the admin PAT's user the
 	// owner of the org being queried.
 	admin := s.store.LookupUserByLogin("admin")
 	s.store.CreateOrg(admin, "default", "Default Org", "")
 
-	resp := doMiscReq(s, "POST", "/api/v3/user/repos", `{"name":"audit-test-repo"}`)
-	if resp.Code != 201 {
-		t.Fatalf("create repo status = %d", resp.Code)
-	}
+	// Repo events are recorded org-less (org=""). An org repo's event must surface
+	// in that org's log; a personal repo's event (and another org's) must not.
+	s.recordAuditEvent("repo.create", "admin", "", map[string]interface{}{"repo": "default/org-repo", "repo_id": 1})
+	s.recordAuditEvent("repo.create", "admin", "", map[string]interface{}{"repo": "admin/personal", "repo_id": 2})
+	s.recordAuditEvent("repo.create", "eve", "", map[string]interface{}{"repo": "otherorg/secret", "repo_id": 3})
 
 	w := doMiscReq(s, "GET", "/api/v3/orgs/default/audit-log", "")
 	if w.Code != 200 {
 		t.Fatalf("audit log status = %d", w.Code)
 	}
-	var entries []interface{}
+	var entries []map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &entries)
-	found := false
+	repos := map[string]bool{}
 	for _, e := range entries {
-		m := e.(map[string]interface{})
-		if m["action"] == "repo.create" {
-			found = true
-			break
+		if e["action"] == "repo.create" {
+			data, _ := e["data"].(map[string]interface{})
+			if r, ok := data["repo"].(string); ok {
+				repos[r] = true
+			}
 		}
 	}
-	if !found {
-		t.Fatal("no repo.create audit event found")
+	if !repos["default/org-repo"] {
+		t.Fatal("the org's own repo.create event is missing from its audit log")
+	}
+	if repos["admin/personal"] || repos["otherorg/secret"] {
+		t.Fatalf("a foreign/personal repo event leaked into the org audit log: %v", repos)
 	}
 }
 

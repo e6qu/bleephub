@@ -167,6 +167,11 @@ func (s *Server) handleSetOrgMembership(w http.ResponseWriter, r *http.Request) 
 	// /user/memberships/orgs/{org}); updating an existing one only changes the
 	// role. Self-PUT by an existing member stays active.
 	existing := s.store.GetMembership(orgLogin, target.ID)
+	// Demoting the sole owner to member would orphan the org (GitHub rejects it).
+	if role != store.OrgRoleAdmin && s.wouldOrphanOrg(org, existing) {
+		writeGHError(w, http.StatusForbidden, "You cannot change the role of the last owner of the organization.")
+		return
+	}
 	state := store.MembershipStatePending
 	if existing != nil {
 		state = existing.State
@@ -216,13 +221,28 @@ func (s *Server) handleRemoveOrgMembership(w http.ResponseWriter, r *http.Reques
 	}
 
 	m := s.store.GetMembership(orgLogin, target.ID)
-	if m == nil || !s.store.RemoveMembership(orgLogin, target.ID) {
+	if m == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if s.wouldOrphanOrg(org, m) {
+		writeGHError(w, http.StatusForbidden, "You cannot remove the last owner of the organization.")
+		return
+	}
+	if !s.store.RemoveMembership(orgLogin, target.ID) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	s.emitOrgMembershipEvent(org, "member_removed", m, target, user)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// wouldOrphanOrg reports whether removing (or demoting) membership m would leave
+// the org with no active owner.
+func (s *Server) wouldOrphanOrg(org *store.Org, m *store.Membership) bool {
+	return m != nil && m.Role == store.OrgRoleAdmin && m.State == store.MembershipStateActive &&
+		s.store.CountActiveOrgOwners(org.ID) <= 1
 }
 
 // handleCheckOrgMember — GET /api/v3/orgs/{org}/members/{username}. 204 for an
@@ -275,7 +295,15 @@ func (s *Server) handleRemoveOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := s.store.GetMembership(orgLogin, target.ID)
-	if m == nil || !s.store.RemoveMembership(orgLogin, target.ID) {
+	if m == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if s.wouldOrphanOrg(org, m) {
+		writeGHError(w, http.StatusForbidden, "You cannot remove the last owner of the organization.")
+		return
+	}
+	if !s.store.RemoveMembership(orgLogin, target.ID) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

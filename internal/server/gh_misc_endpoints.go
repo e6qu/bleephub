@@ -673,6 +673,12 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	if !principal.Scope.CoversRepo(repoFull) {
 		return "", fmt.Errorf("oidc: job token is not scoped to %q", repoFull)
 	}
+	// Minting an OIDC token requires the workflow to declare `permissions:
+	// id-token: write`; the job token carries the workflow's least-privilege set,
+	// so gate on it (GitHub does not provision the token request otherwise).
+	if principal.Claims == nil || principal.Claims.Perms["id_token"] != "write" {
+		return "", fmt.Errorf("oidc: the workflow must set 'permissions: id-token: write' to request a token")
+	}
 	owner, repoName := splitRepoFull(repoFull)
 	repo := s.store.GetRepo(owner, repoName)
 	if repo == nil {
@@ -1197,7 +1203,7 @@ func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, e := range s.store.Misc.AuditLog {
-		if e.Org != "" && e.Org != orgName {
+		if !store.AuditEntryVisibleInOrgLog(e, orgName) {
 			continue
 		}
 		if phrase := r.URL.Query().Get("phrase"); phrase != "" {

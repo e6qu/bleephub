@@ -572,6 +572,21 @@ func (st *Store) listOrgsByUserLocked(userID int, publicOnly bool) []*Org {
 	return orgs
 }
 
+// CountActiveOrgOwners returns how many active owners (admin role) the org has.
+// Used to refuse removing or demoting the last owner, which would orphan the
+// organization (GitHub rejects both).
+func (st *Store) CountActiveOrgOwners(orgID int) int {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	n := 0
+	for _, m := range st.Memberships {
+		if m.OrgID == orgID && m.State == MembershipStateActive && m.Role == OrgRoleAdmin {
+			n++
+		}
+	}
+	return n
+}
+
 // SetMembership upserts a user's org membership with the given role and state,
 // preserving an existing membership's Public flag. Returns nil if the org
 // doesn't exist.
