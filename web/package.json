@@ -43,7 +43,7 @@
     "@vitest/coverage-v8": "4.1.11",
     "jscpd": "5.1.0",
     "jsdom": "30.0.1",
-    "knip": "6.33.0",
+    "knip": "6.34.0",
     "octokit": "^5.0.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
