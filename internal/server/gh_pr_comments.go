@@ -119,6 +119,9 @@ func (s *Server) handleCreatePRComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfInteractionLimited(w, user, repo) {
+		return
+	}
 	var req struct {
 		Body      string  `json:"body"`
 		CommitID  string  `json:"commit_id"`
@@ -309,6 +312,9 @@ func (s *Server) handleReplyPRComment(w http.ResponseWriter, r *http.Request) {
 	pr := s.store.GetPullRequestByNumber(repo.ID, num)
 	if pr == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if s.rejectIfInteractionLimited(w, user, repo) {
 		return
 	}
 	rootID, err := strconv.Atoi(r.PathValue("comment_id"))

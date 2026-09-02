@@ -1146,7 +1146,12 @@ type repoRule struct {
 	// repository access: editing your own issue or hiding your own comment
 	// never required push.
 	authorMayAct bool
-	target       func(s *Resolver, input map[string]interface{}) mutationTarget
+	// interaction marks a content-creating participation mutation (opening an
+	// issue/PR/discussion, commenting, reviewing, reacting) that GitHub subjects
+	// to owner/org blocks and repository interaction limits. Set only on the
+	// read-level rows a non-collaborator can reach.
+	interaction bool
+	target      func(s *Resolver, input map[string]interface{}) mutationTarget
 }
 
 func (r repoRule) check() error {
@@ -1177,6 +1182,16 @@ func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[stri
 	user := s.ghUserFromContext(p.Context)
 	if r.authorMayAct && target.authorID != 0 && target.authorID == user.ID {
 		return nil
+	}
+	// Content-creating participation is subject to owner/org blocks and the
+	// repository's interaction limit, the same as the REST create paths. Asked
+	// after the credential/read checks so a hidden repo still 404s rather than
+	// leaking its limit; the seam exempts owners, collaborators and (for
+	// contributors_only) prior committers.
+	if r.interaction {
+		if msg, refused := s.contentInteractionRefused(user, target.repo); refused {
+			return &ghForbiddenError{message: msg}
+		}
 	}
 	switch r.level {
 	case mutationPushRepo:
@@ -1218,8 +1233,8 @@ var graphqlMutationAuthz = map[string]mutationRule{
 
 	// PR comments are stored/gated as issue comments, so addComment and the
 	// moderation mutations are scopeIssues even for a pull-request subject.
-	"createIssue": repoRule{scope: store.ScopeIssues, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addComment":  repoRule{scope: store.ScopeIssues, level: mutationReadRepo, target: mutationTargetIssueOrPullRequest("subjectId")},
+	"createIssue": repoRule{scope: store.ScopeIssues, level: mutationReadRepo, interaction: true, target: mutationTargetRepo("repositoryId")},
+	"addComment":  repoRule{scope: store.ScopeIssues, level: mutationReadRepo, interaction: true, target: mutationTargetIssueOrPullRequest("subjectId")},
 	"closeIssue":  repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
 	"reopenIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
 	"updateIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("id")},
@@ -1238,9 +1253,9 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"createLinkedBranch": repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 	"deleteLinkedBranch": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetLinkedBranch("linkedBranchId")},
 
-	"createDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addDiscussionComment":            repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
-	"addReaction":                     repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
+	"createDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, interaction: true, target: mutationTargetRepo("repositoryId")},
+	"addDiscussionComment":            repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, interaction: true, target: mutationTargetDiscussion("discussionId")},
+	"addReaction":                     repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, interaction: true, target: mutationTargetReactable("subjectId")},
 	"removeReaction":                  repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
 	"updateDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
 	"closeDiscussion":                 repoRule{scope: store.ScopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
@@ -1266,8 +1281,8 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"lockLockable":      repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetLockable("lockableId")},
 	"unlockLockable":    repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetLockable("lockableId")},
 
-	"createPullRequest":             repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addPullRequestReview":          repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"createPullRequest":             repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, interaction: true, target: mutationTargetRepo("repositoryId")},
+	"addPullRequestReview":          repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, interaction: true, target: mutationTargetPullRequest("pullRequestId")},
 	"submitPullRequestReview":       repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, authorMayAct: true, target: mutationTargetReview("pullRequestReviewId")},
 	"dismissPullRequestReview":      repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetReview("pullRequestReviewId")},
 	"closePullRequest":              repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},

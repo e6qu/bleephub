@@ -60,6 +60,11 @@ func (a graphqlSeams) ViewerHasRepoPermission(ctx context.Context, repo *store.R
 	return a.s.viewerHasRepoPermission(ctx, repo, scope, level)
 }
 
+func (a graphqlSeams) ContentInteractionRefused(actor *store.User, repo *store.Repo) (string, bool) {
+	_, msg, refused := a.s.contentInteractionRefusal(actor, repo)
+	return msg, refused
+}
+
 func (a graphqlSeams) ViewerMayActOnRepo(ctx context.Context, repo *store.Repo, scope store.PermScope, grant, standing store.PermLevel) bool {
 	return a.s.viewerMayActOnRepo(ctx, repo, scope, grant, standing)
 }

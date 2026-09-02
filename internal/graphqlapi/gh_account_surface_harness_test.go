@@ -100,6 +100,10 @@ func (a accountTestAuthz) PrincipalHoldsRepoCapability(ctx context.Context, repo
 	return a.ownsRepo(ctx, repo)
 }
 
+func (a accountTestAuthz) ContentInteractionRefused(*store.User, *store.Repo) (string, bool) {
+	return "", false
+}
+
 func (a accountTestAuthz) ViewerIsOrgMember(ctx context.Context, orgLogin string) bool {
 	viewer := a.viewer(ctx)
 	if viewer == nil {

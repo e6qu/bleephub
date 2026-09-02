@@ -33,6 +33,9 @@ func (stubAuthz) CredentialGrantsAccount(context.Context, store.AccountKind, str
 func (stubAuthz) PrincipalHoldsRepoCapability(context.Context, *store.Repo, store.PermLevel) bool {
 	return false
 }
+func (stubAuthz) ContentInteractionRefused(*store.User, *store.Repo) (string, bool) {
+	return "", false
+}
 func (stubAuthz) ViewerIsOrgMember(context.Context, string) bool            { return false }
 func (stubAuthz) ViewerCanAdminAccount(context.Context, string) bool        { return false }
 func (stubAuthz) ViewerMayMigrateOrg(context.Context, *store.Org) bool      { return false }

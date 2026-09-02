@@ -27,6 +27,11 @@ type Authz interface {
 	CredentialGrantsRepo(ctx context.Context, repo *store.Repo, scope store.PermScope, level store.PermLevel) bool
 	CredentialGrantsAccount(ctx context.Context, kind store.AccountKind, login string, scope store.PermScope, level store.PermLevel) bool
 	PrincipalHoldsRepoCapability(ctx context.Context, repo *store.Repo, need store.PermLevel) bool
+	// ContentInteractionRefused reports whether actor is barred from creating
+	// content in repo by an owner/org block or the repository's interaction
+	// limit, returning the 403 message to surface. It exempts owners,
+	// collaborators and prior committers, mirroring the REST create paths.
+	ContentInteractionRefused(actor *store.User, repo *store.Repo) (string, bool)
 	ViewerIsOrgMember(ctx context.Context, orgLogin string) bool
 	// ViewerCanAdminAccount reports whether the request may administer the
 	// account named by login — the user themselves, an org owner, or a site
@@ -315,6 +320,10 @@ func (s *Resolver) credentialGrantsAccount(ctx context.Context, kind store.Accou
 
 func (s *Resolver) principalHoldsRepoCapability(ctx context.Context, repo *store.Repo, need store.PermLevel) bool {
 	return s.authz.PrincipalHoldsRepoCapability(ctx, repo, need)
+}
+
+func (s *Resolver) contentInteractionRefused(actor *store.User, repo *store.Repo) (string, bool) {
+	return s.authz.ContentInteractionRefused(actor, repo)
 }
 
 func (s *Resolver) viewerIsOrgMember(ctx context.Context, orgLogin string) bool {
