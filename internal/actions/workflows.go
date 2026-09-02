@@ -509,6 +509,24 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 				}
 			}
 
+			// A job targeting an environment whose deployment branch policy forbids
+			// this ref is blocked — it must not run (and must not receive the
+			// environment's secrets/protection context). GitHub fails such a job.
+			if envName := jobEnvironmentName(wfJob); envName != "" {
+				if repo := s.store.ReposByName[wf.RepoFullName]; repo != nil {
+					if env := s.store.Deployments.GetEnvironment(repo.ID, envName); env != nil && !s.environmentAllowsRefLocked(repo.ID, wf, env) {
+						wfJob.Status = store.JobStatusCompleted
+						wfJob.Result = store.ResultFailure
+						wfJob.CompletedAt = time.Now()
+						s.logger.Info().Str("job", wfJob.Key).Str("environment", envName).Str("ref", wf.Ref).
+							Msg("branch not allowed to deploy to environment")
+						s.QueueEvent(EvJobCompleted, wf, wfJob)
+						changed = true
+						continue
+					}
+				}
+			}
+
 			// A job targeting an environment with required reviewers waits for a deployment review.
 			if envName := jobEnvironmentName(wfJob); envName != "" && !envApproved(wf, envName) {
 				if env := s.protectedEnvironmentLocked(wf, envName); env != nil {
@@ -836,6 +854,45 @@ func envApproved(wf *store.Workflow, envName string) bool {
 		}
 	}
 	return false
+}
+
+// environmentAllowsRefLocked reports whether a job running on wf's ref may
+// deploy to env under its deployment branch policy. A nil policy allows any ref;
+// "protected_branches" allows only a protected branch; "custom_branch_policies"
+// allows only refs matching the environment's branch/tag patterns. Caller holds
+// s.store.Mu (reads env-branch-policy and branch-protection maps directly / via
+// the separate Misc mutex, so it never re-locks the store).
+func (s *Engine) environmentAllowsRefLocked(repoID int, wf *store.Workflow, env *store.Environment) bool {
+	policy := env.DeploymentBranchPolicy
+	if policy == nil {
+		return true
+	}
+	ref := wf.Ref
+	isTag := strings.HasPrefix(ref, "refs/tags/")
+	name := ref
+	switch {
+	case strings.HasPrefix(ref, "refs/heads/"):
+		name = strings.TrimPrefix(ref, "refs/heads/")
+	case isTag:
+		name = strings.TrimPrefix(ref, "refs/tags/")
+	}
+	switch {
+	case policy.ProtectedBranches:
+		// Only a protected branch may deploy; a tag never qualifies.
+		return !isTag && s.store.GetBranchProtection(repoID, name) != nil
+	case policy.CustomBranchPolicies:
+		for _, p := range s.store.EnvBranchPolicies[env.ID] {
+			if (p.Type == store.DeploymentBranchPolicyType("tag")) != isTag {
+				continue
+			}
+			if store.MatchBranchPattern(p.Name, name) {
+				return true
+			}
+		}
+		return false
+	default:
+		return true
+	}
 }
 
 // protectedEnvironmentLocked returns the environment when it carries required reviewers; referencing one auto-creates it. Caller holds s.store.mu.

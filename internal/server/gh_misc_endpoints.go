@@ -801,11 +801,41 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 		"runner_environment":    "github-hosted",
 		"environment":           env,
 	}
+	// An org/repo OIDC subject customization (include_claim_keys) rewrites the
+	// subject to key:value:key:value from the configured claims. The repo scope
+	// wins over the org scope. Without this a configured (narrower) subject was
+	// silently ignored and tokens kept the broad default subject.
+	if custom := s.oidcCustomSubject(repoFull, owner, payload); custom != "" {
+		payload["sub"] = custom
+	}
 	key, err := s.oidcKeyE()
 	if err != nil {
 		return "", err
 	}
 	return signRS256JWT(payload, key, "bleephub-oidc")
+}
+
+// oidcCustomSubject builds the customized subject from the configured
+// include_claim_keys for repoFull (falling back to the owning org), joining
+// "key:value" for each key present in the token payload. Returns "" when no
+// customization is configured.
+func (s *Server) oidcCustomSubject(repoFull, owner string, payload map[string]interface{}) string {
+	s.store.Misc.Mu.RLock()
+	keys := s.store.Misc.OidcClaimKeys["repo:"+strings.ToLower(repoFull)]
+	if keys == nil {
+		keys = s.store.Misc.OidcClaimKeys["org:"+strings.ToLower(owner)]
+	}
+	keys = append([]string(nil), keys...)
+	s.store.Misc.Mu.RUnlock()
+	if len(keys) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		value, _ := payload[k].(string)
+		parts = append(parts, k+":"+value)
+	}
+	return strings.Join(parts, ":")
 }
 
 func (s *Server) actionsOIDCIssuer(r *http.Request) string {
