@@ -557,7 +557,9 @@ func (s *Server) handleSetUserCodespaceSecretRepos(w http.ResponseWriter, r *htt
 		return
 	}
 	for _, id := range req.SelectedRepositoryIDs {
-		if s.store.GetRepoByID(id) == nil {
+		// A user may only grant a codespace secret to repositories they can read;
+		// 404 (not 422) so an inaccessible repo's existence stays hidden.
+		if repo := s.store.GetRepoByID(id); repo == nil || !store.CanReadRepoAsUser(s.store, user, repo) {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
@@ -573,7 +575,8 @@ func (s *Server) handleSetUserCodespaceSecretRepos(w http.ResponseWriter, r *htt
 func (s *Server) handleAddUserCodespaceSecretRepo(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	repoID, err := strconv.Atoi(r.PathValue("repository_id"))
-	if err != nil || s.store.GetRepoByID(repoID) == nil {
+	repo := s.store.GetRepoByID(repoID)
+	if err != nil || repo == nil || !store.CanReadRepoAsUser(s.store, user, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -836,6 +839,11 @@ func (s *Server) handlePutOrgCodespaceSecret(w http.ResponseWriter, r *http.Requ
 		} else {
 			req.Visibility = "all"
 		}
+	}
+	if bad, ok := s.firstNonOrgRepo(org, req.SelectedRepositoryIDs); !ok {
+		writeGHError(w, http.StatusUnprocessableEntity,
+			fmt.Sprintf("Validation Failed: repository %d does not belong to the organization", bad))
+		return
 	}
 	created := s.store.GetCodespaceSecret(store.CodespaceSecretScopeKey("org", org), name) == nil
 	s.store.CreateCodespaceSecret(store.CodespaceSecretScopeKey("org", org), name, plain, req.Visibility, req.SelectedRepositoryIDs)

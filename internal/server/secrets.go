@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -562,6 +563,11 @@ func (s *Server) handlePutOrgSecret(w http.ResponseWriter, r *http.Request) {
 	if body.Visibility != "selected" {
 		ids = nil
 	}
+	if bad, ok := s.firstNonOrgRepo(org.Login, ids); !ok {
+		writeGHError(w, http.StatusUnprocessableEntity,
+			fmt.Sprintf("Validation Failed: repository %d does not belong to the organization", bad))
+		return
+	}
 
 	now := time.Now().UTC()
 	s.store.Mu.Lock()
@@ -712,6 +718,33 @@ func (s *Server) handleSetOrgSecretRepos(w http.ResponseWriter, r *http.Request)
 // missing item or unknown repository id, and — where the surface documents it
 // (variables) — 409 unless visibility is "selected". lookup and persistLocked
 // run under the store write lock.
+// repoOwnedByOrgLocked reports whether repository id exists and is owned by
+// orgLogin. Caller holds s.store.Mu (read or write). An org's selected-repository
+// set may only name repos the org owns; a foreign id would let an org admin
+// enumerate arbitrary private repositories through the selected-repos listing.
+func (s *Server) repoOwnedByOrgLocked(orgLogin string, id int) bool {
+	repo := s.store.Repos[id]
+	if repo == nil {
+		return false
+	}
+	owner, _, _ := strings.Cut(repo.FullName, "/")
+	return strings.EqualFold(owner, orgLogin)
+}
+
+// firstNonOrgRepo returns the first selected repository id that is not a repo
+// owned by orgLogin (nonexistent or owned by another account); ok is false when
+// such an id exists. GitHub rejects those with 422. Caller must NOT hold s.store.Mu.
+func (s *Server) firstNonOrgRepo(orgLogin string, ids []int) (int, bool) {
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
+	for _, id := range ids {
+		if !s.repoOwnedByOrgLocked(orgLogin, id) {
+			return id, false
+		}
+	}
+	return 0, true
+}
+
 func (s *Server) setOrgItemSelectedRepos(w http.ResponseWriter, r *http.Request, name string, requireSelected bool,
 	lookup func() store.OrgScopedItem, persistLocked func()) {
 	var body struct {
@@ -737,6 +770,11 @@ func (s *Server) setOrgItemSelectedRepos(w http.ResponseWriter, r *http.Request,
 		if s.store.Repos[id] == nil {
 			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		if !s.repoOwnedByOrgLocked(r.PathValue("org"), id) {
+			s.store.Mu.Unlock()
+			writeGHError(w, http.StatusUnprocessableEntity, "Validation Failed: repository does not belong to the organization")
 			return
 		}
 	}
@@ -772,10 +810,17 @@ func (s *Server) handleOrgSelectionChange(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusConflict, "Conflict: visibility of "+name+" is not set to selected")
 		return
 	}
-	if add && s.store.Repos[id] == nil {
-		s.store.Mu.Unlock()
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
+	if add {
+		if s.store.Repos[id] == nil {
+			s.store.Mu.Unlock()
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		if !s.repoOwnedByOrgLocked(r.PathValue("org"), id) {
+			s.store.Mu.Unlock()
+			writeGHError(w, http.StatusUnprocessableEntity, "Validation Failed: repository does not belong to the organization")
+			return
+		}
 	}
 
 	ids := item.SelectedIDs()

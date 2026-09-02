@@ -119,15 +119,20 @@ func TestDiscussionsGraphQL_Lifecycle(t *testing.T) {
 	if tc, _ := childReplies["totalCount"].(float64); tc != 1 {
 		t.Fatalf("expected 1 reply, got %v", childReplies["totalCount"])
 	}
+	replyNodes, _ := childReplies["nodes"].([]interface{})
+	if len(replyNodes) != 1 || replyNodes[0].(map[string]interface{})["id"] != replyNodeID {
+		t.Fatalf("reply node not surfaced in the replies connection: %v", childReplies["nodes"])
+	}
 
+	// GitHub only allows a top-level comment to be marked as the answer, never a reply.
 	markQuery := `mutation($cid:ID!){markDiscussionCommentAsAnswer(input:{id:$cid}){discussion{number}}}`
-	markRes := runDiscussionGQL(t, markQuery, map[string]interface{}{"cid": replyNodeID})
+	markRes := runDiscussionGQL(t, markQuery, map[string]interface{}{"cid": commentNodeID})
 	if _, ok := markRes["markDiscussionCommentAsAnswer"]; !ok {
 		t.Fatalf("expected mark answer payload, got %v", markRes)
 	}
 
 	unmarkQuery := `mutation($cid:ID!){unmarkDiscussionCommentAsAnswer(input:{id:$cid}){discussion{number}}}`
-	unmarkRes := runDiscussionGQL(t, unmarkQuery, map[string]interface{}{"cid": replyNodeID})
+	unmarkRes := runDiscussionGQL(t, unmarkQuery, map[string]interface{}{"cid": commentNodeID})
 	if _, ok := unmarkRes["unmarkDiscussionCommentAsAnswer"]; !ok {
 		t.Fatalf("expected unmark answer payload, got %v", unmarkRes)
 	}
