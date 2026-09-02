@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -508,6 +509,11 @@ func (s *Server) handleCreateOrgVariable(w http.ResponseWriter, r *http.Request)
 	if body.Visibility != "selected" {
 		ids = nil
 	}
+	if bad, ok := s.firstNonOrgRepo(org.Login, ids); !ok {
+		writeGHError(w, http.StatusUnprocessableEntity,
+			fmt.Sprintf("Validation Failed: repository %d does not belong to the organization", bad))
+		return
+	}
 
 	name := strings.ToUpper(body.Name)
 	now := time.Now().UTC()
@@ -579,6 +585,11 @@ func (s *Server) patchOrgScopedVariable(w http.ResponseWriter, r *http.Request,
 	}
 	if body.Visibility != nil && !validOrgItemVisibility(*body.Visibility) {
 		writeGHError(w, http.StatusUnprocessableEntity, "visibility must be one of: all, private, selected")
+		return "", false
+	}
+	if bad, ok := s.firstNonOrgRepo(r.PathValue("org"), body.SelectedRepositoryIDs); !ok {
+		writeGHError(w, http.StatusUnprocessableEntity,
+			fmt.Sprintf("Validation Failed: repository %d does not belong to the organization", bad))
 		return "", false
 	}
 

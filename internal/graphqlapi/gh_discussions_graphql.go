@@ -1016,13 +1016,22 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			if d == nil {
 				return nil, gqlMissingNodeType("Discussion")
 			}
+			if d.Locked && !s.viewerCanPushRepo(p.Context, s.store.GetRepoByID(d.RepoID)) {
+				//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
+				return nil, fmt.Errorf("Unable to create comment because discussion is locked.")
+			}
 			parentID := 0
 			if replyToID, ok := input["replyToId"].(string); ok && replyToID != "" {
-				if parent := store.FindDiscussionCommentByNodeID(s.store, replyToID); parent != nil && parent.DiscussionID == d.ID {
-					parentID = parent.ID
-				} else {
+				parent := store.FindDiscussionCommentByNodeID(s.store, replyToID)
+				if parent == nil || parent.DiscussionID != d.ID {
 					return nil, fmt.Errorf("could not resolve replyToId to a comment on this discussion")
 				}
+				// GitHub discussions thread exactly one level deep: a reply cannot
+				// itself be replied to.
+				if parent.ParentID != 0 {
+					return nil, fmt.Errorf("the comment you are replying to is already a reply")
+				}
+				parentID = parent.ID
 			}
 			c := s.store.CreateDiscussionComment(d.ID, user.ID, body, parentID)
 			// Fires `on: discussion_comment` workflows (ACT-026).
@@ -1105,6 +1114,10 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			if cat == nil || !cat.IsAnswerable {
 				return nil, fmt.Errorf("this discussion's category does not support answers")
 			}
+			// GitHub only allows a top-level comment to be the answer, never a reply.
+			if c.ParentID != 0 {
+				return nil, fmt.Errorf("a reply cannot be marked as the answer")
+			}
 			s.store.MarkDiscussionCommentAsAnswer(c.ID)
 			return map[string]interface{}{
 				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
@@ -1180,6 +1193,11 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			subjectNodeID, _ := input["subjectId"].(string)
 
 			if d := store.FindDiscussionByNodeID(s.store, subjectNodeID); d != nil {
+				// A locked discussion cannot be upvoted (matches the advertised
+				// Discussion.viewerCanUpvote == !locked).
+				if d.Locked {
+					return nil, fmt.Errorf("cannot upvote a locked discussion")
+				}
 				s.store.SetDiscussionUpvote(d.ID, user.ID, up)
 				return map[string]interface{}{
 					"subject":          optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
@@ -1187,6 +1205,9 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				}, nil
 			}
 			if c := store.FindDiscussionCommentByNodeID(s.store, subjectNodeID); c != nil {
+				if parent := s.store.GetDiscussion(c.DiscussionID); parent != nil && parent.Locked {
+					return nil, fmt.Errorf("cannot upvote a comment on a locked discussion")
+				}
 				s.store.SetDiscussionCommentUpvote(c.ID, user.ID, up)
 				return map[string]interface{}{
 					"subject":          discussionCommentToGQL(s.store.GetDiscussionComment(c.ID), s.store),

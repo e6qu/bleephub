@@ -350,19 +350,21 @@ func resolveGitRevisionSpec(stor gitStorage.Storer, rev string) (GitRevision, er
 	if rev == "" {
 		return GitRevision{}, ErrGitTreeishNotFound
 	}
-	name, operators := rev, ""
-	if _, ok := resolveGitRevisionBase(stor, rev); !ok {
+	// Resolve the base once. resolveGitRevisionBase can be an O(objects) scan (an
+	// abbreviated OID), so the common no-operator case must not resolve twice.
+	operators := ""
+	hash, ok := resolveGitRevisionBase(stor, rev)
+	if !ok {
 		// The whole spelling names nothing; operators start at the first char git
 		// forbids in a ref name.
 		index := strings.IndexAny(rev, "^~")
 		if index <= 0 {
 			return GitRevision{}, ErrGitTreeishNotFound
 		}
-		name, operators = rev[:index], rev[index:]
-	}
-	hash, ok := resolveGitRevisionBase(stor, name)
-	if !ok {
-		return GitRevision{}, ErrGitTreeishNotFound
+		operators = rev[index:]
+		if hash, ok = resolveGitRevisionBase(stor, rev[:index]); !ok {
+			return GitRevision{}, ErrGitTreeishNotFound
+		}
 	}
 	for operators != "" {
 		next, rest, err := applyGitRevisionOperator(stor, hash, operators)

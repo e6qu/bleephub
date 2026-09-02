@@ -274,8 +274,26 @@ func (s *Server) handleContainerRegistryPutBlobUpload(w http.ResponseWriter, r *
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (s *Server) handleContainerRegistryGetBlob(w http.ResponseWriter, r *http.Request, _ string, digest string) {
-	if s.requireRegistryUser(w, r) == nil {
+func (s *Server) handleContainerRegistryGetBlob(w http.ResponseWriter, r *http.Request, name, digest string) {
+	user := s.requireRegistryUser(w, r)
+	if user == nil {
+		return
+	}
+	// Blobs are content-addressed in a global store, so authorize by the named
+	// package: the caller must be able to view it, and the blob must actually
+	// belong to it — otherwise a viewer of one package could read another's
+	// (possibly private) layers by digest.
+	ownerType, ownerKey, ok := s.resolveContainerRegistryOwner(w, name)
+	if !ok {
+		return
+	}
+	p := s.store.GetPackage(ownerKey, "container", containerRegistryPackageName(name))
+	if p == nil || p.OwnerType != ownerType || !s.canViewPackage(r.Context(), user, p) {
+		s.writeRegistryError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known")
+		return
+	}
+	if !s.packageReferencesRegistryBlob(p, digest) {
+		s.writeRegistryError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown to registry")
 		return
 	}
 	data, err := s.readRegistryBlob(digest)
@@ -323,7 +341,9 @@ func (s *Server) handleContainerRegistryPutManifest(w http.ResponseWriter, r *ht
 		return
 	}
 	pkgName := containerRegistryPackageName(name)
-	p, _ := s.store.CreatePackage(ownerType, ownerKey, "container", pkgName, "public")
+	// GHCR creates a pushed package private by default; it is not published until
+	// its owner changes the package visibility.
+	p, _ := s.store.CreatePackage(ownerType, ownerKey, "container", pkgName, "private")
 	files := []store.PackageFileInput{{
 		Name:          "manifest.json",
 		ContentType:   firstNonEmpty(manifest.MediaType, r.Header.Get("Content-Type"), "application/vnd.oci.image.manifest.v1+json"),
@@ -370,7 +390,8 @@ func (s *Server) handleContainerRegistryPutManifest(w http.ResponseWriter, r *ht
 }
 
 func (s *Server) handleContainerRegistryGetManifest(w http.ResponseWriter, r *http.Request, name, reference string) {
-	if s.requireRegistryUser(w, r) == nil {
+	user := s.requireRegistryUser(w, r)
+	if user == nil {
 		return
 	}
 	ownerType, ownerKey, ok := s.resolveContainerRegistryOwner(w, name)
@@ -378,7 +399,9 @@ func (s *Server) handleContainerRegistryGetManifest(w http.ResponseWriter, r *ht
 		return
 	}
 	p := s.store.GetPackage(ownerKey, "container", containerRegistryPackageName(name))
-	if p == nil || p.OwnerType != ownerType {
+	if p == nil || p.OwnerType != ownerType || !s.canViewPackage(r.Context(), user, p) {
+		// A private package is invisible to a caller who cannot view it — never
+		// distinguish "no such package" from "no access".
 		s.writeRegistryError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known")
 		return
 	}
@@ -473,6 +496,22 @@ func registryReferenceTags(reference string) []string {
 		return []string{}
 	}
 	return []string{reference}
+}
+
+// packageReferencesRegistryBlob reports whether the package has a version that
+// stored a file for this blob digest (config or a layer). Push records one
+// package file per referenced blob, so this is the authoritative membership test
+// for a content-addressed blob.
+func (s *Server) packageReferencesRegistryBlob(p *store.Package, digest string) bool {
+	want := registryBlobFileName(digest)
+	for _, v := range s.store.ListPackageVersions(p.ID, false) {
+		for _, f := range s.store.ListPackageFiles(v.ID) {
+			if f.Name == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func registryBlobFileName(digest string) string {

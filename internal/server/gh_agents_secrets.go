@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -294,6 +295,11 @@ func (s *Server) handlePutAgentsOrgSecret(w http.ResponseWriter, r *http.Request
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
+	}
+	if bad, ok := s.firstNonOrgRepo(org.Login, ids); !ok {
+		writeGHError(w, http.StatusUnprocessableEntity,
+			fmt.Sprintf("Validation Failed: repository %d does not belong to the organization", bad))
+		return
 	}
 
 	now := time.Now().UTC()

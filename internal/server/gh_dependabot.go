@@ -465,6 +465,11 @@ func (s *Server) handlePutDependabotOrgSecret(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
+	if bad, ok := s.firstNonOrgRepo(org.Login, ids); !ok {
+		writeGHError(w, http.StatusUnprocessableEntity,
+			fmt.Sprintf("Validation Failed: repository %d does not belong to the organization", bad))
+		return
+	}
 
 	created := s.store.UpsertDependabotOrgSecret(org.Login, name, body.EncryptedValue, body.KeyID, body.Visibility, ids)
 	s.recordAuditEvent("dependabot_secret.create", auditActor(r), org.Login, map[string]interface{}{
