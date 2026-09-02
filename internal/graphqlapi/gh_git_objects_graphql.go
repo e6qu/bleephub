@@ -12,6 +12,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/graphql-go/graphql"
 )
@@ -656,7 +657,7 @@ func (s *Resolver) addCommitHistoryField(commitType *graphql.Object) {
 			if err != nil {
 				return nil, err
 			}
-			commits, err := gitCommitHistory(commit, s.store, filter)
+			commits, err := gitCommitHistory(commit, s.store, filter, commitHistoryWalkLimit(p.Args))
 			if err != nil {
 				return emptyGitConnection(), nil
 			}
@@ -767,9 +768,14 @@ func (f commitHistoryFilter) matchesAuthor(st *store.Store, commit *object.Commi
 	return false
 }
 
+// maxCommitHistoryWalk hard-caps the ancestry walk so a single query cannot
+// alias Commit.history into an O(all-commits) walk per alias. Deep forward pages
+// stay within afterOffset+first; last/unbounded pages fall back to this cap.
+const maxCommitHistoryWalk = 100000
+
 // gitCommitHistory walks the ancestry in `git log` order, keeping commits the
-// filter accepts. Same walk as the REST commit listing.
-func gitCommitHistory(head *object.Commit, st *store.Store, filter commitHistoryFilter) ([]*object.Commit, error) {
+// filter accepts, up to limit matching commits (0 = unbounded).
+func gitCommitHistory(head *object.Commit, st *store.Store, filter commitHistoryFilter, limit int) ([]*object.Commit, error) {
 	iter := object.NewCommitPreorderIter(head, nil, nil)
 	defer iter.Close()
 	var commits []*object.Commit
@@ -780,13 +786,41 @@ func gitCommitHistory(head *object.Commit, st *store.Store, filter commitHistory
 		}
 		if keep {
 			commits = append(commits, commit)
+			if limit > 0 && len(commits) >= limit {
+				return storer.ErrStop
+			}
 		}
 		return nil
 	})
-	if err != nil {
+	if err != nil && err != storer.ErrStop {
 		return nil, err
 	}
 	return commits, nil
+}
+
+// commitHistoryWalkLimit bounds the walk to what the requested page needs. A
+// forward page (first, optionally after) needs at most afterOffset+first
+// commits; last/no-arg pages fall back to the hard cap. This keeps
+// history(first:N) from being an aliasable O(all-commits) walk.
+func commitHistoryWalkLimit(args map[string]interface{}) int {
+	limit := maxCommitHistoryWalk
+	if _, hasLast := intArg(args, "last"); !hasLast {
+		if first, ok := intArg(args, "first"); ok && first > 0 {
+			if first > 100 {
+				first = 100
+			}
+			afterOffset := 0
+			if after, ok := args["after"].(string); ok && after != "" {
+				if idx := decodeCursor(after); idx > 0 && idx < maxCommitHistoryWalk {
+					afterOffset = idx + 1
+				}
+			}
+			if n := afterOffset + first + 1; n < limit {
+				limit = n
+			}
+		}
+	}
+	return limit
 }
 
 func gitArgString(args map[string]interface{}, key string) string {

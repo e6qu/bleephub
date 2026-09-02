@@ -385,14 +385,26 @@ func TestOrgMembership(t *testing.T) {
 func TestRemoveMembership(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-rmmember")
 
-	ghPut(t, "/api/v3/orgs/testorg-rmmember/memberships/admin", defaultToken, map[string]interface{}{
-		"role": "admin",
-	})
+	// Seed a second member; removing a non-owner member succeeds.
+	testServer.store.Mu.Lock()
+	member := &store.User{ID: testServer.store.NextUser, Login: "rmmember-two", Type: "User"}
+	testServer.store.NextUser++
+	testServer.store.Users[member.ID] = member
+	testServer.store.UsersByLogin[member.Login] = member
+	testServer.store.Mu.Unlock()
+	ghPut(t, "/api/v3/orgs/testorg-rmmember/memberships/rmmember-two", defaultToken, map[string]interface{}{"role": "member"})
 
-	resp := ghDelete(t, "/api/v3/orgs/testorg-rmmember/memberships/admin", defaultToken)
-	defer resp.Body.Close()
+	resp := ghDelete(t, "/api/v3/orgs/testorg-rmmember/memberships/rmmember-two", defaultToken)
+	resp.Body.Close()
 	if resp.StatusCode != 204 {
-		t.Fatalf("expected 204, got %d", resp.StatusCode)
+		t.Fatalf("expected 204 removing a member, got %d", resp.StatusCode)
+	}
+
+	// Removing the sole owner would orphan the org — refused (GitHub parity).
+	resp = ghDelete(t, "/api/v3/orgs/testorg-rmmember/memberships/admin", defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 removing the last owner, got %d", resp.StatusCode)
 	}
 }
 

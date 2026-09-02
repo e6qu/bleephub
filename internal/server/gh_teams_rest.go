@@ -42,7 +42,11 @@ func validTeamEnums(privacy, permission, notification string) (string, bool) {
 		return "privacy", false
 	}
 	switch store.TeamPermission(permission) {
-	case "", store.TeamPermissionPull, store.TeamPermissionPush, store.TeamPermissionAdmin:
+	// GitHub's team-level default permission is pull or push only; "admin" (and
+	// the other fine-grained roles) are set per-repository, gated by repo admin.
+	// Accepting "admin" here let a team maintainer raise the default to admin and
+	// retroactively promote the team on every repo linked at the default.
+	case "", store.TeamPermissionPull, store.TeamPermissionPush:
 	default:
 		return "permission", false
 	}
@@ -115,8 +119,17 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, fullName := range req.RepoNames {
 		owner, name, found := strings.Cut(fullName, "/")
-		if !found || s.store.GetRepo(owner, name) == nil {
+		repo := s.store.GetRepo(owner, name)
+		if !found || repo == nil {
 			store.WriteGHValidationError(w, "Team", "repo_names", "invalid")
+			return
+		}
+		// Adding a repository to a team requires admin on that repository (GitHub
+		// parity). Without this, any org member could seed a private repo they
+		// cannot even read into a new team and grant themselves access via the
+		// team's default permission.
+		if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeAdministration, store.PermWrite) {
+			writeGHError(w, http.StatusForbidden, "You must be an admin of the repository to add it to a team.")
 			return
 		}
 	}

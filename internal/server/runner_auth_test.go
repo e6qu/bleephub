@@ -61,7 +61,10 @@ func testJobToken(t *testing.T, s *Server, repoFullName string) (token, scopeID 
 	s.store.Mu.Lock()
 	s.store.Jobs[jobID] = &store.Job{ID: jobID, PlanID: "plan-" + scopeID, Status: "queued", Message: message}
 	s.store.Mu.Unlock()
-	return makeJWT(scopeID, runnerAudJob), scopeID
+	// Carry id-token:write so the token can mint an OIDC token (a workflow
+	// requesting OIDC must declare it); granting only that scope leaves every
+	// other requirePerm gate denied exactly as a bare job token would be.
+	return makeJobJWT(scopeID, repoFullName, map[string]string{"id_token": "write"}), scopeID
 }
 
 // seedRunJobToken registers a workflow run for repoFullName under backendID
