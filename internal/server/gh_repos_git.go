@@ -463,6 +463,9 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 	var req struct {
 		Content  *string `json:"content"`
 		Encoding string  `json:"encoding"`
@@ -524,6 +527,9 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 	_, _, repo, stor := s.gitDataContext(w, r)
 	if repo == nil {
+		return
+	}
+	if s.rejectIfArchived(w, repo) {
 		return
 	}
 	var req struct {
@@ -785,6 +791,9 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 	var req struct {
 		Message   string     `json:"message"`
 		Tree      string     `json:"tree"`
@@ -879,6 +888,9 @@ func (s *Server) handleGetCommit(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 	_, _, repo, stor := s.gitDataContext(w, r)
 	if repo == nil {
+		return
+	}
+	if s.rejectIfArchived(w, repo) {
 		return
 	}
 	var req struct {
@@ -976,6 +988,9 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 	var req struct {
 		Ref string `json:"ref"`
 		SHA string `json:"sha"`
@@ -1006,6 +1021,9 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 	_, _, repo, stor := s.gitDataContext(w, r)
 	if repo == nil {
+		return
+	}
+	if s.rejectIfArchived(w, repo) {
 		return
 	}
 	var req struct {

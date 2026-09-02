@@ -491,9 +491,10 @@ func (st *Store) ListRulesetsForRepository(repo *Repo, includeParents bool) []*R
 	defer st.Mu.RUnlock()
 	var out []*Ruleset
 	for _, rs := range st.Rulesets {
-		if rs.RepoID == repo.ID ||
-			(includeParents && ((repo.OwnerType == "Organization" && rs.OrgID != 0 && rs.OrgID == repo.OwnerID) ||
-				rs.Enterprise != "")) {
+		// A repo-scoped ruleset always lists; org- and enterprise-scoped parents
+		// list only when includeParents. rulesetAppliesToRepo is the single source
+		// of truth for parent applicability (enterprise → org-owned repos only).
+		if rs.RepoID == repo.ID || (includeParents && rulesetAppliesToRepo(rs, repo)) {
 			out = append(out, cloneRuleset(rs))
 		}
 	}
@@ -598,7 +599,13 @@ func (st *Store) BranchProtectedByRuleset(repo *Repo, branch string) bool {
 }
 
 func rulesetAppliesToRepo(rs *Ruleset, repo *Repo) bool {
-	return rs.Enterprise != "" || rs.RepoID == repo.ID ||
+	// Enterprise rulesets target repositories owned by organizations in the
+	// enterprise; personal (user-owned) repositories are not part of an
+	// organization, so an enterprise ruleset never applies to them.
+	if rs.Enterprise != "" {
+		return repo.OwnerType == "Organization"
+	}
+	return rs.RepoID == repo.ID ||
 		(repo.OwnerType == "Organization" && rs.OrgID != 0 && rs.OrgID == repo.OwnerID)
 }
 

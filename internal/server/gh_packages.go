@@ -560,17 +560,28 @@ func (s *Server) handleRestoreOrgPackage(w http.ResponseWriter, r *http.Request)
 // listDockerConflicts returns docker-type packages whose names collide with a
 // container-type package in the same namespace — the ones that cannot migrate off
 // the legacy Docker registry.
-func (s *Server) listDockerConflicts(r *http.Request, ownerKey string) []map[string]interface{} {
+func (s *Server) listDockerConflicts(r *http.Request, user *store.User, ownerKey string) []map[string]interface{} {
 	pkgs := s.store.ListPackages(ownerKey)
-	baseURL := s.baseURL(r)
-	out := []map[string]interface{}{}
+	containerNames := map[string]bool{}
 	for _, p := range pkgs {
-		if p.PackageType != "docker" {
+		if p.PackageType == "container" {
+			containerNames[p.Name] = true
+		}
+	}
+	baseURL := s.baseURL(r)
+	out := make([]map[string]interface{}, 0)
+	for _, p := range pkgs {
+		if p.PackageType != "docker" || !containerNames[p.Name] {
 			continue
 		}
-		if s.store.GetPackage(ownerKey, "container", p.Name) != nil {
-			out = append(out, s.packageToJSON(p, baseURL))
+		if !s.canViewPackage(r.Context(), user, p) {
+			continue
 		}
+		row := s.packageToJSON(p, baseURL)
+		// The vendored package schema does not declare node_id, and this endpoint
+		// emits exactly the documented members.
+		delete(row, "node_id")
+		out = append(out, row)
 	}
 	return out
 }
@@ -580,7 +591,7 @@ func (s *Server) handleListAuthUserDockerConflicts(w http.ResponseWriter, r *htt
 	if user == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.listDockerConflicts(r, user.Login))
+	writeJSON(w, http.StatusOK, s.listDockerConflicts(r, user, user.Login))
 }
 
 func (s *Server) handleListUserDockerConflicts(w http.ResponseWriter, r *http.Request) {
@@ -593,7 +604,7 @@ func (s *Server) handleListUserDockerConflicts(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.listDockerConflicts(r, u.Login))
+	writeJSON(w, http.StatusOK, s.listDockerConflicts(r, user, u.Login))
 }
 
 // ─── Org-scoped handlers ────────────────────────────────────────────────
@@ -659,29 +670,7 @@ func (s *Server) handleListOrgDockerConflicts(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	pkgs := s.store.ListPackages(org.Login)
-	containerNames := map[string]bool{}
-	for _, p := range pkgs {
-		if p.PackageType == "container" {
-			containerNames[p.Name] = true
-		}
-	}
-	baseURL := s.baseURL(r)
-	out := make([]map[string]interface{}, 0)
-	for _, p := range pkgs {
-		if p.PackageType != "docker" || !containerNames[p.Name] {
-			continue
-		}
-		if !s.canViewPackage(r.Context(), user, p) {
-			continue
-		}
-		row := s.packageToJSON(p, baseURL)
-		// The vendored package schema does not declare node_id, and this endpoint
-		// emits exactly the documented members.
-		delete(row, "node_id")
-		out = append(out, row)
-	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, s.listDockerConflicts(r, user, org.Login))
 }
 
 func (s *Server) handleListOrgPackageVersions(w http.ResponseWriter, r *http.Request) {
@@ -1004,6 +993,10 @@ func (s *Server) resolveUserPackageFile(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return nil, nil, nil, false
 	}
+	if v.Deleted {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return nil, nil, nil, false
+	}
 	f, ok := s.resolveFile(w, r)
 	if !ok || f.VersionID != v.ID {
 		return nil, nil, nil, false
@@ -1047,6 +1040,10 @@ func (s *Server) resolveOrgPackageVersion(w http.ResponseWriter, r *http.Request
 func (s *Server) resolveOrgPackageFile(w http.ResponseWriter, r *http.Request) (*store.Package, *store.PackageVersion, *store.PackageFile, bool) {
 	p, v, ok := s.resolveOrgPackageVersion(w, r)
 	if !ok {
+		return nil, nil, nil, false
+	}
+	if v.Deleted {
+		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, nil, false
 	}
 	f, ok := s.resolveFile(w, r)
@@ -1104,6 +1101,10 @@ func (s *Server) resolveRepoPackageVersion(w http.ResponseWriter, r *http.Reques
 func (s *Server) resolveRepoPackageFile(w http.ResponseWriter, r *http.Request) (*store.Package, *store.PackageVersion, *store.PackageFile, bool) {
 	p, v, ok := s.resolveRepoPackageVersion(w, r)
 	if !ok {
+		return nil, nil, nil, false
+	}
+	if v.Deleted {
+		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, nil, false
 	}
 	f, ok := s.resolveFile(w, r)

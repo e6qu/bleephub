@@ -286,7 +286,10 @@ func (s *Server) handleGetEnterpriseInnerSourceSync(w http.ResponseWriter, r *ht
 
 func (s *Server) handleEnterpriseServerStatistics(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	if user == nil || !user.SiteAdmin {
+	// Hide this instance-wide surface from non-admins, and from a site admin's
+	// delegated credentials (fine-grained PAT, app or installation token) — matching
+	// the sibling /enterprise/stats/* gate (requireGHESSiteAdmin).
+	if user == nil || !user.SiteAdmin || !credentialConveysSiteAdmin(r.Context()) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -296,7 +299,9 @@ func (s *Server) handleEnterpriseServerStatistics(w http.ResponseWriter, r *http
 		return
 	}
 	s.store.Mu.RLock()
-	totalRepos, totalTeams := len(s.store.Repos), len(s.store.Teams)+len(s.store.EnterpriseTeams)
+	// total_teams counts organization teams only, matching the sibling admin-stats
+	// endpoint; enterprise teams are a distinct concept and not part of this metric.
+	totalRepos, totalTeams := len(s.store.Repos), len(s.store.Teams)
 	totalOrgs := len(s.store.Orgs)
 	users := make([]*store.User, 0, len(s.store.Users))
 	for _, candidate := range s.store.Users {
