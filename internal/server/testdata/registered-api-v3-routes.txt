@@ -467,6 +467,7 @@ GET /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/hosted-runners
 GET /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories
 GET /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners
 GET /api/v3/orgs/{org}/actions/runners
+GET /api/v3/orgs/{org}/actions/runners/deprecations/{version}
 GET /api/v3/orgs/{org}/actions/runners/downloads
 GET /api/v3/orgs/{org}/actions/runners/{runner_id}
 GET /api/v3/orgs/{org}/actions/runners/{runner_id}/labels
@@ -664,6 +665,7 @@ GET /api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-r
 GET /api/v3/repos/{owner}/{repo}/actions/permissions/selected-actions
 GET /api/v3/repos/{owner}/{repo}/actions/permissions/workflow
 GET /api/v3/repos/{owner}/{repo}/actions/runners
+GET /api/v3/repos/{owner}/{repo}/actions/runners/deprecations/{version}
 GET /api/v3/repos/{owner}/{repo}/actions/runners/downloads
 GET /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}
 GET /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels

@@ -12596,6 +12596,55 @@
         "state_changing": false,
         "webhook_actions_event_review": false
       },
+      "operation_id": "actions/get-runner-version-deprecation-for-org",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/actions/runners/deprecations/{version}",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
       "operation_id": "actions/list-runner-applications-for-org",
       "pagination": {
         "parameters": [],
@@ -35547,6 +35596,61 @@
             "name": "per_page",
             "required": false,
             "type": "integer"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
+      "operation_id": "actions/get-runner-version-deprecation-for-repo",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/actions/runners/deprecations/{version}",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "type": "string"
           }
         ]
       },
@@ -79718,9 +79822,9 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "d0c9206fb92d51d1acde0699364ca06e489141e78cdee0081e4af4da013eeca0",
+  "source_sha256": "f279b177231838aa3826337e05a30eba201be7becd6e05767a05c2b5f39e5b04",
   "summary": {
-    "operations": 1222,
+    "operations": 1224,
     "state_changing": 584,
     "with_conditional_requests": 0,
     "with_pagination": 284,

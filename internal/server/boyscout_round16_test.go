@@ -139,3 +139,41 @@ func TestMergeQueueEnqueueRequiresApproval(t *testing.T) {
 		t.Fatalf("the unreviewed PR was merged from the queue: state=%s", merged.State)
 	}
 }
+
+// TestRunnerVersionDeprecationSchedule pins the newly-documented
+// GET .../actions/runners/deprecations/{version} operation (org + repo): it
+// echoes the requested version with a null end-of-life schedule (bleephub sets
+// none), and shares the two-segment runner path space without shadowing the
+// runner-labels route.
+func TestRunnerVersionDeprecationSchedule(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.seedRepo(t, "runner-dep", false)
+	s.seedTestOrg(t, "runner-dep-org")
+
+	for _, path := range []string{
+		"/api/v3/repos/admin/runner-dep/actions/runners/deprecations/2.300.0",
+		"/api/v3/orgs/runner-dep-org/actions/runners/deprecations/2.300.0",
+	} {
+		resp := s.get(t, path, defaultToken)
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			t.Fatalf("GET %s = %d, want 200", path, resp.StatusCode)
+		}
+		body := decodeJSON(t, resp)
+		if body["runner_version"] != "2.300.0" {
+			t.Errorf("%s: runner_version = %v, want 2.300.0", path, body["runner_version"])
+		}
+		if body["registration_deprecates_at"] != nil || body["runtime_deprecates_at"] != nil {
+			t.Errorf("%s: expected a null deprecation schedule, got %v / %v", path,
+				body["registration_deprecates_at"], body["runtime_deprecates_at"])
+		}
+	}
+
+	// The runner-labels route in the same two-segment space still resolves.
+	resp := s.get(t, "/api/v3/repos/admin/runner-dep/actions/runners/12345/labels", defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("labels route for a missing runner = %d, want 404 (route must still resolve)", resp.StatusCode)
+	}
+}
