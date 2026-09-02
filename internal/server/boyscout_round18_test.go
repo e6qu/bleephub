@@ -49,6 +49,34 @@ func TestTeamCreateRequiresRepoAdmin(t *testing.T) {
 	}
 }
 
+// TestLastOrgOwnerGuard pins that a non-owner member can be removed, but the
+// sole owner cannot be removed or demoted (either would orphan the org).
+func TestLastOrgOwnerGuard(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.seedTestOrg(t, "guarded") // admin is the sole owner
+	member, _ := s.newUser(t, "guard-member")
+	s.store.SetMembership("guarded", member.ID, store.OrgRoleMember, store.MembershipStateActive)
+
+	resp := s.delete(t, "/api/v3/orgs/guarded/members/guard-member", defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("removing a non-owner member = %d, want 204", resp.StatusCode)
+	}
+
+	resp = s.delete(t, "/api/v3/orgs/guarded/members/admin", defaultToken)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("removing the last owner = %d, want 403", resp.StatusCode)
+	}
+
+	resp = s.put(t, "/api/v3/orgs/guarded/memberships/admin", defaultToken, map[string]interface{}{"role": "member"})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("demoting the last owner = %d, want 403", resp.StatusCode)
+	}
+}
+
 // TestOIDCTokenRequiresIdTokenWrite pins that minting an OIDC token requires the
 // workflow to carry `permissions: id-token: write`; a job token without it is
 // refused, one with it succeeds.
