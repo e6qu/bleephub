@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -41,9 +42,34 @@ func fullOIDCQuery(repo string, extra ...string) string {
 // decodeOIDCToken mints a token via GET /token with the given query and returns
 // the decoded JWT payload claims. The endpoint is gated on the job runtime
 // token for repoFull, so a faithful caller presents exactly that.
+// oidcClaimsFromQuery translates a test's OIDC query into the authoritative run
+// context a job token now carries — the mint reads the token, not the request,
+// so a test configures the run by what it "would" pass.
+func oidcClaimsFromQuery(t *testing.T, query string) *oidcRunClaims {
+	t.Helper()
+	v, err := url.ParseQuery(query)
+	if err != nil {
+		t.Fatalf("parse oidc query: %v", err)
+	}
+	return &oidcRunClaims{
+		Ref:          v.Get("ref"),
+		Sha:          v.Get("sha"),
+		RunID:        v.Get("run_id"),
+		RunNumber:    v.Get("run_number"),
+		RunAttempt:   v.Get("run_attempt"),
+		EventName:    v.Get("event_name"),
+		Environment:  v.Get("environment"),
+		HeadRef:      v.Get("head_ref"),
+		BaseRef:      v.Get("base_ref"),
+		Workflow:     v.Get("workflow"),
+		WorkflowFile: v.Get("workflow_file"),
+		Actor:        v.Get("actor"),
+	}
+}
+
 func decodeOIDCToken(t *testing.T, s *Server, repoFull, query string) map[string]any {
 	t.Helper()
-	jobToken, _ := testJobToken(t, s, repoFull)
+	jobToken, _ := testJobTokenWithOIDC(t, s, repoFull, oidcClaimsFromQuery(t, query))
 	req := httptest.NewRequest("GET", "/token?"+query, nil)
 	req.Header.Set("Authorization", "Bearer "+jobToken)
 	w := httptest.NewRecorder()

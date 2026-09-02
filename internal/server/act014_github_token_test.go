@@ -81,7 +81,7 @@ func TestGithubTokenIsRepoScopedLeastPrivilege(t *testing.T) {
 	s.store.CreateRepo(admin, "other", "", false)
 
 	dispatch := func(repoPath string, perms map[string]string) int {
-		token := makeJobJWT("scope-"+repoPath, "admin/act014", perms)
+		token := makeJobJWT("scope-"+repoPath, "admin/act014", perms, nil)
 		resp := s.do(t, http.MethodPost, "/api/v3/repos/"+repoPath+"/dispatches", token, map[string]interface{}{"event_type": "go"})
 		defer resp.Body.Close()
 		return resp.StatusCode

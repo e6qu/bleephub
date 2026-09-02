@@ -205,7 +205,7 @@ func (s *Server) newActionsEngine() *actions.Engine {
 		// GITHUB_TOKEN minting stays in the auth layer: mint and verify share
 		// the runner MAC key, and signature drift would break every job.
 		MintJobToken: func(scopeID string, wf *store.Workflow, jd *store.JobDef) string {
-			return makeJobJWT(scopeID, wf.RepoFullName, s.resolveJobTokenPermissions(wf, jd))
+			return makeJobJWT(scopeID, wf.RepoFullName, s.resolveJobTokenPermissions(wf, jd), oidcRunClaimsFromRun(wf, jd))
 		},
 		RepoEventPayload: func(repo *store.Repo) map[string]interface{} {
 			return repoPayload(repo, s.publicOrigin())
