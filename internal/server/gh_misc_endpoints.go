@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -654,6 +655,51 @@ func (s *Server) oidcKeyE() (*rsa.PrivateKey, error) {
 	return k, nil
 }
 
+// oidcRunClaimsFromRun captures a run/job's authoritative OpenID Connect context
+// at job-token mint time, so the OIDC-token endpoint mints the subject and
+// claims from it rather than from runner-supplied query parameters — a job
+// cannot then forge its ref/environment to assume a cloud role it isn't
+// entitled to. Mirrors the run's github-context assembly (actor/head_ref/base_ref
+// from the event payload).
+func oidcRunClaimsFromRun(wf *store.Workflow, jd *store.JobDef) *oidcRunClaims {
+	if wf == nil {
+		return nil
+	}
+	attempt := wf.Attempt
+	if attempt == 0 {
+		attempt = 1
+	}
+	c := &oidcRunClaims{
+		Ref:        wf.Ref,
+		Sha:        wf.Sha,
+		RunID:      strconv.Itoa(wf.RunID),
+		RunNumber:  strconv.Itoa(wf.RunNumber),
+		RunAttempt: strconv.Itoa(attempt),
+		EventName:  wf.EventName,
+		Workflow:   wf.Name,
+	}
+	if wf.WorkflowFilePath != "" {
+		c.WorkflowFile = path.Base(wf.WorkflowFilePath)
+	}
+	if jd != nil {
+		c.Environment = jd.EnvironmentName()
+	}
+	if wf.EventPayload != nil {
+		if sender, _ := wf.EventPayload["sender"].(map[string]interface{}); sender != nil {
+			c.Actor, _ = sender["login"].(string)
+		}
+		if pr, _ := wf.EventPayload["pull_request"].(map[string]interface{}); pr != nil {
+			if head, _ := pr["head"].(map[string]interface{}); head != nil {
+				c.HeadRef, _ = head["ref"].(string)
+			}
+			if base, _ := pr["base"].(map[string]interface{}); base != nil {
+				c.BaseRef, _ = base["ref"].(string)
+			}
+		}
+	}
+	return c
+}
+
 func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error) {
 	now := s.currentTime()
 	q := r.URL.Query()
@@ -684,37 +730,25 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	if repo == nil {
 		return "", fmt.Errorf("oidc: repository %q not found", repoFull)
 	}
-	ref := q.Get("ref")
+	// Every OIDC claim below is fixed by the workflow run at job-token mint time,
+	// NOT read from this request: the runner cannot forge its ref/sha/environment
+	// to obtain a token for a context it is not running in (subject forgery).
+	oc := principal.Claims.OIDC
+	if oc == nil {
+		return "", fmt.Errorf("oidc: the job token carries no run context")
+	}
+	ref := oc.Ref
 	if ref == "" {
-		return "", fmt.Errorf("oidc: 'ref' is required")
+		return "", fmt.Errorf("oidc: the run has no ref")
 	}
-	sha := q.Get("sha")
-	if sha == "" {
-		return "", fmt.Errorf("oidc: 'sha' is required")
-	}
-	runID := q.Get("run_id")
-	if runID == "" {
-		return "", fmt.Errorf("oidc: 'run_id' is required")
-	}
-	runNumber := q.Get("run_number")
-	if runNumber == "" {
-		return "", fmt.Errorf("oidc: 'run_number' is required")
-	}
-	workflowName := q.Get("workflow")
-	if workflowName == "" {
-		return "", fmt.Errorf("oidc: 'workflow' is required")
-	}
-	workflowFile := q.Get("workflow_file")
-	if workflowFile == "" {
-		return "", fmt.Errorf("oidc: 'workflow_file' is required")
-	}
-	eventName := q.Get("event_name")
-	if eventName == "" {
-		return "", fmt.Errorf("oidc: 'event_name' is required")
-	}
-	// actor is informational (the security binding is the repository, above),
-	// so resolve its id best-effort.
-	actor := q.Get("actor")
+	sha := oc.Sha
+	runID := oc.RunID
+	runNumber := oc.RunNumber
+	workflowName := oc.Workflow
+	workflowFile := oc.WorkflowFile
+	eventName := oc.EventName
+	// actor is informational; resolve its id best-effort.
+	actor := oc.Actor
 	actorID := 0
 	if actor != "" {
 		if u := s.store.LookupUserByLogin(actor); u != nil {
@@ -734,12 +768,12 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	}
 
 	// "1" is the real value for a first attempt, not a placeholder.
-	runAttempt := q.Get("run_attempt")
+	runAttempt := oc.RunAttempt
 	if runAttempt == "" {
 		runAttempt = "1"
 	}
-	headRef := q.Get("head_ref")
-	baseRef := q.Get("base_ref")
+	headRef := oc.HeadRef
+	baseRef := oc.BaseRef
 
 	refType := "branch"
 	switch {
@@ -749,7 +783,7 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 		refType = "branch"
 	}
 
-	env := q.Get("environment")
+	env := oc.Environment
 
 	// sub reflects the environment when supplied, else the ref form.
 	var sub string

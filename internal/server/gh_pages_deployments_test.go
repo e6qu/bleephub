@@ -71,9 +71,14 @@ func (s *isolatedServer) mintPagesOIDCTokenForAudience(t *testing.T, repo, sha, 
 	if audience != "" {
 		q.Set("audience", audience)
 	}
-	// The OIDC mint is gated on the job runtime token — the very
-	// credential the Pages deploy job holds — so present that, scoped to repo.
-	jobToken, _ := testJobToken(t, s.Server, repo)
+	// The OIDC mint is gated on the job runtime token — the very credential the
+	// Pages deploy job holds — and derives every claim from the token's
+	// authoritative run context, so the token carries this run's sha/ref/environment.
+	jobToken, _ := testJobTokenWithOIDC(t, s.Server, repo, &oidcRunClaims{
+		Ref: ref, Sha: sha, Environment: environment,
+		RunID: "42", RunNumber: "7", RunAttempt: "1",
+		Workflow: "Pages", WorkflowFile: "pages.yml", EventName: "push",
+	})
 	req, err := http.NewRequest("GET", s.baseURL+"/token?"+q.Encode(), nil)
 	if err != nil {
 		t.Fatal(err)

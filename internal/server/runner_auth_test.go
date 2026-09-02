@@ -52,6 +52,29 @@ func testRepo(t *testing.T, s *Server, owner, name string, private bool) *store.
 // testJobToken seeds a dispatched job for repoFullName and returns the
 // runtime token its message carries, along with the plan scope identifier.
 func testJobToken(t *testing.T, s *Server, repoFullName string) (token, scopeID string) {
+	return testJobTokenWithOIDC(t, s, repoFullName, defaultTestOIDCClaims())
+}
+
+// defaultTestOIDCClaims is the authoritative run context a job token carries,
+// matching fullOIDCQuery's defaults so the minted OIDC claims equal what a
+// faithful run would produce.
+func defaultTestOIDCClaims() *oidcRunClaims {
+	return &oidcRunClaims{
+		Ref:          "refs/heads/main",
+		Sha:          "0123456789abcdef0123456789abcdef01234567",
+		RunID:        "42",
+		RunNumber:    "7",
+		RunAttempt:   "1",
+		EventName:    "push",
+		Workflow:     "CI",
+		WorkflowFile: "ci.yml",
+	}
+}
+
+// testJobTokenWithOIDC mints a per-job token that carries the given run context
+// (as the server binds from the real run at mint time) plus id-token:write, and
+// registers the backing job so the scope resolves.
+func testJobTokenWithOIDC(t *testing.T, s *Server, repoFullName string, oidc *oidcRunClaims) (token, scopeID string) {
 	t.Helper()
 	scopeID = fmt.Sprintf("plan-scope-%s", strings.ReplaceAll(repoFullName, "/", "-"))
 	message := fmt.Sprintf(
@@ -61,10 +84,9 @@ func testJobToken(t *testing.T, s *Server, repoFullName string) (token, scopeID 
 	s.store.Mu.Lock()
 	s.store.Jobs[jobID] = &store.Job{ID: jobID, PlanID: "plan-" + scopeID, Status: "queued", Message: message}
 	s.store.Mu.Unlock()
-	// Carry id-token:write so the token can mint an OIDC token (a workflow
-	// requesting OIDC must declare it); granting only that scope leaves every
-	// other requirePerm gate denied exactly as a bare job token would be.
-	return makeJobJWT(scopeID, repoFullName, map[string]string{"id_token": "write"}), scopeID
+	// Carry id-token:write so the token can mint an OIDC token; granting only that
+	// scope leaves every other requirePerm gate denied as a bare job token would be.
+	return makeJobJWT(scopeID, repoFullName, map[string]string{"id_token": "write"}, oidc), scopeID
 }
 
 // seedRunJobToken registers a workflow run for repoFullName under backendID

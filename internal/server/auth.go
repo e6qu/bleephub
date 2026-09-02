@@ -594,6 +594,29 @@ type runnerTokenClaims struct {
 	// the REST gate can scope its /api/v3 access (ACT-014); absent on session tokens.
 	Repo  string            `json:"repo,omitempty"`
 	Perms map[string]string `json:"perms,omitempty"`
+	// OIDC carries the run's authoritative OpenID Connect context, captured from
+	// the workflow run and job at mint time. The OIDC-token endpoint uses these
+	// (not client-supplied query parameters) so a job cannot forge a subject —
+	// e.g. claim :ref:refs/heads/main or :environment:production for a job that
+	// runs on neither — to assume a cloud role it isn't entitled to.
+	OIDC *oidcRunClaims `json:"oidc,omitempty"`
+}
+
+// oidcRunClaims is the run/job context an OIDC token is minted from. Every field
+// is fixed by the server at job-token mint time; the runner cannot influence it.
+type oidcRunClaims struct {
+	Ref          string `json:"ref,omitempty"`
+	Sha          string `json:"sha,omitempty"`
+	RunID        string `json:"run_id,omitempty"`
+	RunNumber    string `json:"run_number,omitempty"`
+	RunAttempt   string `json:"run_attempt,omitempty"`
+	EventName    string `json:"event_name,omitempty"`
+	Environment  string `json:"environment,omitempty"`
+	HeadRef      string `json:"head_ref,omitempty"`
+	BaseRef      string `json:"base_ref,omitempty"`
+	Workflow     string `json:"workflow,omitempty"`
+	WorkflowFile string `json:"workflow_file,omitempty"`
+	Actor        string `json:"actor,omitempty"`
 }
 
 const runnerTokenScp = "Actions.Results:write Actions.Pipelines:read"
@@ -624,7 +647,7 @@ func makeJWT(sub, aud string) string {
 // makeJobJWT mints a per-job runtime token (GITHUB_TOKEN) bound to one repo and
 // the workflow's least-privilege permission set, which the REST gate reads to
 // scope /api/v3 access (ACT-014).
-func makeJobJWT(sub, repo string, perms map[string]string) string {
+func makeJobJWT(sub, repo string, perms map[string]string, oidc *oidcRunClaims) string {
 	now := time.Now()
 	return signRunnerClaims(runnerTokenClaims{
 		Sub:   sub,
@@ -633,6 +656,7 @@ func makeJobJWT(sub, repo string, perms map[string]string) string {
 		Nbf:   now.Add(-runnerClockSkew).Unix(),
 		Exp:   now.Add(runnerTokenTTL).Unix(),
 		Scp:   runnerTokenScp,
+		OIDC:  oidc,
 		Repo:  repo,
 		Perms: perms,
 	})
