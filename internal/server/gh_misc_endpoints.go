@@ -511,7 +511,17 @@ func (s *Server) handleFollowUser(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	s.store.SetFollow(user.Login, r.PathValue("username"), true)
+	target := s.store.LookupUserByLogin(r.PathValue("username"))
+	if target == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	// A user blocked by the target cannot follow them (GitHub returns 403).
+	if s.store.IsUserBlocked(target.ID, user.ID) {
+		writeGHError(w, http.StatusForbidden, "You have been blocked from following this user.")
+		return
+	}
+	s.store.SetFollow(user.Login, target.Login, true)
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -357,7 +357,10 @@ func (s *ProjectV2Store) CopyProject(sourceID, ownerID int, ownerType, title str
 	}
 
 	for _, it := range s.itemsForProjectLocked(sourceID) {
-		if it.ContentType == "DraftIssue" && !includeDraftIssues {
+		// GitHub copies a project's configuration (fields/views/workflows) and,
+		// only when asked, its draft issues — never its issue/PR-backed items. So a
+		// copy starts empty of real items; only draft issues carry over.
+		if it.ContentType != "DraftIssue" || !includeDraftIssues {
 			continue
 		}
 		clone := cloneProjectV2Item(it)

@@ -58,6 +58,12 @@ func (s *Server) handleListGlobalAdvisories(w http.ResponseWriter, r *http.Reque
 		if typeFilter != "reviewed" {
 			continue
 		}
+		// The global advisory database is curated from public sources; a private
+		// repository's advisory (and its repo name/details) must never surface
+		// here to any caller, including anonymous ones.
+		if repo := s.store.GetRepoByID(a.RepoID); repo != nil && repo.Private {
+			continue
+		}
 		if v := q.Get("ghsa_id"); v != "" && a.GHSAID != v {
 			continue
 		}
@@ -185,10 +191,15 @@ func (s *Server) handleListGlobalAdvisories(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleGetGlobalAdvisory(w http.ResponseWriter, r *http.Request) {
 	ghsaID := r.PathValue("ghsa_id")
 	for _, a := range s.store.ListGlobalAdvisories() {
-		if a.GHSAID == ghsaID {
-			writeJSON(w, http.StatusOK, s.globalAdvisoryToJSON(a, s.baseURL(r)))
-			return
+		if a.GHSAID != ghsaID {
+			continue
 		}
+		// A private repository's advisory is never part of the global database.
+		if repo := s.store.GetRepoByID(a.RepoID); repo != nil && repo.Private {
+			break
+		}
+		writeJSON(w, http.StatusOK, s.globalAdvisoryToJSON(a, s.baseURL(r)))
+		return
 	}
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
