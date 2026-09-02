@@ -84,7 +84,7 @@ func (s *Server) handleListCodeScanningAlerts(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	repo := s.lookupReadableRepoFromPath(w, r)
+	repo := s.lookupSecurityReadableRepo(w, r)
 	if repo == nil {
 		return
 	}
@@ -113,7 +113,7 @@ func (s *Server) handleGetCodeScanningAlert(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	repo := s.lookupReadableRepoFromPath(w, r)
+	repo := s.lookupSecurityReadableRepo(w, r)
 	if repo == nil {
 		return
 	}
@@ -171,7 +171,7 @@ func (s *Server) handleListCodeScanningAlertInstances(w http.ResponseWriter, r *
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	repo := s.lookupReadableRepoFromPath(w, r)
+	repo := s.lookupSecurityReadableRepo(w, r)
 	if repo == nil {
 		return
 	}
@@ -690,7 +690,7 @@ func (s *Server) handleGetCodeScanningAutofix(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	repo := s.lookupReadableRepoFromPath(w, r)
+	repo := s.lookupSecurityReadableRepo(w, r)
 	if repo == nil {
 		return
 	}

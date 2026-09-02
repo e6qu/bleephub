@@ -122,7 +122,8 @@ const (
 )
 
 func (s *Server) registerGHImportRoutes() {
-	s.route("GET /api/v3/repos/{owner}/{repo}/import", s.handleGetImport)
+	s.route("GET /api/v3/repos/{owner}/{repo}/import",
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleGetImport))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/import",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleStartImport))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/import",
@@ -131,10 +132,12 @@ func (s *Server) registerGHImportRoutes() {
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleCancelImport))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/import/lfs",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleSetImportLFS))
-	s.route("GET /api/v3/repos/{owner}/{repo}/import/authors", s.handleListImportAuthors)
+	s.route("GET /api/v3/repos/{owner}/{repo}/import/authors",
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleListImportAuthors))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/import/authors/{author_id}",
 		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdateImportAuthor))
-	s.route("GET /api/v3/repos/{owner}/{repo}/import/large_files", s.handleListImportLargeFiles)
+	s.route("GET /api/v3/repos/{owner}/{repo}/import/large_files",
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleListImportLargeFiles))
 }
 
 func (s *Server) importToJSON(imp *store.RepoImport, repo *store.Repo, baseURL string) map[string]interface{} {

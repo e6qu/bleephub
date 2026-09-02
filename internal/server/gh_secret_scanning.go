@@ -57,7 +57,7 @@ func (s *Server) handleListSecretScanningAlerts(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	repo := s.lookupReadableRepoFromPath(w, r)
+	repo := s.lookupSecurityReadableRepo(w, r)
 	if repo == nil {
 		return
 	}
@@ -84,7 +84,7 @@ func (s *Server) handleGetSecretScanningAlert(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	repo := s.lookupReadableRepoFromPath(w, r)
+	repo := s.lookupSecurityReadableRepo(w, r)
 	if repo == nil {
 		return
 	}
@@ -142,7 +142,7 @@ func (s *Server) handleListSecretScanningAlertLocations(w http.ResponseWriter, r
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	repo := s.lookupReadableRepoFromPath(w, r)
+	repo := s.lookupSecurityReadableRepo(w, r)
 	if repo == nil {
 		return
 	}

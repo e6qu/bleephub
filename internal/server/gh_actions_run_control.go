@@ -325,6 +325,9 @@ func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWrite
 // handleRunAttemptLogs serves the resolved attempt's log zip. GitHub redirects
 // to a signed URL; bleephub returns the zip directly, matching .../runs/{id}/logs.
 func (s *Server) handleRunAttemptLogs(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	runID, err := strconv.Atoi(r.PathValue("run_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -347,6 +350,9 @@ func (s *Server) handleRunAttemptLogs(w http.ResponseWriter, r *http.Request) {
 // (including archived attempts) produced from the workflow file. Bleephub runs
 // on Linux runners, so usage accrues under UBUNTU.
 func (s *Server) handleWorkflowFileTiming(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
 	repo := repoFullName(r)
 	s.store.DiscoverWorkflowFilesFromGit(repo)
 	file := s.resolveWorkflowFile(repo, r.PathValue("workflow_id"))
