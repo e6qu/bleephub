@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -117,32 +118,87 @@ func (s *Server) handleAdminRenameUser(w http.ResponseWriter, r *http.Request) {
 		store.WriteGHValidationError(w, "User", "login", "missing_field")
 		return
 	}
-	s.store.Mu.Lock()
+	s.store.Mu.RLock()
 	u := s.store.UserByLoginLocked(username)
+	s.store.Mu.RUnlock()
 	if u == nil {
-		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if existing := s.store.UserByLoginLocked(nextLogin); existing != nil && existing.ID != u.ID {
-		s.store.Mu.Unlock()
+	userID := u.ID
+	if !s.renameUser(username, nextLogin) {
 		store.WriteGHValidationError(w, "User", "login", "already_exists")
 		return
 	}
-	delete(s.store.UsersByLogin, u.Login)
-	s.store.UnindexUserLoginLocked(u.Login)
-	u.Login = nextLogin
-	u.UpdatedAt = time.Now().UTC()
-	s.store.UsersByLogin[u.Login] = u
-	s.store.IndexUserLoginLocked(u.Login)
-	if s.store.Persist != nil {
-		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
-	}
-	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusAccepted, map[string]string{
 		"message": "Job queued to rename user. It may take a few minutes to complete.",
-		"url":     fmt.Sprintf("/user/%d", u.ID),
+		"url":     fmt.Sprintf("/user/%d", userID),
 	})
+}
+
+// renameUser changes an account's login namespace synchronously — mirroring
+// renameGHESOrganization — even though the admin API reports it as merely
+// accepted. A rename is a transfer for every repository the user owns (so
+// clones, stars, subscriptions and the folded index follow, and the old address
+// redirects), and it re-keys the login-keyed graph state the user row alone does
+// not carry: the follow edges (both directions) and app installations targeting
+// the account. Returns false when the target login is taken (by a user or an
+// org) — the namespace is shared.
+func (s *Server) renameUser(oldLogin, newLogin string) bool {
+	s.store.Mu.Lock()
+	u := s.store.UserByLoginLocked(oldLogin)
+	if u == nil ||
+		(s.store.UserByLoginLocked(newLogin) != nil && s.store.UserByLoginLocked(newLogin) != u) ||
+		s.store.OrgByLoginLocked(newLogin) != nil {
+		s.store.Mu.Unlock()
+		return false
+	}
+	oldLogin = u.Login // canonicalize before comparing keys
+	if oldLogin == newLogin {
+		s.store.Mu.Unlock()
+		return true
+	}
+	s.store.UsersByLogin[newLogin] = u
+	s.store.IndexUserLoginLocked(newLogin)
+	u.Login = newLogin
+	u.UpdatedAt = time.Now().UTC()
+	repoNames := make([]string, 0)
+	for _, repo := range s.store.Repos {
+		if repo.OwnerType == "User" && repo.OwnerID == u.ID {
+			repoNames = append(repoNames, repo.Name)
+		}
+	}
+	s.store.Mu.Unlock()
+
+	// Transfer each owned repo old->new. Both logins resolve to u until the old
+	// key is dropped below, so the lookup inside TransferRepo still finds them.
+	sort.Strings(repoNames)
+	for _, name := range repoNames {
+		if !s.store.TransferRepo(oldLogin, name, newLogin) {
+			return false
+		}
+	}
+
+	s.store.Mu.Lock()
+	batch := store.NewPersistBatch(s.store.Persist)
+	delete(s.store.UsersByLogin, oldLogin)
+	s.store.UnindexUserLoginLocked(oldLogin)
+	for _, inst := range s.store.Installations {
+		if inst.TargetType == "User" && inst.TargetID == u.ID {
+			inst.TargetLogin = newLogin
+			batch.Put("installations", strconv.Itoa(inst.ID), inst)
+		}
+	}
+	batch.Put("users", strconv.Itoa(u.ID), u)
+	err := batch.Commit()
+	s.store.Mu.Unlock()
+	if err != nil {
+		panic(&store.PersistenceFailure{Op: "batch", Bucket: "users", Key: strconv.Itoa(u.ID), Err: err})
+	}
+
+	// The follow graph lives under a separate mutex, keyed by login on both sides.
+	s.store.RekeyFollowLogin(oldLogin, newLogin)
+	return true
 }
 
 func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
