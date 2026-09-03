@@ -456,7 +456,7 @@ func (s *Server) decideGitPushCommands(ctx context.Context, target *gitTarget, o
 			status.status = gitStatusLine(refusal)
 			continue
 		}
-		placeholder, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, command.Name, command.New)
+		placeholder, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, command.Name, command.Old, command.New)
 		if err != nil {
 			return err
 		}
