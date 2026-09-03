@@ -198,7 +198,7 @@ func (s *Server) handleGetUserPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := s.resolveUserPackage(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.packageToJSON(p, s.baseURL(r)))
@@ -230,10 +230,10 @@ func (s *Server) handleListUserPackageVersions(w http.ResponseWriter, r *http.Re
 		return
 	}
 	p, ok := s.resolveUserPackage(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.listVersionsJSON(p, r))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.listVersionsJSON(p, r)))
 }
 
 func (s *Server) handleGetUserPackageVersion(w http.ResponseWriter, r *http.Request) {
@@ -242,7 +242,7 @@ func (s *Server) handleGetUserPackageVersion(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	p, v, ok := s.resolveUserPackageVersion(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.packageVersionToJSON(v, p, s.baseURL(r), packageScopePath(p.OwnerType, p.OwnerKey)))
@@ -304,7 +304,7 @@ func (s *Server) handleListUserPackageFiles(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	p, v, ok := s.resolveUserPackageVersion(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.listFilesJSON(v, p, r))
@@ -316,7 +316,7 @@ func (s *Server) handleDownloadUserPackageFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 	p, _, f, ok := s.resolveUserPackageFile(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
 	s.servePackageFile(w, r, f)
@@ -632,7 +632,7 @@ func (s *Server) handleGetOrgPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := s.resolveOrgPackage(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.packageToJSON(p, s.baseURL(r)))
@@ -679,7 +679,7 @@ func (s *Server) handleListOrgPackageVersions(w http.ResponseWriter, r *http.Req
 		return
 	}
 	p, ok := s.resolveOrgPackage(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.listVersionsJSON(p, r)))
@@ -691,7 +691,7 @@ func (s *Server) handleGetOrgPackageVersion(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	p, v, ok := s.resolveOrgPackageVersion(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.packageVersionToJSON(v, p, s.baseURL(r), packageScopePath(p.OwnerType, p.OwnerKey)))
@@ -753,7 +753,7 @@ func (s *Server) handleListOrgPackageFiles(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	p, v, ok := s.resolveOrgPackageVersion(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.listFilesJSON(v, p, r))
@@ -765,7 +765,7 @@ func (s *Server) handleDownloadOrgPackageFile(w http.ResponseWriter, r *http.Req
 		return
 	}
 	p, _, f, ok := s.resolveOrgPackageFile(w, r)
-	if !ok || !s.canViewPackage(r.Context(), user, p) {
+	if !ok || s.packageHiddenFrom(w, r, user, p) {
 		return
 	}
 	s.servePackageFile(w, r, f)
@@ -877,7 +877,7 @@ func (s *Server) handleListRepoPackageVersions(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.listVersionsJSON(p, r))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.listVersionsJSON(p, r)))
 }
 
 func (s *Server) handleGetRepoPackageVersion(w http.ResponseWriter, r *http.Request) {
@@ -1161,6 +1161,20 @@ func (s *Server) canViewPackage(ctx context.Context, user *store.User, p *store.
 	return s.canAdminPackage(ctx, user, p)
 }
 
+// packageHiddenFrom writes a 404 and reports true when user may not view p, so a
+// private package the caller cannot see is indistinguishable from one that does
+// not exist. Read handlers previously returned without writing on a failed
+// visibility check, which net/http renders as 200 with an empty body — a status
+// difference from the 404 a missing package gets, letting a caller enumerate
+// another account's private package names.
+func (s *Server) packageHiddenFrom(w http.ResponseWriter, r *http.Request, user *store.User, p *store.Package) bool {
+	if s.canViewPackage(r.Context(), user, p) {
+		return false
+	}
+	writeGHError(w, http.StatusNotFound, "Not Found")
+	return true
+}
+
 func (s *Server) canAdminPackage(ctx context.Context, user *store.User, p *store.Package) bool {
 	ctx = contextWithUser(ctx, user)
 	if user == nil {
@@ -1224,6 +1238,13 @@ func (s *Server) packageToJSON(p *store.Package, baseURL string) map[string]inte
 }
 
 func (s *Server) packageVersionToJSON(v *store.PackageVersion, p *store.Package, baseURL, scopePath string) map[string]interface{} {
+	// GitHub's package-version metadata is a non-null object always carrying the
+	// package_type; a version stored without metadata must still serialize as one,
+	// not as null (the schema marks metadata non-nullable).
+	metadata := v.Metadata
+	if metadata == nil {
+		metadata = map[string]interface{}{"package_type": p.PackageType}
+	}
 	out := map[string]interface{}{
 		"id":               v.ID,
 		"name":             v.Version,
@@ -1233,7 +1254,7 @@ func (s *Server) packageVersionToJSON(v *store.PackageVersion, p *store.Package,
 		"description":      v.Description,
 		"created_at":       v.CreatedAt.Format(time.RFC3339),
 		"updated_at":       v.UpdatedAt.Format(time.RFC3339),
-		"metadata":         v.Metadata,
+		"metadata":         metadata,
 	}
 	if v.Deleted && v.DeletedAt != nil {
 		out["deleted_at"] = v.DeletedAt.Format(time.RFC3339)
