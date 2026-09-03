@@ -80,9 +80,13 @@ type CodeScanningAlert struct {
 	HTMLURL               string                      `json:"html_url"`
 	URL                   string                      `json:"url"`
 	InstancesURL          string                      `json:"instances_url"`
-	Instances             []CodeScanningAlertInstance `json:"instances"`
-	CreatedAt             time.Time                   `json:"created_at"`
-	UpdatedAt             time.Time                   `json:"updated_at"`
+	// Fingerprint is the internal dedup key (tool + rule + primary-location
+	// fingerprint) that correlates a result across SARIF uploads. Persisted but
+	// not part of the GitHub API shape (codeScanningAlertToJSON omits it).
+	Fingerprint string                      `json:"fingerprint,omitempty"`
+	Instances   []CodeScanningAlertInstance `json:"instances"`
+	CreatedAt   time.Time                   `json:"created_at"`
+	UpdatedAt   time.Time                   `json:"updated_at"`
 }
 
 // CodeScanningAnalysis is a single code-scanning analysis run for a repo.
@@ -513,6 +517,17 @@ func (st *Store) createAnalysisAndAlertsLocked(batch *PersistBatch, repoKey, ref
 	analysis.RulesCount = len(ruleSet)
 	st.persistCodeScanningAnalysisBatchLocked(batch, analysis)
 
+	// Index existing repo alerts by fingerprint so a re-uploaded result updates
+	// the alert it already belongs to instead of minting a duplicate number.
+	// GitHub correlates a finding across uploads by tool + rule + location.
+	existingByFingerprint := make(map[string]*CodeScanningAlert, len(st.CodeScanningAlertsByRepo[repoKey]))
+	for _, a := range st.CodeScanningAlertsByRepo[repoKey] {
+		if fp := codeScanningAlertFingerprintOf(a); fp != "" {
+			existingByFingerprint[fp] = a
+		}
+	}
+	seenFingerprints := make(map[string]bool, len(results))
+
 	for _, r := range results {
 		result, _ := r.(map[string]interface{})
 		ruleID, _ := result["ruleId"].(string)
@@ -550,6 +565,23 @@ func (st *Store) createAnalysisAndAlertsLocked(batch *PersistBatch, repoKey, ref
 			})
 		}
 
+		fingerprint := codeScanningResultFingerprint(toolName, ruleID, result, instances[0])
+		seenFingerprints[fingerprint] = true
+
+		// A result matching an existing alert refreshes that alert's instance for
+		// this ref/analysis rather than creating a new one. A finding that had
+		// been fixed and recurs reopens; a dismissed alert stays dismissed.
+		if existing := existingByFingerprint[fingerprint]; existing != nil {
+			existing.Instances = replaceAnalysisInstances(existing.Instances, ref, analysisKey, category, instances)
+			if existing.State == "fixed" {
+				existing.State = "open"
+				existing.FixedAt = nil
+			}
+			existing.UpdatedAt = now
+			st.persistCodeScanningAlertBatchLocked(batch, existing)
+			continue
+		}
+
 		number := st.CodeScanningNextNumber[repoKey]
 		st.CodeScanningNextNumber[repoKey] = number + 1
 
@@ -565,6 +597,7 @@ func (st *Store) createAnalysisAndAlertsLocked(batch *PersistBatch, repoKey, ref
 			ToolName:              toolName,
 			ToolGUID:              toolGUID,
 			State:                 "open",
+			Fingerprint:           fingerprint,
 			Instances:             instances,
 			CreatedAt:             now,
 			UpdatedAt:             now,
@@ -578,10 +611,102 @@ func (st *Store) createAnalysisAndAlertsLocked(batch *PersistBatch, repoKey, ref
 
 		st.CodeScanningAlerts[alert.ID] = alert
 		st.CodeScanningAlertsByRepo[repoKey][number] = alert
+		existingByFingerprint[fingerprint] = alert
 		st.persistCodeScanningAlertBatchLocked(batch, alert)
 	}
 
+	// Reconcile fixes: an open alert that belonged to this analysis stream (same
+	// ref, analysis key and category) but is absent from this upload is now
+	// fixed, as GitHub reports when a finding no longer appears. Dismissed alerts
+	// keep their state.
+	for _, a := range st.CodeScanningAlertsByRepo[repoKey] {
+		if a.State != "open" {
+			continue
+		}
+		if seenFingerprints[codeScanningAlertFingerprintOf(a)] {
+			continue
+		}
+		if !alertHasAnalysisInstance(a, ref, analysisKey, category) {
+			continue
+		}
+		a.State = "fixed"
+		a.FixedAt = &now
+		a.UpdatedAt = now
+		markAnalysisInstancesFixed(a, ref, analysisKey, category)
+		st.persistCodeScanningAlertBatchLocked(batch, a)
+	}
+
 	return analysis
+}
+
+// codeScanningResultFingerprint derives the correlation key for a SARIF result:
+// tool + rule + a primary-location fingerprint (the SARIF partialFingerprints
+// primaryLocationLineHash when present, else the primary instance's path/region,
+// else — a locationless result — its message).
+func codeScanningResultFingerprint(toolName, ruleID string, result map[string]interface{}, primary CodeScanningAlertInstance) string {
+	loc := ""
+	if pf, ok := result["partialFingerprints"].(map[string]interface{}); ok {
+		if h, _ := pf["primaryLocationLineHash"].(string); h != "" {
+			loc = "pf:" + h
+		}
+	}
+	if loc == "" {
+		if primary.Path != "" || primary.StartLine != 0 {
+			loc = fmt.Sprintf("loc:%s:%d:%d:%d:%d", primary.Path, primary.StartLine, primary.StartColumn, primary.EndLine, primary.EndColumn)
+		} else {
+			loc = "msg:" + primary.Message
+		}
+	}
+	return toolName + "\x00" + ruleID + "\x00" + loc
+}
+
+// codeScanningAlertFingerprintOf returns an alert's stored fingerprint, or
+// recomputes one from its primary instance for alerts seeded before the
+// fingerprint field existed (e.g. via the operator endpoint).
+func codeScanningAlertFingerprintOf(a *CodeScanningAlert) string {
+	if a.Fingerprint != "" {
+		return a.Fingerprint
+	}
+	primary := CodeScanningAlertInstance{}
+	if len(a.Instances) > 0 {
+		primary = a.Instances[0]
+	}
+	return codeScanningResultFingerprint(a.ToolName, a.RuleID, nil, primary)
+}
+
+// replaceAnalysisInstances drops any instances belonging to the given analysis
+// stream and appends the fresh ones, so an alert keeps one instance set per
+// (ref, analysis key, category) reflecting the latest upload for that stream.
+func replaceAnalysisInstances(existing []CodeScanningAlertInstance, ref, analysisKey, category string, fresh []CodeScanningAlertInstance) []CodeScanningAlertInstance {
+	kept := existing[:0:0]
+	for _, inst := range existing {
+		if inst.Ref == ref && inst.AnalysisKey == analysisKey && inst.Category == category {
+			continue
+		}
+		kept = append(kept, inst)
+	}
+	return append(kept, fresh...)
+}
+
+// alertHasAnalysisInstance reports whether the alert carries an instance for the
+// given analysis stream.
+func alertHasAnalysisInstance(a *CodeScanningAlert, ref, analysisKey, category string) bool {
+	for _, inst := range a.Instances {
+		if inst.Ref == ref && inst.AnalysisKey == analysisKey && inst.Category == category {
+			return true
+		}
+	}
+	return false
+}
+
+// markAnalysisInstancesFixed sets the state of the alert's instances for the
+// given analysis stream to fixed.
+func markAnalysisInstancesFixed(a *CodeScanningAlert, ref, analysisKey, category string) {
+	for i := range a.Instances {
+		if a.Instances[i].Ref == ref && a.Instances[i].AnalysisKey == analysisKey && a.Instances[i].Category == category {
+			a.Instances[i].State = "fixed"
+		}
+	}
 }
 
 func sarifRuleMetadata(run map[string]interface{}, ruleID string) (severity, description, securityLevel string) {
