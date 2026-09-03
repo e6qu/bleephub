@@ -270,8 +270,17 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 			cr.CompletedAt = &now
 		}
 		if req.Output != nil {
+			// GitHub replaces the title/summary/text on each update but *appends*
+			// annotations across successive requests (≤50 per request); replacing
+			// the whole output object discarded every annotation reported before
+			// this call and reset annotations_count to just this request's slice.
+			var prior []*store.CheckAnnotation
+			if cr.Output != nil {
+				prior = cr.Output.Annotations
+			}
 			cr.Output = req.Output
-			cr.Output.AnnotationsCount = len(req.Output.Annotations)
+			cr.Output.Annotations = append(append([]*store.CheckAnnotation(nil), prior...), req.Output.Annotations...)
+			cr.Output.AnnotationsCount = len(cr.Output.Annotations)
 		}
 		if req.Actions != nil {
 			cr.Actions = req.Actions
@@ -281,9 +290,14 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// A check run transitioning to completed can satisfy an armed auto-merge.
+	// A check run transitioning to completed can satisfy an armed auto-merge and
+	// unblock a merge queue whose group commit is gated on it. The create path
+	// advances both; the update path must too, or a queue whose required check is
+	// reported the canonical way (POST in_progress, then PATCH completed) stalls.
 	if run := s.store.GetCheckRun(id); run != nil && run.Status == "completed" {
-		s.maybeAutoMergeHeadSHA(s.store.GetRepoByFullName(run.RepoKey), run.HeadSHA)
+		repo := s.store.GetRepoByFullName(run.RepoKey)
+		s.maybeAutoMergeHeadSHA(repo, run.HeadSHA)
+		s.advanceMergeQueuesForRepo(repo)
 	}
 	writeJSON(w, http.StatusOK, s.checkRunToJSON(s.store.GetCheckRun(id), s.baseURL(r)))
 }
