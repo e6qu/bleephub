@@ -199,12 +199,17 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 			return
 		}
 
+		// The effective last-read instant is the later of the global marker and
+		// this thread's own repository marker. Marking a repository's
+		// notifications read (PUT /repos/{o}/{r}/notifications, which records only
+		// RepoLastReadAt[repo]) must clear those threads from the whole inbox, not
+		// merely the repo-scoped listing — so consult the repo marker on every
+		// view, keyed by the thread's own repo rather than only the requested
+		// scope.
 		lastRead := state.LastReadAt
-		if opts.RepoScope != "" {
-			if r, ok := state.RepoLastReadAt[opts.RepoScope]; ok {
-				if lastRead.IsZero() || r.After(lastRead) {
-					lastRead = r
-				}
+		if r, ok := state.RepoLastReadAt[repo.FullName]; ok {
+			if lastRead.IsZero() || r.After(lastRead) {
+				lastRead = r
 			}
 		}
 		unread := lastRead.IsZero() || updated.After(lastRead)
