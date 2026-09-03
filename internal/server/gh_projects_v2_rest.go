@@ -1072,15 +1072,19 @@ func (s *Server) serveProjectV2UpdateItem(w http.ResponseWriter, r *http.Request
 		store.WriteGHValidationError(w, "ProjectV2Item", "fields", "missing_field")
 		return
 	}
+	updates := make([]store.ProjectV2ItemFieldUpdate, 0, len(req.Fields))
 	for _, upd := range req.Fields {
 		if upd.ID == nil {
 			store.WriteGHValidationError(w, "ProjectV2Item", "fields", "missing_field")
 			return
 		}
-		if err := s.store.ProjectsV2.SetFieldValueAny(it.ID, *upd.ID, upd.Value); err != nil {
-			store.WriteGHValidationError(w, "ProjectV2Item", "fields", "invalid")
-			return
-		}
+		updates = append(updates, store.ProjectV2ItemFieldUpdate{FieldID: *upd.ID, Value: upd.Value})
+	}
+	// Apply the whole batch atomically: a single invalid field rejects the entire
+	// request without persisting any of the writes.
+	if err := s.store.ProjectsV2.SetFieldValuesAny(it.ID, updates); err != nil {
+		store.WriteGHValidationError(w, "ProjectV2Item", "fields", "invalid")
+		return
 	}
 	// `it` is the pre-write snapshot; re-read so the response carries the new values.
 	updated := s.store.ProjectsV2.GetItem(it.ID)

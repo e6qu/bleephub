@@ -692,18 +692,43 @@ func (s *Server) handleBPReviewsPatch(w http.ResponseWriter, r *http.Request) {
 	if bp.RequiredPullRequestReviews == nil {
 		bp.RequiredPullRequestReviews = &store.BPPullRequestReviews{}
 	}
-	var req store.BPPullRequestReviews
+	// Pointer fields distinguish "absent" from a zero value so the PATCH merges
+	// into the existing rule instead of resetting every unspecified field — GitHub
+	// leaves omitted fields untouched, and a zero approving-review count is a valid
+	// setting, not a signal to drop review protection (that is the DELETE handler).
+	var req struct {
+		DismissStaleReviews          *bool                     `json:"dismiss_stale_reviews"`
+		RequireCodeOwnerReviews      *bool                     `json:"require_code_owner_reviews"`
+		RequireLastPushApproval      *bool                     `json:"require_last_push_approval"`
+		RequiredApprovingReviewCount *int                      `json:"required_approving_review_count"`
+		DismissalRestrictions        *store.BPRestrictions     `json:"dismissal_restrictions"`
+		BypassPullRequestAllowances  *store.BPBypassAllowances `json:"bypass_pull_request_allowances"`
+	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.RequiredApprovingReviewCount > 0 || req.DismissStaleReviews || req.RequireCodeOwnerReviews || req.RequireLastPushApproval || req.DismissalRestrictions != nil || req.BypassPullRequestAllowances != nil {
-		bp.RequiredPullRequestReviews = &req
-	} else {
-		bp.RequiredPullRequestReviews = nil
+	rev := bp.RequiredPullRequestReviews
+	if req.DismissStaleReviews != nil {
+		rev.DismissStaleReviews = *req.DismissStaleReviews
+	}
+	if req.RequireCodeOwnerReviews != nil {
+		rev.RequireCodeOwnerReviews = *req.RequireCodeOwnerReviews
+	}
+	if req.RequireLastPushApproval != nil {
+		rev.RequireLastPushApproval = *req.RequireLastPushApproval
+	}
+	if req.RequiredApprovingReviewCount != nil {
+		rev.RequiredApprovingReviewCount = *req.RequiredApprovingReviewCount
+	}
+	if req.DismissalRestrictions != nil {
+		rev.DismissalRestrictions = req.DismissalRestrictions
+	}
+	if req.BypassPullRequestAllowances != nil {
+		rev.BypassPullRequestAllowances = req.BypassPullRequestAllowances
 	}
 	s.setBranchProtection(repo, branch, bp)
-	req.URL = s.branchProtectionSubURL(s.baseURL(r), repo.FullName, branch, "required_pull_request_reviews")
-	writeJSON(w, http.StatusOK, req)
+	rev.URL = s.branchProtectionSubURL(s.baseURL(r), repo.FullName, branch, "required_pull_request_reviews")
+	writeJSON(w, http.StatusOK, rev)
 }
 
 func (s *Server) handleBPReviewsDelete(w http.ResponseWriter, r *http.Request) {
