@@ -796,33 +796,49 @@ func (s *ProjectV2Store) SetFieldValueAny(itemID, fieldID int, value interface{}
 		}
 		return nil
 	}
-	val := &ProjectV2ItemFieldValue{FieldID: fieldID}
+	val, err := resolveProjectV2FieldValue(field, value)
+	if err != nil {
+		return err
+	}
+	item.FieldValues[fieldID] = val
+	item.UpdatedAt = s.CurrentTime()
+	if s.Persist != nil {
+		s.Persist.MustPut("project_v2_items", strconv.Itoa(itemID), item)
+	}
+	return nil
+}
+
+// resolveProjectV2FieldValue validates value against field's data type and
+// returns the field value to store, without mutating anything — so a batch
+// update can validate every field before applying any.
+func resolveProjectV2FieldValue(field *ProjectV2Field, value interface{}) (*ProjectV2ItemFieldValue, error) {
+	val := &ProjectV2ItemFieldValue{FieldID: field.ID}
 	switch field.DataType {
 	case ProjectV2FieldText:
 		str, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("field %q expects a string value", field.Name)
+			return nil, fmt.Errorf("field %q expects a string value", field.Name)
 		}
 		val.TextValue = str
 	case ProjectV2FieldDate:
 		str, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("field %q expects a date string value", field.Name)
+			return nil, fmt.Errorf("field %q expects a date string value", field.Name)
 		}
 		if _, err := time.Parse("2006-01-02", str); err != nil {
-			return fmt.Errorf("field %q expects a YYYY-MM-DD date, got %q", field.Name, str)
+			return nil, fmt.Errorf("field %q expects a YYYY-MM-DD date, got %q", field.Name, str)
 		}
 		val.DateValue = str
 	case ProjectV2FieldNumber:
 		num, ok := value.(float64)
 		if !ok {
-			return fmt.Errorf("field %q expects a number value", field.Name)
+			return nil, fmt.Errorf("field %q expects a number value", field.Name)
 		}
 		val.NumberValue = num
 	case ProjectV2FieldSingleSelect:
 		optionID, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("field %q expects a single select option ID", field.Name)
+			return nil, fmt.Errorf("field %q expects a single select option ID", field.Name)
 		}
 		var match *ProjectV2SingleSelectOption
 		for _, opt := range field.Options {
@@ -832,14 +848,14 @@ func (s *ProjectV2Store) SetFieldValueAny(itemID, fieldID int, value interface{}
 			}
 		}
 		if match == nil {
-			return fmt.Errorf("option %q not found on field %q", optionID, field.Name)
+			return nil, fmt.Errorf("option %q not found on field %q", optionID, field.Name)
 		}
 		val.OptionID = match.ID
 		val.OptionName = match.Name
 	case ProjectV2FieldIteration:
 		iterationID, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("field %q expects an iteration ID", field.Name)
+			return nil, fmt.Errorf("field %q expects an iteration ID", field.Name)
 		}
 		found := false
 		if field.Iteration != nil {
@@ -851,13 +867,68 @@ func (s *ProjectV2Store) SetFieldValueAny(itemID, fieldID int, value interface{}
 			}
 		}
 		if !found {
-			return fmt.Errorf("iteration %q not found on field %q", iterationID, field.Name)
+			return nil, fmt.Errorf("iteration %q not found on field %q", iterationID, field.Name)
 		}
 		val.IterationID = iterationID
 	default:
-		return fmt.Errorf("field %q of type %q cannot be set directly", field.Name, field.DataType)
+		return nil, fmt.Errorf("field %q of type %q cannot be set directly", field.Name, field.DataType)
 	}
-	item.FieldValues[fieldID] = val
+	return val, nil
+}
+
+// ProjectV2FieldUpdate is one field write in a batch item update.
+type ProjectV2ItemFieldUpdate struct {
+	FieldID int
+	Value   interface{}
+}
+
+// SetFieldValuesAny applies a batch of field writes to one item atomically:
+// every field is resolved and validated first, and nothing is mutated or
+// persisted unless all of them pass — so a later invalid field can no longer
+// leave earlier writes committed while the request reports 422.
+func (s *ProjectV2Store) SetFieldValuesAny(itemID int, updates []ProjectV2ItemFieldUpdate) error {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	item, ok := s.items[itemID]
+	if !ok {
+		return fmt.Errorf("item %d not found", itemID)
+	}
+
+	type resolved struct {
+		fieldID int
+		del     bool
+		val     *ProjectV2ItemFieldValue
+	}
+	plan := make([]resolved, 0, len(updates))
+	for _, upd := range updates {
+		field, ok := s.fields[upd.FieldID]
+		if !ok {
+			return fmt.Errorf("field %d not found", upd.FieldID)
+		}
+		if field.ProjectID != item.ProjectID {
+			return fmt.Errorf("field %d belongs to a different project than item %d", upd.FieldID, itemID)
+		}
+		if upd.Value == nil {
+			plan = append(plan, resolved{fieldID: upd.FieldID, del: true})
+			continue
+		}
+		val, err := resolveProjectV2FieldValue(field, upd.Value)
+		if err != nil {
+			return err
+		}
+		plan = append(plan, resolved{fieldID: upd.FieldID, val: val})
+	}
+
+	if item.FieldValues == nil {
+		item.FieldValues = map[int]*ProjectV2ItemFieldValue{}
+	}
+	for _, p := range plan {
+		if p.del {
+			delete(item.FieldValues, p.fieldID)
+		} else {
+			item.FieldValues[p.fieldID] = p.val
+		}
+	}
 	item.UpdatedAt = s.CurrentTime()
 	if s.Persist != nil {
 		s.Persist.MustPut("project_v2_items", strconv.Itoa(itemID), item)

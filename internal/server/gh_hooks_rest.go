@@ -184,8 +184,10 @@ func (s *Server) handleUpdateHook(w http.ResponseWriter, r *http.Request) {
 			ContentType string      `json:"content_type"`
 			InsecureSSL interface{} `json:"insecure_ssl"`
 		} `json:"config"`
-		Events []string  `json:"events"`
-		Active *flexBool `json:"active"`
+		Events       []string  `json:"events"`
+		AddEvents    []string  `json:"add_events"`
+		RemoveEvents []string  `json:"remove_events"`
+		Active       *flexBool `json:"active"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -222,6 +224,14 @@ func (s *Server) handleUpdateHook(w http.ResponseWriter, r *http.Request) {
 		if req.Events != nil {
 			h.Events = req.Events
 		}
+		// add_events / remove_events adjust the existing subscription, applied after
+		// a wholesale events replacement; GitHub's update-hook accepts all three.
+		if len(req.AddEvents) > 0 {
+			h.Events = unionEvents(h.Events, req.AddEvents)
+		}
+		if len(req.RemoveEvents) > 0 {
+			h.Events = removeEvents(h.Events, req.RemoveEvents)
+		}
 		if req.Active != nil {
 			h.Active = bool(*req.Active)
 		}
@@ -234,6 +244,42 @@ func (s *Server) handleUpdateHook(w http.ResponseWriter, r *http.Request) {
 
 	hook := s.store.GetHook(repoKey, hookID)
 	writeJSON(w, http.StatusOK, s.hookToJSON(hook, s.store.HookLastResp(hook), r, r.PathValue("owner"), r.PathValue("repo")))
+}
+
+// unionEvents returns existing plus any of add not already present, preserving
+// order and de-duplicating — the add_events semantics of a hook update.
+func unionEvents(existing, add []string) []string {
+	seen := make(map[string]bool, len(existing))
+	out := make([]string, 0, len(existing)+len(add))
+	for _, e := range existing {
+		if !seen[e] {
+			seen[e] = true
+			out = append(out, e)
+		}
+	}
+	for _, e := range add {
+		if !seen[e] {
+			seen[e] = true
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// removeEvents returns existing with every member of remove dropped — the
+// remove_events semantics of a hook update.
+func removeEvents(existing, remove []string) []string {
+	drop := make(map[string]bool, len(remove))
+	for _, e := range remove {
+		drop[e] = true
+	}
+	out := make([]string, 0, len(existing))
+	for _, e := range existing {
+		if !drop[e] {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func (s *Server) handleDeleteHook(w http.ResponseWriter, r *http.Request) {
