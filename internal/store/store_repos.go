@@ -3393,6 +3393,29 @@ func (st *Store) moveRepoKeyLocked(batch *PersistBatch, oldFull, newFull string)
 		}
 	}
 	st.Misc.Mu.Unlock()
+
+	// Users hold a repo's full name on their own record: the starred-repo map
+	// (keyed by full name) and the ordered pinned-repo list both store it. The
+	// repo's stargazer set moves with the repo struct, but these user-side copies
+	// would otherwise keep naming the vacated address, so a starrer's starred
+	// list and a pinner's profile would show a name that no longer resolves.
+	for _, user := range st.Users {
+		changed := false
+		if starredAt, ok := user.StarredRepos[oldFull]; ok {
+			user.StarredRepos[newFull] = starredAt
+			delete(user.StarredRepos, oldFull)
+			changed = true
+		}
+		for i, pinned := range user.PinnedRepos {
+			if pinned == oldFull {
+				user.PinnedRepos[i] = newFull
+				changed = true
+			}
+		}
+		if changed && st.Persist != nil {
+			batch.Put("users", strconv.Itoa(user.ID), user)
+		}
+	}
 }
 
 // RenameBranch renames a git branch in a repository.
