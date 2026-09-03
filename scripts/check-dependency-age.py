@@ -631,17 +631,88 @@ def conformance_dependencies() -> dict[str, dt.datetime]:
     return dependencies
 
 
+WAIVERS_PATH = ROOT / ".github/dependency-age-waivers.txt"
+
+
+def load_age_waivers() -> dict[str, tuple[dt.datetime, str]]:
+    """Narrow, self-expiring exceptions to the quarantine.
+
+    The quarantine and the reachable-vulnerability gate (govulncheck) can deadlock
+    when a security release is the only version that clears the vulnerability but
+    is itself younger than 24 hours. A waiver names one exact
+    ``ecosystem:module@version`` so that, and only that, resolved dependency may
+    pass while still young. Each line is tab-separated::
+
+        <ecosystem:module@version>\t<expires RFC3339>\t<reason>
+
+    A waiver is honored only while ``now < expires`` AND ``expires`` is no later
+    than 24 hours after the version was published (enforced in check_age): it can
+    therefore never suppress a dependency beyond the window the quarantine would
+    clear on its own, so it is structurally incapable of becoming a standing
+    bypass. Once the version turns 24 hours old the dependency passes on its own
+    and the entry is inert; delete it then.
+    """
+    waivers: dict[str, tuple[dt.datetime, str]] = {}
+    if not WAIVERS_PATH.exists():
+        return waivers
+    for n, raw in enumerate(WAIVERS_PATH.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        fields = line.split("\t")
+        if len(fields) != 3:
+            raise RuntimeError(
+                f"{WAIVERS_PATH}:{n}: want key<TAB>expires<TAB>reason, "
+                f"got {len(fields)} tab-separated field(s): {line!r}"
+            )
+        key, expires_s, reason = (f.strip() for f in fields)
+        try:
+            expires = parse_time(expires_s)
+        except ValueError as error:
+            raise RuntimeError(f"{WAIVERS_PATH}:{n}: unparseable expires {expires_s!r}: {error}")
+        if not reason:
+            raise RuntimeError(f"{WAIVERS_PATH}:{n}: a waiver must state a reason")
+        if key in waivers:
+            raise RuntimeError(f"{WAIVERS_PATH}:{n}: duplicate waiver for {key!r}")
+        waivers[key] = (expires, reason)
+    return waivers
+
+
 def check_age(dependencies: dict[str, dt.datetime]) -> None:
     now = dt.datetime.now(UTC)
-    too_young = sorted(
-        (name, published, now - published)
-        for name, published in dependencies.items()
-        if now - published < MINIMUM_AGE
-    )
+    waivers = load_age_waivers()
+    too_young: list[tuple[str, dt.datetime, dt.timedelta]] = []
+    honored: list[tuple[str, dt.timedelta, dt.datetime, str]] = []
+    for name, published in sorted(dependencies.items()):
+        age = now - published
+        if age >= MINIMUM_AGE:
+            continue
+        waiver = waivers.get(name)
+        if waiver is not None and now < waiver[0]:
+            expires, reason = waiver
+            # A waiver may not outlast the quarantine window it covers: capping
+            # expiry at publish+24h means an honored waiver only ever spans the
+            # exact interval the dependency is young, never a moment longer.
+            latest = published + MINIMUM_AGE
+            if expires > latest:
+                raise SystemExit(
+                    f"{name}: age waiver expires {expires.isoformat()} is later than "
+                    f"publish+24h ({latest.isoformat()}); a waiver may not outlast the "
+                    "quarantine window it covers"
+                )
+            honored.append((name, age, expires, reason))
+            continue
+        too_young.append((name, published, age))
     for name, published, age in too_young:
         print(
             f"{name} was published {published.isoformat()} "
             f"({age.total_seconds() / 3600:.1f} hours ago)",
+            file=sys.stderr,
+        )
+    for name, age, expires, reason in honored:
+        print(
+            f"WAIVED until {expires.isoformat()}: {name} is only "
+            f"{age.total_seconds() / 3600:.1f} hours old — {reason}",
             file=sys.stderr,
         )
     if too_young:

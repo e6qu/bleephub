@@ -1,0 +1,13 @@
+# Narrow, self-expiring exceptions to the 24-hour dependency quarantine, for the
+# rare case a security release is the only version that clears a reachable
+# vulnerability (govulncheck) yet is itself younger than 24 hours. Format:
+#   <ecosystem:module@version><TAB><expires RFC3339><TAB><reason>
+# check-dependency-age.py honors an entry only while now < expires AND expires
+# is <= publish+24h, so a waiver can never outlast the window the quarantine
+# would clear on its own. Delete an entry once its version turns 24h old.
+#
+# golang.org/x/crypto v0.56.0 fixes GO-2026-6354 / GO-2026-6355 (ssh channel
+# DoS), which govulncheck reports as reachable via the SSH git transport and the
+# importer; no older release fixes them. Published 2026-09-02T18:02:47Z, so this
+# expires at exactly publish+24h.
+go:golang.org/x/crypto@v0.56.0	2026-09-03T18:02:47Z	GO-2026-6354/6355 ssh DoS fix; govulncheck-reachable; expiry = publish+24h
