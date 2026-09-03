@@ -315,13 +315,13 @@
       },
       {
         "event": "release",
-        "line": 516,
+        "line": 525,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
       {
         "event": "release",
-        "line": 560,
+        "line": 569,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },

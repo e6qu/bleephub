@@ -214,6 +214,9 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 	var req struct {
 		TagName                string      `json:"tag_name"`
 		TargetCommitish        string      `json:"target_commitish"`
@@ -358,6 +361,9 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 	id, err := strconv.Atoi(r.PathValue("release_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -493,6 +499,9 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 	id, err := strconv.Atoi(r.PathValue("release_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -587,6 +596,9 @@ func (s *Server) handleUploadReleaseAsset(w http.ResponseWriter, r *http.Request
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if s.rejectIfArchived(w, repo) {
 		return
 	}
 	releaseID, err := strconv.Atoi(r.PathValue("release_id"))
@@ -699,6 +711,9 @@ func (s *Server) handleUpdateReleaseAsset(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfArchived(w, repo) {
+		return
+	}
 	assetID, err := strconv.Atoi(r.PathValue("asset_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -729,7 +744,11 @@ func (s *Server) handleUpdateReleaseAsset(w http.ResponseWriter, r *http.Request
 	if req.Label != nil {
 		label = *req.Label
 	}
-	updated := s.store.Releases.UpdateReleaseAsset(assetID, name, label)
+	updated, err := s.store.Releases.UpdateReleaseAsset(assetID, name, label)
+	if errors.Is(err, store.ErrReleaseAssetNameExists) {
+		store.WriteGHValidationError(w, "ReleaseAsset", "name", "already_exists")
+		return
+	}
 	if !mutated(w, updated) {
 		return
 	}
@@ -740,6 +759,9 @@ func (s *Server) handleDeleteReleaseAsset(w http.ResponseWriter, r *http.Request
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	if s.rejectIfArchived(w, repo) {
 		return
 	}
 	assetID, err := strconv.Atoi(r.PathValue("asset_id"))
@@ -809,7 +831,14 @@ func (s *Server) handleGenerateReleaseNotes(w http.ResponseWriter, r *http.Reque
 		store.WriteGHValidationError(w, "Release", "tag_name", "missing_field")
 		return
 	}
-	notes := s.generatedReleaseNotes(repo, req.TagName, req.TargetCommitish, req.PreviousTagName)
+	// When the client omits previous_tag_name GitHub auto-derives it from the
+	// newest existing release, bounding the changelog; the create path does the
+	// same. Without this the notes span the target's whole ancestry.
+	previousTag := req.PreviousTagName
+	if previousTag == "" {
+		previousTag = s.previousReleaseTag(repo, req.TagName)
+	}
+	notes := s.generatedReleaseNotes(repo, req.TagName, req.TargetCommitish, previousTag)
 	out := map[string]interface{}{
 		"name": req.TagName,
 		"body": notes,

@@ -498,14 +498,23 @@ func (rs *ReleaseStore) GetAssetData(id int) ([]byte, bool) {
 	return rs.loadAssetDataLocked(id)
 }
 
-func (rs *ReleaseStore) UpdateReleaseAsset(id int, name, label string) *ReleaseAsset {
+func (rs *ReleaseStore) UpdateReleaseAsset(id int, name, label string) (*ReleaseAsset, error) {
 	rs.Mu.Lock()
 	defer rs.Mu.Unlock()
 	a := rs.assetByID[id]
 	if a == nil {
-		return nil
+		return nil, nil
 	}
-	if name != "" {
+	// A rename may not collide with another asset on the same release, the same
+	// invariant CreateReleaseAssetStream enforces; GitHub 422s the duplicate.
+	if name != "" && name != a.Name {
+		if rel := rs.ByID[a.ReleaseID]; rel != nil {
+			for _, other := range rel.Assets {
+				if other.ID != a.ID && other.Name == name {
+					return nil, ErrReleaseAssetNameExists
+				}
+			}
+		}
 		a.Name = name
 	}
 	a.Label = label
@@ -513,7 +522,7 @@ func (rs *ReleaseStore) UpdateReleaseAsset(id int, name, label string) *ReleaseA
 	if rs.Persist != nil {
 		rs.Persist.MustPut("release_assets", strconv.Itoa(id), a)
 	}
-	return cloneReleaseAsset(a)
+	return cloneReleaseAsset(a), nil
 }
 
 func (rs *ReleaseStore) DeleteReleaseAsset(id int) (bool, error) {
