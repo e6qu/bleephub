@@ -45,3 +45,19 @@ POST /user/repos -> 201	null-not-allowed	$.pushed_at
 # vendored description. bleephub emits nullOrString(team.Description) (PAR-009).
 PATCH /enterprises/{}/teams/{} -> 200	null-not-allowed	$.description
 POST /enterprises/{}/teams -> 201	null-not-allowed	$.description
+
+# VERIFIED: the official dotcom description GitHub publishes for the still-
+# supported 2022-11-28 API version (descriptions/api.github.com/api.github.com.json
+# at github/rest-api-description commit 4f249d4b6f72c9bdd9a1eed4b797e4260a1b765e,
+# the api-2022 pin in scripts/update-github-openapi.sh) documents a 200 with a
+# JSON body for every Classroom read below. GitHub retired the Classroom REST
+# API to 410 Gone only in the newer rolling contract (2026-03-10), which the
+# vendored dotcom description now tracks; bleephub serves the 2022-11-28 version
+# and Classroom is its one sanctioned divergence, so it keeps returning the
+# documented 200. The gap is the rolling description's, not the emitter's.
+GET /classrooms -> 200	undocumented-status	$
+GET /classrooms/{} -> 200	undocumented-status	$
+GET /classrooms/{}/assignments -> 200	undocumented-status	$
+GET /assignments/{} -> 200	undocumented-status	$
+GET /assignments/{}/accepted_assignments -> 200	undocumented-status	$
+GET /assignments/{}/grades -> 200	undocumented-status	$
