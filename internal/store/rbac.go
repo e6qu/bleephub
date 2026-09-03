@@ -2,6 +2,7 @@ package store
 
 import (
 	"crypto/subtle"
+	"slices"
 	"strings"
 )
 
@@ -87,6 +88,12 @@ func canAccessRepoLocked(st *Store, user *User, repo *Repo, required string) boo
 				repositoryPermissionAtLeast(st.enterpriseClampedBasePermissionLocked(org), required) {
 				return true
 			}
+			// An organization-role assignment (the predefined all_repo_* roles or a
+			// custom role with a base role) grants its base repository role on every
+			// repository in the org. Gated on active membership, like team access.
+			if userHasOrgRoleRepoGrantLocked(st, org, user.ID, required) {
+				return true
+			}
 		}
 		if hasTeamAccessLocked(st, orgLogin, user.ID, repo.FullName, TeamPermission(required)) {
 			return true
@@ -151,6 +158,89 @@ func hasTeamAccessLocked(st *Store, orgLogin string, userID int, repoFullName st
 			visited[t.ID] = true
 			if teamGrantsRepo(t) {
 				return true
+			}
+		}
+	}
+	return false
+}
+
+// PredefinedOrgRoleBaseRoles maps GitHub's predefined organization-role IDs to
+// the repository base role each confers on every repository in the org. It
+// mirrors the server's predefined-role catalog for the enforcement path in the
+// store layer; TestPredefinedOrgRoleBaseRolesMatchCatalog guards against drift.
+var PredefinedOrgRoleBaseRoles = map[int]string{
+	138: "read",     // all_repo_read
+	139: "triage",   // all_repo_triage
+	140: "write",    // all_repo_write
+	141: "maintain", // all_repo_maintain
+	142: "admin",    // all_repo_admin
+	143: "read",     // security_manager (read plus security-management capabilities)
+}
+
+// repoBaseRoleForOrgRoleLocked resolves an assigned organization-role ID to the
+// repository base role it confers, whether the role is predefined or a custom
+// org role. Returns "" for a role that grants no repository base access.
+func repoBaseRoleForOrgRoleLocked(st *Store, orgLogin string, roleID int) string {
+	if base, ok := PredefinedOrgRoleBaseRoles[roleID]; ok {
+		return base
+	}
+	if roles := st.OrgCustomRoles[orgLogin]; roles != nil {
+		if role := roles[roleID]; role != nil && role.BaseRole != nil {
+			return *role.BaseRole
+		}
+	}
+	return ""
+}
+
+// orgRoleBaseGrants reports whether a repository base role (read, triage, write,
+// maintain or admin) confers the required pull/push/admin capability. triage
+// grants no more than read for access purposes and maintain no more than write.
+func orgRoleBaseGrants(baseRole, required string) bool {
+	switch baseRole {
+	case "read", "triage":
+		return repositoryPermissionAtLeast("read", required)
+	case "write", "maintain":
+		return repositoryPermissionAtLeast("write", required)
+	case "admin":
+		return repositoryPermissionAtLeast("admin", required)
+	}
+	return false
+}
+
+// userHasOrgRoleRepoGrantLocked reports whether an organization-role assignment
+// grants the user the required capability on the org's repositories — directly,
+// or through a team the user belongs to (with a role assigned to that team or
+// any of its ancestors, mirroring how team repository access cascades up the
+// hierarchy). Caller holds st.Mu.
+func userHasOrgRoleRepoGrantLocked(st *Store, org *Org, userID int, required string) bool {
+	orgLogin := org.Login
+	grants := func(roleID int) bool {
+		return orgRoleBaseGrants(repoBaseRoleForOrgRoleLocked(st, orgLogin, roleID), required)
+	}
+
+	for roleID, userIDs := range st.OrgRoleUserAssignments[orgLogin] {
+		if slices.Contains(userIDs, userID) && grants(roleID) {
+			return true
+		}
+	}
+
+	teamAssignments := st.OrgRoleTeamAssignments[orgLogin]
+	if len(teamAssignments) == 0 {
+		return false
+	}
+	for _, team := range st.Teams {
+		if team.OrgID != org.ID || !slices.Contains(team.MemberIDs, userID) {
+			continue
+		}
+		// Walk the team and its ancestors: a role assigned to an ancestor team
+		// reaches the members of its descendants, as repository access does.
+		visited := map[int]bool{}
+		for t := team; t != nil && !visited[t.ID]; t = st.Teams[t.ParentID] {
+			visited[t.ID] = true
+			for roleID, teamIDs := range teamAssignments {
+				if slices.Contains(teamIDs, t.ID) && grants(roleID) {
+					return true
+				}
 			}
 		}
 	}
