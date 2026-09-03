@@ -524,7 +524,65 @@ func (st *Store) DeleteUserOwnedResourcesLocked(u *User) ([]PendingDeletion, Pen
 			batch.Delete("marketplace_purchases", k)
 		}
 	}
+	// Follow edges (keyed by login, under Misc.Mu) in both directions: the
+	// accounts the deleted user followed, and its membership in everyone else's
+	// following set. A surviving edge would keep inflating another user's
+	// follower/following count with a login that no longer resolves.
+	followsChanged := false
+	if _, ok := st.Misc.Follows[u.Login]; ok {
+		delete(st.Misc.Follows, u.Login)
+		followsChanged = true
+	}
+	for follower, targets := range st.Misc.Follows {
+		if targets[u.Login] {
+			delete(targets, u.Login)
+			if len(targets) == 0 {
+				delete(st.Misc.Follows, follower)
+			}
+			followsChanged = true
+		}
+	}
+	if followsChanged && st.Misc.Persist != nil {
+		st.Misc.Persist.MustPut("misc", "follows", st.Misc.Follows)
+	}
+	// Block edges (keyed by user ID, under Misc.Mu) in both directions.
+	blocksChanged := false
+	if _, ok := st.Misc.blockedUsers[u.ID]; ok {
+		delete(st.Misc.blockedUsers, u.ID)
+		blocksChanged = true
+	}
+	for blocker, blocked := range st.Misc.blockedUsers {
+		if blocked[u.ID] {
+			delete(blocked, u.ID)
+			if len(blocked) == 0 {
+				delete(st.Misc.blockedUsers, blocker)
+			}
+			blocksChanged = true
+		}
+	}
+	if blocksChanged && st.Misc.Persist != nil {
+		st.Misc.Persist.MustPut("misc", "blocked_users", st.Misc.blockedUsers)
+	}
 	st.Misc.Mu.Unlock()
+
+	// Stars the user placed on other accounts' repositories (their own repos are
+	// already gone). A left-behind entry keeps the repo's stargazer count and the
+	// stargazers listing referring to a deleted account.
+	for _, repo := range st.Repos {
+		if _, starred := repo.Stargazers[u.ID]; !starred {
+			continue
+		}
+		delete(repo.Stargazers, u.ID)
+		repo.StargazersCount = len(repo.Stargazers)
+		batch.Put("repos", strconv.Itoa(repo.ID), repo)
+	}
+	// Watch/subscription rows the user held on any repository.
+	for key, sub := range st.RepoSubscriptions {
+		if sub != nil && sub.UserID == u.ID {
+			delete(st.RepoSubscriptions, key)
+			batch.Delete("repo_subscriptions", key)
+		}
+	}
 
 	for k, m := range st.Memberships {
 		if m.UserID == u.ID {

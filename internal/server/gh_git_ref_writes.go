@@ -58,7 +58,7 @@ func (s *Server) createGitRef(ctx context.Context, repo *store.Repo, stor gitSto
 	if refusal := s.protectedRefWriteRefusal(ctx, repo, stor, fullRef, refCreation, target); refusal != "" {
 		return &gitRefWriteFailure{status: http.StatusForbidden, message: refusal}
 	}
-	if placeholder, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, fullRef, target); err != nil {
+	if placeholder, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, fullRef, plumbing.ZeroHash, target); err != nil {
 		return &gitRefWriteFailure{status: http.StatusInternalServerError, message: err.Error()}
 	} else if placeholder != nil {
 		return &gitRefWriteFailure{status: http.StatusForbidden, message: "push protection", blocked: placeholder}
@@ -113,7 +113,7 @@ func (s *Server) updateGitRef(ctx context.Context, repo *store.Repo, stor gitSto
 			return &gitRefWriteFailure{status: http.StatusUnprocessableEntity, message: "Update is not a fast forward"}
 		}
 	}
-	if placeholder, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, fullRef, target); err != nil {
+	if placeholder, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, fullRef, oldRef.Hash(), target); err != nil {
 		return &gitRefWriteFailure{status: http.StatusInternalServerError, message: err.Error()}
 	} else if placeholder != nil {
 		return &gitRefWriteFailure{status: http.StatusForbidden, message: "push protection", blocked: placeholder}

@@ -962,7 +962,12 @@ func TestViolationAllowlistInvariants(t *testing.T) {
 	// approval_policy member GitHub does not have. What remains is only the
 	// four cases where the vendored description is narrower than GitHub's own
 	// observable behaviour.
-	const maxAllowlistEntries = 11
+	// Raised 11→17 for the six Classroom reads GitHub retired to 410 Gone in its
+	// rolling 2026-03-10 description: bleephub serves the still-supported
+	// 2022-11-28 API version, whose official description still documents their
+	// 200, and Classroom is bleephub's one sanctioned divergence — these are
+	// VERIFIED upstream-deprecation citations, not accumulating emitter bugs.
+	const maxAllowlistEntries = 17
 
 	data, err := os.ReadFile(allowlistFile)
 	if err != nil {

@@ -878,8 +878,6 @@
         "operation_id": "classroom/get-an-assignment",
         "path": "/assignments/{assignment_id}",
         "statuses": [
-          "200",
-          "404",
           "410"
         ]
       },
@@ -888,7 +886,6 @@
         "operation_id": "classroom/list-accepted-assignments-for-an-assignment",
         "path": "/assignments/{assignment_id}/accepted_assignments",
         "statuses": [
-          "200",
           "410"
         ]
       },
@@ -897,8 +894,6 @@
         "operation_id": "classroom/get-assignment-grades",
         "path": "/assignments/{assignment_id}/grades",
         "statuses": [
-          "200",
-          "404",
           "410"
         ]
       },
@@ -907,7 +902,6 @@
         "operation_id": "classroom/list-classrooms",
         "path": "/classrooms",
         "statuses": [
-          "200",
           "410"
         ]
       },
@@ -916,8 +910,6 @@
         "operation_id": "classroom/get-a-classroom",
         "path": "/classrooms/{classroom_id}",
         "statuses": [
-          "200",
-          "404",
           "410"
         ]
       },
@@ -926,7 +918,6 @@
         "operation_id": "classroom/list-assignments-for-a-classroom",
         "path": "/classrooms/{classroom_id}/assignments",
         "statuses": [
-          "200",
           "410"
         ]
       },
@@ -22284,7 +22275,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "f279b177231838aa3826337e05a30eba201be7becd6e05767a05c2b5f39e5b04"
+    "vendored_openapi_sha256": "44ce860ae6541cb1cb7513b6637591755c078ba56de5151250b87f419ef9c8bb"
   },
   "schema_version": 1,
   "sources": {
