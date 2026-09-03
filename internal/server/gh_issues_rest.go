@@ -30,6 +30,9 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	if s.rejectIfArchived(w, repo) {
 		return
 	}
+	if s.rejectIfInteractionLimited(w, user, repo) {
+		return
+	}
 
 	var req struct {
 		Title       string   `json:"title"`
@@ -669,6 +672,9 @@ func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if s.rejectIfArchived(w, repo) {
+		return
+	}
+	if s.rejectIfInteractionLimited(w, user, repo) {
 		return
 	}
 

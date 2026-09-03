@@ -21,7 +21,7 @@
       },
       {
         "event": "commit_comment",
-        "line": 92,
+        "line": 95,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_commit_comments_rest.go"
       },
@@ -63,7 +63,7 @@
       },
       {
         "event": "deployment",
-        "line": 154,
+        "line": 159,
         "producer": "emitWebhookEvent",
         "source": "internal/server/graphql_seams.go"
       },
@@ -81,7 +81,7 @@
       },
       {
         "event": "deployment_status",
-        "line": 159,
+        "line": 164,
         "producer": "emitWebhookEvent",
         "source": "internal/server/graphql_seams.go"
       },
@@ -111,7 +111,7 @@
       },
       {
         "event": "issue_comment",
-        "line": 710,
+        "line": 716,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -123,7 +123,7 @@
       },
       {
         "event": "issues",
-        "line": 97,
+        "line": 100,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -231,13 +231,13 @@
       },
       {
         "event": "pull_request",
-        "line": 127,
+        "line": 130,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 647,
+        "line": 650,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -255,25 +255,25 @@
       },
       {
         "event": "pull_request_review",
-        "line": 835,
+        "line": 841,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1014,
+        "line": 1020,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1115,
+        "line": 1121,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1192,
+        "line": 1198,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -285,19 +285,19 @@
       },
       {
         "event": "pull_request_review_comment",
-        "line": 154,
+        "line": 157,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pr_comments.go"
       },
       {
         "event": "pull_request_review_comment",
-        "line": 260,
+        "line": 263,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pr_comments.go"
       },
       {
         "event": "pull_request_review_comment",
-        "line": 289,
+        "line": 292,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pr_comments.go"
       },

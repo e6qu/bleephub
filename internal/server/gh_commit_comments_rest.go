@@ -73,6 +73,9 @@ func (s *Server) handleCreateCommitComment(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	if s.rejectIfInteractionLimited(w, user, repo) {
+		return
+	}
 	var req struct {
 		Body     string `json:"body"`
 		Path     string `json:"path"`

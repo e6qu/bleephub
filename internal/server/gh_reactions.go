@@ -117,6 +117,15 @@ func (s *Server) handleCreateReaction(parentType, pathParam string) http.Handler
 		if !ok {
 			return
 		}
+		// Every reaction parent here is repo-scoped; enforce the owner/org block
+		// and interaction limit the same as any other content creation. A future
+		// non-repo reaction (a team discussion) has no {owner}/{repo} path and is
+		// left untouched.
+		if repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo")); repo != nil {
+			if s.rejectIfInteractionLimited(w, user, repo) {
+				return
+			}
+		}
 		var body struct {
 			Content string `json:"content"`
 		}
