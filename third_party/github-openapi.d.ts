@@ -597,13 +597,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Closing down - Get an assignment
+         * Closed - Get an assignment
          * @deprecated
          * @description > [!WARNING]
-         *     > **Closing down notice:** This operation is closing down and will be removed on August 28, 2026.
+         *     > **Closed notice:** This operation is no longer available as of August 28, 2026.
          *     > For more information, see the [GitHub Classroom sunset notice](https://gh.io/classroom-sunset).
-         *
-         *     Gets a GitHub Classroom assignment. Assignment will only be returned if the current user is an administrator of the GitHub Classroom for the assignment.
          */
         get: operations["classroom/get-an-assignment"];
         put?: never;
@@ -622,13 +620,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Closing down - List accepted assignments for an assignment
+         * Closed - List accepted assignments for an assignment
          * @deprecated
          * @description > [!WARNING]
-         *     > **Closing down notice:** This operation is closing down and will be removed on August 28, 2026.
+         *     > **Closed notice:** This operation is no longer available as of August 28, 2026.
          *     > For more information, see the [GitHub Classroom sunset notice](https://gh.io/classroom-sunset).
-         *
-         *     Lists any assignment repositories that have been created by students accepting a GitHub Classroom assignment. Accepted assignments will only be returned if the current user is an administrator of the GitHub Classroom for the assignment.
          */
         get: operations["classroom/list-accepted-assignments-for-an-assignment"];
         put?: never;
@@ -647,13 +643,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Closing down - Get assignment grades
+         * Closed - Get assignment grades
          * @deprecated
          * @description > [!WARNING]
-         *     > **Closing down notice:** This operation is closing down and will be removed on August 28, 2026.
+         *     > **Closed notice:** This operation is no longer available as of August 28, 2026.
          *     > For more information, see the [GitHub Classroom sunset notice](https://gh.io/classroom-sunset).
-         *
-         *     Gets grades for a GitHub Classroom assignment. Grades will only be returned if the current user is an administrator of the GitHub Classroom for the assignment.
          */
         get: operations["classroom/get-assignment-grades"];
         put?: never;
@@ -672,13 +666,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Closing down - List classrooms
+         * Closed - List classrooms
          * @deprecated
          * @description > [!WARNING]
-         *     > **Closing down notice:** This operation is closing down and will be removed on August 28, 2026.
+         *     > **Closed notice:** This operation is no longer available as of August 28, 2026.
          *     > For more information, see the [GitHub Classroom sunset notice](https://gh.io/classroom-sunset).
-         *
-         *     Lists GitHub Classroom classrooms for the current user. Classrooms will only be returned if the current user is an administrator of one or more GitHub Classrooms.
          */
         get: operations["classroom/list-classrooms"];
         put?: never;
@@ -697,13 +689,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Closing down - Get a classroom
+         * Closed - Get a classroom
          * @deprecated
          * @description > [!WARNING]
-         *     > **Closing down notice:** This operation is closing down and will be removed on August 28, 2026.
+         *     > **Closed notice:** This operation is no longer available as of August 28, 2026.
          *     > For more information, see the [GitHub Classroom sunset notice](https://gh.io/classroom-sunset).
-         *
-         *     Gets a GitHub Classroom classroom for the current user. Classroom will only be returned if the current user is an administrator of the GitHub Classroom.
          */
         get: operations["classroom/get-a-classroom"];
         put?: never;
@@ -722,13 +712,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Closing down - List assignments for a classroom
+         * Closed - List assignments for a classroom
          * @deprecated
          * @description > [!WARNING]
-         *     > **Closing down notice:** This operation is closing down and will be removed on August 28, 2026.
+         *     > **Closed notice:** This operation is no longer available as of August 28, 2026.
          *     > For more information, see the [GitHub Classroom sunset notice](https://gh.io/classroom-sunset).
-         *
-         *     Lists GitHub Classroom assignments for a classroom. Assignments will only be returned if the current user is an administrator of the GitHub Classroom.
          */
         get: operations["classroom/list-assignments-for-a-classroom"];
         put?: never;
@@ -19521,7 +19509,9 @@ export interface paths {
         };
         /**
          * Get the authenticated user
-         * @description OAuth app tokens and personal access tokens (classic) need the `user` scope in order for the response to include private profile information.
+         * @description OAuth app tokens and personal access tokens (classic) need the `read:user` scope, or the broader `user` scope, for this endpoint to return the private user response. The private user response includes additional fields such as `private_gists`, `total_private_repos`, `owned_private_repos`, `disk_usage`, `collaborators`, and `two_factor_authentication`. Tokens without these scopes receive the public user response.
+         *
+         *     The private and public user response types are unrelated to the [private profile](https://docs.github.com/account-and-profile/concepts/personal-profile#private-profiles) setting. A token without scopes still authenticates as the token's owner, so values subject to private profile visibility, such as `followers` and `following`, may differ from an unauthenticated response.
          */
         get: operations["users/get-authenticated"];
         put?: never;
@@ -21100,6 +21090,8 @@ export interface paths {
          * Get a user
          * @description Provides publicly available information about someone with a GitHub account.
          *
+         *     If the specified user has a [private profile](https://docs.github.com/account-and-profile/concepts/personal-profile#private-profiles), the `followers` and `following` values are `0` unless the request is authenticated as that user. A request authenticated as the specified user returns the actual values even if the token has no OAuth scopes.
+         *
          *     The `events_url` value is a URI template. Replace `{/privacy}` with `/public` to retrieve only public events. Omit it to retrieve public events and, when authenticated as the user, private events. For more information, see "[List events for the authenticated user](https://docs.github.com/rest/activity/events#list-events-for-the-authenticated-user)."
          *
          *     If you are requesting information about an [Enterprise Managed User](https://docs.github.com/enterprise-cloud@latest/admin/managing-iam/understanding-iam-for-enterprises/about-enterprise-managed-users), or a GitHub App bot that is installed in an organization that uses Enterprise Managed Users, your requests must be authenticated as a user or GitHub App that has access to the organization to view that account's information. If you are not authorized, the request will return a `404 Not Found` status.
@@ -21531,6 +21523,8 @@ export interface paths {
         /**
          * List followers of a user
          * @description Lists the people following the specified user.
+         *
+         *     If the specified user has a [private profile](https://docs.github.com/account-and-profile/concepts/personal-profile#private-profiles), this endpoint returns an empty list unless the request is authenticated as that user. A request authenticated as the specified user returns the list even if the token has no OAuth scopes.
          */
         get: operations["users/list-followers-for-user"];
         put?: never;
@@ -21551,6 +21545,8 @@ export interface paths {
         /**
          * List the people a user follows
          * @description Lists the people who the specified user follows.
+         *
+         *     If the specified user has a [private profile](https://docs.github.com/account-and-profile/concepts/personal-profile#private-profiles), this endpoint returns an empty list unless the request is authenticated as that user. A request authenticated as the specified user returns the list even if the token has no OAuth scopes.
          */
         get: operations["users/list-following-for-user"];
         put?: never;
@@ -22228,6 +22224,8 @@ export interface paths {
         /**
          * List repositories starred by a user
          * @description Lists repositories a user has starred.
+         *
+         *     If the specified user has a [private profile](https://docs.github.com/account-and-profile/concepts/personal-profile#private-profiles), this endpoint returns an empty list unless the request is authenticated as that user. A request authenticated as the specified user returns starred repositories visible to the token even if the token has no OAuth scopes.
          *
          *     This endpoint supports the following custom media types. For more information, see "[Media types](https://docs.github.com/rest/using-the-rest-api/getting-started-with-the-rest-api#media-types)."
          *
@@ -23871,385 +23869,6 @@ export interface components {
             installation?: components["schemas"]["nullable-scoped-installation"];
             /** Format: date-time */
             expires_at: string | null;
-        };
-        /**
-         * Simple Classroom Repository
-         * @description A GitHub repository view for Classroom
-         */
-        "simple-classroom-repository": {
-            /**
-             * @description A unique identifier of the repository.
-             * @example 1296269
-             */
-            id: number;
-            /**
-             * @description The full, globally unique name of the repository.
-             * @example octocat/Hello-World
-             */
-            full_name: string;
-            /**
-             * Format: uri
-             * @description The URL to view the repository on GitHub.com.
-             * @example https://github.com/octocat/Hello-World
-             */
-            html_url: string;
-            /**
-             * @description The GraphQL identifier of the repository.
-             * @example MDEwOlJlcG9zaXRvcnkxMjk2MjY5
-             */
-            node_id: string;
-            /** @description Whether the repository is private. */
-            private: boolean;
-            /**
-             * @description The default branch for the repository.
-             * @example main
-             */
-            default_branch: string;
-        };
-        /**
-         * Organization Simple for Classroom
-         * @description A GitHub organization.
-         */
-        "simple-classroom-organization": {
-            /** @example 1 */
-            id: number;
-            /** @example github */
-            login: string;
-            /** @example MDEyOk9yZ2FuaXphdGlvbjE= */
-            node_id: string;
-            /**
-             * Format: uri
-             * @example https://github.com/github
-             */
-            html_url: string;
-            /** @example Github - Code thigns happen here */
-            name: string | null;
-            /** @example https://github.com/images/error/octocat_happy.gif */
-            avatar_url: string;
-        };
-        /**
-         * Classroom
-         * @description A GitHub Classroom classroom
-         */
-        classroom: {
-            /**
-             * @description Unique identifier of the classroom.
-             * @example 42
-             */
-            id: number;
-            /**
-             * @description The name of the classroom.
-             * @example Programming Elixir
-             */
-            name: string;
-            /**
-             * @description Whether classroom is archived.
-             * @example false
-             */
-            archived: boolean;
-            organization: components["schemas"]["simple-classroom-organization"];
-            /**
-             * @description The URL of the classroom on GitHub Classroom.
-             * @example https://classroom.github.com/classrooms/1-programming-elixir
-             */
-            url: string;
-        };
-        /**
-         * Classroom Assignment
-         * @description A GitHub Classroom assignment
-         */
-        "classroom-assignment": {
-            /**
-             * @description Unique identifier of the repository.
-             * @example 42
-             */
-            id: number;
-            /**
-             * @description Whether an accepted assignment creates a public repository.
-             * @example true
-             */
-            public_repo: boolean;
-            /**
-             * @description Assignment title.
-             * @example Intro to Binaries
-             */
-            title: string;
-            /**
-             * @description Whether it's a group assignment or individual assignment.
-             * @example individual
-             * @enum {string}
-             */
-            type: "individual" | "group";
-            /**
-             * @description The link that a student can use to accept the assignment.
-             * @example https://classroom.github.com/a/Lx7jiUgx
-             */
-            invite_link: string;
-            /**
-             * @description Whether the invitation link is enabled. Visiting an enabled invitation link will accept the assignment.
-             * @example true
-             */
-            invitations_enabled: boolean;
-            /**
-             * @description Sluggified name of the assignment.
-             * @example intro-to-binaries
-             */
-            slug: string;
-            /**
-             * @description Whether students are admins on created repository when a student accepts the assignment.
-             * @example true
-             */
-            students_are_repo_admins: boolean;
-            /**
-             * @description Whether feedback pull request will be created when a student accepts the assignment.
-             * @example true
-             */
-            feedback_pull_requests_enabled: boolean;
-            /**
-             * @description The maximum allowable teams for the assignment.
-             * @example 0
-             */
-            max_teams: number | null;
-            /**
-             * @description The maximum allowable members per team.
-             * @example 0
-             */
-            max_members: number | null;
-            /**
-             * @description The selected editor for the assignment.
-             * @example codespaces
-             */
-            editor: string;
-            /**
-             * @description The number of students that have accepted the assignment.
-             * @example 25
-             */
-            accepted: number;
-            /**
-             * @description The number of students that have submitted the assignment.
-             * @example 10
-             */
-            submitted: number;
-            /**
-             * @description The number of students that have passed the assignment.
-             * @example 10
-             */
-            passing: number;
-            /**
-             * @description The programming language used in the assignment.
-             * @example elixir
-             */
-            language: string;
-            /**
-             * Format: date-time
-             * @description The time at which the assignment is due.
-             * @example 2011-01-26T19:06:43Z
-             */
-            deadline: string | null;
-            starter_code_repository: components["schemas"]["simple-classroom-repository"];
-            classroom: components["schemas"]["classroom"];
-        };
-        /**
-         * Simple Classroom User
-         * @description A GitHub user simplified for Classroom.
-         */
-        "simple-classroom-user": {
-            /** @example 1 */
-            id: number;
-            /** @example octocat */
-            login: string;
-            /**
-             * Format: uri
-             * @example https://github.com/images/error/octocat_happy.gif
-             */
-            avatar_url: string;
-            /**
-             * Format: uri
-             * @example https://github.com/octocat
-             */
-            html_url: string;
-        };
-        /**
-         * Simple Classroom
-         * @description A GitHub Classroom classroom
-         */
-        "simple-classroom": {
-            /**
-             * @description Unique identifier of the classroom.
-             * @example 42
-             */
-            id: number;
-            /**
-             * @description The name of the classroom.
-             * @example Programming Elixir
-             */
-            name: string;
-            /**
-             * @description Returns whether classroom is archived or not.
-             * @example false
-             */
-            archived: boolean;
-            /**
-             * @description The url of the classroom on GitHub Classroom.
-             * @example https://classroom.github.com/classrooms/1-programming-elixir
-             */
-            url: string;
-        };
-        /**
-         * Simple Classroom Assignment
-         * @description A GitHub Classroom assignment
-         */
-        "simple-classroom-assignment": {
-            /**
-             * @description Unique identifier of the repository.
-             * @example 42
-             */
-            id: number;
-            /**
-             * @description Whether an accepted assignment creates a public repository.
-             * @example true
-             */
-            public_repo: boolean;
-            /**
-             * @description Assignment title.
-             * @example Intro to Binaries
-             */
-            title: string;
-            /**
-             * @description Whether it's a Group Assignment or Individual Assignment.
-             * @example individual
-             * @enum {string}
-             */
-            type: "individual" | "group";
-            /**
-             * @description The link that a student can use to accept the assignment.
-             * @example https://classroom.github.com/a/Lx7jiUgx
-             */
-            invite_link: string;
-            /**
-             * @description Whether the invitation link is enabled. Visiting an enabled invitation link will accept the assignment.
-             * @example true
-             */
-            invitations_enabled: boolean;
-            /**
-             * @description Sluggified name of the assignment.
-             * @example intro-to-binaries
-             */
-            slug: string;
-            /**
-             * @description Whether students are admins on created repository on accepted assignment.
-             * @example true
-             */
-            students_are_repo_admins: boolean;
-            /**
-             * @description Whether feedback pull request will be created on assignment acceptance.
-             * @example true
-             */
-            feedback_pull_requests_enabled: boolean;
-            /**
-             * @description The maximum allowable teams for the assignment.
-             * @example 0
-             */
-            max_teams?: number | null;
-            /**
-             * @description The maximum allowable members per team.
-             * @example 0
-             */
-            max_members?: number | null;
-            /**
-             * @description The selected editor for the assignment.
-             * @example codespaces
-             */
-            editor: string;
-            /**
-             * @description The number of students that have accepted the assignment.
-             * @example 25
-             */
-            accepted: number;
-            /**
-             * @description The number of students that have submitted the assignment.
-             * @example 10
-             */
-            submitted: number;
-            /**
-             * @description The number of students that have passed the assignment.
-             * @example 10
-             */
-            passing: number;
-            /**
-             * @description The programming language used in the assignment.
-             * @example elixir
-             */
-            language: string;
-            /**
-             * Format: date-time
-             * @description The time at which the assignment is due.
-             * @example 2011-01-26T19:06:43Z
-             */
-            deadline: string | null;
-            classroom: components["schemas"]["simple-classroom"];
-        };
-        /**
-         * Classroom Accepted Assignment
-         * @description A GitHub Classroom accepted assignment
-         */
-        "classroom-accepted-assignment": {
-            /**
-             * @description Unique identifier of the repository.
-             * @example 42
-             */
-            id: number;
-            /**
-             * @description Whether an accepted assignment has been submitted.
-             * @example true
-             */
-            submitted: boolean;
-            /**
-             * @description Whether a submission passed.
-             * @example true
-             */
-            passing: boolean;
-            /**
-             * @description Count of student commits.
-             * @example 5
-             */
-            commit_count: number;
-            /**
-             * @description Most recent grade.
-             * @example 10/10
-             */
-            grade: string;
-            students: components["schemas"]["simple-classroom-user"][];
-            repository: components["schemas"]["simple-classroom-repository"];
-            assignment: components["schemas"]["simple-classroom-assignment"];
-        };
-        /**
-         * Classroom Assignment Grade
-         * @description Grade for a student or groups GitHub Classroom assignment
-         */
-        "classroom-assignment-grade": {
-            /** @description Name of the assignment */
-            assignment_name: string;
-            /** @description URL of the assignment */
-            assignment_url: string;
-            /** @description URL of the starter code for the assignment */
-            starter_code_url: string;
-            /** @description GitHub username of the student */
-            github_username: string;
-            /** @description Roster identifier of the student */
-            roster_identifier: string;
-            /** @description Name of the student's assignment repository */
-            student_repository_name: string;
-            /** @description URL of the student's assignment repository */
-            student_repository_url: string;
-            /** @description Timestamp of the student's assignment submission */
-            submission_timestamp: string;
-            /** @description Number of points awarded to the student */
-            points_awarded: number;
-            /** @description Number of points available for the assignment */
-            points_available: number;
-            /** @description If a group assignment, name of the group the student is in */
-            group_name?: string;
         };
         /**
          * Code Of Conduct
@@ -31433,7 +31052,7 @@ export interface components {
             /** @description Whether the property is required. */
             required?: boolean;
             /** @description Default value of the property */
-            default_value?: (string | string[]) | null;
+            default_value?: ((string | null) | string[]) | null;
             /** @description Short description of the property */
             description?: string | null;
             /**
@@ -31458,7 +31077,7 @@ export interface components {
             /** @description The name of the property */
             property_name: string;
             /** @description The value assigned to the property */
-            value: (string | string[]) | null;
+            value: ((string | null) | string[]) | null;
         };
         /**
          * Organization Repository Custom Property Values
@@ -64812,7 +64431,7 @@ export interface components {
             action: "auto_merge_disabled";
             enterprise?: components["schemas"]["enterprise-webhooks"];
             installation?: components["schemas"]["simple-installation"];
-            number: number;
+            number: components["schemas"]["webhooks_number"];
             organization?: components["schemas"]["organization-simple-webhooks"];
             /** Pull Request */
             pull_request: {
@@ -66041,7 +65660,7 @@ export interface components {
             action: "auto_merge_enabled";
             enterprise?: components["schemas"]["enterprise-webhooks"];
             installation?: components["schemas"]["simple-installation"];
-            number: number;
+            number: components["schemas"]["webhooks_number"];
             organization?: components["schemas"]["organization-simple-webhooks"];
             /** Pull Request */
             pull_request: {
@@ -67290,12 +66909,13 @@ export interface components {
             /** @enum {string} */
             action: "demilestoned";
             enterprise?: components["schemas"]["enterprise-webhooks"];
+            installation?: components["schemas"]["simple-installation"];
             milestone?: components["schemas"]["milestone"];
             number: components["schemas"]["webhooks_number"];
             organization?: components["schemas"]["organization-simple-webhooks"];
             pull_request: components["schemas"]["webhooks_pull_request_5"];
             repository: components["schemas"]["repository-webhooks"];
-            sender?: components["schemas"]["simple-user"];
+            sender: components["schemas"]["simple-user"];
         };
         /** pull_request dequeued event */
         "webhook-pull-request-dequeued": {
@@ -67303,7 +66923,7 @@ export interface components {
             action: "dequeued";
             enterprise?: components["schemas"]["enterprise-webhooks"];
             installation?: components["schemas"]["simple-installation"];
-            number: number;
+            number: components["schemas"]["webhooks_number"];
             organization?: components["schemas"]["organization-simple-webhooks"];
             /** Pull Request */
             pull_request: {
@@ -68556,7 +68176,7 @@ export interface components {
             organization?: components["schemas"]["organization-simple-webhooks"];
             pull_request: components["schemas"]["pull-request-webhook"];
             repository: components["schemas"]["repository-webhooks"];
-            sender?: components["schemas"]["simple-user"];
+            sender: components["schemas"]["simple-user"];
         };
         /** pull_request enqueued event */
         "webhook-pull-request-enqueued": {
@@ -68564,7 +68184,7 @@ export interface components {
             action: "enqueued";
             enterprise?: components["schemas"]["enterprise-webhooks"];
             installation?: components["schemas"]["simple-installation"];
-            number: number;
+            number: components["schemas"]["webhooks_number"];
             organization?: components["schemas"]["organization-simple-webhooks"];
             /** Pull Request */
             pull_request: {
@@ -72248,12 +71868,13 @@ export interface components {
             /** @enum {string} */
             action: "milestoned";
             enterprise?: components["schemas"]["enterprise-webhooks"];
+            installation?: components["schemas"]["simple-installation"];
             milestone?: components["schemas"]["milestone"];
             number: components["schemas"]["webhooks_number"];
             organization?: components["schemas"]["organization-simple-webhooks"];
             pull_request: components["schemas"]["webhooks_pull_request_5"];
             repository: components["schemas"]["repository-webhooks"];
-            sender?: components["schemas"]["simple-user"];
+            sender: components["schemas"]["simple-user"];
         };
         /** pull_request opened event */
         "webhook-pull-request-opened": {
@@ -90661,7 +90282,7 @@ export interface components {
                 } | null;
             };
             repository: components["schemas"]["repository-webhooks"];
-            sender?: components["schemas"]["simple-user"];
+            sender: components["schemas"]["simple-user"];
         };
         /** pull_request unlabeled event */
         "webhook-pull-request-unlabeled": {
@@ -101640,27 +101261,12 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["classroom-assignment"];
-                };
-            };
-            404: components["responses"]["not_found"];
             410: components["responses"]["gone"];
         };
     };
     "classroom/list-accepted-assignments-for-an-assignment": {
         parameters: {
-            query?: {
-                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                page?: components["parameters"]["page"];
-                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                per_page?: components["parameters"]["per-page"];
-            };
+            query?: never;
             header?: never;
             path: {
                 /** @description The unique identifier of the classroom assignment. */
@@ -101670,15 +101276,6 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["classroom-accepted-assignment"][];
-                };
-            };
             410: components["responses"]["gone"];
         };
     };
@@ -101694,42 +101291,18 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["classroom-assignment-grade"][];
-                };
-            };
-            404: components["responses"]["not_found"];
             410: components["responses"]["gone"];
         };
     };
     "classroom/list-classrooms": {
         parameters: {
-            query?: {
-                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                page?: components["parameters"]["page"];
-                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                per_page?: components["parameters"]["per-page"];
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["simple-classroom"][];
-                };
-            };
             410: components["responses"]["gone"];
         };
     };
@@ -101745,27 +101318,12 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["classroom"];
-                };
-            };
-            404: components["responses"]["not_found"];
             410: components["responses"]["gone"];
         };
     };
     "classroom/list-assignments-for-a-classroom": {
         parameters: {
-            query?: {
-                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                page?: components["parameters"]["page"];
-                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                per_page?: components["parameters"]["per-page"];
-            };
+            query?: never;
             header?: never;
             path: {
                 /** @description The unique identifier of the classroom. */
@@ -101775,15 +101333,6 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["simple-classroom-assignment"][];
-                };
-            };
             410: components["responses"]["gone"];
         };
     };
