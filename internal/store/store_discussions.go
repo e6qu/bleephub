@@ -266,7 +266,10 @@ func (st *Store) ListDiscussions(repoID, categoryID int) []*Discussion {
 	return snapshotDiscussions(out)
 }
 
-// UpdateDiscussion applies fn to a discussion.
+// UpdateDiscussion applies fn to a discussion and bumps UpdatedAt. LastEditedAt
+// is NOT touched here — it reflects only title/body edits, so a content edit
+// stamps it inside fn (see the updateDiscussion resolver); close, reopen and
+// re-categorize must leave it unchanged.
 func (st *Store) UpdateDiscussion(id int, fn func(*Discussion)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -275,13 +278,7 @@ func (st *Store) UpdateDiscussion(id int, fn func(*Discussion)) bool {
 		return false
 	}
 	fn(d)
-	now := st.CurrentTime()
-	if d.LastEditedAt == nil {
-		d.LastEditedAt = &now
-	} else {
-		*d.LastEditedAt = now
-	}
-	d.UpdatedAt = now
+	d.UpdatedAt = st.CurrentTime()
 	st.persistDiscussion(d)
 	return true
 }

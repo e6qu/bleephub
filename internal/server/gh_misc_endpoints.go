@@ -959,6 +959,15 @@ func (s *Server) handlePagesCreate(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	// GitHub returns 409 when Pages is already enabled; PUT modifies an existing
+	// site. Re-creating would silently drop https_enforced and the built status.
+	s.store.Misc.Mu.RLock()
+	exists := s.store.Misc.PagesByRepo[repo.ID] != nil
+	s.store.Misc.Mu.RUnlock()
+	if exists {
+		writeGHError(w, http.StatusConflict, "GitHub Pages is already enabled.")
+		return
+	}
 	ownerLogin := repo.Owner.Login
 	pages := &store.PagesSite{
 		CNAME:   req.CNAME,

@@ -125,7 +125,17 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				"viewerCanUpvote": &graphql.Field{
 					Type: graphql.NewNonNull(graphql.Boolean),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						return s.ghUserFromContext(p.Context) != nil, nil
+						if s.ghUserFromContext(p.Context) == nil {
+							return false, nil
+						}
+						// A comment on a locked discussion cannot be upvoted (mirrors
+						// resolveUpvote and Discussion.viewerCanUpvote == !locked).
+						c, _ := p.Source.(map[string]interface{})
+						discussionID, _ := c["discussionID"].(int)
+						if parent := s.store.GetDiscussion(discussionID); parent != nil && parent.Locked {
+							return false, nil
+						}
+						return true, nil
 					},
 				},
 				"viewerHasUpvoted": &graphql.Field{
@@ -850,7 +860,10 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			if d == nil {
 				return nil, gqlMissingNodeType("Discussion")
 			}
+			now := s.store.CurrentTime()
 			s.store.UpdateDiscussion(d.ID, func(disc *store.Discussion) {
+				_, titleEdit := input["title"].(string)
+				_, bodyEdit := input["body"].(string)
 				if v, ok := input["title"].(string); ok {
 					disc.Title = v
 				}
@@ -861,6 +874,11 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					if cat := store.FindDiscussionCategoryByNodeID(s.store, v); cat != nil && cat.RepoID == disc.RepoID {
 						disc.CategoryID = cat.ID
 					}
+				}
+				// lastEditedAt tracks content edits only; a category-only change leaves it.
+				if titleEdit || bodyEdit {
+					stamp := now
+					disc.LastEditedAt = &stamp
 				}
 			})
 			return map[string]interface{}{
