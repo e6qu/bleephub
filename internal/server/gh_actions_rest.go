@@ -505,7 +505,7 @@ func runnerJSON(a *store.Agent, busy bool) map[string]any {
 		"os":              actions.OSFromDescription(a.OSDescription),
 		"status":          agentStatusForRunner(a.Status),
 		"busy":            busy,
-		"ephemeral":       false,
+		"ephemeral":       a.Ephemeral,
 		"version":         versionForRunner(a),
 		"labels":          labels,
 	}

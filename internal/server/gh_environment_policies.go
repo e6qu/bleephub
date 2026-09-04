@@ -36,11 +36,13 @@ func (s *Server) registerGHEnvironmentPolicyRoutes() {
 }
 
 // environmentFromPath resolves {owner}/{repo}/environments/{env_name}, writing a
-// 404 and returning nils when either does not exist.
+// 404 and returning nils when either does not exist. It uses the read-visibility
+// helper so the unauthenticated GET routes (branch policies, protection rules)
+// hide a private repository's environment config rather than disclosing it — the
+// write routes reach here already gated by requirePerm.
 func (s *Server) environmentFromPath(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Environment) {
-	repo := s.lookupRepoFromPath(r)
+	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil
 	}
 	env := s.store.Deployments.GetEnvironment(repo.ID, r.PathValue("env_name"))

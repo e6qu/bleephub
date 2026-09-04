@@ -66869,6 +66869,77 @@
         "state_changing": false,
         "webhook_actions_event_review": false
       },
+      "operation_id": "activity/get-stargazer-history-for-repo",
+      "pagination": {
+        "parameters": [
+          "page",
+          "per_page"
+        ],
+        "required": true
+      },
+      "path": "/repos/{owner}/{repo}/stargazers/history",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "default": 1,
+            "in": "query",
+            "maximum": 100,
+            "minimum": 1,
+            "name": "page",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "default": 30,
+            "in": "query",
+            "maximum": 30,
+            "minimum": 1,
+            "name": "per_page",
+            "required": false,
+            "type": "integer"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
       "operation_id": "repos/get-code-frequency-stats",
       "pagination": {
         "parameters": [],
@@ -79761,12 +79832,12 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "44ce860ae6541cb1cb7513b6637591755c078ba56de5151250b87f419ef9c8bb",
+  "source_sha256": "144e659e6666eafe1eba78b696fc8594dc1b04b9ad4fbbebf14d767c74f6b656",
   "summary": {
-    "operations": 1224,
+    "operations": 1225,
     "state_changing": 584,
     "with_conditional_requests": 0,
-    "with_pagination": 281,
+    "with_pagination": 282,
     "with_request_body": 344,
     "with_required_body": 278
   }

@@ -892,6 +892,7 @@ GET /api/v3/repos/{owner}/{repo}/stacks
 GET /api/v3/repos/{owner}/{repo}/stacks/{stack_number}
 GET /api/v3/repos/{owner}/{repo}/stargazers
 GET /api/v3/repos/{owner}/{repo}/stargazers/count
+GET /api/v3/repos/{owner}/{repo}/stargazers/history
 GET /api/v3/repos/{owner}/{repo}/stats/code_frequency
 GET /api/v3/repos/{owner}/{repo}/stats/commit_activity
 GET /api/v3/repos/{owner}/{repo}/stats/contributors

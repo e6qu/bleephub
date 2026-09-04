@@ -18514,6 +18514,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{repo}/stargazers/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get repository star history
+         * @description Returns repository stars grouped by calendar weeks, most recent first. Pages move backward toward the repository's creation week, and weeks within a page are ordered newest to oldest, so concatenating pages produces one continuous series. Weeks without stars contain zero counts. Week and day boundaries are not guaranteed to align with UTC. The `days` array contains the number of stars created on each day of the week, starting on Sunday.
+         */
+        get: operations["activity/get-stargazer-history-for-repo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{repo}/stats/code_frequency": {
         parameters: {
             query?: never;
@@ -40623,6 +40643,35 @@ export interface components {
             /** Format: date-time */
             starred_at: string;
             user: components["schemas"]["nullable-simple-user"];
+        };
+        /**
+         * Stargazer History
+         * @description Stargazer History
+         */
+        "stargazer-history": {
+            /**
+             * @description The number of stars created on each day of the week, starting on Sunday.
+             * @example [
+             *       0,
+             *       12,
+             *       7,
+             *       0,
+             *       0,
+             *       0,
+             *       0
+             *     ]
+             */
+            days: number[];
+            /**
+             * @description The number of stars created during the week.
+             * @example 19
+             */
+            total: number;
+            /**
+             * @description The start of the week, given as a Unix timestamp.
+             * @example 1754784000
+             */
+            week: number;
         };
         /**
          * Code Frequency Stat
@@ -137039,6 +137088,38 @@ export interface operations {
                 };
             };
             404: components["responses"]["not_found"];
+        };
+    };
+    "activity/get-stargazer-history-for-repo": {
+        parameters: {
+            query?: {
+                /** @description The number of results per page (max 30). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                per_page?: number;
+                /** @description The page number of the results to fetch (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                page?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Repository star history */
+            200: {
+                headers: {
+                    Link: components["headers"]["link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["stargazer-history"][];
+                };
+            };
+            422: components["responses"]["validation_failed"];
         };
     };
     "repos/get-code-frequency-stats": {
