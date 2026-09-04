@@ -53,7 +53,9 @@ func TestStargazerHistory(t *testing.T) {
 		t.Fatal("star failed")
 	}
 
-	resp := s.get(t, "/api/v3/repos/admin/star-hist/stargazers/history", defaultToken)
+	// per_page=100 returns all 52 weekly buckets in one page (the endpoint
+	// documents per_page/page, so the default page would truncate to 30).
+	resp := s.get(t, "/api/v3/repos/admin/star-hist/stargazers/history?per_page=100", defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("stargazer history = %d, want 200", resp.StatusCode)

@@ -618,7 +618,8 @@ func (s *Server) handleStargazerHistory(w http.ResponseWriter, r *http.Request) 
 			"total": total,
 		})
 	}
-	writeJSON(w, http.StatusOK, out)
+	// The endpoint documents per_page/page, unlike the /stats/* activity series.
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
 func (s *Server) handleStatsCommitActivity(w http.ResponseWriter, r *http.Request) {
