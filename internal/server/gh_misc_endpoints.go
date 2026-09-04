@@ -1312,7 +1312,32 @@ func auditEntryMatchesPhrase(e *store.AuditEntry, phrase string) bool {
 			text += " " + strings.ToLower(string(b))
 		}
 	}
+	action := strings.ToLower(e.Action)
 	for _, term := range terms {
+		// GitHub's audit-log phrase supports key:value qualifiers; the plain
+		// substring match treated e.g. "actor:octocat" as a literal it could never
+		// find. Handle the common qualifiers against their own field (action:repo
+		// matches every repo.* action), and fall back to free-text for a plain term
+		// or an unhandled qualifier.
+		if key, val, ok := strings.Cut(term, ":"); ok {
+			switch key {
+			case "actor":
+				if !strings.EqualFold(e.Actor, val) {
+					return false
+				}
+				continue
+			case "org":
+				if !strings.EqualFold(e.Org, val) {
+					return false
+				}
+				continue
+			case "action":
+				if action != val && !strings.HasPrefix(action, val+".") {
+					return false
+				}
+				continue
+			}
+		}
 		if !strings.Contains(text, term) {
 			return false
 		}
