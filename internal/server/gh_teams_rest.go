@@ -163,6 +163,28 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	writeJSONCreated(w, jsonStringField(teamJSON, "url"), teamJSON)
 }
 
+// viewerCanSeeTeam reports whether the caller may see a team. A closed team is
+// visible to every org member (all callers that clear the org-teams read gate); a
+// secret team is visible only to an org owner (or site admin) and to members of
+// that team, matching GitHub — the team list/get surfaces previously disclosed
+// every secret team to any org member.
+func (s *Server) viewerCanSeeTeam(user *store.User, canAdminOrg bool, team *store.Team) bool {
+	if team.Privacy != store.TeamPrivacySecret {
+		return true
+	}
+	if canAdminOrg {
+		return true
+	}
+	if user != nil {
+		for _, mid := range team.MemberIDs {
+			if mid == user.ID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Server) handleListTeams(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -182,9 +204,13 @@ func (s *Server) handleListTeams(w http.ResponseWriter, r *http.Request) {
 	}
 
 	teams := s.store.ListTeams(orgLogin)
+	canAdminOrg := s.viewerCanAdminOrg(r.Context(), orgLogin)
 	result := make([]map[string]interface{}, 0, len(teams))
 	base := s.baseURL(r)
 	for _, team := range teams {
+		if !s.viewerCanSeeTeam(user, canAdminOrg, team) {
+			continue
+		}
 		result = append(result, teamSimpleJSON(team, org, s.store, base))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
@@ -211,6 +237,11 @@ func (s *Server) handleGetTeam(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("team_slug")
 	team := s.store.GetTeam(orgLogin, slug)
 	if team == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	// A secret team the caller may not see is hidden as if it did not exist.
+	if !s.viewerCanSeeTeam(user, s.viewerCanAdminOrg(r.Context(), orgLogin), team) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -353,10 +384,18 @@ func (s *Server) handleListChildTeams(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	canAdminOrg := s.viewerCanAdminOrg(r.Context(), orgLogin)
+	if !s.viewerCanSeeTeam(user, canAdminOrg, team) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	children := s.store.ListChildTeams(orgLogin, team.ID)
 	base := s.baseURL(r)
 	result := make([]map[string]interface{}, 0, len(children))
 	for _, child := range children {
+		if !s.viewerCanSeeTeam(user, canAdminOrg, child) {
+			continue
+		}
 		result = append(result, teamSimpleJSON(child, org, s.store, base))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))

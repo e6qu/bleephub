@@ -141,8 +141,9 @@ func (s *Resolver) addTeamFields(types *accountSurfaceTypes) {
 			if err != nil || team == nil {
 				return paginateGQLItems(nil, p.Args), err
 			}
-			// A secret team's roster is visible only to organization members.
-			if team.Privacy == store.TeamPrivacySecret && !s.viewerIsOrgMember(p.Context, org.Login) {
+			// A secret team's roster is visible only to org owners and its own
+			// members, not to every org member.
+			if !s.viewerCanSeeTeam(p.Context, org, team) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
 			roleFilter, _ := p.Args["role"].(string)

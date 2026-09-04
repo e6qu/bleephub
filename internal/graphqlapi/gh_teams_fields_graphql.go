@@ -150,8 +150,9 @@ func (s *Resolver) addTeamMemberStatusesField(teamType *graphql.Object, types *a
 			if err != nil || team == nil {
 				return paginateGQLItems(nil, p.Args), err
 			}
-			// A secret team's roster is visible only within the organization.
-			if team.Privacy == store.TeamPrivacySecret && !s.viewerIsOrgMember(p.Context, org.Login) {
+			// A secret team's roster is visible only to org owners and its own
+			// members, not to every org member.
+			if !s.viewerCanSeeTeam(p.Context, org, team) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
 			members := s.store.ListTeamMembers(org.Login, team.Slug)
