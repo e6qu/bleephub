@@ -155,8 +155,11 @@ type cursorPageInfo struct {
 	Prev    string
 }
 
-// cursorPaginate applies per_page/after/before to items sorted ascending by the
-// stable integer identity idOf. Cursors are opaque encodings of that identity.
+// cursorPaginate applies per_page/after/before to items in their given order.
+// A cursor is an opaque encoding of an item's stable integer identity idOf; the
+// boundary is located by matching that identity within the current ordering, so
+// it stays correct even when the slice order is not ascending-by-idOf (e.g.
+// project items ordered by manual position, which reordering detaches from ID).
 func cursorPaginate[T any](r *http.Request, items []T, idOf func(T) int) ([]T, cursorPageInfo) {
 	perPage := 30
 	if v := r.URL.Query().Get("per_page"); v != "" {
@@ -174,21 +177,42 @@ func cursorPaginate[T any](r *http.Request, items []T, idOf func(T) int) ([]T, c
 	switch {
 	case after != "":
 		id := graphqlapi.DecodeCursor(after)
+		// Page begins just past the cursor item in the current order.
 		start = len(items)
 		for i, it := range items {
-			if idOf(it) > id {
-				start = i
+			if idOf(it) == id {
+				start = i + 1
 				break
+			}
+		}
+		if start == len(items) {
+			// Cursor item is gone: fall back to the ascending-by-id boundary,
+			// exact for id-ordered callers and best-effort otherwise.
+			for i, it := range items {
+				if idOf(it) > id {
+					start = i
+					break
+				}
 			}
 		}
 		end = start + perPage
 	case before != "":
 		id := graphqlapi.DecodeCursor(before)
-		end = 0
+		// Page ends just before the cursor item in the current order.
+		end = -1
 		for i := len(items) - 1; i >= 0; i-- {
-			if idOf(items[i]) < id {
-				end = i + 1
+			if idOf(items[i]) == id {
+				end = i
 				break
+			}
+		}
+		if end < 0 {
+			end = 0
+			for i := len(items) - 1; i >= 0; i-- {
+				if idOf(items[i]) < id {
+					end = i + 1
+					break
+				}
 			}
 		}
 		start = end - perPage

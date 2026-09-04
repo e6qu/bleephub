@@ -5078,6 +5078,12 @@ func (st *Store) CreateGistComment(gistID string, user *User, body string) *Gist
 		return nil
 	}
 	now := st.CurrentTime()
+	// author_association is OWNER only for the gist's own author; every other
+	// commenter is NONE (GitHub has no repo-collaborator roles on a gist).
+	association := "NONE"
+	if user.ID == g.OwnerID {
+		association = "OWNER"
+	}
 	c := &GistComment{
 		ID:                st.NextGistCommentID,
 		NodeID:            fmt.Sprintf("GC_kwDOB%06d", st.NextGistCommentID),
@@ -5086,7 +5092,7 @@ func (st *Store) CreateGistComment(gistID string, user *User, body string) *Gist
 		Body:              body,
 		CreatedAt:         now,
 		UpdatedAt:         now,
-		AuthorAssociation: "OWNER",
+		AuthorAssociation: association,
 	}
 	updatedGist := cloneGist(g)
 	updatedGist.Comments++
