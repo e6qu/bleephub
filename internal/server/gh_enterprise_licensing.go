@@ -132,7 +132,9 @@ func (s *Server) handleListVisualStudioSubscriptions(w http.ResponseWriter, r *h
 	s.store.Mu.RLock()
 	subscriptions := make([]*store.VisualStudioSubscription, 0, len(s.store.EnterpriseSettings.VisualStudioSubscriptions))
 	for _, subscription := range s.store.EnterpriseSettings.VisualStudioSubscriptions {
-		if unmatchedOnly && subscription.ManualMatch {
+		// "Unmatched" means the subscription is not linked to a GitHub user, i.e.
+		// it has no username — not whether the match was manual.
+		if unmatchedOnly && subscription.Username != "" {
 			continue
 		}
 		copy := *subscription
