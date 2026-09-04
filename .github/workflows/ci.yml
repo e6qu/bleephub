@@ -486,11 +486,11 @@ jobs:
       - name: Enforce the transitive dependency quarantine window
         run: ./scripts/check-dependency-age.py bun
       - name: Audit the locked web dependency graph
-        # bun audit queries npm's advisory registry over the network; a transient
-        # "ConnectionClosed: audit request failed" must retry rather than fail the
-        # build (a real advisory still fails every attempt). Cap each attempt so a
-        # hung request can't stall the job, and retry with the shared helper.
-        run: cd web && ../scripts/retry-command.sh timeout 120 bun audit
+        # bun audit queries npm's advisory registry over the network. A real
+        # advisory fails the build; an inability to reach the registry (a
+        # ConnectionClosed or a hang, as during an npm incident) is inconclusive
+        # and must not block every merge. web-audit.sh makes that distinction.
+        run: ./scripts/web-audit.sh
       - name: Type-check and test the web application
         run: cd web && bun run typecheck && bun run test:coverage
       # third_party/github-openapi.d.ts is a committed witness of the vendored
