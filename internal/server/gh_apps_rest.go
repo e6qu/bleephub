@@ -773,7 +773,24 @@ func (s *Server) handleListUserInstallationRepos(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	repos := filterInstallationRepos(s.store.ListReposByOwner(inst.TargetLogin), inst)
+	// GitHub lists only the repos the authenticated user actually has access to
+	// within the installation — the intersection, not every repo the installation
+	// covers. Without this a plain org member enumerates all private org repos.
+	// A repo-scoped ghu_ token narrows the set further.
+	covered := filterInstallationRepos(s.store.ListReposByOwner(inst.TargetLogin), inst)
+	uts := ghUserToServerTokenFromContext(r.Context())
+	repos := covered[:0:0]
+	for _, repo := range covered {
+		// Ask the credential-aware layer (not the user-scoped predicate) whether
+		// this request may read the repo — the authz chokepoint the ratchet enforces.
+		if !s.viewerCanReadRepo(r.Context(), repo) {
+			continue
+		}
+		if uts != nil && uts.RepositoryIDs != nil && !slices.Contains(uts.RepositoryIDs, repo.ID) {
+			continue
+		}
+		repos = append(repos, repo)
+	}
 	page := paginateAndLink(w, r, repos)
 	base := s.baseURL(r)
 	repoJSON := make([]map[string]interface{}, 0, len(page))
@@ -862,6 +879,11 @@ func (s *Server) handleSuspendInstallation(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusConflict, "Installation already suspended")
 		return
 	}
+	// Re-fetch so the webhook carries the post-suspend state (suspended_at/by),
+	// matching GitHub and the browser path; the pre-suspend snapshot is stale.
+	if fresh := s.store.GetInstallation(id); fresh != nil {
+		inst = fresh
+	}
 	s.emitInstallationEvent(app, "suspend", inst)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -891,6 +913,11 @@ func (s *Server) handleUnsuspendInstallation(w http.ResponseWriter, r *http.Requ
 	if !s.store.UnsuspendInstallation(id) {
 		writeGHError(w, http.StatusConflict, "Installation not suspended")
 		return
+	}
+	// Re-fetch so the webhook shows suspended_at/by cleared, not the stale
+	// pre-unsuspend snapshot.
+	if fresh := s.store.GetInstallation(id); fresh != nil {
+		inst = fresh
 	}
 	s.emitInstallationEvent(app, "unsuspend", inst)
 	w.WriteHeader(http.StatusNoContent)

@@ -74,7 +74,12 @@ func (s *CommitStatusStore) List(repoKey, ref string) []*CommitStatus {
 	out := make([]*CommitStatus, len(src))
 	copy(out, src)
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreatedAt.After(out[j].CreatedAt)
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		// Same instant (frozen test clock, rapid POSTs): the higher id is newer,
+		// so latest-per-context stays deterministic.
+		return out[i].ID > out[j].ID
 	})
 	return out
 }
@@ -94,7 +99,10 @@ func (s *CommitStatusStore) Combined(repoKey, ref string) (state string, total i
 		statuses = append(statuses, st)
 	}
 	sort.Slice(statuses, func(i, j int) bool {
-		return statuses[i].CreatedAt.After(statuses[j].CreatedAt)
+		if !statuses[i].CreatedAt.Equal(statuses[j].CreatedAt) {
+			return statuses[i].CreatedAt.After(statuses[j].CreatedAt)
+		}
+		return statuses[i].ID > statuses[j].ID
 	})
 	total = len(statuses)
 	state = computeCombinedState(statuses)

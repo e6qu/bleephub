@@ -186,11 +186,18 @@ func (s *Server) missingRulesetStatusChecks(repo *store.Repo, sha string, parame
 		return nil
 	}
 	green := map[string]bool{}
+	// Roll up to the LATEST check run per name — a re-run mints a new run that
+	// supersedes the old one (matches evaluateChecksForMerge). ListCheckRunsForCommit
+	// ranges a map, so first-seen is nondeterministic; pick the highest ID.
+	latest := map[string]*store.CheckRun{}
 	for _, run := range s.store.ListCheckRunsForCommit(repo.FullName, sha, "", "", 0) {
-		if _, seen := green[run.Name]; seen {
+		if prev, ok := latest[run.Name]; ok && run.ID <= prev.ID {
 			continue
 		}
-		green[run.Name] = run.Status == "completed" &&
+		latest[run.Name] = run
+	}
+	for name, run := range latest {
+		green[name] = run.Status == "completed" &&
 			(run.Conclusion == "success" || run.Conclusion == "neutral" || run.Conclusion == "skipped")
 	}
 	_, _, statuses := s.store.CommitStatuses.Combined(repo.FullName, sha)
