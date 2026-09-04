@@ -135,13 +135,13 @@
       },
       {
         "event": "label",
-        "line": 229,
+        "line": 239,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 259,
+        "line": 269,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -159,19 +159,19 @@
       },
       {
         "event": "milestone",
-        "line": 311,
+        "line": 321,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 428,
+        "line": 453,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 465,
+        "line": 490,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },

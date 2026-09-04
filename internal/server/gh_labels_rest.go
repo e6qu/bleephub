@@ -209,6 +209,16 @@ func (s *Server) handleUpdateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Renaming onto a name another label in the repo already holds is refused, the
+	// same invariant the create path enforces; without this the repo ended up with
+	// two identically-named labels and label-by-name resolution became ambiguous.
+	if req.NewName != nil && *req.NewName != label.Name {
+		if existing := s.store.GetLabelByName(repo.ID, *req.NewName); existing != nil && existing.ID != label.ID {
+			store.WriteGHValidationError(w, "Label", "name", "already_exists")
+			return
+		}
+	}
+
 	s.store.UpdateLabel(label.ID, func(l *store.IssueLabel) {
 		if req.NewName != nil {
 			l.Name = *req.NewName
@@ -411,6 +421,21 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 				m.ClosedAt = nil
 			}
 			m.State = store.MilestoneState(v)
+		}
+		// GitHub's milestone update accepts due_on (and a null clears it); the
+		// handler previously ignored it, so a due date could never be set or
+		// changed after creation. Parse leniently, matching the create path.
+		if raw, present := req["due_on"]; present {
+			switch v := raw.(type) {
+			case string:
+				if v == "" {
+					m.DueOn = nil
+				} else if t, err := time.Parse(time.RFC3339, v); err == nil {
+					m.DueOn = &t
+				}
+			case nil:
+				m.DueOn = nil
+			}
 		}
 	})
 

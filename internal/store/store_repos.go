@@ -2745,6 +2745,11 @@ func (st *Store) SetRepoSubscription(userID int, repoID int, subscribed, ignored
 	if st.Repos[repoID] == nil {
 		return false
 	}
+	// subscribed and ignored are mutually exclusive on GitHub: ignoring a repo
+	// (blocking all its notifications) clears the subscription, so ignored wins.
+	if ignored {
+		subscribed = false
+	}
 	key := RepoSubscriptionKey(userID, repoID)
 	sub := &RepoSubscription{
 		UserID:     userID,
