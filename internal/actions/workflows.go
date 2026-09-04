@@ -527,16 +527,20 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 				}
 			}
 
-			// A job targeting an environment with required reviewers waits for a deployment review.
+			// A job targeting a protected environment waits: reviewer-gated envs wait for a deployment
+			// review; wait-timer-only envs wait for the timer, auto-approved by ReleaseElapsedWaitTimers.
 			if envName := jobEnvironmentName(wfJob); envName != "" && !envApproved(wf, envName) {
 				if env := s.protectedEnvironmentLocked(wf, envName); env != nil {
 					wfJob.Status = store.JobStatusWaiting
-					addPendingDeployment(wf, env)
+					addPendingDeployment(wf, env, s.currentTime())
 					if wf.Status == store.WorkflowStatusRunning {
 						wf.Status = store.WorkflowStatusWaiting
 					}
-					s.logger.Info().Str("job", wfJob.Key).Str("environment", envName).
-						Msg("job waiting for deployment review")
+					reason := "job waiting for deployment review"
+					if len(env.Reviewers) == 0 {
+						reason = "job waiting for environment wait timer"
+					}
+					s.logger.Info().Str("job", wfJob.Key).Str("environment", envName).Msg(reason)
 					s.QueueEvent(EvJobWaiting, wf, wfJob)
 					changed = true
 					continue
@@ -895,7 +899,8 @@ func (s *Engine) environmentAllowsRefLocked(repoID int, wf *store.Workflow, env 
 	}
 }
 
-// protectedEnvironmentLocked returns the environment when it carries required reviewers; referencing one auto-creates it. Caller holds s.store.mu.
+// protectedEnvironmentLocked returns the environment when it protects deployments — via required reviewers or a
+// wait timer; referencing one auto-creates it. Caller holds s.store.mu.
 func (s *Engine) protectedEnvironmentLocked(wf *store.Workflow, envName string) *store.Environment {
 	if wf.RepoFullName == "" {
 		return nil
@@ -908,14 +913,14 @@ func (s *Engine) protectedEnvironmentLocked(wf *store.Workflow, envName string) 
 	if env == nil {
 		env = s.store.Deployments.UpsertEnvironment(repo.ID, envName)
 	}
-	if len(env.Reviewers) == 0 {
+	if len(env.Reviewers) == 0 && env.WaitTimer <= 0 {
 		return nil
 	}
 	return env
 }
 
-// addPendingDeployment records the run's wait on an environment once.
-func addPendingDeployment(wf *store.Workflow, env *store.Environment) {
+// addPendingDeployment records the run's wait on an environment once, stamping the wait-timer clock.
+func addPendingDeployment(wf *store.Workflow, env *store.Environment, now time.Time) {
 	for _, p := range wf.PendingDeployments {
 		if p.EnvID == env.ID {
 			return
@@ -924,8 +929,17 @@ func addPendingDeployment(wf *store.Workflow, env *store.Environment) {
 	wf.PendingDeployments = append(wf.PendingDeployments, &store.PendingDeployment{
 		EnvID:              env.ID,
 		EnvName:            env.Name,
-		WaitTimerStartedAt: time.Now().UTC(),
+		WaitTimerStartedAt: now,
 	})
+}
+
+// waitTimerElapsed reports whether an environment's wait timer has run out for a pending deployment.
+func waitTimerElapsed(env *store.Environment, p *store.PendingDeployment, now time.Time) bool {
+	if p == nil || env.WaitTimer <= 0 {
+		return false
+	}
+	deadline := p.WaitTimerStartedAt.Add(time.Duration(env.WaitTimer) * time.Minute)
+	return !now.Before(deadline)
 }
 
 // ApplyDeploymentReview resolves a review against pending deployments: approved environments release their waiting jobs;
@@ -995,6 +1009,76 @@ func (s *Engine) ApplyDeploymentReview(ctx context.Context, wf *store.Workflow, 
 	}
 	s.FinalizeWorkflowIfDone(wf)
 	return names
+}
+
+// ReleaseElapsedWaitTimers auto-approves environment wait timers that have elapsed, releasing their held jobs
+// back into admission and re-dispatching. It runs on the per-minute schedule tick; reviewer-gated waits are
+// released by ApplyDeploymentReview instead and are never auto-approved here. An elapsed timer is modeled as an
+// approved EnvApproval so the dispatch gate short-circuits (envApproved) rather than re-gating the job.
+func (s *Engine) ReleaseElapsedWaitTimers(ctx context.Context) {
+	type readyDispatch struct {
+		wf           *store.Workflow
+		serverURL    string
+		defaultImage string
+	}
+	var ready []readyDispatch
+	now := s.currentTime()
+
+	s.store.Mu.Lock()
+	for _, wf := range s.store.Workflows {
+		if wf.Status != store.WorkflowStatusWaiting {
+			continue
+		}
+		repo := s.store.ReposByName[wf.RepoFullName]
+		if repo == nil {
+			continue
+		}
+		var elapsedNames []string
+		var elapsedIDs []int
+		elapsed := map[string]bool{}
+		remaining := wf.PendingDeployments[:0]
+		for _, p := range wf.PendingDeployments {
+			env := s.store.Deployments.GetEnvironment(repo.ID, p.EnvName)
+			// Only wait-timer-only environments auto-approve; a reviewer gate must be resolved by a human.
+			if env != nil && len(env.Reviewers) == 0 && waitTimerElapsed(env, p, now) {
+				elapsed[p.EnvName] = true
+				elapsedNames = append(elapsedNames, p.EnvName)
+				elapsedIDs = append(elapsedIDs, env.ID)
+			} else {
+				remaining = append(remaining, p)
+			}
+		}
+		if len(elapsed) == 0 {
+			continue
+		}
+		wf.PendingDeployments = remaining
+		wf.EnvApprovals = append(wf.EnvApprovals, &store.EnvApproval{
+			State:     "approved",
+			Comment:   "wait timer elapsed",
+			EnvIDs:    elapsedIDs,
+			EnvNames:  elapsedNames,
+			CreatedAt: now,
+		})
+		for _, wfJob := range wf.Jobs {
+			if wfJob.Status == store.JobStatusWaiting && elapsed[jobEnvironmentName(wfJob)] {
+				wfJob.Status = store.JobStatusPending
+			}
+		}
+		if len(wf.PendingDeployments) == 0 && wf.Status == store.WorkflowStatusWaiting {
+			wf.Status = store.WorkflowStatusRunning
+		}
+		serverURL, defaultImage := workflowDispatchCoordinates(wf)
+		s.store.PersistWorkflowRecord(wf)
+		if serverURL != "" {
+			ready = append(ready, readyDispatch{wf, serverURL, defaultImage})
+		}
+	}
+	s.store.Mu.Unlock()
+
+	for _, d := range ready {
+		s.DispatchReadyJobs(ctx, d.wf, d.serverURL, d.defaultImage)
+		s.FinalizeWorkflowIfDone(d.wf)
+	}
 }
 
 // FinalizeWorkflowIfDone completes the run once every job is terminal — needed independently of OnJobCompleted

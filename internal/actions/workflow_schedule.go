@@ -56,6 +56,8 @@ func (s *Engine) startScheduleDispatcher(ctx context.Context) {
 			for _, hook := range s.onScheduleTick {
 				hook(tickTime)
 			}
+			// Release deployments whose environment wait timer has now elapsed.
+			s.ReleaseElapsedWaitTimers(ctx)
 			lastFired = s.FireSchedulesThrough(lastFired, tickTime)
 		}
 	})
