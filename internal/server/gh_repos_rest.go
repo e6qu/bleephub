@@ -32,6 +32,7 @@ func (s *Server) registerGHRepoRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/forks", s.handleListForks)
 	s.route("GET /api/v3/repos/{owner}/{repo}/stargazers", s.handleListStargazers)
 	s.route("GET /api/v3/repos/{owner}/{repo}/stargazers/count", s.handleStargazerCount)
+	s.route("GET /api/v3/repos/{owner}/{repo}/stargazers/history", s.handleStargazerHistory)
 	s.route("PUT /api/v3/user/starred/{owner}/{repo}", s.handleStarRepo)
 	s.route("DELETE /api/v3/user/starred/{owner}/{repo}", s.handleUnstarRepo)
 	s.route("GET /api/v3/user/starred", s.handleListStarredRepos)

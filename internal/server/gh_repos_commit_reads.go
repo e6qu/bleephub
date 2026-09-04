@@ -579,6 +579,48 @@ func (s *Server) handleStatsCodeFrequency(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleStargazerHistory serves GET /repos/{owner}/{repo}/stargazers/history:
+// the last 52 weeks of star activity, one entry per week carrying the seven
+// daily counts and the week's total, the same weekly shape as commit activity.
+func (s *Server) handleStargazerHistory(w http.ResponseWriter, r *http.Request) {
+	repo := s.lookupReadableRepoFromPath(w, r)
+	if repo == nil {
+		return
+	}
+	byWeekDay := map[int64]*[7]int{}
+	for _, starredAt := range repo.Stargazers {
+		when := starredAt.UTC()
+		wk := weekStart(when).Unix()
+		days := byWeekDay[wk]
+		if days == nil {
+			days = &[7]int{}
+			byWeekDay[wk] = days
+		}
+		days[int(when.Weekday())]++
+	}
+	out := make([]map[string]interface{}, 0, 52)
+	current := weekStart(s.currentTime())
+	for i := 51; i >= 0; i-- {
+		wk := current.AddDate(0, 0, -7*i)
+		days := byWeekDay[wk.Unix()]
+		if days == nil {
+			days = &[7]int{}
+		}
+		total := 0
+		dayList := make([]int, 7)
+		for d := 0; d < 7; d++ {
+			dayList[d] = days[d]
+			total += days[d]
+		}
+		out = append(out, map[string]interface{}{
+			"week":  wk.Unix(),
+			"days":  dayList,
+			"total": total,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleStatsCommitActivity(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {

@@ -41,6 +41,43 @@ func TestEnvPolicyGetsHidePrivateRepo(t *testing.T) {
 	}
 }
 
+// TestStargazerHistory pins the newly-vendored GET
+// /repos/{owner}/{repo}/stargazers/history: 52 weekly buckets of star activity,
+// each with seven daily counts and a total, summing to the repo's stars.
+func TestStargazerHistory(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.seedRepo(t, "star-hist", false)
+	fan, _ := s.newUser(t, "star-fan")
+	if !s.store.StarRepo(fan.ID, "admin", "star-hist") {
+		t.Fatal("star failed")
+	}
+
+	resp := s.get(t, "/api/v3/repos/admin/star-hist/stargazers/history", defaultToken)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("stargazer history = %d, want 200", resp.StatusCode)
+	}
+	weeks := decodeJSONArray(t, resp)
+	if len(weeks) != 52 {
+		t.Fatalf("history has %d weeks, want 52", len(weeks))
+	}
+	total := 0
+	for _, wk := range weeks {
+		if _, ok := wk["week"]; !ok {
+			t.Fatalf("week entry missing week field: %v", wk)
+		}
+		days, _ := wk["days"].([]interface{})
+		if len(days) != 7 {
+			t.Fatalf("week has %d days, want 7", len(days))
+		}
+		total += int(wk["total"].(float64))
+	}
+	if total != 1 {
+		t.Fatalf("summed star total = %d, want 1 (the single star)", total)
+	}
+}
+
 // TestRunnerJSONReportsEphemeral pins that a runner's ephemeral flag is rendered
 // from its real state, not hardcoded false, so a JIT / --ephemeral runner is
 // reported as ephemeral.
