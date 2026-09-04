@@ -10388,6 +10388,15 @@
       },
       {
         "method": "GET",
+        "operation_id": "activity/get-stargazer-history-for-repo",
+        "path": "/repos/{owner}/{repo}/stargazers/history",
+        "statuses": [
+          "200",
+          "422"
+        ]
+      },
+      {
+        "method": "GET",
         "operation_id": "repos/get-code-frequency-stats",
         "path": "/repos/{owner}/{repo}/stats/code_frequency",
         "statuses": [
@@ -12599,10 +12608,11 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1472,
+          "documented_operations": 1473,
           "missing_operations": [
             "DELETE /enterprises/{}/credential-authorizations",
             "GET /enterprises/{}/actions/runners/deprecations/{}",
+            "GET /repos/{}/{}/stargazers/history",
             "POST /orgs/{}/credential-authorizations/revoke-all",
             "POST /orgs/{}/credential-authorizations/revoke-credential-type",
             "POST /orgs/{}/credential-authorizations/{}/revoke",
@@ -22275,7 +22285,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "44ce860ae6541cb1cb7513b6637591755c078ba56de5151250b87f419ef9c8bb"
+    "vendored_openapi_sha256": "144e659e6666eafe1eba78b696fc8594dc1b04b9ad4fbbebf14d767c74f6b656"
   },
   "schema_version": 1,
   "sources": {
