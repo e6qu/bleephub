@@ -98,7 +98,7 @@ func (s *Server) requirePerm(scope store.PermScope, level store.PermLevel, next 
 		}
 
 		need := resourceCapabilityFor(scope, level, r.Method, r.URL.Path)
-		switch s.credentialMayAccessTarget(r, user, instTok, scope, need) {
+		switch s.credentialMayAccessTarget(r, user, instTok, scope, level, need) {
 		case targetMissing:
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
@@ -149,7 +149,7 @@ const (
 // suits the credential. An installation token's principal is the installation,
 // not the synthetic bot user on the context, so the user-shaped question must
 // not be asked of it.
-func (s *Server) credentialMayAccessTarget(r *http.Request, user *store.User, instTok *store.InstallationToken, scope store.PermScope, need store.PermLevel) targetVerdict {
+func (s *Server) credentialMayAccessTarget(r *http.Request, user *store.User, instTok *store.InstallationToken, scope store.PermScope, level, need store.PermLevel) targetVerdict {
 	if verdict := s.namedTargetsResolve(r); verdict != targetAllowed {
 		return verdict
 	}
@@ -176,14 +176,14 @@ func (s *Server) credentialMayAccessTarget(r *http.Request, user *store.User, in
 			// Same public-repo carve-out the installation path gets, so a ghu_
 			// token is not narrower than a ghs_ token of the same app.
 			readOnly := r.Method == http.MethodGet || r.Method == http.MethodHead
-			if !(readOnly && !repo.Private && publicReadAllowed(scope)) && !s.userToServerReachesRepo(uts, repo) {
+			if !(readOnly && !repo.Private && publicReadAllowed(scope)) && !s.userToServerReachesRepo(uts, repo, scope, level) {
 				return targetDenied
 			}
 		}
 		// The org half: checking only the repo let a ghu_ token for an app
 		// installed on a user (never the org) mint that org's runner
 		// registration token.
-		if orgLogin := r.PathValue("org"); orgLogin != "" && !s.userToServerReachesAccount(uts, store.OrganizationAccount, orgLogin) {
+		if orgLogin := r.PathValue("org"); orgLogin != "" && !s.userToServerReachesAccount(uts, store.OrganizationAccount, orgLogin, scope, level) {
 			return targetDenied
 		}
 	}
@@ -230,9 +230,12 @@ func installationOnAccount(inst *store.Installation, kind store.AccountKind, log
 	return strings.EqualFold(inst.TargetLogin, login)
 }
 
-// userToServerReachesAccount reports whether any installation of the token's app
-// is on the account, honouring a token narrowed to specific installations.
-func (s *Server) userToServerReachesAccount(tok *store.UserToServerToken, kind store.AccountKind, login string) bool {
+// userToServerReachesAccount reports whether a SINGLE installation of the token's
+// app is on the account AND grants (scope, level), honouring a token narrowed to
+// specific installations. Permission and reach must be satisfied by the same
+// installation: a grant on the app's installation elsewhere must never authorize
+// an account whose own installation was granted less (per-installation ceiling).
+func (s *Server) userToServerReachesAccount(tok *store.UserToServerToken, kind store.AccountKind, login string, scope store.PermScope, level store.PermLevel) bool {
 	if tok == nil || tok.AppID == 0 {
 		return true
 	}
@@ -240,17 +243,19 @@ func (s *Server) userToServerReachesAccount(tok *store.UserToServerToken, kind s
 		if len(tok.InstallationIDs) > 0 && !containsRepoID(tok.InstallationIDs, inst.ID) {
 			continue
 		}
-		if installationOnAccount(inst, kind, login) {
+		if installationOnAccount(inst, kind, login) && hasPerm(inst.Permissions, scope, level) {
 			return true
 		}
 	}
 	return false
 }
 
-// userToServerReachesRepo reports whether any installation of the token's app
-// covers the repository, honouring a token narrowed to specific installations.
+// userToServerReachesRepo reports whether a SINGLE installation of the token's app
+// covers the repository AND grants (scope, level), honouring a token narrowed to
+// specific installations. As with the account half, permission and reach must be
+// the same installation so one installation's grant cannot reach another's repos.
 // A gho_ OAuth-app token has no installation behind it and is unconstrained.
-func (s *Server) userToServerReachesRepo(tok *store.UserToServerToken, repo *store.Repo) bool {
+func (s *Server) userToServerReachesRepo(tok *store.UserToServerToken, repo *store.Repo, scope store.PermScope, level store.PermLevel) bool {
 	if tok == nil || tok.AppID == 0 || repo == nil {
 		return true
 	}
@@ -261,7 +266,7 @@ func (s *Server) userToServerReachesRepo(tok *store.UserToServerToken, repo *sto
 		if len(tok.InstallationIDs) > 0 && !containsRepoID(tok.InstallationIDs, inst.ID) {
 			continue
 		}
-		if installationCovers(inst, nil, repo) {
+		if installationCovers(inst, nil, repo) && hasPerm(inst.Permissions, scope, level) {
 			return true
 		}
 	}
@@ -392,7 +397,7 @@ func (s *Server) credentialGrantsRepo(ctx context.Context, repo *store.Repo, sco
 		if !userToServerHasPerm(uts, scope, level, s.store) {
 			return false
 		}
-		return s.userToServerReachesRepo(uts, repo)
+		return s.userToServerReachesRepo(uts, repo, scope, level)
 	}
 	// A fine-grained PAT names both halves itself. requirePerm consults them via
 	// fineGrainedPATAllows, but /api/graphql and the git transports never reach
@@ -495,7 +500,7 @@ func (s *Server) credentialGrantsAccount(ctx context.Context, kind store.Account
 	// Grant for both prefixes, reach for ghu_ only — the asymmetry
 	// credentialGrantsRepo spells out.
 	if uts := ghUserToServerTokenFromContext(ctx); uts != nil {
-		return userToServerHasPerm(uts, scope, level, s.store) && s.userToServerReachesAccount(uts, kind, login)
+		return userToServerHasPerm(uts, scope, level, s.store) && s.userToServerReachesAccount(uts, kind, login, scope, level)
 	}
 	if token := ghPersonalAccessTokenFromContext(ctx); token != nil && token.FineGrained {
 		return s.fineGrainedPATGrantsAccount(token, login, scope, level)
