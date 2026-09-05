@@ -73,7 +73,7 @@ func (s *Server) handleListSecretScanningAlerts(w http.ResponseWriter, r *http.R
 	baseURL := s.baseURL(r)
 	out := make([]map[string]interface{}, len(page))
 	for i, a := range page {
-		out[i] = secretScanningAlertToJSON(a, baseURL, repo)
+		out[i] = s.secretScanningAlertToJSON(a, baseURL, repo)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -93,7 +93,7 @@ func (s *Server) handleGetSecretScanningAlert(w http.ResponseWriter, r *http.Req
 	if a == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, secretScanningAlertToJSON(a, s.baseURL(r), repo))
+	writeJSON(w, http.StatusOK, s.secretScanningAlertToJSON(a, s.baseURL(r), repo))
 }
 
 func (s *Server) handleUpdateSecretScanningAlert(w http.ResponseWriter, r *http.Request) {
@@ -129,11 +129,15 @@ func (s *Server) handleUpdateSecretScanningAlert(w http.ResponseWriter, r *http.
 		store.WriteGHValidationError(w, "SecretScanningAlert", "state", "missing_field")
 		return
 	}
-	if err := s.store.UpdateSecretScanningAlert(a, req.State, req.Resolution, req.ResolutionComment); err != nil {
+	resolverID := 0
+	if caller := ghUserFromContext(r.Context()); caller != nil {
+		resolverID = caller.ID
+	}
+	if err := s.store.UpdateSecretScanningAlert(a, req.State, req.Resolution, req.ResolutionComment, resolverID); err != nil {
 		store.WriteGHValidationError(w, "SecretScanningAlert", "state", "invalid")
 		return
 	}
-	writeJSON(w, http.StatusOK, secretScanningAlertToJSON(a, s.baseURL(r), repo))
+	writeJSON(w, http.StatusOK, s.secretScanningAlertToJSON(a, s.baseURL(r), repo))
 }
 
 func (s *Server) handleListSecretScanningAlertLocations(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +183,7 @@ func (s *Server) handleListSecretScanningOrgAlerts(w http.ResponseWriter, r *htt
 		if repo == nil {
 			continue
 		}
-		alertJSON := secretScanningAlertToJSON(a, baseURL, repo)
+		alertJSON := s.secretScanningAlertToJSON(a, baseURL, repo)
 		alertJSON["repository"] = simpleRepoJSON(repo, s.store, baseURL)
 		out = append(out, alertJSON)
 	}
@@ -398,7 +402,7 @@ func (s *Server) lookupSecretScanningAlert(w http.ResponseWriter, r *http.Reques
 	return a
 }
 
-func secretScanningAlertToJSON(a *store.SecretScanningAlert, baseURL string, repo *store.Repo) map[string]interface{} {
+func (s *Server) secretScanningAlertToJSON(a *store.SecretScanningAlert, baseURL string, repo *store.Repo) map[string]interface{} {
 	apiURL := fmt.Sprintf("%s/api/v3/repos/%s/secret-scanning/alerts/%d", baseURL, repo.FullName, a.Number)
 	htmlURL := fmt.Sprintf("%s/%s/security/secret-scanning/%d", baseURL, repo.FullName, a.Number)
 	locationsURL := fmt.Sprintf("%s/locations", apiURL)
@@ -406,6 +410,12 @@ func secretScanningAlertToJSON(a *store.SecretScanningAlert, baseURL string, rep
 	resolvedAt := interface{}(nil)
 	if a.ResolvedAt != nil {
 		resolvedAt = a.ResolvedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+	}
+	var resolvedBy interface{}
+	if a.ResolvedByID != 0 {
+		if u := s.store.GetUserByID(a.ResolvedByID); u != nil {
+			resolvedBy = store.UserToJSON(u, baseURL)
+		}
 	}
 
 	return map[string]interface{}{
@@ -418,7 +428,7 @@ func secretScanningAlertToJSON(a *store.SecretScanningAlert, baseURL string, rep
 		"state":                    a.State,
 		"resolution":               nullOrString(string(a.Resolution)),
 		"resolved_at":              resolvedAt,
-		"resolved_by":              nil,
+		"resolved_by":              resolvedBy,
 		"resolution_comment":       nullOrString(a.ResolutionComment),
 		"secret_type":              a.SecretType,
 		"secret_type_display_name": a.SecretTypeDisplayName,

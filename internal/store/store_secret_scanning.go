@@ -71,6 +71,7 @@ type SecretScanningAlert struct {
 	CreatedAt             time.Time                `json:"created_at"`
 	UpdatedAt             time.Time                `json:"updated_at"`
 	ResolvedAt            *time.Time               `json:"resolved_at"`
+	ResolvedByID          int                      `json:"resolved_by_id,omitempty"`
 }
 
 // CreateSecretScanningAlert seeds a new alert. The real API has no create
@@ -234,7 +235,7 @@ func (st *Store) ListSecretScanningAlerts(repoKey, state, secretType, resolution
 // UpdateSecretScanningAlert applies a state/resolution transition. The caller's
 // `a` is a detached clone, so the mutation is applied to the live alert
 // re-fetched by key here and a fresh snapshot is written back into `a`.
-func (st *Store) UpdateSecretScanningAlert(a *SecretScanningAlert, state, resolution, resolutionComment string) error {
+func (st *Store) UpdateSecretScanningAlert(a *SecretScanningAlert, state, resolution, resolutionComment string, resolverID int) error {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
@@ -254,10 +255,12 @@ func (st *Store) UpdateSecretScanningAlert(a *SecretScanningAlert, state, resolu
 		live.Resolution = SecretScanningResolution(resolution)
 		live.ResolutionComment = resolutionComment
 		live.ResolvedAt = &now
+		live.ResolvedByID = resolverID
 	} else if state == "open" {
 		live.Resolution = ""
 		live.ResolutionComment = ""
 		live.ResolvedAt = nil
+		live.ResolvedByID = 0
 	}
 	live.UpdatedAt = now
 	st.persistSecretScanningAlert(live)

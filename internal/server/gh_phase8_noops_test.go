@@ -81,7 +81,7 @@ func TestSecretScanning_OrgAlertFilters(t *testing.T) {
 		t.Errorf("secret_type=aws returned secret_type=%v", list[0]["secret_type"])
 	}
 
-	_ = s.store.UpdateSecretScanningAlert(a2, "resolved", "used_in_tests", "")
+	_ = s.store.UpdateSecretScanningAlert(a2, "resolved", "used_in_tests", "", 0)
 
 	w = pagedJSONRequest(t, s, "GET", base+"?resolution=used_in_tests", token, nil)
 	list = mustDecodeJSONList(t, w.Body.Bytes())

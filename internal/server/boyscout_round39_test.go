@@ -1,7 +1,10 @@
 package bleephub
 
 import (
+	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestNodeResolvesDiscussionCommentAndGistGlobalIDs pins that GraphQL
@@ -84,4 +87,87 @@ func TestNodeGistVisibilityRespectsSecret(t *testing.T) {
 	if data == nil || data["node"] != nil {
 		t.Fatalf("secret gist leaked to a non-owner via node(id:): %v", body)
 	}
+}
+
+// TestRepoCodespaceListScopedToCaller pins that GET /repos/{o}/{r}/codespaces
+// lists only the authenticated user's codespaces, not every user's on the repo.
+func TestRepoCodespaceListScopedToCaller(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	st := s.store
+	name := s.createRepoWriteRepo(t, true)
+	other, _ := s.userSurfaceUser(t, "cs-leak-other")
+	if _, err := st.CreateCodespace("admin", "admin/"+name, "main", "EastUs", store.CodespaceCreateOptions{}); err != nil {
+		t.Fatalf("seed admin codespace: %v", err)
+	}
+	if _, err := st.CreateCodespace(other.Login, "admin/"+name, "main", "EastUs", store.CodespaceCreateOptions{}); err != nil {
+		t.Fatalf("seed other codespace: %v", err)
+	}
+
+	resp := s.get(t, "/api/v3/repos/admin/"+name+"/codespaces", defaultToken)
+	requireStatusNoClose(t, resp, 200)
+	body := decodeJSON(t, resp)
+	list, _ := body["codespaces"].([]interface{})
+	if len(list) != 1 {
+		t.Fatalf("admin saw %d codespaces, want only their own 1 (no cross-user leak)", len(list))
+	}
+	owner, _ := list[0].(map[string]interface{})["owner"].(map[string]interface{})
+	if owner["login"] != "admin" {
+		t.Fatalf("listed a codespace owned by %v, want admin", owner["login"])
+	}
+}
+
+// TestOrgCodespaceSecretReposValidated pins that setting an org codespace
+// secret's selected repos rejects a repo not owned by the org (422).
+func TestOrgCodespaceSecretReposValidated(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	st := s.store
+	admin := st.LookupUserByLogin("admin")
+	org := st.CreateOrg(admin, "cs-secret-org", "", "")
+	st.CreateCodespaceSecret(store.CodespaceSecretScopeKey("org", org.Login), "TOK", "v", "selected", nil)
+	// A repo owned by someone else must not be accepted into the org secret.
+	foreign := st.CreateRepo(admin, "cs-foreign", "", false) // user-owned, not the org
+
+	resp := s.put(t, "/api/v3/orgs/"+org.Login+"/codespaces/secrets/TOK/repositories", defaultToken,
+		map[string]interface{}{"selected_repository_ids": []int{foreign.ID}})
+	requireStatus(t, resp, http.StatusUnprocessableEntity)
+}
+
+// TestSecretScanningResolvedByPopulated pins that resolving an alert records and
+// returns the resolving user in resolved_by (was always null).
+func TestSecretScanningResolvedByPopulated(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	st := s.store
+	name := s.createRepoWriteRepo(t, false)
+	alert := st.CreateSecretScanningAlert("admin/"+name, "github_personal_access_token", nil)
+	if alert == nil {
+		t.Fatal("seed alert failed")
+	}
+
+	resp := s.patch(t, "/api/v3/repos/admin/"+name+"/secret-scanning/alerts/"+itoa(alert.Number), defaultToken,
+		map[string]interface{}{"state": "resolved", "resolution": "used_in_tests"})
+	requireStatusNoClose(t, resp, 200)
+	body := decodeJSON(t, resp)
+	rb, _ := body["resolved_by"].(map[string]interface{})
+	if rb == nil || rb["login"] != "admin" {
+		t.Fatalf("resolved_by = %v, want the admin user object", body["resolved_by"])
+	}
+}
+
+// TestPagesUpdateSourcePathOnlyKeepsBranch pins that a legacy Pages PATCH sending
+// only source.path (branch omitted) is accepted, keeping the stored branch.
+func TestPagesUpdateSourcePathOnlyKeepsBranch(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	name := s.createRepoWriteRepo(t, true)
+	resp := s.post(t, "/api/v3/repos/admin/"+name+"/pages", defaultToken,
+		map[string]interface{}{"source": map[string]interface{}{"branch": "main"}})
+	requireStatus(t, resp, 201)
+
+	// PATCH the path alone; must not fail "branch required".
+	resp = s.put(t, "/api/v3/repos/admin/"+name+"/pages", defaultToken,
+		map[string]interface{}{"source": map[string]interface{}{"path": "/docs"}})
+	requireStatus(t, resp, http.StatusNoContent)
 }

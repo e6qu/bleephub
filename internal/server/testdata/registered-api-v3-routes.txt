@@ -287,7 +287,6 @@ GET /api/v3/enterprise/stats/orgs
 GET /api/v3/enterprise/stats/pages
 GET /api/v3/enterprise/stats/pulls
 GET /api/v3/enterprise/stats/repos
-GET /api/v3/enterprise/stats/security-products
 GET /api/v3/enterprise/stats/users
 GET /api/v3/enterprises/{enterprise}/actions/cache/retention-limit
 GET /api/v3/enterprises/{enterprise}/actions/cache/storage-limit
