@@ -269,12 +269,14 @@ func RepoCollaboratorPermissionAtLeastLocked(st *Store, repoFullName, login, min
 // and "push" are the collaborator/team wire names for read/write.
 func repositoryPermissionAtLeast(granted, required string) bool {
 	levels := map[string]int{
-		"none":  0,
-		"read":  1,
-		"pull":  1,
-		"write": 2,
-		"push":  2,
-		"admin": 3,
+		"none":     0,
+		"read":     1,
+		"pull":     1,
+		"triage":   1, // triage grants read-level content access (plus issue/PR triage)
+		"write":    2,
+		"push":     2,
+		"maintain": 2, // maintain grants write-level content access
+		"admin":    3,
 	}
 	if granted == "" {
 		granted = "read"

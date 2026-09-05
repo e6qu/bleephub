@@ -2454,8 +2454,12 @@ func normalizeRepoPermission(p string) string {
 	switch strings.ToLower(p) {
 	case "admin":
 		return "admin"
+	case "maintain":
+		return "maintain"
 	case "push", "write":
 		return "push"
+	case "triage":
+		return "triage"
 	case "pull", "read", "":
 		return "pull"
 	default:
