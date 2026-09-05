@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -442,10 +443,9 @@ func (s *Server) handleDeleteRepoSubscription(w http.ResponseWriter, r *http.Req
 	if repo == nil {
 		return
 	}
-	if !s.store.DeleteRepoSubscription(user.ID, repo.ID) {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
+	// Deleting a repository subscription is idempotent: 204 whether or not one
+	// existed (matches GitHub and the sibling thread-subscription delete).
+	s.store.DeleteRepoSubscription(user.ID, repo.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1464,6 +1464,49 @@ func (s *Server) handleListCollaborators(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// Listing collaborators requires push access when a user acts in their own
+	// capacity (session/classic token); app-based credentials (installation,
+	// fine-grained PAT, user-to-server) are governed by the Metadata grant the
+	// route already checked, matching GitHub.
+	if s.collaboratorReadNeedsPush(r.Context()) && !s.viewerCanPushRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusForbidden, "Must have push access to view repository collaborators.")
+		return
+	}
+	affiliation := store.CoalesceStr(r.URL.Query().Get("affiliation"), "all")
+	if affiliation != "all" && affiliation != "direct" && affiliation != "outside" {
+		writeGHError(w, http.StatusUnprocessableEntity, "Invalid affiliation.")
+		return
+	}
+	permFilter := r.URL.Query().Get("permission")
+	if permFilter != "" && !validCollaboratorPermission(permFilter) {
+		writeGHError(w, http.StatusUnprocessableEntity, "Invalid permission.")
+		return
+	}
+	orgLogin := ""
+	if repo.OwnerType == "Organization" {
+		// repo.Owner is not populated for org repos; the path owner is the org.
+		orgLogin = owner
+	}
+	// keep applies the affiliation and permission query filters to one collaborator.
+	keep := func(u *store.User, perm string, isOwner bool) bool {
+		if affiliation == "outside" {
+			// Outside collaborators are direct collaborators who are not members
+			// of the owning org; the owner is never an outside collaborator.
+			if isOwner {
+				return false
+			}
+			if orgLogin != "" {
+				if m := s.store.GetMembership(orgLogin, u.ID); m != nil && m.State == store.MembershipStateActive {
+					return false
+				}
+			}
+		}
+		if permFilter != "" && collaboratorPermissionRank(perm) < collaboratorPermissionRank(permFilter) {
+			return false
+		}
+		return true
+	}
+
 	collabs := s.store.ListRepoCollaborators(owner, name)
 	// ListRepoCollaborators returns a map; range order is randomized per call,
 	// so paginating it directly duplicates/drops collaborators across pages.
@@ -1475,11 +1518,15 @@ func (s *Server) handleListCollaborators(w http.ResponseWriter, r *http.Request)
 	}
 	sort.Strings(logins)
 	out := make([]map[string]interface{}, 0, len(collabs)+1)
-	if repo.Owner != nil {
+	if repo.Owner != nil && keep(repo.Owner, "admin", true) {
 		out = append(out, collaboratorJSON(repo.Owner, "admin", s.baseURL(r)))
 	}
 	for _, login := range logins {
-		if u := s.store.LookupUserByLogin(login); u != nil {
+		u := s.store.LookupUserByLogin(login)
+		if u == nil {
+			continue
+		}
+		if keep(u, collabs[login], false) {
 			out = append(out, collaboratorJSON(u, collabs[login], s.baseURL(r)))
 		}
 	}
@@ -1495,6 +1542,12 @@ func (s *Server) handleGetCollaboratorPermission(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// Reading a user's permission requires push access for a user acting in their
+	// own capacity (see handleListCollaborators).
+	if s.collaboratorReadNeedsPush(r.Context()) && !s.viewerCanPushRepo(r.Context(), repo) {
+		writeGHError(w, http.StatusForbidden, "Must have push access to view repository collaborators.")
+		return
+	}
 	u := s.store.LookupUserByLogin(username)
 	if u == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -1505,8 +1558,9 @@ func (s *Server) handleGetCollaboratorPermission(w http.ResponseWriter, r *http.
 		if repo.Owner != nil && strings.EqualFold(repo.Owner.Login, username) {
 			perm = "admin"
 		} else {
-			writeGHError(w, http.StatusNotFound, "Not Found")
-			return
+			// A real user with no access is "none" (200), not 404 — only a
+			// non-existent user 404s, and that was checked above.
+			perm = "none"
 		}
 	}
 	userJSON := store.UserToJSON(u, s.baseURL(r))
@@ -1546,6 +1600,11 @@ func (s *Server) handleAddCollaborator(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSONBody(w, r, &req) {
 			return
 		}
+	}
+	// An explicit but unrecognized permission is a 422, not a silent downgrade to pull.
+	if req.Permission != "" && !validCollaboratorPermission(req.Permission) {
+		writeGHError(w, http.StatusUnprocessableEntity, "Invalid permission.")
+		return
 	}
 	// GitHub defaults an omitted collaborator permission to push (write), not pull.
 	if req.Permission == "" {
@@ -1622,14 +1681,66 @@ func collaboratorJSON(u *store.User, perm, baseURL string) map[string]interface{
 	return json
 }
 
-func collaboratorPermsJSON(perm string) map[string]bool {
-	levels := map[string]int{"pull": 1, "push": 2, "admin": 3}
-	level := levels[perm]
-	return map[string]bool{
-		"pull":  level >= 1,
-		"push":  level >= 2,
-		"admin": level >= 3,
+// collaboratorPermissionRank ranks a repo permission on GitHub's cumulative
+// scale pull < triage < push < maintain < admin (read/write are aliases). 0 = none.
+func collaboratorPermissionRank(perm string) int {
+	switch strings.ToLower(perm) {
+	case "admin":
+		return 5
+	case "maintain":
+		return 4
+	case "push", "write":
+		return 3
+	case "triage":
+		return 2
+	case "pull", "read":
+		return 1
 	}
+	return 0
+}
+
+func collaboratorPermsJSON(perm string) map[string]bool {
+	// GitHub always returns all five booleans, cumulative by rank
+	// (pull < triage < push < maintain < admin): a maintain user is push+triage+pull.
+	level := collaboratorPermissionRank(perm)
+	return map[string]bool{
+		"admin":    level >= 5,
+		"maintain": level >= 4,
+		"push":     level >= 3,
+		"triage":   level >= 2,
+		"pull":     level >= 1,
+	}
+}
+
+// collaboratorReadNeedsPush reports whether the collaborator read endpoints must
+// require push access. GitHub requires it for a user acting in their own
+// capacity (a web session or a classic token), but governs app-based credentials
+// — installation tokens, fine-grained PATs and user-to-server tokens — by the
+// Metadata repository permission the route already enforced.
+func (s *Server) collaboratorReadNeedsPush(ctx context.Context) bool {
+	if ghInstallationTokenFromContext(ctx) != nil {
+		return false
+	}
+	if ghJobTokenFromContext(ctx) != nil {
+		return false
+	}
+	if ghUserToServerTokenFromContext(ctx) != nil {
+		return false
+	}
+	if tok := ghPersonalAccessTokenFromContext(ctx); tok != nil && tok.FineGrained {
+		return false
+	}
+	return true
+}
+
+// validCollaboratorPermission reports whether p is a permission the collaborator
+// PUT accepts; anything else is a 422 (not a silent downgrade to pull).
+func validCollaboratorPermission(p string) bool {
+	switch strings.ToLower(p) {
+	case "pull", "read", "triage", "push", "write", "maintain", "admin":
+		return true
+	}
+	return false
 }
 
 // simpleRepoJSON returns a GitHub `simple-repository`-shaped map, used by alert/list

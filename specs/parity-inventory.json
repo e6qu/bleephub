@@ -13734,7 +13734,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -13818,7 +13818,7 @@
         "source": "internal/server/gh_repos_autolinks.go"
       },
       {
-        "line": 66,
+        "line": 67,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/automated-security-fixes",
         "source": "internal/server/gh_repos_rest.go"
@@ -13908,7 +13908,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 43,
+        "line": 44,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators/{username}",
         "source": "internal/server/gh_repos_rest.go"
@@ -14004,7 +14004,7 @@
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 72,
+        "line": 73,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits",
         "source": "internal/server/gh_repos_rest.go"
@@ -14058,7 +14058,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 55,
+        "line": 56,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/keys/{key_id}",
         "source": "internal/server/gh_repos_rest.go"
@@ -14094,7 +14094,7 @@
         "source": "internal/server/gh_ghes_pre_receive.go"
       },
       {
-        "line": 68,
+        "line": 69,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/private-vulnerability-reporting",
         "source": "internal/server/gh_repos_rest.go"
@@ -14154,13 +14154,13 @@
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 60,
+        "line": 61,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/subscription",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 70,
+        "line": 71,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
@@ -14316,7 +14316,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 37,
+        "line": 38,
         "method": "DELETE",
         "path": "/api/v3/user/starred/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -16602,7 +16602,7 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 25,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/repos",
         "source": "internal/server/gh_repos_rest.go"
@@ -16806,7 +16806,7 @@
         "source": "internal/server/gh_rest.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -17178,7 +17178,7 @@
         "source": "internal/server/gh_repos_autolinks.go"
       },
       {
-        "line": 61,
+        "line": 62,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/automated-security-fixes",
         "source": "internal/server/gh_repos_rest.go"
@@ -17454,7 +17454,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 40,
+        "line": 41,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators",
         "source": "internal/server/gh_repos_rest.go"
@@ -17466,7 +17466,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 41,
+        "line": 42,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators/{username}/permission",
         "source": "internal/server/gh_repos_rest.go"
@@ -17550,7 +17550,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 29,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/compare/{range...}",
         "source": "internal/server/gh_repos_rest.go"
@@ -17766,7 +17766,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 32,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/forks",
         "source": "internal/server/gh_repos_rest.go"
@@ -17880,7 +17880,7 @@
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 64,
+        "line": 65,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits",
         "source": "internal/server/gh_repos_rest.go"
@@ -17952,13 +17952,13 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 52,
+        "line": 53,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/keys",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 54,
+        "line": 55,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/keys/{key_id}",
         "source": "internal/server/gh_repos_rest.go"
@@ -17976,7 +17976,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 28,
+        "line": 29,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/languages",
         "source": "internal/server/gh_repos_rest.go"
@@ -18060,7 +18060,7 @@
         "source": "internal/server/gh_ghes_pre_receive.go"
       },
       {
-        "line": 62,
+        "line": 63,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/private-vulnerability-reporting",
         "source": "internal/server/gh_repos_rest.go"
@@ -18300,19 +18300,19 @@
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 33,
+        "line": 34,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stargazers",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 34,
+        "line": 35,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stargazers/count",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 35,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stargazers/history",
         "source": "internal/server/gh_repos_rest.go"
@@ -18378,7 +18378,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 26,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/topics",
         "source": "internal/server/gh_repos_rest.go"
@@ -18408,7 +18408,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 63,
+        "line": 64,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
@@ -18804,7 +18804,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 20,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/user/repos",
         "source": "internal/server/gh_repos_rest.go"
@@ -18834,7 +18834,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 38,
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/user/starred",
         "source": "internal/server/gh_repos_rest.go"
@@ -19068,7 +19068,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 24,
+        "line": 25,
         "method": "GET",
         "path": "/api/v3/users/{username}/repos",
         "source": "internal/server/gh_repos_rest.go"
@@ -19110,7 +19110,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 39,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/users/{username}/starred",
         "source": "internal/server/gh_repos_rest.go"
@@ -19524,7 +19524,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 22,
+        "line": 23,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -20658,7 +20658,7 @@
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 58,
+        "line": 59,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/rename",
         "source": "internal/server/gh_repos_rest.go"
@@ -20778,7 +20778,7 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 31,
+        "line": 32,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/forks",
         "source": "internal/server/gh_repos_rest.go"
@@ -20904,7 +20904,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 53,
+        "line": 54,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/keys",
         "source": "internal/server/gh_repos_rest.go"
@@ -20916,13 +20916,13 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 57,
+        "line": 58,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/merge-upstream",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 30,
+        "line": 31,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/merges",
         "source": "internal/server/gh_repos_rest.go"
@@ -21102,7 +21102,7 @@
         "source": "internal/server/gh_statuses_rest.go"
       },
       {
-        "line": 56,
+        "line": 57,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/transfer",
         "source": "internal/server/gh_repos_rest.go"
@@ -21198,7 +21198,7 @@
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "POST",
         "path": "/api/v3/user/repos",
         "source": "internal/server/gh_repos_rest.go"
@@ -21966,7 +21966,7 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 65,
+        "line": 66,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/automated-security-fixes",
         "source": "internal/server/gh_repos_rest.go"
@@ -22008,7 +22008,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 42,
+        "line": 43,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators/{username}",
         "source": "internal/server/gh_repos_rest.go"
@@ -22056,7 +22056,7 @@
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 71,
+        "line": 72,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits",
         "source": "internal/server/gh_repos_rest.go"
@@ -22110,7 +22110,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 67,
+        "line": 68,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/private-vulnerability-reporting",
         "source": "internal/server/gh_repos_rest.go"
@@ -22152,19 +22152,19 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 59,
+        "line": 60,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/subscription",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 27,
+        "line": 28,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/topics",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 69,
+        "line": 70,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
@@ -22254,7 +22254,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 36,
+        "line": 37,
         "method": "PUT",
         "path": "/api/v3/user/starred/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"

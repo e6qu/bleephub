@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.0-alpine@sha256:07235578f79ef8c6f97d94aee7938e76f5cdba5f21ae5dbfdd3d3d38058437eb AS ui-builder
+FROM oven/bun:1.4.1-alpine@sha256:2ef545220f7a886f22fcb3f2309bbd6bcf1c0aa04b7d79c31765c7aa4a13aac1 AS ui-builder
 ARG BLEEPHUB_VERSION=development
 ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
 ENV VITE_BLEEPHUB_VERSION=$BLEEPHUB_VERSION \
@@ -12,7 +12,7 @@ COPY web/index.html web/knip.ts web/tsconfig.json web/vite.config.ts ./
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile && bun run build
 
-FROM golang:1.27.0-alpine@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS builder
+FROM golang:1.27.1-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS builder
 # The official golang images pin GOTOOLCHAIN=local; re-enable auto so this
 # 1.26.5 image downloads and builds with the go1.26.6 toolchain go.mod requires
 # (patched stdlib — CVE-2026-39821 / -46600). The base image stays 1.26.5
@@ -28,7 +28,7 @@ COPY --from=ui-builder /src/web/dist/ ./internal/server/dist/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub ./cmd/bleephub && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-ssh-gateway ./ssh-gateway
 
-FROM golang:1.27.0-bookworm@sha256:484ef6066fa69acb059fdfeda7ba2b8f7391f2ef6abc6f9b8411e669ebd56466 AS go-toolchain
+FROM golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS go-toolchain
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb AS dqlite-builder
 COPY --from=go-toolchain /usr/local/go /usr/local/go
