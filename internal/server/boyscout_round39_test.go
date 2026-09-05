@@ -3,6 +3,7 @@ package bleephub
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
 )
@@ -170,4 +171,27 @@ func TestPagesUpdateSourcePathOnlyKeepsBranch(t *testing.T) {
 	resp = s.put(t, "/api/v3/repos/admin/"+name+"/pages", defaultToken,
 		map[string]interface{}{"source": map[string]interface{}{"path": "/docs"}})
 	requireStatus(t, resp, http.StatusNoContent)
+}
+
+// TestSAMLAssertionReplayRejected pins one-time-use of SAML assertion IDs:
+// a fresh ID is accepted, a replay within its window is rejected, an ID-less
+// assertion is refused, and distinct IDs are independent. This closes the
+// IdP-initiated replay window (SP-initiated already binds a single-use state).
+func TestSAMLAssertionReplayRejected(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	exp := s.currentTime().Add(5 * time.Minute)
+
+	if !s.consumeSAMLAssertionID("_assert-1", exp) {
+		t.Fatal("first use of an assertion ID must be accepted")
+	}
+	if s.consumeSAMLAssertionID("_assert-1", exp) {
+		t.Fatal("replay of the same assertion ID must be rejected")
+	}
+	if s.consumeSAMLAssertionID("", exp) {
+		t.Fatal("an assertion with no ID must be rejected (untrackable)")
+	}
+	if !s.consumeSAMLAssertionID("_assert-2", exp) {
+		t.Fatal("a distinct assertion ID must be accepted")
+	}
 }

@@ -66,8 +66,10 @@ type Server struct {
 	marketplaceMu     sync.Mutex // serializes Marketplace billing transitions and webhook emission
 	rateLimitsMu      sync.Mutex
 	rateLimits        map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
-	routePatterns     []string                  // every pattern registered via route(), for fidelity enumeration
-	externalURL       string                    // BLEEPHUB_EXTERNAL_URL; overrides request-Host URL derivation
+	samlAssertionsMu  sync.Mutex
+	samlSeenAssertion map[string]time.Time // consumed SAML assertion ID -> expiry, for one-time-use replay defense
+	routePatterns     []string             // every pattern registered via route(), for fidelity enumeration
+	externalURL       string               // BLEEPHUB_EXTERNAL_URL; overrides request-Host URL derivation
 	// observedOrigin is the origin of the most recently served request, used to
 	// render absolute hypermedia in out-of-request payloads (webhook deliveries)
 	// when no external URL is configured.
@@ -175,6 +177,7 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 		maxConcurrentWorkflows: construction.maxConcurrentWorkflows,
 		registryUploads:        map[string]*containerRegistryUpload{},
 		rateLimits:             map[string]*apiRateWindow{},
+		samlSeenAssertion:      map[string]time.Time{},
 		externalURL:            construction.externalURL,
 		pagesJekyllExecutable:  construction.pagesJekyllExecutable,
 		identity:               construction.identity,
