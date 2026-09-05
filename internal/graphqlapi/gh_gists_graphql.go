@@ -82,7 +82,8 @@ func (s *Resolver) gqlGistType() *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	s.graphqlTypes.gist = graphql.NewObject(graphql.ObjectConfig{
-		Name: "Gist",
+		Name:       "Gist",
+		Interfaces: []*graphql.Interface{s.graphqlTypes.node},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),

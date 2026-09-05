@@ -111,7 +111,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 	discussionCommentType = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "DiscussionComment",
-		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
+		Interfaces: []*graphql.Interface{s.graphqlTypes.node, s.gqlMinimizableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
 		Fields: graphql.FieldsThunk(func() graphql.Fields {
 			base := graphql.Fields{
 				"upvoteCount": &graphql.Field{
@@ -320,7 +320,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 	discussionType = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Discussion",
-		Interfaces: []*graphql.Interface{s.gqlLockableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
+		Interfaces: []*graphql.Interface{s.graphqlTypes.node, s.gqlLockableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
 		Fields: graphql.Fields{
 			"upvoteCount": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.Int),

@@ -53,6 +53,19 @@ func FindDiscussionCommentByNodeID(st *Store, nodeID string) *DiscussionComment 
 	return nil
 }
 
+// FindGistByNodeID resolves a G_-prefixed gist global id. Gists are keyed by a
+// string id (not a decodable database id), so this scans; the gist set is small.
+func FindGistByNodeID(st *Store, nodeID string) *Gist {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, g := range st.Gists {
+		if g.NodeID == nodeID {
+			return g
+		}
+	}
+	return nil
+}
+
 func FindRepoByNodeID(st *Store, nodeID string) *Repo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
