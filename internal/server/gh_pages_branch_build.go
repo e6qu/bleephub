@@ -216,7 +216,10 @@ func (s *Server) buildJekyllPagesArtifact(ctx context.Context, repo *store.Repo,
 	// directory, and no shell is involved. gosec's taint analysis flags the
 	// env-derived base-config path, which the operator controls like the executable.
 	cmd := exec.CommandContext(ctx, s.pagesJekyllExecutable, args...)
-	cmd.Env = append(os.Environ(), "JEKYLL_ENV=production", "PAGES_REPO_NWO="+repo.FullName)
+	// A UTF-8 locale so Ruby/Sass read UTF-8 source (themes, content) rather than
+	// defaulting to US-ASCII and aborting; the release image also sets it, this
+	// covers any other deployment environment.
+	cmd.Env = append(os.Environ(), "JEKYLL_ENV=production", "PAGES_REPO_NWO="+repo.FullName, "LANG=C.UTF-8", "LC_ALL=C.UTF-8")
 	output := &pagesJekyllOutput{}
 	cmd.Stdout = output
 	cmd.Stderr = output

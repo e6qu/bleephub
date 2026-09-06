@@ -48,6 +48,11 @@ COPY internal/dqliteaddr ./internal/dqliteaddr
 RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-dqlite-node ./dqlite-node
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+# Jekyll and Sass read source files as the process's default external encoding;
+# without a UTF-8 locale Ruby defaults to US-ASCII and any UTF-8 byte in a theme
+# or a site's content (e.g. jekyll-theme-primer's SCSS) aborts the build.
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 COPY docker/pages-gems/Gemfile docker/pages-gems/pinned-gems.sha256 docker/pages-gems/github-pages-config.yml /opt/bleephub-pages/
 WORKDIR /opt/bleephub-pages/vendor/cache
 # Every gem in the github-pages closure is fetched by exact version, checked
