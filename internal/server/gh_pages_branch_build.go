@@ -211,8 +211,10 @@ func (s *Server) buildJekyllPagesArtifact(ctx context.Context, repo *store.Repo,
 		}
 		args = append(args, "--config", configs)
 	}
-	// #nosec G204 -- the executable is deployment configuration; every argument
-	// is fixed or a server-created temporary directory and no shell is involved.
+	// #nosec G204 G702 -- the executable and the base-config path are deployment
+	// configuration; every other argument is fixed or a server-created temporary
+	// directory, and no shell is involved. gosec's taint analysis flags the
+	// env-derived base-config path, which the operator controls like the executable.
 	cmd := exec.CommandContext(ctx, s.pagesJekyllExecutable, args...)
 	cmd.Env = append(os.Environ(), "JEKYLL_ENV=production", "PAGES_REPO_NWO="+repo.FullName)
 	output := &pagesJekyllOutput{}
