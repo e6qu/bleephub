@@ -70,11 +70,14 @@ func TestNodeResolvesDiscussionCommentAndGistGlobalIDs(t *testing.T) {
 // TestNodeGistVisibilityRespectsSecret pins that node(id:) will not expose a
 // secret gist to a non-owner.
 func TestNodeGistVisibilityRespectsSecret(t *testing.T) {
-	// Owner creates a SECRET gist.
-	resp := ghPost(t, "/api/v3/gists", defaultToken, map[string]interface{}{
+	t.Parallel()
+	s := newIsolatedServer(t)
+	// admin (defaultToken) creates a SECRET gist.
+	resp := s.post(t, "/api/v3/gists", defaultToken, map[string]interface{}{
 		"public": false,
 		"files":  map[string]interface{}{"s.txt": map[string]interface{}{"content": "secret"}},
 	})
+	requireStatusNoClose(t, resp, 201)
 	gist := decodeJSON(t, resp)
 	gistNodeID, _ := gist["node_id"].(string)
 	if gistNodeID == "" {
@@ -82,9 +85,8 @@ func TestNodeGistVisibilityRespectsSecret(t *testing.T) {
 	}
 
 	// A different user must not resolve it through node(id:).
-	other := seedTestUser(testServer, "gist-node-stranger")
-	otherTok := testServer.store.CreateToken(other.ID, "gist")
-	resp = ghPost(t, "/api/graphql", otherTok.Value, map[string]interface{}{
+	_, otherTok := s.userSurfaceUser(t, "gist-node-stranger")
+	resp = s.post(t, "/api/graphql", otherTok, map[string]interface{}{
 		"query":     `query($id:ID!){node(id:$id){__typename}}`,
 		"variables": map[string]interface{}{"id": gistNodeID},
 	})
