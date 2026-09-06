@@ -48,7 +48,7 @@ COPY internal/dqliteaddr ./internal/dqliteaddr
 RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-dqlite-node ./dqlite-node
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
-COPY docker/pages-gems/Gemfile docker/pages-gems/pinned-gems.sha256 /opt/bleephub-pages/
+COPY docker/pages-gems/Gemfile docker/pages-gems/pinned-gems.sha256 docker/pages-gems/github-pages-config.yml /opt/bleephub-pages/
 WORKDIR /opt/bleephub-pages/vendor/cache
 # Every gem in the github-pages closure is fetched by exact version, checked
 # against its recorded SHA-256, and only then installed; --local keeps bundler
@@ -56,7 +56,7 @@ WORKDIR /opt/bleephub-pages/vendor/cache
 RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; }; \
     retry_apt_transaction() { apt_transaction "$@" || apt_transaction "$@"; }; \
     retry_apt_transaction ca-certificates curl && \
-    retry_apt_transaction ruby-full ruby-bundler build-essential git libdqlite0=1.18.4-1 && \
+    retry_apt_transaction ruby-full ruby-bundler build-essential git libdqlite0=1.18.4-1 libssl-dev pkg-config && \
     mkdir -p /opt/bleephub-pages/vendor/cache && \
     while read -r digest gem; do \
         curl --fail --location --silent --show-error \
@@ -65,7 +65,7 @@ RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FR
     done < /opt/bleephub-pages/pinned-gems.sha256 && \
     sha256sum --check --strict /opt/bleephub-pages/pinned-gems.sha256 && \
     BUNDLE_GEMFILE=/opt/bleephub-pages/Gemfile bundle install --local && \
-    apt-get purge -y --auto-remove build-essential curl && \
+    apt-get purge -y --auto-remove build-essential curl libssl-dev pkg-config && \
     rm -rf /var/lib/apt/lists/* /root/.bundle/cache /usr/local/bundle/cache /opt/bleephub-pages/vendor/cache
 COPY --from=builder /bleephub /usr/local/bin/bleephub
 COPY --from=builder /bleephub-ssh-gateway /usr/local/bin/bleephub-ssh-gateway

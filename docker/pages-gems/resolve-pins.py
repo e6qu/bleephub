@@ -173,13 +173,30 @@ def newest(gem, requirements):
     return usable[-1]
 
 
+# github-pages 232 (the latest) hard-pins jekyll-remote-theme = 0.4.3, whose
+# `rubyzip >= 1.3.0, < 3.0` caps rubyzip at 2.x — vulnerable to CVE-2026-85396
+# (fixed only in rubyzip 3.4.0). jekyll-remote-theme 0.5.2 relaxes that to
+# `rubyzip < 4.0` while keeping `jekyll < 5.0`, so Jekyll 3.10 and every other
+# github-pages 232 gem stay exactly pinned; only jekyll-remote-theme moves and
+# rubyzip 3.x becomes reachable. The github-pages metagem is used only to seed
+# those exact versions here — it is dropped from the installed set because its
+# 0.4.3 pin cannot coexist with 0.5.2; its GitHub-Pages plugins are carried
+# individually by the Gemfile.
+# jekyll-remote-theme 0.5.2 also introduces an `openssl >= 3.1.2` runtime
+# dependency (a native gem). Hold it on the stable 3.x line rather than letting
+# the resolver jump to the brand-new openssl 4.x major.
+PIN_OVERRIDES = {"jekyll-remote-theme": ["= 0.5.2"], "openssl": [">= 3.1.2", "< 4.0"]}
+DROP_FROM_OUTPUT = {"github-pages"}
+
+
 def main():
     constraints = {ROOT_GEM: [ROOT_REQUIREMENT]}
     resolved = {}
     for _ in range(len(constraints) + 500):
         changed = False
         for gem in sorted(constraints):
-            version, deps, digest, _ = newest(gem, constraints[gem])
+            requirements = PIN_OVERRIDES[gem] if gem in PIN_OVERRIDES else constraints[gem]
+            version, deps, digest, _ = newest(gem, requirements)
             if resolved.get(gem, (None,))[0] != version:
                 resolved[gem] = (version, deps, digest)
                 changed = True
@@ -195,14 +212,17 @@ def main():
         raise SystemExit("resolution did not converge")
 
     for gem, (version, deps, _) in sorted(resolved.items()):
-        if not satisfies_all(version, constraints[gem]):
+        # An overridden gem is deliberately held off its accumulated constraints
+        # (the github-pages 0.4.3 pin); every other gem must still satisfy them.
+        if gem not in PIN_OVERRIDES and not satisfies_all(version, constraints[gem]):
             raise SystemExit("%s %s violates %s" % (gem, version, constraints[gem]))
         for dep in deps:
             if dep not in resolved:
                 raise SystemExit("%s %s depends on unresolved %s" % (gem, version, dep))
 
     lines = ["%s  %s-%s.gem" % (digest, gem, version)
-             for gem, (version, _, digest) in sorted(resolved.items())]
+             for gem, (version, _, digest) in sorted(resolved.items())
+             if gem not in DROP_FROM_OUTPUT]
     print("\n".join(lines))
     print("%d gems" % len(lines), file=sys.stderr)
 

@@ -1,0 +1,73 @@
+# Base Jekyll config reproducing what the github-pages 232 metagem injected, now
+# that its plugins are carried directly (see docker/pages-gems/Gemfile). Layered
+# UNDER a site's own _config.yml. `whitelist` is what lets these bundled plugins
+# load under `jekyll build --safe`; `--safe` still blocks a repo's _plugins/*.rb.
+jailed: false
+future: true
+theme: jekyll-theme-primer
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+  gfm_quirks: paragraph_end
+  syntax_highlighter_opts:
+    default_lang: plaintext
+sass:
+  style: compressed
+exclude:
+  - CNAME
+plugins:
+  - jekyll-avatar
+  - jekyll-coffeescript
+  - jekyll-commonmark-ghpages
+  - jekyll-default-layout
+  - jekyll-feed
+  - jekyll-gist
+  - jekyll-github-metadata
+  - jekyll-include-cache
+  - jekyll-mentions
+  - jekyll-optional-front-matter
+  - jekyll-paginate
+  - jekyll-readme-index
+  - jekyll-redirect-from
+  - jekyll-relative-links
+  - jekyll-remote-theme
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-titles-from-headings
+  - jemoji
+whitelist:
+  - jekyll-avatar
+  - jekyll-coffeescript
+  - jekyll-commonmark-ghpages
+  - jekyll-default-layout
+  - jekyll-feed
+  - jekyll-gist
+  - jekyll-github-metadata
+  - jekyll-include-cache
+  - jekyll-mentions
+  - jekyll-optional-front-matter
+  - jekyll-paginate
+  - jekyll-readme-index
+  - jekyll-redirect-from
+  - jekyll-relative-links
+  - jekyll-remote-theme
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-titles-from-headings
+  - jemoji
+  - jekyll-swiss
+  - minima
+  - jekyll-theme-architect
+  - jekyll-theme-cayman
+  - jekyll-theme-dinky
+  - jekyll-theme-hacker
+  - jekyll-theme-leap-day
+  - jekyll-theme-merlot
+  - jekyll-theme-midnight
+  - jekyll-theme-minimal
+  - jekyll-theme-modernist
+  - jekyll-theme-primer
+  - jekyll-theme-slate
+  - jekyll-theme-tactile
+  - jekyll-theme-time-machine

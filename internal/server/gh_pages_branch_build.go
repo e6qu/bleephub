@@ -194,9 +194,26 @@ func (s *Server) buildJekyllPagesArtifact(ctx context.Context, repo *store.Repo,
 			return nil, false, fmt.Errorf("write GitHub Pages source %q: %w", entry.path, err)
 		}
 	}
+	// Layer the base config the release image ships (in place of the retired
+	// github-pages metagem it reproduces: the plugin `whitelist` that lets the
+	// bundled plugins run under --safe, plus GitHub Pages' markdown/kramdown/theme
+	// defaults) UNDER the site's own _config.yml. Kept last so the Jekyll runner's
+	// positional argument layout (source is the 4th argument) is unchanged.
+	baseConfig := store.CoalesceStr(os.Getenv("BLEEPHUB_PAGES_BASE_CONFIG"), "/opt/bleephub-pages/github-pages-config.yml")
+	args := []string{"build", "--safe", "--source", sourceDir, "--destination", destinationDir, "--trace"}
+	if baseConfig != "" {
+		configs := baseConfig
+		for _, name := range []string{"_config.yml", "_config.yaml"} {
+			if _, statErr := os.Stat(filepath.Join(sourceDir, name)); statErr == nil {
+				configs += "," + filepath.Join(sourceDir, name)
+				break
+			}
+		}
+		args = append(args, "--config", configs)
+	}
 	// #nosec G204 -- the executable is deployment configuration; every argument
 	// is fixed or a server-created temporary directory and no shell is involved.
-	cmd := exec.CommandContext(ctx, s.pagesJekyllExecutable, "build", "--safe", "--source", sourceDir, "--destination", destinationDir, "--trace")
+	cmd := exec.CommandContext(ctx, s.pagesJekyllExecutable, args...)
 	cmd.Env = append(os.Environ(), "JEKYLL_ENV=production", "PAGES_REPO_NWO="+repo.FullName)
 	output := &pagesJekyllOutput{}
 	cmd.Stdout = output
