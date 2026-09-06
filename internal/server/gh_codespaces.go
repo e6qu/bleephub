@@ -300,15 +300,23 @@ func (s *Server) handleStopUserCodespace(w http.ResponseWriter, r *http.Request)
 // repo codespace handlers
 
 func (s *Server) handleListRepoCodespaces(w http.ResponseWriter, r *http.Request) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	list := s.store.ListCodespacesByRepo(repo.FullName)
-	out := make([]map[string]interface{}, len(list))
-	for i, cs := range list {
-		out[i] = s.codespaceToJSON(cs, s.baseURL(r))
+	// "List codespaces in a repository for the authenticated user" — only the
+	// caller's own codespaces, not every user's (their names are actionable).
+	out := make([]map[string]interface{}, 0)
+	for _, cs := range s.store.ListCodespacesByRepo(repo.FullName) {
+		if cs.OwnerLogin == user.Login {
+			out = append(out, s.codespaceToJSON(cs, s.baseURL(r)))
+		}
 	}
 	paged := paginateAndLink(w, r, out)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"codespaces": paged, "total_count": len(out)})
@@ -882,6 +890,24 @@ func (s *Server) handleSetOrgCodespaceSecretRepos(w http.ResponseWriter, r *http
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
+	}
+	// Validate each repo like the Actions org-secret setter: unknown → 404,
+	// not owned by this org → 422 (else foreign repo ids leak into the grant).
+	orgRec := s.store.GetOrg(org)
+	if orgRec == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	for _, id := range req.SelectedRepositoryIDs {
+		repo := s.store.GetRepoByID(id)
+		if repo == nil {
+			writeGHError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		if repo.OwnerType != "Organization" || repo.OwnerID != orgRec.ID {
+			writeGHError(w, http.StatusUnprocessableEntity, "Validation Failed: repository does not belong to the organization")
+			return
+		}
 	}
 	if !s.store.SetCodespaceSecretSelectedRepos(store.CodespaceSecretScopeKey("org", org), name, req.SelectedRepositoryIDs) {
 		writeGHError(w, http.StatusNotFound, "Not Found")

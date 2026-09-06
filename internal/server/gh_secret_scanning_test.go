@@ -339,7 +339,7 @@ func TestSecretScanningAlertGetReturnsDetachedSnapshot(t *testing.T) {
 	}
 
 	// The update path still mutates the live row despite the getter cloning.
-	if err := s.store.UpdateSecretScanningAlert(again, "resolved", "used_in_tests", ""); err != nil {
+	if err := s.store.UpdateSecretScanningAlert(again, "resolved", "used_in_tests", "", 0); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if again.State != "resolved" {

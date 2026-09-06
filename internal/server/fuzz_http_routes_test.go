@@ -1589,7 +1589,6 @@ var fuzzRoutePatterns = []string{
 	"GET /api/v3/enterprise/stats/pages",
 	"GET /api/v3/enterprise/stats/pulls",
 	"GET /api/v3/enterprise/stats/repos",
-	"GET /api/v3/enterprise/stats/security-products",
 	"GET /api/v3/enterprise/stats/users",
 	"PATCH /api/v3/enterprise/announcement",
 	"DELETE /api/v3/admin/hooks/{hook_id}",

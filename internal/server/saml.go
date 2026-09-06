@@ -34,6 +34,10 @@ const (
 	// samlClockSkew tolerates small clock differences between the SP and the IdP
 	// when checking assertion time conditions.
 	samlClockSkew = 3 * time.Minute
+	// samlAssertionReplayWindow bounds how long a consumed assertion ID is
+	// remembered when it declares no NotOnOrAfter (defensive; a conforming IdP
+	// always sets one).
+	samlAssertionReplayWindow = 10 * time.Minute
 )
 
 // samlIDPCertificate parses the configured identity-provider certificate. It
@@ -196,6 +200,15 @@ func (s *Server) handleSAMLConsume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One-time use: reject a replayed assertion. SP-initiated flows already bind a
+	// single-use InResponseTo, but an IdP-initiated assertion (no InResponseTo)
+	// could otherwise be replayed within its validity window.
+	if !s.consumeSAMLAssertionID(assertion.SelectAttrValue("ID", ""), claims.notOnOrAfter) {
+		s.logger.Warn().Msg("SAML assertion replay rejected")
+		writeGHError(w, http.StatusUnauthorized, "SAML assertion has already been used")
+		return
+	}
+
 	user, err := s.upsertExternalUser(s.identity.samlIDPEntityID, claims.nameID, claims.login, claims.name, claims.email, "", claims.admin, true)
 	if err != nil {
 		writeGHError(w, http.StatusForbidden, "SAML account cannot be provisioned on this instance")
@@ -351,6 +364,36 @@ func (s *Server) parseSAMLAssertion(r *http.Request, assertion *etree.Element, e
 		return claims, errors.New("assertion resolves no login")
 	}
 	return claims, nil
+}
+
+// consumeSAMLAssertionID records an assertion ID as used and reports whether it
+// was fresh (true) or a replay (false). Entries expire at the assertion's
+// NotOnOrAfter (a default window when absent), after which the ID may recur only
+// once the IdP could no longer present the same assertion. Expired entries are
+// reaped opportunistically; SAML consume volume is low.
+func (s *Server) consumeSAMLAssertionID(id string, notOnOrAfter time.Time) bool {
+	if id == "" {
+		// An assertion with no ID cannot be tracked; reject rather than allow an
+		// untrackable, replayable credential.
+		return false
+	}
+	now := s.currentTime()
+	expiry := notOnOrAfter
+	if expiry.IsZero() {
+		expiry = now.Add(samlAssertionReplayWindow)
+	}
+	s.samlAssertionsMu.Lock()
+	defer s.samlAssertionsMu.Unlock()
+	for seen, exp := range s.samlSeenAssertion {
+		if !now.Before(exp) {
+			delete(s.samlSeenAssertion, seen)
+		}
+	}
+	if exp, ok := s.samlSeenAssertion[id]; ok && now.Before(exp) {
+		return false
+	}
+	s.samlSeenAssertion[id] = expiry
+	return true
 }
 
 // samlAudienceMatches reports whether any AudienceRestriction/Audience equals the

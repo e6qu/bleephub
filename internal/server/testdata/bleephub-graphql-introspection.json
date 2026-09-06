@@ -6860,6 +6860,7 @@
       },
       "interfaces": [
         "Lockable",
+        "Node",
         "Reactable",
         "Votable"
       ]
@@ -7073,6 +7074,7 @@
       },
       "interfaces": [
         "Minimizable",
+        "Node",
         "Reactable",
         "Votable"
       ]
@@ -9671,7 +9673,10 @@
         "viewerHasStarred": {
           "type": "Boolean!"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "GistComment": {
       "kind": "OBJECT",
@@ -15660,6 +15665,8 @@
         "CrossReferencedEvent",
         "DemilestonedEvent",
         "DependencyGraphManifest",
+        "Discussion",
+        "DiscussionComment",
         "Enterprise",
         "EnterpriseAdministratorInvitation",
         "EnterpriseIdentityProvider",
@@ -15672,6 +15679,7 @@
         "EnterpriseTeam",
         "EnterpriseUserAccount",
         "ExternalIdentity",
+        "Gist",
         "HeadRefDeletedEvent",
         "HeadRefRestoredEvent",
         "IpAllowListEntry",

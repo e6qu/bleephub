@@ -293,7 +293,10 @@ func (s *Server) handleListOrgMigrationRepositories(w http.ResponseWriter, r *ht
 	out := make([]map[string]interface{}, 0, len(m.Repositories))
 	for _, fullName := range m.Repositories {
 		if repo := s.store.GetRepoByFullName(fullName); repo != nil {
-			out = append(out, migrationRepoJSON(repo, s.store, base))
+			// GitHub documents this list as minimal-repository[], matching the
+			// user-migration sibling; the full projection is only for the
+			// repositories embedded in the migration object itself.
+			out = append(out, minimalRepoJSON(repo, s.store, base))
 		}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))

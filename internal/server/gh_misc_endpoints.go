@@ -1030,9 +1030,16 @@ func (s *Server) handlePagesUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	branch, _ := pages.Source["branch"].(string)
 	sourcePath, _ := pages.Source["path"].(string)
+	// Validate the EFFECTIVE post-apply source: the apply below only overwrites a
+	// non-empty branch/path, so an omitted field keeps the stored value here too
+	// (a PATCH of source.path alone must not fail "branch required").
 	if req.Source != nil {
-		branch = req.Source.Branch
-		sourcePath = req.Source.Path
+		if req.Source.Branch != "" {
+			branch = req.Source.Branch
+		}
+		if req.Source.Path != "" {
+			sourcePath = req.Source.Path
+		}
 	}
 	s.store.Misc.Mu.Unlock()
 	if err := s.validatePagesConfiguration(repo, buildType, branch, sourcePath); err != nil {

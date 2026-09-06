@@ -33,7 +33,7 @@
       },
       {
         "event": "create",
-        "line": 699,
+        "line": 708,
         "producer": "emitWebhookEvent",
         "source": "internal/server/git_receivepack.go"
       },
@@ -45,7 +45,7 @@
       },
       {
         "event": "delete",
-        "line": 701,
+        "line": 710,
         "producer": "emitWebhookEvent",
         "source": "internal/server/git_receivepack.go"
       },
@@ -183,7 +183,7 @@
       },
       {
         "event": "page_build",
-        "line": 1218,
+        "line": 1225,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_misc_endpoints.go"
       },
@@ -396,7 +396,7 @@
       "shared_types": 1809,
       "signature_exact_fields": 8364
     },
-    "introspection_snapshot_sha256": "0ba26e8188dab475c1b1551832db7d3df1aee75565a7ba99b0f0d68b34736ffa",
+    "introspection_snapshot_sha256": "69b36e78e2011019bc3a985df63b7e164ccb56111af7cf5b73c57f0224b26e52",
     "official_schema": {
       "content_sha256": "ee878de9ade05f0b88be0c29ea461755c23c3fd541d86d875a10aade686bbbc3",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -12714,6 +12714,7 @@
             "DELETE /teams/{}/discussions/{}",
             "DELETE /teams/{}/discussions/{}/comments/{}",
             "DELETE /teams/{}/projects/{}",
+            "GET /enterprise/stats/security-products",
             "GET /orgs/{}/projects",
             "GET /orgs/{}/teams/{}/discussions",
             "GET /orgs/{}/teams/{}/discussions/{}",
@@ -12772,13 +12773,14 @@
             "PUT /setup/api/settings",
             "PUT /teams/{}/projects/{}"
           ],
-          "represented_operations": 904
+          "represented_operations": 903
         },
         "ghes-3.21": {
           "documented_operations": 1101,
           "missing_operations": [
             "GET /enterprise/live-migrations",
             "GET /enterprise/live-migrations/{}",
+            "GET /enterprise/stats/security-products",
             "POST /enterprise/live-migrations",
             "POST /enterprise/live-migrations/{}/cancel",
             "POST /enterprise/live-migrations/{}/cutover",
@@ -12787,7 +12789,7 @@
             "POST /enterprise/live-migrations/{}/revert-cutover",
             "POST /enterprise/live-migrations/{}/start"
           ],
-          "represented_operations": 1092
+          "represented_operations": 1091
         },
         "ghes-3.7": {
           "documented_operations": 828,
@@ -14679,12 +14681,6 @@
         "line": 0,
         "method": "GET",
         "path": "/api/v3/enterprise/stats/repos",
-        "source": "runtime route table (programmatic registration)"
-      },
-      {
-        "line": 0,
-        "method": "GET",
-        "path": "/api/v3/enterprise/stats/security-products",
         "source": "runtime route table (programmatic registration)"
       },
       {

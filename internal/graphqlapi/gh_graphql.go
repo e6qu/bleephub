@@ -149,6 +149,12 @@ func (s *Resolver) initGraphQLSchema() {
 				return nodeTypes["PullRequest"]
 			case strings.HasPrefix(nodeID, "REF_"):
 				return nodeTypes["Ref"]
+			case strings.HasPrefix(nodeID, "DC_"): // must precede the D_ case
+				return nodeTypes["DiscussionComment"]
+			case strings.HasPrefix(nodeID, "D_"):
+				return nodeTypes["Discussion"]
+			case strings.HasPrefix(nodeID, "G_"): // gist (GC_ gist-comment is not a Node)
+				return nodeTypes["Gist"]
 			}
 			// A git object's global id carries its type prefix, so dispatch off the store's codec.
 			if prefix, _, _, ok := store.ParseGitObjectNodeID(nodeID); ok {
@@ -276,6 +282,8 @@ func (s *Resolver) initGraphQLSchema() {
 	s.addNodeFieldsToSchema(queryType, nodeInterface)
 
 	s.addDiscussionFieldsToSchema(userType, repoType, mutationType)
+	nodeTypes["Discussion"] = s.graphqlTypes.discussion
+	nodeTypes["DiscussionComment"] = s.graphqlTypes.discussionComment
 	s.addModerationMutationsToSchema(mutationType)
 
 	// Labelable mutations go after the issue and PR families because their payloads render whichever the subject turns out to be.
@@ -321,6 +329,7 @@ func (s *Resolver) initGraphQLSchema() {
 
 	// Gists hang off the shared User type that `viewer` resolves to.
 	s.addGistFieldsToSchema(userType)
+	nodeTypes["Gist"] = s.graphqlTypes.gist
 	s.addReactionMutationsToSchema(mutationType)
 
 	// Sponsors last among read families: its Sponsorable fields name Repository (featured items) and the mutation type, which must be assembled first.
@@ -489,6 +498,35 @@ func (s *Resolver) graphQLNodeByID(ctx context.Context, nodeID string) interface
 			return nil
 		}
 		return s.linkedBranchSource(issue.ID, link)
+	}
+	if discussion := store.FindDiscussionByNodeID(s.store, nodeID); discussion != nil {
+		repo := s.store.GetRepoByID(discussion.RepoID)
+		if repo == nil || (repo.Private && !s.viewerCanReadRepo(ctx, repo)) {
+			return nil
+		}
+		return discussionToGQL(discussion, s.store)
+	}
+	if comment := store.FindDiscussionCommentByNodeID(s.store, nodeID); comment != nil {
+		if discussion := s.store.GetDiscussion(comment.DiscussionID); discussion != nil {
+			repo := s.store.GetRepoByID(discussion.RepoID)
+			if repo == nil || (repo.Private && !s.viewerCanReadRepo(ctx, repo)) {
+				return nil
+			}
+			return discussionCommentToGQL(comment, s.store)
+		}
+		return nil
+	}
+	if gist := store.FindGistByNodeID(s.store, nodeID); gist != nil {
+		// A secret gist is visible only to its owner (matches visibleGistsFor / REST).
+		viewer := s.ghUserFromContext(ctx)
+		if !gist.Public && (viewer == nil || viewer.ID != gist.OwnerID) {
+			return nil
+		}
+		owner := s.store.GetUserByID(gist.OwnerID)
+		if owner == nil {
+			return nil
+		}
+		return gistToGQL(gist, userToGraphQL(owner))
 	}
 	if gitObject := s.gitObjectNodeByID(ctx, nodeID); gitObject != nil {
 		return gitObject

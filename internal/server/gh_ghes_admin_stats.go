@@ -29,9 +29,11 @@ func (s *Server) registerGHESAdminStatsRoutes() {
 	s.route("PATCH /api/v3/enterprise/announcement", admin(s.handleSetEnterpriseAnnouncement))
 	s.route("DELETE /api/v3/enterprise/announcement", admin(s.handleDeleteEnterpriseAnnouncement))
 	s.route("GET /api/v3/enterprise/settings/license", admin(s.handleGHESLicense))
+	// GHES admin-stats has no "security-products" category (the "all" handler
+	// already excludes it); only the categories GitHub actually serves.
 	for _, name := range []string{
 		"all", "comments", "gists", "hooks", "issues", "milestones", "orgs",
-		"pages", "pulls", "repos", "security-products", "users",
+		"pages", "pulls", "repos", "users",
 	} {
 		s.route("GET /api/v3/enterprise/stats/"+name, admin(s.handleGHESAdminStats))
 	}
