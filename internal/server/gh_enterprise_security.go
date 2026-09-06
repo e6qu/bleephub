@@ -71,7 +71,7 @@ func (s *Server) handleListEnterpriseSecretScanningAlerts(w http.ResponseWriter,
 		if repo == nil {
 			continue
 		}
-		value := secretScanningAlertToJSON(alert, baseURL, repo)
+		value := s.secretScanningAlertToJSON(alert, baseURL, repo)
 		value["repository"] = simpleRepoJSON(repo, s.store, baseURL)
 		out = append(out, value)
 	}
