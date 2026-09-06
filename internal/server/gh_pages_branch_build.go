@@ -194,10 +194,32 @@ func (s *Server) buildJekyllPagesArtifact(ctx context.Context, repo *store.Repo,
 			return nil, false, fmt.Errorf("write GitHub Pages source %q: %w", entry.path, err)
 		}
 	}
-	// #nosec G204 -- the executable is deployment configuration; every argument
-	// is fixed or a server-created temporary directory and no shell is involved.
-	cmd := exec.CommandContext(ctx, s.pagesJekyllExecutable, "build", "--safe", "--source", sourceDir, "--destination", destinationDir, "--trace")
-	cmd.Env = append(os.Environ(), "JEKYLL_ENV=production", "PAGES_REPO_NWO="+repo.FullName)
+	// Layer the base config the release image ships (in place of the retired
+	// github-pages metagem it reproduces: the plugin `whitelist` that lets the
+	// bundled plugins run under --safe, plus GitHub Pages' markdown/kramdown/theme
+	// defaults) UNDER the site's own _config.yml. Kept last so the Jekyll runner's
+	// positional argument layout (source is the 4th argument) is unchanged.
+	baseConfig := store.CoalesceStr(os.Getenv("BLEEPHUB_PAGES_BASE_CONFIG"), "/opt/bleephub-pages/github-pages-config.yml")
+	args := []string{"build", "--safe", "--source", sourceDir, "--destination", destinationDir, "--trace"}
+	if baseConfig != "" {
+		configs := baseConfig
+		for _, name := range []string{"_config.yml", "_config.yaml"} {
+			if _, statErr := os.Stat(filepath.Join(sourceDir, name)); statErr == nil {
+				configs += "," + filepath.Join(sourceDir, name)
+				break
+			}
+		}
+		args = append(args, "--config", configs)
+	}
+	// #nosec G204 G702 -- the executable and the base-config path are deployment
+	// configuration; every other argument is fixed or a server-created temporary
+	// directory, and no shell is involved. gosec's taint analysis flags the
+	// env-derived base-config path, which the operator controls like the executable.
+	cmd := exec.CommandContext(ctx, s.pagesJekyllExecutable, args...)
+	// A UTF-8 locale so Ruby/Sass read UTF-8 source (themes, content) rather than
+	// defaulting to US-ASCII and aborting; the release image also sets it, this
+	// covers any other deployment environment.
+	cmd.Env = append(os.Environ(), "JEKYLL_ENV=production", "PAGES_REPO_NWO="+repo.FullName, "LANG=C.UTF-8", "LC_ALL=C.UTF-8")
 	output := &pagesJekyllOutput{}
 	cmd.Stdout = output
 	cmd.Stderr = output

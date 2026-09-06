@@ -60,7 +60,12 @@ func realPagesJekyllExecutable(t *testing.T) string {
 	}
 	dir := t.TempDir()
 	executable := filepath.Join(dir, "bleephub-pages-jekyll")
-	script := "#!/bin/sh\nset -eu\nworkspace=$(dirname \"$4\")\nexec docker run --rm --user \"$(id -u):$(id -g)\" -v \"$workspace:$workspace\" --entrypoint bleephub-pages-jekyll " + pagesJekyllTestImage + " \"$@\"\n"
+	// -e forwards the JEKYLL_ENV / PAGES_REPO_NWO the Go build sets into the
+	// container (docker run does not inherit the host env); jekyll-github-metadata
+	// and the default primer theme's site.github references need PAGES_REPO_NWO. In
+	// production Jekyll runs in-process in the release image, so it sees them
+	// directly — only the test's docker wrapper has to forward them.
+	script := "#!/bin/sh\nset -eu\nworkspace=$(dirname \"$4\")\nexec docker run --rm --user \"$(id -u):$(id -g)\" -e JEKYLL_ENV -e PAGES_REPO_NWO -v \"$workspace:$workspace\" --entrypoint bleephub-pages-jekyll " + pagesJekyllTestImage + " \"$@\"\n"
 	if err := os.WriteFile(executable, []byte(script), 0o755); err != nil {
 		t.Fatalf("write GitHub Pages Jekyll test executable: %v", err)
 	}
