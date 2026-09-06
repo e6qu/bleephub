@@ -441,6 +441,15 @@ func (s *Server) decideGitPushCommands(ctx context.Context, target *gitTarget, o
 		if err != nil {
 			return err
 		}
+		// Reject a create/update whose new tip is neither in the pushed pack nor
+		// already stored: git's connectivity check refuses "missing necessary
+		// objects", and accepting it would leave a ref dangling at an absent oid.
+		if !command.New.IsZero() {
+			if _, objErr := stor.EncodedObject(plumbing.AnyObject, command.New); objErr != nil {
+				status.status = gitStatusLine("missing necessary objects")
+				continue
+			}
+		}
 		status.forced = kind == refForcePush
 		if stale := gitPushPreconditionRefusal(stor, command); stale != "" {
 			status.status = stale

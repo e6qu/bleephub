@@ -1,7 +1,12 @@
 package bleephub
 
 import (
+	"bytes"
+	"crypto/sha1"
+	"encoding/binary"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,4 +199,40 @@ func TestSAMLAssertionReplayRejected(t *testing.T) {
 	if !s.consumeSAMLAssertionID("_assert-2", exp) {
 		t.Fatal("a distinct assertion ID must be accepted")
 	}
+}
+
+// TestReceivePackRejectsRefCreateToAbsentObject pins that the receive-pack
+// transport refuses creating a ref at an object the push never sent (git's
+// "missing necessary objects" connectivity check) — it left a dangling ref.
+func TestReceivePackRejectsRefCreateToAbsentObject(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	name := s.createRepoWriteRepo(t, true)
+	fake := "0123456789abcdef0123456789abcdef01234567"
+
+	var body bytes.Buffer
+	line := strings.Repeat("0", 40) + " " + fake + " refs/heads/evil\x00report-status\n"
+	fmt.Fprintf(&body, "%04x%s", len(line)+4, line)
+	body.WriteString("0000") // flush-pkt
+	// An empty but well-formed packfile: PACK, version 2, zero objects, SHA-1 trailer.
+	var pack bytes.Buffer
+	pack.WriteString("PACK")
+	_ = binary.Write(&pack, binary.BigEndian, uint32(2))
+	_ = binary.Write(&pack, binary.BigEndian, uint32(0))
+	sum := sha1.Sum(pack.Bytes())
+	pack.Write(sum[:])
+	body.Write(pack.Bytes())
+
+	req, _ := http.NewRequest("POST", s.baseURL+"/admin/"+name+".git/git-receive-pack", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
+	req.SetBasicAuth("x-token", defaultToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("receive-pack POST: %v", err)
+	}
+	resp.Body.Close()
+
+	// The ref must not exist: the create-to-absent-object was refused.
+	got := s.get(t, "/api/v3/repos/admin/"+name+"/git/ref/heads/evil", defaultToken)
+	requireStatus(t, got, http.StatusNotFound)
 }
