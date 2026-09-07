@@ -15,7 +15,7 @@ require (
 	github.com/rs/zerolog v1.35.1
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/stretchr/testify v1.12.1
-	github.com/yuin/goldmark v1.8.5
+	github.com/yuin/goldmark v1.8.6
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.71.0
 	go.opentelemetry.io/otel v1.46.0
