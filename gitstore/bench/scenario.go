@@ -30,6 +30,7 @@ const (
 	scenarioCloneMaintained = "clone-cold-maintained"
 	scenarioProbeMaintained = "probe-absent-maintained"
 	scenarioCloneParallel   = "clone-parallel"
+	scenarioReplicaStart    = "replica-start"
 	scenarioRefsCreate      = "refs-create"
 	scenarioRefsAdvertise   = "refs-advertise"
 )
@@ -61,6 +62,7 @@ var scenarioNotes = map[string]string{
 	scenarioCloneMaintained: "cold full clone after housekeeping",
 	scenarioProbeMaintained: "the same negotiation probes after housekeeping",
 	scenarioCloneParallel:   "concurrent full clones from a cold start, to show how a replica scales",
+	scenarioReplicaStart:    "git level: a replica with an empty cache starts, and the object store goes quiet — what it spends before the cold clone below can arrive",
 	scenarioRefsCreate:      "create the branches and tags of a busy repository, one reference write each",
 	scenarioRefsAdvertise:   "list every reference, as each fetch and push begins by doing: a cold replica, then three more clients 400ms apart (pauses included in the time)",
 }

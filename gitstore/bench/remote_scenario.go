@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,7 +19,19 @@ import (
 // scenario: what a remote does between requests is its own business, and its
 // cost is charged to the request that caused it (see settle).
 var gitScenarioOrder = []string{
-	scenarioPushInitial, scenarioCloneCold, scenarioCloneWarm, scenarioPushIncremental, scenarioFetch, scenarioCloneParallel,
+	scenarioPushInitial, scenarioReplicaStart, scenarioCloneCold, scenarioCloneWarm, scenarioPushIncremental, scenarioFetch, scenarioCloneParallel,
+}
+
+// everyScenario is every scenario either level runs, the Storer level's first,
+// each named once.
+func everyScenario() []string {
+	names := append([]string(nil), scenarioOrder...)
+	for _, name := range gitScenarioOrder {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // clientRepository is the pusher's side of the workload: a bare repository on
@@ -94,16 +107,19 @@ func (r *gitRunner) measure(scenario string, ops int, body func(result *Result) 
 
 // measureCold measures a scenario against a replica that has served nothing: the
 // remote is restarted, and has gone quiet, before the clock and the request count
-// start. What a server does once when it starts — opening its store, proving the
-// store keeps its promises — is a cost of starting, paid once however many
-// clones follow, and billing it to the first of them made a cold clone look like
-// a cold boot.
-func (r *gitRunner) measureCold(ctx context.Context, scenario string, ops int, body func(result *Result) error) Result {
-	if err := r.driver.Restart(ctx); err != nil {
-		return Result{Driver: r.driver.Name(), Scenario: scenario, Run: r.run, Ops: ops, Level: levelGit, Error: err.Error()}
+// start. What a server does when it starts — opening its store, proving the
+// store keeps its promises, fetching what it means to serve — is a cost of
+// starting, paid once however many clones follow, and billing it to the first of
+// them made a cold clone look like a cold boot. It is not hidden either: start
+// is where it is reported, because designs differ in how much they do there. One
+// that materializes its repositories as it starts answers its first clone from
+// disk, and has paid for that here.
+func (r *gitRunner) measureCold(ctx context.Context, scenario string, ops int, body func(result *Result) error) (start, measured Result) {
+	start = r.measure(scenarioReplicaStart, 1, func(*Result) error { return r.driver.Restart(ctx) })
+	if start.Error != "" {
+		return start, Result{Driver: r.driver.Name(), Scenario: scenario, Run: r.run, Ops: ops, Level: levelGit, Error: start.Error}
 	}
-	r.settle()
-	return r.measure(scenario, ops, body)
+	return start, r.measure(scenario, ops, body)
 }
 
 func (r *gitRunner) execute(ctx context.Context) []Result {
@@ -141,11 +157,13 @@ func (r *gitRunner) execute(ctx context.Context) []Result {
 	}
 
 	var firstClone string
-	keep(r.measureCold(ctx, scenarioCloneCold, 1, func(result *Result) error {
+	started, cold := r.measureCold(ctx, scenarioCloneCold, 1, func(result *Result) error {
 		dir, err := r.clone(ctx, remote, gitEnv, initial.Tip, initial.Objects, result)
 		firstClone = dir
 		return err
-	}))
+	})
+	keep(started)
+	keep(cold)
 	keep(r.measure(scenarioCloneWarm, 1, func(result *Result) error {
 		_, err := r.clone(ctx, remote, gitEnv, initial.Tip, initial.Objects, result)
 		return err
@@ -172,7 +190,7 @@ func (r *gitRunner) execute(ctx context.Context) []Result {
 		}
 	}
 
-	keep(r.measureCold(ctx, scenarioCloneParallel, r.parallel, func(result *Result) error {
+	_, parallel := r.measureCold(ctx, scenarioCloneParallel, r.parallel, func(result *Result) error {
 		var wg sync.WaitGroup
 		errs := make([]error, r.parallel)
 		for worker := range r.parallel {
@@ -186,7 +204,8 @@ func (r *gitRunner) execute(ctx context.Context) []Result {
 		wg.Wait()
 		result.Objects = r.workload.Objects
 		return errors.Join(errs...)
-	}))
+	})
+	keep(parallel)
 	return results
 }
 

@@ -89,7 +89,7 @@ func parseFlags() (config, error) {
 			fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
 		}
 		fmt.Fprintf(flag.CommandLine.Output(), "\nscenarios, in execution order:\n")
-		for _, name := range scenarioOrder {
+		for _, name := range everyScenario() {
 			fmt.Fprintf(flag.CommandLine.Output(), "  %-22s %s\n", name, scenarioNotes[name])
 		}
 		fmt.Fprintf(flag.CommandLine.Output(), "\nflags:\n")
@@ -123,13 +123,13 @@ func parseFlags() (config, error) {
 		}
 	}
 	cfg.scenarios = map[string]bool{}
-	for _, name := range scenarioOrder {
+	for _, name := range everyScenario() {
 		cfg.scenarios[name] = scenarios == "all"
 	}
 	if scenarios != "all" {
 		for _, name := range strings.Split(scenarios, ",") {
 			if _, known := cfg.scenarios[name]; !known {
-				return cfg, fmt.Errorf("unknown scenario %q (have %v)", name, scenarioOrder)
+				return cfg, fmt.Errorf("unknown scenario %q (have %v)", name, everyScenario())
 			}
 			cfg.scenarios[name] = true
 		}
