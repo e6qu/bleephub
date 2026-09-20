@@ -227,7 +227,7 @@ func TestOrgProfileTeamsAndMembershipSurfaces(t *testing.T) {
 	}
 
 	// Team hierarchy: parent + child via ParentTeamID, child listing.
-	parent, _, err := client.Teams.CreateTeam(ctx(), org, github.NewTeam{Name: "platform", Permission: github.Ptr("push")})
+	parent, _, err := client.Teams.CreateTeam(ctx(), org, github.NewTeam{Name: "platform"})
 	if err != nil {
 		t.Fatalf("CreateTeam(parent): %v", err)
 	}
