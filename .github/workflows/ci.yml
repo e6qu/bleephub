@@ -369,7 +369,7 @@ jobs:
         run: cd gitstore && go test -race -count=1 -timeout 10m -coverprofile="$RUNNER_TEMP/gitstore-coverage.out" ./...
       - name: Enforce the gitstore coverage floor
         env:
-          BLEEPHUB_GO_COVERAGE_MIN: '70.0'
+          BLEEPHUB_GO_COVERAGE_MIN: '77.0'
         run: cd gitstore && bash ../scripts/check-go-coverage.sh "$RUNNER_TEMP/gitstore-coverage.out"
       # The comparison harness is a program, not a test, so nothing above runs
       # it. One tiny pass through every driver and scenario keeps it from
