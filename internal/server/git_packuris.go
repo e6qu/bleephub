@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -212,5 +213,5 @@ const gitPackURIFetchArgument = "packfile-uris"
 // local-directory backends have no such address, so neither packfile-uris nor
 // bundle-uri is advertised there.
 func gitPackOffloadSupported() bool {
-	return gitstore.IsS3GitStorage()
+	return gitbackend.IsS3GitStorage()
 }

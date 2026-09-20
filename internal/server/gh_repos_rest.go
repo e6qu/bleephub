@@ -1682,14 +1682,17 @@ func collaboratorJSON(u *store.User, perm, baseURL string) map[string]interface{
 }
 
 // collaboratorPermissionRank ranks a repo permission on GitHub's cumulative
-// scale pull < triage < push < maintain < admin (read/write are aliases). 0 = none.
+// scale pull < triage < triage_plus < push < maintain < admin (read/write are
+// aliases). 0 = none.
 func collaboratorPermissionRank(perm string) int {
 	switch strings.ToLower(perm) {
 	case "admin":
-		return 5
+		return 6
 	case "maintain":
-		return 4
+		return 5
 	case "push", "write":
+		return 4
+	case "triage_plus":
 		return 3
 	case "triage":
 		return 2
@@ -1704,9 +1707,9 @@ func collaboratorPermsJSON(perm string) map[string]bool {
 	// (pull < triage < push < maintain < admin): a maintain user is push+triage+pull.
 	level := collaboratorPermissionRank(perm)
 	return map[string]bool{
-		"admin":    level >= 5,
-		"maintain": level >= 4,
-		"push":     level >= 3,
+		"admin":    level >= 6,
+		"maintain": level >= 5,
+		"push":     level >= 4,
 		"triage":   level >= 2,
 		"pull":     level >= 1,
 	}
@@ -1737,7 +1740,7 @@ func (s *Server) collaboratorReadNeedsPush(ctx context.Context) bool {
 // PUT accepts; anything else is a 422 (not a silent downgrade to pull).
 func validCollaboratorPermission(p string) bool {
 	switch strings.ToLower(p) {
-	case "pull", "read", "triage", "push", "write", "maintain", "admin":
+	case "pull", "read", "triage", "triage_plus", "push", "write", "maintain", "admin":
 		return true
 	}
 	return false

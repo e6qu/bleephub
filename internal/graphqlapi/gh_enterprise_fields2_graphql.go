@@ -73,7 +73,7 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 	// the node is never realized; fields read the source map by name so a
 	// populated node would render correctly.
 	extras.orgInvitationType.AddFieldConfig("invitationSource", &graphql.Field{
-		Type: graphql.NewNonNull(s.sharedEnum("OrganizationInvitationSource", "MEMBER", "SCIM", "UNKNOWN")),
+		Type: graphql.NewNonNull(s.sharedEnum("OrganizationInvitationSource", "ENTERPRISE_ORGANIZATION_CREATION", "MEMBER", "SCIM", "UNKNOWN")),
 	})
 	extras.orgInvitationType.AddFieldConfig("invitationType", &graphql.Field{
 		Type: graphql.NewNonNull(s.sharedEnum("OrganizationInvitationType", "EMAIL", "USER")),

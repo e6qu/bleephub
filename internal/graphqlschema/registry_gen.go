@@ -6,12 +6,12 @@ package graphqlschema
 // Counts of the generated type universe, used to presize the registry's
 // maps and asserted by the completeness ratchet.
 const (
-	generatedTypeCount      = 1814
-	generatedObjectCount    = 1027
+	generatedTypeCount      = 1811
+	generatedObjectCount    = 1026
 	generatedInterfaceCount = 50
 	generatedUnionCount     = 49
-	generatedEnumCount      = 256
-	generatedInputCount     = 419
+	generatedEnumCount      = 255
+	generatedInputCount     = 418
 	generatedScalarCount    = 13
 	generatedAbstractCount  = 99
 )
@@ -1112,7 +1112,6 @@ func (r *Registry) defineAllTypes() {
 	r.defineProjectV2WorkflowsOrderField()
 	r.definePromoteRepositoryCustomPropertyInput()
 	r.definePromoteRepositoryCustomPropertyPayload()
-	r.defineProofOfPresenceRequirement()
 	r.definePropertyTargetDefinition()
 	r.definePropertyTargetDefinitionInput()
 	r.definePublicKey()
@@ -1688,8 +1687,6 @@ func (r *Registry) defineAllTypes() {
 	r.defineUpdateEnterpriseOwnerOrganizationRolePayload()
 	r.defineUpdateEnterpriseProfileInput()
 	r.defineUpdateEnterpriseProfilePayload()
-	r.defineUpdateEnterpriseProofOfPresenceRequiredSettingInput()
-	r.defineUpdateEnterpriseProofOfPresenceRequiredSettingPayload()
 	r.defineUpdateEnterpriseRepositoryProjectsSettingInput()
 	r.defineUpdateEnterpriseRepositoryProjectsSettingPayload()
 	r.defineUpdateEnterpriseTwoFactorAuthenticationDisallowedMethodsSettingInput()

@@ -70,14 +70,16 @@ const (
 // The *bool member-privilege fields are pointers because nil means "GitHub's
 // default for that field", not false.
 type Org struct {
-	ID                           int    `json:"id"`
-	NodeID                       string `json:"node_id"`
-	Login                        string `json:"login"`
-	Name                         string `json:"name"`
-	Description                  string `json:"description"`
-	Email                        string `json:"email"`
-	AvatarURL                    string `json:"avatar_url"`
-	Type                         string `json:"type"`
+	ID          int    `json:"id"`
+	NodeID      string `json:"node_id"`
+	Login       string `json:"login"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Email       string `json:"email"`
+	AvatarURL   string `json:"avatar_url"`
+	Type        string `json:"type"`
+	// CodeScanningAIScan is "enabled" or "disabled"; empty reads as disabled.
+	CodeScanningAIScan           string `json:"code_scanning_ai_scan,omitempty"`
 	Company                      string `json:"company"`
 	Blog                         string `json:"blog"`
 	Location                     string `json:"location"`
@@ -431,6 +433,16 @@ func (st *Store) deleteOrgMetadata(login string) ([]PendingDeletion, PendingDele
 			batch.Delete("teams", strconv.Itoa(t.ID))
 		}
 	}
+	// An organization's rulesets and Actions policies are keyed by its id, which
+	// is never reissued, so without this they would outlive it as rows nothing
+	// can reach or delete.
+	for id, rs := range st.Rulesets {
+		if rs.OrgID == org.ID {
+			delete(st.Rulesets, id)
+			batch.Delete("repo_rulesets", strconv.Itoa(id))
+		}
+	}
+	st.deleteActionsPoliciesLocked(0, org.ID, batch)
 
 	delete(st.Orgs, org.ID)
 	delete(st.OrgsByLogin, login)

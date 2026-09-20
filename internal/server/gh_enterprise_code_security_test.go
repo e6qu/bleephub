@@ -287,3 +287,27 @@ func TestEnterpriseCodeSecurityConfiguration_DefaultsAndAttach(t *testing.T) {
 		t.Fatalf("repositories after delete: got %d, want 404", resp.StatusCode)
 	}
 }
+
+// TestEnterpriseEnforcedIsAnEnterpriseOnlyEnforcement covers the third
+// enforcement value in both directions: an enterprise configuration accepts
+// `enterprise_enforced` and reports it back, and an organization's — whose
+// documented values remain two — still refuses it.
+func TestEnterpriseEnforcedIsAnEnterpriseOnlyEnforcement(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	created := decodeBody(t, s.post(t, enterpriseAPI+"/code-security/configurations", defaultToken, map[string]interface{}{
+		"name": "locked", "description": "Enforced from the enterprise", "enforcement": "enterprise_enforced",
+	}), http.StatusCreated)
+	if created["enforcement"] != "enterprise_enforced" {
+		t.Fatalf("enforcement = %v, want enterprise_enforced", created["enforcement"])
+	}
+	expectStatus(t, s.post(t, enterpriseAPI+"/code-security/configurations", defaultToken, map[string]interface{}{
+		"name": "bogus", "description": "Unknown enforcement", "enforcement": "sometimes",
+	}), http.StatusBadRequest, "enterprise configuration with an unknown enforcement")
+
+	admin := s.store.LookupUserByLogin("admin")
+	org := s.store.CreateOrg(admin, "enforcement-org", "Enforcement", "")
+	expectStatus(t, s.post(t, "/api/v3/orgs/"+org.Login+"/code-security/configurations", defaultToken, map[string]interface{}{
+		"name": "org-locked", "description": "Not an organization's to set", "enforcement": "enterprise_enforced",
+	}), http.StatusUnprocessableEntity, "organization configuration with the enterprise-only enforcement")
+}

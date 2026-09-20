@@ -14,7 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -444,7 +445,7 @@ func classifyCodespaceWorkspace(mount string) codespaceWorkspaceKind {
 	if mount == "" {
 		return codespaceWorkspaceNone
 	}
-	if gitDir := gitstore.GitDataDir(); gitDir != "" && pathIsUnderDir(mount, gitDir) {
+	if gitDir := gitbackend.GitDataDir(); gitDir != "" && pathIsUnderDir(mount, gitDir) {
 		return codespaceWorkspaceBorrowed
 	}
 	if pathIsUnderDir(mount, os.TempDir()) {
@@ -876,8 +877,8 @@ func prepareCodespaceWorkspace(repoKey string, repo *Repo, stor gitStorage.Store
 		gitRef = repo.DefaultBranch
 	}
 
-	if gitstore.GitDataDir() != "" {
-		dir, pathErr := gitstore.RepoGitDirPath(gitstore.GitDataDir(), repoKey)
+	if gitbackend.GitDataDir() != "" {
+		dir, pathErr := gitstore.RepoGitDirPath(gitbackend.GitDataDir(), repoKey)
 		if pathErr != nil {
 			return "", cleanup, pathErr
 		}

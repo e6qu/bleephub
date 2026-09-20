@@ -65,6 +65,10 @@ func (s *Server) listCustomPatterns(w http.ResponseWriter, r *http.Request, scop
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, patterns))
 }
 
+// maxCustomPatternsPerRequest is the `maxItems` GitHub documents for the
+// create body's `patterns`.
+const maxCustomPatternsPerRequest = 100
+
 func (s *Server) createCustomPatterns(w http.ResponseWriter, r *http.Request, scope string) {
 	var request struct {
 		Patterns []store.SecretScanningPatternCreate `json:"patterns"`
@@ -87,6 +91,13 @@ func (s *Server) createCustomPatterns(w http.ResponseWriter, r *http.Request, sc
 	if len(request.Patterns) == 0 {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
 			"message": "patterns is required",
+		})
+		return
+	}
+	// One request creates at most a hundred patterns.
+	if len(request.Patterns) > maxCustomPatternsPerRequest {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"message": "patterns accepts at most " + strconv.Itoa(maxCustomPatternsPerRequest) + " items",
 		})
 		return
 	}

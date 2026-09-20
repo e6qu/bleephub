@@ -5,15 +5,6 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
-func (r *Registry) defineSavedReplyOrderField() {
-	r.enum("SavedReplyOrderField", "Properties by which saved reply connections can be ordered.", graphql.EnumValueConfigMap{
-		"UPDATED_AT": {
-			Value:       "UPDATED_AT",
-			Description: "Order saved reply by when they were updated.",
-		},
-	})
-}
-
 func (r *Registry) defineSearchResultItem() {
 	r.union("SearchResultItem", "The results of a search.", []string{"App", "Discussion", "Issue", "MarketplaceListing", "Organization", "PullRequest", "Repository", "User"})
 }
@@ -4311,6 +4302,29 @@ func (r *Registry) defineSuggestedReviewerActor() {
 			"reviewer": {
 				Type:        graphql.NewNonNull(r.t("Actor")),
 				Description: "Identifies the actor suggested to review the pull request.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSuggestedReviewerActorConnection() {
+	r.object("SuggestedReviewerActorConnection", "A suggestion to review a pull request based on an actor's commit history, review comments, and integrations.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("SuggestedReviewerActorEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("SuggestedReviewerActor")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
 			},
 		}
 	})

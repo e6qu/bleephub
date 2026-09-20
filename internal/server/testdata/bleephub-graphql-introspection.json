@@ -15344,12 +15344,6 @@
             "input": "UpdateEnterpriseProfileInput!"
           }
         },
-        "updateEnterpriseProofOfPresenceRequiredSetting": {
-          "type": "UpdateEnterpriseProofOfPresenceRequiredSettingPayload",
-          "args": {
-            "input": "UpdateEnterpriseProofOfPresenceRequiredSettingInput!"
-          }
-        },
         "updateEnterpriseRepositoryProjectsSetting": {
           "type": "UpdateEnterpriseRepositoryProjectsSettingPayload",
           "args": {
@@ -18731,6 +18725,7 @@
     "OrganizationInvitationSource": {
       "kind": "ENUM",
       "enum_values": [
+        "ENTERPRISE_ORGANIZATION_CREATION",
         "MEMBER",
         "SCIM",
         "UNKNOWN"
@@ -22273,14 +22268,6 @@
           "type": "RepositoryCustomProperty"
         }
       }
-    },
-    "ProofOfPresenceRequirement": {
-      "kind": "ENUM",
-      "enum_values": [
-        "MFA",
-        "NO_POLICY",
-        "REAUTH"
-      ]
     },
     "PropertyTargetDefinition": {
       "kind": "OBJECT",
@@ -28795,6 +28782,9 @@
         "enterpriseRole": {
           "type": "Boolean!"
         },
+        "enterpriseRoleDatabaseId": {
+          "type": "BigInt"
+        },
         "id": {
           "type": "ID!"
         },
@@ -28856,6 +28846,7 @@
         "deployKey": "Boolean",
         "enterpriseOwner": "Boolean",
         "enterpriseRole": "Boolean",
+        "enterpriseRoleDatabaseId": "BigInt",
         "organizationAdmin": "Boolean",
         "repositoryRoleDatabaseId": "Int"
       }
@@ -34385,28 +34376,6 @@
         },
         "enterprise": {
           "type": "Enterprise"
-        }
-      }
-    },
-    "UpdateEnterpriseProofOfPresenceRequiredSettingInput": {
-      "kind": "INPUT_OBJECT",
-      "input_fields": {
-        "clientMutationId": "String",
-        "enterpriseId": "ID!",
-        "settingValue": "ProofOfPresenceRequirement!"
-      }
-    },
-    "UpdateEnterpriseProofOfPresenceRequiredSettingPayload": {
-      "kind": "OBJECT",
-      "fields": {
-        "clientMutationId": {
-          "type": "String"
-        },
-        "enterprise": {
-          "type": "Enterprise"
-        },
-        "message": {
-          "type": "String"
         }
       }
     },

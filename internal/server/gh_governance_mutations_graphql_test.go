@@ -430,3 +430,67 @@ func TestGraphQLEnterpriseVerifiableDomainFeedsTheVerifiedDomainList(t *testing.
 		t.Fatalf("verified domains after delete = %v, want none", e.VerifiedDomains)
 	}
 }
+
+// TestGraphQLRulesetBypassActorsCarryTheirRoleIDs covers the two role-keyed
+// bypass actors. A repository role and an enterprise role are each named by a
+// database id, and the input's deprecated `enterpriseRole` flag names no role
+// by itself — so an enterprise-role actor is selected by
+// enterpriseRoleDatabaseId, round-trips through the shared ruleset store, and
+// reads back with the id it was given.
+func TestGraphQLRulesetBypassActorsCarryTheirRoleIDs(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "ruleset-bypass-roles", true)
+
+	env := s.gqlAuthzPost(t, f.ownerToken,
+		`mutation($input:CreateRepositoryRulesetInput!){createRepositoryRuleset(input:$input){ruleset{databaseId bypassActors(first:5){totalCount nodes{bypassMode enterpriseRole enterpriseRoleDatabaseId repositoryRoleDatabaseId organizationAdmin}}}}}`,
+		map[string]interface{}{"input": map[string]interface{}{
+			"sourceId":    f.repo.NodeID,
+			"name":        "bypass-roles",
+			"enforcement": "ACTIVE",
+			"target":      "BRANCH",
+			"conditions": map[string]interface{}{
+				"refName": map[string]interface{}{"include": []interface{}{"~DEFAULT_BRANCH"}, "exclude": []interface{}{}},
+			},
+			"bypassActors": []interface{}{
+				map[string]interface{}{"bypassMode": "ALWAYS", "enterpriseRoleDatabaseId": "42"},
+				map[string]interface{}{"bypassMode": "PULL_REQUEST", "repositoryRoleDatabaseId": 5},
+				// Names no role, so it selects nothing rather than an actor with
+				// no identity.
+				map[string]interface{}{"bypassMode": "ALWAYS", "enterpriseRole": true},
+			},
+		}},
+	)
+	ruleset := innerObject(t, gqlData(t, env), "createRepositoryRuleset", "ruleset")
+	actors := innerObject(t, ruleset, "bypassActors")
+	if actors["totalCount"] != float64(2) {
+		t.Fatalf("bypass actors = %v, want the two that name a role", actors)
+	}
+	byMode := map[string]map[string]interface{}{}
+	for _, node := range actors["nodes"].([]interface{}) {
+		actor := node.(map[string]interface{})
+		byMode[actor["bypassMode"].(string)] = actor
+	}
+	enterprise := byMode["ALWAYS"]
+	if enterprise["enterpriseRole"] != true || enterprise["enterpriseRoleDatabaseId"] != "42" || enterprise["repositoryRoleDatabaseId"] != nil {
+		t.Errorf("enterprise-role actor = %v, want enterpriseRole with id 42 and no repository role", enterprise)
+	}
+	repository := byMode["PULL_REQUEST"]
+	if repository["enterpriseRole"] != false || repository["enterpriseRoleDatabaseId"] != nil || repository["repositoryRoleDatabaseId"] != float64(5) {
+		t.Errorf("repository-role actor = %v, want repository role 5 and no enterprise role", repository)
+	}
+
+	stored := s.store.GetRuleset(int(ruleset["databaseId"].(float64)))
+	if stored == nil || len(stored.BypassActors) != 2 {
+		t.Fatalf("stored ruleset = %+v", stored)
+	}
+	found := false
+	for _, actor := range stored.BypassActors {
+		if actor.ActorType == "EnterpriseRole" && actor.ActorID == 42 && actor.BypassMode == "always" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("stored bypass actors = %+v, want EnterpriseRole 42", stored.BypassActors)
+	}
+}

@@ -8,7 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -138,7 +139,7 @@ func (st *Store) openWikiStorageLocked(repoKey, defaultBranch string) gitStorage
 	}
 	open := st.RepoStorageOpen
 	if open == nil {
-		open = gitstore.OpenOrInitGitStorage
+		open = gitbackend.OpenOrInitGitStorage
 	}
 	stor, err := open(context.Background(), WikiStorageName(repoKey))
 	if err != nil {

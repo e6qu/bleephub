@@ -344,7 +344,6 @@ var enterprisePolicySettingValues = []struct {
 	{"updateEnterpriseMembersCanUpdateProtectedBranchesSetting", "DISABLED"},
 	{"updateEnterpriseMembersCanViewDependencyInsightsSetting", "DISABLED"},
 	{"updateEnterpriseOrganizationProjectsSetting", "DISABLED"},
-	{"updateEnterpriseProofOfPresenceRequiredSetting", "MFA"},
 	{"updateEnterpriseRepositoryProjectsSetting", "DISABLED"},
 	{"updateEnterpriseTwoFactorAuthenticationDisallowedMethodsSetting", "INSECURE"},
 	{"updateEnterpriseTwoFactorAuthenticationRequiredSetting", "ENABLED"},

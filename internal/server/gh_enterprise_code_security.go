@@ -91,7 +91,10 @@ func (req *enterpriseCodeSecurityConfigRequest) validate() (string, bool) {
 			return field, false
 		}
 	}
-	if req.Enforcement != nil && *req.Enforcement != "enforced" && *req.Enforcement != "unenforced" {
+	// `enterprise_enforced` is the enterprise's own third value: only an
+	// enterprise configuration may carry it, so the organization validator
+	// (store.CodeSecurityConfigurationRequest) still refuses it.
+	if req.Enforcement != nil && *req.Enforcement != "enforced" && *req.Enforcement != "unenforced" && *req.Enforcement != "enterprise_enforced" {
 		return "enforcement", false
 	}
 	return "", true

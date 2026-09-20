@@ -16,7 +16,7 @@
 # Durable state. A partial write here can leave the instance unable to boot.
 /internal/store/persistence.go     @e6qu
 /internal/store/store.go           @e6qu
-/internal/gitstore/s3fs.go            @e6qu
+/gitstore/s3fs.go            @e6qu
 /dqlite-node/                       @e6qu
 
 # Deployment and supply chain.

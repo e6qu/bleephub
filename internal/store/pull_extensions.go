@@ -9,6 +9,14 @@ import (
 type PRCreationCap struct {
 	Enabled             bool `json:"enabled"`
 	MaxOpenPullRequests int  `json:"max_open_pull_requests"`
+	// IncludeDrafts is whether a draft pull request counts toward the cap.
+	IncludeDrafts bool `json:"include_drafts"`
+}
+
+// defaultPRCreationCap is the cap a repository or organization reports before
+// it has configured one: off, and counting drafts like any open pull request.
+func defaultPRCreationCap() PRCreationCap {
+	return PRCreationCap{Enabled: false, MaxOpenPullRequests: 10, IncludeDrafts: true}
 }
 
 type PullRequestStack struct {
@@ -59,7 +67,7 @@ func (st *Store) GetPRCreationCap(repoKey string) PRCreationCap {
 	if cap := st.PRCreationCaps[repoKey]; cap != nil {
 		return *cap
 	}
-	return PRCreationCap{Enabled: false, MaxOpenPullRequests: 10}
+	return defaultPRCreationCap()
 }
 
 func (st *Store) SetPRCreationCap(repoKey string, cap PRCreationCap) PRCreationCap {
@@ -79,7 +87,7 @@ func (st *Store) GetOrgPRCreationCap(orgLogin string) PRCreationCap {
 	if cap := st.OrgPRCreationCaps[orgLogin]; cap != nil {
 		return *cap
 	}
-	return PRCreationCap{Enabled: false, MaxOpenPullRequests: 10}
+	return defaultPRCreationCap()
 }
 
 func (st *Store) SetOrgPRCreationCap(orgLogin string, cap PRCreationCap) PRCreationCap {
@@ -132,15 +140,30 @@ func (st *Store) CanCreatePullRequest(repoID, userID int, login string) bool {
 	if repo == nil {
 		return false
 	}
+	if st.PRCreationBypass[repo.FullName][login] {
+		return true
+	}
+	// The repository's own cap governs when it has one in force; otherwise its
+	// organization's does. An organization's cap that no repository consulted
+	// would be a setting that reads back and restricts nothing.
 	cap := st.PRCreationCaps[repo.FullName]
-	if cap == nil || !cap.Enabled || st.PRCreationBypass[repo.FullName][login] {
+	if (cap == nil || !cap.Enabled) && repo.OwnerType == "Organization" {
+		if org := st.Orgs[repo.OwnerID]; org != nil {
+			cap = st.OrgPRCreationCaps[org.Login]
+		}
+	}
+	if cap == nil || !cap.Enabled {
 		return true
 	}
 	open := 0
 	for _, pull := range st.PullsByRepo[repoID] {
-		if pull.AuthorID == userID && pull.State == "OPEN" {
-			open++
+		if pull.AuthorID != userID || pull.State != "OPEN" {
+			continue
 		}
+		if pull.IsDraft && !cap.IncludeDrafts {
+			continue
+		}
+		open++
 	}
 	return open < cap.MaxOpenPullRequests
 }

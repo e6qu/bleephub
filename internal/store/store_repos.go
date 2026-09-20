@@ -11,24 +11,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/go-git/go-git/v5/plumbing"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
 type Repo struct {
-	ID                        int        `json:"id"`
-	NodeID                    string     `json:"node_id"`
-	Name                      string     `json:"name"`
-	FullName                  string     `json:"full_name"`
-	Description               string     `json:"description"`
-	Homepage                  string     `json:"homepage"`
-	DefaultBranch             string     `json:"default_branch"`
-	Visibility                string     `json:"visibility"`
-	Language                  string     `json:"language"`
-	Owner                     *User      `json:"-"`
-	OwnerID                   int        `json:"owner_id"`   // serialized so Owner can be relinked on reload
-	OwnerType                 string     `json:"owner_type"` // "User" or "Organization"
+	ID            int    `json:"id"`
+	NodeID        string `json:"node_id"`
+	Name          string `json:"name"`
+	FullName      string `json:"full_name"`
+	Description   string `json:"description"`
+	Homepage      string `json:"homepage"`
+	DefaultBranch string `json:"default_branch"`
+	Visibility    string `json:"visibility"`
+	Language      string `json:"language"`
+	Owner         *User  `json:"-"`
+	OwnerID       int    `json:"owner_id"`   // serialized so Owner can be relinked on reload
+	OwnerType     string `json:"owner_type"` // "User" or "Organization"
+	// CodeScanningAIScan is the repository's own AI Scan choice: "enabled",
+	// "disabled", or empty to follow its organization. See
+	// (*Store).RepoCodeScanningAIScan for the value in effect.
+	CodeScanningAIScan        string     `json:"code_scanning_ai_scan,omitempty"`
 	Private                   bool       `json:"private"`
 	Fork                      bool       `json:"fork"`
 	Archived                  bool       `json:"archived"`
@@ -104,7 +109,7 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 	// pending-name reservation preserves duplicate-create atomicity.
 	openStorage := st.RepoStorageOpen
 	if openStorage == nil {
-		openStorage = gitstore.OpenOrInitGitStorage
+		openStorage = gitbackend.OpenOrInitGitStorage
 	}
 	stor, err := openStorage(context.Background(), fullName)
 	if err != nil {
@@ -179,7 +184,7 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 		var err error
 		openStorage := st.RepoStorageOpen
 		if openStorage == nil {
-			openStorage = gitstore.OpenOrInitGitStorage
+			openStorage = gitbackend.OpenOrInitGitStorage
 		}
 		stor, err = openStorage(context.Background(), fullName)
 		if err != nil {
@@ -289,7 +294,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	// target reservation prevents a create/fork race on the same name.
 	openStorage := st.RepoStorageOpen
 	if openStorage == nil {
-		openStorage = gitstore.OpenOrInitGitStorage
+		openStorage = gitbackend.OpenOrInitGitStorage
 	}
 	stor, err := openStorage(context.Background(), fullName)
 	if err == nil {
@@ -698,7 +703,7 @@ func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 	}
 	stor := st.GitStorages[oldFull]
 	if stor != nil && repoGitStorageIsPathBound() {
-		reopened, err := gitstore.OpenOrInitGitStorage(context.Background(), newFull)
+		reopened, err := gitbackend.OpenOrInitGitStorage(context.Background(), newFull)
 		if err != nil {
 			st.Logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("rename repo: reopen git storage failed")
 			return false
@@ -791,7 +796,7 @@ func (st *Store) renameRepoS3(owner, name, newName string) bool {
 	}
 	stor := st.GitStorages[oldFull]
 	if stor != nil && repoGitStorageIsPathBound() {
-		reopened, err := gitstore.OpenOrInitGitStorage(context.Background(), newFull)
+		reopened, err := gitbackend.OpenOrInitGitStorage(context.Background(), newFull)
 		if err != nil {
 			st.Mu.Unlock()
 			st.abortRenameReservation(newFull)
@@ -1171,6 +1176,7 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 			batch.Delete("ruleset_suites", strconv.Itoa(id))
 		}
 	}
+	st.deleteActionsPoliciesLocked(repo.ID, 0, batch)
 	for id, project := range st.ProjectClassic {
 		if project.RepoKey == fullName {
 			delete(st.ProjectClassic, id)
@@ -1445,7 +1451,7 @@ func (st *Store) repoDeletionIntentLocked(repo *Repo) PendingDeletion {
 // path. An in-memory storer does not, so it survives a rename in place while a
 // path-bound one must be reopened.
 func repoGitStorageIsPathBound() bool {
-	return gitstore.GitDataDir() != "" || gitstore.IsS3GitStorage()
+	return gitbackend.GitDataDir() != "" || gitbackend.IsS3GitStorage()
 }
 
 // moveRepoGitStorage moves a repo's git bytes and its wiki's; the wiki lives at
@@ -1464,7 +1470,7 @@ func moveOneGitStoragePrefix(oldFull, newFull string) error {
 	if err := gitstore.ValidateRepoStorageFullName(newFull); err != nil {
 		return err
 	}
-	if gitDir := gitstore.GitDataDir(); gitDir != "" {
+	if gitDir := gitbackend.GitDataDir(); gitDir != "" {
 		oldDir, err := gitstore.RepoGitDirPath(gitDir, oldFull)
 		if err != nil {
 			return err
@@ -1483,10 +1489,10 @@ func moveOneGitStoragePrefix(oldFull, newFull string) error {
 			return fmt.Errorf("move git directory %s -> %s: %w", oldDir, newDir, err)
 		}
 	}
-	if !gitstore.IsS3GitStorage() {
+	if !gitbackend.IsS3GitStorage() {
 		return nil
 	}
-	s3fs, err := gitstore.GetS3FS(context.Background())
+	s3fs, err := gitbackend.GetS3FS(context.Background())
 	if err != nil {
 		return fmt.Errorf("resolve S3 git storage: %w", err)
 	}
@@ -1511,7 +1517,7 @@ func deleteOneGitStoragePrefix(fullName string) error {
 	if err := gitstore.ValidateRepoStorageFullName(fullName); err != nil {
 		return err
 	}
-	if gitDir := gitstore.GitDataDir(); gitDir != "" {
+	if gitDir := gitbackend.GitDataDir(); gitDir != "" {
 		repoDir, err := gitstore.RepoGitDirPath(gitDir, fullName)
 		if err != nil {
 			return err
@@ -1520,10 +1526,10 @@ func deleteOneGitStoragePrefix(fullName string) error {
 			return fmt.Errorf("remove filesystem git directory %s: %w", repoDir, err)
 		}
 	}
-	if !gitstore.IsS3GitStorage() {
+	if !gitbackend.IsS3GitStorage() {
 		return nil
 	}
-	s3fs, err := gitstore.GetS3FS(context.Background())
+	s3fs, err := gitbackend.GetS3FS(context.Background())
 	if err != nil {
 		return fmt.Errorf("resolve S3 git storage: %w", err)
 	}
@@ -1543,7 +1549,7 @@ func (st *Store) renameNeedsSlowMove() bool {
 	if st.RepoPrefixCopy != nil {
 		return true
 	}
-	return gitstore.IsS3GitStorage() && gitstore.GitDataDir() == ""
+	return gitbackend.IsS3GitStorage() && gitbackend.GitDataDir() == ""
 }
 
 // copyRepoPrefixBytes/deleteRepoPrefixBytes run the slow object-store prefix
@@ -1570,7 +1576,7 @@ func copyRepoGitStorageS3(oldFull, newFull string) error {
 	if err := gitstore.ValidateRepoStorageFullName(newFull); err != nil {
 		return err
 	}
-	s3fs, err := gitstore.GetS3FS(context.Background())
+	s3fs, err := gitbackend.GetS3FS(context.Background())
 	if err != nil {
 		return fmt.Errorf("resolve S3 git storage: %w", err)
 	}
@@ -1588,7 +1594,7 @@ func deleteRepoGitStorageS3(fullName string) error {
 	if err := gitstore.ValidateRepoStorageFullName(fullName); err != nil {
 		return err
 	}
-	s3fs, err := gitstore.GetS3FS(context.Background())
+	s3fs, err := gitbackend.GetS3FS(context.Background())
 	if err != nil {
 		return fmt.Errorf("resolve S3 git storage: %w", err)
 	}
@@ -2322,10 +2328,10 @@ func (st *Store) GitStorageForRepoID(repoID int) (gitStorage.Storer, string) {
 // RepoSize returns the git storage size in kilobytes (GitHub's `size` unit).
 // In-memory and S3-backed storage report 0 (S3 until a list-objects sum lands).
 func (st *Store) RepoSize(fullName string) int64 {
-	if gitstore.IsS3GitStorage() {
+	if gitbackend.IsS3GitStorage() {
 		return 0
 	}
-	gitDir := gitstore.GitDataDir()
+	gitDir := gitbackend.GitDataDir()
 	if gitDir == "" {
 		return 0
 	}
@@ -2460,6 +2466,8 @@ func normalizeRepoPermission(p string) string {
 		return "push"
 	case "triage":
 		return "triage"
+	case "triage_plus":
+		return "triage_plus"
 	case "pull", "read", "":
 		return "pull"
 	default:
@@ -2867,7 +2875,7 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	}
 	stor := st.GitStorages[oldFull]
 	if stor != nil && repoGitStorageIsPathBound() {
-		reopened, err := gitstore.OpenOrInitGitStorage(context.Background(), newFull)
+		reopened, err := gitbackend.OpenOrInitGitStorage(context.Background(), newFull)
 		if err != nil {
 			st.Logger.Error().Str("from", oldFull).Str("to", newFull).Err(err).Msg("transfer repo: reopen git storage failed")
 			return false

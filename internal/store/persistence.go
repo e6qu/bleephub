@@ -32,8 +32,8 @@ import (
 
 	"github.com/canonical/go-dqlite/v3/client"
 	"github.com/canonical/go-dqlite/v3/driver"
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/dqliteaddr"
-	"github.com/e6qu/bleephub/internal/gitstore"
 	zlog "github.com/rs/zerolog/log"
 	_ "modernc.org/sqlite" // SQLite driver — pure Go, no CGO
 )

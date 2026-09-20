@@ -5,14 +5,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// Compaction packs a repository's loose objects into a packfile. It is
-// scheduled from the push (the only event creating loose objects) rather than
-// the storage write path, so timing is deterministic. The push does not wait
+// Compaction packs a repository's loose objects into a packfile and folds the
+// small packs pushes leave into larger ones. It is scheduled from the push — a
+// push lands as a pack of its own, so pushes are what make packs accumulate —
+// rather than the storage write path, so timing is deterministic. The push does not wait
 // for it (background goroutine); a burst does not overlap runs (one at a time,
 // with a single follow-up for objects written after a run's listing); and it
 // cannot outlive the server (started via goBackground, cancelled on shutdown).

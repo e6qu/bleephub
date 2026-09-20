@@ -14,7 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -40,7 +41,7 @@ func packReuseSignature(index int) *object.Signature {
 func seedPackedGitRepo(t *testing.T, srv *isolatedServer, name string) (gitStorage.Storer, string) {
 	t.Helper()
 	fullName := "admin/" + name
-	stor, err := gitstore.OpenOrInitGitStorage(context.Background(), fullName)
+	stor, err := gitbackend.OpenOrInitGitStorage(context.Background(), fullName)
 	if err != nil {
 		t.Fatalf("open git storage for %s: %v", fullName, err)
 	}
@@ -59,7 +60,7 @@ func seedPackedGitRepo(t *testing.T, srv *isolatedServer, name string) (gitStora
 		t.Fatalf("point git HEAD at main: %v", err)
 	}
 
-	repoDir, err := gitstore.RepoGitDirPath(gitstore.GitDataDir(), fullName)
+	repoDir, err := gitstore.RepoGitDirPath(gitbackend.GitDataDir(), fullName)
 	if err != nil {
 		t.Fatalf("resolve the repository directory: %v", err)
 	}
@@ -389,13 +390,13 @@ func benchmarkPackedRepository(b *testing.B, commits, files int) gitStorage.Stor
 	}
 	b.Setenv("BLEEPHUB_GIT_DIR", b.TempDir())
 	const fullName = "bench/packs"
-	stor, err := gitstore.OpenOrInitGitStorage(context.Background(), fullName)
+	stor, err := gitbackend.OpenOrInitGitStorage(context.Background(), fullName)
 	if err != nil {
 		b.Fatal(err)
 	}
 	benchmarkPackedHistory(b, stor, commits, files)
 
-	repoDir, err := gitstore.RepoGitDirPath(gitstore.GitDataDir(), fullName)
+	repoDir, err := gitstore.RepoGitDirPath(gitbackend.GitDataDir(), fullName)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -404,7 +405,7 @@ func benchmarkPackedRepository(b *testing.B, commits, files int) gitStorage.Stor
 	if output, err := repack.CombinedOutput(); err != nil {
 		b.Fatalf("git repack: %v\n%s", err, output)
 	}
-	reopened, err := gitstore.OpenOrInitGitStorage(context.Background(), fullName)
+	reopened, err := gitbackend.OpenOrInitGitStorage(context.Background(), fullName)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -510,7 +511,7 @@ func TestReuseConcatenatesSeveralStoredPacks(t *testing.T) {
 	}
 
 	// Reopen the storer because the pack it must serve was published after the held one was opened.
-	reopened, err := gitstore.OpenOrInitGitStorage(context.Background(), "admin/"+name)
+	reopened, err := gitbackend.OpenOrInitGitStorage(context.Background(), "admin/"+name)
 	if err != nil {
 		t.Fatalf("reopen git storage: %v", err)
 	}

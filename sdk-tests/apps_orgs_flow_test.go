@@ -227,7 +227,7 @@ func TestOrgProfileTeamsAndMembershipSurfaces(t *testing.T) {
 	}
 
 	// Team hierarchy: parent + child via ParentTeamID, child listing.
-	parent, _, err := client.Teams.CreateTeam(ctx(), org, github.NewTeam{Name: "platform", Permission: github.Ptr("push")})
+	parent, _, err := client.Teams.CreateTeam(ctx(), org, github.NewTeam{Name: "platform"})
 	if err != nil {
 		t.Fatalf("CreateTeam(parent): %v", err)
 	}
@@ -271,7 +271,10 @@ func TestOrgProfileTeamsAndMembershipSurfaces(t *testing.T) {
 	if _, _, err := client.Repositories.Create(ctx(), org, &github.Repository{Name: github.Ptr("team-managed")}); err != nil {
 		t.Fatalf("Repositories.Create: %v", err)
 	}
-	if _, err := client.Teams.AddTeamRepoBySlug(ctx(), org, "platform", org, "team-managed", nil); err != nil {
+	// The permission is granted with the repository. A team-wide default
+	// (NewTeam.Permission) is deprecated under GitHub's current permission model.
+	if _, err := client.Teams.AddTeamRepoBySlug(ctx(), org, "platform", org, "team-managed",
+		&github.TeamAddTeamRepoOptions{Permission: "push"}); err != nil {
 		t.Fatalf("AddTeamRepoBySlug: %v", err)
 	}
 	teamRepos, _, err := client.Teams.ListTeamReposBySlug(ctx(), org, "platform", nil)

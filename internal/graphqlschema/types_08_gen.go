@@ -1944,23 +1944,6 @@ func (r *Registry) definePromoteRepositoryCustomPropertyPayload() {
 	})
 }
 
-func (r *Registry) defineProofOfPresenceRequirement() {
-	r.enum("ProofOfPresenceRequirement", "The proof of presence (PoP) re-authentication requirement for sudo actions in an enterprise.", graphql.EnumValueConfigMap{
-		"MFA": {
-			Value:       "MFA",
-			Description: "Members must satisfy an MFA re-authentication.",
-		},
-		"NO_POLICY": {
-			Value:       "NO_POLICY",
-			Description: "Proof of presence is not required.",
-		},
-		"REAUTH": {
-			Value:       "REAUTH",
-			Description: "Members must complete a fresh re-authentication against the enterprise identity provider.",
-		},
-	})
-}
-
 func (r *Registry) definePropertyTargetDefinition() {
 	r.object("PropertyTargetDefinition", "A property that must match", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -4740,6 +4723,10 @@ func (r *Registry) definePullRequestTimelineItemsItemType() {
 			Value:       "ADDED_TO_PROJECT_V2_EVENT",
 			Description: "Represents a 'added_to_project_v2' event on a given issue or pull request.",
 		},
+		"ADDED_TO_STACK_EVENT": {
+			Value:       "ADDED_TO_STACK_EVENT",
+			Description: "Represents an 'added_to_stack' event on a given pull request.",
+		},
 		"ARCHIVED_EVENT": {
 			Value:       "ARCHIVED_EVENT",
 			Description: "Represents an 'archived' event on a given pull request.",
@@ -4980,6 +4967,10 @@ func (r *Registry) definePullRequestTimelineItemsItemType() {
 			Value:       "REMOVED_FROM_PROJECT_V2_EVENT",
 			Description: "Represents a 'removed_from_project_v2' event on a given issue or pull request.",
 		},
+		"REMOVED_FROM_STACK_EVENT": {
+			Value:       "REMOVED_FROM_STACK_EVENT",
+			Description: "Represents a 'removed_from_stack' event on a given pull request.",
+		},
 		"RENAMED_TITLE_EVENT": {
 			Value:       "RENAMED_TITLE_EVENT",
 			Description: "Represents a 'renamed' event on a given issue or pull request",
@@ -5061,5 +5052,36 @@ func (r *Registry) definePullRequestUpdateState() {
 			Value:       "OPEN",
 			Description: "A pull request that is still open.",
 		},
+	})
+}
+
+func (r *Registry) definePush() {
+	r.object("Push", "A Git push.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the Push object",
+			},
+			"nextSha": {
+				Type:        r.t("GitObjectID"),
+				Description: "The SHA after the push",
+			},
+			"permalink": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The permalink for this push.",
+			},
+			"previousSha": {
+				Type:        r.t("GitObjectID"),
+				Description: "The SHA before the push",
+			},
+			"pusher": {
+				Type:        graphql.NewNonNull(r.t("Actor")),
+				Description: "The actor who pushed",
+			},
+			"repository": {
+				Type:        graphql.NewNonNull(r.t("Repository")),
+				Description: "The repository that was pushed to",
+			},
+		}
 	})
 }

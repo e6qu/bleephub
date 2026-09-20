@@ -13,7 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
@@ -493,6 +494,7 @@ type Store struct {
 	ProjectsV2                   *ProjectV2Store               // GitHub Projects v2
 	NotificationsState           map[int]*UserNotificationsState
 	Rulesets                     map[int]*Ruleset
+	ActionsPolicies              map[int]*ActionsPolicy
 	RulesetSuites                map[int]*RulesetSuite
 	ProjectClassic               map[int]*ProjectClassic                // id → project
 	ProjectColumns               map[int]*ProjectColumn                 // id → column
@@ -573,6 +575,7 @@ type Store struct {
 	NextCheckRunID               int64
 	NextCheckSuiteID             int64
 	NextRulesetID                int
+	NextActionsPolicyID          int
 	NextRulesetSuiteID           int
 	NextProjectClassicID         int
 	NextProjectColumnID          int
@@ -1053,6 +1056,7 @@ func NewStore() *Store {
 		ProjectsV2:                   NewProjectV2Store(nil),
 		NotificationsState:           map[int]*UserNotificationsState{},
 		Rulesets:                     map[int]*Ruleset{},
+		ActionsPolicies:              map[int]*ActionsPolicy{},
 		RulesetSuites:                map[int]*RulesetSuite{},
 		ProjectClassic:               map[int]*ProjectClassic{},
 		ProjectColumns:               map[int]*ProjectColumn{},
@@ -1143,6 +1147,7 @@ func NewStore() *Store {
 		NextCheckRunID:               1,
 		NextCheckSuiteID:             1,
 		NextRulesetID:                1,
+		NextActionsPolicyID:          1,
 		NextRulesetSuiteID:           1,
 		NextProjectClassicID:         1,
 		NextProjectColumnID:          1,
@@ -1326,7 +1331,7 @@ func NewStore() *Store {
 	}
 	store.CodespaceRuntimeDelete = store.deleteCodespaceRuntime
 	store.CodespaceWorkspacePrepare = prepareCodespaceWorkspace
-	store.RepoStorageOpen = gitstore.OpenOrInitGitStorage
+	store.RepoStorageOpen = gitbackend.OpenOrInitGitStorage
 	// Sponsors bills against the store's clock, so a frozen test clock
 	// freezes the billing cycle with it.
 	store.Sponsors = NewSponsorsStore(store.CurrentTime)
@@ -1397,7 +1402,7 @@ func (st *Store) wirePersistence(p *Persistence) {
 	st.Mu.Unlock()
 	// Object-store git bytes have no advisory locking of their own; the shared
 	// durable store arbitrates concurrent ref updates.
-	if gitstore.IsS3GitStorage() {
+	if gitbackend.IsS3GitStorage() {
 		gitstore.SetGitObjectLocker(p)
 	}
 }
@@ -1431,7 +1436,7 @@ func (st *Store) openRepoStoragesConcurrently(fullNames []string) error {
 		go func(i int, fullName string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			stor, err := gitstore.OpenOrInitGitStorage(context.Background(), fullName)
+			stor, err := gitbackend.OpenOrInitGitStorage(context.Background(), fullName)
 			results[i] = opened{stor: stor, Err: err}
 		}(i, fullName)
 	}
@@ -2612,6 +2617,17 @@ func (st *Store) loadFromPersistence() error {
 			st.Rulesets[rs.ID] = &rs
 			if rs.ID >= st.NextRulesetID {
 				st.NextRulesetID = rs.ID + 1
+			}
+			return nil
+		}},
+		{"actions_policies", func(_ string, raw []byte) error {
+			var policy ActionsPolicy
+			if err := LoadJSON(raw, &policy); err != nil {
+				return err
+			}
+			st.ActionsPolicies[policy.ID] = &policy
+			if policy.ID >= st.NextActionsPolicyID {
+				st.NextActionsPolicyID = policy.ID + 1
 			}
 			return nil
 		}},
@@ -4353,6 +4369,7 @@ func (st *Store) finishInterruptedRenames() error {
 // object-store key, so the new entity would inherit the deleted one's bytes.
 func (st *Store) idCounterBuckets() map[string]*int {
 	return map[string]*int{
+		"actions_policies":                 &st.NextActionsPolicyID,
 		"apps":                             &st.NextAppID,
 		"artifact_deployment_records":      &st.NextArtifactDeploymentRecordID,
 		"artifact_storage_records":         &st.NextArtifactStorageRecordID,

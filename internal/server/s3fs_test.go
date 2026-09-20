@@ -17,11 +17,11 @@ import (
 	"testing"
 	"time"
 
-	minio "github.com/minio/minio-go/v7"
-
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/e6qu/bleephub/internal/store"
+	minio "github.com/minio/minio-go/v7"
 )
 
 var (
@@ -52,7 +52,7 @@ func s3ServerRunArgs(addr string) []string {
 		"--publish", addr + ":9000",
 		"--env", "MINIO_ROOT_USER=bleephub-test",
 		"--env", "MINIO_ROOT_PASSWORD=bleephub-test-secret",
-		"minio/minio:RELEASE.2025-04-22T22-12-26Z", "server", "/data",
+		"quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z", "server", "/data",
 	}
 }
 
@@ -109,11 +109,11 @@ func testBinaryAlive(pid int) bool {
 func resetS3FSCacheForTest(t *testing.T) {
 	t.Helper()
 	reset := func() {
-		gitstore.S3FSCache.Mu.Lock()
-		gitstore.S3FSCache.FS = nil
-		gitstore.S3FSCache.Err = nil
-		gitstore.S3FSCache.Inited = false
-		gitstore.S3FSCache.Mu.Unlock()
+		gitbackend.S3FSCache.Mu.Lock()
+		gitbackend.S3FSCache.FS = nil
+		gitbackend.S3FSCache.Err = nil
+		gitbackend.S3FSCache.Inited = false
+		gitbackend.S3FSCache.Mu.Unlock()
 	}
 	reset()
 	t.Cleanup(reset)
@@ -136,7 +136,7 @@ func newS3FSForTest(t *testing.T) *gitstore.S3FS {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	bucket := fmt.Sprintf("bleephub-test-%d", testutil.NextTestID())
-	fs, err := gitstore.NewS3FS(ctx, endpoint, bucket, "git")
+	fs, err := gitbackend.NewS3FS(ctx, endpoint, bucket, "git")
 	if err != nil {
 		t.Fatalf("newS3FS: %v", err)
 	}
@@ -159,7 +159,7 @@ func deriveS3FSForTest(t *testing.T, bucket, prefix string) *gitstore.S3FS {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	fs, err := gitstore.NewS3FS(ctx, s3ServerEndpoint, bucket, prefix)
+	fs, err := gitbackend.NewS3FS(ctx, s3ServerEndpoint, bucket, prefix)
 	if err != nil {
 		t.Fatalf("newS3FS: %v", err)
 	}

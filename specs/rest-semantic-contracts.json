@@ -2690,7 +2690,8 @@
                 "enforcement": {
                   "enum": [
                     "enforced",
-                    "unenforced"
+                    "unenforced",
+                    "enterprise_enforced"
                   ],
                   "type": "string"
                 },
@@ -3056,7 +3057,8 @@
                 "enforcement": {
                   "enum": [
                     "enforced",
-                    "unenforced"
+                    "unenforced",
+                    "enterprise_enforced"
                   ],
                   "type": "string"
                 },
@@ -11602,6 +11604,326 @@
         "state_changing": false,
         "webhook_actions_event_review": false
       },
+      "operation_id": "actions/get-org-actions-policies",
+      "pagination": {
+        "parameters": [
+          "page",
+          "per_page"
+        ],
+        "required": true
+      },
+      "path": "/orgs/{org}/actions/policies",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "default": true,
+            "in": "query",
+            "name": "has_parents",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "default": 1,
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "default": 30,
+            "in": "query",
+            "name": "per_page",
+            "required": false,
+            "type": "integer"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "404",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "POST",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "actions/create-org-actions-policy",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/actions/policies",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "conditions": {
+                  "type": "object"
+                },
+                "enforcement": {
+                  "enum": [
+                    "disabled",
+                    "active",
+                    "evaluate"
+                  ],
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "rules": {
+                  "type": "array"
+                }
+              },
+              "required_fields": [
+                "enforcement",
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "201",
+          "404",
+          "422",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "DELETE",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "actions/delete-org-actions-policy",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/actions/policies/{policy_id}",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "type": "integer"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "204",
+          "404",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
+      "operation_id": "actions/get-org-actions-policy",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/actions/policies/{policy_id}",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "type": "integer"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "404",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "PUT",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "actions/update-org-actions-policy",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/actions/policies/{policy_id}",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "conditions": {
+                  "type": "object"
+                },
+                "enforcement": {
+                  "enum": [
+                    "disabled",
+                    "active",
+                    "evaluate"
+                  ],
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "rules": {
+                  "type": "array"
+                }
+              },
+              "required_fields": [],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "type": "integer"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "404",
+          "422",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
       "operation_id": "actions/list-self-hosted-runner-groups-for-org",
       "pagination": {
         "parameters": [
@@ -16748,6 +17070,111 @@
         "state_changing": false,
         "webhook_actions_event_review": false
       },
+      "operation_id": "code-scanning/get-ai-scan-enablement-for-org",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/code-scanning/ai-scan",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "403",
+          "404"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "PATCH",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "code-scanning/update-ai-scan-enablement-for-org",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/code-scanning/ai-scan",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "pr_scan": {
+                  "enum": [
+                    "enabled",
+                    "disabled"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required_fields": [],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "403",
+          "404",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
       "operation_id": "code-scanning/list-alerts-for-org",
       "pagination": {
         "parameters": [
@@ -17703,7 +18130,8 @@
       },
       "responses": {
         "documented_statuses": [
-          "202"
+          "202",
+          "403"
         ],
         "redirect_statuses": []
       }
@@ -23415,6 +23843,9 @@
             "application/json": {
               "properties": {
                 "enabled": {
+                  "type": "boolean"
+                },
+                "include_drafts": {
                   "type": "boolean"
                 },
                 "max_open_pull_requests": {
@@ -35489,6 +35920,356 @@
         "state_changing": false,
         "webhook_actions_event_review": false
       },
+      "operation_id": "actions/get-repo-actions-policies",
+      "pagination": {
+        "parameters": [
+          "page",
+          "per_page"
+        ],
+        "required": true
+      },
+      "path": "/repos/{owner}/{repo}/actions/policies",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "default": true,
+            "in": "query",
+            "name": "has_parents",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "default": 1,
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "default": 30,
+            "in": "query",
+            "name": "per_page",
+            "required": false,
+            "type": "integer"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "404",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "POST",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "actions/create-repo-actions-policy",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/actions/policies",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "conditions": {
+                  "type": "object"
+                },
+                "enforcement": {
+                  "enum": [
+                    "disabled",
+                    "active",
+                    "evaluate"
+                  ],
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "rules": {
+                  "type": "array"
+                }
+              },
+              "required_fields": [
+                "enforcement",
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "201",
+          "404",
+          "422",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "DELETE",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "actions/delete-repo-actions-policy",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/actions/policies/{policy_id}",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "204",
+          "404",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
+      "operation_id": "actions/get-repo-actions-policy",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/actions/policies/{policy_id}",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "404",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "PUT",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "actions/update-repo-actions-policy",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/actions/policies/{policy_id}",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "conditions": {
+                  "type": "object"
+                },
+                "enforcement": {
+                  "enum": [
+                    "disabled",
+                    "active",
+                    "evaluate"
+                  ],
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "rules": {
+                  "type": "array"
+                }
+              },
+              "required_fields": [],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "404",
+          "422",
+          "500"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
       "operation_id": "actions/list-self-hosted-runners-for-repo",
       "pagination": {
         "parameters": [
@@ -43585,6 +44366,123 @@
         "state_changing": false,
         "webhook_actions_event_review": false
       },
+      "operation_id": "code-scanning/get-ai-scan-enablement",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/code-scanning/ai-scan",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "403",
+          "404"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "PATCH",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "code-scanning/update-ai-scan-enablement",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/code-scanning/ai-scan",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "pr_scan": {
+                  "enum": [
+                    "enabled",
+                    "disabled"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required_fields": [],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "403",
+          "404",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
       "operation_id": "code-scanning/list-alerts-for-repo",
       "pagination": {
         "parameters": [
@@ -46017,6 +46915,7 @@
             "enum": [
               "pull",
               "triage",
+              "triage_plus",
               "push",
               "maintain",
               "admin"
@@ -46858,6 +47757,8 @@
           "400",
           "404",
           "409",
+          "422",
+          "429",
           "500"
         ],
         "redirect_statuses": []
@@ -47214,6 +48115,7 @@
           "404",
           "409",
           "422",
+          "429",
           "500",
           "503"
         ],
@@ -47676,6 +48578,7 @@
         "documented_statuses": [
           "200",
           "404",
+          "422",
           "500",
           "503"
         ],
@@ -48273,7 +49176,8 @@
           "200",
           "304",
           "403",
-          "404"
+          "404",
+          "410"
         ],
         "redirect_statuses": [
           "304"
@@ -48368,6 +49272,7 @@
           "403",
           "404",
           "409",
+          "410",
           "422"
         ],
         "redirect_statuses": []
@@ -54182,6 +55087,9 @@
             "application/json": {
               "properties": {
                 "enabled": {
+                  "type": "boolean"
+                },
+                "include_drafts": {
                   "type": "boolean"
                 },
                 "max_open_pull_requests": {
@@ -61151,6 +62059,7 @@
           "304",
           "404",
           "406",
+          "422",
           "500",
           "503"
         ],
@@ -79832,13 +80741,13 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "144e659e6666eafe1eba78b696fc8594dc1b04b9ad4fbbebf14d767c74f6b656",
+  "source_sha256": "4939f186ab675d3626a8b3b7092c5544524c52695cd13aca87dfbb806b96765d",
   "summary": {
-    "operations": 1225,
-    "state_changing": 584,
+    "operations": 1239,
+    "state_changing": 592,
     "with_conditional_requests": 0,
-    "with_pagination": 282,
-    "with_request_body": 344,
-    "with_required_body": 278
+    "with_pagination": 284,
+    "with_request_body": 350,
+    "with_required_body": 284
   }
 }

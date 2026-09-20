@@ -20,17 +20,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/gitbackend"
+	"github.com/e6qu/bleephub/internal/graphqlapi"
+	"github.com/e6qu/bleephub/internal/store"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
-
-	"github.com/e6qu/bleephub/internal/actions"
-	"github.com/e6qu/bleephub/internal/gitstore"
-	"github.com/e6qu/bleephub/internal/graphqlapi"
-	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Server is the bleephub HTTP server.
@@ -416,7 +416,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 }
 
 func validatePersistentServerStorage(serviceByteStoreReady bool) error {
-	if gitstore.GitDataDir() == "" && !gitstore.IsS3GitStorage() {
+	if gitbackend.GitDataDir() == "" && !gitbackend.IsS3GitStorage() {
 		return errors.New("persistence is enabled (BLEEPHUB_PERSIST=true) but git storage is in-memory: " +
 			"repo metadata would survive a restart while every git repo reloads empty. " +
 			"Configure durable git storage (BLEEPHUB_GIT_DIR=<dir> or BLEEPHUB_S3_BUCKET=<bucket>) or disable persistence")
@@ -496,6 +496,8 @@ func (s *Server) registerRoutes() {
 
 	// Repository Rulesets API (gh_rulesets.go)
 	s.registerGHRulesetRoutes()
+	s.registerGHActionsPolicyRoutes()
+	s.registerGHCodeScanningAIScanRoutes()
 
 	// Secret scanning API (gh_secret_scanning.go)
 	s.registerGHSecretScanningRoutes()
@@ -763,8 +765,8 @@ func (s *Server) handleInternalStorage(w http.ResponseWriter, r *http.Request) {
 
 	gitBackend := "memory"
 	gitDetails := map[string]string{}
-	gitDir := gitstore.GitDataDir()
-	if gitstore.IsS3GitStorage() {
+	gitDir := gitbackend.GitDataDir()
+	if gitbackend.IsS3GitStorage() {
 		gitBackend = "s3"
 		if bucket := os.Getenv("BLEEPHUB_S3_BUCKET"); bucket != "" {
 			gitDetails["bucket"] = bucket
@@ -806,7 +808,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// Bind the git object store's S3 I/O to the server lifetime so a slow or dead
 	// store cancels in-flight calls on shutdown instead of detaching and holding
 	// per-repo git locks past the drain.
-	if fs, _ := gitstore.GetS3FS(ctx); fs != nil {
+	if fs, _ := gitbackend.GetS3FS(ctx); fs != nil {
 		fs.SetBaseContext(ctx)
 	}
 	s.startObjectReaper(ctx)

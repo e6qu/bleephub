@@ -5,59 +5,6 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
-func (r *Registry) defineVerifiableDomainConnection() {
-	r.object("VerifiableDomainConnection", "The connection type for VerifiableDomain.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"edges": {
-				Type:        graphql.NewList(r.t("VerifiableDomainEdge")),
-				Description: "A list of edges.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("VerifiableDomain")),
-				Description: "A list of nodes.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"totalCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the total count of items in the connection.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineVerifiableDomainEdge() {
-	r.object("VerifiableDomainEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("VerifiableDomain"),
-				Description: "The item at the end of the edge.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineVerifiableDomainOrder() {
-	r.input("VerifiableDomainOrder", "Ordering options for verifiable domain connections.", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"direction": {
-				Type:        graphql.NewNonNull(r.t("OrderDirection")),
-				Description: "The ordering direction.",
-			},
-			"field": {
-				Type:        graphql.NewNonNull(r.t("VerifiableDomainOrderField")),
-				Description: "The field to order verifiable domains by.",
-			},
-		}
-	})
-}
-
 func (r *Registry) defineVerifiableDomainOrderField() {
 	r.enum("VerifiableDomainOrderField", "Properties by which verifiable domain connections can be ordered.", graphql.EnumValueConfigMap{
 		"CREATED_AT": {

@@ -88,3 +88,40 @@ func namedUserCanReadRepo(st *store.Store, subject *store.User, repo *store.Repo
 	}
 	return canReadRepoAsUser(st, subject, repo)
 }
+
+// GitHub's predefined repository-role ids, as rulesets and Actions policies
+// name them; an organization's custom roles take ids of their own and stand on
+// a base role.
+var predefinedRepositoryRoleBase = map[int]string{1: "read", 2: "maintain", 3: "triage", 4: "write", 5: "admin"}
+
+// userHoldsRepositoryRole reports whether a named user holds the repository
+// role, or a higher one, on the repository. It asks about a third party — the
+// actor behind a workflow trigger, on a path with no request credential — so it
+// is not a viewer predicate. Standing is compared on the three levels the
+// access model distinguishes: triage reads, maintain writes.
+func userHoldsRepositoryRole(st *store.Store, user *store.User, repo *store.Repo, roleID int) bool {
+	if user == nil || repo == nil {
+		return false
+	}
+	base, ok := predefinedRepositoryRoleBase[roleID]
+	if !ok {
+		owner, _ := splitRepoFull(repo.FullName)
+		st.Mu.RLock()
+		role := st.OrgCustomRepoRoles[owner][roleID]
+		if role != nil {
+			base = role.BaseRole
+		}
+		st.Mu.RUnlock()
+		if role == nil {
+			return false
+		}
+	}
+	switch base {
+	case "admin":
+		return canAdminRepo(st, user, repo)
+	case "write", "maintain":
+		return canPushRepo(st, user, repo)
+	default:
+		return canReadRepoAsUser(st, user, repo)
+	}
+}

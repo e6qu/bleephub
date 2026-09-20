@@ -903,6 +903,9 @@ func (s *Server) handleRerunWorkflowRun(w http.ResponseWriter, r *http.Request) 
 	serverURL := s.baseURL(r)
 	def.Env["__serverURL"] = serverURL
 	def.Env["__defaultImage"] = ""
+	if s.refuseByActionsPolicy(w, r, wf.RepoFullName, match.Path, wf.EventName) {
+		return
+	}
 	if err := s.rerunWorkflowAsNewAttempt(r, wf, match, def, serverURL, nil); err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "rerun submit: "+err.Error())
 		return

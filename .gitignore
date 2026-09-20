@@ -68,3 +68,6 @@ __pycache__/
 # module directory. These are build output, not source.
 terraform/wake/bleephub-ecs-wake
 terraform/startup/bleephub-startup
+
+# The comparison harness, when built in place rather than run.
+/gitstore/bench/bench

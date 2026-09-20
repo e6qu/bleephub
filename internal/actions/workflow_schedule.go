@@ -335,6 +335,18 @@ func (s *Engine) fireScheduledWorkflow(repoKey, fileName string, content []byte,
 	}
 	ref := "refs/heads/" + defaultBranch
 
+	// A schedule has no actor behind it, so a policy restricting actors admits
+	// no one for it, and one restricting events admits it only if it lists
+	// `schedule`. A refusal is permanent until the policy changes: not an error
+	// to retry.
+	policies := s.store.ApplicableActionsPolicies(repo, ".github/workflows/"+fileName)
+	if verdict := store.EvaluateActionsPolicies(policies, "schedule", func(store.ActionsPolicyActor) bool { return false }); verdict.Refused {
+		s.logger.Info().Str("repo", repoKey).Str("file", fileName).Str("cron", cron).
+			Str("policy", verdict.PolicyName).Str("rule", verdict.Rule).
+			Msg("scheduled workflow refused by Actions policy")
+		return nil
+	}
+
 	parts := SplitRepoKeyParts(repoKey)
 	stor := s.store.GetGitStorage(parts[0], parts[1])
 	if stor == nil {

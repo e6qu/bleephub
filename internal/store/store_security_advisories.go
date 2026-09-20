@@ -3,12 +3,11 @@ package store
 import (
 	"context"
 	"fmt"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/e6qu/bleephub/internal/gitstore"
 )
 
 // SecurityAdvisory is a repository-scoped security advisory.
@@ -445,7 +444,7 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 	if srcStor == nil {
 		return nil
 	}
-	stor, err := gitstore.OpenOrInitGitStorage(context.Background(), fullName)
+	stor, err := gitbackend.OpenOrInitGitStorage(context.Background(), fullName)
 	if err != nil {
 		st.Logger.Error().Str("repo", fullName).Err(err).Msg("security advisory fork: open git storage failed")
 		return nil

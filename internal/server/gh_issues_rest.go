@@ -1478,7 +1478,7 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 	labels := make([]map[string]interface{}, 0)
 	for _, lid := range issue.LabelIDs {
 		if l, ok := st.Labels[lid]; ok {
-			labels = append(labels, issueLabelToJSON(l, baseURL, repoFullName))
+			labels = append(labels, issueEmbeddedLabelToJSON(l, baseURL, repoFullName))
 		}
 	}
 

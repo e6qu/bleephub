@@ -94,7 +94,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and publish native architecture image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile.release
@@ -125,7 +125,7 @@ jobs:
           cache-from: type=gha,scope=bleephub-${{ matrix.arch.suffix }}
           cache-to: type=gha,scope=bleephub-${{ matrix.arch.suffix }},mode=max
       - name: Build and publish native architecture runner image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile.runner
@@ -268,7 +268,7 @@ jobs:
           format: sarif
           output: trivy-bleephub.sarif
           severity: HIGH,CRITICAL
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: trivy-bleephub.sarif
           category: trivy-bleephub

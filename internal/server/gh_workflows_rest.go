@@ -255,6 +255,9 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnprocessableEntity, "Workflow does not have 'workflow_dispatch' trigger")
 		return
 	}
+	if s.refuseByActionsPolicy(w, r, repo, wf.Path, "workflow_dispatch") {
+		return
+	}
 	inputs, typedInputs, errMsg := resolveDispatchInputs(dispatchDef, req.Inputs)
 	if errMsg != "" {
 		writeGHError(w, http.StatusUnprocessableEntity, errMsg)

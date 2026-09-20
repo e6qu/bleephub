@@ -5,37 +5,6 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
-func (r *Registry) definePush() {
-	r.object("Push", "A Git push.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the Push object",
-			},
-			"nextSha": {
-				Type:        r.t("GitObjectID"),
-				Description: "The SHA after the push",
-			},
-			"permalink": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The permalink for this push.",
-			},
-			"previousSha": {
-				Type:        r.t("GitObjectID"),
-				Description: "The SHA before the push",
-			},
-			"pusher": {
-				Type:        graphql.NewNonNull(r.t("Actor")),
-				Description: "The actor who pushed",
-			},
-			"repository": {
-				Type:        graphql.NewNonNull(r.t("Repository")),
-				Description: "The repository that was pushed to",
-			},
-		}
-	})
-}
-
 func (r *Registry) definePushAllowance() {
 	r.object("PushAllowance", "A team, user, or app who has the ability to push to a protected branch.", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
@@ -6805,6 +6774,33 @@ func (r *Registry) defineRepositoryCollaboratorEdge() {
 			"permissionSources": {
 				Type:        graphql.NewList(graphql.NewNonNull(r.t("PermissionSource"))),
 				Description: "A list of sources for the user's access to the repository.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryConnection() {
+	r.object("RepositoryConnection", "A list of repositories owned by the subject.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("RepositoryEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("Repository")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+			"totalDiskUsage": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "The total size in kilobytes of all repositories in the connection. Value will\nnever be larger than max 32-bit signed integer.",
 			},
 		}
 	})

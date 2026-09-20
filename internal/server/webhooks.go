@@ -772,6 +772,14 @@ func (s *Server) triggerWorkflowsForEvent(repoKey, eventType, action, ref string
 			s.logger.Info().Str("file", name).Str("trigger", eventType).Msg("workflow disabled — not triggered")
 			continue
 		}
+		if repo := s.store.GetRepoByFullName(repoKey); repo != nil {
+			if verdict := s.actionsPolicyVerdict(repo, workflowFilePath(name), eventType, s.eventSender(payload)); verdict.Refused {
+				s.logger.Info().Str("file", name).Str("trigger", eventType).
+					Str("policy", verdict.PolicyName).Str("rule", verdict.Rule).
+					Msg("workflow trigger refused by Actions policy")
+				continue
+			}
+		}
 
 		meta := &actions.WorkflowEventMeta{
 			EventName: eventType,

@@ -23,7 +23,20 @@ test:
 # BLEEPHUB_BENCH_REPOS/_ISSUES/_PRS/_RUNS; add -cpu 1,2,4,8 to see lock scaling.
 bench:
 	GOWORK=off go test -tags noui -run '^$$' -bench . -benchmem -benchtime 5x \
-		./internal/server/ ./internal/gitstore/ ./internal/graphqlapi/
+		./internal/server/ ./internal/graphqlapi/
+	cd gitstore && GOWORK=off go test -run '^$$' -bench . -benchmem -benchtime 5x ./...
+
+# Compares the gitstore library against other git-on-object-storage designs on
+# one generated repository. Pass flags through BENCH_FLAGS, e.g.
+# BENCH_FLAGS='-latency 5ms -files 5000'; see gitstore/bench/README.md.
+bench-gitstore:
+	cd gitstore/bench && GOWORK=off go run . $(BENCH_FLAGS)
+
+# The same comparison one level up: the stock git client against the real
+# bleephub server on object storage, and against any git remote helper found on
+# PATH (see gitstore/bench/README.md for the ones it knows).
+bench-gitstore-git:
+	cd gitstore/bench && GOWORK=off go run . -level git $(BENCH_FLAGS)
 
 # Runs the opt-in scaling ramp: concurrency vs latency percentiles + the knee.
 # Tune with BLEEPHUB_SCALE_* (see internal/server/scaling_ramp_test.go).

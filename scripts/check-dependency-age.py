@@ -111,6 +111,8 @@ def go_dependencies() -> dict[str, dt.datetime]:
     dependencies: dict[str, dt.datetime] = {}
     modules = (
         (ROOT, ROOT / "go.mod", []),
+        (ROOT / "gitstore", ROOT / "gitstore/go.mod", []),
+        (ROOT / "gitstore/bench", ROOT / "gitstore/bench/go.mod", []),
         (ROOT / "sdk-tests", ROOT / "sdk-tests/go.mod", []),
         (
             ROOT / "test/conformance/drivers/gogithub",
@@ -150,7 +152,13 @@ def go_dependencies() -> dict[str, dt.datetime]:
         for item in concatenated_json(output):
             if item.get("Main") or not item.get("Version"):
                 continue
-            resolved = item.get("Replace") or item
+            replacement = item.get("Replace")
+            if replacement and not replacement.get("Version"):
+                # A filesystem replacement is a module of this repository: it
+                # was never published, and its own dependencies are aged
+                # through its entry in the list above.
+                continue
+            resolved = replacement or item
             published = resolved.get("Time") or item.get("Time")
             if not published:
                 raise RuntimeError(

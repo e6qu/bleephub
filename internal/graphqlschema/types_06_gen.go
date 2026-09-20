@@ -2556,7 +2556,7 @@ func (r *Registry) defineMutation() {
 			},
 			"createEnterpriseOrganization": {
 				Type:        r.t("CreateEnterpriseOrganizationPayload"),
-				Description: "Creates an organization as part of an enterprise account. A personal access\ntoken used to create an organization is implicitly permitted to update the\norganization it created, if the organization is part of an enterprise that has\nSAML enabled or uses Enterprise Managed Users. If the organization is not part\nof such an enterprise, and instead has SAML enabled for it individually, the\ntoken will then require SAML authorization to continue working against that organization.",
+				Description: "Creates an organization as part of an enterprise account. User-authenticated\nrequests make the viewer an owner. Users listed in `adminLogins` are invited\nas owners unless owner invitations are disabled, in which case they are added\ndirectly. Installation requests also add existing enterprise members directly.\nInvitation failures do not roll back organization creation. A personal access\ntoken used to create an organization is implicitly permitted to update the\norganization it created, if the organization is part of an enterprise that has\nSAML enabled or uses Enterprise Managed Users. If the organization is not part\nof such an enterprise, and instead has SAML enabled for it individually, the\ntoken will then require SAML authorization to continue working against that organization.",
 				Args: graphql.FieldConfigArgument{
 					"input": {
 						Type:        graphql.NewNonNull(r.t("CreateEnterpriseOrganizationInput")),
@@ -4250,16 +4250,6 @@ func (r *Registry) defineMutation() {
 					"input": {
 						Type:        graphql.NewNonNull(r.t("UpdateEnterpriseProfileInput")),
 						Description: "Parameters for UpdateEnterpriseProfile",
-					},
-				},
-			},
-			"updateEnterpriseProofOfPresenceRequiredSetting": {
-				Type:        r.t("UpdateEnterpriseProofOfPresenceRequiredSettingPayload"),
-				Description: "Sets the proof of presence (PoP) re-authentication requirement for sudo actions in an enterprise.",
-				Args: graphql.FieldConfigArgument{
-					"input": {
-						Type:        graphql.NewNonNull(r.t("UpdateEnterpriseProofOfPresenceRequiredSettingInput")),
-						Description: "Parameters for UpdateEnterpriseProofOfPresenceRequiredSetting",
 					},
 				},
 			},
@@ -10031,6 +10021,10 @@ func (r *Registry) defineOrganizationInvitationRole() {
 
 func (r *Registry) defineOrganizationInvitationSource() {
 	r.enum("OrganizationInvitationSource", "The possible organization invitation sources.", graphql.EnumValueConfigMap{
+		"ENTERPRISE_ORGANIZATION_CREATION": {
+			Value:       "ENTERPRISE_ORGANIZATION_CREATION",
+			Description: "The invitation was created with an enterprise organization",
+		},
 		"MEMBER": {
 			Value:       "MEMBER",
 			Description: "The invitation was created from the web interface or from API",
