@@ -372,16 +372,18 @@ objects by MD5.
   bulk delete.
 - **The operation set:** GET, ranged GET, HEAD returning an opaque version
   token; PUT, PUT-if-absent, PUT-if-version-matches, streaming or multipart PUT,
-  DELETE; strongly consistent prefix LIST with a delimiter; server-side COPY.
-  Behind a capability flag with a fallback: bulk delete (looped deletes) and
-  presigned GET (proxying).
+  DELETE and bulk delete; strongly consistent prefix LIST, recursive and by
+  directory; server-side COPY; presigned GET. (The researcher suggested putting
+  bulk delete and presigning behind a capability flag with a client-side
+  substitute; we require them of every driver instead.)
 - **Never rely on:** an ETag being an MD5; conditional completion of a multipart
   upload (unavailable on GCS); conditional DELETE or COPY; list ordering beyond
   lexicographic.
 - **Probe at startup.** Create-if-absent twice must answer "condition not met";
   a stale version must too; a list after a write must show the key. On failure,
-  fail closed or keep the external lock for that store. This is what catches
-  GCS-over-HMAC, OSS, B2 and older Ceph or MinIO.
+  fail closed. This is what catches GCS-over-HMAC, OSS, B2 and older Ceph or
+  MinIO. (The researcher also offered "or keep the external lock for that
+  store"; see *Decisions taken* for why there is no such second path.)
 
 ## Lessons from object-store-native data systems
 
@@ -626,6 +628,31 @@ Seven lines of research, arrived at independently, converge on the same engine:
    need invalidating.
 9. **Validate everything that arrives:** hash it, check it, apply the reference
    name rules, cap its size, check connectivity with filters first.
+
+## Decisions taken
+
+**Each store gets a driver for its native API, behind one interface of ours
+(`gitstore/objstore`).** Azure Blob Storage has no S3 endpoint — Microsoft's own
+answer is "no official S3 support for Blob Storage", and what exists is
+third-party gateways (S3Proxy, Flexify.IO)
+([Microsoft Q&A](https://learn.microsoft.com/en-us/answers/questions/1183760/s3-api-support-over-azure-blob-storage)) —
+and Google Cloud Storage's S3 endpoint is unsafe for compare-and-swap. A gateway
+would put someone else's component, with partial conditional-write support, on
+the write path of the only durable state we have. Azure's native API offers every
+operation the interface names, conditional writes included (`If-Match` /
+`If-None-Match` on the ETag), as does GCS's (generation preconditions); both
+official Go SDKs are pure Go.
+
+**That driver switch is the one branch the design tolerates**, and it is tolerated
+because it is not a fallback: the operator states which store protocol the
+deployment speaks, and nothing infers it. Everywhere else the rule is one explicit
+code path — no capability flags with a lesser alternative, no "try this, else
+that", no value chosen silently for something the operator should state.
+Concretely: `objstore.Bucket` has no capabilities to ask about and no
+"unsupported" error; every driver implements every operation with its whole
+meaning; and `objstore.Conform` proves the guarantees against the live store at
+startup and refuses to run on one that fails them. A store that cannot arbitrate a
+write is not run on differently. It is not run on.
 
 ## The order of work
 
