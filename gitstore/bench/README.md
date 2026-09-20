@@ -120,9 +120,9 @@ go run ../s3fake/cmd/s3fake -addr 127.0.0.1:9000 -trace
 ```
 
 serves the counting fake on a fixed address — any bucket exists, any
-credentials sign — logs each request with its query and byte range, so one
-listing can be told from another by its prefix, and prints the totals when
-interrupted. It is how the per-request breakdowns below were found. The fake
+credentials sign — logs each request with what tells it from another (a
+listing's prefix, a read's extent, whether a write was conditional; never a
+header value or a signature), and prints the totals when interrupted. It is how the per-request breakdowns below were found. The fake
 gives objects content-derived ETags and honours `If-Match` / `If-None-Match` on
 writes, which designs that lock or swap a manifest by conditional write depend
 on.

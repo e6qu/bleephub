@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/e6qu/bleephub/gitstore/s3fake"
@@ -34,20 +35,9 @@ func main() {
 	server.SetLatency(*latency)
 	if *trace {
 		server.SetTrace(func(r *http.Request) {
-			line := r.Method + " " + r.URL.Path
-			if r.URL.RawQuery != "" {
-				line += "?" + r.URL.RawQuery
-			}
-			if extent := r.Header.Get("Range"); extent != "" {
-				line += " [" + extent + "]"
-			}
-			for _, condition := range []string{"If-Match", "If-None-Match"} {
-				if value := r.Header.Get(condition); value != "" {
-					line += " [" + condition + ": " + value + "]"
-				}
-			}
-			// Quoted: the line is made of what a client sent.
-			log.Print(strconv.Quote(line))
+			// Quoted as well: whatever else a client put in its path or prefix
+			// stays inside the one line.
+			log.Print(strconv.Quote(traceLine(r)))
 		})
 	}
 	fmt.Fprintf(os.Stderr, "s3fake listening on %s (path-style, any bucket, any credentials)\n", server.URL())
@@ -57,4 +47,42 @@ func main() {
 	started := time.Now()
 	<-interrupt
 	fmt.Fprintf(os.Stderr, "\n%s over %s\n", server.Snapshot(), time.Since(started).Round(time.Millisecond))
+}
+
+// traceLine describes a request by what tells one from another: the method and
+// key, a listing's prefix and delimiter, a ranged read's extent, and whether the
+// write was conditional. It prints no header value and no other query
+// parameter — a presigned URL carries its credential and signature there, and a
+// trace is something people paste into bug reports.
+func traceLine(r *http.Request) string {
+	line := printable(r.Method) + " " + printable(r.URL.Path)
+	query := r.URL.Query()
+	for _, name := range []string{"prefix", "delimiter"} {
+		if query.Has(name) {
+			line += " " + name + "=" + printable(query.Get(name))
+		}
+	}
+	for _, name := range []string{"uploads", "uploadId", "partNumber", "delete"} {
+		if query.Has(name) {
+			line += " " + name
+		}
+	}
+	var first, last int64
+	if n, _ := fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &first, &last); n == 2 {
+		line += fmt.Sprintf(" [bytes %d-%d]", first, last)
+	}
+	switch {
+	case r.Header.Get("If-None-Match") == "*":
+		line += " [if absent]"
+	case r.Header.Get("If-None-Match") != "":
+		line += " [if changed]"
+	case r.Header.Get("If-Match") != "":
+		line += " [if unchanged]"
+	}
+	return line
+}
+
+// printable keeps a client-supplied string from starting a log line of its own.
+func printable(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\n", ""), "\r", "")
 }
