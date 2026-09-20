@@ -159,3 +159,21 @@ func TestReadsListingsAndDeletes(t *testing.T) {
 		t.Fatalf("presign: %q, %v", signed, err)
 	}
 }
+
+// TestAPartSizeTheProtocolForbidsIsRefusedAtOnce pins that a misconfigured part
+// size is an error when the bucket is opened, not when the first object large
+// enough to be uploaded in parts arrives — which, in a git server, is some
+// push, some day.
+func TestAPartSizeTheProtocolForbidsIsRefusedAtOnce(t *testing.T) {
+	if _, err := objstore.NewS3("bucket", objstore.S3Options{Endpoint: "http://127.0.0.1:9", PartBytes: 1 << 20}); err == nil {
+		t.Fatal("a one-mebibyte part size was accepted")
+	}
+	for _, partBytes := range []uint64{0, 5 << 20, 64 << 20} {
+		if _, err := objstore.NewS3("bucket", objstore.S3Options{Endpoint: "http://127.0.0.1:9", PartBytes: partBytes}); err != nil {
+			t.Fatalf("a part size of %d was refused: %v", partBytes, err)
+		}
+	}
+	if _, err := objstore.NewS3("bucket", objstore.S3Options{Endpoint: "http://bad host/"}); err == nil {
+		t.Fatal("an endpoint that is not a URL was accepted")
+	}
+}

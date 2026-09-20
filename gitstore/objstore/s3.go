@@ -27,14 +27,16 @@ type S3Options struct {
 	Credentials *credentials.Credentials
 	// Transport carries every request. Nil selects the client's default.
 	Transport http.RoundTripper
-	// PartBytes is the part size of an upload too large for one request. Zero
-	// selects 16 MiB.
+	// PartBytes is the part size of an upload too large for one request, which
+	// is also the size above which an upload goes in parts. Zero selects 16 MiB;
+	// the protocol allows no part but the last to be under 5 MiB.
 	PartBytes uint64
 }
 
 const (
 	defaultS3Region    = "us-east-1"
 	defaultS3PartBytes = 16 << 20
+	minimumS3PartBytes = 5 << 20
 	// s3DeleteBatch is the most keys one multi-object delete may name.
 	s3DeleteBatch = 1000
 )
@@ -51,6 +53,9 @@ type s3Bucket struct {
 
 // NewS3 opens a bucket on an S3-compatible store.
 func NewS3(bucket string, opts S3Options) (Bucket, error) {
+	if opts.PartBytes != 0 && opts.PartBytes < minimumS3PartBytes {
+		return nil, fmt.Errorf("s3 part size %d is below the protocol's minimum of %d", opts.PartBytes, minimumS3PartBytes)
+	}
 	region := opts.Region
 	if region == "" {
 		region = defaultS3Region

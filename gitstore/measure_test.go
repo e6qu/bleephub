@@ -16,9 +16,9 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
-// The benchmarks here are the measurement the design is argued from. They run the two storage shapes — loose tier alone
-// (what this package had) and loose tier with the pack tier under it (what it has now) — against one in-process object
-// store that counts every request and byte, both built in the same binary from the same code, so the numbers compare.
+// The benchmarks here are the measurement the design is argued from. They run the two tiers — a repository whose objects
+// are all loose, and the same repository packed — against one in-process object store that counts every request and
+// byte, both built in the same binary from the same code, so the numbers compare.
 //
 // Each reports three metrics beside per-operation time: the object store requests one clone/push costs, the same per
 // object, and bytes transferred. Request count is the quantity of interest: the cost removed is a network round trip, a fixed toll no local speed pays off.
@@ -139,7 +139,7 @@ func BenchmarkPushPack(b *testing.B) {
 // BenchmarkCloneLoose is the baseline: a clone served entirely out of the loose tier, where every object is one whole-object GET.
 func BenchmarkCloneLoose(b *testing.B) {
 	fake := newBenchFakeS3(b)
-	stor, err := looseStorage(fake, benchRepo)
+	stor, err := packedStorage(fake, benchRepo)
 	if err != nil {
 		b.Fatalf("storage: %v", err)
 	}
@@ -149,7 +149,7 @@ func BenchmarkCloneLoose(b *testing.B) {
 	for b.Loop() {
 		b.StopTimer()
 		// A clone is served by a storer opened for the request, so the writing handle's warm in-process object cache must not be counted as a saving the read path actually has.
-		readStor, err := looseStorage(fake, benchRepo)
+		readStor, err := packedStorage(fake, benchRepo)
 		if err != nil {
 			b.Fatalf("storage: %v", err)
 		}

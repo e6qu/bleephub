@@ -65,11 +65,11 @@ const (
 	defaultPackMemoryBytes = 256 << 20
 )
 
-// packCache returns the cache for this filesystem's configured directory,
-// creating it on first reference. Filesystems naming one directory share one
-// cache, sized by whichever referenced it first.
-func (f *S3FS) packCache() *packDiskCache {
-	opts := f.options()
+// packCache returns the cache for this store's configured directory, creating
+// it on first reference. Stores naming one directory share one cache, sized by
+// whichever referenced it first.
+func (s *storeShared) packCache() *packDiskCache {
+	opts := s.opts
 	if cached, ok := packCaches.Load(opts.CacheDir); ok {
 		return cached.(*packDiskCache)
 	}
@@ -135,11 +135,6 @@ func (c *packDiskCache) hotStore(name string, data []byte) {
 	}
 }
 
-// packCacheSizeChunk is the pseudo-chunk index caching an object's total
-// length, kept beside the bytes so a reader with chunk zero resident need not
-// round-trip to the object store for the length.
-const packCacheSizeChunk = -1
-
 // cacheKey names one chunk of one bucket-absolute object key. The object key is
 // hashed so a key with a path separator, or longer than a file name, still maps
 // to exactly one cache file.
@@ -150,22 +145,6 @@ func cacheKey(bucket, key string, chunkSize, chunk int64) string {
 
 func (c *packDiskCache) pathFor(name string) string {
 	return filepath.Join(c.root, name[:2], name)
-}
-
-func (c *packDiskCache) loadSize(bucket, key string, chunkSize int64) (int64, bool) {
-	raw := c.load(bucket, key, chunkSize, packCacheSizeChunk)
-	if raw == nil {
-		return 0, false
-	}
-	size, err := strconv.ParseInt(string(raw), 10, 64)
-	if err != nil || size < 0 {
-		return 0, false
-	}
-	return size, true
-}
-
-func (c *packDiskCache) storeSize(bucket, key string, chunkSize, size int64) {
-	c.store(bucket, key, chunkSize, packCacheSizeChunk, []byte(strconv.FormatInt(size, 10)))
 }
 
 // load returns a cached chunk, or nil when not resident.

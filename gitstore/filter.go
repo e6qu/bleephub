@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
+	"slices"
 )
 
 // Two approximate membership structures for the object index.
@@ -360,6 +361,22 @@ const cuckooLoadHeadroom = 2
 // masked with buckets-1, so the count must be a power of two fitting a uint32 —
 // 2^31 is the last. A larger capacity saturates the filter instead.
 const cuckooMaxBuckets = 1 << 31
+
+// cuckooMinimumCapacity sizes the filter of a directory with few or no objects,
+// leaving room for the writes that follow the listing that found it so.
+const cuckooMinimumCapacity = 16
+
+// copyForWrite returns a filter the caller may insert into and remove from
+// without disturbing readers of the receiver, which a published snapshot shares
+// and which must therefore never change. A nil receiver is an empty directory.
+func (c *cuckooFilter) copyForWrite() *cuckooFilter {
+	if c == nil {
+		return newCuckooFilter(cuckooMinimumCapacity)
+	}
+	copied := *c
+	copied.buckets = slices.Clone(c.buckets)
+	return &copied
+}
 
 func newCuckooFilter(capacity int) *cuckooFilter {
 	needed := max(capacity, 1)*cuckooLoadHeadroom/cuckooSlotsPerBucket + 1

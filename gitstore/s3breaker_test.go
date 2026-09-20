@@ -1,10 +1,13 @@
 package gitstore
 
 import (
+	"context"
 	"errors"
-	"os"
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/gitstore/objstore"
 )
 
 func newTestBreaker(threshold int, cooldown time.Duration, clock *time.Time) *s3Breaker {
@@ -40,12 +43,12 @@ func TestS3BreakerSuccessAndNotFoundReset(t *testing.T) {
 
 	b.record(hard)
 	b.record(hard)
-	// A normal absent answer (os.ErrNotExist, as the fs maps a 404) resets the run.
-	b.record(os.ErrNotExist)
+	// A normal absent answer shows the store is there, and resets the run.
+	b.record(fmt.Errorf("s3 get key: %w", objstore.ErrNotFound))
 	b.record(hard)
 	b.record(hard)
 	if err := b.check(); err != nil {
-		t.Fatalf("os.ErrNotExist should have reset the failure run; breaker open: %v", err)
+		t.Fatalf("an absent answer should have reset the failure run; breaker open: %v", err)
 	}
 	// A success also resets.
 	b.record(hard)
@@ -92,5 +95,25 @@ func TestS3BreakerDisabledWhenThresholdZero(t *testing.T) {
 	}
 	if err := b.check(); err != nil {
 		t.Fatalf("disabled breaker must never trip: %v", err)
+	}
+}
+
+// TestS3BreakerIgnoresACallerThatWentAway pins that a request abandoned by its
+// caller says nothing about the store: a burst of clients hanging up must not
+// open the breaker for everyone else, nor close one a real outage opened.
+func TestS3BreakerIgnoresACallerThatWentAway(t *testing.T) {
+	now := time.Unix(1000, 0)
+	b := newTestBreaker(2, 5*time.Second, &now)
+	for range 10 {
+		b.record(fmt.Errorf("s3 get key: %w", context.Canceled))
+	}
+	if err := b.check(); err != nil {
+		t.Fatalf("abandoned requests opened the breaker: %v", err)
+	}
+	b.record(errors.New("s3 5xx"))
+	b.record(fmt.Errorf("s3 get key: %w", context.Canceled))
+	b.record(errors.New("s3 5xx"))
+	if err := b.check(); !errors.Is(err, ErrS3Unavailable) {
+		t.Fatalf("an abandoned request between two failures reset the run: %v", err)
 	}
 }

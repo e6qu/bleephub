@@ -1,8 +1,6 @@
 package gitstore
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -11,10 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 
-	"github.com/go-git/go-billy/v5/helper/polyfill"
 	"github.com/go-git/go-billy/v5/osfs"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -25,7 +20,6 @@ import (
 	gitStorage "github.com/go-git/go-git/v5/storage"
 	gitFilesystem "github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/google/uuid"
 )
 
 var (
@@ -35,9 +29,10 @@ var (
 )
 
 // checkSafeRefName rejects a reference name that cannot be safely turned into a
-// storage path. The S3 backend joins the name with `path.Join`, which cleans
-// `..`, so a crafted name like `refs/heads/../../other-repo/refs/heads/main`
-// would escape the per-repository chroot. go-git's IsSafe applies git's own
+// storage path or key. A reference is stored under its own name, so a crafted
+// one like `refs/heads/../../other-repo/refs/heads/main` would reach outside the
+// repository on a disk, and one like `config` would overwrite another of the
+// repository's files in a bucket. go-git's IsSafe applies git's own
 // check-ref-format rules and accepts every legitimate ref bleephub stores.
 func checkSafeRefName(name plumbing.ReferenceName) error {
 	if !name.IsSafe() {
@@ -47,7 +42,9 @@ func checkSafeRefName(name plumbing.ReferenceName) error {
 }
 
 // atomicRefStorer is the single git-storage handle bleephub keeps per repository
-// (the value in Store.GitStorages). Concurrent goroutines routinely touch one
+// on the local-directory and memory backends, where the storage underneath is
+// go-git's own. (The object-store backend is repository, which is safe for
+// concurrent use by construction and needs none of this.) Concurrent goroutines routinely touch one
 // repository's git data at once (a clone/fetch reading refs and objects while a
 // push or REST write mutates them), and neither side holds Store.Mu, so mu
 // guards the backing go-git maps: RLock for reads, Lock for mutations. It is a
@@ -63,31 +60,17 @@ type atomicRefStorer struct {
 	repo    string
 	mu      sync.RWMutex
 	modules map[string]gitStorage.Storer
-	// fs is the object store this repository's git data lives in, or nil for
-	// local-directory or memory backing. The pack tier needs it: compaction
-	// publishes through it, and the membership index is keyed by its prefix.
-	fs *S3FS
-	// looseWrites counts objects written into the loose tier since the last
-	// compaction request. Admitting one compaction at a time is the scheduler's
-	// job, not this counter's.
-	looseWrites atomic.Int64
-	// packWrites counts pushed packs published since the last compaction request.
-	packWrites atomic.Int64
 	// primed records that the delegate's lazily built state exists. See prime.
 	primed sync.Once
 }
 
 var _ gitStorage.Storer = (*atomicRefStorer)(nil)
-var _ Compactor = (*atomicRefStorer)(nil)
 
+// WrapAtomicRefStorage makes a go-git storage safe to share: reference updates
+// become a compare-and-swap across goroutines and replicas, and reads and writes
+// of the storage's own maps are kept apart.
 func WrapAtomicRefStorage(repo string, stor gitStorage.Storer) gitStorage.Storer {
 	return &atomicRefStorer{storer: stor, repo: repo}
-}
-
-// wrapObjectStoreStorage is the object-store form of WrapAtomicRefStorage,
-// carrying the filesystem alongside the storer so the pack tier can reach it.
-func wrapObjectStoreStorage(repo string, stor gitStorage.Storer, fs *S3FS) *atomicRefStorer {
-	return &atomicRefStorer{storer: stor, repo: repo, fs: fs}
 }
 
 // prime builds the delegate's lazy state under the exclusive lock, once, before
@@ -99,8 +82,7 @@ func wrapObjectStoreStorage(repo string, stor gitStorage.Storer, fs *S3FS) *atom
 // arrive together at an unbuilt handle, and one arriving mid-build saw some
 // packs and not others — an object the repository holds reported missing, which
 // a git client is told as "not our ref". The probe drives that construction
-// through go-git's public surface; its answer is irrelevant. adoptPack repeats
-// it after a reindex for the same reason.
+// through go-git's public surface; its answer is irrelevant.
 func (s *atomicRefStorer) prime() {
 	s.primed.Do(func() {
 		s.mu.Lock()
@@ -109,53 +91,12 @@ func (s *atomicRefStorer) prime() {
 	})
 }
 
-func (s *atomicRefStorer) lockName(ref plumbing.ReferenceName) string {
-	digest := sha256.Sum256([]byte(s.repo + "\x00" + ref.String()))
-	return "git-ref:" + hex.EncodeToString(digest[:])
-}
-
 func (s *atomicRefStorer) withRefLock(ref plumbing.ReferenceName, mutate func() error) error {
-	return s.withLockName(s.lockName(ref), mutate)
-}
-
-func (s *atomicRefStorer) withLockName(name string, mutate func() error) error {
-	if err := refMutationLocks.acquire(name, gitObjectLockWait); err != nil {
-		return err
-	}
-	defer refMutationLocks.release(name)
-	locker := currentGitObjectLocker()
-	if locker == nil {
-		return mutate()
-	}
-	owner := uuid.New().String()
-	deadline := time.Now().Add(gitObjectLockWait)
-	for {
-		acquired, err := locker.AcquireLock(name, owner, gitObjectLockTTL)
-		if err != nil {
-			return err
-		}
-		if acquired {
-			mutationErr := mutate()
-			releaseErr := locker.ReleaseLock(name, owner)
-			if mutationErr != nil {
-				return mutationErr
-			}
-			if releaseErr != nil {
-				return fmt.Errorf("release lock %s: %w", name, releaseErr)
-			}
-			return nil
-		}
-		if !time.Now().Before(deadline) {
-			return fmt.Errorf("lock %s: another replica still holds it after %s", name, gitObjectLockWait)
-		}
-		time.Sleep(gitObjectLockPoll)
-	}
+	return withLockName(lockNameFor("git-ref", s.repo, ref.String()), mutate)
 }
 
 func (s *atomicRefStorer) InitializeRepositoryReferences(branch *plumbing.Reference, requireEmpty bool) error {
-	digest := sha256.Sum256([]byte(s.repo + "\x00repository-initialization"))
-	name := "git-ref:" + hex.EncodeToString(digest[:])
-	return s.withLockName(name, func() error {
+	return withLockName(lockNameFor("git-ref", s.repo, "repository-initialization"), func() error {
 		// One exclusive hold so no reader observes the branch without HEAD and
 		// the rollback below cannot race a concurrent clone.
 		s.mu.Lock()
@@ -351,13 +292,8 @@ func (s *atomicRefStorer) NewEncodedObject() plumbing.EncodedObject { //nolint:i
 
 func (s *atomicRefStorer) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
 	s.mu.Lock()
-	hash, err := s.storer.SetEncodedObject(obj)
-	s.mu.Unlock()
-	if err != nil {
-		return hash, err
-	}
-	s.noteObjectWritten()
-	return hash, nil
+	defer s.mu.Unlock()
+	return s.storer.SetEncodedObject(obj)
 }
 
 func (s *atomicRefStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) { //nolint:ireturn
@@ -367,16 +303,8 @@ func (s *atomicRefStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) 
 	return s.storer.EncodedObject(t, h)
 }
 
-// HasEncodedObject short-circuits a fetch negotiation's per-object presence
-// check. On object-backed storage the real lookup costs an S3 GET (go-git tries
-// the loose tier first, always a 404 for a packed repository), so the membership
-// index returns ErrObjectNotFound when it can prove absence. Negative-only: a
-// "maybe" delegates to the real lookup. See the filter invariant in filter.go.
 func (s *atomicRefStorer) HasEncodedObject(h plumbing.Hash) error {
 	s.prime()
-	if s.fs != nil && !s.fs.repoIndexFor().maybePresent(s.fs, oidKeyFrom(h[:])) {
-		return plumbing.ErrObjectNotFound
-	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.HasEncodedObject(h)
@@ -615,27 +543,8 @@ func RepoGitDirPath(gitDir, fullName string) (string, error) {
 	return filepath.Join(root, relative), nil
 }
 
-// OpenObjectStore opens the repository fullName inside fs: go-git's dotgit
-// layout written into the bucket, with the pack tier, ranged pack reads and the
-// membership index wired in.
-func OpenObjectStore(fs *S3FS, fullName string) (gitStorage.Storer, error) {
-	if err := ValidateRepoStorageFullName(fullName); err != nil {
-		return nil, err
-	}
-	chrooted, err := fs.Chroot(fullName)
-	if err != nil {
-		return nil, fmt.Errorf("s3 chroot %s: %w", fullName, err)
-	}
-	s3Chroot, ok := chrooted.(*S3FS)
-	if !ok {
-		return nil, fmt.Errorf("s3 chroot %s: unexpected filesystem type %T", fullName, chrooted)
-	}
-	storage := gitFilesystem.NewStorage(polyfill.New(chrooted), cache.NewObjectLRUDefault())
-	return wrapObjectStoreStorage(fullName, storage, s3Chroot), nil
-}
-
 // OpenDir opens the repository fullName as a bare dotgit directory under gitDir,
-// creating the directory if it does not exist.
+// creating the directory if it does not exist. The handle is also a PackSource.
 func OpenDir(gitDir, fullName string) (gitStorage.Storer, error) {
 	repoDir, err := RepoGitDirPath(gitDir, fullName)
 	if err != nil {
@@ -644,7 +553,8 @@ func OpenDir(gitDir, fullName string) (gitStorage.Storer, error) {
 	if err := os.MkdirAll(repoDir, 0o750); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", repoDir, err)
 	}
-	return WrapAtomicRefStorage(fullName, gitFilesystem.NewStorage(osfs.New(repoDir), cache.NewObjectLRUDefault())), nil
+	wrapped := &atomicRefStorer{storer: gitFilesystem.NewStorage(osfs.New(repoDir), cache.NewObjectLRUDefault()), repo: fullName}
+	return newDirStorer(repoDir, wrapped), nil
 }
 
 // OpenMemory returns a repository held in process memory.

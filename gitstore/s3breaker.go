@@ -1,23 +1,25 @@
 package gitstore
 
 import (
+	"context"
 	"errors"
-	"os"
 	"sync"
 	"time"
+
+	"github.com/e6qu/bleephub/gitstore/objstore"
 )
 
 // ErrS3Unavailable is returned by a call the circuit breaker fast-fails while
 // the object store is deemed down. It is a TRANSIENT error and deliberately not
-// os.ErrNotExist: go-git reads os.ErrNotExist as proof a git object/ref is
-// absent, so mapping an outage to absence could let a push overwrite a live
-// branch (STORE-037). Fast-failing instead makes a dead S3 return in
+// "not found": absence is proof a git object or reference does not exist, so
+// mapping an outage to absence could let a push overwrite a live branch
+// (STORE-037). Fast-failing instead makes a dead S3 return in
 // microseconds rather than every goroutine blocking the full per-call timeout
 // (and holding the per-repo lock while it waits).
 var ErrS3Unavailable = errors.New("gitstore: object store temporarily unavailable (circuit open)")
 
-// s3Breaker is a conservative circuit breaker shared across one process's S3
-// filesystem (and its chroots). It trips only after several CONSECUTIVE hard
+// s3Breaker is a conservative circuit breaker shared across one Store (and its
+// Subs). It trips only after several CONSECUTIVE hard
 // failures — a normal 404 or a healthy call resets it — so steady-state traffic
 // never trips it; only a genuine outage does. Tuned by Options.BreakerThreshold
 // and Options.BreakerCooldown.
@@ -59,20 +61,26 @@ func (b *s3Breaker) check() error {
 	return nil
 }
 
-// record folds one completed call's outcome into the breaker. isFailure decides
-// what counts: a definite 404 (a normal "absent" answer) and success both reset
-// the failure run; anything else (timeout, throttle, 5xx, network) advances it.
+// record folds one completed call's outcome into the breaker. Success, and
+// every answer that shows the store is there and working — absence, a refused
+// condition, a range past the end — reset the failure run; a caller that went
+// away says nothing either way; anything else (timeout, throttle, 5xx, network)
+// advances the run.
 func (b *s3Breaker) record(err error) {
 	if b == nil || b.threshold <= 0 {
 		return
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	// nil, a raw 404, or the os.ErrNotExist the filesystem maps a 404 to are all
-	// normal "absent" answers, not outages — they reset the failure run.
-	if err == nil || isNotFound(err) || errors.Is(err, os.ErrNotExist) {
+	if err == nil || errors.Is(err, objstore.ErrNotFound) || errors.Is(err, objstore.ErrConditionNotMet) ||
+		errors.Is(err, objstore.ErrRangeNotSatisfiable) {
 		b.fails = 0
 		b.openUntil = time.Time{}
+		return
+	}
+	// A request abandoned by its caller — a client that hung up, a shutdown — is
+	// no evidence about the store. A deadline that ran out is, and still counts.
+	if errors.Is(err, context.Canceled) {
 		return
 	}
 	b.fails++

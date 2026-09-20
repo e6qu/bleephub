@@ -1,12 +1,10 @@
 package gitstore
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -41,24 +39,23 @@ import (
 // then re-encoded as a self-contained pack of exactly the objects pushed. That
 // costs CPU in proportion to the push, and still no per-object request.
 
-// packIngestTimeout bounds the publication of one pushed pack. Like the
-// compaction timeout it is generous: a ceiling on a wedged upload, not a pace.
-const packIngestTimeout = 30 * time.Minute
-
 var _ storer.PackfileWriter = (*atomicRefStorer)(nil)
 
-// PackfileWriter receives a pushed packfile. On object storage the pack is
-// published as a pack; on the other backends it is parsed into the storage as
-// it streams in, which is what go-git does for a storage without this method.
+// PackfileWriter receives a pushed packfile on the local-directory and memory
+// backends, which have no pack tier of their own to publish into: the pack is
+// parsed into the storage as it streams in, which is what go-git does for a
+// storage without this method.
 func (s *atomicRefStorer) PackfileWriter() (io.WriteCloser, error) {
-	if s.fs == nil {
-		return s.newStreamingIngest(), nil
-	}
-	spool, built, err := s.stagePack("ingest-*.pack")
+	return s.newStreamingIngest(), nil
+}
+
+// PackfileWriter receives a pushed packfile and publishes it as a pack.
+func (r *repository) PackfileWriter() (io.WriteCloser, error) {
+	spool, built, err := r.stagePack("ingest-*.pack")
 	if err != nil {
 		return nil, err
 	}
-	return &packIngest{storer: s, spool: spool, built: built}, nil
+	return &packIngest{repository: r, spool: spool, built: built}, nil
 }
 
 // streamingIngest parses a pack into the storage while it is still arriving, so
@@ -98,10 +95,10 @@ func parsePackInto(pack io.Reader, into storer.EncodedObjectStorer) error {
 
 // packIngest spools a pushed pack and publishes it when the push has sent it all.
 type packIngest struct {
-	storer *atomicRefStorer
-	spool  *os.File
-	built  *builtPack
-	wrote  int64
+	repository *repository
+	spool      *os.File
+	built      *builtPack
+	wrote      int64
 }
 
 func (i *packIngest) Write(p []byte) (int, error) {
@@ -120,7 +117,7 @@ func (i *packIngest) Close() error {
 
 	ready := i.built
 	if err := i.built.describe(i.spool); err != nil {
-		completed, completeErr := i.storer.completeThinPack(i.spool)
+		completed, completeErr := i.repository.completeThinPack(i.spool)
 		if completeErr != nil {
 			// Whatever was wrong with the pack, the parse against the
 			// repository is the authoritative account of it.
@@ -133,20 +130,31 @@ func (i *packIngest) Close() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(i.storer.fs.baseContext(), packIngestTimeout)
-	defer cancel()
-	if err := i.storer.publishPack(ctx, ready); err != nil {
+	published, err := i.repository.publishPack(i.repository.shared.baseContext(), ready)
+	if err != nil {
 		return err
 	}
-	i.storer.adoptPack(ready)
-	i.storer.notePackWritten()
+	// The pack joins the snapshot this handle already holds: a push only adds,
+	// so everything the snapshot could answer before is still right, and nothing
+	// is listed to learn what is already known here. A handle with no snapshot
+	// yet takes its first, which the count of live packs below needs anyway.
+	snapshot, err := i.repository.tiers.snapshot()
+	if err != nil {
+		return err
+	}
+	i.repository.tiers.apply(tierChange{pack: published})
+	livePacks := len(snapshot.packs)
+	if snapshot.pack(published.name) == nil {
+		livePacks++
+	}
+	i.repository.notePackWritten(livePacks)
 	return nil
 }
 
 // completeThinPack turns a pack that leans on objects already in the repository
 // into a self-contained one holding exactly the objects pushed.
-func (s *atomicRefStorer) completeThinPack(spool *os.File) (*builtPack, error) {
-	staging, err := s.compactionScratchDir()
+func (r *repository) completeThinPack(spool *os.File) (*builtPack, error) {
+	staging, err := r.compactionScratchDir()
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +170,7 @@ func (s *atomicRefStorer) completeThinPack(spool *os.File) (*builtPack, error) {
 	if _, err := spool.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("rewind pushed pack: %w", err)
 	}
-	if err := parsePackInto(spool, &thinBaseOverlay{Storage: scratch, repository: s}); err != nil {
+	if err := parsePackInto(spool, &thinBaseOverlay{Storage: scratch, repository: r}); err != nil {
 		return nil, err
 	}
 
@@ -180,7 +188,7 @@ func (s *atomicRefStorer) completeThinPack(spool *os.File) (*builtPack, error) {
 	if len(hashes) == 0 {
 		return &builtPack{}, nil
 	}
-	return s.buildPackFrom(scratch, hashes)
+	return r.buildPackFrom(scratch, hashes)
 }
 
 // thinBaseOverlay is where a thin pack is parsed: every object the pack carries

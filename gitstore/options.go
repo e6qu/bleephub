@@ -9,7 +9,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// Options tune one object-store filesystem and every chroot derived from it.
+// Options tune one Store, every Sub of it and every repository opened from it.
 // The zero value selects every default, so a caller sets only what it means to
 // change. The package never consults the process environment: an embedding
 // application that wants environment-driven configuration parses it and passes
@@ -34,8 +34,8 @@ type Options struct {
 	// 4 MiB.
 	ChunkBytes int64
 	// CacheDir holds the local pack-extent cache and compaction staging. Empty
-	// selects a directory under os.TempDir. Filesystems naming the same
-	// directory share one cache, sized by whichever referenced it first.
+	// selects a directory under os.TempDir. Stores naming the same directory
+	// share one cache, sized by whichever referenced it first.
 	CacheDir string
 	// CacheBytes bounds the on-disk pack cache. Zero selects 8 GiB.
 	CacheBytes int64
@@ -43,18 +43,22 @@ type Options struct {
 	// selects 256 MiB; negative disables the tier.
 	MemoryCacheBytes int64
 
-	// IndexFreshness is how long a loose-object membership snapshot may answer
-	// "absent" before it is re-listed. Against a store without strongly
-	// consistent list-after-write this is the staleness bound. Zero selects
-	// 250ms; negative re-lists on every probe.
+	// IndexFreshness is how far a plain read may lag another replica's write:
+	// how long a snapshot of a repository's objects may answer "absent" before a
+	// miss re-lists, and how long a reference read or a listing of references may
+	// answer again. A read made in order to compare never relies on it. Zero
+	// selects 250ms; negative re-lists on every miss and reuses no reference
+	// read or listing at all.
 	IndexFreshness time.Duration
 
 	// CompactionTrigger is the number of loose writes to one repository that
 	// requests a compaction through the installed handler. Zero selects 4096;
 	// negative never requests one.
 	CompactionTrigger int64
-	// MultipartBytes is the pack size above which compaction publishes through
-	// a multipart upload. Zero selects 64 MiB.
+	// MultipartBytes is the pack size above which a pack is published through a
+	// multipart upload, and the size of its parts. Zero selects 64 MiB. It
+	// configures the driver OpenS3 builds; a bucket handed to Open was
+	// configured by whoever built it.
 	MultipartBytes int64
 
 	// BreakerThreshold is the run of consecutive hard failures that opens the
