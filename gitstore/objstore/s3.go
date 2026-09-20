@@ -98,10 +98,6 @@ func NewS3WithClient(client *minio.Client, bucket string, partBytes uint64) Buck
 
 func (b *s3Bucket) Name() string { return b.bucket }
 
-func (b *s3Bucket) Capabilities() Capabilities {
-	return Capabilities{ConditionalWrites: true, Presign: true}
-}
-
 func (b *s3Bucket) Get(ctx context.Context, key string) (io.ReadCloser, Info, error) {
 	return b.get(ctx, key, minio.GetObjectOptions{})
 }
@@ -184,20 +180,25 @@ func (b *s3Bucket) DeleteMany(ctx context.Context, keys []string) error {
 	return nil
 }
 
-func (b *s3Bucket) List(ctx context.Context, prefix, delimiter string, visit func(Entry) error) error {
-	// minio-go knows one delimiter. It is the only one a git layout needs.
-	if delimiter != "" && delimiter != "/" {
-		return fmt.Errorf("s3 list %s: %w: delimiter %q", prefix, ErrUnsupported, delimiter)
-	}
+func (b *s3Bucket) List(ctx context.Context, prefix string, visit func(Entry) error) error {
+	return b.list(ctx, prefix, true, visit)
+}
+
+func (b *s3Bucket) ListDirectory(ctx context.Context, prefix string, visit func(Entry) error) error {
+	return b.list(ctx, prefix, false, visit)
+}
+
+func (b *s3Bucket) list(ctx context.Context, prefix string, recursive bool, visit func(Entry) error) error {
+	// Cancelling on the way out stops the listing goroutine if visit ended it.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	listing := b.client.ListObjects(ctx, b.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: delimiter == ""})
+	listing := b.client.ListObjects(ctx, b.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: recursive})
 	for object := range listing {
 		if object.Err != nil {
 			return b.translate("list", prefix, object.Err)
 		}
 		entry := Entry{Info: b.info(object.Key, object)}
-		if delimiter != "" && strings.HasSuffix(object.Key, delimiter) {
+		if !recursive && strings.HasSuffix(object.Key, "/") {
 			entry = Entry{Info: Info{Key: object.Key}, Prefix: true}
 		}
 		if err := visit(entry); err != nil {

@@ -15,6 +15,13 @@
 // content, that a multipart upload can be completed conditionally, that a DELETE
 // or a COPY can be conditional, or that a listing is ordered beyond byte order of
 // the keys.
+//
+// Every driver implements every operation with its whole meaning. There is no
+// capability to ask about and no lesser behaviour to settle for: a store that
+// cannot hold a conditional write, or sign a URL, is a store gitstore does not
+// run on, and Conform says so at startup rather than letting a replica find out
+// by losing a reference. Which driver a deployment uses is something its
+// operator states; nothing here guesses it from an endpoint.
 package objstore
 
 import (
@@ -32,9 +39,6 @@ var (
 	ErrConditionNotMet = errors.New("object store condition not met")
 	// ErrRangeNotSatisfiable reports a ranged read that starts past the end.
 	ErrRangeNotSatisfiable = errors.New("range starts beyond the end of the object")
-	// ErrUnsupported reports an operation the store does not offer. Callers
-	// consult Capabilities rather than probe for it.
-	ErrUnsupported = errors.New("object store does not support this operation")
 )
 
 // Version identifies one state of one object. It is opaque: equal versions of
@@ -51,12 +55,12 @@ type Info struct {
 	ModTime time.Time
 }
 
-// Entry is one result of a listing: an object, or — in a delimited listing — a
+// Entry is one result of a listing: an object, or — from ListDirectory — a
 // common prefix standing for everything below it.
 type Entry struct {
 	Info
-	// Prefix marks a common prefix; Key then ends in the delimiter and the
-	// other fields are zero.
+	// Prefix marks a common prefix; Key then ends in "/" and the other fields
+	// are zero.
 	Prefix bool
 }
 
@@ -84,18 +88,6 @@ func (c Condition) Version() Version { return c.version }
 // Conditional reports whether the condition restricts the write at all.
 func (c Condition) Conditional() bool { return c.absent || c.version != "" }
 
-// Capabilities says what a store offers beyond the required operations, so a
-// caller chooses a strategy up front instead of discovering a refusal mid-write.
-type Capabilities struct {
-	// ConditionalWrites reports that Put honours its Condition. A store
-	// without it cannot arbitrate between replicas, and a caller must use a
-	// lock held elsewhere.
-	ConditionalWrites bool
-	// Presign reports that PresignGet returns a URL a client can fetch without
-	// credentials.
-	Presign bool
-}
-
 // Bucket is one bucket or container, addressed by whole keys.
 type Bucket interface {
 	// Get reads a whole object.
@@ -112,17 +104,18 @@ type Bucket interface {
 	Delete(ctx context.Context, key string) error
 	// DeleteMany removes every key given, in as few requests as the store allows.
 	DeleteMany(ctx context.Context, keys []string) error
-	// List calls visit for everything under prefix, in byte order of the keys.
-	// With a delimiter, keys containing it after the prefix are folded into
-	// common prefixes; with none, the listing is recursive.
-	List(ctx context.Context, prefix, delimiter string, visit func(Entry) error) error
+	// List calls visit for every object under prefix, in byte order of the keys.
+	List(ctx context.Context, prefix string, visit func(Entry) error) error
+	// ListDirectory calls visit for what is immediately under prefix: objects
+	// whose key has no "/" after it, and one common prefix for each run of keys
+	// that do.
+	ListDirectory(ctx context.Context, prefix string, visit func(Entry) error) error
 	// Copy copies an object within the bucket without moving its bytes through
 	// the caller.
 	Copy(ctx context.Context, sourceKey, destinationKey string) error
-	// PresignGet returns a URL that reads the object for the given time.
+	// PresignGet returns a URL that reads the object, without credentials, for
+	// the given time.
 	PresignGet(ctx context.Context, key string, expiry time.Duration) (string, error)
-	// Capabilities reports what this store offers.
-	Capabilities() Capabilities
 	// Name identifies the bucket for logs and cache keys.
 	Name() string
 }
