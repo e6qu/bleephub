@@ -138,17 +138,23 @@ func (s *atomicRefStorer) noteObjectWritten() {
 	s.requestCompaction()
 }
 
-// notePackWritten counts a pushed pack toward the next compaction. Its objects
-// count as writes do, and the pack itself counts toward the number a merge is
-// due at: a run of small pushes never reaches the object trigger, but each
-// leaves a pack whose index every packed lookup must load.
-func (s *atomicRefStorer) notePackWritten(objects int64) {
-	trigger := s.fs.options().CompactionTrigger
-	if trigger <= 0 {
+// notePackWritten decides, as a push lands, whether the repository is due a
+// compaction, and asks for one only then. A compaction opens with a listing of
+// the whole object tree, so one run after every push to find nothing to do was
+// a request per push; what it would find is already known here.
+//
+// Two things make one due. Packs: a run of small pushes leaves a pack each, and
+// every packed lookup loads every pack's index. The count is the pack directory
+// as last listed, not a tally of this process's pushes, so packs an earlier
+// process left are counted after a restart. And loose objects: the API's
+// object writes land loose, below the write trigger for a long time, and a push
+// is the natural moment to fold in a tier worth packing.
+func (s *atomicRefStorer) notePackWritten() {
+	if s.fs.options().CompactionTrigger <= 0 {
 		return
 	}
-	packs := s.packWrites.Add(1)
-	if s.looseWrites.Add(objects) < trigger && packs <= compactionMergeThreshold {
+	packs := max(s.packWrites.Add(1), s.fs.repoIndexFor().livePackCount())
+	if packs <= compactionMergeThreshold && s.looseWrites.Load() < compactionMinLooseObjects {
 		return
 	}
 	s.requestCompaction()
@@ -157,9 +163,20 @@ func (s *atomicRefStorer) notePackWritten(objects int64) {
 func (s *atomicRefStorer) requestCompaction() {
 	s.looseWrites.Store(0)
 	s.packWrites.Store(0)
-	if request := compactionRequestHook(); request != nil {
-		request(s.repo, s)
+	RequestCompaction(s.repo, s)
+}
+
+// RequestCompaction asks the installed handler to compact a repository, and
+// reports whether one is installed. The storage calls it when a write leaves a
+// repository due a compaction; an application may call it for reasons of its
+// own, such as an operator asking.
+func RequestCompaction(repo string, stor gitStorage.Storer) bool {
+	request := compactionRequestHook()
+	if request == nil {
+		return false
 	}
+	request(repo, stor)
+	return true
 }
 
 // compactionRequestFunc is invoked when a repository's loose tier fills. The
@@ -207,11 +224,12 @@ func (s *atomicRefStorer) Compact(ctx context.Context) (CompactionResult, error)
 func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, error) {
 	var result CompactionResult
 
-	// One listing of the pack directory serves both questions asked of it —
-	// which superseded packs have aged out, and which packs are live. A
-	// compaction runs after every push and usually finds nothing to do, so a
-	// second listing was a request per push spent learning the same thing.
-	entries, err := s.listPackDirectory(ctx)
+	// One listing of objects/ answers everything a compaction asks before it
+	// decides: what is loose, which superseded packs have aged out, and which
+	// packs are live. A compaction runs after every push and usually finds
+	// nothing to do, so each further listing was a request per push spent
+	// learning what the first had already said.
+	loose, entries, err := s.listObjectTiers(ctx)
 	if err != nil {
 		return result, err
 	}
@@ -220,11 +238,6 @@ func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, 
 		return result, err
 	}
 	result.RetiredPacks = retired
-
-	loose, err := s.listLooseObjects(ctx)
-	if err != nil {
-		return result, err
-	}
 
 	live := s.livePacks(entries)
 	var existing []string
@@ -286,7 +299,7 @@ func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, 
 
 	// Make the pack visible before deleting any loose key (step 5 before 6), so a
 	// concurrent reader never looks only where the object no longer is.
-	s.adoptPack()
+	s.adoptPack(nil)
 
 	if err := s.deleteLooseObjects(ctx, packedLoose); err != nil {
 		return result, err
@@ -354,18 +367,21 @@ type looseObject struct {
 	key  string
 }
 
-// listLooseObjects enumerates every loose object of the repository.
-func (s *atomicRefStorer) listLooseObjects(ctx context.Context) ([]looseObject, error) {
+// listObjectTiers walks objects/ once and sorts what it finds into the two
+// tiers: the loose objects, and the entries of the pack directory.
+func (s *atomicRefStorer) listObjectTiers(ctx context.Context) ([]looseObject, map[string]packDirectoryEntry, error) {
 	prefix := s.fs.key("objects") + "/"
 	packPrefix := prefix + "pack/"
 
 	var objects []looseObject
+	packs := map[string]packDirectoryEntry{}
 	for entry := range s.fs.client.Client.ListObjects(ctx, s.fs.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
 		if entry.Err != nil {
-			return nil, fmt.Errorf("list loose objects of %s: %w", s.repo, entry.Err)
+			return nil, nil, fmt.Errorf("list objects of %s: %w", s.repo, entry.Err)
 		}
 		key := entry.Key
 		if strings.HasPrefix(key, packPrefix) {
+			packs[key] = packDirectoryEntry{modified: entry.LastModified, size: entry.Size}
 			continue
 		}
 		rest := strings.TrimPrefix(key, prefix)
@@ -379,7 +395,7 @@ func (s *atomicRefStorer) listLooseObjects(ctx context.Context) ([]looseObject, 
 		}
 		objects = append(objects, looseObject{hash: hash, key: key})
 	}
-	return objects, nil
+	return objects, packs, nil
 }
 
 // livePack is a reader-visible pack no merge has yet rewritten.
@@ -448,18 +464,6 @@ func packsToMerge(packs []livePack) []string {
 type packDirectoryEntry struct {
 	modified time.Time
 	size     int64
-}
-
-func (s *atomicRefStorer) listPackDirectory(ctx context.Context) (map[string]packDirectoryEntry, error) {
-	prefix := s.fs.key(path.Join("objects", "pack")) + "/"
-	entries := map[string]packDirectoryEntry{}
-	for entry := range s.fs.client.Client.ListObjects(ctx, s.fs.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
-		if entry.Err != nil {
-			return nil, fmt.Errorf("list packs of %s: %w", s.repo, entry.Err)
-		}
-		entries[entry.Key] = packDirectoryEntry{modified: entry.LastModified, size: entry.Size}
-	}
-	return entries, nil
 }
 
 // hashesInPacks reads the object ids from the existing packs' indexes, the set
@@ -682,6 +686,7 @@ func (s *atomicRefStorer) publishPack(ctx context.Context, built *builtPack) err
 	// Seed the disk cache from the staged file so this replica does not download
 	// back the pack it just uploaded.
 	s.seedPackCache(base+".pack", built)
+	s.seedIndexCache(base+".idx", built.index)
 	s.fs.rememberObjectSize(s.fs.key(base+".pack"), built.packSize)
 	return nil
 }
@@ -787,9 +792,43 @@ func (s *atomicRefStorer) seedPackCache(name string, built *builtPack) {
 	}
 }
 
-// adoptPack makes the just-published pack visible to the storer and drops the
-// membership snapshots so the next negative answer reflects the new repository.
-func (s *atomicRefStorer) adoptPack() {
+// seedIndexCache does for a published pack's index what seedPackCache does for
+// the pack: the storer reads the index back as soon as it adopts the pack, and
+// those are bytes this replica has just uploaded.
+func (s *atomicRefStorer) seedIndexCache(name string, index []byte) {
+	cache := s.fs.packCache()
+	if cache == nil {
+		return
+	}
+	key := s.fs.key(name)
+	chunkSize := s.fs.shared().chunkSize
+	cache.storeSize(s.fs.bucket, key, chunkSize, int64(len(index)))
+	for chunk, start := int64(0), int64(0); start < int64(len(index)); chunk, start = chunk+1, start+chunkSize {
+		end := min(start+chunkSize, int64(len(index)))
+		// A copy, for the reason seedPackCache gives: an admitted chunk is shared.
+		cache.store(s.fs.bucket, key, chunkSize, chunk, bytes.Clone(index[start:end]))
+	}
+	s.fs.rememberObjectSize(key, int64(len(index)))
+}
+
+// adoptPack makes a just-published pack visible to the storer and brings the
+// membership index up to date with it. A pushed pack only adds, so the index is
+// told of it (added is that pack). A compaction also removes — loose objects,
+// superseded packs — so it passes nil and the snapshots are dropped.
+func (s *atomicRefStorer) adoptPack(added *builtPack) {
+	index := s.fs.repoIndexFor()
+	var filter *binaryFuseFilter
+	if added != nil {
+		// An unreadable filter leaves the pack recorded as one that rules
+		// nothing out, which is what a reader finding it that way would record.
+		filter, _ = decodeBinaryFuseFilter(added.filter)
+		index.notePackPublished(added.name, filter)
+	} else {
+		// Dropped before the rebuild below, not after: a listing the rebuild
+		// takes now, with the new pack already published, is one the next
+		// reader can use.
+		index.invalidate()
+	}
 	s.mu.Lock()
 	if reindexer, ok := s.storer.(interface{ Reindex() }); ok {
 		reindexer.Reindex()
@@ -803,7 +842,6 @@ func (s *atomicRefStorer) adoptPack() {
 		_ = s.storer.HasEncodedObject(plumbing.ZeroHash)
 	}
 	s.mu.Unlock()
-	s.fs.repoIndexFor().invalidate()
 }
 
 // deleteLooseObjects removes the keys that went into the published pack, a
@@ -883,7 +921,7 @@ func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context, entries map
 		}
 		s.fs.forgetObjectSize(key)
 	}
-	s.adoptPack()
+	s.adoptPack(nil)
 	sort.Strings(retired)
 	return retired, nil
 }

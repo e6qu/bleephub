@@ -38,6 +38,7 @@ type config struct {
 	runs       int
 	parallel   int
 	probes     int
+	refs       int
 	endpoint   string
 	bucket     string
 	region     string
@@ -50,19 +51,25 @@ func parseFlags() (config, error) {
 	var cfg config
 	var drivers, gitDrivers, scenarios string
 	flag.StringVar(&cfg.level, "level", levelStorer, "what to measure: storer (in-process go-git Storers), git (the stock git client against remotes), or both")
-	flag.StringVar(&gitDrivers, "git-drivers", "bleephub,git-remote-s3,git-remote-object-store,git-local", "comma-separated git-level drivers; one whose helper is not installed is skipped")
+	flag.StringVar(&gitDrivers, "git-drivers", "bleephub,walgit,git-remote-s3,git-remote-object-store,git-local", "comma-separated git-level drivers; one whose helper is not installed is skipped")
 	flag.Var(&cfg.remotes, "remote", "add a git-level driver as name=url-template; placeholders {endpoint} {host} {bucket} {prefix} {region} {repo}; repeatable")
 	flag.StringVar(&bleephubBinary, "bleephub-bin", "", "bleephub server binary for the bleephub driver; empty builds it from this checkout")
+	flag.StringVar(&walgitBinary, "walgit-bin", "", "walgit server binary for the walgit driver; empty looks it up on PATH")
 	flag.StringVar(&drivers, "drivers", "gitstore,ogit,gogit-disk,gogit-memory", "comma-separated drivers; the first is the baseline of the \"vs first\" column")
 	flag.StringVar(&scenarios, "scenarios", "all", "comma-separated scenarios to report, or all")
 	flag.IntVar(&cfg.spec.Files, "files", 1000, "files in the generated tree")
 	flag.IntVar(&cfg.spec.Commits, "commits", 30, "commits in the initial push")
 	flag.IntVar(&cfg.spec.Pushes, "pushes", 10, "single-commit pushes after it")
 	flag.IntVar(&cfg.spec.Changes, "changes", 8, "files each commit rewrites")
+	flag.IntVar(&cfg.spec.FileLines, "file-lines", 0, "scale of each file, in function definitions (default 80); raise it for packs that span read extents or need multipart upload")
 	flag.Uint64Var(&cfg.spec.Seed, "seed", 1, "workload seed")
+	flag.Int64Var(&gitstoreTuning.ChunkBytes, "gitstore-chunk-bytes", 0, "gitstore driver: pack read extent size (default 4 MiB)")
+	flag.Int64Var(&gitstoreTuning.MultipartBytes, "gitstore-multipart-bytes", 0, "gitstore driver: pack size above which compaction uploads in parts (default 64 MiB)")
+	flag.Int64Var(&gitstoreTuning.MemoryCacheBytes, "gitstore-memory-cache-bytes", 0, "gitstore driver: in-memory pack cache budget (default 256 MiB; negative disables)")
 	flag.DurationVar(&cfg.latency, "latency", 0, "delay injected into every object-store request, standing in for a remote region (try 5ms)")
 	flag.IntVar(&cfg.runs, "runs", 3, "times to run each driver; the table reports medians")
 	flag.IntVar(&cfg.parallel, "parallel", 8, "concurrent clones in the clone-parallel scenario")
+	flag.IntVar(&cfg.refs, "refs", 200, "extra branches and tags in the refs-create and refs-advertise scenarios; 0 skips them")
 	flag.IntVar(&cfg.probes, "probes", 1000, "absent objects asked about in the probe-absent scenario")
 	flag.StringVar(&cfg.endpoint, "endpoint", "", "S3-compatible endpoint URL, credentials from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY; empty runs an in-process fake")
 	flag.StringVar(&cfg.bucket, "bucket", "gitstore-bench", "bucket to use; created if missing")
@@ -302,7 +309,7 @@ func runStorerLevel(ctx context.Context, cfg config, env Env, meter *Meter, work
 				// A repository per run: a run must not inherit the packs and
 				// caches the previous one left.
 				repo: fmt.Sprintf("bench/repo-%d", runIndex),
-				run:  runIndex, parallel: cfg.parallel, probes: cfg.probes, selected: cfg.scenarios,
+				run:  runIndex, parallel: cfg.parallel, probes: cfg.probes, refs: cfg.refs, selected: cfg.scenarios,
 			}
 			report.Results = append(report.Results, r.execute(ctx)...)
 			if err := driver.Close(); err != nil {

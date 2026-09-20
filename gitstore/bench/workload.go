@@ -34,6 +34,11 @@ type WorkloadSpec struct {
 	Pushes int
 	// Changes is the number of files each commit rewrites.
 	Changes int
+	// FileLines scales file size: a file has between a quarter of it and seven
+	// quarters of it function definitions. Zero selects 80. Larger files are how
+	// a workload reaches packs that span several read extents, or that a
+	// compaction must publish in parts.
+	FileLines int
 	// Seed fixes the content, so two runs measure the same repository.
 	Seed uint64
 }
@@ -117,10 +122,10 @@ func (s *stream) IntN(n int) int {
 
 // sourceLike returns text with the redundancy of source code: compressible, and
 // similar from one revision to the next.
-func sourceLike(rng *stream, index int) []byte {
+func sourceLike(rng *stream, index, fileLines int) []byte {
 	var body bytes.Buffer
 	fmt.Fprintf(&body, "package pkg%03d\n\n", index%97)
-	lines := 20 + rng.IntN(120)
+	lines := fileLines/4 + rng.IntN(fileLines*3/2)
 	for line := range lines {
 		fmt.Fprintf(&body, "func f%d_%d(a, b int) int {\n\treturn a*%d + b*%d\n}\n\n", index, line, rng.IntN(1000), rng.IntN(1000))
 	}
@@ -234,6 +239,10 @@ func GenerateWorkload(spec WorkloadSpec) (*Workload, error) {
 		return nil, fmt.Errorf("workload needs positive files, commits and changes: %+v", spec)
 	}
 	rng := &stream{seed: spec.Seed}
+	fileLines := spec.FileLines
+	if fileLines <= 0 {
+		fileLines = 80
+	}
 	source := memory.NewStorage()
 	tree := &treeState{stor: source, leaves: map[string]map[string]plumbing.Hash{}, bodies: map[string][]byte{}}
 
@@ -241,7 +250,7 @@ func GenerateWorkload(spec WorkloadSpec) (*Workload, error) {
 		leaf, name := filePath(i)
 		path := leaf + "/" + name
 		tree.paths = append(tree.paths, path)
-		if err := tree.writeBlob(path, sourceLike(rng, i)); err != nil {
+		if err := tree.writeBlob(path, sourceLike(rng, i, fileLines)); err != nil {
 			return nil, err
 		}
 	}

@@ -1,9 +1,11 @@
 package gitstore
 
 import (
+	"errors"
 	"io"
 	"os"
 	"testing"
+	"time"
 )
 
 func writeReferenceFile(t *testing.T, fs *S3FS, name, body string) {
@@ -39,6 +41,8 @@ func readAll(t *testing.T, fs *S3FS, name string) string {
 // server resolves a branch many times in the course of one push or clone.
 func TestResolvingAReferenceCostsOneRequest(t *testing.T) {
 	fake := newFakeS3(t)
+	// No reuse between reads, so that what one resolution costs is what is priced.
+	fake.opts.IndexFreshness = -1
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 3)
 	tip := hashes[len(hashes)-1]
@@ -69,6 +73,8 @@ func TestResolvingAReferenceCostsOneRequest(t *testing.T) {
 // bytes nobody collected expire.
 func TestAReferenceHandoffNeverServesStaleBytes(t *testing.T) {
 	fake := newFakeS3(t)
+	// With no staleness allowed, an entry joins one Stat to the Open after it.
+	fake.opts.IndexFreshness = -1
 	fs := fake.fs("bucket", "prefix")
 	const name = "refs/heads/main"
 	writeReferenceFile(t, fs, name, "first\n")
@@ -141,5 +147,101 @@ func TestOnlyReferenceFilesAreFetchedByAStat(t *testing.T) {
 		if got := isReferenceFile(name); got != want {
 			t.Errorf("isReferenceFile(%q) = %v, want %v", name, got, want)
 		}
+	}
+}
+
+// TestReferenceReadsWithinTheFreshnessBoundAreOneRead covers the reuse a server
+// depends on — it resolves a branch a dozen times in one push — and each thing
+// that must end it: a local write, a read made in order to write, and the
+// bound itself.
+func TestReferenceReadsWithinTheFreshnessBoundAreOneRead(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.opts.IndexFreshness = time.Hour
+	fs := fake.fs("bucket", "prefix")
+	const name = "refs/heads/main"
+	writeReferenceFile(t, fs, name, "first\n")
+
+	before := fake.Snapshot()
+	for range 12 {
+		if _, err := fs.Stat(name); err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+		if got := readAll(t, fs, name); got != "first\n" {
+			t.Fatalf("read %q", got)
+		}
+	}
+	// A reference that is not there is remembered as well.
+	for range 5 {
+		if _, err := fs.Stat("packed-refs"); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("stat packed-refs: %v", err)
+		}
+		if _, err := fs.Open("refs/heads/absent"); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("open an absent ref: %v", err)
+		}
+	}
+	// The branch was written through this filesystem, which is itself the first
+	// read of it; the two absent names cost a read each, once.
+	if spent := fake.Snapshot().Sub(before); spent.Total() != 2 {
+		t.Fatalf("twelve resolutions of a branch just written, and ten misses, should cost two reads: %s", spent)
+	}
+
+	// A branch this replica did not write costs its first read and no more.
+	fake.Put("prefix/refs/heads/elsewhere", []byte("written elsewhere\n"))
+	before = fake.Snapshot()
+	for range 12 {
+		if got := readAll(t, fs, "refs/heads/elsewhere"); got != "written elsewhere\n" {
+			t.Fatalf("read %q", got)
+		}
+	}
+	if spent := fake.Snapshot().Sub(before); spent.Total() != 1 {
+		t.Fatalf("twelve resolutions of one branch should cost one read: %s", spent)
+	}
+
+	// Another replica moves the branch: inside the bound a plain read lags it,
+	// which is the bound's meaning, and a read made in order to write does not.
+	fake.Put("prefix/"+name, []byte("moved elsewhere\n"))
+	if got := readAll(t, fs, name); got != "first\n" {
+		t.Fatalf("a plain read inside the bound saw %q", got)
+	}
+	file, err := fs.OpenFile(name, os.O_RDWR, 0o644)
+	if err != nil {
+		t.Fatalf("open for writing: %v", err)
+	}
+	body, _ := io.ReadAll(file)
+	_ = file.Close()
+	if string(body) != "moved elsewhere\n" {
+		t.Fatalf("a read made in order to write saw %q, not the store's current value", body)
+	}
+
+	// A local write ends the reuse at once, for every handle on the filesystem.
+	writeReferenceFile(t, fs, name, "second\n")
+	if got := readAll(t, fs, name); got != "second\n" {
+		t.Fatalf("a read after a local write saw %q", got)
+	}
+
+	// And so does the bound running out.
+	fake.Put("prefix/"+name, []byte("third\n"))
+	shared := fs.shared()
+	shared.mu.Lock()
+	for _, handoff := range shared.handoffs {
+		handoff.at = handoff.at.Add(-2 * time.Hour)
+	}
+	shared.mu.Unlock()
+	if got := readAll(t, fs, name); got != "third\n" {
+		t.Fatalf("a read after the bound ran out saw %q", got)
+	}
+
+	// A caller's bytes are its own: changing them changes nobody else's read.
+	first, err := fs.Open(name)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	mine, _ := io.ReadAll(first)
+	_ = first.Close()
+	for i := range mine {
+		mine[i] = 'x'
+	}
+	if got := readAll(t, fs, name); got != "third\n" {
+		t.Fatalf("one reader's buffer leaked into another's read: %q", got)
 	}
 }

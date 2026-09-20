@@ -65,6 +65,15 @@ type s3Shared struct {
 	// handoffs carries a reference file's bytes from the Stat that fetched them
 	// to the Open that follows. See statReference.
 	handoffs map[string]*referenceHandoff
+	// refTrees holds each repository's recursive listing of refs/, refContents
+	// the reference bytes kept by ETag, and refsList coalesces concurrent
+	// listings. See refstree.go.
+	refTrees    map[string]*refsTree
+	refContents map[string]referenceContent
+	refsList    singleflight.Group
+	// refsWrites counts local writes under each repository's refs/, so a
+	// listing that raced one is not kept.
+	refsWrites map[string]uint64
 	// chunkFetch coalesces concurrent fetches of one pack extent. A replica that
 	// starts cold under load has every clone ask for the same extents at once;
 	// without this each of them pays for its own copy of identical bytes.
@@ -74,12 +83,15 @@ type s3Shared struct {
 func newS3Shared(opts Options) *s3Shared {
 	opts = opts.resolved()
 	return &s3Shared{
-		sizes:     map[string]int64{},
-		objects:   map[string]*repoObjectIndex{},
-		handoffs:  map[string]*referenceHandoff{},
-		opts:      opts,
-		chunkSize: opts.ChunkBytes,
-		breaker:   newS3Breaker(opts.BreakerThreshold, opts.BreakerCooldown),
+		sizes:       map[string]int64{},
+		objects:     map[string]*repoObjectIndex{},
+		handoffs:    map[string]*referenceHandoff{},
+		refTrees:    map[string]*refsTree{},
+		refContents: map[string]referenceContent{},
+		refsWrites:  map[string]uint64{},
+		opts:        opts,
+		chunkSize:   opts.ChunkBytes,
+		breaker:     newS3Breaker(opts.BreakerThreshold, opts.BreakerCooldown),
 	}
 }
 
@@ -330,8 +342,18 @@ func (f *S3FS) open(filename string, takeHandoff bool) (billy.File, error) {
 		return &s3File{fs: f, name: filename, state: state}, nil
 	}
 	if takeHandoff {
-		if data, ok := f.takeReferenceHandoff(filename); ok {
-			return &s3File{fs: f, name: filename, state: &s3FileState{data: data}}, nil
+		if data, absent, found := f.takeReferenceHandoff(filename); found {
+			if absent {
+				return nil, os.ErrNotExist
+			}
+			// Each reader gets bytes of its own: an entry may answer several.
+			return &s3File{fs: f, name: filename, state: &s3FileState{data: append([]byte(nil), data...)}}, nil
+		}
+		if data, absent, answered := f.referenceFromTree(filename); answered {
+			if absent {
+				return nil, os.ErrNotExist
+			}
+			return &s3File{fs: f, name: filename, state: &s3FileState{data: append([]byte(nil), data...)}}, nil
 		}
 	}
 	// A pack or index is opened once per object decoded, so read it through ranges rather than whole.
@@ -363,16 +385,40 @@ func (f *S3FS) open(filename string, takeHandoff bool) (billy.File, error) {
 	}
 
 	data, err := io.ReadAll(obj)
+	etag := ""
+	if err == nil && takeHandoff && underRefs(filename) {
+		// The response just read carries the ETag; this asks nothing more.
+		if info, statErr := obj.Stat(); statErr == nil {
+			etag = info.ETag
+		}
+	}
 	_ = obj.Close()
 	f.breaker().record(err)
 	if err != nil {
 		if isNotFound(err) {
+			f.rememberReferenceRead(filename, takeHandoff, nil, true)
 			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("s3 read %s: %w", key, err)
 	}
+	f.rememberReferenceRead(filename, takeHandoff, data, false)
+	f.rememberReferenceContent(filename, etag, data)
 
 	return &s3File{fs: f, name: filename, state: &s3FileState{data: data}}, nil
+}
+
+// rememberReferenceRead records what an Open of a reference file found, for the
+// reads that follow. A read made in order to write records nothing: what it
+// read is about to be replaced. Nor does single-use mode, where an entry exists
+// only to join a Stat to the Open after it.
+func (f *S3FS) rememberReferenceRead(filename string, plainRead bool, data []byte, absent bool) {
+	if !plainRead || !isReferenceFile(filename) {
+		return
+	}
+	if _, once := f.referenceReadTTL(); once {
+		return
+	}
+	f.rememberReference(f.key(filename), append([]byte(nil), data...), absent)
 }
 
 func (f *S3FS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
@@ -470,6 +516,12 @@ func (f *S3FS) Stat(filename string) (os.FileInfo, error) {
 	}
 	if isReferenceFile(filename) {
 		return f.statReference(filename)
+	}
+	// git stats a loose object's final path before it writes one. The index
+	// may already know the answer; being wrong about "absent" only rewrites an
+	// object with the bytes it already has.
+	if f.looseProvenAbsent(filename) {
+		return nil, os.ErrNotExist
 	}
 	if berr := f.breaker().check(); berr != nil {
 		return nil, berr
@@ -648,12 +700,8 @@ func hideSupersededPacks(entries map[string]os.FileInfo) {
 	}
 }
 
-func (f *S3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
-	prefix := f.key(dirname)
-	if !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
-	}
-
+// listDirectory lists the immediate children of a bucket-absolute prefix.
+func (f *S3FS) listDirectory(prefix string) (map[string]os.FileInfo, error) {
 	ctx, cancel := context.WithTimeout(f.baseContext(), 30*time.Second)
 	defer cancel()
 
@@ -695,9 +743,35 @@ func (f *S3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 		}
 		entriesByName[info.name] = info
 	}
+	return entriesByName, nil
+}
+
+func (f *S3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
+	prefix := f.key(dirname)
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	// refs/ is answered from one recursive listing of it: see refstree.go.
+	entriesByName, fromTree, err := f.refsDirectory(dirname)
+	if err != nil {
+		return nil, err
+	}
+	if !fromTree {
+		if entriesByName, err = f.listDirectory(prefix); err != nil {
+			return nil, err
+		}
+	}
 
 	if path.Clean(dirname) == path.Join("objects", "pack") {
 		hideSupersededPacks(entriesByName)
+		live := int64(0)
+		for name := range entriesByName {
+			if strings.HasSuffix(name, ".pack") {
+				live++
+			}
+		}
+		f.repoIndexFor().livePacks.Store(live)
 	}
 
 	// S3 cannot list an object until its upload completes, but go-git expects an open file to appear in the namespace, so merge the staging namespace in.
@@ -744,17 +818,34 @@ func (f *S3FS) MkdirAll(filename string, perm os.FileMode) error {
 	return nil
 }
 
-// referenceHandoff is a reference file's bytes, fetched by a Stat and waiting
-// for the Open that follows it.
+// referenceHandoff is what a read of a reference file found — its bytes, or
+// that it is absent — kept for the reads that follow.
 type referenceHandoff struct {
-	data []byte
-	at   time.Time
+	data   []byte
+	absent bool
+	at     time.Time
+	// once marks an entry only the very next read may use. See referenceReadTTL.
+	once bool
 }
 
-// referenceHandoffTTL bounds how long fetched bytes may wait. git stats a
-// reference and opens it in the same breath, so a handoff older than this was
-// never going to be collected by the read that made it.
+// referenceHandoffTTL bounds how long a single-use entry may wait. git stats a
+// reference and opens it in the same breath, so one older than this was never
+// going to be collected by the read that made it.
 const referenceHandoffTTL = 100 * time.Millisecond
+
+// referenceReadTTL is how long a fetched reference may answer later reads, and
+// whether it may answer more than one. It is Options.IndexFreshness: the bound
+// this filesystem already works to on how far a read may lag another replica's
+// write. A server resolves a branch a dozen times in the course of one push —
+// the advertisement, validation, hooks, triggers — and within that bound they
+// are one read. With the bound set to nothing, an entry serves only the Open
+// that follows the Stat which fetched it, which costs no staleness at all.
+func (f *S3FS) referenceReadTTL() (ttl time.Duration, once bool) {
+	if freshness := f.options().IndexFreshness; freshness > 0 {
+		return freshness, false
+	}
+	return referenceHandoffTTL, true
+}
 
 // isReferenceFile reports whether a path is one of the small files git reads to
 // resolve a reference: HEAD, packed-refs, or anything under refs/.
@@ -775,6 +866,18 @@ func isReferenceFile(name string) bool {
 // discards the one for its key, and an uncollected handoff expires at once.
 func (f *S3FS) statReference(filename string) (os.FileInfo, error) {
 	key := f.key(filename)
+	if handoff := f.peekReferenceHandoff(filename); handoff != nil {
+		if handoff.absent {
+			return nil, os.ErrNotExist
+		}
+		return &s3FileInfo{name: path.Base(filename), size: int64(len(handoff.data)), mode: 0o644}, nil
+	}
+	if data, absent, answered := f.referenceFromTree(filename); answered {
+		if absent {
+			return nil, os.ErrNotExist
+		}
+		return &s3FileInfo{name: path.Base(filename), size: int64(len(data)), mode: 0o644}, nil
+	}
 	if berr := f.breaker().check(); berr != nil {
 		return nil, berr
 	}
@@ -784,6 +887,7 @@ func (f *S3FS) statReference(filename string) (os.FileInfo, error) {
 	if err != nil {
 		f.breaker().record(err)
 		if isNotFound(err) {
+			f.rememberReference(key, nil, true)
 			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("s3 get %s: %w", key, err)
@@ -793,42 +897,74 @@ func (f *S3FS) statReference(filename string) (os.FileInfo, error) {
 	f.breaker().record(err)
 	if err != nil {
 		if isNotFound(err) {
+			f.rememberReference(key, nil, true)
 			return nil, os.ErrNotExist
 		}
 		return nil, fmt.Errorf("s3 read %s: %w", key, err)
 	}
-
-	now := time.Now()
-	shared := f.shared()
-	shared.mu.Lock()
-	for other, handoff := range shared.handoffs {
-		if now.Sub(handoff.at) > referenceHandoffTTL {
-			delete(shared.handoffs, other)
-		}
-	}
-	shared.handoffs[key] = &referenceHandoff{data: data, at: now}
-	shared.mu.Unlock()
+	f.rememberReference(key, data, false)
+	f.rememberReferenceContent(filename, info.ETag, data)
 	return &s3FileInfo{name: path.Base(filename), size: int64(len(data)), mode: 0o644, modTime: info.LastModified}, nil
 }
 
-// takeReferenceHandoff collects the bytes a Stat just fetched, once.
-func (f *S3FS) takeReferenceHandoff(filename string) ([]byte, bool) {
-	if !isReferenceFile(filename) {
-		return nil, false
+// rememberReference records what a read found, sweeping what has expired. An
+// absent reference is worth remembering too: git looks for packed-refs, and for
+// loose names that are not there, as often as for those that are.
+func (f *S3FS) rememberReference(key string, data []byte, absent bool) {
+	ttl, once := f.referenceReadTTL()
+	now := time.Now()
+	shared := f.shared()
+	shared.mu.Lock()
+	defer shared.mu.Unlock()
+	for other, handoff := range shared.handoffs {
+		if now.Sub(handoff.at) > ttl {
+			delete(shared.handoffs, other)
+		}
 	}
+	// A single-use entry exists to join a Stat to its Open; there is no Open
+	// after a Stat that found nothing.
+	if once && absent {
+		return
+	}
+	shared.handoffs[key] = &referenceHandoff{data: data, absent: absent, at: now, once: once}
+}
+
+// peekReferenceHandoff returns a fresh, reusable entry without consuming it.
+func (f *S3FS) peekReferenceHandoff(filename string) *referenceHandoff {
+	ttl, _ := f.referenceReadTTL()
+	shared := f.shared()
+	shared.mu.Lock()
+	defer shared.mu.Unlock()
+	handoff := shared.handoffs[f.key(filename)]
+	if handoff == nil || handoff.once || time.Since(handoff.at) > ttl {
+		return nil
+	}
+	return handoff
+}
+
+// takeReferenceHandoff answers a read from what an earlier one fetched. found
+// reports whether an entry answered at all; an entry may answer "absent".
+func (f *S3FS) takeReferenceHandoff(filename string) (data []byte, absent, found bool) {
+	if !isReferenceFile(filename) {
+		return nil, false, false
+	}
+	ttl, _ := f.referenceReadTTL()
 	key := f.key(filename)
 	shared := f.shared()
 	shared.mu.Lock()
 	defer shared.mu.Unlock()
 	handoff := shared.handoffs[key]
 	if handoff == nil {
-		return nil, false
+		return nil, false, false
 	}
-	delete(shared.handoffs, key)
-	if time.Since(handoff.at) > referenceHandoffTTL {
-		return nil, false
+	if handoff.once {
+		delete(shared.handoffs, key)
 	}
-	return handoff.data, true
+	if time.Since(handoff.at) > ttl {
+		delete(shared.handoffs, key)
+		return nil, false, false
+	}
+	return handoff.data, handoff.absent, true
 }
 
 // dropReferenceHandoff discards bytes that a write to the key has made stale.
@@ -840,6 +976,7 @@ func (f *S3FS) dropReferenceHandoff(filename string) {
 	shared.mu.Lock()
 	delete(shared.handoffs, f.key(filename))
 	shared.mu.Unlock()
+	f.dropRefsTree(filename)
 }
 
 func (f *S3FS) Lstat(filename string) (os.FileInfo, error) {
@@ -1120,13 +1257,19 @@ func (sf *s3File) flush() error {
 	if berr := sf.fs.breaker().check(); berr != nil {
 		return berr
 	}
-	_, err := sf.fs.client.Client.PutObject(ctx, sf.fs.bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{})
+	uploaded, err := sf.fs.client.Client.PutObject(ctx, sf.fs.bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{})
 	sf.fs.breaker().record(err)
 	if err != nil {
 		return fmt.Errorf("s3 put %s: %w", key, err)
 	}
 	// Again, for a Stat that fetched the old bytes while the upload was in flight.
 	sf.fs.dropReferenceHandoff(sf.name)
+	// The next listing of refs/ will show this ETag, and these are its bytes.
+	sf.fs.rememberReferenceContent(sf.name, uploaded.ETag, data)
+	// A server reads a branch back as soon as it has moved it — for the hooks,
+	// the events, the next advertisement — and what the store holds is what was
+	// just put there.
+	sf.fs.rememberReferenceRead(sf.name, true, data, false)
 	sf.fs.noteLooseWrite(sf.name)
 	return nil
 }

@@ -69,9 +69,26 @@ git reads packs at random offsets and probes for thousands of loose objects. The
 - **Single-request reference reads** (`s3fs.go`) — git stats a reference file
   before opening it, which against a bucket is a HEAD and then a GET for every
   branch resolution, and a server resolves a branch many times in one push. The
-  stat performs the GET and hands the bytes to the open that follows. A read
-  made in order to write never takes that handoff, any local write discards it,
-  and it expires within 100 ms, so the reference compare-and-set is unaffected.
+  stat performs the GET and hands the bytes to the open that follows, and within
+  the freshness bound (`Options.IndexFreshness`, the bound the membership index
+  already works to) a reference that has been read — or has just been written
+  through this filesystem — answers again without a request. A read made in
+  order to write never takes any of this and any local write discards it, so the
+  reference compare-and-set always compares against the store. With the bound
+  set to nothing only the stat-to-open handoff remains, and it expires within
+  100 ms.
+- **One listing per advertisement** (`refstree.go`) — every fetch and push opens
+  by listing the repository's references, which go-git does as it would on a
+  disk: a directory of `refs/` at a time, then a file at a time — a LIST per
+  directory and a GET per branch and tag, again for the next client. One
+  recursive listing of `refs/` names them all and carries each one's ETag;
+  reference bytes are kept beside the ETag they were read or written under, so a
+  listing that shows the same ETag is the store's own word that they have not
+  changed. An advertisement is one LIST plus a GET for each reference that has
+  moved since this replica last read it, and those GETs run together rather
+  than one after another. The listing is the revalidation — nothing is served
+  that the plain walk would have found different — and it is reused only within
+  the freshness bound and never past a local write under `refs/`.
 - **Single-request object writes** (`s3fs.go`) — git writes an object to a
   temporary name and renames it into place, which on a disk makes it appear
   atomically. A PUT already is atomic, so the temporary name never reaches the
@@ -92,7 +109,11 @@ git reads packs at random offsets and probes for thousands of loose objects. The
   packs, whose deltas lean on objects the server already has; those cannot be
   stored as they stand, so they are completed — resolved against the repository
   and re-encoded self-contained — before they are published. What lands in the
-  bucket is always an ordinary git pack.
+  bucket is always an ordinary git pack. Adopting it costs
+  one listing of the pack directory: the membership index is told of the new
+  pack and its filter rather than dropped and rebuilt, and the pack cache is
+  seeded with the pack and its index so the replica does not download what it
+  has just uploaded.
 - **Compaction** (`compact.go`) — loose objects (the REST git-database endpoints
   and web edits still write objects one at a time) are rolled into pack files,
   and the small packs pushes leave are merged, the same housekeeping `git gc`
@@ -103,6 +124,13 @@ git reads packs at random offsets and probes for thousands of loose objects. The
   pack is kept for an hour for requests that were already reading it, but is
   hidden from every new reader, which would otherwise load an index and a
   filter for a pack that holds nothing its replacement does not.
+  The storage layer asks for a compaction when a write leaves the repository
+  due one — more than eight live packs, by the pack directory as last listed so
+  that a restart does not reset the count; a push landing behind a loose tier
+  worth packing; or the loose-write trigger — and the server runs it in the
+  background. A compaction opens with a listing of the whole object tree, so
+  running one after every push, as the server did while pushes still landed as
+  loose objects, was a request per push spent finding nothing to do.
 - **Presigned reads** (`presign.go`) — a caller already entitled to a repo's
   bytes can be handed a short-lived presigned URL that fetches one object
   directly from the bucket, without bleephub proxying the bytes or lending its

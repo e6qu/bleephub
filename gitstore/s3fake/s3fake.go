@@ -7,6 +7,8 @@ package s3fake
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -57,6 +59,9 @@ type Server struct {
 	// replica's concurrent write or deletion is interleaved at an exact point
 	// in this replica's work.
 	onRequest func(method, key string)
+	// trace sees every request whole, so an operator reading a trace can tell
+	// one listing from another by its prefix and one ranged read by its extent.
+	trace func(*http.Request)
 
 	counts Counts
 }
@@ -193,6 +198,14 @@ func (f *Server) SetFailOn(fail func(method, key string) bool) {
 	f.failOn = fail
 }
 
+// SetTrace installs an observer handed every request before it is served; nil
+// clears it. The observer must not read the request body.
+func (f *Server) SetTrace(trace func(*http.Request)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.trace = trace
+}
+
 // SetOnRequest installs a hook run before each request is served; nil clears it.
 func (f *Server) SetOnRequest(hook func(method, key string)) {
 	f.mu.Lock()
@@ -237,6 +250,43 @@ func (f *Server) Remove(key string) {
 	delete(f.metadata, key)
 }
 
+// etagOf is an object's entity tag: a function of its bytes alone, so equal
+// tags mean equal contents and a rewrite with the same bytes keeps its tag,
+// which is all that conditional writes and revalidation rely on. S3's own is an
+// MD5 for a simple upload; clients treat the tag as opaque, so this one is a
+// SHA-256 cut to the same 32 hex digits.
+func etagOf(data []byte) string {
+	sum := sha256.Sum256(data)
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
+// preconditionFails applies If-None-Match and If-Match to a write. Conditional
+// writes are how designs with no lock service take a lock or swap a manifest,
+// so a fake that ignored them would let every contender win. Must be called
+// with f.mu held.
+func (f *Server) preconditionFails(r *http.Request, key string) bool {
+	existing, exists := f.objects[key]
+	if match := r.Header.Get("If-None-Match"); match != "" {
+		if exists && (match == "*" || sameETag(match, etagOf(existing))) {
+			return true
+		}
+	}
+	if match := r.Header.Get("If-Match"); match != "" {
+		if !exists || (match != "*" && !sameETag(match, etagOf(existing))) {
+			return true
+		}
+	}
+	return false
+}
+
+// sameETag compares entity tags as S3 does: with or without their quotes.
+// Clients differ — minio-go sends the tag quoted, the AWS SDK for Rust as the
+// caller gave it — and a store that insisted on one form would fail the other's
+// every compare-and-swap.
+func sameETag(a, b string) bool {
+	return strings.Trim(a, `"`) == strings.Trim(b, `"`)
+}
+
 // userMetadata picks out the headers S3 stores with an object and returns on
 // every read of it.
 func userMetadata(header http.Header) http.Header {
@@ -277,7 +327,11 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	fail := f.failOn
 	hook := f.onRequest
+	trace := f.trace
 	f.mu.Unlock()
+	if trace != nil {
+		trace(r)
+	}
 	if hook != nil {
 		hook(r.Method, key)
 	}
@@ -430,6 +484,7 @@ func (f *Server) serveGet(w http.ResponseWriter, r *http.Request, key string) {
 
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.Header().Set("Last-Modified", time.Unix(0, 0).UTC().Format(http.TimeFormat))
+	w.Header().Set("ETag", etagOf(data))
 	if ranged {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end-1, len(data)))
 		w.WriteHeader(http.StatusPartialContent)
@@ -480,6 +535,7 @@ func (f *Server) serveHead(w http.ResponseWriter, key string) {
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.Header().Set("Last-Modified", time.Unix(0, 0).UTC().Format(http.TimeFormat))
+	w.Header().Set("ETag", etagOf(data))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -492,10 +548,15 @@ func (f *Server) servePut(w http.ResponseWriter, r *http.Request, key string) {
 	f.mu.Lock()
 	f.counts.Put++
 	f.counts.BytesUp += int64(len(body))
+	if f.preconditionFails(r, key) {
+		f.mu.Unlock()
+		writeS3Error(w, http.StatusPreconditionFailed, "PreconditionFailed", "At least one of the pre-conditions you specified did not hold")
+		return
+	}
 	f.objects[key] = body
 	f.metadata[key] = userMetadata(r.Header)
 	f.mu.Unlock()
-	w.Header().Set("ETag", `"fake"`)
+	w.Header().Set("ETag", etagOf(body))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -570,10 +631,12 @@ func (f *Server) serveList(w http.ResponseWriter, query url.Values) {
 	f.counts.List++
 	keys := make([]string, 0, len(f.objects))
 	sizes := map[string]int64{}
+	etags := map[string]string{}
 	for key, data := range f.objects {
 		if strings.HasPrefix(key, prefix) {
 			keys = append(keys, key)
 			sizes[key] = int64(len(data))
+			etags[key] = etagOf(data)
 		}
 	}
 	f.mu.Unlock()
@@ -609,7 +672,7 @@ func (f *Server) serveList(w http.ResponseWriter, query url.Values) {
 			Key:          key,
 			Size:         sizes[key],
 			LastModified: time.Unix(0, 0).UTC().Format(time.RFC3339),
-			ETag:         `"fake"`,
+			ETag:         etags[key],
 		})
 		emitted++
 	}

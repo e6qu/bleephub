@@ -214,8 +214,8 @@ func TestACompactionWithNothingToDoIsCheap(t *testing.T) {
 		t.Fatalf("a repository of one pack was compacted into %s", result.PackName)
 	}
 	spent := fake.Snapshot().Sub(before)
-	// One listing of the pack directory and one of the loose tier.
-	if spent.List != 2 || spent.Total() != 2 {
-		t.Fatalf("finding nothing to do should cost two listings: %s", spent)
+	// One listing of objects/ says what is loose and what is packed.
+	if spent.List != 1 || spent.Total() != 1 {
+		t.Fatalf("finding nothing to do should cost one listing: %s", spent)
 	}
 }

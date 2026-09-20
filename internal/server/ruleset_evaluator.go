@@ -36,7 +36,7 @@ func (s *Server) evaluateRulesetsForRefWrite(ctx context.Context, repo *store.Re
 	firstRefusal := ""
 	for i := range rulesets {
 		rs := &rulesets[i]
-		bypassed := rulesetActorBypasses(rs, actor)
+		bypassed := rulesetActorBypasses(s.store, rs, repo, actor)
 		if bypassed && rs.Enforcement == "active" && len(rs.Rules) > 0 {
 			activeBypassed = true
 		}
@@ -283,18 +283,6 @@ func rulesetPatternMatches(value string, parameters map[string]interface{}) (boo
 		return false, fmt.Sprintf("%q does not satisfy the configured %s pattern.", value, operator)
 	}
 	return true, ""
-}
-
-func rulesetActorBypasses(rs *store.Ruleset, actor *store.User) bool {
-	if actor == nil {
-		return false
-	}
-	for _, bypass := range rs.BypassActors {
-		if bypass.ActorType == "User" && bypass.ActorID == actor.ID && bypass.BypassMode == "always" {
-			return true
-		}
-	}
-	return false
 }
 
 func intPointer(value int) *int          { return &value }

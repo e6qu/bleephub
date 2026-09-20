@@ -11,8 +11,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
 	"github.com/e6qu/bleephub/gitstore/s3fake"
@@ -31,8 +33,21 @@ func main() {
 	defer server.Close()
 	server.SetLatency(*latency)
 	if *trace {
-		server.SetOnRequest(func(method, key string) {
-			log.Printf("%s %s", method, key)
+		server.SetTrace(func(r *http.Request) {
+			line := r.Method + " " + r.URL.Path
+			if r.URL.RawQuery != "" {
+				line += "?" + r.URL.RawQuery
+			}
+			if extent := r.Header.Get("Range"); extent != "" {
+				line += " [" + extent + "]"
+			}
+			for _, condition := range []string{"If-Match", "If-None-Match"} {
+				if value := r.Header.Get(condition); value != "" {
+					line += " [" + condition + ": " + value + "]"
+				}
+			}
+			// Quoted: the line is made of what a client sent.
+			log.Print(strconv.Quote(line))
 		})
 	}
 	fmt.Fprintf(os.Stderr, "s3fake listening on %s (path-style, any bucket, any credentials)\n", server.URL())

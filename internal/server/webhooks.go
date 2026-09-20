@@ -793,7 +793,7 @@ func (s *Server) triggerWorkflowsForEvent(repoKey, eventType, action, ref string
 			// A matched workflow that can't start becomes a job-less
 			// startup_failure run, visible on the runs API, not just a log.
 			s.logger.Error().Err(err).Str("file", name).Msg("workflow failed at startup")
-			s.createStartupFailureRun(name, content, meta)
+			s.createStartupFailureRun(name, content, meta, err)
 			continue
 		}
 
@@ -1046,7 +1046,7 @@ func resolveGitHubRefInput(stor gitStorage.Storer, ref string) (string, string) 
 
 // createStartupFailureRun records a terminal, job-less run for a workflow that
 // matched its trigger but could not start.
-func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *actions.WorkflowEventMeta) {
+func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *actions.WorkflowEventMeta, cause error) {
 	name := workflowNameFromYAML(content)
 	if name == "" {
 		name = strings.TrimSuffix(strings.TrimSuffix(fileName, ".yml"), ".yaml")
@@ -1058,6 +1058,7 @@ func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *
 		Jobs:         map[string]*store.WorkflowJob{},
 		Status:       store.WorkflowStatusCompleted,
 		Result:       store.ResultStartupFailure,
+		StartupError: cause.Error(),
 		CreatedAt:    time.Now(),
 		EventName:    meta.EventName,
 		Ref:          meta.Ref,

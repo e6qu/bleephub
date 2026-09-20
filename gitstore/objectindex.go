@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	minio "github.com/minio/minio-go/v7"
@@ -49,6 +50,9 @@ type repoObjectIndex struct {
 	// one listing proves all 256 fanout directories empty.
 	roots   map[string]bool
 	rootsAt time.Time
+
+	// livePacks is the live pack count at the last listing or publication.
+	livePacks atomic.Int64
 }
 
 // fanoutSnapshot is the loose-object membership of one objects/XX/ directory
@@ -103,8 +107,36 @@ func (f *S3FS) looseObjectAbsent(name string) (absent bool, answered bool) {
 	if !ok {
 		return false, false
 	}
+	if key == (oidKey{}) {
+		return true, true
+	}
 	index := f.repoIndexFor()
 	return index.looseAbsent(f, fanout, key)
+}
+
+// looseProvenAbsent reports whether what the index already holds proves the
+// object absent, without listing anything to find out. It is for a Stat, where
+// asking the store costs one HEAD and refreshing the index would cost a LIST:
+// worth answering from a snapshot that is to hand, not worth building one for.
+func (f *S3FS) looseProvenAbsent(name string) bool {
+	fanout, key, ok := looseObjectPath(name)
+	if !ok {
+		return false
+	}
+	// No object hashes to zero. The storer asks after it to make go-git build
+	// its pack index (see prime), once per handle and again after every pushed
+	// pack, and that question is not worth a request.
+	if key == (oidKey{}) {
+		return true
+	}
+	i := f.repoIndexFor()
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.roots != nil && time.Since(i.rootsAt) <= i.freshness && !i.roots[fanout] {
+		return true
+	}
+	snapshot := i.fanouts[fanout]
+	return snapshot != nil && time.Since(snapshot.takenT) <= i.freshness && !snapshot.filter.contains(key)
 }
 
 func (i *repoObjectIndex) looseAbsent(fs *S3FS, fanout string, key oidKey) (bool, bool) {
@@ -252,6 +284,24 @@ func (f *S3FS) noteLooseRemoved(name string) {
 
 // invalidate drops every snapshot so the next negative answer comes from a
 // fresh listing. Compaction calls it after its new pack becomes visible.
+// notePackPublished records a pack this replica has just published, with the
+// filter it built for it. A pushed pack adds objects and takes nothing away, so
+// every answer the index could give before it is still right once the pack is
+// counted; dropping the snapshots instead cost the next reader a listing of the
+// loose tier and one of the pack directory, after every push. What other
+// replicas publish is still found when the freshness bound lapses, as before.
+func (i *repoObjectIndex) notePackPublished(name string, filter *binaryFuseFilter) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.packs[name] = filter
+	i.livePacks.Store(int64(len(i.packs)))
+}
+
+// livePackCount is the number of live packs at the last look, or zero before
+// the first. It is what makes the decision to request a compaction survive a
+// restart: a count of this process's own pushes starts again from nothing.
+func (i *repoObjectIndex) livePackCount() int64 { return i.livePacks.Load() }
+
 func (i *repoObjectIndex) invalidate() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -369,6 +419,7 @@ func (i *repoObjectIndex) refreshPacksInner(fs *S3FS) error {
 	}
 	i.packsKnown = len(i.packs) == len(present)
 	i.packedAt = time.Now()
+	i.livePacks.Store(int64(len(present)))
 	i.mu.Unlock()
 	return nil
 }

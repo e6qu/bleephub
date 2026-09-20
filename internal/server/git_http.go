@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -302,6 +303,16 @@ func gitRequestUsesProtocolV2(r *http.Request, body *bufio.Reader) bool {
 	return err == nil && bytes.HasSuffix(head, []byte("command="))
 }
 
+// gitReceivePackIsProbe reports whether a receive-pack body is the lone flush
+// packet git sends ahead of a push too large for its post buffer. Such a push
+// is streamed with chunked encoding and cannot be replayed if the server asks
+// for credentials part way, so git settles authentication first with a request
+// that carries no commands; git-http-backend answers it with an empty result.
+func gitReceivePackIsProbe(body *bufio.Reader) bool {
+	head, err := body.Peek(len("0000") + 1)
+	return errors.Is(err, io.EOF) && string(head) == "0000"
+}
+
 func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
 	ctx, user, target, ok := s.authorizeGitHTTP(w, r, owner, repoName, true)
 	if !ok {
@@ -310,7 +321,15 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 
 	// A malformed request is still answerable with a status code; once the
 	// report is under way the only channel left is the stream.
-	request, err := decodeGitReceiveRequest(bufio.NewReader(r.Body))
+	body := bufio.NewReader(r.Body)
+	if gitReceivePackIsProbe(body) {
+		// Authorized above, which is all the probe asks.
+		w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	request, err := decodeGitReceiveRequest(body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

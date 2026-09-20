@@ -425,3 +425,110 @@ func TestARunOfSmallPushesRequestsCompaction(t *testing.T) {
 		t.Fatalf("%d pushes requested %d compactions, want 1", compactionMergeThreshold+1, requested)
 	}
 }
+
+// smallPush publishes one single-blob pack, as a small push does.
+func smallPush(t *testing.T, stor gitStorage.Storer, body string) plumbing.Hash {
+	t.Helper()
+	client := memory.NewStorage()
+	hash := storeBlob(t, client, body)
+	var pack bytes.Buffer
+	if _, err := packfile.NewEncoder(&pack, client, false).Encode([]plumbing.Hash{hash}, gitPackWindow); err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if err := packfile.UpdateObjectStorage(stor, &pack); err != nil {
+		t.Fatalf("push %q: %v", body, err)
+	}
+	return hash
+}
+
+// countCompactionRequests installs a handler that counts.
+func countCompactionRequests(t *testing.T) func() int {
+	t.Helper()
+	var mu sync.Mutex
+	requested := 0
+	SetCompactionRequestHandler(func(string, gitStorage.Storer) {
+		mu.Lock()
+		defer mu.Unlock()
+		requested++
+	})
+	t.Cleanup(func() { SetCompactionRequestHandler(nil) })
+	return func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return requested
+	}
+}
+
+// TestAPushCostsItsUploadsAndOneListing pins what a push to a warm replica
+// spends on the object store: the pack, its index and its filter, and the one
+// listing of the pack directory go-git takes to adopt it. It used to spend a
+// listing of the loose tier and a second of the pack directory rebuilding a
+// membership index it had thrown away, and a read of the index it had just
+// uploaded — and the object pushed must still be readable without any of them.
+func TestAPushCostsItsUploadsAndOneListing(t *testing.T) {
+	fake := newFakeS3(t)
+	stor := testPackedStorage(t, fake)
+	smallPush(t, stor, "the push that warms the replica")
+
+	before := fake.Snapshot()
+	hash := smallPush(t, stor, "the push that is measured")
+	spent := fake.Snapshot().Sub(before)
+	if spent.Put != 3 || spent.List != 1 || spent.Total() != 4 {
+		t.Fatalf("a push spent %s, want 3 writes and 1 listing", spent)
+	}
+
+	before = fake.Snapshot()
+	if got := readObjects(t, stor, []plumbing.Hash{hash})[hash]; !strings.HasPrefix(got, "the push that is measured") {
+		t.Fatalf("read back %q", got)
+	}
+	if err := stor.HasEncodedObject(plumbing.NewHash("1111111111111111111111111111111111111111")); err == nil {
+		t.Fatal("an object nobody pushed was reported present")
+	}
+	if spent := fake.Snapshot().Sub(before); spent.Get+spent.GetRanged != 0 {
+		t.Fatalf("reading the pushed object back downloaded what was just uploaded: %s", spent)
+	}
+}
+
+// TestPacksLeftByAnEarlierProcessCountTowardCompaction pins that the pack count
+// a compaction is due at is the repository's, not this process's. A server that
+// restarted every few pushes never reached the threshold by its own tally, and
+// its repositories gathered packs without limit.
+func TestPacksLeftByAnEarlierProcessCountTowardCompaction(t *testing.T) {
+	fake := newFakeS3(t)
+	earlier := testPackedStorage(t, fake)
+	requested := countCompactionRequests(t)
+	for push := range compactionMergeThreshold {
+		smallPush(t, earlier, fmt.Sprintf("before the restart %d", push))
+	}
+	if got := requested(); got != 0 {
+		t.Fatalf("premise: %d compactions requested below the threshold", got)
+	}
+
+	restarted := testPackedStorage(t, fake)
+	smallPush(t, restarted, "the first push after the restart")
+	if got := requested(); got != 1 {
+		t.Fatalf("the push that crossed the threshold requested %d compactions, want 1", got)
+	}
+}
+
+// TestAPushFoldsInALooseTierWorthPacking pins the other reason a push asks for
+// a compaction. Objects written through the API land loose, and stay below the
+// write trigger for a long time; a push is when they are packed, as they were
+// when every push ran a compaction.
+func TestAPushFoldsInALooseTierWorthPacking(t *testing.T) {
+	fake := newFakeS3(t)
+	stor := testPackedStorage(t, fake)
+	requested := countCompactionRequests(t)
+
+	smallPush(t, stor, "a push with nothing loose behind it")
+	if got := requested(); got != 0 {
+		t.Fatalf("a push to a tidy repository requested %d compactions", got)
+	}
+	for i := range compactionMinLooseObjects {
+		storeBlob(t, stor, fmt.Sprintf("written through the API %d", i))
+	}
+	smallPush(t, stor, "a push with a loose tier behind it")
+	if got := requested(); got != 1 {
+		t.Fatalf("a push behind %d loose objects requested %d compactions, want 1", compactionMinLooseObjects, got)
+	}
+}

@@ -64,17 +64,20 @@ type Workflow struct {
 	PendingDeployments []*PendingDeployment `json:"pendingDeployments,omitempty"`
 	EnvApprovals       []*EnvApproval       `json:"envApprovals,omitempty"`
 	Result             Result               `json:"result"`
-	CreatedAt          time.Time            `json:"createdAt"`
-	MaxParallel        int                  `json:"-"` // fallback for directly-constructed runs
-	MatrixMaxParallel  map[string]int       `json:"-"`
-	CancelTimeout      func()               `json:"-"` // stops the timeout watcher goroutine
-	EventName          string               `json:"eventName,omitempty"`
-	Ref                string               `json:"ref,omitempty"`
-	Sha                string               `json:"sha,omitempty"`
-	RepoFullName       string               `json:"repoFullName,omitempty"`
-	Inputs             map[string]string    `json:"inputs,omitempty"`
-	ConcurrencyGroup   string               `json:"concurrencyGroup,omitempty"`
-	CancelInProgress   bool                 `json:"-"`
+	// StartupError says why a run that never produced a job failed to start:
+	// an invalid definition, or an action its permissions do not allow.
+	StartupError      string            `json:"startupError,omitempty"`
+	CreatedAt         time.Time         `json:"createdAt"`
+	MaxParallel       int               `json:"-"` // fallback for directly-constructed runs
+	MatrixMaxParallel map[string]int    `json:"-"`
+	CancelTimeout     func()            `json:"-"` // stops the timeout watcher goroutine
+	EventName         string            `json:"eventName,omitempty"`
+	Ref               string            `json:"ref,omitempty"`
+	Sha               string            `json:"sha,omitempty"`
+	RepoFullName      string            `json:"repoFullName,omitempty"`
+	Inputs            map[string]string `json:"inputs,omitempty"`
+	ConcurrencyGroup  string            `json:"concurrencyGroup,omitempty"`
+	CancelInProgress  bool              `json:"-"`
 	// ConcurrencyAcquiredAt is when this run took its concurrency group's
 	// lease; zero without a group or while still queued behind it.
 	ConcurrencyAcquiredAt time.Time `json:"-"`
