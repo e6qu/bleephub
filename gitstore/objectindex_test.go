@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"io"
+	"os"
 	"testing"
 	"time"
 
@@ -274,5 +276,48 @@ func TestMembershipStructureSizePerMillionObjects(t *testing.T) {
 
 	if fuseBytes > 1_400_000 {
 		t.Fatalf("binary fuse filter for a million objects is %d bytes, want under 1.4 MB", fuseBytes)
+	}
+}
+
+// TestAStatOfALooseObjectUsesWhatTheIndexAlreadyKnows pins the saving on the
+// write path: git stats an object's final path before writing it, and when a
+// fresh snapshot already proves it absent that needs no request. With nothing
+// fresh to hand, the Stat asks the store rather than list a directory for it.
+func TestAStatOfALooseObjectUsesWhatTheIndexAlreadyKnows(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.opts.IndexFreshness = time.Hour
+	stor := testPackedStorage(t, fake)
+	present := writeBlob(t, stor, "already here")
+	presentPath := "objects/" + present.String()[:2] + "/" + present.String()[2:]
+	absent := absentHash(11)
+	absentPath := "objects/" + absent.String()[:2] + "/" + absent.String()[2:]
+
+	cold, err := fake.fs("bucket", "prefix").Chroot(testRepo)
+	if err != nil {
+		t.Fatalf("chroot: %v", err)
+	}
+	before := fake.Snapshot()
+	if _, err := cold.Stat(absentPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat of an absent object: %v", err)
+	}
+	if spent := fake.Snapshot().Sub(before); spent.Head != 1 || spent.List != 0 {
+		t.Fatalf("with no snapshot to hand a Stat should ask the store once and list nothing: %s", spent)
+	}
+
+	// A probe brings the snapshots in; after it the same Stat is free, and an
+	// object that is there is still found.
+	if err := stor.HasEncodedObject(absent); err == nil {
+		t.Fatal("absent object reported present")
+	}
+	warm := stor.fs
+	before = fake.Snapshot()
+	if _, err := warm.Stat(absentPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat of an absent object: %v", err)
+	}
+	if spent := fake.Snapshot().Sub(before); spent.Total() != 0 {
+		t.Fatalf("a Stat the index could answer cost requests: %s", spent)
+	}
+	if _, err := warm.Stat(presentPath); err != nil {
+		t.Fatalf("an object that is present was reported absent: %v", err)
 	}
 }

@@ -17,7 +17,9 @@ what a disk gives for free and an object store does not:
 | **Pack cache** | Packs are content-addressed and immutable, so fetched extents are cached on local disk and in memory with no invalidation protocol. |
 | **Membership index** | "Is this object loose?" is answered from cuckoo and binary-fuse filters built off bucket listings, so a clone of a packed repository does not pay a 404 per object. Answers are negative-only: a "maybe" always falls through to the real lookup. |
 | **Compaction** | Loose objects are rolled into packs and small packs are merged geometrically (as `git repack --geometric` does), published pack-last so a concurrent reader on another replica never sees an object in neither tier. |
-| **One request per reference read** | git stats a reference file before it opens it. Here the stat performs the GET and hands the bytes to the open that follows, so resolving a branch costs one request, not two — and a read made in order to write never takes the handoff, so the compare-and-set still compares against the store. |
+| **Reference reads** | git stats a reference file before it opens it; here the stat performs the GET and hands the bytes to the open that follows. Within `IndexFreshness` a branch already read — or just written — answers again without a request, so the dozen resolutions a server makes in one push are one read. A read made in order to write never takes either, so the compare-and-set still compares against the store. |
+| **One listing per advertisement** | Listing references walks `refs/` a directory and a file at a time. Here it is one recursive LIST, whose ETags say which references have moved since this replica last read them; only those are fetched, together rather than one after another. An advertisement of a thousand unchanged branches is one request. |
+| **A push costs what it uploads** | A pushed pack updates the membership index in place and seeds the pack cache with its own index, and a compaction is requested only when the repository is due one — by the pack count as last listed, so a restart does not reset it — rather than run after every push to find nothing to do. |
 | **Safe first use** | go-git builds a handle's pack index lazily, from inside read calls. A handle is primed once under its exclusive lock, so the concurrent first reads a freshly started server gets never see a half-built index. |
 | **Atomic references** | Every reference update is a compare-and-swap, serialized in-process and — with a `GitObjectLocker` installed — across replicas sharing the bucket. |
 | **Outage behaviour** | S3 calls run under a circuit breaker whose open state is a transient error, never "object absent", so go-git cannot mistake an outage for a deleted ref. |
@@ -63,8 +65,8 @@ The library never reads the process environment. Everything is an
 | `ChunkBytes` | 4 MiB | Extent size of ranged pack reads. |
 | `CacheDir`, `CacheBytes` | under `os.TempDir`, 8 GiB | On-disk pack cache and compaction staging. |
 | `MemoryCacheBytes` | 256 MiB | In-memory tier of the pack cache. Negative disables it. |
-| `IndexFreshness` | 250ms | How long a membership snapshot may answer "absent" before re-listing. Negative re-lists every probe. |
-| `CompactionTrigger` | 4096 | Loose writes to one repository that request a compaction. Negative never requests one. |
+| `IndexFreshness` | 250ms | How far a read may lag another replica's write: how long a membership snapshot may answer "absent", and how long a fetched reference or a listing of `refs/` may answer again. Negative re-lists every probe and reads every reference from the store each time. |
+| `CompactionTrigger` | 4096 | Loose writes to one repository that request a compaction. A push requests one sooner: when it leaves more than 8 live packs, or lands behind 64 or more loose writes. Negative never requests one. |
 | `MultipartBytes` | 64 MiB | Pack size above which compaction publishes by multipart upload. |
 | `BreakerThreshold`, `BreakerCooldown` | 5, 5s | Circuit breaker. A negative threshold disables it. |
 

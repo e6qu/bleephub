@@ -20,12 +20,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/e6qu/bleephub/internal/graphqlapi"
 	"github.com/e6qu/bleephub/internal/store"
-	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
@@ -801,10 +799,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// construction: the handler is process-global but a Server is not, and a
 	// test process stands up many. Only a serving server owns it, and hands it
 	// back below.
-	gitstore.SetCompactionRequestHandler(func(repo string, stor gitStorage.Storer) {
-		s.scheduleGitCompaction(repo, stor)
-	})
-	defer gitstore.SetCompactionRequestHandler(nil)
+	defer s.adoptGitCompactionRequests()()
 	// Bind the git object store's S3 I/O to the server lifetime so a slow or dead
 	// store cancels in-flight calls on shutdown instead of detaching and holding
 	// per-repo git locks past the drain.

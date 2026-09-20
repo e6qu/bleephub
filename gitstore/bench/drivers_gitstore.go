@@ -15,6 +15,10 @@ func init() {
 	registerStorerDriver("gitstore", func() StorerDriver { return &gitstoreDriver{} })
 }
 
+// gitstoreTuning carries the library tunables the command line overrides, for
+// measuring what a setting is worth. The zero value leaves every default.
+var gitstoreTuning gitstore.Options
+
 // gitstoreDriver is the library under test, configured as bleephub runs it.
 type gitstoreDriver struct {
 	env Env
@@ -47,6 +51,9 @@ func (d *gitstoreDriver) newFS(ctx context.Context) (*gitstore.S3FS, error) {
 		// The harness decides when maintenance runs, so that its cost lands in
 		// the maintenance phase and not in whichever push crossed the trigger.
 		CompactionTrigger: -1,
+		ChunkBytes:        gitstoreTuning.ChunkBytes,
+		MultipartBytes:    gitstoreTuning.MultipartBytes,
+		MemoryCacheBytes:  gitstoreTuning.MemoryCacheBytes,
 	})
 }
 

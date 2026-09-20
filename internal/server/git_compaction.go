@@ -11,12 +11,12 @@ import (
 )
 
 // Compaction packs a repository's loose objects into a packfile and folds the
-// small packs pushes leave into larger ones. It is scheduled from the push — a
-// push lands as a pack of its own, so pushes are what make packs accumulate —
-// rather than the storage write path, so timing is deterministic. The push does not wait
-// for it (background goroutine); a burst does not overlap runs (one at a time,
-// with a single follow-up for objects written after a run's listing); and it
-// cannot outlive the server (started via goBackground, cancelled on shutdown).
+// small packs pushes leave into larger ones. The storage layer asks for it — it
+// knows, as a write lands, how many packs and loose objects the repository has
+// gathered — and this scheduler runs it: the write does not wait (background
+// goroutine); a burst does not overlap runs (one at a time, with a single
+// follow-up for objects written after a run's listing); and a run cannot
+// outlive the server (started via goBackground, cancelled on shutdown).
 
 // gitCompactionTimeout bounds a wedged run from holding a repository's slot
 // forever; it is generous, not a pace for ordinary work.
@@ -60,8 +60,7 @@ func (c *gitCompactionScheduler) release(repo string) bool {
 	return false
 }
 
-// scheduleGitCompaction packs the objects a push just wrote, on a
-// server-owned goroutine. Storage that cannot pack itself (memory,
+// scheduleGitCompaction compacts a repository on a server-owned goroutine. Storage that cannot pack itself (memory,
 // local-directory) is skipped.
 func (s *Server) scheduleGitCompaction(repo string, stor storer.Storer) {
 	full, ok := stor.(gitStorage.Storer)
@@ -82,6 +81,21 @@ func (s *Server) scheduleGitCompaction(repo string, stor storer.Storer) {
 			}
 		}
 	})
+}
+
+// adoptGitCompactionRequests makes this server the one that runs the
+// compactions the storage layer asks for, and returns the function that hands
+// the role back. The handler is process-global and a Server is not, so only a
+// serving server takes it.
+func (s *Server) adoptGitCompactionRequests() (release func()) {
+	gitstore.SetCompactionRequestHandler(s.onGitCompactionRequested)
+	return func() { gitstore.SetCompactionRequestHandler(nil) }
+}
+
+// onGitCompactionRequested is the storage layer saying a write has left a
+// repository due a compaction.
+func (s *Server) onGitCompactionRequested(repo string, stor gitStorage.Storer) {
+	s.scheduleGitCompaction(repo, stor)
 }
 
 // compactGitRepository runs one compaction. A failure is logged and dropped:

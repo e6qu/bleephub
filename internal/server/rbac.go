@@ -125,3 +125,58 @@ func userHoldsRepositoryRole(st *store.Store, user *store.User, repo *store.Repo
 		return canReadRepoAsUser(st, user, repo)
 	}
 }
+
+// rulesetActorBypasses reports whether actor may bypass the ruleset on a direct
+// write to a reference. A bypass actor is listed by kind: a user, a team, a
+// repository role (held at that level or above), the organization's
+// administrators, the enterprise's owners, or an app. Only the `always` and
+// `exempt` modes cover a direct write; `pull_request` lets its holder bypass
+// when merging a pull request and nowhere else. Everything but `User` used to be
+// stored, returned by the API and ignored, so a team given a bypass was still
+// refused. It lives in the RBAC layer because it asks what a named user holds.
+func rulesetActorBypasses(st *store.Store, rs *store.Ruleset, repo *store.Repo, actor *store.User) bool {
+	if actor == nil {
+		return false
+	}
+	for _, bypass := range rs.BypassActors {
+		if bypass.BypassMode != "always" && bypass.BypassMode != "exempt" {
+			continue
+		}
+		switch bypass.ActorType {
+		case "User":
+			if bypass.ActorID == actor.ID {
+				return true
+			}
+		case "Team":
+			team := st.GetTeamByID(bypass.ActorID)
+			if team == nil {
+				continue
+			}
+			org := st.GetOrgByID(team.OrgID)
+			if org == nil {
+				continue
+			}
+			if _, member := st.GetTeamMembership(org.Login, team.Slug, actor.ID); member {
+				return true
+			}
+		case "RepositoryRole":
+			if userHoldsRepositoryRole(st, actor, repo, bypass.ActorID) {
+				return true
+			}
+		case "OrganizationAdmin":
+			if repo.OwnerType == "Organization" && canAdminOrgAsUser(st, actor, st.GetOrgByID(repo.OwnerID)) {
+				return true
+			}
+		case "EnterpriseOwner":
+			if _, enterprise := st.EnterprisePolicyForRepo(repo); enterprise != nil && st.IsEnterpriseOwner(enterprise.ID, actor) {
+				return true
+			}
+		case "Integration":
+			// An app acts as its bot, whose id is the app's, negated.
+			if actor.Type == "Bot" && actor.ID == -bypass.ActorID {
+				return true
+			}
+		}
+	}
+	return false
+}

@@ -138,8 +138,8 @@ func (i *packIngest) Close() error {
 	if err := i.storer.publishPack(ctx, ready); err != nil {
 		return err
 	}
-	i.storer.adoptPack()
-	i.storer.notePackWritten(int64(ready.objects))
+	i.storer.adoptPack(ready)
+	i.storer.notePackWritten()
 	return nil
 }
 

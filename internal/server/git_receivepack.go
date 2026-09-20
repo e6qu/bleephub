@@ -413,12 +413,9 @@ func (s *Server) applyGitReceivePack(ctx context.Context, target *gitTarget, req
 	if !request.quiet {
 		outcome.messagef("Updated %d of %d ref(s), done.", len(outcome.applied), len(outcome.report.statuses))
 	}
-	// Pack the loose objects this push wrote; a delete-only or objectless push
-	// wrote nothing. See git_compaction.go for why this does not delay the
-	// report the caller is about to write.
-	if request.packfile != nil {
-		s.scheduleGitCompaction(target.storageName, stor)
-	}
+	// No compaction is scheduled here: the storage asks for one when a push
+	// leaves the repository due one (see git_compaction.go), and a run after
+	// every push spent a listing of the object tree finding nothing to do.
 	return outcome, nil
 }
 

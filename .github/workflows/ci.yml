@@ -369,7 +369,7 @@ jobs:
         run: cd gitstore && go test -race -count=1 -timeout 10m -coverprofile="$RUNNER_TEMP/gitstore-coverage.out" ./...
       - name: Enforce the gitstore coverage floor
         env:
-          BLEEPHUB_GO_COVERAGE_MIN: '67.0'
+          BLEEPHUB_GO_COVERAGE_MIN: '70.0'
         run: cd gitstore && bash ../scripts/check-go-coverage.sh "$RUNNER_TEMP/gitstore-coverage.out"
       # The comparison harness is a program, not a test, so nothing above runs
       # it. One tiny pass through every driver and scenario keeps it from
@@ -409,7 +409,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - *checkout
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       # Both release Dockerfiles were built for the first time on push to main,
       # after review had already happened — so a Dockerfile change could only
       # be discovered broken once it was unreviewable and the publish had

@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -54,8 +55,17 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *store
 	if len(eventMeta) > 0 && eventMeta[0] != nil {
 		repoForCalls = eventMeta[0].Repo
 	}
+	// The reusable workflows a job calls are checked before they are expanded
+	// away, and the actions every step uses after, so that what a called
+	// workflow brings in is held to the caller's policy too.
+	if err := s.refuseDisallowedUses(wf, repoForCalls, true); err != nil {
+		return nil, err
+	}
 	wf, err := s.expandReusableWorkflows(wf, repoForCalls, 1)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.refuseDisallowedUses(wf, repoForCalls, false); err != nil {
 		return nil, err
 	}
 
@@ -1619,4 +1629,45 @@ func workflowRollupLocked(wf *store.Workflow) (allDone, anyFailed bool) {
 		}
 	}
 	return allDone, anyFailed
+}
+
+// refuseDisallowedUses fails a run that uses an action or a reusable workflow
+// the Actions permissions of its repository, organization or enterprise do not
+// allow. Every run is created through SubmitWorkflow, so checking here covers
+// events, dispatches, schedules and re-runs alike; the error surfaces as the
+// run's startup failure, which is how GitHub reports it. A setting that was
+// stored and returned but consulted nowhere let any action run regardless.
+func (s *Engine) refuseDisallowedUses(wf *store.WorkflowDef, repoKey string, calls bool) error {
+	if repoKey == "" {
+		return nil
+	}
+	repo := s.store.GetRepoByFullName(repoKey)
+	if repo == nil {
+		return nil
+	}
+	for _, key := range sortedJobKeys(wf.Jobs) {
+		job := wf.Jobs[key]
+		if calls {
+			if refusal := s.store.ActionUseRefusal(repo, job.Uses); refusal != "" {
+				return errors.New(refusal)
+			}
+			continue
+		}
+		for _, step := range job.Steps {
+			if refusal := s.store.ActionUseRefusal(repo, step.Uses); refusal != "" {
+				return errors.New(refusal)
+			}
+		}
+	}
+	return nil
+}
+
+// sortedJobKeys makes the first refusal reported the same one on every run.
+func sortedJobKeys(jobs map[string]*store.JobDef) []string {
+	keys := make([]string, 0, len(jobs))
+	for key := range jobs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

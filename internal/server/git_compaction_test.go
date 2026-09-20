@@ -189,10 +189,13 @@ func TestStorageThatCannotPackItselfIsNeverScheduled(t *testing.T) {
 	}
 }
 
-// TestAPushSchedulesCompactionOfTheRepositoryItWroteTo is the deterministic
-// half of the scheduling change: the objects a push writes are packed because
-// the push happened, not because a counter somewhere reached a threshold.
-func TestAPushSchedulesCompactionOfTheRepositoryItWroteTo(t *testing.T) {
+// TestAPushAloneSchedulesNoCompaction pins that receiving a push is not itself
+// a reason to compact. It was, while a push landed as loose objects; a push now
+// lands as a pack, a compaction opens by listing the repository's whole object
+// tree, and one run per push spent that listing finding nothing to do. The
+// storage layer asks when a write leaves a repository due one — see
+// TestTheStorageLayersRequestReachesTheScheduler for that path.
+func TestAPushAloneSchedulesNoCompaction(t *testing.T) {
 	t.Parallel()
 	git := requireGitCLI(t)
 	srv := newIsolatedServer(t)
@@ -210,7 +213,7 @@ func TestAPushSchedulesCompactionOfTheRepositoryItWroteTo(t *testing.T) {
 	clone := filepath.Join(root, "clone")
 	git.run(root, "clone", cloneURL, clone)
 	if fake.runs.Load() != 0 {
-		t.Fatal("a clone scheduled a compaction: only a push writes loose objects")
+		t.Fatal("a clone scheduled a compaction")
 	}
 
 	git.run(clone, "config", "user.name", "Compaction Pusher")
@@ -222,6 +225,26 @@ func TestAPushSchedulesCompactionOfTheRepositoryItWroteTo(t *testing.T) {
 	git.run(clone, "commit", "-m", "pushed")
 	git.run(clone, "push", "origin", "HEAD:main")
 
+	srv.background.Wait()
+	if runs := fake.runs.Load(); runs != 0 {
+		t.Fatalf("a push to a repository that was not due a compaction ran %d", runs)
+	}
+}
+
+// TestTheStorageLayersRequestReachesTheScheduler covers the path a compaction
+// now starts by: the storage layer asks, and the server runs it on its own
+// supervised goroutine. The handler itself is process-global and belongs to
+// whichever server is serving, so what is driven here is what it is set to.
+func TestTheStorageLayersRequestReachesTheScheduler(t *testing.T) {
+	t.Parallel()
+	srv := newIsolatedServer(t)
+	fake := newFakeCompactingStorer(memory.NewStorage())
+	close(fake.release)
+
+	srv.onGitCompactionRequested("owner/repo", fake)
 	awaitStart(t, fake)
 	srv.background.Wait()
+	if runs := fake.runs.Load(); runs != 1 {
+		t.Fatalf("one request ran %d compactions", runs)
+	}
 }

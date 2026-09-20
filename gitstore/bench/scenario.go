@@ -30,11 +30,24 @@ const (
 	scenarioCloneMaintained = "clone-cold-maintained"
 	scenarioProbeMaintained = "probe-absent-maintained"
 	scenarioCloneParallel   = "clone-parallel"
+	scenarioRefsCreate      = "refs-create"
+	scenarioRefsAdvertise   = "refs-advertise"
+)
+
+// advertiseRounds is how many times refs-advertise lists the references, and
+// advertisePause the gap between rounds. The gap is longer than any driver
+// reuses a read for, so each round is a new client arriving, not a repeat
+// answered from a moment ago; it is the same for every driver and is included
+// in the time column.
+const (
+	advertiseRounds = 4
+	advertisePause  = 400 * time.Millisecond
 )
 
 var scenarioOrder = []string{
 	scenarioPushInitial, scenarioCloneCold, scenarioCloneWarm, scenarioPushIncremental, scenarioFetch,
 	scenarioProbeAbsent, scenarioMaintain, scenarioCloneMaintained, scenarioProbeMaintained, scenarioCloneParallel,
+	scenarioRefsCreate, scenarioRefsAdvertise,
 }
 
 var scenarioNotes = map[string]string{
@@ -48,6 +61,8 @@ var scenarioNotes = map[string]string{
 	scenarioCloneMaintained: "cold full clone after housekeeping",
 	scenarioProbeMaintained: "the same negotiation probes after housekeeping",
 	scenarioCloneParallel:   "concurrent full clones from a cold start, to show how a replica scales",
+	scenarioRefsCreate:      "create the branches and tags of a busy repository, one reference write each",
+	scenarioRefsAdvertise:   "list every reference, as each fetch and push begins by doing: a cold replica, then three more clients 400ms apart (pauses included in the time)",
 }
 
 // The two levels a driver can be measured at. Figures compare within a level,
@@ -85,6 +100,7 @@ type runner struct {
 	run      int
 	parallel int
 	probes   int
+	refs     int
 	selected map[string]bool
 }
 
@@ -200,7 +216,75 @@ func (r *runner) execute(ctx context.Context) []Result {
 		}
 		return errors.Join(errs...)
 	}))
+
+	if r.refs > 0 {
+		if !keep(r.measure(scenarioRefsCreate, r.refs, func(*Result) error {
+			stor, err := r.driver.Open(ctx, r.repo, false)
+			if err != nil {
+				return err
+			}
+			for n := range r.refs {
+				if err := stor.SetReference(plumbing.NewHashReference(extraReference(n), final.Tip)); err != nil {
+					return err
+				}
+			}
+			return nil
+		})) {
+			return results
+		}
+		keep(r.measure(scenarioRefsAdvertise, advertiseRounds, func(*Result) error {
+			for round := range advertiseRounds {
+				if round > 0 {
+					time.Sleep(advertisePause)
+				}
+				stor, err := r.driver.Open(ctx, r.repo, round == 0)
+				if err != nil {
+					return err
+				}
+				if err := r.advertise(stor, final.Tip); err != nil {
+					return err
+				}
+			}
+			return nil
+		}))
+	}
 	return results
+}
+
+// extraReference names the nth reference of the refs scenarios: mostly
+// branches, nested as teams nest them, and a tag for every fifth.
+func extraReference(n int) plumbing.ReferenceName {
+	if n%5 == 4 {
+		return plumbing.NewTagReferenceName(fmt.Sprintf("v0.%d.0", n))
+	}
+	return plumbing.NewBranchReferenceName(fmt.Sprintf("team-%d/topic-%d", n%7, n))
+}
+
+// advertise lists every reference and checks none is missing or wrong: a driver
+// that dropped references would otherwise have the cheapest advertisement.
+func (r *runner) advertise(stor storer.Storer, tip plumbing.Hash) error {
+	iter, err := stor.IterReferences()
+	if err != nil {
+		return err
+	}
+	found := 0
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Type() != plumbing.HashReference {
+			return nil
+		}
+		if ref.Hash() != tip {
+			return fmt.Errorf("%s is %s, want %s", ref.Name(), ref.Hash(), tip)
+		}
+		found++
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if want := r.refs + 1; found != want {
+		return fmt.Errorf("advertised %d references, want %d", found, want)
+	}
+	return nil
 }
 
 // probeAbsent asks about objects the repository does not hold, which is what a

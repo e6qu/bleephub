@@ -84,21 +84,21 @@ helpers are other people's programs.
 |---|---|---|
 | `bleephub` | This repository's server on `gitstore`, over smart HTTP. Built from the checkout, or `-bleephub-bin`. | Runs in CI. |
 | `git-local` | Stock git, bare repository on local disk. The ceiling. | Runs in CI. |
+| `walgit` | [tobi/walgit](https://github.com/tobi/walgit) (Rust), a smart-HTTP server: packs plus a write-ahead log whose manifest it swaps by conditional write, repositories materialized to a local cache. The nearest design to `gitstore`. Needs git ≥ 2.46 and a store with conditional writes (the fake has them). `cargo build --release`, then `-walgit-bin` or `walgit` on `PATH`; the harness writes its configuration and restarts it with an empty cache for the cold scenarios. | Verified against this harness, commit `80e9a20`. |
 | `git-remote-s3` | [awslabs/git-remote-s3](https://github.com/awslabs/git-remote-s3) (Python): one full bundle per ref per push, so a push costs the repository, not the change. `pip install git-remote-s3`. | Verified against this harness, v0.4.2. |
 | `git-remote-object-store` | [dekobon/git-remote-object-store](https://github.com/dekobon/git-remote-object-store) (Rust), `packchain` engine: a manifest of packs. `cargo xtask install`. | Verified against this harness, v0.2.5. |
 
 Any other remote is driven without code:
 
 ```sh
-go run . -level git -git-drivers bleephub -remote 'walgit=https://walgit.internal/{repo}.git'
+go run . -level git -git-drivers bleephub -remote 'mine=https://git.internal/{repo}.git'
 ```
 
 `-remote name=url-template` takes the placeholders `{endpoint}` (the metered
 endpoint), `{host}`, `{bucket}`, `{prefix}`, `{region}` and `{repo}`, and gives
 the helper the standard `AWS_*` environment, `AWS_ENDPOINT_URL` included, which
-is how every helper surveyed takes its endpoint. A server, such as
-[tobi/walgit](https://github.com/tobi/walgit), is started by hand with its
-store pointed at the meter, and named the same way.
+is how every helper surveyed takes its endpoint. A server is started by hand
+with its store pointed at the meter, and named the same way.
 
 Left out: [tigrisdata/objgit](https://github.com/tigrisdata/objgit) relies on
 Tigris's non-standard `RenameObject`, and
@@ -120,8 +120,26 @@ go run ../s3fake/cmd/s3fake -addr 127.0.0.1:9000 -trace
 ```
 
 serves the counting fake on a fixed address — any bucket exists, any
-credentials sign — logs each request, and prints the totals when interrupted.
-It is how the per-request breakdowns below were found.
+credentials sign — logs each request with what tells it from another (a
+listing's prefix, a read's extent, whether a write was conditional; never a
+header value or a signature), and prints the totals when interrupted. It is how the per-request breakdowns below were found. The fake
+gives objects content-derived ETags and honours `If-Match` / `If-None-Match` on
+writes, which designs that lock or swap a manifest by conditional write depend
+on.
+
+### Larger workloads and a real store
+
+```sh
+docker run -d -p 127.0.0.1:19000:9000 -e MINIO_ROOT_USER=benchadmin -e MINIO_ROOT_PASSWORD=benchsecret123 \
+    quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+AWS_ACCESS_KEY_ID=benchadmin AWS_SECRET_ACCESS_KEY=benchsecret123 \
+    go run . -endpoint http://127.0.0.1:19000 -latency 5ms -files 4000 -file-lines 400 -commits 60 -pushes 20 -changes 25
+```
+
+`-file-lines` scales each file, which is how a workload gets packs that span
+several read extents (4 MiB by default; `-gitstore-chunk-bytes`) or cross the
+multipart threshold (`-gitstore-multipart-bytes`). The meter forwards the `Host`
+header untouched, so requests signed for it verify at MinIO or AWS.
 
 ## Scenarios
 
@@ -143,6 +161,8 @@ are a Storer's to expose, and a remote's own business.
 | `maintain` | The driver's own housekeeping; skipped where there is none. |
 | `clone-cold-maintained`, `probe-absent-maintained` | The same reads after housekeeping. |
 | `clone-parallel` | `-parallel` concurrent clones from a cold start. |
+| `refs-create` | Storer level. `-refs` branches and tags (default 200; 0 skips both), one reference write each. |
+| `refs-advertise` | Storer level. List every reference, as each fetch and push begins by doing: a cold replica, then three more clients 400 ms apart — longer than any driver reuses a read for, so each is a new arrival. The pauses are in the time column, equally for every driver. |
 
 ## Output
 
@@ -160,57 +180,90 @@ pushes: 1,787 objects, a 928 KiB initial pack.
 
 | Scenario | gitstore | ogit | go-git on local disk |
 |---|---|---|---|
-| `push-initial` | **13** requests, 0.08 s | 3,187 requests, 9.7 s | 0.04 s |
-| `clone-cold` | **9**, 0.68 s | 1,956, 6.4 s | 0.62 s |
-| `clone-warm` | **7**, 0.68 s | 1,956, 6.7 s | 0.62 s |
-| `push-incremental` (10 pushes) | **110**, 0.32 s | 408, 1.2 s | 0.03 s |
-| `fetch-incremental` | **7**, 0.07 s | 671, 2.1 s | 0.07 s |
-| `probe-absent` (1,000 probes) | **16**, 0.05 s | 1,000, 3.0 s | 0.01 s |
-| `maintain` | 22, 0.11 s | — | — |
-| `clone-cold-maintained` | 11, 0.73 s | — | — |
-| `clone-parallel` (8 clones) | **55**, 0.90 s | 18,112, 7.5 s | 0.98 s |
+| `push-initial` | **12** requests, 0.08 s | 3,187 requests, 8.1 s | 0.04 s |
+| `clone-cold` | **6**, 0.68 s | 1,956, 5.6 s | 0.63 s |
+| `clone-warm` | **4**, 0.67 s | 1,956, 5.6 s | 0.63 s |
+| `push-incremental` (10 pushes) | **81**, 0.27 s | 408, 1.0 s | 0.03 s |
+| `fetch-incremental` | **3**, 0.06 s | 671, 1.8 s | 0.07 s |
+| `probe-absent` (1,000 probes) | **5**, 0.02 s | 1,000, 2.5 s | 0.01 s |
+| `maintain` | 17, 0.10 s | — | — |
+| `clone-cold-maintained` | 8, 0.73 s | — | — |
+| `clone-parallel` (8 clones) | **29**, 0.99 s | 18,112, 6.7 s | 1.03 s |
+| `refs-create` (200 references) | 203, 0.51 s | 200, 0.50 s | 0.02 s |
+| `refs-advertise` (4 clients, 201 references) | **223**, 1.31 s | 812, 3.25 s | 1.23 s |
+
+`refs-advertise` spends 1.2 s of its time in the pauses between clients, which
+every driver pays, so `gitstore`'s four advertisements cost 0.11 s over the
+ceiling: the cold replica lists `refs/` once and reads the 200 references it has
+never seen, sixteen at a time, and each client after it is one LIST. A reference
+write is one PUT in any design, which is why `refs-create` is a draw.
 
 A clone's time is dominated by the pack encode, which every driver pays (the
-in-memory ceiling is 0.62 s), so the read rows say that `gitstore`'s object-store
+in-memory ceiling is 0.63 s), so the read rows say that `gitstore`'s object-store
 overhead is a few tens of milliseconds while the one-object-per-key design's is
 the whole clone, ten times over. The gap scales with the round trip, since it
 is the request counts that differ: every extra millisecond of latency adds about
-two seconds to the 1,956-request clone and about nine milliseconds to the
-9-request one. Rerun with a larger `-latency` to measure a farther region.
+two seconds to the 1,956-request clone and about six milliseconds to the
+6-request one. Rerun with a larger `-latency` to measure a farther region.
 
 ### Git level
 
 The same workload and latency, the stock git client, clones verified object by
 object. `go run . -level git -files 1000 -commits 30 -pushes 10 -latency 2ms -runs 3`
 
-| Scenario | bleephub | git-remote-object-store | git-remote-s3 | git, local disk |
-|---|---|---|---|---|
-| `push-initial` | 27 requests, **0.27 s**, 977 KiB up | 15, 0.35 s, 1.9 MiB up | **9**, 0.27 s, 929 KiB up | 0.07 s |
-| `clone-cold` | 16, **0.23 s**, **977 KiB** down | 15, 0.31 s, 3.6 MiB down | **7**, 0.28 s, 1.8 MiB down | 0.04 s |
-| `clone-warm` | 10, **0.11 s**, **2 KiB** down | 15, 0.34 s, 3.6 MiB down | **7**, 0.29 s, 1.8 MiB down | 0.04 s |
-| `push-incremental` (10 pushes) | 246, **1.29 s**, **256 KiB** up | 150, 2.33 s, 854 KiB up | **90**, 2.75 s, 8.4 MiB up | 0.67 s |
-| `fetch-incremental` | 12, **0.11 s**, **2 KiB** down | 26, 0.76 s, 146 KiB down | **5**, 0.31 s, 849 KiB down | 0.09 s |
-| `clone-parallel` (8 clones) | 93, **0.30 s**, **1.2 MiB** down | 440, 1.24 s, 31 MiB down | **56**, 0.55 s, 13 MiB down | 0.61 s |
+| Scenario | bleephub | walgit | git-remote-object-store | git-remote-s3 | git, local disk |
+|---|---|---|---|---|---|
+| `push-initial` | **6** requests, 0.20 s, 977 KiB up | 49, **0.13 s**, 976 KiB up | 15, 0.28 s, 1.9 MiB up | 9, 0.26 s, 929 KiB up | 0.07 s |
+| `clone-cold` | 9, **0.20 s**, **976 KiB** down | 69, 2.46 s, 2.1 MiB down | 15, 0.31 s, 3.6 MiB down | **7**, 0.28 s, 1.8 MiB down | 0.06 s |
+| `clone-warm` | **4**, **0.08 s**, **2 KiB** down | 5, 0.10 s, 3 KiB down | 15, 0.31 s, 3.6 MiB down | 7, 0.27 s, 1.8 MiB down | 0.05 s |
+| `push-incremental` (10 pushes) | 89, 0.82 s, 256 KiB up | **70**, **0.69 s**, **186 KiB** up | 150, 2.24 s, 854 KiB up | 90, 2.58 s, 8.4 MiB up | 0.62 s |
+| `fetch-incremental` | **3**, **0.08 s**, **1 KiB** down | 4, 0.08 s, 6 KiB down | 26, 0.74 s, 147 KiB down | 5, 0.28 s, 849 KiB down | 0.09 s |
+| `clone-parallel` (8 clones) | **36**, **0.29 s**, **1.2 MiB** down | 127, 2.62 s, 2.3 MiB down | 440, 1.14 s, 31 MiB down | 56, 0.45 s, 13 MiB down | 0.59 s |
 
 What it says:
 
 - **A server that keeps state wins on bytes and time.** A remote helper starts
   from nothing on every invocation, so it downloads the repository to clone it
-  and again to fetch into it; bleephub's warm clone and incremental fetch move
-  two kilobytes, because the packs are already in its cache. Eight parallel
-  clones cost the helpers eight downloads and bleephub one.
+  and again to fetch into it; the two servers' warm clones and incremental
+  fetches move a few kilobytes, because the packs are already in their caches.
+  Eight parallel clones cost the helpers eight downloads and bleephub one.
 - **A bundle per push costs the repository, not the change.** `git-remote-s3`
   uploads 8.4 MiB over ten one-commit pushes to a repository whose whole history
   is under 1 MiB; bleephub uploads 256 KiB.
-- **bleephub makes more requests per push than either helper** — about 25,
-  against 15 and 9. Tracing one push (`s3fake -trace`) shows where they go: the
-  server resolves the branch a dozen times in the course of a push (the
-  advertisement, validation, the compare-and-set, hooks, workflow triggers),
-  each time from the object store, and lists the pack directory after it. That
-  is the next thing worth attacking, and it is a server question — how long a
-  resolved reference may be reused across one request — rather than a storage
-  one. At 2 ms it costs little; at a cross-region 50 ms it would be most of a
-  push.
+- **The two servers differ in what a cold replica does.** walgit materializes a
+  repository on local disk before it serves it, so a replica that has never seen
+  the repository spends 2.5 s and 69 requests getting ready, where bleephub
+  reads the pack extents the clone touches and answers in 0.2 s. Once warm they
+  are level. walgit is the cheaper per push — 7 requests against 9, no listings
+  at all, because its manifest names the packs where a dotgit layout has to list
+  a directory to find them — and it is the design to beat there.
+- **A push through bleephub is now 9 requests**: the pack, its index and its
+  filter; one listing of the pack directory to adopt it; the branch read, for
+  the compare-and-set, and written; and one listing of `refs/` for the
+  advertisement. It was 25 when this table was first drawn; see below.
+
+The same comparison at a size where packs span read extents, against a real
+MinIO with 5 ms injected into every request — 3,000 larger files, 50 commits
+then 20 pushes, 6,265 objects, an 8 MiB initial pack:
+`go run . -level git -endpoint http://127.0.0.1:19000 -latency 5ms -files 3000 -file-lines 300 -commits 50 -pushes 20 -changes 20 -runs 3`
+
+| Scenario | bleephub | walgit | git-remote-object-store | git-remote-s3 | git, local disk |
+|---|---|---|---|---|---|
+| `push-initial` | 11, 1.15 s | 89, 0.54 s | 15, 0.69 s | **9**, **0.41 s** | 0.24 s |
+| `clone-cold` | 11, **0.41 s**, **8.2 MiB** down | 87, 2.75 s, 18 MiB down | 15, 0.52 s, 32 MiB down | **7**, 0.48 s, 16 MiB down | 0.06 s |
+| `clone-warm` | **4**, **0.24 s** | **4**, 0.30 s | 15, 0.51 s, 32 MiB down | 7, 0.48 s, 16 MiB down | 0.05 s |
+| `push-incremental` (20 pushes) | 193, 4.50 s, 2.8 MiB up | **140**, **3.83 s**, **1.6 MiB** up | 300, 6.29 s, 5.4 MiB up | 180, 10.3 s, 154 MiB up | 2.30 s |
+| `fetch-incremental` | **3**, **0.21 s**, **1 KiB** down | 4, 0.23 s | 46, 1.35 s, 1.3 MiB down | 5, 0.49 s, 7.6 MiB down | 0.16 s |
+| `clone-parallel` (8 clones) | **44**, **0.72 s**, **9.8 MiB** down | 178, 5.48 s, 20 MiB down | 760, 2.75 s, 279 MiB down | 56, 0.98 s, 122 MiB down | 0.50 s |
+
+The shape holds, and the costs that grow with the repository show: a bundle per
+push is now 154 MiB of upload for twenty one-commit pushes. bleephub's twenty
+pushes include the compaction that more than eight packs make due, which
+walgit's figure has no counterpart to. bleephub's initial push is its one slow row: it indexes
+the 8 MiB pack and builds the membership filter before it answers, where a
+helper uploads what the client already built. The Storer-level run at this size
+(`-files 4000 -file-lines 400`, a 14 MiB pack) lands that pack in 15 requests
+where the one-object-per-key design takes 15,055.
 
 ### What building this harness found
 
@@ -262,3 +315,48 @@ The git level then found three more, by driving the real server:
   fewer requests on every scenario through the server.
 - **A compaction with nothing to do listed the pack directory twice**, on every
   push.
+
+And the first run at a larger size found the one that mattered most:
+
+- **Stock git could not push more than a mebibyte over HTTP.** A pack that
+  outgrows `http.postBuffer` is streamed with chunked encoding, which git cannot
+  replay if the server asks for credentials part way, so it first POSTs a lone
+  flush packet to `git-receive-pack` to settle authentication. The server parsed
+  that probe as a push with no commands and answered 400 — every push over
+  1 MiB failed, and none under it, so no test and no small workload had noticed.
+  It is now answered as `git-http-backend` answers it.
+
+Then a second pass over the per-request traces, taking a push through the server
+from 25 requests to 9 and an advertisement from a request per reference to one
+listing:
+
+| Scenario (git level, bleephub) | #543 | now |
+|---|---|---|
+| `push-initial` | 27 | 6 |
+| `clone-cold` / `clone-warm` | 16 / 10 | 9 / 4 |
+| `push-incremental` (10 pushes) | 246 | 89 |
+| `fetch-incremental` | 12 | 3 |
+| `clone-parallel` (8 clones) | 93 | 36 |
+
+- **The server ran a compaction after every push**, which dates from when a push
+  landed as loose objects. A compaction opens by listing the repository's whole
+  object tree, and one run per push spent that finding nothing to do. The
+  storage layer now asks for one when a write leaves the repository due it —
+  and counts packs from the pack directory rather than from its own pushes, so a
+  server restarted every few pushes no longer never compacts.
+- **A pushed pack threw the membership index away**, and the next reader paid a
+  listing of the loose tier and one of the pack directory to rebuild what had
+  only gained a pack. The index is now told of the pack.
+- **The replica downloaded the pack index it had just uploaded.**
+- **A branch was read back from the store straight after it was written**, and
+  resolved a dozen times in one push from the store each time. Within the
+  freshness bound those are one read — none, after a local write.
+- **References were listed the way a disk is walked**: a LIST per directory under
+  `refs/` and a GET per branch and tag, for every client. One recursive listing
+  carries every reference's ETag, so only references that have moved are read,
+  and those sixteen at a time. In `refs-advertise` the cold replica's first look
+  is 200 reads and each client after it is one listing, where every client used
+  to cost the 200 reads again.
+- **The fake compared entity tags as strings**, so a client that sends `If-Match`
+  without the quotes — the AWS SDK for Rust does — lost every compare-and-swap.
+  Found by walgit working against MinIO and not against the fake.
