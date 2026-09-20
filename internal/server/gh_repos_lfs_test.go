@@ -717,8 +717,8 @@ func TestLFSLockingRequiresPushAccess(t *testing.T) {
 // S3-backed byte store (MinIO) rather than the in-process fake, pinning that
 // LFS bytes land in object storage on the implementation that ships.
 func TestLFSObjectBytesLandInTheS3ByteStore(t *testing.T) {
-	resetS3FSCacheForTest(t)
-	objectFS, byteStore := newObjectByteStoreForTest(t)
+	resetGitObjectStoreForTest(t)
+	storedObjects, byteStore := newObjectByteStoreForTest(t)
 	srv := newIsolatedServer(t)
 	srv.store.ObjectByteStore = byteStore
 	resp := srv.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "lfs-s3"})
@@ -734,7 +734,7 @@ func TestLFSObjectBytesLandInTheS3ByteStore(t *testing.T) {
 		t.Fatalf("upload to the S3 byte store = %d, want 200", uploaded.StatusCode)
 	}
 
-	if got := readS3TestFile(t, objectFS, store.LFSObjectDataKey(oid)); !bytes.Equal(got, content) {
+	if got := readStoredObjectForTest(t, storedObjects, store.LFSObjectDataKey(oid)); !bytes.Equal(got, content) {
 		t.Fatalf("object in S3 is %d bytes, want the %d uploaded", len(got), len(content))
 	}
 	_, batch, _ = srv.lfsBatch(t, repo, defaultToken, lfsBatchBody("download", content))

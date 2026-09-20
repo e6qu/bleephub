@@ -39,8 +39,8 @@ func TestAConformingStorePassesAndIsLeftClean(t *testing.T) {
 // condition, as Google Cloud Storage's S3-compatible endpoint does.
 type unconditional struct{ objstore.Bucket }
 
-func (u unconditional) Put(ctx context.Context, key string, body io.Reader, size int64, _ objstore.Condition) (objstore.Version, error) {
-	return u.Bucket.Put(ctx, key, body, size, objstore.Always)
+func (u unconditional) Put(ctx context.Context, key string, body io.Reader, size int64, _ objstore.Condition, metadata objstore.Metadata) (objstore.Version, error) {
+	return u.Bucket.Put(ctx, key, body, size, objstore.Always, metadata)
 }
 
 // TestAStoreThatIgnoresConditionsIsRefused is why the probe exists. Such a store
@@ -61,7 +61,7 @@ func TestConditionalWritesArbitrateBetweenWriters(t *testing.T) {
 	bucket, _ := newBucket(t)
 	ctx := context.Background()
 	put := func(body string, condition objstore.Condition) (objstore.Version, error) {
-		return bucket.Put(ctx, "repo/manifest", strings.NewReader(body), int64(len(body)), condition)
+		return bucket.Put(ctx, "repo/manifest", strings.NewReader(body), int64(len(body)), condition, nil)
 	}
 
 	first, err := put("one", objstore.IfAbsent())
@@ -100,7 +100,7 @@ func TestReadsListingsAndDeletes(t *testing.T) {
 	bucket, server := newBucket(t)
 	ctx := context.Background()
 	for _, key := range []string{"r/HEAD", "r/refs/heads/main", "r/refs/heads/topic", "r/refs/tags/v1"} {
-		if _, err := bucket.Put(ctx, key, strings.NewReader("0123456789"), 10, objstore.Always); err != nil {
+		if _, err := bucket.Put(ctx, key, strings.NewReader("0123456789"), 10, objstore.Always, nil); err != nil {
 			t.Fatalf("put %s: %v", key, err)
 		}
 	}
@@ -175,5 +175,54 @@ func TestAPartSizeTheProtocolForbidsIsRefusedAtOnce(t *testing.T) {
 	}
 	if _, err := objstore.NewS3("bucket", objstore.S3Options{Endpoint: "http://bad host/"}); err == nil {
 		t.Fatal("an endpoint that is not a URL was accepted")
+	}
+}
+
+// forgetful is a store that accepts metadata and does not keep it.
+type forgetful struct{ objstore.Bucket }
+
+func (f forgetful) Put(ctx context.Context, key string, body io.Reader, size int64, condition objstore.Condition, _ objstore.Metadata) (objstore.Version, error) {
+	return f.Bucket.Put(ctx, key, body, size, condition, nil)
+}
+
+// TestMetadataTravelsWithAnObjectAndOnlyInNamesEveryStoreKeeps pins the facts a
+// writer may keep beside an object. They come back from a read and from a Head,
+// under the name they were written with whatever case the wire gave it; a name
+// one of the stores would refuse or respell is refused here, before it is
+// written somewhere it cannot be read back from; and a store that drops them is
+// refused at startup, since a digest kept this way is how corruption is caught.
+func TestMetadataTravelsWithAnObjectAndOnlyInNamesEveryStoreKeeps(t *testing.T) {
+	bucket, _ := newBucket(t)
+	ctx := context.Background()
+	written := objstore.Metadata{"bleephubsha256": "3q2+7w=="}
+	if _, err := bucket.Put(ctx, "objects/asset", strings.NewReader("bytes"), 5, objstore.Always, written); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	info, err := bucket.Head(ctx, "objects/asset")
+	if err != nil || info.Metadata["bleephubsha256"] != "3q2+7w==" {
+		t.Fatalf("head returned metadata %v, %v", info.Metadata, err)
+	}
+	body, info, err := bucket.Get(ctx, "objects/asset")
+	if err != nil || info.Metadata["bleephubsha256"] != "3q2+7w==" {
+		t.Fatalf("get returned metadata %v, %v", info.Metadata, err)
+	}
+	content, _ := io.ReadAll(body)
+	_ = body.Close()
+	if string(content) != "bytes" {
+		t.Fatalf("an object written with metadata is not exactly its content: %q", content)
+	}
+
+	for _, name := range []string{"bleephub-sha256", "Sha256", "9lives", "", "sha_256"} {
+		if _, err := bucket.Put(ctx, "objects/refused", strings.NewReader("x"), 1, objstore.Always, objstore.Metadata{name: "v"}); err == nil {
+			t.Errorf("metadata name %q was accepted; not every store keeps it as written", name)
+		}
+	}
+	if _, err := bucket.Head(ctx, "objects/refused"); !errors.Is(err, objstore.ErrNotFound) {
+		t.Fatalf("a refused write reached the store: %v", err)
+	}
+
+	err = objstore.Conform(ctx, forgetful{bucket}, "probe/")
+	if err == nil || !strings.Contains(err.Error(), "metadata") {
+		t.Fatalf("a store that drops metadata answered %v, want a refusal naming metadata", err)
 	}
 }

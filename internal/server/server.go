@@ -792,6 +792,19 @@ func (s *Server) handleInternalStorage(w http.ResponseWriter, r *http.Request) {
 // is bounded: long-poll routes (the runner broker) would otherwise never let
 // every connection close. Requests past the bound are cut.
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	// Opening the git object store proves it against the live bucket (see
+	// gitbackend.GetStore). A store that fails the proof would lose a reference
+	// the first time two replicas raced, so the server refuses to serve on it.
+	objectStore, err := gitbackend.GetStore(ctx)
+	if err != nil {
+		return fmt.Errorf("git object store: %w", err)
+	}
+	// Bind the store's I/O to the server lifetime so a slow or dead store cancels
+	// in-flight calls on shutdown instead of detaching and holding per-repo git
+	// locks past the drain.
+	if objectStore != nil {
+		objectStore.SetBaseContext(ctx)
+	}
 	if err := s.startGitSSH(ctx); err != nil {
 		return err
 	}
@@ -800,12 +813,6 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// test process stands up many. Only a serving server owns it, and hands it
 	// back below.
 	defer s.adoptGitCompactionRequests()()
-	// Bind the git object store's S3 I/O to the server lifetime so a slow or dead
-	// store cancels in-flight calls on shutdown instead of detaching and holding
-	// per-repo git locks past the drain.
-	if fs, _ := gitbackend.GetS3FS(ctx); fs != nil {
-		fs.SetBaseContext(ctx)
-	}
 	s.startObjectReaper(ctx)
 	s.actions.Start(ctx)
 	// Re-run migration exports a dead process left "exporting"; nothing else
@@ -867,7 +874,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	s.stopServing()
 	drain, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
-	err := srv.Shutdown(drain)
+	err = srv.Shutdown(drain)
 	s.background.Wait()
 	if err != nil {
 		return fmt.Errorf("shutdown: %w", err)

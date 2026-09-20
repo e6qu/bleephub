@@ -251,7 +251,7 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 	// line is out there is no status code left, so a later refusal travels in
 	// the stream. A request rejected before that is still answerable with 400.
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
-	stor := gitStorerWithPackReuse(r.Context(), target.storageName, target.stor)
+	stor := target.stor
 	var result gitUploadPackResult
 	if gitRequestUsesProtocolV2(r, requestReader) {
 		// Each smart-HTTP POST is one whole request, so the v2 command loop

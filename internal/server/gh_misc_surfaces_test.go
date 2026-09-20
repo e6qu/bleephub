@@ -314,9 +314,8 @@ func TestPagesBuildsCRUD(t *testing.T) {
 	s.registerGHMiscEndpoints()
 	s.registerGHRepoObjectRoutes()
 	s.registerGHGitDataRoutes()
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "pages-build-objects")
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
+	storedObjects := newGitObjectStoreForTest(t).Sub("pages-build-objects")
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-build-test", "", false)
 	commitHash, err := initRepoWithFiles(s.store.GetGitStorage("admin", "pages-build-test"), repo.DefaultBranch, "init", map[string]string{
@@ -500,9 +499,8 @@ func TestPagesJekyllBuildPublishesGeneratedSite(t *testing.T) {
 	s := newTestServer()
 	s.registerGHMiscEndpoints()
 	s.pagesJekyllExecutable = realPagesJekyllExecutable(t)
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "pages-jekyll-objects")
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
+	storedObjects := newGitObjectStoreForTest(t).Sub("pages-jekyll-objects")
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-jekyll-test", "", false)
 	commitHash, err := initRepoWithFiles(s.store.GetGitStorage("admin", repo.Name), repo.DefaultBranch, "Jekyll source", map[string]string{

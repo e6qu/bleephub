@@ -1495,11 +1495,11 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 	const controllerKey = "admin/variant-controller"
 	var oldRepoID int
 	var codespaceWorkspace string
-	var objectFS *gitstore.S3FS
+	var storedObjects *gitstore.Store
 	var codeQLDBPath string
 	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		var objectStore store.ActionsByteStore
-		objectFS, objectStore = newObjectByteStoreForTest(t)
+		storedObjects, objectStore = newObjectByteStoreForTest(t)
 		st.ObjectByteStore = objectStore
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
@@ -1553,14 +1553,14 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 			t.Fatalf("UpsertCodeQLDatabase: %v", err)
 		}
 		codeQLDBPath = db.StoragePath
-		if got := string(readS3TestFile(t, objectFS, db.StoragePath)); got != "db" {
+		if got := string(readStoredObjectForTest(t, storedObjects, db.StoragePath)); got != "db" {
 			t.Fatalf("CodeQL database object bytes = %q, want db", got)
 		}
 		va, err := st.CreateCodeQLVariantAnalysis(controller.FullName, user.ID, "go", []byte("pack"), []string{repoKey})
 		if err != nil {
 			t.Fatalf("CreateCodeQLVariantAnalysis: %v", err)
 		}
-		if got := string(readS3TestFile(t, objectFS, va.StoragePath)); got != "pack" {
+		if got := string(readStoredObjectForTest(t, storedObjects, va.StoragePath)); got != "pack" {
 			t.Fatalf("CodeQL variant-analysis query-pack object bytes = %q, want pack", got)
 		}
 		if _, created := st.CreatePackage("Repository", repoKey, "container", "image", "private"); !created {
@@ -1628,7 +1628,7 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 		} else if !deleted {
 			t.Fatal("DeleteRepo failed")
 		}
-		if _, err := objectFS.Open(codeQLDBPath); err == nil {
+		if storedObjectExistsForTest(t, storedObjects, codeQLDBPath) {
 			t.Fatalf("CodeQL database object %s survived repository deletion", codeQLDBPath)
 		}
 	})

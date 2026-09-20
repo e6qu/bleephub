@@ -1492,14 +1492,14 @@ func moveOneGitStoragePrefix(oldFull, newFull string) error {
 	if !gitbackend.IsS3GitStorage() {
 		return nil
 	}
-	s3fs, err := gitbackend.GetS3FS(context.Background())
+	objectStore, err := gitbackend.GetStore(context.Background())
 	if err != nil {
 		return fmt.Errorf("resolve S3 git storage: %w", err)
 	}
-	if s3fs == nil {
+	if objectStore == nil {
 		return nil
 	}
-	if err := s3fs.RenameRepoPrefix(oldFull, newFull); err != nil {
+	if err := objectStore.RenameRepository(oldFull, newFull); err != nil {
 		return fmt.Errorf("move S3 object prefix: %w", err)
 	}
 	return nil
@@ -1529,14 +1529,14 @@ func deleteOneGitStoragePrefix(fullName string) error {
 	if !gitbackend.IsS3GitStorage() {
 		return nil
 	}
-	s3fs, err := gitbackend.GetS3FS(context.Background())
+	objectStore, err := gitbackend.GetStore(context.Background())
 	if err != nil {
 		return fmt.Errorf("resolve S3 git storage: %w", err)
 	}
-	if s3fs == nil {
+	if objectStore == nil {
 		return nil
 	}
-	if err := s3fs.DeleteRepoPrefix(fullName); err != nil {
+	if err := objectStore.DeleteRepository(fullName); err != nil {
 		return fmt.Errorf("purge S3 object prefix: %w", err)
 	}
 	return nil
@@ -1576,14 +1576,14 @@ func copyRepoGitStorageS3(oldFull, newFull string) error {
 	if err := gitstore.ValidateRepoStorageFullName(newFull); err != nil {
 		return err
 	}
-	s3fs, err := gitbackend.GetS3FS(context.Background())
+	objectStore, err := gitbackend.GetStore(context.Background())
 	if err != nil {
 		return fmt.Errorf("resolve S3 git storage: %w", err)
 	}
-	if s3fs == nil {
+	if objectStore == nil {
 		return nil
 	}
-	if err := s3fs.CopyRepoPrefix(oldFull, newFull); err != nil {
+	if err := objectStore.CopyRepository(oldFull, newFull); err != nil {
 		return fmt.Errorf("copy S3 object prefix: %w", err)
 	}
 	return nil
@@ -1594,14 +1594,14 @@ func deleteRepoGitStorageS3(fullName string) error {
 	if err := gitstore.ValidateRepoStorageFullName(fullName); err != nil {
 		return err
 	}
-	s3fs, err := gitbackend.GetS3FS(context.Background())
+	objectStore, err := gitbackend.GetStore(context.Background())
 	if err != nil {
 		return fmt.Errorf("resolve S3 git storage: %w", err)
 	}
-	if s3fs == nil {
+	if objectStore == nil {
 		return nil
 	}
-	if err := s3fs.DeleteRepoPrefix(fullName); err != nil {
+	if err := objectStore.DeleteRepository(fullName); err != nil {
 		return fmt.Errorf("purge S3 object prefix: %w", err)
 	}
 	return nil

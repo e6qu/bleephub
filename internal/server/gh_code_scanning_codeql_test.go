@@ -380,7 +380,7 @@ func TestCodeQLDatabases_RoundTrip(t *testing.T) {
 func TestCodeQLDatabases_BytesUseObjectStore(t *testing.T) {
 	s := newIsolatedServer(t)
 	repo := s.seedRepo(t, "codeql-dbs-object", false)
-	objectFS, objectStore := newObjectByteStoreForTest(t)
+	storedObjects, objectStore := newObjectByteStoreForTest(t)
 	oldStore := s.store.ObjectByteStore
 	s.store.ObjectByteStore = objectStore
 	t.Cleanup(func() {
@@ -394,7 +394,7 @@ func TestCodeQLDatabases_BytesUseObjectStore(t *testing.T) {
 	if db == nil {
 		t.Fatal("CodeQL database missing after seed")
 	}
-	if got := string(readS3TestFile(t, objectFS, db.StoragePath)); got != string(dbBytes) {
+	if got := string(readStoredObjectForTest(t, storedObjects, db.StoragePath)); got != string(dbBytes) {
 		t.Fatalf("CodeQL database object bytes = %q, want %q", got, dbBytes)
 	}
 	if len(db.Content) != 0 {
@@ -424,7 +424,7 @@ func TestCodeQLDatabases_BytesUseObjectStore(t *testing.T) {
 	}
 
 	mustStatus(t, s.delete(t, "/api/v3/repos/"+repo.FullName+"/code-scanning/codeql/databases/go", defaultToken), http.StatusNoContent, "delete object-backed database")
-	if _, err := objectFS.Open(db.StoragePath); err == nil {
+	if storedObjectExistsForTest(t, storedObjects, db.StoragePath) {
 		t.Fatalf("CodeQL database object %s survived database deletion", db.StoragePath)
 	}
 }
@@ -623,7 +623,7 @@ func TestCodeQLDatabaseUpload_ObjectFailurePreservesPreviousDatabase(t *testing.
 	repo := s.seedRepo(t, "codeql-object-atomic", false)
 	firstCommit := s.putRepoFile(t, repo.FullName, "main.go", "package main\n", "add source")
 	firstBundle := testCodeQLDatabaseBundle(t, "go", "first dataset")
-	objectFS, goodStore := newObjectByteStoreForTest(t)
+	storedObjects, goodStore := newObjectByteStoreForTest(t)
 	oldStore := s.store.ObjectByteStore
 	s.store.ObjectByteStore = goodStore
 	t.Cleanup(func() { s.store.ObjectByteStore = oldStore })
@@ -632,7 +632,7 @@ func TestCodeQLDatabaseUpload_ObjectFailurePreservesPreviousDatabase(t *testing.
 	databaseID := int(created["id"].(float64))
 	secondCommit := s.putRepoFile(t, repo.FullName, "second.go", "package main\n", "add second source")
 	secondBundle := testCodeQLDatabaseBundle(t, "go", "replacement dataset")
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: deriveS3FSForTest(t, "missing-bucket", objectFS.Prefix())}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: deriveObjectStoreForTest(t, "missing-bucket", storedObjects.Prefix())}
 
 	resp := s.postCodeQLDatabase(t, defaultToken, repo.FullName, "go", "replacement", secondCommit, "application/zip", secondBundle)
 	body, _ := io.ReadAll(resp.Body)
@@ -649,7 +649,7 @@ func TestCodeQLDatabaseUpload_ObjectFailurePreservesPreviousDatabase(t *testing.
 	if database.ID != databaseID {
 		t.Fatalf("database ID changed after object failure: got %d want %d", database.ID, databaseID)
 	}
-	if got := readS3TestFile(t, objectFS, database.StoragePath); !bytes.Equal(got, firstBundle) {
+	if got := readStoredObjectForTest(t, storedObjects, database.StoragePath); !bytes.Equal(got, firstBundle) {
 		t.Fatalf("database bytes changed after object failure")
 	}
 	previousPath := database.StoragePath
@@ -658,10 +658,10 @@ func TestCodeQLDatabaseUpload_ObjectFailurePreservesPreviousDatabase(t *testing.
 	if database == nil || database.CommitOID != secondCommit || database.StoragePath == previousPath || database.Name != "go-database" {
 		t.Fatalf("successful replacement database = %+v response=%v", database, replaced)
 	}
-	if _, err := objectFS.Open(previousPath); err == nil {
+	if storedObjectExistsForTest(t, storedObjects, previousPath) {
 		t.Fatalf("replaced CodeQL database archive %s survived successful replacement", previousPath)
 	}
-	if got := readS3TestFile(t, objectFS, database.StoragePath); !bytes.Equal(got, secondBundle) {
+	if got := readStoredObjectForTest(t, storedObjects, database.StoragePath); !bytes.Equal(got, secondBundle) {
 		t.Fatalf("replacement database bytes differ")
 	}
 }
@@ -868,7 +868,7 @@ func TestCodeQLVariantAnalyses_QueryPacksUseObjectStore(t *testing.T) {
 	databaseCommit := s.putRepoFile(t, withDB.FullName, "main.go", "package main\n", "add source")
 	s.uploadCodeQLDatabase(t, withDB.FullName, "go", databaseCommit, testCodeQLDatabaseBundle(t, "go", "db"))
 
-	objectFS, objectStore := newObjectByteStoreForTest(t)
+	storedObjects, objectStore := newObjectByteStoreForTest(t)
 	oldStore := s.store.ObjectByteStore
 	s.store.ObjectByteStore = objectStore
 	t.Cleanup(func() {
@@ -912,7 +912,7 @@ func TestCodeQLVariantAnalyses_QueryPacksUseObjectStore(t *testing.T) {
 		t.Fatalf("authorized private query-pack download = %d bytes=%d", authorized.StatusCode, len(authorizedBytes))
 	}
 	key := store.CodeQLVariantAnalysisQueryPackDataKey(vaID)
-	if got := readS3TestFile(t, objectFS, key); !bytes.Equal(got, queryPackBytes) {
+	if got := readStoredObjectForTest(t, storedObjects, key); !bytes.Equal(got, queryPackBytes) {
 		t.Fatalf("CodeQL variant-analysis query-pack object bytes = %q, want %q", got, queryPackBytes)
 	}
 
@@ -950,7 +950,7 @@ func TestCodeQLVariantAnalyses_QueryPacksUseObjectStore(t *testing.T) {
 	}
 
 	mustStatus(t, s.delete(t, "/api/v3/repos/"+controller.FullName, defaultToken), http.StatusNoContent, "delete controller repository")
-	if _, err := objectFS.Open(key); err == nil {
+	if storedObjectExistsForTest(t, storedObjects, key) {
 		t.Fatalf("CodeQL variant-analysis query-pack object %s survived controller repository deletion", key)
 	}
 }

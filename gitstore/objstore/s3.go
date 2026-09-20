@@ -142,8 +142,11 @@ func (b *s3Bucket) Head(ctx context.Context, key string) (Info, error) {
 	return b.info(key, info), nil
 }
 
-func (b *s3Bucket) Put(ctx context.Context, key string, body io.Reader, size int64, condition Condition) (Version, error) {
-	opts := minio.PutObjectOptions{PartSize: b.partBytes}
+func (b *s3Bucket) Put(ctx context.Context, key string, body io.Reader, size int64, condition Condition, metadata Metadata) (Version, error) {
+	if err := metadata.Validate(); err != nil {
+		return "", fmt.Errorf("s3 put %s: %w", key, err)
+	}
+	opts := minio.PutObjectOptions{PartSize: b.partBytes, UserMetadata: metadata}
 	switch {
 	case condition.Absent():
 		opts.SetMatchETagExcept("*")
@@ -232,7 +235,16 @@ func (b *s3Bucket) PresignGet(ctx context.Context, key string, expiry time.Durat
 }
 
 func (b *s3Bucket) info(key string, info minio.ObjectInfo) Info {
-	return Info{Key: key, Size: info.Size, Version: versionOf(info.ETag), ModTime: info.LastModified}
+	described := Info{Key: key, Size: info.Size, Version: versionOf(info.ETag), ModTime: info.LastModified}
+	// S3 returns a name in the case HTTP gave its header, not the case it was
+	// written in; the names this package allows have one spelling, lower-case.
+	for name, value := range info.UserMetadata {
+		if described.Metadata == nil {
+			described.Metadata = Metadata{}
+		}
+		described.Metadata[strings.ToLower(name)] = value
+	}
+	return described
 }
 
 // versionOf takes the quotes off an ETag, which some responses carry and some

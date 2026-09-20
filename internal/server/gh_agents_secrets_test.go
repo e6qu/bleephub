@@ -379,7 +379,7 @@ func TestAgentsCodeScanPersistenceReload(t *testing.T) {
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
-	objectFS, objectStore := newObjectByteStoreForTest(t)
+	storedObjects, objectStore := newObjectByteStoreForTest(t)
 	st1.ObjectByteStore = objectStore
 	st1.SeedDefaultUser()
 	user := st1.UsersByLogin["admin"]
@@ -408,14 +408,14 @@ func TestAgentsCodeScanPersistenceReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertCodeQLDatabase: %v", err)
 	}
-	if got := string(readS3TestFile(t, objectFS, db.StoragePath)); got != "db-bytes" {
+	if got := string(readStoredObjectForTest(t, storedObjects, db.StoragePath)); got != "db-bytes" {
 		t.Fatalf("CodeQL database object bytes = %q, want db-bytes", got)
 	}
 	va, err := st1.CreateCodeQLVariantAnalysis(repo.FullName, user.ID, "go", []byte("pack"), []string{repo.FullName})
 	if err != nil {
 		t.Fatalf("CreateCodeQLVariantAnalysis: %v", err)
 	}
-	if got := string(readS3TestFile(t, objectFS, va.StoragePath)); got != "pack" {
+	if got := string(readStoredObjectForTest(t, storedObjects, va.StoragePath)); got != "pack" {
 		t.Fatalf("CodeQL variant-analysis query-pack object bytes = %q, want pack", got)
 	}
 

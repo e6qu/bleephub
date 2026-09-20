@@ -7,6 +7,7 @@ package gitbackend
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,52 +15,70 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/gitstore/objstore"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
-// S3FSCacheState memoizes the process-wide S3 filesystem built from the
+// StoreCacheState memoizes the process-wide git object store built from the
 // environment. Fields are exported so dependent-package tests can reset the memo
 // without a test-only exported function tripping the deadcode gate.
-type S3FSCacheState struct {
+type StoreCacheState struct {
 	Mu     sync.Mutex
-	FS     *gitstore.S3FS
-	Err    error
+	Store  *gitstore.Store
 	Inited bool
 }
 
-// S3FSCache is the process-wide memo consulted by GetS3FS.
-var S3FSCache S3FSCacheState
+// StoreCache is the process-wide memo consulted by GetStore.
+var StoreCache StoreCacheState
 
-func GetS3FS(ctx context.Context) (*gitstore.S3FS, error) {
-	S3FSCache.Mu.Lock()
-	defer S3FSCache.Mu.Unlock()
-	if S3FSCache.Inited {
-		return S3FSCache.FS, S3FSCache.Err
+// conformancePrefix is where, inside the configured git prefix, the startup
+// probe writes its one key. No repository can live there: an owner's name never
+// starts with a dot.
+const conformancePrefix = ".conformance"
+
+// conformanceTimeout bounds the startup probe: a store that does not answer a
+// dozen small requests in this long is not one to start serving on.
+const conformanceTimeout = 30 * time.Second
+
+// GetStore returns the process-wide git object store, or nil when git storage is
+// not in an object store. The first call opens it and proves, against the live
+// bucket, the guarantees the storage engine is built on; a store that fails the
+// proof is not memoized and its error is returned, which at startup means the
+// server does not start.
+func GetStore(ctx context.Context) (*gitstore.Store, error) {
+	StoreCache.Mu.Lock()
+	defer StoreCache.Mu.Unlock()
+	if StoreCache.Inited {
+		return StoreCache.Store, nil
 	}
-
-	endpoint := os.Getenv("BLEEPHUB_S3_ENDPOINT")
 	bucket := os.Getenv("BLEEPHUB_S3_BUCKET")
 	if bucket == "" {
-		S3FSCache.Inited = true
+		StoreCache.Inited = true
 		return nil, nil
 	}
-
-	prefix := os.Getenv("BLEEPHUB_S3_PREFIX")
-	fs, err := NewS3FS(ctx, endpoint, bucket, prefix)
+	opened, err := NewStore(ctx, os.Getenv("BLEEPHUB_S3_ENDPOINT"), bucket, os.Getenv("BLEEPHUB_S3_PREFIX"))
 	if err != nil {
-		// Discovery can fail transiently (e.g. while an ECS task waits for
-		// credentials); leave the memo uninited so the next operation retries.
 		return nil, err
 	}
-	S3FSCache.FS = fs
-	S3FSCache.Err = nil
-	S3FSCache.Inited = true
-	return fs, nil
+	if err := Conform(ctx, opened); err != nil {
+		return nil, err
+	}
+	StoreCache.Store = opened
+	StoreCache.Inited = true
+	return opened, nil
 }
 
-// NewS3FS builds an object-store filesystem tuned from the environment.
-func NewS3FS(ctx context.Context, endpoint, bucket, prefix string) (*gitstore.S3FS, error) {
-	return gitstore.NewS3FS(ctx, endpoint, bucket, prefix, OptionsFromEnv())
+// NewStore opens an object store tuned from the environment.
+func NewStore(ctx context.Context, endpoint, bucket, prefix string) (*gitstore.Store, error) {
+	return gitstore.OpenS3(ctx, endpoint, bucket, prefix, OptionsFromEnv())
+}
+
+// Conform runs the object-store conformance probe under a prefix of its own
+// inside the store's prefix. The probe writes and deletes a single key there.
+func Conform(ctx context.Context, opened *gitstore.Store) error {
+	ctx, cancel := context.WithTimeout(ctx, conformanceTimeout)
+	defer cancel()
+	return objstore.Conform(ctx, opened.Bucket(), path.Join(opened.Prefix(), conformancePrefix)+"/")
 }
 
 func GitDataDir() string {
@@ -88,12 +107,12 @@ func openGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, er
 	if err := gitstore.ValidateRepoStorageFullName(fullName); err != nil {
 		return nil, err
 	}
-	s3fs, err := GetS3FS(ctx)
+	objectStore, err := GetStore(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if s3fs != nil {
-		return gitstore.OpenObjectStore(s3fs, fullName)
+	if objectStore != nil {
+		return objectStore.Repository(fullName)
 	}
 	if gitDir := GitDataDir(); gitDir != "" {
 		return gitstore.OpenDir(gitDir, fullName)

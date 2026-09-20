@@ -4,8 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -63,7 +66,7 @@ func serveGitBundleURIV2(ctx context.Context, stor storer.Storer, arguments []st
 		return fmt.Errorf("bundle-uri: unexpected argument: '%s'", arguments[0])
 	}
 	encoder := pktline.NewEncoder(out)
-	packDir, addressable := gitPackDirOf(stor).(*gitstore.S3FS)
+	addresses, addressable := stor.(gitstore.Addressable)
 	if !addressable {
 		return encoder.Flush()
 	}
@@ -76,13 +79,17 @@ func serveGitBundleURIV2(ctx context.Context, stor storer.Storer, arguments []st
 	}
 
 	id := gitBundleID(tips)
-	name := packDir.Join(gitBundleDirectory, "bundle-"+id+gitBundleExtension)
-	if _, err := packDir.Stat(name); err != nil {
-		if err := publishGitBundleOnce(ctx, stor, packDir, name, tips); err != nil {
+	name := path.Join(gitBundleDirectory, "bundle-"+id+gitBundleExtension)
+	published, err := gitBundlePublished(ctx, addresses, name)
+	if err != nil {
+		return err
+	}
+	if !published {
+		if err := publishGitBundleOnce(ctx, stor, addresses, name, tips); err != nil {
 			return err
 		}
 	}
-	uri, err := packDir.PresignedGetURL(ctx, name, gitPackURIExpiry)
+	uri, err := addresses.AuxURL(ctx, name, gitPackURIExpiry)
 	if err != nil {
 		return err
 	}
@@ -97,6 +104,17 @@ func serveGitBundleURIV2(ctx context.Context, stor storer.Storer, arguments []st
 		}
 	}
 	return encoder.Flush()
+}
+
+// gitBundlePublished reports whether the bundle of that name is in the object
+// store. Only absence means "publish it": a store that cannot answer is this
+// request's failure, not a reason to build the bundle again.
+func gitBundlePublished(ctx context.Context, addresses gitstore.Addressable, name string) (bool, error) {
+	_, err := addresses.StatAux(ctx, name)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // gitBundleTips lists the references a bundle carries, sorted by name for
@@ -158,7 +176,7 @@ type gitBundleGate struct {
 // already publishing that exact one, in which case it waits and takes theirs. The
 // store is re-consulted after the wait: a waiter that finds the key is done, one
 // that does not (the publisher failed, or it was swept) publishes it itself.
-func publishGitBundleOnce(ctx context.Context, stor storer.Storer, packDir *gitstore.S3FS, name string, tips []gitBundleTip) error {
+func publishGitBundleOnce(ctx context.Context, stor storer.Storer, addresses gitstore.Addressable, name string, tips []gitBundleTip) error {
 	gitBundlePublications.mu.Lock()
 	gate := gitBundlePublications.gates[name]
 	if gate == nil {
@@ -179,25 +197,26 @@ func publishGitBundleOnce(ctx context.Context, stor storer.Storer, packDir *gits
 		gitBundlePublications.mu.Unlock()
 	}()
 
-	if _, err := packDir.Stat(name); err == nil {
-		return nil
-	}
-	if err := publishGitBundle(ctx, stor, packDir, name, tips); err != nil {
+	published, err := gitBundlePublished(ctx, addresses, name)
+	if err != nil || published {
 		return err
 	}
-	pruneGitBundles(packDir, name)
+	if err := publishGitBundle(ctx, stor, addresses, name, tips); err != nil {
+		return err
+	}
+	pruneGitBundles(ctx, addresses, name)
 	return nil
 }
 
 // publishGitBundle builds the bundle for a ref state and writes it to the object
 // store. It streams rather than buffering, so serving a bundle costs a buffer
 // rather than the size of the repository.
-func publishGitBundle(ctx context.Context, stor storer.Storer, packDir *gitstore.S3FS, name string, tips []gitBundleTip) error {
+func publishGitBundle(ctx context.Context, stor storer.Storer, addresses gitstore.Addressable, name string, tips []gitBundleTip) error {
 	reader, writer := io.Pipe()
 	go func() {
-		_ = writer.CloseWithError(writeGitBundle(writer, stor, tips))
+		_ = writer.CloseWithError(writeGitBundle(ctx, writer, stor, tips))
 	}()
-	err := packDir.PutStream(ctx, name, reader)
+	err := addresses.PutAux(ctx, name, reader)
 	// Closing the read end unblocks a writer still producing bytes the upload
 	// will never take, so a failed upload does not park the goroutine on a dead pipe.
 	_ = reader.CloseWithError(err)
@@ -214,7 +233,7 @@ const gitBundleSignature = "# v2 git bundle\n"
 // a blank line, and the packfile of everything they reach. The pack comes from the
 // ordinary fetch path (same as a clone would receive), and the bundle lists no
 // prerequisites, so a client holding nothing can use it.
-func writeGitBundle(out io.Writer, stor storer.Storer, tips []gitBundleTip) error {
+func writeGitBundle(ctx context.Context, out io.Writer, stor storer.Storer, tips []gitBundleTip) error {
 	if _, err := io.WriteString(out, gitBundleSignature); err != nil {
 		return err
 	}
@@ -238,26 +257,26 @@ func writeGitBundle(out io.Writer, stor storer.Storer, tips []gitBundleTip) erro
 	if err != nil {
 		return err
 	}
-	return writeGitPackfile(newGitBandWriter(out, gitSidebandNone, false), stor, plan, false)
+	return writeGitPackfile(ctx, newGitBandWriter(out, gitSidebandNone, false), stor, plan, false)
 }
 
 // pruneGitBundles removes every bundle but the one just published, once it is
 // older than any URL that could still point at it. A failed removal is not this
 // request's failure: the next publication retries.
-func pruneGitBundles(packDir *gitstore.S3FS, keep string) {
-	entries, err := packDir.ReadDir(gitBundleDirectory)
+func pruneGitBundles(ctx context.Context, addresses gitstore.Addressable, keep string) {
+	bundles, err := addresses.ListAux(ctx, gitBundleDirectory)
 	if err != nil {
 		return
 	}
 	cutoff := time.Now().Add(-gitBundleRetention)
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), gitBundleExtension) {
+	for _, bundle := range bundles {
+		if !strings.HasSuffix(bundle.Name, gitBundleExtension) {
 			continue
 		}
-		name := packDir.Join(gitBundleDirectory, entry.Name())
-		if name == keep || !entry.ModTime().Before(cutoff) {
+		name := path.Join(gitBundleDirectory, bundle.Name)
+		if name == keep || !bundle.ModTime.Before(cutoff) {
 			continue
 		}
-		_ = packDir.Remove(name)
+		_ = addresses.RemoveAux(ctx, name)
 	}
 }

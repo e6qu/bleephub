@@ -300,7 +300,7 @@ func (s *storeShared) put(parent context.Context, timeout time.Duration, key str
 	var version objstore.Version
 	err := s.call(parent, timeout, func(ctx context.Context) error {
 		var err error
-		version, err = s.bucket.Put(ctx, key, body, size, condition)
+		version, err = s.bucket.Put(ctx, key, body, size, condition, nil)
 		return err
 	})
 	return version, err

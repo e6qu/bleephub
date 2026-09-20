@@ -3,6 +3,7 @@ package bleephub
 import (
 	"bytes"
 	"context"
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/gitbackend"
 	"io"
 	"net/http"
@@ -170,21 +171,25 @@ func TestBundleURIIsRebuiltWhenTheRefsMove(t *testing.T) {
 // storedBundles lists the bundle keys a repository holds in object storage.
 func storedBundles(t *testing.T, name string) []string {
 	t.Helper()
-	objectStore, err := gitbackend.GetS3FS(context.Background())
+	objectStore, err := gitbackend.GetStore(context.Background())
 	if err != nil || objectStore == nil {
 		t.Fatalf("open the object store: %v", err)
 	}
-	repoFS, err := objectStore.Chroot("admin/" + name)
+	repository, err := objectStore.Repository("admin/" + name)
 	if err != nil {
-		t.Fatalf("chroot the repository: %v", err)
+		t.Fatalf("open the repository: %v", err)
 	}
-	entries, err := repoFS.ReadDir(gitBundleDirectory)
+	addresses, addressable := repository.(gitstore.Addressable)
+	if !addressable {
+		t.Fatal("the object-store repository is not addressable")
+	}
+	bundles, err := addresses.ListAux(context.Background(), gitBundleDirectory)
 	if err != nil {
 		t.Fatalf("list the bundle directory: %v", err)
 	}
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		names = append(names, entry.Name())
+	names := make([]string, 0, len(bundles))
+	for _, bundle := range bundles {
+		names = append(names, bundle.Name)
 	}
 	return names
 }
@@ -248,7 +253,7 @@ func TestConcurrentBundleURIRequestsPublishOneBundle(t *testing.T) {
 	srv := newS3GitServerForTest(t)
 	const name = "bundleuri-concurrent"
 	seedPackedS3Repo(t, srv, name)
-	stor := gitStorerWithPackReuse(context.Background(), "admin/"+name, srv.store.GetGitStorage("admin", name))
+	stor := srv.store.GetGitStorage("admin", name)
 
 	const callers = 4
 	replies := make([]bytes.Buffer, callers)

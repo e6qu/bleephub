@@ -92,6 +92,20 @@ func (r *gitRunner) measure(scenario string, ops int, body func(result *Result) 
 	return result
 }
 
+// measureCold measures a scenario against a replica that has served nothing: the
+// remote is restarted, and has gone quiet, before the clock and the request count
+// start. What a server does once when it starts — opening its store, proving the
+// store keeps its promises — is a cost of starting, paid once however many
+// clones follow, and billing it to the first of them made a cold clone look like
+// a cold boot.
+func (r *gitRunner) measureCold(ctx context.Context, scenario string, ops int, body func(result *Result) error) Result {
+	if err := r.driver.Restart(ctx); err != nil {
+		return Result{Driver: r.driver.Name(), Scenario: scenario, Run: r.run, Ops: ops, Level: levelGit, Error: err.Error()}
+	}
+	r.settle()
+	return r.measure(scenario, ops, body)
+}
+
 func (r *gitRunner) execute(ctx context.Context) []Result {
 	var results []Result
 	keep := func(result Result) bool {
@@ -127,10 +141,7 @@ func (r *gitRunner) execute(ctx context.Context) []Result {
 	}
 
 	var firstClone string
-	keep(r.measure(scenarioCloneCold, 1, func(result *Result) error {
-		if err := r.driver.Restart(ctx); err != nil {
-			return err
-		}
+	keep(r.measureCold(ctx, scenarioCloneCold, 1, func(result *Result) error {
 		dir, err := r.clone(ctx, remote, gitEnv, initial.Tip, initial.Objects, result)
 		firstClone = dir
 		return err
@@ -161,10 +172,7 @@ func (r *gitRunner) execute(ctx context.Context) []Result {
 		}
 	}
 
-	keep(r.measure(scenarioCloneParallel, r.parallel, func(result *Result) error {
-		if err := r.driver.Restart(ctx); err != nil {
-			return err
-		}
+	keep(r.measureCold(ctx, scenarioCloneParallel, r.parallel, func(result *Result) error {
 		var wg sync.WaitGroup
 		errs := make([]error, r.parallel)
 		for worker := range r.parallel {

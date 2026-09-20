@@ -89,6 +89,13 @@ func gitParsePackURIProtocols(value string) []string {
 	return protocols
 }
 
+// gitAddressablePacks is a repository whose stored packs can be both chosen and
+// handed out by address: the object-store backend.
+type gitAddressablePacks interface {
+	gitstore.PackSource
+	gitstore.Addressable
+}
+
 // gitPackURIOffload returns an offer when this fetch is answered with URIs, and
 // nil otherwise: nothing is offered unless the client asked, the packs live in
 // object storage (where a presigned GET exists), and they pass the same
@@ -97,14 +104,14 @@ func gitPackURIOffload(ctx context.Context, stor storer.Storer, request *gitUplo
 	if len(request.packURIProtocols) == 0 {
 		return nil, nil
 	}
-	packDir, addressable := gitPackDirOf(stor).(*gitstore.S3FS)
+	packs, addressable := stor.(gitAddressablePacks)
 	if !addressable {
 		return nil, nil
 	}
 	if len(plan.objects) == 0 {
 		return nil, nil
 	}
-	offloadable, err := gitReusablePacks(packDir, plan)
+	offloadable, err := gitReusablePacks(ctx, packs, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +124,7 @@ func gitPackURIOffload(ctx context.Context, stor storer.Storer, request *gitUplo
 		if !named {
 			continue
 		}
-		signed, err := packDir.PresignedGetURL(ctx, packDir.Join(gitPackDirectory, pack.name+".pack"), gitPackURIExpiry)
+		signed, err := packs.PackURL(ctx, pack.name, gitPackURIExpiry)
 		if err != nil {
 			return nil, err
 		}

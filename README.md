@@ -163,7 +163,7 @@ BLEEPHUB_ADMIN_TOKEN=<token> ./bleephub-server --addr :80 --log-level info
 - `BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY` — **required when persistence is enabled.** A stable base64-encoded 32-byte key for AES-256-GCM encryption of credentials at rest; a missing or wrong key fails startup loudly. Terraform injects it via AWS Secrets Manager.
 - `BLEEPHUB_DATA_DIR` — directory for the SQLite database and local development metadata (default `.`).
 - `BLEEPHUB_GIT_DIR` — store git repos on the local filesystem (default: in-memory).
-- `BLEEPHUB_S3_BUCKET` / `BLEEPHUB_S3_ENDPOINT` / `BLEEPHUB_S3_PREFIX` / `BLEEPHUB_S3_REGION` — store git repos in S3-compatible object storage (bucket set ⇒ S3 wins over `BLEEPHUB_GIT_DIR`). How bleephub drives real git over each of these backends — in-memory, filesystem, and object store — through go-git and the go-billy filesystem abstraction is described in [docs/git-storage.md](docs/git-storage.md).
+- `BLEEPHUB_S3_BUCKET` / `BLEEPHUB_S3_ENDPOINT` / `BLEEPHUB_S3_PREFIX` / `BLEEPHUB_S3_REGION` — store git repos in S3-compatible object storage (bucket set ⇒ S3 wins over `BLEEPHUB_GIT_DIR`). At startup the bucket is probed for the guarantees git storage is built on — conditional writes above all — by writing and deleting one key under `<prefix>/.conformance/`; a store that fails the probe (Google Cloud Storage's S3-compatible endpoint does) is one bleephub refuses to start on. How bleephub drives real git over each of these backends — in-memory, filesystem, and object store — through go-git and its own object-store storage engine is described in [docs/git-storage.md](docs/git-storage.md).
 - `BLEEPHUB_OBJECT_S3_BUCKET` / `BLEEPHUB_OBJECT_S3_ENDPOINT` / `BLEEPHUB_OBJECT_S3_PREFIX` — store Actions artifacts, caches, runner logs, release assets, package files, container-registry blobs, CodeQL archives/query-packs, and attestation bundles in object storage.
 - `BLEEPHUB_PAGES_JEKYLL_EXECUTABLE` — the Pages build binary (default `bleephub-pages-jekyll`).
 
@@ -239,7 +239,7 @@ Two hermetic unit-test gates validate Bleephub against the vendored GitHub OpenA
 - [specs/BLEEPHUB_GITHUB_API_PARITY.md](specs/BLEEPHUB_GITHUB_API_PARITY.md) — per-endpoint parity audit + acceptance criteria.
 - [docs/BLEEPHUB_GH_CLI.md](docs/BLEEPHUB_GH_CLI.md) — the full `gh` CLI walkthrough.
 - [docs/oidc.md](docs/oidc.md) — SSO integration: OpenID Connect (any compliant provider, or shauth) and SAML 2.0.
-- [docs/git-storage.md](docs/git-storage.md) — how bleephub drives real git in-process over memory, filesystem, and S3 through go-git and go-billy.
+- [docs/git-storage.md](docs/git-storage.md) — how bleephub drives real git in-process over memory, filesystem, and an object store through go-git and the `gitstore` storage engine.
 - [gitstore/README.md](gitstore/README.md) — the git-on-object-storage library on its own: API, options, and [`gitstore/bench`](gitstore/bench/README.md), the harness that compares it with other implementations (`make bench-gitstore`).
 - [docs/scaling.md](docs/scaling.md) — the scaling limits, the fuzz/benchmark/ramp suite, and the tuning knobs (`make bench` / `make scale` / `make fuzz`).
 - [docs/private-api.md](docs/private-api.md) — bleephub's own non-GitHub management and data-plane routes (`/ui-data`, `/manage`, `/internal`, `/_apis`).

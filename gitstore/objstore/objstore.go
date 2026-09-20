@@ -27,6 +27,7 @@ package objstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 )
@@ -47,12 +48,50 @@ var (
 // like a hash of the content it is not one that can be trusted as such.
 type Version string
 
+// Metadata is a few short facts a writer keeps with an object and gets back
+// with every read of it — a digest of the content, say, held beside the bytes
+// rather than inside them, so that the object stays exactly its content.
+//
+// Names are lower-case ASCII letters and digits, starting with a letter. That is
+// the intersection of what the stores allow: S3 carries a name as an HTTP header
+// and folds its case, and Azure requires an identifier, which rules out the
+// hyphen. Values are printable ASCII.
+type Metadata map[string]string
+
+// Validate reports the first name or value a store would refuse or alter.
+func (m Metadata) Validate() error {
+	for name, value := range m {
+		if !validMetadataName(name) {
+			return fmt.Errorf("object metadata name %q: want lower-case letters and digits, starting with a letter", name)
+		}
+		for _, r := range value {
+			if r < ' ' || r > '~' {
+				return fmt.Errorf("object metadata %s: value is not printable ASCII", name)
+			}
+		}
+	}
+	return nil
+}
+
+func validMetadataName(name string) bool {
+	for i, r := range name {
+		letter := r >= 'a' && r <= 'z'
+		if !letter && (i == 0 || r < '0' || r > '9') {
+			return false
+		}
+	}
+	return name != ""
+}
+
 // Info describes an object.
 type Info struct {
 	Key     string
 	Size    int64
 	Version Version
 	ModTime time.Time
+	// Metadata is what the object was written with. A listing does not carry
+	// it; a read and a Head do.
+	Metadata Metadata
 }
 
 // Entry is one result of a listing: an object, or — from ListDirectory — a
@@ -97,9 +136,10 @@ type Bucket interface {
 	GetRange(ctx context.Context, key string, offset, length int64) (io.ReadCloser, Info, error)
 	// Head describes an object without reading it.
 	Head(ctx context.Context, key string) (Info, error)
-	// Put writes an object atomically. A size below zero means unknown, and the
-	// body is then uploaded in parts, which no store lets be conditional.
-	Put(ctx context.Context, key string, body io.Reader, size int64, condition Condition) (Version, error)
+	// Put writes an object atomically, with the metadata given. A size below
+	// zero means unknown, and the body is then uploaded in parts, which no store
+	// lets be conditional.
+	Put(ctx context.Context, key string, body io.Reader, size int64, condition Condition, metadata Metadata) (Version, error)
 	// Delete removes an object. Removing one that is not there is not an error.
 	Delete(ctx context.Context, key string) error
 	// DeleteMany removes every key given, in as few requests as the store allows.

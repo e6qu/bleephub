@@ -11,6 +11,9 @@ import (
 	"time"
 )
 
+// conformanceMetadata is what the probe writes its first object with.
+var conformanceMetadata = Metadata{"bleephubprobe": "kept+beside/the=object"}
+
 // presignProbeExpiry is how long the URL signed by the probe would last. Nothing
 // fetches it.
 const presignProbeExpiry = time.Minute
@@ -44,7 +47,7 @@ func Conform(ctx context.Context, bucket Bucket, prefix string) error {
 	}
 
 	first := []byte("first writer")
-	created, err := bucket.Put(ctx, key, bytes.NewReader(first), int64(len(first)), IfAbsent())
+	created, err := bucket.Put(ctx, key, bytes.NewReader(first), int64(len(first)), IfAbsent(), conformanceMetadata)
 	if err != nil {
 		return fail("creating an object that does not exist", err)
 	}
@@ -53,15 +56,24 @@ func Conform(ctx context.Context, bucket Bucket, prefix string) error {
 	}
 
 	second := []byte("second writer")
-	if _, err := bucket.Put(ctx, key, bytes.NewReader(second), int64(len(second)), IfAbsent()); !errors.Is(err, ErrConditionNotMet) {
+	if _, err := bucket.Put(ctx, key, bytes.NewReader(second), int64(len(second)), IfAbsent(), nil); !errors.Is(err, ErrConditionNotMet) {
 		return broken(fmt.Sprintf("a create-if-absent of an object that exists answered %v, not a refusal: two replicas would both win", err))
 	}
 
 	if err := expectContent(ctx, bucket, key, first, created); err != nil {
 		return fail("reading back what the refused write must not have changed", err)
 	}
+	described, err := bucket.Head(ctx, key)
+	if err != nil {
+		return fail("describing an object", err)
+	}
+	for name, want := range conformanceMetadata {
+		if got := described.Metadata[name]; got != want {
+			return broken(fmt.Sprintf("an object written with metadata %s=%q came back with %q: a digest kept beside an object would be lost", name, want, got))
+		}
+	}
 
-	replaced, err := bucket.Put(ctx, key, bytes.NewReader(second), int64(len(second)), IfVersion(created))
+	replaced, err := bucket.Put(ctx, key, bytes.NewReader(second), int64(len(second)), IfVersion(created), nil)
 	if err != nil {
 		return fail("replacing an object at the version just read", err)
 	}
@@ -69,7 +81,7 @@ func Conform(ctx context.Context, bucket Bucket, prefix string) error {
 		return broken("an object's version did not change when its content did")
 	}
 	third := []byte("third writer")
-	if _, err := bucket.Put(ctx, key, bytes.NewReader(third), int64(len(third)), IfVersion(created)); !errors.Is(err, ErrConditionNotMet) {
+	if _, err := bucket.Put(ctx, key, bytes.NewReader(third), int64(len(third)), IfVersion(created), nil); !errors.Is(err, ErrConditionNotMet) {
 		return broken(fmt.Sprintf("a replace-if-unchanged against a stale version answered %v, not a refusal: a lost update would go unnoticed", err))
 	}
 	if err := expectContent(ctx, bucket, key, second, replaced); err != nil {

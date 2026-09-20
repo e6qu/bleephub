@@ -15,7 +15,7 @@ import (
 // loose tier and published packs.
 func looseAndPackedKeys(t *testing.T, name string) (loose, packs []string) {
 	t.Helper()
-	objectStore, err := gitbackend.GetS3FS(context.Background())
+	objectStore, err := gitbackend.GetStore(context.Background())
 	if err != nil || objectStore == nil {
 		t.Fatalf("open the object store: %v", err)
 	}

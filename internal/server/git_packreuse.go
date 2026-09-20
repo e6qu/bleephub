@@ -4,17 +4,13 @@ import (
 	"compress/zlib"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 
 	"github.com/e6qu/bleephub/gitstore"
-	"github.com/e6qu/bleephub/internal/gitbackend"
-	billy "github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
@@ -36,9 +32,6 @@ import (
 // When no stored pack qualifies (the ordinary incremental fetch) the encoder
 // answers as before, at the cost of a search over a small window.
 
-// gitPackDirectory is the pack directory relative to a repository's git dir.
-const gitPackDirectory = "objects/pack"
-
 // gitPackHeaderSize is the twelve-byte packfile header ("PACK", version, count).
 const gitPackHeaderSize = 12
 
@@ -55,58 +48,6 @@ const (
 	gitPackReuseCoverageOf = 4
 )
 
-// gitPackReuseStorer pairs a repository's storer with its pack directory, so the
-// fetch path reaches the stored bytes through the value it already carries. The
-// storer is embedded because every method a fetch calls belongs to it.
-type gitPackReuseStorer struct {
-	storer.Storer
-	packDir billy.Filesystem
-}
-
-// gitStorerWithPackReuse returns the fetch storer with its pack directory
-// attached when the backend has one. Memory-backed storage and an unresolvable
-// name have no packfiles and fall back to the plain (encoder-path) storer.
-func gitStorerWithPackReuse(ctx context.Context, fullName string, stor storer.Storer) storer.Storer { //nolint:ireturn
-	packDir, err := gitRepositoryFilesystem(ctx, fullName)
-	if err != nil || packDir == nil {
-		return stor
-	}
-	return &gitPackReuseStorer{Storer: stor, packDir: packDir}
-}
-
-// gitRepositoryFilesystem opens a repository's git directory on whichever
-// backend holds it, mirroring the storage layer's choice.
-func gitRepositoryFilesystem(ctx context.Context, fullName string) (billy.Filesystem, error) { //nolint:ireturn
-	if err := gitstore.ValidateRepoStorageFullName(fullName); err != nil {
-		return nil, err
-	}
-	objectStore, err := gitbackend.GetS3FS(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if objectStore != nil {
-		return objectStore.Chroot(fullName)
-	}
-	dataDir := gitbackend.GitDataDir()
-	if dataDir == "" {
-		return nil, nil
-	}
-	repoDir, err := gitstore.RepoGitDirPath(dataDir, fullName)
-	if err != nil {
-		return nil, err
-	}
-	return osfs.New(repoDir), nil
-}
-
-// gitPackDirOf returns the pack directory a storer carries, or nil.
-func gitPackDirOf(stor storer.EncodedObjectStorer) billy.Filesystem { //nolint:ireturn
-	reuse, ok := stor.(*gitPackReuseStorer)
-	if !ok {
-		return nil
-	}
-	return reuse.packDir
-}
-
 // gitStoredPack is one packfile: the objects its index lists and its file size.
 type gitStoredPack struct {
 	name    string
@@ -114,109 +55,57 @@ type gitStoredPack struct {
 	size    int64
 }
 
-// gitReusablePacks reads a repository's pack directory and returns the packs
-// this answer can be built from, or nothing. Two passes because the index is the
-// expensive part: the fanout table gives an index's object count from its first
-// kilobyte, ruling out packs larger than the answer without reading a
-// repository-sized index.
-func gitReusablePacks(fs billy.Filesystem, plan *gitPackPlan) ([]*gitStoredPack, error) {
-	entries, err := fs.ReadDir(gitPackDirectory)
+// gitReusablePacks returns the stored packs this answer can be built from, or
+// nothing. The storage engine already holds the live pack set and its parsed
+// indexes, so nothing is listed or read here that a previous request has not
+// paid for. Two passes all the same, because turning an index into an object set
+// is the expensive part: the counts rule out packs larger than the answer, and
+// the coverage floor rules out the whole repository, before any set is built.
+func gitReusablePacks(ctx context.Context, source gitstore.PackSource, plan *gitPackPlan) ([]*gitStoredPack, error) {
+	stored, err := source.StoredPacks(ctx)
 	if err != nil {
-		// No pack directory (never compacted) is the same as an empty one.
-		return nil, nil
+		return nil, err
 	}
-	type candidate struct {
-		name  string
-		size  int64
-		count int
-	}
-	var candidates []candidate
+	var candidates []gitstore.StoredPack
 	reachable := 0
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".idx") {
+	for _, pack := range stored {
+		if pack.Objects == 0 || pack.Objects > len(plan.objects) {
 			continue
 		}
-		name := strings.TrimSuffix(entry.Name(), ".idx")
-		// The .pack key is written last, so an index without its packfile belongs
-		// to a compaction still in flight and names bytes no reader can serve.
-		info, err := fs.Stat(fs.Join(gitPackDirectory, name+".pack"))
-		if err != nil {
-			continue
-		}
-		count, err := gitPackIndexCount(fs, name)
-		if err != nil {
-			return nil, err
-		}
-		if count == 0 || count > len(plan.objects) {
-			continue
-		}
-		candidates = append(candidates, candidate{name: name, size: info.Size(), count: count})
-		reachable += count
+		candidates = append(candidates, pack)
+		reachable += pack.Objects
 	}
 	// Even every candidate whole (overlap only reduces this) would miss the
-	// coverage floor, so no index is read.
+	// coverage floor, so no object set is built.
 	if reachable*gitPackReuseCoverageOf < len(plan.objects)*gitPackReuseCoverage {
 		return nil, nil
 	}
 	packs := make([]*gitStoredPack, 0, len(candidates))
 	for _, candidate := range candidates {
-		objects, err := gitPackIndexObjects(fs, candidate.name)
+		objects, err := gitPackIndexObjects(ctx, source, candidate.Name)
 		if err != nil {
 			return nil, err
 		}
-		packs = append(packs, &gitStoredPack{name: candidate.name, objects: objects, size: candidate.size})
+		packs = append(packs, &gitStoredPack{name: candidate.Name, objects: objects, size: candidate.Size})
 	}
 	return gitSelectReusablePacks(packs, plan), nil
 }
 
-// gitPackIndexFanoutSize is the 256 four-byte cumulative counts opening a pack
-// index; the last is the number of objects the index lists.
-const gitPackIndexFanoutSize = 256 * 4
-
-// gitPackIndexCount reads a pack index's object count from its fanout table
-// alone. A version 2 index puts magic and version ahead of the fanout; a version
-// 1 index begins with it.
-func gitPackIndexCount(fs billy.Filesystem, name string) (int, error) {
-	file, err := fs.Open(fs.Join(gitPackDirectory, name+".idx"))
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = file.Close() }()
-	head := make([]byte, 8+gitPackIndexFanoutSize)
-	if _, err := io.ReadFull(file, head); err != nil {
-		return 0, fmt.Errorf("read %s.idx: %w", name, err)
-	}
-	fanout := head[:gitPackIndexFanoutSize]
-	if string(head[:4]) == gitPackIndexMagic {
-		if version := binary.BigEndian.Uint32(head[4:8]); version != 2 {
-			return 0, fmt.Errorf("pack index %s is format version %d", name, version)
-		}
-		fanout = head[8:]
-	}
-	return int(binary.BigEndian.Uint32(fanout[gitPackIndexFanoutSize-4:])), nil
-}
-
-// gitPackIndexMagic opens a version 2 pack index.
-const gitPackIndexMagic = "\xfftOc"
-
-func gitPackIndexObjects(fs billy.Filesystem, name string) (map[plumbing.Hash]bool, error) {
-	file, err := fs.Open(fs.Join(gitPackDirectory, name+".idx"))
+// gitPackIndexObjects is the set of objects a stored pack's index lists.
+func gitPackIndexObjects(ctx context.Context, source gitstore.PackSource, name string) (map[plumbing.Hash]bool, error) {
+	index, err := source.PackIndex(ctx, name)
 	if err != nil {
 		return nil, err
-	}
-	defer func() { _ = file.Close() }()
-	index := idxfile.NewMemoryIndex()
-	if err := idxfile.NewDecoder(file).Decode(index); err != nil {
-		return nil, fmt.Errorf("decode %s.idx: %w", name, err)
 	}
 	iter, err := index.Entries()
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = iter.Close() }()
 	objects := map[plumbing.Hash]bool{}
 	for {
 		entry, err := iter.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return objects, nil
 		}
 		if err != nil {
@@ -285,7 +174,7 @@ func gitSelectReusablePacks(packs []*gitStoredPack, plan *gitPackPlan) []*gitSto
 // entry regions are copied byte for byte, and the checksum is computed over
 // everything written — so the client always reads a pack this call built, never
 // a stored pack forwarded whole.
-func writeGitReusedPackfile(band *gitBandWriter, stor storer.EncodedObjectStorer, fs billy.Filesystem, packs []*gitStoredPack, plan *gitPackPlan) error {
+func writeGitReusedPackfile(ctx context.Context, band *gitBandWriter, stor storer.EncodedObjectStorer, source gitstore.PackSource, packs []*gitStoredPack, plan *gitPackPlan) error {
 	reused := map[plumbing.Hash]bool{}
 	for _, pack := range packs {
 		for object := range pack.objects {
@@ -307,7 +196,7 @@ func writeGitReusedPackfile(band *gitBandWriter, stor storer.EncodedObjectStorer
 	}
 	copied := 0
 	for _, pack := range packs {
-		if err := copyGitPackEntries(stream, fs, pack); err != nil {
+		if err := copyGitPackEntries(ctx, stream, source, pack); err != nil {
 			return err
 		}
 		copied += len(pack.objects)
@@ -333,19 +222,20 @@ func writeGitReusedPackfile(band *gitBandWriter, stor storer.EncodedObjectStorer
 // checksum) onto the stream. The header is read, not skipped: its entry count
 // must agree with the index the object set came from, or the file is not the
 // pack that index describes.
-func copyGitPackEntries(stream io.Writer, fs billy.Filesystem, pack *gitStoredPack) error {
+func copyGitPackEntries(ctx context.Context, stream io.Writer, source gitstore.PackSource, pack *gitStoredPack) error {
 	entries := pack.size - int64(gitPackHeaderSize) - int64(gitPackTrailerSize)
 	if entries <= 0 {
 		return fmt.Errorf("pack %s is %d bytes, too short to hold entries", pack.name, pack.size)
 	}
-	file, err := fs.Open(fs.Join(gitPackDirectory, pack.name+".pack"))
+	reader, err := source.OpenPack(ctx, pack.name)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = file.Close() }()
+	defer func() { _ = reader.Close() }()
 	header := make([]byte, gitPackHeaderSize)
-	if _, err := io.ReadFull(file, header); err != nil {
-		return err
+	// io.ReaderAt may report io.EOF beside a full read, so the count decides.
+	if read, err := reader.ReadAt(header, 0); read != len(header) {
+		return fmt.Errorf("read header of pack %s: %w", pack.name, err)
 	}
 	if string(header[:4]) != "PACK" {
 		return fmt.Errorf("pack %s does not start with a pack signature", pack.name)
@@ -356,7 +246,7 @@ func copyGitPackEntries(stream io.Writer, fs billy.Filesystem, pack *gitStoredPa
 	if count := binary.BigEndian.Uint32(header[8:12]); int(count) != len(pack.objects) {
 		return fmt.Errorf("pack %s holds %d entries but its index lists %d", pack.name, count, len(pack.objects))
 	}
-	copied, err := io.CopyN(stream, file, entries)
+	copied, err := io.Copy(stream, io.NewSectionReader(reader, int64(gitPackHeaderSize), entries))
 	if err != nil {
 		return err
 	}
