@@ -7,7 +7,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/graphql-go/graphql"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
 )
 

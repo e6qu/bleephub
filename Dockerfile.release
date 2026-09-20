@@ -42,6 +42,9 @@ RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FR
     rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY go.mod go.sum ./
+# go.mod replaces the gitstore library with ./gitstore, and the module graph
+# cannot be loaded without the replacement's own go.mod.
+COPY gitstore/go.mod gitstore/go.sum ./gitstore/
 RUN go mod download
 COPY dqlite-node ./dqlite-node
 COPY internal/dqliteaddr ./internal/dqliteaddr

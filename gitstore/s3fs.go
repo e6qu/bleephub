@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"golang.org/x/sync/singleflight"
 )
 
 type S3FS struct {
@@ -51,7 +52,8 @@ type s3Shared struct {
 	sizes map[string]int64
 	// objects holds the per-repository membership index consulted before any loose-object read.
 	objects map[string]*repoObjectIndex
-	// chunkSize is the pack read path's extent size, resolved once.
+	// opts are the resolved tunables; chunkSize is the pack read path's extent size.
+	opts      Options
 	chunkSize int64
 	// baseCtx is the server-lifetime context every per-call timeout derives from,
 	// so in-flight S3 I/O is cancelled on shutdown instead of detaching. nil until
@@ -60,16 +62,25 @@ type s3Shared struct {
 	// breaker fast-fails S3 calls during an outage so a dead store returns quickly
 	// rather than every goroutine blocking the full per-call timeout under the lock.
 	breaker *s3Breaker
+	// chunkFetch coalesces concurrent fetches of one pack extent. A replica that
+	// starts cold under load has every clone ask for the same extents at once;
+	// without this each of them pays for its own copy of identical bytes.
+	chunkFetch singleflight.Group
 }
 
-func newS3Shared() *s3Shared {
+func newS3Shared(opts Options) *s3Shared {
+	opts = opts.resolved()
 	return &s3Shared{
 		sizes:     map[string]int64{},
 		objects:   map[string]*repoObjectIndex{},
-		chunkSize: packChunkSize(),
-		breaker:   newS3Breaker(),
+		opts:      opts,
+		chunkSize: opts.ChunkBytes,
+		breaker:   newS3Breaker(opts.BreakerThreshold, opts.BreakerCooldown),
 	}
 }
+
+// options returns the resolved tunables this filesystem and its chroots run under.
+func (f *S3FS) options() Options { return f.shared().opts }
 
 // baseContext returns the server-lifetime context per-call timeouts derive from.
 func (f *S3FS) baseContext() context.Context {
@@ -97,7 +108,7 @@ func (f *S3FS) shared() *s3Shared {
 	f.activeMu.Lock()
 	defer f.activeMu.Unlock()
 	if f.sharedV == nil {
-		f.sharedV = newS3Shared()
+		f.sharedV = newS3Shared(Options{})
 	}
 	return f.sharedV
 }
@@ -233,8 +244,12 @@ func (l *s3KeyLocks) drop(key string) {
 	}
 }
 
-func NewS3FS(ctx context.Context, endpoint, bucket, prefix string) (*S3FS, error) {
-	region := bleephubS3Region()
+// NewS3FS builds a filesystem over bucket, rooted at prefix. An empty endpoint
+// targets AWS S3 in opts.Region; anything else is an S3-compatible store
+// addressed path-style.
+func NewS3FS(ctx context.Context, endpoint, bucket, prefix string, opts Options) (*S3FS, error) {
+	opts = opts.resolved()
+	region := opts.Region
 
 	// minio-go wants the endpoint as host[:port] without a scheme, and derives
 	// TLS from a separate Secure flag rather than the scheme. An explicit
@@ -256,37 +271,39 @@ func NewS3FS(ctx context.Context, endpoint, bucket, prefix string) (*S3FS, error
 		pathStyle = true
 	}
 
-	opts := &minio.Options{
-		Creds:  credentials.NewEnvAWS(),
-		Secure: secure,
-		Region: region,
+	creds := opts.Credentials
+	if creds == nil {
+		creds = credentials.NewEnvAWS()
+	}
+	clientOpts := &minio.Options{
+		Creds:     creds,
+		Secure:    secure,
+		Region:    region,
+		Transport: opts.Transport,
 	}
 	if pathStyle {
-		opts.BucketLookup = minio.BucketLookupPath
+		clientOpts.BucketLookup = minio.BucketLookupPath
 	}
-	client, err := minio.NewCore(host, opts)
+	client, err := minio.NewCore(host, clientOpts)
 	if err != nil {
 		return nil, fmt.Errorf("s3 client: %w", err)
 	}
-
-	return &S3FS{
-		client: client,
-		bucket: bucket,
-		prefix: prefix,
-		active: &s3ActiveFiles{files: map[string]*s3FileState{}},
-		locks:  newS3KeyLocks(),
-	}, nil
+	return NewS3FSWithClient(client, bucket, prefix, opts), nil
 }
 
-// bleephubS3Region selects the AWS region: explicit BLEEPHUB_S3_REGION, then ECS-supplied AWS_REGION, then a local-simulator default.
-func bleephubS3Region() string {
-	if region := strings.TrimSpace(os.Getenv("BLEEPHUB_S3_REGION")); region != "" {
-		return region
+// NewS3FSWithClient builds a filesystem over a client the caller configured,
+// for an endpoint NewS3FS's addressing rules do not fit or a client shared with
+// other stores. Of opts, the connection fields (Region, Credentials, Transport)
+// are the client's business and are ignored here.
+func NewS3FSWithClient(client *minio.Core, bucket, prefix string, opts Options) *S3FS {
+	return &S3FS{
+		client:  client,
+		bucket:  bucket,
+		prefix:  prefix,
+		active:  &s3ActiveFiles{files: map[string]*s3FileState{}},
+		locks:   newS3KeyLocks(),
+		sharedV: newS3Shared(opts),
 	}
-	if region := strings.TrimSpace(os.Getenv("AWS_REGION")); region != "" {
-		return region
-	}
-	return "us-east-1"
 }
 
 func (f *S3FS) key(p string) string {
@@ -464,6 +481,9 @@ func (f *S3FS) Stat(filename string) (os.FileInfo, error) {
 }
 
 func (f *S3FS) Rename(oldpath, newpath string) error {
+	if state := f.parkedTemp(oldpath); state != nil {
+		return f.landParkedTemp(oldpath, newpath, state)
+	}
 	srcKey := f.key(oldpath)
 	dstKey := f.key(newpath)
 	ctx, cancel := context.WithTimeout(f.baseContext(), 30*time.Second)
@@ -495,7 +515,36 @@ func (f *S3FS) Rename(oldpath, newpath string) error {
 	return nil
 }
 
+// landParkedTemp uploads a parked temp file to the name it is being renamed to.
+// The staging entry is dropped only once the upload has succeeded, so a failed
+// rename can be retried, exactly as a failed rename on a disk leaves the source.
+func (f *S3FS) landParkedTemp(oldpath, newpath string, state *s3FileState) error {
+	key := f.key(newpath)
+	state.mu.Lock()
+	data := append([]byte(nil), state.data...)
+	state.mu.Unlock()
+
+	if berr := f.breaker().check(); berr != nil {
+		return berr
+	}
+	ctx, cancel := context.WithTimeout(f.baseContext(), 60*time.Second)
+	defer cancel()
+	_, err := f.client.Client.PutObject(ctx, f.bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{})
+	f.breaker().record(err)
+	if err != nil {
+		return fmt.Errorf("s3 put %s: %w", key, err)
+	}
+	f.removeActiveFile(oldpath, state)
+	f.noteLooseWrite(newpath)
+	return nil
+}
+
 func (f *S3FS) Remove(filename string) error {
+	if state := f.parkedTemp(filename); state != nil {
+		// It never reached the bucket, so there is nothing there to delete.
+		f.removeActiveFile(filename, state)
+		return nil
+	}
 	key := f.key(filename)
 	ctx, cancel := context.WithTimeout(f.baseContext(), 15*time.Second)
 	defer cancel()
@@ -515,7 +564,66 @@ func (f *S3FS) Join(elem ...string) string {
 
 func (f *S3FS) TempFile(dir, prefix string) (billy.File, error) {
 	name := path.Join(dir, prefix+uuid.New().String())
-	return f.Create(name)
+	file := f.newActiveFile(name, nil)
+	file.state.temp = true
+	return file, nil
+}
+
+// parkTemp keeps a closed temp file's bytes staged until it is renamed or
+// removed, and drops any that were abandoned.
+func (f *S3FS) parkTemp(state *s3FileState) {
+	now := time.Now()
+	state.mu.Lock()
+	state.parkedAt = now
+	state.mu.Unlock()
+
+	active := f.activeFiles()
+	active.mu.Lock()
+	defer active.mu.Unlock()
+	for key, other := range active.files {
+		if other == state {
+			continue
+		}
+		other.mu.Lock()
+		abandoned := other.temp && !other.parkedAt.IsZero() && now.Sub(other.parkedAt) > parkedTempRetention
+		other.mu.Unlock()
+		if abandoned {
+			delete(active.files, key)
+		}
+	}
+}
+
+// parkedTemp returns the staged state of a temp file that has been closed and
+// not yet renamed.
+func (f *S3FS) parkedTemp(filename string) *s3FileState {
+	state := f.activeFile(filename)
+	if state == nil {
+		return nil
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if !state.temp || state.parkedAt.IsZero() {
+		return nil
+	}
+	return state
+}
+
+// hideSupersededPacks drops from a listing of objects/pack every pack a merge
+// has rewritten. Such a pack is kept for a retention window so that a request
+// which began before the merge can finish reading it — by key, which still
+// works — but a reader arriving now must not adopt it: every object in it is in
+// the pack that replaced it, and each adopted pack costs the reader an index
+// and a filter it has no use for.
+func hideSupersededPacks(entries map[string]os.FileInfo) {
+	for name := range entries {
+		pack, ok := strings.CutSuffix(name, ".superseded")
+		if !ok {
+			continue
+		}
+		for _, extension := range []string{".pack", ".idx", ".bfilter"} {
+			delete(entries, pack+extension)
+		}
+	}
 }
 
 func (f *S3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
@@ -564,6 +672,10 @@ func (f *S3FS) ReadDir(dirname string) ([]os.FileInfo, error) {
 			isDir:   false,
 		}
 		entriesByName[info.name] = info
+	}
+
+	if path.Clean(dirname) == path.Join("objects", "pack") {
+		hideSupersededPacks(entriesByName)
 	}
 
 	// S3 cannot list an object until its upload completes, but go-git expects an open file to appear in the namespace, so merge the staging namespace in.
@@ -745,7 +857,23 @@ type s3FileState struct {
 	data  []byte
 	dirty bool
 	mu    sync.Mutex
+	// temp marks a file made by TempFile. git writes an object to a temporary
+	// name and renames it onto its final one, which on a disk makes the object
+	// appear atomically. A PUT is already atomic, so here the temporary name
+	// never reaches the bucket: closing the file parks its bytes in the staging
+	// area, and Rename uploads them once, straight to the final key. Uploading
+	// the temporary key too would cost a PUT, a COPY and a DELETE per object
+	// where one PUT does.
+	temp bool
+	// parkedAt is when a temp file was closed, for sweeping one its writer
+	// abandoned without renaming or removing it.
+	parkedAt time.Time
 }
+
+// parkedTempRetention is how long a closed temp file may wait for its rename.
+// git renames within the same call that closed it, so anything older was
+// abandoned on an error path and would otherwise hold its bytes forever.
+const parkedTempRetention = 10 * time.Minute
 
 type s3ActiveFiles struct {
 	mu    sync.Mutex
@@ -837,7 +965,10 @@ func (sf *s3File) Close() error {
 	}
 	sf.closed = true
 	var err error
-	if sf.writer {
+	switch {
+	case sf.writer && sf.state.temp:
+		sf.fs.parkTemp(sf.state)
+	case sf.writer:
 		// Drop the staging entry even when the flush fails, or later readers of the key would be served the bytes of a write that never landed.
 		err = sf.flush()
 		sf.fs.removeActiveFile(sf.name, sf.state)

@@ -231,7 +231,7 @@ Two hermetic unit-test gates validate Bleephub against the vendored GitHub OpenA
 | Actions + Checks | `gh_actions_*.go`, `gh_workflows_rest.go`, `gh_checks_*.go` | Runs/jobs/steps, dispatch, logs, check-runs/suites |
 | GraphQL | `gh_graphql.go`, `gh_*_graphql.go`, `gh_request_decode.go` | Schema + flex decoders |
 | Webhooks | `webhooks*.go`, `gh_hooks_rest.go` | HMAC-SHA256/SHA1 delivery with retry |
-| Git | `git_http.go`, `git_storage.go`, `s3fs.go` | Smart HTTP (go-git); in-memory / on-disk / S3 storage |
+| Git | `git_http.go`, `git_receivepack.go`; the [`gitstore`](gitstore/README.md) module | Smart HTTP (go-git); in-memory / on-disk / S3 storage, as a separately importable library |
 | Persistence + infra | `persistence.go`, `store*.go`, `rbac.go`, `metrics.go`, `otel.go`, `ui_embed.go` | SQLite layer, state, RBAC, metrics, OTel, dashboard |
 
 ## See also
@@ -240,6 +240,7 @@ Two hermetic unit-test gates validate Bleephub against the vendored GitHub OpenA
 - [docs/BLEEPHUB_GH_CLI.md](docs/BLEEPHUB_GH_CLI.md) — the full `gh` CLI walkthrough.
 - [docs/oidc.md](docs/oidc.md) — SSO integration: OpenID Connect (any compliant provider, or shauth) and SAML 2.0.
 - [docs/git-storage.md](docs/git-storage.md) — how bleephub drives real git in-process over memory, filesystem, and S3 through go-git and go-billy.
+- [gitstore/README.md](gitstore/README.md) — the git-on-object-storage library on its own: API, options, and [`gitstore/bench`](gitstore/bench/README.md), the harness that compares it with other implementations (`make bench-gitstore`).
 - [docs/scaling.md](docs/scaling.md) — the scaling limits, the fuzz/benchmark/ramp suite, and the tuning knobs (`make bench` / `make scale` / `make fuzz`).
 - [docs/private-api.md](docs/private-api.md) — bleephub's own non-GitHub management and data-plane routes (`/ui-data`, `/manage`, `/internal`, `/_apis`).
 - [BUGS.md](BUGS.md) — audited non-defects (false-positive findings); the fixed-defect history is in git.

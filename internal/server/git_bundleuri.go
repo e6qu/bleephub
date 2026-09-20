@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/storer"

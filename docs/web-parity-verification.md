@@ -65,7 +65,7 @@ routes. The a11y sweep exercises this by navigating each route with a fresh load
 ## Known non-parity items (owner decisions, not open gaps)
 
 - **ARCH-001** — the single flat `internal/server` package was split into a
-  compiler-enforced data layer (`internal/store` on `internal/gitstore`) with the
+  compiler-enforced data layer (`internal/store` on the `gitstore` module) with the
   application layer importing it and never the reverse. Done.
 - **WEB-016 / WEB-017** — `@bleephub/ui-core`'s operator-shell exports (~1,500 lines)
   are a maintained, tested library surface the SPA does not mount. Owner decision

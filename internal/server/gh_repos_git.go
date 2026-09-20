@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"

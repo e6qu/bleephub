@@ -1,4 +1,9 @@
-package gitstore
+// Package s3fake is an in-process object store that speaks enough of the S3
+// REST API for the minio-go client and counts every request and byte that
+// crosses it. It is the measuring instrument for gitstore's tests and
+// benchmarks, exported so a harness outside this module can point any
+// S3-speaking implementation at the same instrument.
+package s3fake
 
 import (
 	"bytes"
@@ -12,14 +17,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// fakeS3 is an in-process object store that speaks enough of the S3 REST API
+// Server is an in-process object store that speaks enough of the S3 REST API
 // for the minio-go client, and counts every request and every byte that
 // crosses it. Counting is the entire point: the cost this package exists to
 // reduce is measured in S3 requests, and a request counter that lives inside
@@ -30,12 +34,16 @@ import (
 // answers whether bleephub speaks S3 correctly. It cannot answer how many
 // requests an operation costs without parsing container logs, and it costs a
 // docker pull. Both harnesses are wanted; this one is the measuring instrument.
-type fakeS3 struct {
+type Server struct {
 	server *httptest.Server
 
 	mu      sync.Mutex
 	objects map[string][]byte
 	uploads map[string]map[int][]byte
+	// metadata holds each object's x-amz-meta-* headers. Designs that keep a
+	// fact about an object beside its bytes — a git object's type, say — read
+	// it back from here, and would misbehave against a store that dropped it.
+	metadata map[string]http.Header
 
 	// latency is slept before answering each request, standing in for the
 	// round trip to a real endpoint. A benchmark with zero latency measures
@@ -49,69 +57,71 @@ type fakeS3 struct {
 	// in this replica's work.
 	onRequest func(method, key string)
 
-	counts s3Counts
+	counts Counts
 }
 
-// s3Counts is the measurement. Requests are counted per operation because the
+// Counts is the measurement. Requests are counted per operation because the
 // operations have wildly different costs: a LIST returns up to a thousand keys
 // for one round trip, a GET returns one object.
-type s3Counts struct {
-	get         int64
-	getRanged   int64
-	head        int64
-	put         int64
-	list        int64
-	del         int64
-	copy        int64
-	multipart   int64
-	bytesDown   int64
-	bytesUp     int64
-	notFoundGet int64
+type Counts struct {
+	Get         int64
+	GetRanged   int64
+	Head        int64
+	Put         int64
+	List        int64
+	Delete      int64
+	Copy        int64
+	Multipart   int64
+	BytesDown   int64
+	BytesUp     int64
+	NotFoundGet int64
 }
 
-func (c s3Counts) total() int64 {
-	return c.get + c.getRanged + c.head + c.put + c.list + c.del + c.copy + c.multipart
+// Total is the number of requests of every kind.
+func (c Counts) Total() int64 {
+	return c.Get + c.GetRanged + c.Head + c.Put + c.List + c.Delete + c.Copy + c.Multipart
 }
 
-func (c s3Counts) sub(prev s3Counts) s3Counts {
-	return s3Counts{
-		get:         c.get - prev.get,
-		getRanged:   c.getRanged - prev.getRanged,
-		head:        c.head - prev.head,
-		put:         c.put - prev.put,
-		list:        c.list - prev.list,
-		del:         c.del - prev.del,
-		copy:        c.copy - prev.copy,
-		multipart:   c.multipart - prev.multipart,
-		bytesDown:   c.bytesDown - prev.bytesDown,
-		bytesUp:     c.bytesUp - prev.bytesUp,
-		notFoundGet: c.notFoundGet - prev.notFoundGet,
+// Sub returns the counts accrued since prev.
+func (c Counts) Sub(prev Counts) Counts {
+	return Counts{
+		Get:         c.Get - prev.Get,
+		GetRanged:   c.GetRanged - prev.GetRanged,
+		Head:        c.Head - prev.Head,
+		Put:         c.Put - prev.Put,
+		List:        c.List - prev.List,
+		Delete:      c.Delete - prev.Delete,
+		Copy:        c.Copy - prev.Copy,
+		Multipart:   c.Multipart - prev.Multipart,
+		BytesDown:   c.BytesDown - prev.BytesDown,
+		BytesUp:     c.BytesUp - prev.BytesUp,
+		NotFoundGet: c.NotFoundGet - prev.NotFoundGet,
 	}
 }
 
-func (c s3Counts) String() string {
+func (c Counts) String() string {
 	return fmt.Sprintf("total=%d get=%d ranged=%d head=%d put=%d list=%d delete=%d copy=%d multipart=%d down=%dB up=%dB 404=%d",
-		c.total(), c.get, c.getRanged, c.head, c.put, c.list, c.del, c.copy, c.multipart, c.bytesDown, c.bytesUp, c.notFoundGet)
+		c.Total(), c.Get, c.GetRanged, c.Head, c.Put, c.List, c.Delete, c.Copy, c.Multipart, c.BytesDown, c.BytesUp, c.NotFoundGet)
 }
 
-func newFakeS3(tb testing.TB) *fakeS3 {
-	tb.Helper()
-	f := &fakeS3{
-		objects: map[string][]byte{},
-		uploads: map[string]map[int][]byte{},
+// New starts a server on a loopback port. The caller closes it.
+func New() *Server {
+	f := &Server{
+		objects:  map[string][]byte{},
+		uploads:  map[string]map[int][]byte{},
+		metadata: map[string]http.Header{},
 	}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
-	tb.Cleanup(f.server.Close)
 	return f
 }
 
-// client builds an object-store client wired to this fake. Credentials are
+// Client builds an object-store client wired to this fake. Credentials are
 // static literals so nothing consults a credential file, an instance metadata
 // endpoint or an operating system credential store; path-style addressing and a
 // pinned region keep the client from ever issuing a bucket-location lookup that
 // would pollute the request counters. Retries are disabled so an injected
 // failure is observed exactly once.
-func (f *fakeS3) client() *minio.Core {
+func (f *Server) Client() *minio.Core {
 	u, err := url.Parse(f.server.URL)
 	if err != nil {
 		panic(err)
@@ -129,47 +139,49 @@ func (f *fakeS3) client() *minio.Core {
 	return core
 }
 
-func (f *fakeS3) fs(bucket, prefix string) *S3FS {
-	return &S3FS{
-		client: f.client(),
-		bucket: bucket,
-		prefix: prefix,
-		active: &s3ActiveFiles{files: map[string]*s3FileState{}},
-		locks:  newS3KeyLocks(),
-	}
-}
+// URL is the endpoint the server listens on.
+func (f *Server) URL() string { return f.server.URL }
 
-func (f *fakeS3) snapshot() s3Counts {
+// Close shuts the server down.
+func (f *Server) Close() { f.server.Close() }
+
+// Snapshot returns the counts so far.
+func (f *Server) Snapshot() Counts {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.counts
 }
 
-func (f *fakeS3) reset() {
+// Reset zeroes the counts.
+func (f *Server) Reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.counts = s3Counts{}
+	f.counts = Counts{}
 }
 
-func (f *fakeS3) setLatency(d time.Duration) {
+// SetLatency sets the delay slept before answering each request.
+func (f *Server) SetLatency(d time.Duration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.latency = d
 }
 
-func (f *fakeS3) setFailOn(fail func(method, key string) bool) {
+// SetFailOn makes the requests fail selects answer 500; nil clears it.
+func (f *Server) SetFailOn(fail func(method, key string) bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failOn = fail
 }
 
-func (f *fakeS3) setOnRequest(hook func(method, key string)) {
+// SetOnRequest installs a hook run before each request is served; nil clears it.
+func (f *Server) SetOnRequest(hook func(method, key string)) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onRequest = hook
 }
 
-func (f *fakeS3) keysWithPrefix(prefix string) []string {
+// KeysWithPrefix lists stored keys under prefix, sorted.
+func (f *Server) KeysWithPrefix(prefix string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var keys []string
@@ -182,23 +194,46 @@ func (f *fakeS3) keysWithPrefix(prefix string) []string {
 	return keys
 }
 
-func (f *fakeS3) put(key string, data []byte) {
+// Put stores an object directly, uncounted.
+func (f *Server) Put(key string, data []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.objects[key] = append([]byte(nil), data...)
 }
 
-func (f *fakeS3) get(key string) ([]byte, bool) {
+// Get reads an object directly, uncounted.
+func (f *Server) Get(key string) ([]byte, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	data, ok := f.objects[key]
 	return append([]byte(nil), data...), ok
 }
 
-func (f *fakeS3) remove(key string) {
+// Remove deletes an object directly, uncounted.
+func (f *Server) Remove(key string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.objects, key)
+	delete(f.metadata, key)
+}
+
+// userMetadata picks out the headers S3 stores with an object and returns on
+// every read of it.
+func userMetadata(header http.Header) http.Header {
+	kept := http.Header{}
+	for name, values := range header {
+		if strings.HasPrefix(name, "X-Amz-Meta-") {
+			kept[name] = append([]string(nil), values...)
+		}
+	}
+	return kept
+}
+
+// writeUserMetadata must be called with f.mu held.
+func (f *Server) writeUserMetadata(w http.ResponseWriter, key string) {
+	for name, values := range f.metadata[key] {
+		w.Header()[name] = values
+	}
 }
 
 // keyOf strips the leading "/bucket/" of a path-style request URL.
@@ -208,7 +243,7 @@ func keyOf(p string) (bucket, key string) {
 	return bucket, key
 }
 
-func (f *fakeS3) serve(w http.ResponseWriter, r *http.Request) {
+func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	latency := f.latency
 	f.mu.Unlock()
@@ -311,18 +346,32 @@ func decodeAWSChunked(raw []byte) ([]byte, error) {
 	return out, nil
 }
 
-func writeS3Error(w http.ResponseWriter, status int, code, message string) {
+// writeXML marshals a response body. Object keys reach these bodies verbatim
+// from the request, and a key may hold any character XML reserves, so the
+// encoder's escaping is what keeps the document well formed.
+func writeXML(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><Error><Code>%s</Code><Message>%s</Message></Error>`, code, message)
+	_, _ = io.WriteString(w, xml.Header)
+	_ = xml.NewEncoder(w).Encode(body)
 }
 
-func (f *fakeS3) serveGet(w http.ResponseWriter, r *http.Request, key string) {
-	data, ok := f.get(key)
+type errorResult struct {
+	XMLName xml.Name `xml:"Error"`
+	Code    string
+	Message string
+}
+
+func writeS3Error(w http.ResponseWriter, status int, code, message string) {
+	writeXML(w, status, errorResult{Code: code, Message: message})
+}
+
+func (f *Server) serveGet(w http.ResponseWriter, r *http.Request, key string) {
+	data, ok := f.Get(key)
 	if !ok {
 		f.mu.Lock()
-		f.counts.get++
-		f.counts.notFoundGet++
+		f.counts.Get++
+		f.counts.NotFoundGet++
 		f.mu.Unlock()
 		writeS3Error(w, http.StatusNotFound, "NoSuchKey", "The specified key does not exist.")
 		return
@@ -344,11 +393,12 @@ func (f *fakeS3) serveGet(w http.ResponseWriter, r *http.Request, key string) {
 
 	f.mu.Lock()
 	if ranged {
-		f.counts.getRanged++
+		f.counts.GetRanged++
 	} else {
-		f.counts.get++
+		f.counts.Get++
 	}
-	f.counts.bytesDown += int64(len(body))
+	f.counts.BytesDown += int64(len(body))
+	f.writeUserMetadata(w, key)
 	f.mu.Unlock()
 
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
@@ -389,10 +439,13 @@ func parseByteRange(header string, size int64) (int64, int64, error) {
 	return start, end, nil
 }
 
-func (f *fakeS3) serveHead(w http.ResponseWriter, key string) {
-	data, ok := f.get(key)
+func (f *Server) serveHead(w http.ResponseWriter, key string) {
+	data, ok := f.Get(key)
 	f.mu.Lock()
-	f.counts.head++
+	f.counts.Head++
+	if ok {
+		f.writeUserMetadata(w, key)
+	}
 	f.mu.Unlock()
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
@@ -403,30 +456,32 @@ func (f *fakeS3) serveHead(w http.ResponseWriter, key string) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (f *fakeS3) servePut(w http.ResponseWriter, r *http.Request, key string) {
+func (f *Server) servePut(w http.ResponseWriter, r *http.Request, key string) {
 	body, err := readObjectBody(r)
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error())
 		return
 	}
 	f.mu.Lock()
-	f.counts.put++
-	f.counts.bytesUp += int64(len(body))
+	f.counts.Put++
+	f.counts.BytesUp += int64(len(body))
 	f.objects[key] = body
+	f.metadata[key] = userMetadata(r.Header)
 	f.mu.Unlock()
 	w.Header().Set("ETag", `"fake"`)
 	w.WriteHeader(http.StatusOK)
 }
 
-func (f *fakeS3) serveDelete(w http.ResponseWriter, key string) {
+func (f *Server) serveDelete(w http.ResponseWriter, key string) {
 	f.mu.Lock()
-	f.counts.del++
+	f.counts.Delete++
 	delete(f.objects, key)
+	delete(f.metadata, key)
 	f.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (f *fakeS3) serveCopy(w http.ResponseWriter, r *http.Request, key string) {
+func (f *Server) serveCopy(w http.ResponseWriter, r *http.Request, key string) {
 	source, err := url.PathUnescape(strings.TrimPrefix(r.Header.Get("x-amz-copy-source"), "/"))
 	if err != nil {
 		writeS3Error(w, http.StatusBadRequest, "InvalidRequest", err.Error())
@@ -434,10 +489,12 @@ func (f *fakeS3) serveCopy(w http.ResponseWriter, r *http.Request, key string) {
 	}
 	_, sourceKey, _ := strings.Cut(source, "/")
 	f.mu.Lock()
-	f.counts.copy++
+	f.counts.Copy++
 	data, ok := f.objects[sourceKey]
 	if ok {
 		f.objects[key] = append([]byte(nil), data...)
+		// S3's default metadata directive is COPY.
+		f.metadata[key] = f.metadata[sourceKey].Clone()
 	}
 	f.mu.Unlock()
 	if !ok {
@@ -476,14 +533,14 @@ type listCommonPrefix struct {
 // serveList implements ListObjectsV2 with the same thousand-key page size the
 // real service uses, so a benchmark counts the same number of round trips it
 // would against S3.
-func (f *fakeS3) serveList(w http.ResponseWriter, query url.Values) {
+func (f *Server) serveList(w http.ResponseWriter, query url.Values) {
 	const maxKeys = 1000
 	prefix := query.Get("prefix")
 	delimiter := query.Get("delimiter")
 	after := query.Get("continuation-token")
 
 	f.mu.Lock()
-	f.counts.list++
+	f.counts.List++
 	keys := make([]string, 0, len(f.objects))
 	sizes := map[string]int64{}
 	for key, data := range f.objects {
@@ -543,7 +600,7 @@ type deleteRequest struct {
 	} `xml:"Object"`
 }
 
-func (f *fakeS3) serveDeleteObjects(w http.ResponseWriter, r *http.Request) {
+func (f *Server) serveDeleteObjects(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error())
@@ -555,26 +612,40 @@ func (f *fakeS3) serveDeleteObjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.mu.Lock()
-	f.counts.del++
+	f.counts.Delete++
 	for _, obj := range req.Objects {
 		delete(f.objects, obj.Key)
+		delete(f.metadata, obj.Key)
 	}
 	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/xml")
 	_, _ = io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?><DeleteResult></DeleteResult>`)
 }
 
-func (f *fakeS3) serveCreateMultipart(w http.ResponseWriter, key string) {
+func (f *Server) serveCreateMultipart(w http.ResponseWriter, key string) {
 	f.mu.Lock()
-	f.counts.multipart++
+	f.counts.Multipart++
 	id := fmt.Sprintf("upload-%d", len(f.uploads)+1)
 	f.uploads[id] = map[int][]byte{}
 	f.mu.Unlock()
-	w.Header().Set("Content-Type", "application/xml")
-	_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult><Bucket>bucket</Bucket><Key>%s</Key><UploadId>%s</UploadId></InitiateMultipartUploadResult>`, key, id)
+	writeXML(w, http.StatusOK, initiateMultipartUploadResult{Bucket: "bucket", Key: key, UploadID: id})
 }
 
-func (f *fakeS3) serveUploadPart(w http.ResponseWriter, r *http.Request, uploadID, partNumber string) {
+type initiateMultipartUploadResult struct {
+	XMLName  xml.Name `xml:"InitiateMultipartUploadResult"`
+	Bucket   string
+	Key      string
+	UploadID string `xml:"UploadId"`
+}
+
+type completeMultipartUploadResult struct {
+	XMLName xml.Name `xml:"CompleteMultipartUploadResult"`
+	Bucket  string
+	Key     string
+	ETag    string
+}
+
+func (f *Server) serveUploadPart(w http.ResponseWriter, r *http.Request, uploadID, partNumber string) {
 	body, err := readObjectBody(r)
 	if err != nil {
 		writeS3Error(w, http.StatusInternalServerError, "InternalError", err.Error())
@@ -586,8 +657,8 @@ func (f *fakeS3) serveUploadPart(w http.ResponseWriter, r *http.Request, uploadI
 		return
 	}
 	f.mu.Lock()
-	f.counts.multipart++
-	f.counts.bytesUp += int64(len(body))
+	f.counts.Multipart++
+	f.counts.BytesUp += int64(len(body))
 	parts, ok := f.uploads[uploadID]
 	if ok {
 		parts[part] = body
@@ -601,10 +672,10 @@ func (f *fakeS3) serveUploadPart(w http.ResponseWriter, r *http.Request, uploadI
 	w.WriteHeader(http.StatusOK)
 }
 
-func (f *fakeS3) serveCompleteMultipart(w http.ResponseWriter, r *http.Request, key, uploadID string) {
+func (f *Server) serveCompleteMultipart(w http.ResponseWriter, r *http.Request, key, uploadID string) {
 	_, _ = io.Copy(io.Discard, r.Body)
 	f.mu.Lock()
-	f.counts.multipart++
+	f.counts.Multipart++
 	parts, ok := f.uploads[uploadID]
 	if ok {
 		numbers := make([]int, 0, len(parts))
@@ -624,13 +695,12 @@ func (f *fakeS3) serveCompleteMultipart(w http.ResponseWriter, r *http.Request, 
 		writeS3Error(w, http.StatusNotFound, "NoSuchUpload", "unknown upload")
 		return
 	}
-	w.Header().Set("Content-Type", "application/xml")
-	_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult><Bucket>bucket</Bucket><Key>%s</Key><ETag>"fake"</ETag></CompleteMultipartUploadResult>`, key)
+	writeXML(w, http.StatusOK, completeMultipartUploadResult{Bucket: "bucket", Key: key, ETag: `"fake"`})
 }
 
-func (f *fakeS3) serveAbortMultipart(w http.ResponseWriter, uploadID string) {
+func (f *Server) serveAbortMultipart(w http.ResponseWriter, uploadID string) {
 	f.mu.Lock()
-	f.counts.multipart++
+	f.counts.Multipart++
 	delete(f.uploads, uploadID)
 	f.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)

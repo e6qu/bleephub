@@ -3,7 +3,6 @@ package gitstore
 import (
 	"errors"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -20,7 +19,8 @@ var ErrS3Unavailable = errors.New("gitstore: object store temporarily unavailabl
 // s3Breaker is a conservative circuit breaker shared across one process's S3
 // filesystem (and its chroots). It trips only after several CONSECUTIVE hard
 // failures — a normal 404 or a healthy call resets it — so steady-state traffic
-// never trips it; only a genuine outage does. Tunable/disable-able via env.
+// never trips it; only a genuine outage does. Tuned by Options.BreakerThreshold
+// and Options.BreakerCooldown.
 type s3Breaker struct {
 	mu        sync.Mutex
 	threshold int           // consecutive hard failures to trip; <=0 disables the breaker
@@ -30,10 +30,10 @@ type s3Breaker struct {
 	now       func() time.Time // injectable for tests
 }
 
-func newS3Breaker() *s3Breaker {
+func newS3Breaker(threshold int, cooldown time.Duration) *s3Breaker {
 	return &s3Breaker{
-		threshold: envIntDefault("BLEEPHUB_S3_BREAKER_THRESHOLD", 5),
-		cooldown:  time.Duration(envIntDefault("BLEEPHUB_S3_BREAKER_COOLDOWN_MS", 5000)) * time.Millisecond,
+		threshold: threshold,
+		cooldown:  cooldown,
 		now:       time.Now,
 	}
 }
@@ -79,13 +79,4 @@ func (b *s3Breaker) record(err error) {
 	if b.fails >= b.threshold {
 		b.openUntil = b.now().Add(b.cooldown)
 	}
-}
-
-func envIntDefault(name string, def int) int {
-	if v := os.Getenv(name); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return def
 }

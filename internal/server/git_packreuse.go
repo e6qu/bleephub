@@ -9,7 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	billy "github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -79,14 +80,14 @@ func gitRepositoryFilesystem(ctx context.Context, fullName string) (billy.Filesy
 	if err := gitstore.ValidateRepoStorageFullName(fullName); err != nil {
 		return nil, err
 	}
-	objectStore, err := gitstore.GetS3FS(ctx)
+	objectStore, err := gitbackend.GetS3FS(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if objectStore != nil {
 		return objectStore.Chroot(fullName)
 	}
-	dataDir := gitstore.GitDataDir()
+	dataDir := gitbackend.GitDataDir()
 	if dataDir == "" {
 		return nil, nil
 	}

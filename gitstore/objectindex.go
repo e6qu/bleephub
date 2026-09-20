@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"io"
-	"os"
 	"path"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,24 +20,7 @@ import (
 // loose?" probes a clone of a packed repository makes into a few listings a
 // second. This process's own writes/deletes update the index immediately, so a
 // single writer is never stale about itself.
-const (
-	objectIndexFreshnessEnv     = "BLEEPHUB_GITSTORE_INDEX_FRESHNESS"
-	defaultObjectIndexFreshness = 250 * time.Millisecond
-)
-
-func envDuration(name string, fallback time.Duration) time.Duration {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return fallback
-	}
-	if parsed, err := time.ParseDuration(raw); err == nil && parsed >= 0 {
-		return parsed
-	}
-	if millis, err := strconv.Atoi(raw); err == nil && millis >= 0 {
-		return time.Duration(millis) * time.Millisecond
-	}
-	return fallback
-}
+const defaultObjectIndexFreshness = 250 * time.Millisecond
 
 // repoObjectIndex answers "could this object be here" for one repository from
 // two tiers: a cuckoo filter per objects/XX/ fanout directory (the granularity
@@ -47,8 +28,7 @@ func envDuration(name string, fallback time.Duration) time.Duration {
 // answer is negative-only; true means the caller must look properly.
 type repoObjectIndex struct {
 	prefix string
-	// freshness is read once at first touch so the hot path never consults the
-	// environment.
+	// freshness is Options.IndexFreshness, fixed when the index is created.
 	freshness time.Duration
 
 	// sf coalesces concurrent refreshes of the same fanout / roots / pack set so a
@@ -78,10 +58,10 @@ type fanoutSnapshot struct {
 	takenT time.Time
 }
 
-func newRepoObjectIndex(prefix string) *repoObjectIndex {
+func newRepoObjectIndex(prefix string, freshness time.Duration) *repoObjectIndex {
 	return &repoObjectIndex{
 		prefix:    prefix,
-		freshness: envDuration(objectIndexFreshnessEnv, defaultObjectIndexFreshness),
+		freshness: freshness,
 		fanouts:   map[string]*fanoutSnapshot{},
 		packs:     map[string]*binaryFuseFilter{},
 	}
@@ -95,7 +75,7 @@ func (f *S3FS) repoIndexFor() *repoObjectIndex {
 	defer shared.mu.Unlock()
 	index, ok := shared.objects[f.prefix]
 	if !ok {
-		index = newRepoObjectIndex(f.prefix)
+		index = newRepoObjectIndex(f.prefix, shared.opts.IndexFreshness)
 		shared.objects[f.prefix] = index
 	}
 	return index
@@ -349,6 +329,13 @@ func (i *repoObjectIndex) refreshPacksInner(fs *S3FS) error {
 			continue
 		}
 		present[strings.TrimSuffix(base, ".pack")] = true
+	}
+	// A superseded pack holds nothing its replacement does not: see
+	// hideSupersededPacks. Leaving it out costs no answer and spares its filter.
+	for _, name := range names {
+		if pack, ok := strings.CutSuffix(path.Base(name), ".superseded"); ok {
+			delete(present, pack)
+		}
 	}
 
 	i.mu.Lock()

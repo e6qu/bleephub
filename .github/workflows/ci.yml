@@ -76,11 +76,12 @@ jobs:
           GOMEMLIMIT: 12GiB
         run: bash ./scripts/run-race-suite.sh
       - name: Re-run for the coverage profile
-        # -coverpkg follows the ARCH-001 module split: internal/store and
-        # internal/gitstore carry no test binaries of their own — they are
-        # exercised through internal/server's suite — and without cross-package
-        # attribution the profile would count their statements as 0% and read
-        # as a coverage collapse that never happened.
+        # -coverpkg follows the ARCH-001 module split: internal/store carries
+        # no test binary of its own — it is exercised through internal/server's
+        # suite — and without cross-package attribution the profile would count
+        # its statements as 0% and read as a coverage collapse that never
+        # happened. The gitstore library is a module of its own, outside
+        # `./...`; its suite and its coverage floor run in the nested-modules job.
         #
         # -coverpkg=./... instruments the whole tree into internal/server's test
         # binary, and at the default -parallel that binary's concurrent test
@@ -223,7 +224,7 @@ jobs:
       - name: Run staticcheck and gosec in every Go module
         run: |
           set -euo pipefail
-          for module in . sdk-tests terraform/wake test/terraform-sockerless; do
+          for module in . gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
             echo "::group::$module"
             (cd "$module" && staticcheck ./...)
             # G101 treats public context keys and token-prefix constants as
@@ -234,7 +235,7 @@ jobs:
       - name: Reject reachable Go vulnerabilities in every module
         run: |
           set -euo pipefail
-          for module in . sdk-tests terraform/wake test/terraform-sockerless; do
+          for module in . gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
             echo "::group::$module"
             (cd "$module" && govulncheck ./...)
             echo "::endgroup::"
@@ -353,22 +354,39 @@ jobs:
       - name: Build and vet every nested module
         run: |
           set -euo pipefail
-          for module in sdk-tests terraform/wake test/terraform-sockerless test/conformance/drivers/gogithub; do
+          for module in gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless test/conformance/drivers/gogithub; do
             echo "::group::$module"
             (cd "$module" && go build ./... && go vet ./...)
             echo "::endgroup::"
           done
+      # The gitstore library left the root module so that it can be imported,
+      # benchmarked and scaled on its own, which also took its suite out of the
+      # root `go test ./...`. It runs here instead, under the race detector
+      # (its subject is concurrent readers, writers and compaction) and against
+      # its own non-regression floor, since it no longer counts toward the
+      # server's.
+      - name: Test the gitstore library under the race detector
+        run: cd gitstore && go test -race -count=1 -timeout 10m -coverprofile="$RUNNER_TEMP/gitstore-coverage.out" ./...
+      - name: Enforce the gitstore coverage floor
+        env:
+          BLEEPHUB_GO_COVERAGE_MIN: '67.0'
+        run: cd gitstore && bash ../scripts/check-go-coverage.sh "$RUNNER_TEMP/gitstore-coverage.out"
+      # The comparison harness is a program, not a test, so nothing above runs
+      # it. One tiny pass through every driver and scenario keeps it from
+      # rotting; it is a smoke, not a measurement.
+      - name: Smoke the gitstore comparison harness
+        run: cd gitstore/bench && go run . -files 64 -commits 4 -pushes 2 -changes 4 -runs 1 -probes 32 -parallel 2
       - name: Test the wake controller
         run: cd terraform/wake && go test -count=1 ./...
       - name: Run the official go-github conformance suite
         run: cd sdk-tests && go test -count=1 -timeout 10m ./...
-      # A fourth module must not be able to arrive unnoticed the way these three
-      # did. Discovering go.mod files and checking them against the list above
+      # Another module must not be able to arrive unnoticed the way the first
+      # three did. Discovering go.mod files and checking them against the list above
       # makes that a build failure rather than a silence.
       - name: Assert every module is covered
         run: |
           set -euo pipefail
-          expected=$'./go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/conformance/drivers/gogithub/go.mod\n./test/terraform-sockerless/go.mod'
+          expected=$'./go.mod\n./gitstore/bench/go.mod\n./gitstore/go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/conformance/drivers/gogithub/go.mod\n./test/terraform-sockerless/go.mod'
           found=$(find . -name go.mod -not -path './web/*' | sort)
           if [ "$found" != "$(printf '%s' "$expected" | sort)" ]; then
             echo "Go modules changed. Found:"; echo "$found"

@@ -94,7 +94,7 @@ func (f *s3RangeFile) chunkAtLocked(index int64) ([]byte, error) {
 	if data, ok := f.chunks[index]; ok {
 		return data, nil
 	}
-	cache := sharedPackDiskCache()
+	cache := f.fs.packCache()
 	if data := cache.load(f.fs.bucket, f.key, f.chunkSize, index); data != nil {
 		f.chunks[index] = data
 		if !f.sized {
@@ -116,41 +116,74 @@ func (f *s3RangeFile) chunkAtLocked(index int64) ([]byte, error) {
 	if f.sized && start >= f.size {
 		return nil, io.EOF
 	}
-	end := start + f.chunkSize
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	flight := fmt.Sprintf("%s\x00%s\x00%d\x00%d", f.fs.bucket, f.key, f.chunkSize, index)
+	fetched, err, _ := f.fs.shared().chunkFetch.Do(flight, func() (any, error) {
+		return f.fetchChunk(cache, index, start)
+	})
+	if err != nil {
+		return nil, err
+	}
+	chunk := fetched.(fetchedChunk)
+	if chunk.sized {
+		f.size, f.sized = chunk.total, true
+	} else if !f.sized {
+		f.size, f.sized = start+int64(len(chunk.data)), true
+		f.fs.rememberObjectSize(f.key, f.size)
+		cache.storeSize(f.fs.bucket, f.key, f.chunkSize, f.size)
+	}
+	f.chunks[index] = chunk.data
+	return chunk.data, nil
+}
+
+// fetchedChunk is one extent as the object store returned it. The bytes are
+// shared read-only between every reader the fetch was coalesced for.
+type fetchedChunk struct {
+	data  []byte
+	total int64
+	sized bool
+}
+
+// fetchChunk reads one extent from the object store and admits it to the shared
+// cache. It touches no per-handle state, because under coalescing it runs once
+// on behalf of several handles.
+func (f *s3RangeFile) fetchChunk(cache *packDiskCache, index, start int64) (fetchedChunk, error) {
+	if berr := f.fs.breaker().check(); berr != nil {
+		return fetchedChunk{}, berr
+	}
+	ctx, cancel := context.WithTimeout(f.fs.baseContext(), 120*time.Second)
 	defer cancel()
 	opts := minio.GetObjectOptions{}
 	// SetRange takes an inclusive end offset, matching the old bytes=start-(end-1).
-	if err := opts.SetRange(start, end-1); err != nil {
-		return nil, fmt.Errorf("s3 ranged get %s: %w", f.key, err)
+	if err := opts.SetRange(start, start+f.chunkSize-1); err != nil {
+		return fetchedChunk{}, fmt.Errorf("s3 ranged get %s: %w", f.key, err)
 	}
 	body, _, headers, err := f.fs.client.GetObject(ctx, f.fs.bucket, f.key, opts)
 	if err != nil {
 		if isRangeBeyondEnd(err) {
-			return nil, io.EOF
+			// The store answered; the range was simply past the end.
+			f.fs.breaker().record(nil)
+			return fetchedChunk{}, io.EOF
 		}
-		return nil, translateS3NotFound(err, "s3 ranged get", f.key)
+		f.fs.breaker().record(err)
+		return fetchedChunk{}, translateS3NotFound(err, "s3 ranged get", f.key)
 	}
 	data, err := io.ReadAll(body)
 	_ = body.Close()
+	f.fs.breaker().record(err)
 	if err != nil {
-		return nil, fmt.Errorf("s3 ranged read %s: %w", f.key, err)
+		return fetchedChunk{}, fmt.Errorf("s3 ranged read %s: %w", f.key, err)
 	}
+
+	chunk := fetchedChunk{data: data}
 	// The response states the object's total length, so size never needs its own request.
 	if total, ok := totalFromContentRange(headers.Get("Content-Range")); ok {
-		f.size, f.sized = total, true
+		chunk.total, chunk.sized = total, true
 		f.fs.rememberObjectSize(f.key, total)
-	} else if !f.sized {
-		f.size, f.sized = start+int64(len(data)), true
-		f.fs.rememberObjectSize(f.key, f.size)
+		cache.storeSize(f.fs.bucket, f.key, f.chunkSize, total)
 	}
-	f.chunks[index] = data
 	cache.store(f.fs.bucket, f.key, f.chunkSize, index, data)
-	if f.sized {
-		cache.storeSize(f.fs.bucket, f.key, f.chunkSize, f.size)
-	}
-	return data, nil
+	return chunk, nil
 }
 
 // totalFromContentRange reads the object length from a "bytes a-b/total" header.

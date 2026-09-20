@@ -98,7 +98,9 @@ measures, and the knobs that move them.
 ## Git over S3
 
 Clone/fetch/push performance against object storage is characterized in
-[docs/git-storage.md](git-storage.md) and measured by
-`internal/gitstore/measure_test.go` (S3 requests and bytes per object). The main
-ceilings are loose-object explosions between compactions and per-pack existence
-checks when many packs accumulate.
+[docs/git-storage.md](git-storage.md) and measured in the `gitstore` module: its
+in-package benchmarks (`gitstore/measure_test.go`, S3 requests and bytes per
+object) and the comparison harness in [`gitstore/bench`](../gitstore/bench/README.md),
+which runs the same workload against other git-on-object-storage designs
+(`make bench-gitstore`). The main ceilings are loose-object explosions between
+compactions and per-pack existence checks when many packs accumulate.

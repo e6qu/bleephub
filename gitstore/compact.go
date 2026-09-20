@@ -12,7 +12,6 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
@@ -61,11 +61,20 @@ const (
 	compactionMinLooseObjects = 64
 	// compactionPackWindow is the delta window the pack encoder searches.
 	compactionPackWindow = 10
-	// compactionMergeThreshold is the pack count above which a compaction also
-	// rewrites existing packs into the new one. go-git loads every pack's index
-	// before answering any packed lookup, so one-pack-per-push would give back
-	// what packing bought.
+	// compactionMergeThreshold is the live pack count above which a compaction
+	// also rewrites existing packs. go-git loads every pack's index before
+	// answering any packed lookup, so one-pack-per-push would give back what
+	// packing bought.
 	compactionMergeThreshold = 8
+	// compactionGeometricFactor shapes which packs a merge rewrites: a pack is
+	// left alone while it is at least this many times the size of everything
+	// smaller than it put together. A push lands as a pack of its own, so
+	// merging every pack each time the count crossed the threshold would rewrite
+	// the whole repository every few pushes; keeping the sizes geometric bounds
+	// the pack count by the logarithm of the repository's size while each byte
+	// is rewritten only a logarithmic number of times. It is the rule behind
+	// `git repack --geometric`.
+	compactionGeometricFactor = 2
 	// supersededPackRetention is how long a merged-away pack is kept before its
 	// bytes are removed, for requests that began before the merge and still read it.
 	supersededPackRetention = time.Hour
@@ -73,18 +82,8 @@ const (
 	// parts. Configurable because non-Amazon endpoints cap the single-request
 	// upload well below Amazon's 5 GiB.
 	defaultMultipartThreshold = 64 << 20
-	multipartThresholdEnv     = "BLEEPHUB_GITSTORE_MULTIPART_BYTES"
 	multipartPartSize         = 32 << 20
 )
-
-func multipartThreshold() int64 {
-	if raw := strings.TrimSpace(os.Getenv(multipartThresholdEnv)); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			return parsed
-		}
-	}
-	return defaultMultipartThreshold
-}
 
 // CompactionResult reports what one compaction did.
 type CompactionResult struct {
@@ -119,10 +118,6 @@ func CompactRepository(ctx context.Context, stor gitStorage.Storer) (CompactionR
 	return compactor.Compact(ctx)
 }
 
-// compactionTriggerEnv sets the loose-object count that triggers a background
-// compaction.
-const compactionTriggerEnv = "BLEEPHUB_GITSTORE_COMPACT_AFTER"
-
 // defaultCompactionTrigger is deliberately larger than an ordinary push, so the
 // once-per-object read a compaction costs is amortized over a batch worth
 // packing.
@@ -136,11 +131,32 @@ func (s *atomicRefStorer) noteObjectWritten() {
 	if s.fs == nil {
 		return
 	}
-	trigger := s.compactionTrigger()
+	trigger := s.fs.options().CompactionTrigger
 	if trigger <= 0 || s.looseWrites.Add(1) < trigger {
 		return
 	}
+	s.requestCompaction()
+}
+
+// notePackWritten counts a pushed pack toward the next compaction. Its objects
+// count as writes do, and the pack itself counts toward the number a merge is
+// due at: a run of small pushes never reaches the object trigger, but each
+// leaves a pack whose index every packed lookup must load.
+func (s *atomicRefStorer) notePackWritten(objects int64) {
+	trigger := s.fs.options().CompactionTrigger
+	if trigger <= 0 {
+		return
+	}
+	packs := s.packWrites.Add(1)
+	if s.looseWrites.Add(objects) < trigger && packs <= compactionMergeThreshold {
+		return
+	}
+	s.requestCompaction()
+}
+
+func (s *atomicRefStorer) requestCompaction() {
 	s.looseWrites.Store(0)
+	s.packWrites.Store(0)
 	if request := compactionRequestHook(); request != nil {
 		request(s.repo, s)
 	}
@@ -168,18 +184,6 @@ func compactionRequestHook() func(repo string, stor gitStorage.Storer) {
 	compactionRequestMu.RLock()
 	defer compactionRequestMu.RUnlock()
 	return compactionRequestFunc
-}
-
-func (s *atomicRefStorer) compactionTrigger() int64 {
-	s.triggerOnce.Do(func() {
-		s.trigger = defaultCompactionTrigger
-		if raw := strings.TrimSpace(os.Getenv(compactionTriggerEnv)); raw != "" {
-			if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed >= 0 {
-				s.trigger = parsed
-			}
-		}
-	})
-	return s.trigger
 }
 
 // Compact runs one compaction of this repository. See the ordering and
@@ -214,11 +218,15 @@ func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, 
 		return result, err
 	}
 
-	existing, err := s.listPublishedPacks(ctx)
+	live, err := s.listLivePacks(ctx)
 	if err != nil {
 		return result, err
 	}
-	merge := len(existing) > compactionMergeThreshold
+	var existing []string
+	if len(live) > compactionMergeThreshold {
+		existing = packsToMerge(live)
+	}
+	merge := len(existing) > 0
 
 	if len(loose) < compactionMinLooseObjects && !merge {
 		return result, nil
@@ -369,32 +377,86 @@ func (s *atomicRefStorer) listLooseObjects(ctx context.Context) ([]looseObject, 
 	return objects, nil
 }
 
-// listPublishedPacks names every reader-visible pack, i.e. those whose .pack
-// key exists.
-func (s *atomicRefStorer) listPublishedPacks(ctx context.Context) ([]string, error) {
-	keys, err := s.listPackDirectory(ctx)
+// livePack is a reader-visible pack no merge has yet rewritten.
+type livePack struct {
+	name string
+	size int64
+}
+
+// listLivePacks names every pack whose .pack key exists and that carries no
+// supersession marker. A superseded pack stays readable for its retention
+// window, but its objects already live in the pack that replaced it: counting
+// it toward the merge threshold, or merging it again, would rewrite the same
+// objects on every compaction until the window closed.
+func (s *atomicRefStorer) listLivePacks(ctx context.Context) ([]livePack, error) {
+	entries, err := s.listPackDirectory(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var packs []string
-	for key := range keys {
+	prefix := s.fs.key(path.Join("objects", "pack")) + "/"
+	var packs []livePack
+	for key, entry := range entries {
 		base := path.Base(key)
-		if strings.HasPrefix(base, "pack-") && strings.HasSuffix(base, ".pack") {
-			packs = append(packs, strings.TrimSuffix(base, ".pack"))
+		if !strings.HasPrefix(base, "pack-") || !strings.HasSuffix(base, ".pack") {
+			continue
 		}
+		name := strings.TrimSuffix(base, ".pack")
+		if _, superseded := entries[prefix+name+".superseded"]; superseded {
+			continue
+		}
+		packs = append(packs, livePack{name: name, size: entry.size})
 	}
-	sort.Strings(packs)
+	sort.Slice(packs, func(i, j int) bool { return packs[i].name < packs[j].name })
 	return packs, nil
 }
 
-func (s *atomicRefStorer) listPackDirectory(ctx context.Context) (map[string]time.Time, error) {
+// packsToMerge picks the packs a merge rewrites: the smallest ones, up to the
+// point from which every remaining pack is at least compactionGeometricFactor
+// times everything below it. It returns nil when the sizes are already
+// geometric, or when the rule selects a single pack, which would be rewritten
+// into itself.
+func packsToMerge(packs []livePack) []string {
+	ordered := append([]livePack(nil), packs...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].size != ordered[j].size {
+			return ordered[i].size < ordered[j].size
+		}
+		return ordered[i].name < ordered[j].name
+	})
+	below := make([]int64, len(ordered))
+	var sum int64
+	for i, pack := range ordered {
+		below[i] = sum
+		sum += pack.size
+	}
+	split := len(ordered)
+	for split > 0 && ordered[split-1].size >= compactionGeometricFactor*below[split-1] {
+		split--
+	}
+	if split < 2 {
+		return nil
+	}
+	names := make([]string, 0, split)
+	for _, pack := range ordered[:split] {
+		names = append(names, pack.name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+type packDirectoryEntry struct {
+	modified time.Time
+	size     int64
+}
+
+func (s *atomicRefStorer) listPackDirectory(ctx context.Context) (map[string]packDirectoryEntry, error) {
 	prefix := s.fs.key(path.Join("objects", "pack")) + "/"
-	entries := map[string]time.Time{}
+	entries := map[string]packDirectoryEntry{}
 	for entry := range s.fs.client.Client.ListObjects(ctx, s.fs.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
 		if entry.Err != nil {
 			return nil, fmt.Errorf("list packs of %s: %w", s.repo, entry.Err)
 		}
-		entries[entry.Key] = entry.LastModified
+		entries[entry.Key] = packDirectoryEntry{modified: entry.LastModified, size: entry.Size}
 	}
 	return entries, nil
 }
@@ -449,6 +511,7 @@ type builtPack struct {
 	stagingDir string
 	packFile   string
 	packSize   int64
+	objects    int
 	index      []byte
 	filter     []byte
 	filterBits int
@@ -491,74 +554,82 @@ func (b *builtPack) cleanup() {
 // than streaming because the pack's name is the hash of its contents, unknown
 // until the last byte.
 func (s *atomicRefStorer) buildPack(hashes []plumbing.Hash) (*builtPack, error) {
-	dir, err := compactionScratchDir()
+	return s.buildPackFrom(s, hashes)
+}
+
+// buildPackFrom is buildPack reading the objects from source, which lets a
+// pack be built from objects that are not in the repository yet.
+func (s *atomicRefStorer) buildPackFrom(source storer.EncodedObjectStorer, hashes []plumbing.Hash) (*builtPack, error) {
+	temp, built, err := s.stagePack("compact-*.pack")
 	if err != nil {
 		return nil, err
 	}
-	temp, err := os.CreateTemp(dir, "compact-*.pack")
-	if err != nil {
-		return nil, fmt.Errorf("stage pack: %w", err)
-	}
-	built := &builtPack{stagingDir: dir, packFile: filepath.Base(temp.Name())}
-
-	encoder := packfile.NewEncoder(temp, s, false)
-	checksum, err := encoder.Encode(hashes, compactionPackWindow)
-	if err != nil {
+	if _, err := packfile.NewEncoder(temp, source, false).Encode(hashes, compactionPackWindow); err != nil {
 		_ = temp.Close()
 		built.cleanup()
 		return nil, fmt.Errorf("encode pack for %s: %w", s.repo, err)
 	}
-	size, err := temp.Seek(0, io.SeekCurrent)
-	if err != nil {
+	if err := built.describe(temp); err != nil {
 		_ = temp.Close()
 		built.cleanup()
-		return nil, fmt.Errorf("size staged pack: %w", err)
-	}
-	built.name = "pack-" + checksum.String()
-	built.packSize = size
-
-	if _, err := temp.Seek(0, io.SeekStart); err != nil {
-		_ = temp.Close()
-		built.cleanup()
-		return nil, fmt.Errorf("rewind staged pack: %w", err)
-	}
-	// Derive the index by parsing the written bytes, not the encoder's
-	// bookkeeping, so it can only describe the pack that exists byte for byte.
-	writer := new(idxfile.Writer)
-	parser, err := packfile.NewParser(packfile.NewScanner(temp), writer)
-	if err != nil {
-		_ = temp.Close()
-		built.cleanup()
-		return nil, fmt.Errorf("parse staged pack: %w", err)
-	}
-	if _, err := parser.Parse(); err != nil {
-		_ = temp.Close()
-		built.cleanup()
-		return nil, fmt.Errorf("parse staged pack: %w", err)
-	}
-	index, err := writer.Index()
-	if err != nil {
-		_ = temp.Close()
-		built.cleanup()
-		return nil, fmt.Errorf("index staged pack: %w", err)
+		return nil, err
 	}
 	if err := temp.Close(); err != nil {
 		built.cleanup()
 		return nil, fmt.Errorf("close staged pack: %w", err)
 	}
+	return built, nil
+}
 
-	var encoded strings.Builder
-	if _, err := idxfile.NewEncoder(&encoded).Encode(index); err != nil {
-		built.cleanup()
-		return nil, fmt.Errorf("encode index: %w", err)
+// stagePack creates the local file a pack is assembled in.
+func (s *atomicRefStorer) stagePack(pattern string) (*os.File, *builtPack, error) {
+	dir, err := s.compactionScratchDir()
+	if err != nil {
+		return nil, nil, err
 	}
-	built.index = []byte(encoded.String())
+	temp, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return nil, nil, fmt.Errorf("stage pack: %w", err)
+	}
+	return temp, &builtPack{stagingDir: dir, packFile: filepath.Base(temp.Name())}, nil
+}
 
-	keys := make([]oidKey, 0, len(hashes))
+// describe derives everything publication needs — name, size, index and
+// membership filter — by parsing the staged bytes, never from whoever wrote
+// them, so it can only describe the pack that exists byte for byte. It fails on
+// a pack that is not self-contained: a thin pack's deltas name bases outside
+// it, and a stored pack must be readable on its own.
+func (b *builtPack) describe(staged *os.File) error {
+	size, err := staged.Seek(0, io.SeekEnd)
+	if err != nil {
+		return fmt.Errorf("size staged pack: %w", err)
+	}
+	if _, err := staged.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("rewind staged pack: %w", err)
+	}
+	writer := new(idxfile.Writer)
+	parser, err := packfile.NewParser(packfile.NewScanner(staged), writer)
+	if err != nil {
+		return fmt.Errorf("parse staged pack: %w", err)
+	}
+	checksum, err := parser.Parse()
+	if err != nil {
+		return fmt.Errorf("parse staged pack: %w", err)
+	}
+	index, err := writer.Index()
+	if err != nil {
+		return fmt.Errorf("index staged pack: %w", err)
+	}
+
+	var encoded bytes.Buffer
+	if _, err := idxfile.NewEncoder(&encoded).Encode(index); err != nil {
+		return fmt.Errorf("encode index: %w", err)
+	}
+
+	var keys []oidKey
 	iter, err := index.EntriesByOffset()
 	if err != nil {
-		built.cleanup()
-		return nil, fmt.Errorf("read staged index: %w", err)
+		return fmt.Errorf("read staged index: %w", err)
 	}
 	for {
 		entry, err := iter.Next()
@@ -566,25 +637,28 @@ func (s *atomicRefStorer) buildPack(hashes []plumbing.Hash) (*builtPack, error) 
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			built.cleanup()
-			return nil, fmt.Errorf("read staged index: %w", err)
+			return fmt.Errorf("read staged index: %w", err)
 		}
 		keys = append(keys, oidKeyFrom(entry.Hash[:]))
 	}
 	filter, err := newBinaryFuseFilter(keys)
 	if err != nil {
-		built.cleanup()
-		return nil, err
+		return err
 	}
-	built.filter = filter.encode()
-	built.filterBits = filter.bits()
-	return built, nil
+
+	b.name = "pack-" + checksum.String()
+	b.packSize = size
+	b.objects = len(keys)
+	b.index = encoded.Bytes()
+	b.filter = filter.encode()
+	b.filterBits = filter.bits()
+	return nil
 }
 
 // compactionScratchDir stages a pack while it is built. It shares the pack
 // cache's directory: both hold pack bytes against the same local disk budget.
-func compactionScratchDir() (string, error) {
-	dir := filepath.Join(packCacheDir(), "staging")
+func (s *atomicRefStorer) compactionScratchDir() (string, error) {
+	dir := filepath.Join(s.fs.options().CacheDir, "staging")
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", fmt.Errorf("compaction staging directory: %w", err)
 	}
@@ -632,7 +706,7 @@ func (s *atomicRefStorer) uploadPackFile(ctx context.Context, name string, built
 	}
 	defer func() { _ = file.Close() }()
 
-	if size <= multipartThreshold() {
+	if size <= s.fs.options().MultipartBytes {
 		if _, err := s.fs.client.Client.PutObject(ctx, s.fs.bucket, key, file, size, minio.PutObjectOptions{}); err != nil {
 			return fmt.Errorf("s3 put %s: %w", key, err)
 		}
@@ -685,7 +759,7 @@ func (s *atomicRefStorer) abortMultipart(ctx context.Context, key, uploadID stri
 }
 
 func (s *atomicRefStorer) seedPackCache(name string, built *builtPack) {
-	cache := sharedPackDiskCache()
+	cache := s.fs.packCache()
 	if cache == nil {
 		return
 	}
@@ -775,21 +849,21 @@ func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context) ([]string, 
 	prefix := s.fs.key(path.Join("objects", "pack")) + "/"
 
 	var newest time.Time
-	for _, modified := range entries {
-		if modified.After(newest) {
-			newest = modified
+	for _, entry := range entries {
+		if entry.modified.After(newest) {
+			newest = entry.modified
 		}
 	}
 
 	var retired []string
 	var doomed []string
-	for key, modified := range entries {
+	for key, entry := range entries {
 		base := path.Base(key)
 		pack, ok := strings.CutSuffix(base, ".superseded")
 		if !ok {
 			continue
 		}
-		if newest.Sub(modified) < supersededPackRetention {
+		if newest.Sub(entry.modified) < supersededPackRetention {
 			continue
 		}
 		for _, extension := range []string{".pack", ".idx", ".bfilter", ".superseded"} {

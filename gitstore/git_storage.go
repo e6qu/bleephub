@@ -1,7 +1,6 @@
 package gitstore
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -28,19 +27,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/uuid"
 )
-
-// S3FSCacheState memoizes the process-wide S3 filesystem built from the
-// environment. Fields are exported so dependent-package tests can reset the memo
-// without a test-only exported function tripping the deadcode gate.
-type S3FSCacheState struct {
-	Mu     sync.Mutex
-	FS     *S3FS
-	Err    error
-	Inited bool
-}
-
-// S3FSCache is the process-wide memo consulted by GetS3FS.
-var S3FSCache S3FSCacheState
 
 var (
 	ErrReferenceAlreadyExists = errors.New("reference already exists")
@@ -85,8 +71,8 @@ type atomicRefStorer struct {
 	// compaction request. Admitting one compaction at a time is the scheduler's
 	// job, not this counter's.
 	looseWrites atomic.Int64
-	triggerOnce sync.Once
-	trigger     int64
+	// packWrites counts pushed packs published since the last compaction request.
+	packWrites atomic.Int64
 }
 
 var _ gitStorage.Storer = (*atomicRefStorer)(nil)
@@ -561,41 +547,6 @@ func InitializeRepositoryReferences(stor gitStorage.Storer, branch *plumbing.Ref
 	return nil
 }
 
-func GetS3FS(ctx context.Context) (*S3FS, error) {
-	S3FSCache.Mu.Lock()
-	defer S3FSCache.Mu.Unlock()
-	if S3FSCache.Inited {
-		return S3FSCache.FS, S3FSCache.Err
-	}
-
-	endpoint := os.Getenv("BLEEPHUB_S3_ENDPOINT")
-	bucket := os.Getenv("BLEEPHUB_S3_BUCKET")
-	if bucket == "" {
-		S3FSCache.Inited = true
-		return nil, nil
-	}
-
-	prefix := os.Getenv("BLEEPHUB_S3_PREFIX")
-	fs, err := NewS3FS(ctx, endpoint, bucket, prefix)
-	if err != nil {
-		// Discovery can fail transiently (e.g. while an ECS task waits for
-		// credentials); leave the memo uninited so the next operation retries.
-		return nil, err
-	}
-	S3FSCache.FS = fs
-	S3FSCache.Err = nil
-	S3FSCache.Inited = true
-	return fs, nil
-}
-
-func GitDataDir() string {
-	return os.Getenv("BLEEPHUB_GIT_DIR")
-}
-
-func IsS3GitStorage() bool {
-	return os.Getenv("BLEEPHUB_S3_BUCKET") != ""
-}
-
 // ValidateRepoStorageFullName holds every backend to one trust boundary.
 // Repository keys are always exactly owner/name; an absolute path, dot
 // component, or platform separator would escape the configured namespace.
@@ -632,31 +583,28 @@ func RepoGitDirPath(gitDir, fullName string) (string, error) {
 	return filepath.Join(root, relative), nil
 }
 
-func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
+// OpenObjectStore opens the repository fullName inside fs: go-git's dotgit
+// layout written into the bucket, with the pack tier, ranged pack reads and the
+// membership index wired in.
+func OpenObjectStore(fs *S3FS, fullName string) (gitStorage.Storer, error) {
 	if err := ValidateRepoStorageFullName(fullName); err != nil {
 		return nil, err
 	}
-	s3fs, err := GetS3FS(ctx)
+	chrooted, err := fs.Chroot(fullName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("s3 chroot %s: %w", fullName, err)
 	}
-	if s3fs != nil {
-		chrooted, err := s3fs.Chroot(fullName)
-		if err != nil {
-			return nil, fmt.Errorf("s3 chroot %s: %w", fullName, err)
-		}
-		s3Chroot, ok := chrooted.(*S3FS)
-		if !ok {
-			return nil, fmt.Errorf("s3 chroot %s: unexpected filesystem type %T", fullName, chrooted)
-		}
-		storage := gitFilesystem.NewStorage(polyfill.New(chrooted), cache.NewObjectLRUDefault())
-		return wrapObjectStoreStorage(fullName, storage, s3Chroot), nil
+	s3Chroot, ok := chrooted.(*S3FS)
+	if !ok {
+		return nil, fmt.Errorf("s3 chroot %s: unexpected filesystem type %T", fullName, chrooted)
 	}
+	storage := gitFilesystem.NewStorage(polyfill.New(chrooted), cache.NewObjectLRUDefault())
+	return wrapObjectStoreStorage(fullName, storage, s3Chroot), nil
+}
 
-	gitDir := GitDataDir()
-	if gitDir == "" {
-		return WrapAtomicRefStorage(fullName, memory.NewStorage()), nil
-	}
+// OpenDir opens the repository fullName as a bare dotgit directory under gitDir,
+// creating the directory if it does not exist.
+func OpenDir(gitDir, fullName string) (gitStorage.Storer, error) {
 	repoDir, err := RepoGitDirPath(gitDir, fullName)
 	if err != nil {
 		return nil, err
@@ -664,18 +612,21 @@ func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, err
 	if err := os.MkdirAll(repoDir, 0o750); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", repoDir, err)
 	}
-	fs := osfs.New(repoDir)
-	return WrapAtomicRefStorage(fullName, gitFilesystem.NewStorage(fs, cache.NewObjectLRUDefault())), nil
+	return WrapAtomicRefStorage(fullName, gitFilesystem.NewStorage(osfs.New(repoDir), cache.NewObjectLRUDefault())), nil
 }
 
-func OpenOrInitGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
-	stor, err := newGitStorage(ctx, fullName)
-	if err != nil {
+// OpenMemory returns a repository held in process memory.
+func OpenMemory(fullName string) (gitStorage.Storer, error) {
+	if err := ValidateRepoStorageFullName(fullName); err != nil {
 		return nil, err
 	}
-	_, err = git.Init(stor, nil)
-	if err != nil && !errors.Is(err, git.ErrRepositoryAlreadyExists) {
-		return nil, fmt.Errorf("git init %s: %w", fullName, err)
+	return WrapAtomicRefStorage(fullName, memory.NewStorage()), nil
+}
+
+// Init makes stor a git repository if it is not one already.
+func Init(stor gitStorage.Storer) error {
+	if _, err := git.Init(stor, nil); err != nil && !errors.Is(err, git.ErrRepositoryAlreadyExists) {
+		return fmt.Errorf("git init: %w", err)
 	}
-	return stor, nil
+	return nil
 }

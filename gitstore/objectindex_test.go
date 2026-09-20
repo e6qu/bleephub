@@ -26,9 +26,8 @@ func absentHash(n int) plumbing.Hash {
 // does not have, and that used to be an S3 GET that returned a 404 for every
 // question.
 func TestMembershipIndexAnswersAbsenceWithoutARoundTrip(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
-	t.Setenv(objectIndexFreshnessEnv, "1h")
 	fake := newFakeS3(t)
+	fake.opts.IndexFreshness = time.Hour
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
 	if _, err := CompactRepository(context.Background(), stor); err != nil {
@@ -43,19 +42,19 @@ func TestMembershipIndexAnswersAbsenceWithoutARoundTrip(t *testing.T) {
 	}
 
 	const probes = 5000
-	fake.reset()
+	fake.Reset()
 	for i := 1; i <= probes; i++ {
 		if err := fresh.HasEncodedObject(absentHash(i)); err == nil {
 			t.Fatalf("absent object %d was reported present", i)
 		}
 	}
-	counts := fake.snapshot()
+	counts := fake.Snapshot()
 	// The residual cost is the filters' false positive rate, not the number of
 	// questions: a probe the pack filter cannot rule out falls through to the
 	// exact index, which is the whole point of a negative-only filter. At about
 	// one in 256 that is a couple of dozen lookups for five thousand questions,
 	// against five thousand round trips before.
-	if counts.total() > probes/50 {
+	if counts.Total() > probes/50 {
 		t.Fatalf("%d negative answers cost %s, want far fewer than one request each", probes, counts)
 	}
 	t.Logf("%d negative answers cost %s", probes, counts)
@@ -80,7 +79,6 @@ func TestMembershipIndexAnswersAbsenceWithoutARoundTrip(t *testing.T) {
 // way it could be wrong is by answering "absent", which saturation makes
 // impossible.
 func TestSaturatedFilterCannotHideAnObject(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
@@ -150,9 +148,8 @@ func TestSaturatedFilterCannotHideAnObject(t *testing.T) {
 // An object another replica writes must become visible once the snapshot the
 // negative answer is drawn from has aged past the freshness window.
 func TestNegativeAnswersAreRefreshedFromTheObjectStore(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
-	t.Setenv(objectIndexFreshnessEnv, "1ms")
 	fake := newFakeS3(t)
+	fake.opts.IndexFreshness = time.Millisecond
 
 	writer := testPackedStorage(t, fake)
 	reader := testPackedStorage(t, fake)
@@ -184,9 +181,8 @@ func TestNegativeAnswersAreRefreshedFromTheObjectStore(t *testing.T) {
 // writer is never stale about itself, because every write and every deletion
 // updates the index as it happens.
 func TestLooseObjectIndexTracksThisProcessesOwnWrites(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
-	t.Setenv(objectIndexFreshnessEnv, "24h")
 	fake := newFakeS3(t)
+	fake.opts.IndexFreshness = 24 * time.Hour
 	stor := testPackedStorage(t, fake)
 	seedObjects(t, stor, 100)
 

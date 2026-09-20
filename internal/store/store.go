@@ -13,7 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
@@ -1326,7 +1327,7 @@ func NewStore() *Store {
 	}
 	store.CodespaceRuntimeDelete = store.deleteCodespaceRuntime
 	store.CodespaceWorkspacePrepare = prepareCodespaceWorkspace
-	store.RepoStorageOpen = gitstore.OpenOrInitGitStorage
+	store.RepoStorageOpen = gitbackend.OpenOrInitGitStorage
 	// Sponsors bills against the store's clock, so a frozen test clock
 	// freezes the billing cycle with it.
 	store.Sponsors = NewSponsorsStore(store.CurrentTime)
@@ -1397,7 +1398,7 @@ func (st *Store) wirePersistence(p *Persistence) {
 	st.Mu.Unlock()
 	// Object-store git bytes have no advisory locking of their own; the shared
 	// durable store arbitrates concurrent ref updates.
-	if gitstore.IsS3GitStorage() {
+	if gitbackend.IsS3GitStorage() {
 		gitstore.SetGitObjectLocker(p)
 	}
 }
@@ -1431,7 +1432,7 @@ func (st *Store) openRepoStoragesConcurrently(fullNames []string) error {
 		go func(i int, fullName string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			stor, err := gitstore.OpenOrInitGitStorage(context.Background(), fullName)
+			stor, err := gitbackend.OpenOrInitGitStorage(context.Background(), fullName)
 			results[i] = opened{stor: stor, Err: err}
 		}(i, fullName)
 	}

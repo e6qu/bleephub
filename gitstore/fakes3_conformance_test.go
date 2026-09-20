@@ -90,10 +90,10 @@ func TestFakeS3PaginatesListings(t *testing.T) {
 
 	const objects = 2500
 	for i := range objects {
-		fake.put("prefix/many/"+padHex(i), []byte("x"))
+		fake.Put("prefix/many/"+padHex(i), []byte("x"))
 	}
 
-	fake.reset()
+	fake.Reset()
 	entries, err := fs.ReadDir("many")
 	if err != nil {
 		t.Fatalf("readdir: %v", err)
@@ -101,9 +101,9 @@ func TestFakeS3PaginatesListings(t *testing.T) {
 	if len(entries) != objects {
 		t.Fatalf("readdir returned %d entries, want %d", len(entries), objects)
 	}
-	counts := fake.snapshot()
-	if counts.list != 3 {
-		t.Fatalf("listing %d keys took %d requests, want 3 pages of 1000", objects, counts.list)
+	counts := fake.Snapshot()
+	if counts.List != 3 {
+		t.Fatalf("listing %d keys took %d requests, want 3 pages of 1000", objects, counts.List)
 	}
 }
 

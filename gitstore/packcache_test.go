@@ -17,9 +17,8 @@ import (
 // the whole pack, or every blob would drag the whole monorepo across the wire.
 // The extent size is turned down so the pack is many extents long; the pinned ratio holds at any scale.
 func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
-	t.Setenv(packChunkBytesEnv, "4096")
 	fake := newFakeS3(t)
+	fake.opts.ChunkBytes = 4096
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 4000)
 	if _, err := CompactRepository(context.Background(), stor); err != nil {
@@ -27,29 +26,29 @@ func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
 	}
 	packBytes := 0
 	for _, key := range packKeys(fake, ".pack") {
-		body, _ := fake.get(key)
+		body, _ := fake.Get(key)
 		packBytes = len(body)
 	}
 	if packBytes == 0 {
 		t.Fatal("no packfile was published")
 	}
 
-	clearPackCache(t, os.Getenv(packCacheDirEnv))
+	clearPackCache(t, fake.opts.CacheDir)
 	fresh := testPackedStorage(t, fake)
-	fake.reset()
+	fake.Reset()
 	if _, err := fresh.EncodedObject(plumbing.AnyObject, hashes[3]); err != nil {
 		t.Fatalf("read one object: %v", err)
 	}
-	counts := fake.snapshot()
-	if counts.get != 0 {
-		t.Fatalf("reading one object issued %d whole-object GETs, want ranged reads only", counts.get)
+	counts := fake.Snapshot()
+	if counts.Get != 0 {
+		t.Fatalf("reading one object issued %d whole-object GETs, want ranged reads only", counts.Get)
 	}
-	if counts.getRanged == 0 {
+	if counts.GetRanged == 0 {
 		t.Fatal("reading one object issued no ranged read")
 	}
 	// The index and membership filter are read whole; only the packfile traffic
 	// must not scale with the pack.
-	packTraffic := counts.bytesDown - indexAndFilterBytes(fake)
+	packTraffic := counts.BytesDown - indexAndFilterBytes(fake)
 	if packTraffic >= int64(packBytes)/4 {
 		t.Fatalf("reading one object pulled %d bytes of a %d byte pack; a ranged read must cost the extent, not the pack",
 			packTraffic, packBytes)
@@ -63,7 +62,7 @@ func indexAndFilterBytes(fake *fakeS3) int64 {
 	total := int64(0)
 	for _, extension := range []string{".idx", ".bfilter"} {
 		for _, key := range packKeys(fake, extension) {
-			body, _ := fake.get(key)
+			body, _ := fake.Get(key)
 			total += int64(len(body))
 		}
 	}
@@ -75,8 +74,8 @@ func indexAndFilterBytes(fake *fakeS3) int64 {
 // is what makes the object store the cold tier rather than the only tier.
 func TestPackCacheSurvivesARestart(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv(packCacheDirEnv, dir)
 	fake := newFakeS3(t)
+	fake.opts.CacheDir = dir
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 300)
 	if _, err := CompactRepository(context.Background(), stor); err != nil {
@@ -91,10 +90,10 @@ func TestPackCacheSurvivesARestart(t *testing.T) {
 	// directory on disk. Dropping the memoized cache reproduces that.
 	packCaches.Delete(dir)
 	restarted := testPackedStorage(t, fake)
-	fake.reset()
+	fake.Reset()
 	clonePack(t, restarted, hashes)
-	counts := fake.snapshot()
-	if counts.getRanged != 0 || counts.get != 0 {
+	counts := fake.Snapshot()
+	if counts.GetRanged != 0 || counts.Get != 0 {
 		t.Fatalf("a clone after a restart re-fetched pack bytes: %s", counts)
 	}
 	t.Logf("clone after restart cost %s", counts)
@@ -194,9 +193,8 @@ func TestOnlyContentAddressedKeysAreCached(t *testing.T) {
 // endpoints, which never push, so an API-built repo depends on this signal
 // rather than post-receive scheduling.
 func TestWritesRequestCompactionWhenTheLooseTierFills(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
-	t.Setenv(compactionTriggerEnv, "150")
 	fake := newFakeS3(t)
+	fake.opts.CompactionTrigger = 150
 	stor := testPackedStorage(t, fake)
 
 	// The write path only signals; capture the signal and verify it names this

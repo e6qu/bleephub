@@ -11,7 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -22,7 +23,7 @@ import (
 // test that reaches the network has already failed its own premise.
 func newStagingFSForTest(t *testing.T) *gitstore.S3FS {
 	t.Helper()
-	fs, err := gitstore.NewS3FS(context.Background(), "http://127.0.0.1:1", "bleephub-test", "git")
+	fs, err := gitbackend.NewS3FS(context.Background(), "http://127.0.0.1:1", "bleephub-test", "git")
 	if err != nil {
 		t.Fatalf("build object filesystem: %v", err)
 	}

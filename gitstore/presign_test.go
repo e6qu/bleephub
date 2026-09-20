@@ -22,7 +22,7 @@ func TestPresignedGetURLAddressesOneObject(t *testing.T) {
 	fake := newFakeS3(t)
 	fs := fake.fs("bucket", "git/owner/repo")
 	content := []byte("PACK not really, but these are the bytes behind the key")
-	fake.put("git/owner/repo/objects/pack/pack-abc.pack", content)
+	fake.Put("git/owner/repo/objects/pack/pack-abc.pack", content)
 
 	signed, err := fs.PresignedGetURL(context.Background(), "objects/pack/pack-abc.pack", presignTestExpiry)
 	if err != nil {
@@ -76,15 +76,15 @@ func TestPutStreamPublishesASmallStreamInOneRequest(t *testing.T) {
 	fs := fake.fs("bucket", "git")
 	content := bytes.Repeat([]byte("small "), 1024)
 
-	before := fake.snapshot()
+	before := fake.Snapshot()
 	if err := fs.PutStream(context.Background(), "objects/bundle/one.bundle", bytes.NewReader(content)); err != nil {
 		t.Fatalf("put stream: %v", err)
 	}
-	spent := fake.snapshot().sub(before)
-	if spent.put != 1 || spent.multipart != 0 {
+	spent := fake.Snapshot().Sub(before)
+	if spent.Put != 1 || spent.Multipart != 0 {
 		t.Fatalf("a one-part stream cost %s, want a single put", spent)
 	}
-	stored, ok := fake.get("git/objects/bundle/one.bundle")
+	stored, ok := fake.Get("git/objects/bundle/one.bundle")
 	if !ok || !bytes.Equal(stored, content) {
 		t.Fatal("the stream did not land under its key")
 	}
@@ -104,14 +104,14 @@ func TestPutStreamPublishesALargeStreamInParts(t *testing.T) {
 		content[index] = byte(index)
 	}
 
-	before := fake.snapshot()
+	before := fake.Snapshot()
 	if err := fs.PutStream(context.Background(), "objects/bundle/large.bundle", bytes.NewReader(content)); err != nil {
 		t.Fatalf("put stream: %v", err)
 	}
-	if spent := fake.snapshot().sub(before); spent.multipart == 0 {
+	if spent := fake.Snapshot().Sub(before); spent.Multipart == 0 {
 		t.Fatalf("a %d byte stream cost %s, want a multipart upload", len(content), spent)
 	}
-	stored, ok := fake.get("git/objects/bundle/large.bundle")
+	stored, ok := fake.Get("git/objects/bundle/large.bundle")
 	if !ok {
 		t.Fatal("the stream did not land under its key")
 	}

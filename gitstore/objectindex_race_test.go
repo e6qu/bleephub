@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestLooseAbsentIsRaceFreeAgainstConcurrentWrites exercises the exact
@@ -15,9 +16,8 @@ import (
 // A short freshness window forces every probe down the refresh path where the
 // unlocked reads lived. Run under -race, this must stay clean.
 func TestLooseAbsentIsRaceFreeAgainstConcurrentWrites(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
-	t.Setenv(objectIndexFreshnessEnv, "1ms") // stale immediately → refresh path
 	fake := newFakeS3(t)
+	fake.opts.IndexFreshness = time.Millisecond // stale immediately → refresh path
 	stor := testPackedStorage(t, fake)
 	seedObjects(t, stor, 50)
 

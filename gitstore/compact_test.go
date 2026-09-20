@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage"
 )
 
 const testRepo = "octocat/monorepo"
@@ -51,7 +52,6 @@ func readObjects(t *testing.T, stor *atomicRefStorer, hashes []plumbing.Hash) ma
 // TestCompactionPreservesEveryObject asserts the pack tier returns every object
 // byte-for-byte, read through a storer that has never seen the loose form.
 func TestCompactionPreservesEveryObject(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 300)
@@ -95,7 +95,7 @@ func TestCompactionPreservesEveryObject(t *testing.T) {
 func looseKeyCount(fake *fakeS3) int {
 	prefix := "prefix/" + testRepo + "/objects/"
 	count := 0
-	for _, key := range fake.keysWithPrefix(prefix) {
+	for _, key := range fake.KeysWithPrefix(prefix) {
 		if !strings.HasPrefix(key, prefix+"pack/") {
 			count++
 		}
@@ -107,19 +107,18 @@ func looseKeyCount(fake *fakeS3) int {
 // with the index and filter stored but the .pack key absent; the repository must
 // still read entirely from loose objects and a retry must succeed.
 func TestCompactionCrashBeforeThePackIsPublishedLosesNothing(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
 	want := readObjects(t, stor, hashes)
 
-	fake.setFailOn(func(method, key string) bool {
+	fake.SetFailOn(func(method, key string) bool {
 		return method == "PUT" && strings.HasSuffix(key, ".pack")
 	})
 	if _, err := CompactRepository(context.Background(), stor); err == nil {
 		t.Fatal("compaction reported success although the packfile upload failed")
 	}
-	fake.setFailOn(nil)
+	fake.SetFailOn(nil)
 
 	if looseKeyCount(fake) != len(hashes) {
 		t.Fatalf("a compaction that never published its pack removed loose objects: %d of %d remain",
@@ -158,17 +157,16 @@ func TestCompactionCrashBeforeThePackIsPublishedLosesNothing(t *testing.T) {
 // is published with the loose keys only partly deleted; both copies stay
 // readable and the objects must come back unchanged.
 func TestCompactionCrashDuringLooseDeletionLosesNothing(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
 	want := readObjects(t, stor, hashes)
 
-	fake.setFailOn(func(method, key string) bool { return method == "POST" && key == "" })
+	fake.SetFailOn(func(method, key string) bool { return method == "POST" && key == "" })
 	if _, err := CompactRepository(context.Background(), stor); err == nil {
 		t.Fatal("compaction reported success although the loose deletion failed")
 	}
-	fake.setFailOn(nil)
+	fake.SetFailOn(nil)
 
 	if len(packKeys(fake, ".pack")) != 1 {
 		t.Fatalf("expected the packfile to be published before deletion was attempted, found %v",
@@ -197,7 +195,7 @@ func TestCompactionCrashDuringLooseDeletionLosesNothing(t *testing.T) {
 
 func packKeys(fake *fakeS3, extension string) []string {
 	var out []string
-	for _, key := range fake.keysWithPrefix("prefix/" + testRepo + "/objects/pack/") {
+	for _, key := range fake.KeysWithPrefix("prefix/" + testRepo + "/objects/pack/") {
 		if strings.HasSuffix(key, extension) {
 			out = append(out, key)
 		}
@@ -209,7 +207,6 @@ func packKeys(fake *fakeS3, extension string) []string {
 // concurrent with a compaction safe. Objects written after the compaction took
 // its listing are not in the pack, so they must still be loose afterwards.
 func TestCompactionDeletesOnlyWhatItPacked(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
@@ -274,7 +271,6 @@ func writeBlob(t *testing.T, stor *atomicRefStorer, body string) plumbing.Hash {
 // a loose key that another replica packs and deletes before this one reads it;
 // compaction must complete and must not delete a key it did not pack.
 func TestCompactionToleratesAnObjectAnotherReplicaAlreadyPacked(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
@@ -284,15 +280,15 @@ func TestCompactionToleratesAnObjectAnotherReplicaAlreadyPacked(t *testing.T) {
 	vanished := hashes[7]
 	vanishedKey := looseKeyOf(vanished)
 	var once sync.Once
-	fake.setOnRequest(func(method, key string) {
+	fake.SetOnRequest(func(method, key string) {
 		if method != "GET" || key == vanishedKey || !strings.Contains(key, "/objects/") {
 			return
 		}
-		once.Do(func() { fake.remove(vanishedKey) })
+		once.Do(func() { fake.Remove(vanishedKey) })
 	})
 
 	result, err := CompactRepository(context.Background(), stor)
-	fake.setOnRequest(nil)
+	fake.SetOnRequest(nil)
 	if err != nil {
 		t.Fatalf("compaction failed on an object another replica had already packed: %v", err)
 	}
@@ -315,7 +311,6 @@ func TestCompactionToleratesAnObjectAnotherReplicaAlreadyPacked(t *testing.T) {
 // writers on the same repository handle, which is the shape a scheduled
 // compaction and an ongoing push have.
 func TestConcurrentCompactionAndWritesLoseNothing(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	seeded := seedObjects(t, stor, 150)
@@ -358,7 +353,6 @@ func TestConcurrentCompactionAndWritesLoseNothing(t *testing.T) {
 // must fold its packs together rather than grow an index per push, and every
 // object must survive the fold.
 func TestCompactionMergesPacksOnceTheyAccumulate(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 
@@ -394,7 +388,7 @@ func TestCompactionMergesPacksOnceTheyAccumulate(t *testing.T) {
 	}
 	for _, key := range packKeys(fake, ".superseded") {
 		pack := strings.TrimSuffix(key, ".superseded") + ".pack"
-		if _, ok := fake.get(pack); !ok {
+		if _, ok := fake.Get(pack); !ok {
 			t.Fatalf("superseded pack %s was deleted immediately instead of aging out", pack)
 		}
 	}
@@ -403,7 +397,6 @@ func TestCompactionMergesPacksOnceTheyAccumulate(t *testing.T) {
 // TestCompactionSkipsRepositoriesWithLittleToGain pins that a handful of loose
 // objects is left alone, since publishing a pack costs three uploads.
 func TestCompactionSkipsRepositoriesWithLittleToGain(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	seedObjects(t, stor, 4)
@@ -420,24 +413,22 @@ func TestCompactionSkipsRepositoriesWithLittleToGain(t *testing.T) {
 // TestCompactRepositoryIgnoresStorageWithoutAPackTier pins that the local
 // filesystem and in-memory backends are left to git's own maintenance.
 func TestCompactRepositoryIgnoresStorageWithoutAPackTier(t *testing.T) {
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
-	t.Setenv("BLEEPHUB_GIT_DIR", "")
-	S3FSCache.Mu.Lock()
-	S3FSCache.Inited = false
-	S3FSCache.FS = nil
-	S3FSCache.Err = nil
-	S3FSCache.Mu.Unlock()
-
-	stor, err := newGitStorage(context.Background(), testRepo)
+	memStor, err := OpenMemory(testRepo)
 	if err != nil {
-		t.Fatalf("storage: %v", err)
+		t.Fatalf("memory storage: %v", err)
 	}
-	result, err := CompactRepository(context.Background(), stor)
+	dirStor, err := OpenDir(t.TempDir(), testRepo)
 	if err != nil {
-		t.Fatalf("compact: %v", err)
+		t.Fatalf("directory storage: %v", err)
 	}
-	if result.PackName != "" || result.Packed != 0 {
-		t.Fatalf("non-object-store storage reported a compaction: %+v", result)
+	for _, stor := range []storage.Storer{memStor, dirStor} {
+		result, err := CompactRepository(context.Background(), stor)
+		if err != nil {
+			t.Fatalf("compact: %v", err)
+		}
+		if result.PackName != "" || result.Packed != 0 {
+			t.Fatalf("non-object-store storage reported a compaction: %+v", result)
+		}
 	}
 }
 
@@ -445,16 +436,15 @@ func TestCompactRepositoryIgnoresStorageWithoutAPackTier(t *testing.T) {
 // not read the object store fails loudly rather than publishing a pack that is
 // missing whatever it could not read.
 func TestCompactionSurfacesAnObjectStoreOutage(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
 
-	fake.setFailOn(func(method, key string) bool {
+	fake.SetFailOn(func(method, key string) bool {
 		return method == "GET" && strings.Contains(key, "/objects/") && !strings.Contains(key, "/pack/")
 	})
 	_, err := CompactRepository(context.Background(), stor)
-	fake.setFailOn(nil)
+	fake.SetFailOn(nil)
 	if err == nil {
 		t.Fatal("compaction reported success although it could not read the objects")
 	}
@@ -471,9 +461,8 @@ func TestCompactionSurfacesAnObjectStoreOutage(t *testing.T) {
 // per-Next iterator locking exist for; run under the race detector, its
 // assertions only check no object is lost.
 func TestConcurrentReadsWritesAndCompactionAreRaceFree(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
-	t.Setenv(compactionTriggerEnv, "0")
 	fake := newFakeS3(t)
+	fake.opts.CompactionTrigger = -1
 	stor := testPackedStorage(t, fake)
 	seeded := seedObjects(t, stor, 120)
 
@@ -554,23 +543,22 @@ func TestConcurrentReadsWritesAndCompactionAreRaceFree(t *testing.T) {
 // request, it appears only on multipart-upload completion, so this path must
 // publish atomically too.
 func TestLargePacksAreUploadedInParts(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
-	t.Setenv(compactionTriggerEnv, "0")
+	fake := newFakeS3(t)
+	fake.opts.CompactionTrigger = -1
 	// Any pack these tests produce is far above one kilobyte, so this forces
 	// every publication through the multipart path.
-	t.Setenv(multipartThresholdEnv, "1024")
-	fake := newFakeS3(t)
+	fake.opts.MultipartBytes = 1024
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 300)
 	want := readObjects(t, stor, hashes)
 
-	before := fake.snapshot()
+	before := fake.Snapshot()
 	result, err := CompactRepository(context.Background(), stor)
 	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	counts := fake.snapshot().sub(before)
-	if counts.multipart == 0 {
+	counts := fake.Snapshot().Sub(before)
+	if counts.Multipart == 0 {
 		t.Fatalf("the packfile was not uploaded in parts: %s", counts)
 	}
 
@@ -578,7 +566,7 @@ func TestLargePacksAreUploadedInParts(t *testing.T) {
 	if len(packs) != 1 {
 		t.Fatalf("expected one published pack, found %v", packs)
 	}
-	body, _ := fake.get(packs[0])
+	body, _ := fake.Get(packs[0])
 	if int64(len(body)) != result.PackBytes {
 		t.Fatalf("the assembled pack is %d bytes, want %d", len(body), result.PackBytes)
 	}
@@ -596,17 +584,16 @@ func TestLargePacksAreUploadedInParts(t *testing.T) {
 // point: a pack whose completion never ran must be invisible, and the loose
 // objects it was built from must be untouched.
 func TestAnInterruptedMultipartUploadPublishesNothing(t *testing.T) {
-	t.Setenv(packCacheDirEnv, t.TempDir())
-	t.Setenv(compactionTriggerEnv, "0")
-	t.Setenv(multipartThresholdEnv, "1024")
 	fake := newFakeS3(t)
+	fake.opts.CompactionTrigger = -1
+	fake.opts.MultipartBytes = 1024
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 300)
 
 	// Failing a part upload leaves the multipart upload incomplete, which is
 	// the same state a crashed replica leaves behind.
 	failed := false
-	fake.setFailOn(func(method, key string) bool {
+	fake.SetFailOn(func(method, key string) bool {
 		if method == "PUT" && strings.HasSuffix(key, ".pack") && !failed {
 			failed = true
 			return true
@@ -614,7 +601,7 @@ func TestAnInterruptedMultipartUploadPublishesNothing(t *testing.T) {
 		return false
 	})
 	_, err := CompactRepository(context.Background(), stor)
-	fake.setFailOn(nil)
+	fake.SetFailOn(nil)
 	if err == nil {
 		t.Fatal("compaction reported success although a part upload failed")
 	}

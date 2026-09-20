@@ -16,7 +16,7 @@ func createLabeledS3Container(t *testing.T, owner int) string {
 	t.Helper()
 	output, err := exec.Command("docker", "create",
 		"--label", s3TestOwnerLabel+"="+strconv.Itoa(owner),
-		"minio/minio:RELEASE.2025-04-22T22-12-26Z", "server", "/data").CombinedOutput()
+		"quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z", "server", "/data").CombinedOutput()
 	if err != nil {
 		t.Fatalf("create labeled container: %v\n%s", err, output)
 	}

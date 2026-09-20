@@ -19,19 +19,7 @@ import (
 // too large and one blob lookup drags megabytes across the wire. Tunable per
 // endpoint; the size in force is folded into every cache entry's name, so a
 // reconfigured replica never mistakes a 4 MiB extent for a 1 MiB one.
-const (
-	defaultPackChunkSize = 4 << 20
-	packChunkBytesEnv    = "BLEEPHUB_GITSTORE_CHUNK_BYTES"
-)
-
-func packChunkSize() int64 {
-	if raw := strings.TrimSpace(os.Getenv(packChunkBytesEnv)); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			return parsed
-		}
-	}
-	return defaultPackChunkSize
-}
+const defaultPackChunkSize = 4 << 20
 
 // packDiskCache is a byte-budgeted LRU of pack and index extents on local disk,
 // shared by every repository in the process and read back after a restart. It
@@ -73,44 +61,22 @@ type packCacheEntry struct {
 var packCaches sync.Map
 
 const (
-	packCacheDirEnv    = "BLEEPHUB_GITSTORE_CACHE_DIR"
-	packCacheBytesEnv  = "BLEEPHUB_GITSTORE_CACHE_BYTES"
-	packMemoryBytesEnv = "BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES"
-
 	defaultPackCacheBytes  = 8 << 30
 	defaultPackMemoryBytes = 256 << 20
 )
 
-// sharedPackDiskCache returns the cache for this process's configured
-// directory, creating it on first reference.
-func sharedPackDiskCache() *packDiskCache {
-	dir := packCacheDir()
-	if cached, ok := packCaches.Load(dir); ok {
+// packCache returns the cache for this filesystem's configured directory,
+// creating it on first reference. Filesystems naming one directory share one
+// cache, sized by whichever referenced it first.
+func (f *S3FS) packCache() *packDiskCache {
+	opts := f.options()
+	if cached, ok := packCaches.Load(opts.CacheDir); ok {
 		return cached.(*packDiskCache)
 	}
-	limit := int64(defaultPackCacheBytes)
-	if raw := strings.TrimSpace(os.Getenv(packCacheBytesEnv)); raw != "" {
-		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err == nil && parsed > 0 {
-			limit = parsed
-		}
-	}
-	cache := newPackDiskCache(dir, limit)
-	if raw := strings.TrimSpace(os.Getenv(packMemoryBytesEnv)); raw != "" {
-		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err == nil && parsed >= 0 {
-			cache.memoryLimit = parsed
-		}
-	}
-	cached, _ := packCaches.LoadOrStore(dir, cache)
+	cache := newPackDiskCache(opts.CacheDir, opts.CacheBytes)
+	cache.memoryLimit = opts.MemoryCacheBytes
+	cached, _ := packCaches.LoadOrStore(opts.CacheDir, cache)
 	return cached.(*packDiskCache)
-}
-
-func packCacheDir() string {
-	if dir := strings.TrimSpace(os.Getenv(packCacheDirEnv)); dir != "" {
-		return dir
-	}
-	return filepath.Join(os.TempDir(), "bleephub-gitstore-cache")
 }
 
 func newPackDiskCache(root string, limit int64) *packDiskCache {

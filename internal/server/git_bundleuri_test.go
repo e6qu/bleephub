@@ -3,6 +3,7 @@ package bleephub
 import (
 	"bytes"
 	"context"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"io"
 	"net/http"
 	"os"
@@ -10,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/e6qu/bleephub/internal/gitstore"
 )
 
 // bundleURIList runs the bundle-uri command over smart HTTP and returns the
@@ -171,7 +170,7 @@ func TestBundleURIIsRebuiltWhenTheRefsMove(t *testing.T) {
 // storedBundles lists the bundle keys a repository holds in object storage.
 func storedBundles(t *testing.T, name string) []string {
 	t.Helper()
-	objectStore, err := gitstore.GetS3FS(context.Background())
+	objectStore, err := gitbackend.GetS3FS(context.Background())
 	if err != nil || objectStore == nil {
 		t.Fatalf("open the object store: %v", err)
 	}

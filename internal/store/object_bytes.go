@@ -14,7 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	minio "github.com/minio/minio-go/v7"
 )
 
@@ -59,7 +60,7 @@ func NewActionsByteStoreFromEnv(ctx context.Context) (ActionsByteStore, error) {
 	if prefix == "" {
 		prefix = "objects"
 	}
-	fs, err := gitstore.NewS3FS(ctx, endpoint, bucket, prefix)
+	fs, err := gitbackend.NewS3FS(ctx, endpoint, bucket, prefix)
 	if err != nil {
 		return nil, err
 	}

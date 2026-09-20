@@ -15,14 +15,20 @@ objects (blobs, trees, commits, tags) plus references (branches, tags, `HEAD`).
 Every git operation bleephub performs runs against a `Storer`; nothing above that
 interface knows or cares how the bytes are persisted.
 
+The storage layer is the [`gitstore`](../gitstore/README.md) library, a Go module
+of its own in this repository so that it can be imported, benchmarked and scaled
+apart from the server. The library takes its configuration as options and never
+reads the environment; `internal/gitbackend` is the one place bleephub's
+`BLEEPHUB_*` storage settings are parsed and handed to it.
+
 Bleephub builds three kinds of `Storer`, chosen at startup, all behind that one
-interface (`internal/gitstore/git_storage.go`, `newGitStorage`):
+interface (`internal/gitbackend`, `OpenOrInitGitStorage`):
 
 | Backend | When | Built from |
 |---|---|---|
-| In-memory | default (no config) | `memory.NewStorage()` |
-| Local filesystem | `BLEEPHUB_GIT_DIR` set | `osfs` over `<dir>/<owner>/<repo>` |
-| Object store (S3) | `BLEEPHUB_S3_BUCKET` set | the `S3FS` filesystem (below) |
+| In-memory | default (no config) | `gitstore.OpenMemory` — `memory.NewStorage()` |
+| Local filesystem | `BLEEPHUB_GIT_DIR` set | `gitstore.OpenDir` — `osfs` over `<dir>/<owner>/<repo>` |
+| Object store (S3) | `BLEEPHUB_S3_BUCKET` set | `gitstore.OpenObjectStore` — the `S3FS` filesystem (below) |
 
 The filesystem and object-store backends share the *same* go-git code:
 `filesystem.NewStorage(fs, cache)` turns any **filesystem** into a git store,
@@ -39,7 +45,7 @@ storage is written entirely against `billy.Filesystem`, so it runs unmodified on
 anything that implements it:
 
 - **Local disk** uses billy's `osfs`, a thin pass-through to the real filesystem.
-- **Object storage** uses bleephub's own `S3FS` (`internal/gitstore/s3fs.go`), a
+- **Object storage** uses bleephub's own `S3FS` (`gitstore/s3fs.go`), a
   `billy.Filesystem` whose files are objects in an S3-compatible bucket. Because
   `S3FS` satisfies the same interface, go-git writes git's on-disk layout into
   the bucket exactly as it would to a disk — one object per git file, keyed by
@@ -57,7 +63,14 @@ git reads packs at random offsets and probes for thousands of loose objects. The
 
 - **Range reads** (`s3rangefile.go`) — pack files are read with HTTP range
   requests, so resolving one object pulls a bounded window instead of the whole
-  (potentially gigabyte) pack.
+  (potentially gigabyte) pack. Concurrent fetches of one extent are coalesced,
+  so a replica that starts cold under load downloads each extent once rather
+  than once per clone.
+- **Single-request object writes** (`s3fs.go`) — git writes an object to a
+  temporary name and renames it into place, which on a disk makes it appear
+  atomically. A PUT already is atomic, so the temporary name never reaches the
+  bucket: the bytes wait in the staging area and are uploaded once, to the final
+  key. The alternative is a PUT, a COPY and a DELETE for every object written.
 - **Pack cache** (`packcache.go`) — pack files are content-addressed and
   immutable, so their fetched extents are cached locally and reused; the chunk
   size is folded into each cache key so a reconfigured replica never confuses
@@ -66,8 +79,24 @@ git reads packs at random offsets and probes for thousands of loose objects. The
   clone makes are batched into a few bucket listings, relying on S3's
   strongly-consistent list-after-write; a process trusts its own writes
   immediately.
-- **Compaction** (`compact.go`) — accumulated loose objects are rolled into pack
-  files, the same housekeeping `git gc` does, keeping listings and lookups cheap.
+- **Pack ingest** (`ingest.go`) — a push arrives as a packfile and is published
+  as one: index, membership filter, then the pack, three writes however many
+  objects it carries. Parsing it into loose objects instead costs several
+  requests *per object*. A stock git client sends incremental pushes as *thin*
+  packs, whose deltas lean on objects the server already has; those cannot be
+  stored as they stand, so they are completed — resolved against the repository
+  and re-encoded self-contained — before they are published. What lands in the
+  bucket is always an ordinary git pack.
+- **Compaction** (`compact.go`) — loose objects (the REST git-database endpoints
+  and web edits still write objects one at a time) are rolled into pack files,
+  and the small packs pushes leave are merged, the same housekeeping `git gc`
+  does. Merging is geometric, as in `git repack --geometric`: a pack is left
+  alone while it is at least twice the size of everything smaller than it, so a
+  run of small pushes never causes the repository's large packs to be rewritten,
+  and the pack count stays logarithmic in the repository's size. A merged-away
+  pack is kept for an hour for requests that were already reading it, but is
+  hidden from every new reader, which would otherwise load an index and a
+  filter for a pack that holds nothing its replacement does not.
 - **Presigned reads** (`presign.go`) — a caller already entitled to a repo's
   bytes can be handed a short-lived presigned URL that fetches one object
   directly from the bucket, without bleephub proxying the bytes or lending its
@@ -125,7 +154,8 @@ already serializes shared state:
   advance a branch from the same tip. A replica that dies holding a lock frees it
   when the TTL expires.
 - **Membership freshness** — the loose-object index answers "absent" only from a
-  snapshot no older than `BLEEPHUB_GITSTORE_INDEX_FRESHNESS`, relying on S3's
+  snapshot no older than `BLEEPHUB_GITSTORE_INDEX_FRESHNESS` (the library's
+  `Options.IndexFreshness`), relying on S3's
   strongly-consistent list-after-write; against a weakly-consistent S3-compatible
   store, that window is the staleness bound.
 - **Compaction is single-writer per repo** — it runs under a durable

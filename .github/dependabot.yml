@@ -7,6 +7,8 @@ updates:
   - package-ecosystem: gomod
     directories:
       - /
+      - /gitstore
+      - /gitstore/bench
       - /sdk-tests
       - /terraform/wake
       - /test/terraform-sockerless
