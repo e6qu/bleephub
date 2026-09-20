@@ -6,6 +6,9 @@ package gitbackend
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -70,7 +73,11 @@ func GetStore(ctx context.Context) (*gitstore.Store, error) {
 
 // NewStore opens an object store tuned from the environment.
 func NewStore(ctx context.Context, endpoint, bucket, prefix string) (*gitstore.Store, error) {
-	return gitstore.OpenS3(ctx, endpoint, bucket, prefix, OptionsFromEnv())
+	opts, err := OptionsFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return gitstore.OpenS3(ctx, endpoint, bucket, prefix, opts)
 }
 
 // Conform runs the object-store conformance probe under a prefix of its own
@@ -121,35 +128,62 @@ func openGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, er
 }
 
 // OptionsFromEnv maps the BLEEPHUB_* storage tunables onto the library's
-// options. An unset or unparseable variable leaves the library default in force.
-// The library spells "off" as a negative value, so a variable set to 0 — off,
-// for the tunables that have an off — is translated here.
-func OptionsFromEnv() gitstore.Options {
+// options. An unset variable leaves the library's documented default in force.
+// A variable that is set and cannot be read is an error, and the server does not
+// start: an operator who wrote BLEEPHUB_GITSTORE_CACHE_BYTES=8G meant something,
+// and running on the default instead is a decision nobody made. The library
+// spells "off" as a negative value, so a variable set to 0 — off, for the
+// tunables that have an off — is translated here.
+func OptionsFromEnv() (gitstore.Options, error) {
+	var problems []error
+	count := func(name string) (int64, bool) {
+		value, set, err := envCount(name)
+		if err != nil {
+			problems = append(problems, err)
+		}
+		return value, set
+	}
+	sized := func(name string) int64 {
+		value, set := count(name)
+		if set && value == 0 {
+			problems = append(problems, fmt.Errorf("%s=0: want a positive number of bytes, or leave it unset", name))
+		}
+		return value
+	}
+
 	opts := gitstore.Options{
 		Region:            s3Region(),
-		ChunkBytes:        envPositiveInt64("BLEEPHUB_GITSTORE_CHUNK_BYTES"),
+		ChunkBytes:        sized("BLEEPHUB_GITSTORE_CHUNK_BYTES"),
 		CacheDir:          packCacheDir(),
-		CacheBytes:        envPositiveInt64("BLEEPHUB_GITSTORE_CACHE_BYTES"),
-		MemoryCacheBytes:  zeroIsOff(envNonNegativeInt64("BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES")),
-		CompactionTrigger: zeroIsOff(envNonNegativeInt64("BLEEPHUB_GITSTORE_COMPACT_AFTER")),
-		MultipartBytes:    envPositiveInt64("BLEEPHUB_GITSTORE_MULTIPART_BYTES"),
+		CacheBytes:        sized("BLEEPHUB_GITSTORE_CACHE_BYTES"),
+		MemoryCacheBytes:  zeroIsOff(count("BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES")),
+		CompactionTrigger: zeroIsOff(count("BLEEPHUB_GITSTORE_COMPACT_AFTER")),
+		MultipartBytes:    sized("BLEEPHUB_GITSTORE_MULTIPART_BYTES"),
 	}
-	if freshness, ok := envDuration("BLEEPHUB_GITSTORE_INDEX_FRESHNESS"); ok {
+	freshness, set, err := envDuration("BLEEPHUB_GITSTORE_INDEX_FRESHNESS")
+	if err != nil {
+		problems = append(problems, err)
+	}
+	if set {
 		opts.IndexFreshness = freshness
 		if freshness == 0 {
 			opts.IndexFreshness = -1
 		}
 	}
-	if threshold, ok := envInt("BLEEPHUB_S3_BREAKER_THRESHOLD"); ok {
-		opts.BreakerThreshold = threshold
-		if threshold <= 0 {
+	if threshold, set := count("BLEEPHUB_S3_BREAKER_THRESHOLD"); set {
+		switch {
+		case threshold == 0:
 			opts.BreakerThreshold = -1
+		case threshold > math.MaxInt32:
+			problems = append(problems, fmt.Errorf("BLEEPHUB_S3_BREAKER_THRESHOLD=%d: too large to be a count of failures", threshold))
+		default:
+			opts.BreakerThreshold = int(threshold)
 		}
 	}
-	if millis, ok := envInt("BLEEPHUB_S3_BREAKER_COOLDOWN_MS"); ok {
+	if millis, set := count("BLEEPHUB_S3_BREAKER_COOLDOWN_MS"); set {
 		opts.BreakerCooldown = time.Duration(millis) * time.Millisecond
 	}
-	return opts
+	return opts, errors.Join(problems...)
 }
 
 // s3Region selects the AWS region: explicit BLEEPHUB_S3_REGION, then
@@ -171,38 +205,18 @@ func packCacheDir() string {
 	return filepath.Join(os.TempDir(), "bleephub-gitstore-cache")
 }
 
-func envInt(name string) (int, bool) {
+// envCount reads a variable holding a whole number that is not negative. set
+// reports whether the variable was given at all.
+func envCount(name string) (value int64, set bool, err error) {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {
-		return 0, false
+		return 0, false, nil
 	}
-	parsed, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, false
+	parsed, parseErr := strconv.ParseInt(raw, 10, 64)
+	if parseErr != nil || parsed < 0 {
+		return 0, true, fmt.Errorf("%s=%q: want a whole number that is not negative", name, raw)
 	}
-	return parsed, true
-}
-
-// envPositiveInt64 returns the variable's value, or 0 — the library's "use the
-// default" — when it is unset, unparseable or not positive.
-func envPositiveInt64(name string) int64 {
-	parsed, ok := envNonNegativeInt64(name)
-	if !ok {
-		return 0
-	}
-	return parsed
-}
-
-func envNonNegativeInt64(name string) (int64, bool) {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return 0, false
-	}
-	parsed, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || parsed < 0 {
-		return 0, false
-	}
-	return parsed, true
+	return parsed, true, nil
 }
 
 // zeroIsOff translates an explicitly configured 0 into the library's negative
@@ -214,17 +228,16 @@ func zeroIsOff(value int64, set bool) int64 {
 	return value
 }
 
-// envDuration accepts a Go duration or a bare count of milliseconds.
-func envDuration(name string) (time.Duration, bool) {
+// envDuration reads a variable holding a Go duration, such as 250ms, that is not
+// negative.
+func envDuration(name string) (value time.Duration, set bool, err error) {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {
-		return 0, false
+		return 0, false, nil
 	}
-	if parsed, err := time.ParseDuration(raw); err == nil && parsed >= 0 {
-		return parsed, true
+	parsed, parseErr := time.ParseDuration(raw)
+	if parseErr != nil || parsed < 0 {
+		return 0, true, fmt.Errorf("%s=%q: want a duration that is not negative, such as 250ms", name, raw)
 	}
-	if millis, err := strconv.Atoi(raw); err == nil && millis >= 0 {
-		return time.Duration(millis) * time.Millisecond, true
-	}
-	return 0, false
+	return parsed, true, nil
 }

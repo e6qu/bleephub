@@ -46,7 +46,10 @@ func clearTunables(t *testing.T) {
 // tunable, rather than restating defaults that could drift from the library's.
 func TestOptionsFromEnvLeavesUnsetTunablesToTheLibrary(t *testing.T) {
 	clearTunables(t)
-	opts := OptionsFromEnv()
+	opts, err := OptionsFromEnv()
+	if err != nil {
+		t.Fatalf("an empty environment is an error: %v", err)
+	}
 	if opts.ChunkBytes != 0 || opts.CacheBytes != 0 || opts.MemoryCacheBytes != 0 ||
 		opts.IndexFreshness != 0 || opts.CompactionTrigger != 0 || opts.MultipartBytes != 0 ||
 		opts.BreakerThreshold != 0 || opts.BreakerCooldown != 0 {
@@ -72,16 +75,14 @@ func TestOptionsFromEnvParsesEveryTunable(t *testing.T) {
 	t.Setenv("BLEEPHUB_S3_BREAKER_THRESHOLD", "9")
 	t.Setenv("BLEEPHUB_S3_BREAKER_COOLDOWN_MS", "1500")
 
-	opts := OptionsFromEnv()
+	opts, err := OptionsFromEnv()
+	if err != nil {
+		t.Fatalf("valid settings are an error: %v", err)
+	}
 	if opts.ChunkBytes != 1048576 || opts.CacheDir != "/var/cache/packs" || opts.CacheBytes != 2048 ||
 		opts.MemoryCacheBytes != 1024 || opts.IndexFreshness != 2*time.Second || opts.CompactionTrigger != 500 ||
 		opts.MultipartBytes != 8388608 || opts.BreakerThreshold != 9 || opts.BreakerCooldown != 1500*time.Millisecond {
 		t.Fatalf("parsed options = %+v", opts)
-	}
-
-	t.Setenv("BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "750")
-	if got := OptionsFromEnv().IndexFreshness; got != 750*time.Millisecond {
-		t.Fatalf("a bare number is milliseconds: freshness = %s, want 750ms", got)
 	}
 }
 
@@ -96,20 +97,39 @@ func TestOptionsFromEnvTranslatesZeroToOff(t *testing.T) {
 	t.Setenv("BLEEPHUB_GITSTORE_COMPACT_AFTER", "0")
 	t.Setenv("BLEEPHUB_S3_BREAKER_THRESHOLD", "0")
 
-	opts := OptionsFromEnv()
+	opts, err := OptionsFromEnv()
+	if err != nil {
+		t.Fatalf("turning tunables off is an error: %v", err)
+	}
 	if opts.MemoryCacheBytes >= 0 || opts.IndexFreshness >= 0 || opts.CompactionTrigger >= 0 || opts.BreakerThreshold >= 0 {
 		t.Fatalf("a tunable set to 0 was not translated to the library's off: %+v", opts)
 	}
 }
 
-func TestOptionsFromEnvIgnoresUnparseableValues(t *testing.T) {
+// TestOptionsFromEnvRefusesASettingItCannotRead pins that a setting which was
+// given and cannot be read stops the server, naming every such setting at once.
+// It used to be ignored: an operator who wrote a cache size of "8G" ran on the
+// default, which nobody had chosen, and found out from a full disk or an empty
+// cache. A size of 0 is refused too, for the tunables that have no "off": it
+// does not mean what 0 means for the ones that do.
+func TestOptionsFromEnvRefusesASettingItCannotRead(t *testing.T) {
 	clearTunables(t)
 	t.Setenv("BLEEPHUB_GITSTORE_CHUNK_BYTES", "lots")
 	t.Setenv("BLEEPHUB_GITSTORE_CACHE_BYTES", "-5")
-	t.Setenv("BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "soon")
-	opts := OptionsFromEnv()
-	if opts.ChunkBytes != 0 || opts.CacheBytes != 0 || opts.IndexFreshness != 0 {
-		t.Fatalf("an unparseable value overrode a library default: %+v", opts)
+	t.Setenv("BLEEPHUB_GITSTORE_MULTIPART_BYTES", "0")
+	t.Setenv("BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "750")
+	t.Setenv("BLEEPHUB_S3_BREAKER_THRESHOLD", "3.5")
+	_, err := OptionsFromEnv()
+	if err == nil {
+		t.Fatal("settings that cannot be read were accepted")
+	}
+	for _, name := range []string{
+		"BLEEPHUB_GITSTORE_CHUNK_BYTES", "BLEEPHUB_GITSTORE_CACHE_BYTES", "BLEEPHUB_GITSTORE_MULTIPART_BYTES",
+		"BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "BLEEPHUB_S3_BREAKER_THRESHOLD",
+	} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("the error does not name %s: %v", name, err)
+		}
 	}
 }
 

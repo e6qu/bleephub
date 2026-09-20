@@ -93,8 +93,13 @@ measures, and the knobs that move them.
 | `BLEEPHUB_GROUP_COMMIT` | Single-node SQLite only: batch many writers' fsyncs into one via a background committer + HTTP durability barrier (acked writes stay durable). ~4.8× concurrent durable-write throughput. Trades synchronous atomicity for throughput; default off. Ignored on a dqlite quorum. |
 | `BLEEPHUB_GITSTORE_CHUNK_BYTES` | S3 pack-cache extent size (default 4 MiB). |
 | `BLEEPHUB_GITSTORE_COMPACT_AFTER` | Loose-object count that triggers compaction (default 4096); lower to keep clone/fetch S3-request counts down under heavy push churn. |
-| `BLEEPHUB_GITSTORE_INDEX_FRESHNESS` | How far a plain read may lag another replica's write: how long a repository snapshot may answer "absent" before a miss lists again, and how long a fetched reference may answer again (default 250 ms). |
+| `BLEEPHUB_GITSTORE_INDEX_FRESHNESS` | How far a plain read may lag another replica's write: how long a repository snapshot may answer "absent" before a miss lists again, and how long a fetched reference may answer again (default 250 ms). A Go duration, such as `250ms` or `2s`; `0` turns reuse off. |
 | `BLEEPHUB_GITSTORE_MULTIPART_BYTES` | Pack size above which a pack is published by multipart upload, and the size of its parts (default 64 MiB). The S3 protocol allows no part under 5 MiB, so a smaller value is refused and the server does not start. |
+
+A `BLEEPHUB_GITSTORE_*` or `BLEEPHUB_S3_BREAKER_*` variable that is set and
+cannot be read — `8G` for a byte count, a bare `750` for a duration — is an error
+naming it, and the server does not start. It is not ignored in favour of the
+default: nobody chose the default.
 
 ## Git over S3
 
