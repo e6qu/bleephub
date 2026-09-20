@@ -50,8 +50,17 @@ var scenarioNotes = map[string]string{
 	scenarioCloneParallel:   "concurrent full clones from a cold start, to show how a replica scales",
 }
 
+// The two levels a driver can be measured at. Figures compare within a level,
+// never across: the git level includes the client, the wire protocol and the
+// server's own work, none of which the Storer level has.
+const (
+	levelStorer = "storer"
+	levelGit    = "git"
+)
+
 // Result is one scenario measured once against one driver.
 type Result struct {
+	Level    string        `json:"level"`
 	Driver   string        `json:"driver"`
 	Scenario string        `json:"scenario"`
 	Run      int           `json:"run"`
@@ -80,7 +89,7 @@ type runner struct {
 }
 
 func (r *runner) measure(scenario string, ops int, body func(result *Result) error) Result {
-	result := Result{Driver: r.driver.Name(), Scenario: scenario, Run: r.run, Ops: ops}
+	result := Result{Driver: r.driver.Name(), Scenario: scenario, Run: r.run, Ops: ops, Level: levelStorer}
 	before := r.meter.Snapshot()
 	start := time.Now()
 	err := body(&result)

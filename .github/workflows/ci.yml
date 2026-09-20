@@ -376,6 +376,15 @@ jobs:
       # rotting; it is a smoke, not a measurement.
       - name: Smoke the gitstore comparison harness
         run: cd gitstore/bench && go run . -files 64 -commits 4 -pushes 2 -changes 4 -runs 1 -probes 32 -parallel 2
+      # The git level drives the stock git client against the real server
+      # binary, restarted mid-run, with concurrent clones of a freshly started
+      # replica at the end — the scenario that first caught a cold handle
+      # reporting objects it held as missing. Remote helpers that are not
+      # installed are skipped by the harness, not failed.
+      - name: Smoke the harness's git level against the real server
+        run: cd gitstore/bench && go run . -level git -git-drivers git-local,bleephub -files 64 -commits 4 -pushes 3 -changes 4 -runs 1 -parallel 4
+      - name: Test the comparison harness
+        run: cd gitstore/bench && go test -race -count=1 -timeout 10m ./...
       - name: Test the wake controller
         run: cd terraform/wake && go test -count=1 ./...
       - name: Run the official go-github conformance suite

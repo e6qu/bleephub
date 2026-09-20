@@ -8,6 +8,18 @@ import (
 	minio "github.com/minio/minio-go/v7"
 )
 
+// TestEveryBucketExists pins the answer to the existence check S3 clients make
+// before they use a bucket. The fake keys objects without regard to a bucket,
+// so refusing the check would fail a client that the fake could otherwise serve.
+func TestEveryBucketExists(t *testing.T) {
+	server := New()
+	t.Cleanup(server.Close)
+	exists, err := server.Client().Client.BucketExists(context.Background(), "any-bucket-at-all")
+	if err != nil || !exists {
+		t.Fatalf("BucketExists = %v, %v; want true", exists, err)
+	}
+}
+
 // TestUserMetadataRoundTrips pins that x-amz-meta-* headers are stored with an
 // object, returned on GET and HEAD, carried by a copy and dropped on delete.
 // Storage designs that keep a fact beside an object's bytes depend on it.

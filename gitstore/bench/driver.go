@@ -12,11 +12,14 @@ import (
 // Env is what a driver is given to reach the object store. Endpoint is always
 // the meter, never the store itself.
 type Env struct {
-	Endpoint  string
-	Bucket    string
-	Region    string
-	AccessKey string
-	SecretKey string
+	Endpoint string
+	// DirectEndpoint reaches the object store past the meter, for traffic that
+	// is not git storage and must not be billed as it.
+	DirectEndpoint string
+	Bucket         string
+	Region         string
+	AccessKey      string
+	SecretKey      string
 	// Prefix is unique to this run, so runs against a shared bucket do not
 	// read each other's repositories.
 	Prefix string

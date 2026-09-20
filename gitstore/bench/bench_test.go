@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"net/url"
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/e6qu/bleephub/gitstore/s3fake"
@@ -183,5 +185,104 @@ func TestEveryDriverCompletesEveryScenario(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestTheGitLevelDrivesStockGitAndVerifiesWhatComesBack runs the git level at
+// its smallest against a local bare repository, which needs nothing but git.
+// Every clone is checked for its tip, its object count and its integrity, so a
+// pass means the runner pushes and clones what it says it does.
+func TestTheGitLevelDrivesStockGitAndVerifiesWhatComesBack(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	workload, err := GenerateWorkload(tinySpec)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	fake := s3fake.New()
+	t.Cleanup(fake.Close)
+	target, _ := url.Parse(fake.URL())
+	meter := NewMeter(target)
+	t.Cleanup(meter.Close)
+	env := Env{Endpoint: meter.URL(), DirectEndpoint: fake.URL(), Bucket: "bucket", Region: "us-east-1",
+		AccessKey: "fake", SecretKey: "fake", Prefix: "git-level", TempDir: t.TempDir()}
+	ctx := context.Background()
+
+	client, err := newClientRepository(ctx, env, workload)
+	if err != nil {
+		t.Fatalf("client repository: %v", err)
+	}
+	driver, err := newRemoteDriver("git-local")
+	if err != nil {
+		t.Fatalf("driver: %v", err)
+	}
+	if err := driver.Setup(ctx, env); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	selected := map[string]bool{}
+	for _, name := range gitScenarioOrder {
+		selected[name] = true
+	}
+	r := &gitRunner{driver: driver, meter: meter, workload: workload, client: client, env: env,
+		repo: "bench/repo", parallel: 2, selected: selected}
+	ran := map[string]Result{}
+	for _, result := range r.execute(ctx) {
+		if result.Error != "" {
+			t.Errorf("%s: %s", result.Scenario, result.Error)
+		}
+		if result.Level != levelGit {
+			t.Errorf("%s is tagged level %q, want %q", result.Scenario, result.Level, levelGit)
+		}
+		ran[result.Scenario] = result
+	}
+	for _, scenario := range gitScenarioOrder {
+		if _, ok := ran[scenario]; !ok {
+			t.Errorf("scenario %s did not run", scenario)
+		}
+	}
+	if got := ran[scenarioFetch].Objects; got != workload.Objects {
+		t.Errorf("the fetched clone holds %d objects, want all %d", got, workload.Objects)
+	}
+}
+
+// TestGitErrorsDoNotCarryCredentials pins that a remote's URL, which may embed
+// a token, is scrubbed from the error text that ends up in reports and logs.
+func TestGitErrorsDoNotCarryCredentials(t *testing.T) {
+	for in, want := range map[string]string{
+		"git clone http://admin:s3cr3t-token@127.0.0.1:9/x.git": "git clone http://127.0.0.1:9/x.git",
+		"fatal: unable to access 'https://u:p@host/r.git/'":     "fatal: unable to access 'https://host/r.git/'",
+		"s3://bucket/prefix/repo has no credentials":            "s3://bucket/prefix/repo has no credentials",
+	} {
+		if got := redactCredentials(in); got != want {
+			t.Errorf("redactCredentials(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return
+	}
+	_, err := runGit(context.Background(), t.TempDir(), nil, nil, "ls-remote", "http://admin:s3cr3t-token@127.0.0.1:1/nope.git")
+	if err == nil {
+		t.Fatal("ls-remote of an unreachable remote succeeded")
+	}
+	if strings.Contains(err.Error(), "s3cr3t-token") {
+		t.Fatalf("the error carries the credential: %v", err)
+	}
+}
+
+func TestACustomRemoteNeedsARepositoryPlaceholder(t *testing.T) {
+	if _, err := customRemote("walgit=https://host/{repo}.git"); err != nil {
+		t.Errorf("a well-formed remote was refused: %v", err)
+	}
+	for _, bad := range []string{"no-equals", "=https://host/{repo}", "name=https://host/fixed.git"} {
+		if _, err := customRemote(bad); err == nil {
+			t.Errorf("customRemote(%q) was accepted", bad)
+		}
+	}
+	remote, _ := customRemote("x=s3+http://{host}/{bucket}/{prefix}/{repo}?region={region}")
+	remote.env = Env{Endpoint: "http://127.0.0.1:9000", Bucket: "b", Prefix: "p", Region: "eu-west-1"}
+	got, err := remote.Remote(context.Background(), "o/r")
+	if err != nil || got != "s3+http://127.0.0.1:9000/b/p/o/r?region=eu-west-1" {
+		t.Errorf("expanded template = %q, %v", got, err)
 	}
 }

@@ -17,6 +17,8 @@ what a disk gives for free and an object store does not:
 | **Pack cache** | Packs are content-addressed and immutable, so fetched extents are cached on local disk and in memory with no invalidation protocol. |
 | **Membership index** | "Is this object loose?" is answered from cuckoo and binary-fuse filters built off bucket listings, so a clone of a packed repository does not pay a 404 per object. Answers are negative-only: a "maybe" always falls through to the real lookup. |
 | **Compaction** | Loose objects are rolled into packs and small packs are merged geometrically (as `git repack --geometric` does), published pack-last so a concurrent reader on another replica never sees an object in neither tier. |
+| **One request per reference read** | git stats a reference file before it opens it. Here the stat performs the GET and hands the bytes to the open that follows, so resolving a branch costs one request, not two — and a read made in order to write never takes the handoff, so the compare-and-set still compares against the store. |
+| **Safe first use** | go-git builds a handle's pack index lazily, from inside read calls. A handle is primed once under its exclusive lock, so the concurrent first reads a freshly started server gets never see a half-built index. |
 | **Atomic references** | Every reference update is a compare-and-swap, serialized in-process and — with a `GitObjectLocker` installed — across replicas sharing the bucket. |
 | **Outage behaviour** | S3 calls run under a circuit breaker whose open state is a transient error, never "object absent", so go-git cannot mistake an outage for a deleted ref. |
 
@@ -94,9 +96,11 @@ instrument.
 ## Measuring it
 
 ```sh
-go test -race ./...                      # the suite
-go test -run '^$' -bench . -benchmem .   # in-package benchmarks: S3 requests per operation
-cd bench && go run . -latency 5ms        # comparison against other implementations
+go test -race ./...                        # the suite
+go test -run '^$' -bench . -benchmem .     # in-package benchmarks: S3 requests per operation
+cd bench && go run . -latency 5ms          # against other Storer implementations
+cd bench && go run . -level git            # stock git against the real server and remote helpers
+go run ./s3fake/cmd/s3fake -trace          # the counting fake on a fixed port, for any tool
 ```
 
 The in-package benchmarks report `s3-requests/op` and `bytes/op` beside time,

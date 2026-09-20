@@ -192,3 +192,30 @@ func TestRangedReadsHonourTheCircuitBreaker(t *testing.T) {
 		t.Fatalf("an open breaker still let a ranged read through: %s", spent)
 	}
 }
+
+// TestACompactionWithNothingToDoIsCheap prices the common case. A server asks
+// for a compaction after every push, and nearly every time there is nothing to
+// pack or merge; what that costs is paid on every push.
+func TestACompactionWithNothingToDoIsCheap(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.opts.CompactionTrigger = -1
+	stor := testPackedStorage(t, fake)
+	pack, _ := pushPack(t, 50)
+	if err := packfile.UpdateObjectStorage(stor, bytes.NewReader(pack)); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	before := fake.Snapshot()
+	result, err := CompactRepository(context.Background(), stor)
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if result.PackName != "" {
+		t.Fatalf("a repository of one pack was compacted into %s", result.PackName)
+	}
+	spent := fake.Snapshot().Sub(before)
+	// One listing of the pack directory and one of the loose tier.
+	if spent.List != 2 || spent.Total() != 2 {
+		t.Fatalf("finding nothing to do should cost two listings: %s", spent)
+	}
+}

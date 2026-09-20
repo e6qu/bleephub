@@ -66,6 +66,12 @@ git reads packs at random offsets and probes for thousands of loose objects. The
   (potentially gigabyte) pack. Concurrent fetches of one extent are coalesced,
   so a replica that starts cold under load downloads each extent once rather
   than once per clone.
+- **Single-request reference reads** (`s3fs.go`) — git stats a reference file
+  before opening it, which against a bucket is a HEAD and then a GET for every
+  branch resolution, and a server resolves a branch many times in one push. The
+  stat performs the GET and hands the bytes to the open that follows. A read
+  made in order to write never takes that handoff, any local write discards it,
+  and it expires within 100 ms, so the reference compare-and-set is unaffected.
 - **Single-request object writes** (`s3fs.go`) — git writes an object to a
   temporary name and renames it into place, which on a disk makes it appear
   atomically. A PUT already is atomic, so the temporary name never reaches the

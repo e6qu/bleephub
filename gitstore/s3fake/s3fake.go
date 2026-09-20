@@ -10,6 +10,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -137,6 +138,25 @@ func (f *Server) Client() *minio.Core {
 		panic(err)
 	}
 	return core
+}
+
+// Listen starts a server on addr rather than a port of the system's choosing,
+// for pointing a tool at the fake by hand. The caller closes it.
+func Listen(addr string) (*Server, error) {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	f := &Server{
+		objects:  map[string][]byte{},
+		uploads:  map[string]map[int][]byte{},
+		metadata: map[string]http.Header{},
+	}
+	f.server = httptest.NewUnstartedServer(http.HandlerFunc(f.serve))
+	_ = f.server.Listener.Close()
+	f.server.Listener = listener
+	f.server.Start()
+	return f, nil
 }
 
 // URL is the endpoint the server listens on.
@@ -268,6 +288,13 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case r.Method == http.MethodHead && key == "":
+		// Every bucket exists: objects are keyed without regard to one, so a
+		// client that checks for its bucket before using it must be told yes.
+		f.mu.Lock()
+		f.counts.Head++
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusOK)
 	case r.Method == http.MethodGet && key == "":
 		f.serveList(w, query)
 	case r.Method == http.MethodPost && query.Has("delete"):

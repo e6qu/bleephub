@@ -207,7 +207,15 @@ func (s *atomicRefStorer) Compact(ctx context.Context) (CompactionResult, error)
 func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, error) {
 	var result CompactionResult
 
-	retired, err := s.retireSupersededPacks(ctx)
+	// One listing of the pack directory serves both questions asked of it —
+	// which superseded packs have aged out, and which packs are live. A
+	// compaction runs after every push and usually finds nothing to do, so a
+	// second listing was a request per push spent learning the same thing.
+	entries, err := s.listPackDirectory(ctx)
+	if err != nil {
+		return result, err
+	}
+	retired, err := s.retireSupersededPacks(ctx, entries)
 	if err != nil {
 		return result, err
 	}
@@ -218,10 +226,7 @@ func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, 
 		return result, err
 	}
 
-	live, err := s.listLivePacks(ctx)
-	if err != nil {
-		return result, err
-	}
+	live := s.livePacks(entries)
 	var existing []string
 	if len(live) > compactionMergeThreshold {
 		existing = packsToMerge(live)
@@ -383,16 +388,12 @@ type livePack struct {
 	size int64
 }
 
-// listLivePacks names every pack whose .pack key exists and that carries no
+// livePacks names every pack whose .pack key exists and that carries no
 // supersession marker. A superseded pack stays readable for its retention
 // window, but its objects already live in the pack that replaced it: counting
 // it toward the merge threshold, or merging it again, would rewrite the same
 // objects on every compaction until the window closed.
-func (s *atomicRefStorer) listLivePacks(ctx context.Context) ([]livePack, error) {
-	entries, err := s.listPackDirectory(ctx)
-	if err != nil {
-		return nil, err
-	}
+func (s *atomicRefStorer) livePacks(entries map[string]packDirectoryEntry) []livePack {
 	prefix := s.fs.key(path.Join("objects", "pack")) + "/"
 	var packs []livePack
 	for key, entry := range entries {
@@ -407,7 +408,7 @@ func (s *atomicRefStorer) listLivePacks(ctx context.Context) ([]livePack, error)
 		packs = append(packs, livePack{name: name, size: entry.size})
 	}
 	sort.Slice(packs, func(i, j int) bool { return packs[i].name < packs[j].name })
-	return packs, nil
+	return packs
 }
 
 // packsToMerge picks the packs a merge rewrites: the smallest ones, up to the
@@ -841,11 +842,7 @@ func (s *atomicRefStorer) markSuperseded(ctx context.Context, packs []string, re
 // retireSupersededPacks removes packs whose supersession marker is older than
 // the retention window, aging against the object store's LastModified rather
 // than this replica's clock.
-func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context) ([]string, error) {
-	entries, err := s.listPackDirectory(ctx)
-	if err != nil {
-		return nil, err
-	}
+func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context, entries map[string]packDirectoryEntry) ([]string, error) {
 	prefix := s.fs.key(path.Join("objects", "pack")) + "/"
 
 	var newest time.Time

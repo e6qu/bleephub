@@ -40,8 +40,9 @@ func (r *Report) writeBenchfmt(w io.Writer) error {
 		if result.Error != "" || result.Skipped != "" {
 			continue
 		}
-		_, err := fmt.Fprintf(w, "BenchmarkStorer/scenario=%s/driver=%s 1 %d ns/op %d s3-requests/op %d s3-bytes/op\n",
-			result.Scenario, result.Driver, result.Elapsed.Nanoseconds(), result.S3.Total(), result.S3.BytesDown+result.S3.BytesUp)
+		_, err := fmt.Fprintf(w, "Benchmark%s/scenario=%s/driver=%s 1 %d ns/op %d s3-requests/op %d s3-bytes/op\n",
+			strings.ToUpper(result.Level[:1])+result.Level[1:], result.Scenario, result.Driver,
+			result.Elapsed.Nanoseconds(), result.S3.Total(), result.S3.BytesDown+result.S3.BytesUp)
 		if err != nil {
 			return err
 		}
@@ -63,22 +64,26 @@ func median(values []float64) float64 {
 	return (values[n/2-1] + values[n/2]) / 2
 }
 
-func (r *Report) writeTable(w io.Writer, driverOrder []string) {
+func (r *Report) writeTable(w io.Writer, level string, driverOrder, scenarios []string) {
+	fmt.Fprintf(w, "\n=== level: %s ===\n", level)
 	fmt.Fprintf(w, "workload: %d files, %d commits then %d pushes, %d files changed per commit → %d objects (initial push: %d objects, %s pack)\n",
 		r.Workload.Files, r.Workload.Commits, r.Workload.Pushes, r.Workload.Changes, r.Objects,
 		r.InitialObjects, humanBytes(float64(r.InitialPackBytes)))
 	fmt.Fprintf(w, "endpoint: %s, injected latency %s per request, median of %d run(s)\n\n", r.Endpoint, r.Latency, r.Runs)
 	for _, name := range driverOrder {
-		fmt.Fprintf(w, "  %-14s %s\n", name, r.Drivers[name])
+		fmt.Fprintf(w, "  %-24s %s\n", name, r.Drivers[name])
 	}
 
 	byKey := map[string][]Result{}
 	for _, result := range r.Results {
+		if result.Level != level {
+			continue
+		}
 		key := result.Scenario + "\x00" + result.Driver
 		byKey[key] = append(byKey[key], result)
 	}
 
-	for _, scenario := range scenarioOrder {
+	for _, scenario := range scenarios {
 		var rows []string
 		var baseline float64
 		for _, driver := range driverOrder {
@@ -128,7 +133,13 @@ func (r *Report) writeTable(w io.Writer, driverOrder []string) {
 func firstFailure(results []Result) string {
 	for _, result := range results {
 		if result.Error != "" {
-			return "FAILED: " + strings.ReplaceAll(result.Error, "\n", " ")
+			// The table names the failure; the whole message is in the JSON
+			// report and in the error the run exits with.
+			message := strings.ReplaceAll(result.Error, "\n", " ")
+			if len(message) > 90 {
+				message = message[:90] + "…"
+			}
+			return "FAILED: " + message
 		}
 		if result.Skipped != "" {
 			return "skipped: " + result.Skipped

@@ -73,6 +73,8 @@ type atomicRefStorer struct {
 	looseWrites atomic.Int64
 	// packWrites counts pushed packs published since the last compaction request.
 	packWrites atomic.Int64
+	// primed records that the delegate's lazily built state exists. See prime.
+	primed sync.Once
 }
 
 var _ gitStorage.Storer = (*atomicRefStorer)(nil)
@@ -86,6 +88,25 @@ func WrapAtomicRefStorage(repo string, stor gitStorage.Storer) gitStorage.Storer
 // carrying the filesystem alongside the storer so the pack tier can reach it.
 func wrapObjectStoreStorage(repo string, stor gitStorage.Storer, fs *S3FS) *atomicRefStorer {
 	return &atomicRefStorer{storer: stor, repo: repo, fs: fs}
+}
+
+// prime builds the delegate's lazy state under the exclusive lock, once, before
+// the first shared read. mu lets readers run together on the understanding that
+// reading does not write, and go-git's filesystem storage breaks that on first
+// use: it publishes its pack-index map and then fills it, and memoizes what it
+// finds in the object directory, from inside read calls. A server shares one
+// handle per repository between requests, so after a restart the first clones
+// arrive together at an unbuilt handle, and one arriving mid-build saw some
+// packs and not others — an object the repository holds reported missing, which
+// a git client is told as "not our ref". The probe drives that construction
+// through go-git's public surface; its answer is irrelevant. adoptPack repeats
+// it after a reindex for the same reason.
+func (s *atomicRefStorer) prime() {
+	s.primed.Do(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		_ = s.storer.HasEncodedObject(plumbing.ZeroHash)
+	})
 }
 
 func (s *atomicRefStorer) lockName(ref plumbing.ReferenceName) string {
@@ -242,12 +263,14 @@ func (s *atomicRefStorer) RemoveReferenceCAS(old *plumbing.Reference) error {
 }
 
 func (s *atomicRefStorer) Reference(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	s.prime()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.Reference(name)
 }
 
 func (s *atomicRefStorer) CountLooseRefs() (int, error) {
+	s.prime()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.CountLooseRefs()
@@ -262,6 +285,7 @@ func (s *atomicRefStorer) PackRefs() error {
 }
 
 func (s *atomicRefStorer) IterReferences() (storer.ReferenceIter, error) { //nolint:ireturn
+	s.prime()
 	s.mu.RLock()
 	iter, err := s.storer.IterReferences()
 	s.mu.RUnlock()
@@ -319,6 +343,7 @@ func (i *lockedReferenceIter) ForEach(cb func(*plumbing.Reference) error) error 
 }
 
 func (s *atomicRefStorer) NewEncodedObject() plumbing.EncodedObject { //nolint:ireturn
+	s.prime()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.NewEncodedObject()
@@ -336,6 +361,7 @@ func (s *atomicRefStorer) SetEncodedObject(obj plumbing.EncodedObject) (plumbing
 }
 
 func (s *atomicRefStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) { //nolint:ireturn
+	s.prime()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.EncodedObject(t, h)
@@ -347,6 +373,7 @@ func (s *atomicRefStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) 
 // index returns ErrObjectNotFound when it can prove absence. Negative-only: a
 // "maybe" delegates to the real lookup. See the filter invariant in filter.go.
 func (s *atomicRefStorer) HasEncodedObject(h plumbing.Hash) error {
+	s.prime()
 	if s.fs != nil && !s.fs.repoIndexFor().maybePresent(s.fs, oidKeyFrom(h[:])) {
 		return plumbing.ErrObjectNotFound
 	}
@@ -356,6 +383,7 @@ func (s *atomicRefStorer) HasEncodedObject(h plumbing.Hash) error {
 }
 
 func (s *atomicRefStorer) EncodedObjectSize(h plumbing.Hash) (int64, error) {
+	s.prime()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.EncodedObjectSize(h)
@@ -368,6 +396,7 @@ func (s *atomicRefStorer) AddAlternate(remote string) error {
 }
 
 func (s *atomicRefStorer) IterEncodedObjects(t plumbing.ObjectType) (storer.EncodedObjectIter, error) { //nolint:ireturn
+	s.prime()
 	s.mu.RLock()
 	iter, err := s.storer.IterEncodedObjects(t)
 	s.mu.RUnlock()
@@ -426,6 +455,7 @@ func (s *atomicRefStorer) SetShallow(commits []plumbing.Hash) error {
 }
 
 func (s *atomicRefStorer) Shallow() ([]plumbing.Hash, error) {
+	s.prime()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.Shallow()
@@ -438,6 +468,7 @@ func (s *atomicRefStorer) SetIndex(idx *index.Index) error {
 }
 
 func (s *atomicRefStorer) Index() (*index.Index, error) {
+	s.prime()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.Index()
@@ -450,6 +481,7 @@ func (s *atomicRefStorer) SetConfig(cfg *config.Config) error {
 }
 
 func (s *atomicRefStorer) Config() (*config.Config, error) {
+	s.prime()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.Config()

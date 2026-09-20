@@ -5,11 +5,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,25 +21,38 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+// remoteSpecs collects repeated -remote flags.
+type remoteSpecs []string
+
+func (r *remoteSpecs) String() string     { return strings.Join(*r, ",") }
+func (r *remoteSpecs) Set(v string) error { *r = append(*r, v); return nil }
+
 type config struct {
-	drivers   []string
-	scenarios map[string]bool
-	spec      WorkloadSpec
-	latency   time.Duration
-	runs      int
-	parallel  int
-	probes    int
-	endpoint  string
-	bucket    string
-	region    string
-	jsonPath  string
-	benchPath string
-	keep      bool
+	level      string
+	gitDrivers []string
+	remotes    remoteSpecs
+	drivers    []string
+	scenarios  map[string]bool
+	spec       WorkloadSpec
+	latency    time.Duration
+	runs       int
+	parallel   int
+	probes     int
+	endpoint   string
+	bucket     string
+	region     string
+	jsonPath   string
+	benchPath  string
+	keep       bool
 }
 
 func parseFlags() (config, error) {
 	var cfg config
-	var drivers, scenarios string
+	var drivers, gitDrivers, scenarios string
+	flag.StringVar(&cfg.level, "level", levelStorer, "what to measure: storer (in-process go-git Storers), git (the stock git client against remotes), or both")
+	flag.StringVar(&gitDrivers, "git-drivers", "bleephub,git-remote-s3,git-remote-object-store,git-local", "comma-separated git-level drivers; one whose helper is not installed is skipped")
+	flag.Var(&cfg.remotes, "remote", "add a git-level driver as name=url-template; placeholders {endpoint} {host} {bucket} {prefix} {region} {repo}; repeatable")
+	flag.StringVar(&bleephubBinary, "bleephub-bin", "", "bleephub server binary for the bleephub driver; empty builds it from this checkout")
 	flag.StringVar(&drivers, "drivers", "gitstore,ogit,gogit-disk,gogit-memory", "comma-separated drivers; the first is the baseline of the \"vs first\" column")
 	flag.StringVar(&scenarios, "scenarios", "all", "comma-separated scenarios to report, or all")
 	flag.IntVar(&cfg.spec.Files, "files", 1000, "files in the generated tree")
@@ -56,10 +71,15 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.benchPath, "benchfmt", "", "write Go benchmark lines to this file, for benchstat")
 	flag.BoolVar(&cfg.keep, "keep", false, "leave this run's objects in the bucket")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: bench [flags]\n\ndrivers:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: bench [flags]\n\n-level storer drivers (-drivers):\n")
 		for _, name := range storerDriverNames() {
 			driver, _ := newStorerDriver(name)
-			fmt.Fprintf(flag.CommandLine.Output(), "  %-14s %s\n", name, driver.Describe())
+			fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
+		}
+		fmt.Fprintf(flag.CommandLine.Output(), "\n-level git drivers (-git-drivers):\n")
+		for _, name := range remoteDriverNames() {
+			driver, _ := newRemoteDriver(name)
+			fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
 		}
 		fmt.Fprintf(flag.CommandLine.Output(), "\nscenarios, in execution order:\n")
 		for _, name := range scenarioOrder {
@@ -70,9 +90,28 @@ func parseFlags() (config, error) {
 	}
 	flag.Parse()
 
+	switch cfg.level {
+	case levelStorer, levelGit, "both":
+	default:
+		return cfg, fmt.Errorf("-level must be storer, git or both, got %q", cfg.level)
+	}
 	cfg.drivers = strings.Split(drivers, ",")
 	for _, name := range cfg.drivers {
 		if _, err := newStorerDriver(name); err != nil {
+			return cfg, err
+		}
+	}
+	for _, spec := range cfg.remotes {
+		custom, err := customRemote(spec)
+		if err != nil {
+			return cfg, err
+		}
+		registerRemoteDriver(custom.name, func() RemoteDriver { clone := *custom; return &clone })
+		gitDrivers += "," + custom.name
+	}
+	cfg.gitDrivers = strings.Split(gitDrivers, ",")
+	for _, name := range cfg.gitDrivers {
+		if _, err := newRemoteDriver(name); err != nil {
 			return cfg, err
 		}
 	}
@@ -137,7 +176,7 @@ func run() error {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	env := Env{
-		Endpoint: meter.URL(), Bucket: cfg.bucket, Region: cfg.region,
+		Endpoint: meter.URL(), DirectEndpoint: target, Bucket: cfg.bucket, Region: cfg.region,
 		AccessKey: accessKey, SecretKey: secretKey,
 		Prefix:  fmt.Sprintf("bench-%d", time.Now().UnixNano()),
 		TempDir: tempDir,
@@ -156,32 +195,25 @@ func run() error {
 		Endpoint: endpointLabel, Runs: cfg.runs, Drivers: map[string]string{},
 	}
 	meter.SetLatency(cfg.latency)
-	for _, name := range cfg.drivers {
-		for runIndex := range cfg.runs {
-			driver, err := newStorerDriver(name)
-			if err != nil {
-				return err
-			}
-			report.Drivers[name] = driver.Describe()
-			fmt.Fprintf(os.Stderr, "%s: run %d/%d…\n", name, runIndex+1, cfg.runs)
-			if err := driver.Setup(ctx, env); err != nil {
-				return fmt.Errorf("%s: setup: %w", name, err)
-			}
-			r := &runner{
-				driver: driver, meter: meter, workload: workload,
-				// A repository per run: a run must not inherit the packs and
-				// caches the previous one left.
-				repo: fmt.Sprintf("bench/repo-%d", runIndex),
-				run:  runIndex, parallel: cfg.parallel, probes: cfg.probes, selected: cfg.scenarios,
-			}
-			report.Results = append(report.Results, r.execute(ctx)...)
-			if err := driver.Close(); err != nil {
-				return fmt.Errorf("%s: close: %w", name, err)
-			}
+	if cfg.level != levelGit {
+		if err := runStorerLevel(ctx, cfg, env, meter, workload, report); err != nil {
+			return err
+		}
+	}
+	var gitDrivers []string
+	if cfg.level != levelStorer {
+		gitDrivers, err = runGitLevel(ctx, cfg, env, meter, workload, report)
+		if err != nil {
+			return err
 		}
 	}
 
-	report.writeTable(os.Stdout, cfg.drivers)
+	if cfg.level != levelGit {
+		report.writeTable(os.Stdout, levelStorer, cfg.drivers, scenarioOrder)
+	}
+	if cfg.level != levelStorer {
+		report.writeTable(os.Stdout, levelGit, gitDrivers, gitScenarioOrder)
+	}
 	if cfg.jsonPath != "" {
 		if err := writeFile(cfg.jsonPath, report.writeJSON); err != nil {
 			return err
@@ -251,4 +283,75 @@ func prepareBucket(ctx context.Context, target *url.URL, env Env, keep bool) (fu
 			fmt.Fprintf(os.Stderr, "bench: cleanup %s: %v\n", failure.ObjectName, failure.Err)
 		}
 	}, nil
+}
+
+func runStorerLevel(ctx context.Context, cfg config, env Env, meter *Meter, workload *Workload, report *Report) error {
+	for _, name := range cfg.drivers {
+		for runIndex := range cfg.runs {
+			driver, err := newStorerDriver(name)
+			if err != nil {
+				return err
+			}
+			report.Drivers[name] = driver.Describe()
+			fmt.Fprintf(os.Stderr, "%s: run %d/%d…\n", name, runIndex+1, cfg.runs)
+			if err := driver.Setup(ctx, env); err != nil {
+				return fmt.Errorf("%s: setup: %w", name, err)
+			}
+			r := &runner{
+				driver: driver, meter: meter, workload: workload,
+				// A repository per run: a run must not inherit the packs and
+				// caches the previous one left.
+				repo: fmt.Sprintf("bench/repo-%d", runIndex),
+				run:  runIndex, parallel: cfg.parallel, probes: cfg.probes, selected: cfg.scenarios,
+			}
+			report.Results = append(report.Results, r.execute(ctx)...)
+			if err := driver.Close(); err != nil {
+				return fmt.Errorf("%s: close: %w", name, err)
+			}
+		}
+	}
+	return nil
+}
+
+// runGitLevel drives the stock git client against each remote, returning the
+// drivers that ran. One that is not installed is reported and skipped: the
+// helpers are other people's programs, and their absence is not a failure.
+func runGitLevel(ctx context.Context, cfg config, env Env, meter *Meter, workload *Workload, report *Report) ([]string, error) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil, errors.New("-level git needs the git client on PATH")
+	}
+	client, err := newClientRepository(ctx, env, workload)
+	if err != nil {
+		return nil, err
+	}
+	var ran []string
+	for _, name := range cfg.gitDrivers {
+		probe, err := newRemoteDriver(name)
+		if err != nil {
+			return nil, err
+		}
+		if reason := probe.Available(); reason != nil {
+			fmt.Fprintf(os.Stderr, "%s: skipped — %v\n", name, reason)
+			continue
+		}
+		ran = append(ran, name)
+		for runIndex := range cfg.runs {
+			driver, _ := newRemoteDriver(name)
+			report.Drivers[name] = driver.Describe()
+			fmt.Fprintf(os.Stderr, "%s: run %d/%d…\n", name, runIndex+1, cfg.runs)
+			if err := driver.Setup(ctx, env); err != nil {
+				return nil, fmt.Errorf("%s: setup: %w", name, err)
+			}
+			r := &gitRunner{
+				driver: driver, meter: meter, workload: workload, client: client, env: env,
+				repo: fmt.Sprintf("bench/repo-%d", runIndex),
+				run:  runIndex, parallel: cfg.parallel, selected: cfg.scenarios,
+			}
+			report.Results = append(report.Results, r.execute(ctx)...)
+			if err := driver.Close(); err != nil {
+				return nil, fmt.Errorf("%s: close: %w", name, err)
+			}
+		}
+	}
+	return ran, nil
 }

@@ -32,6 +32,12 @@ bench:
 bench-gitstore:
 	cd gitstore/bench && GOWORK=off go run . $(BENCH_FLAGS)
 
+# The same comparison one level up: the stock git client against the real
+# bleephub server on object storage, and against any git remote helper found on
+# PATH (see gitstore/bench/README.md for the ones it knows).
+bench-gitstore-git:
+	cd gitstore/bench && GOWORK=off go run . -level git $(BENCH_FLAGS)
+
 # Runs the opt-in scaling ramp: concurrency vs latency percentiles + the knee.
 # Tune with BLEEPHUB_SCALE_* (see internal/server/scaling_ramp_test.go).
 scale:
