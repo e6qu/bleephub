@@ -35,9 +35,10 @@ func main() {
 	server.SetLatency(*latency)
 	if *trace {
 		server.SetTrace(func(r *http.Request) {
-			// Quoted as well: whatever else a client put in its path or prefix
-			// stays inside the one line.
-			log.Print(strconv.Quote(traceLine(r)))
+			// The line is made of what a client sent, so it is stripped of line
+			// breaks as a whole and then quoted: nothing in it can start a line
+			// of its own or reach the terminal as a control character.
+			log.Print(strconv.Quote(printable(traceLine(r))))
 		})
 	}
 	fmt.Fprintf(os.Stderr, "s3fake listening on %s (path-style, any bucket, any credentials)\n", server.URL())
