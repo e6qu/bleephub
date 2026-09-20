@@ -10,6 +10,7 @@ package graphqlapi
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/graphql-go/graphql"
@@ -122,6 +123,7 @@ func (s *Resolver) addRulesetMutationsToSchema(mutationType *graphql.Object) {
 		"deployKey":                gqlBool(),
 		"enterpriseOwner":          gqlBool(),
 		"enterpriseRole":           gqlBool(),
+		"enterpriseRoleDatabaseId": &graphql.InputObjectFieldConfig{Type: s.graphQLStringScalar("BigInt")},
 		"organizationAdmin":        gqlBool(),
 		"repositoryRoleDatabaseId": gqlInt(),
 	})
@@ -412,6 +414,17 @@ func (s *Resolver) rulesetBypassActorsFromInput(input map[string]interface{}) ([
 		default:
 			if roleID, ok := gqlInputInt(item, "repositoryRoleDatabaseId"); ok {
 				actor.ActorType = "RepositoryRole"
+				actor.ActorID = roleID
+				break
+			}
+			// BigInt travels as a string. The deprecated `enterpriseRole` flag
+			// names no role by itself, so only the id selects this actor.
+			if raw, ok := item["enterpriseRoleDatabaseId"].(string); ok {
+				roleID, err := strconv.Atoi(raw)
+				if err != nil || roleID <= 0 {
+					continue
+				}
+				actor.ActorType = "EnterpriseRole"
 				actor.ActorID = roleID
 				break
 			}

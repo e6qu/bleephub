@@ -72,6 +72,7 @@ func (s *Server) handleUpdatePRCreationCap(w http.ResponseWriter, r *http.Reques
 	var request struct {
 		Enabled             *bool `json:"enabled"`
 		MaxOpenPullRequests *int  `json:"max_open_pull_requests"`
+		IncludeDrafts       *bool `json:"include_drafts"`
 	}
 	if !decodeJSONBody(w, r, &request) {
 		return
@@ -88,6 +89,9 @@ func (s *Server) handleUpdatePRCreationCap(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		current.MaxOpenPullRequests = *request.MaxOpenPullRequests
+	}
+	if request.IncludeDrafts != nil {
+		current.IncludeDrafts = *request.IncludeDrafts
 	}
 	writeJSON(w, http.StatusOK, s.store.SetPRCreationCap(repo.FullName, current))
 }
@@ -108,6 +112,7 @@ func (s *Server) handleUpdateOrgPRCreationCap(w http.ResponseWriter, r *http.Req
 	var request struct {
 		Enabled             *bool `json:"enabled"`
 		MaxOpenPullRequests *int  `json:"max_open_pull_requests"`
+		IncludeDrafts       *bool `json:"include_drafts"`
 	}
 	if !decodeJSONBody(w, r, &request) {
 		return
@@ -124,6 +129,9 @@ func (s *Server) handleUpdateOrgPRCreationCap(w http.ResponseWriter, r *http.Req
 			return
 		}
 		current.MaxOpenPullRequests = *request.MaxOpenPullRequests
+	}
+	if request.IncludeDrafts != nil {
+		current.IncludeDrafts = *request.IncludeDrafts
 	}
 	writeJSON(w, http.StatusOK, s.store.SetOrgPRCreationCap(org.Login, current))
 }

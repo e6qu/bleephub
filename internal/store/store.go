@@ -494,6 +494,7 @@ type Store struct {
 	ProjectsV2                   *ProjectV2Store               // GitHub Projects v2
 	NotificationsState           map[int]*UserNotificationsState
 	Rulesets                     map[int]*Ruleset
+	ActionsPolicies              map[int]*ActionsPolicy
 	RulesetSuites                map[int]*RulesetSuite
 	ProjectClassic               map[int]*ProjectClassic                // id → project
 	ProjectColumns               map[int]*ProjectColumn                 // id → column
@@ -574,6 +575,7 @@ type Store struct {
 	NextCheckRunID               int64
 	NextCheckSuiteID             int64
 	NextRulesetID                int
+	NextActionsPolicyID          int
 	NextRulesetSuiteID           int
 	NextProjectClassicID         int
 	NextProjectColumnID          int
@@ -1054,6 +1056,7 @@ func NewStore() *Store {
 		ProjectsV2:                   NewProjectV2Store(nil),
 		NotificationsState:           map[int]*UserNotificationsState{},
 		Rulesets:                     map[int]*Ruleset{},
+		ActionsPolicies:              map[int]*ActionsPolicy{},
 		RulesetSuites:                map[int]*RulesetSuite{},
 		ProjectClassic:               map[int]*ProjectClassic{},
 		ProjectColumns:               map[int]*ProjectColumn{},
@@ -1144,6 +1147,7 @@ func NewStore() *Store {
 		NextCheckRunID:               1,
 		NextCheckSuiteID:             1,
 		NextRulesetID:                1,
+		NextActionsPolicyID:          1,
 		NextRulesetSuiteID:           1,
 		NextProjectClassicID:         1,
 		NextProjectColumnID:          1,
@@ -2613,6 +2617,17 @@ func (st *Store) loadFromPersistence() error {
 			st.Rulesets[rs.ID] = &rs
 			if rs.ID >= st.NextRulesetID {
 				st.NextRulesetID = rs.ID + 1
+			}
+			return nil
+		}},
+		{"actions_policies", func(_ string, raw []byte) error {
+			var policy ActionsPolicy
+			if err := LoadJSON(raw, &policy); err != nil {
+				return err
+			}
+			st.ActionsPolicies[policy.ID] = &policy
+			if policy.ID >= st.NextActionsPolicyID {
+				st.NextActionsPolicyID = policy.ID + 1
 			}
 			return nil
 		}},
@@ -4354,6 +4369,7 @@ func (st *Store) finishInterruptedRenames() error {
 // object-store key, so the new entity would inherit the deleted one's bytes.
 func (st *Store) idCounterBuckets() map[string]*int {
 	return map[string]*int{
+		"actions_policies":                 &st.NextActionsPolicyID,
 		"apps":                             &st.NextAppID,
 		"artifact_deployment_records":      &st.NextArtifactDeploymentRecordID,
 		"artifact_storage_records":         &st.NextArtifactStorageRecordID,

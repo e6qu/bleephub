@@ -18,18 +18,22 @@ import (
 )
 
 type Repo struct {
-	ID                        int        `json:"id"`
-	NodeID                    string     `json:"node_id"`
-	Name                      string     `json:"name"`
-	FullName                  string     `json:"full_name"`
-	Description               string     `json:"description"`
-	Homepage                  string     `json:"homepage"`
-	DefaultBranch             string     `json:"default_branch"`
-	Visibility                string     `json:"visibility"`
-	Language                  string     `json:"language"`
-	Owner                     *User      `json:"-"`
-	OwnerID                   int        `json:"owner_id"`   // serialized so Owner can be relinked on reload
-	OwnerType                 string     `json:"owner_type"` // "User" or "Organization"
+	ID            int    `json:"id"`
+	NodeID        string `json:"node_id"`
+	Name          string `json:"name"`
+	FullName      string `json:"full_name"`
+	Description   string `json:"description"`
+	Homepage      string `json:"homepage"`
+	DefaultBranch string `json:"default_branch"`
+	Visibility    string `json:"visibility"`
+	Language      string `json:"language"`
+	Owner         *User  `json:"-"`
+	OwnerID       int    `json:"owner_id"`   // serialized so Owner can be relinked on reload
+	OwnerType     string `json:"owner_type"` // "User" or "Organization"
+	// CodeScanningAIScan is the repository's own AI Scan choice: "enabled",
+	// "disabled", or empty to follow its organization. See
+	// (*Store).RepoCodeScanningAIScan for the value in effect.
+	CodeScanningAIScan        string     `json:"code_scanning_ai_scan,omitempty"`
 	Private                   bool       `json:"private"`
 	Fork                      bool       `json:"fork"`
 	Archived                  bool       `json:"archived"`
@@ -1172,6 +1176,7 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 			batch.Delete("ruleset_suites", strconv.Itoa(id))
 		}
 	}
+	st.deleteActionsPoliciesLocked(repo.ID, 0, batch)
 	for id, project := range st.ProjectClassic {
 		if project.RepoKey == fullName {
 			delete(st.ProjectClassic, id)
@@ -2461,6 +2466,8 @@ func normalizeRepoPermission(p string) string {
 		return "push"
 	case "triage":
 		return "triage"
+	case "triage_plus":
+		return "triage_plus"
 	case "pull", "read", "":
 		return "pull"
 	default:

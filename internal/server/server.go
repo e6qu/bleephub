@@ -496,6 +496,8 @@ func (s *Server) registerRoutes() {
 
 	// Repository Rulesets API (gh_rulesets.go)
 	s.registerGHRulesetRoutes()
+	s.registerGHActionsPolicyRoutes()
+	s.registerGHCodeScanningAIScanRoutes()
 
 	// Secret scanning API (gh_secret_scanning.go)
 	s.registerGHSecretScanningRoutes()

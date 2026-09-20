@@ -491,7 +491,7 @@ func (s *Resolver) addEnterpriseExtraFields(
 	ownerInfoType.AddFieldConfig("pendingMemberInvitations", &graphql.Field{
 		Type: graphql.NewNonNull(extras.pendingMemberInvitationConnection),
 		Args: mergeArgs(relayConnectionArgs(), graphql.FieldConfigArgument{
-			"invitationSource":   &graphql.ArgumentConfig{Type: s.sharedEnum("OrganizationInvitationSource", "MEMBER", "SCIM", "UNKNOWN")},
+			"invitationSource":   &graphql.ArgumentConfig{Type: s.sharedEnum("OrganizationInvitationSource", "ENTERPRISE_ORGANIZATION_CREATION", "MEMBER", "SCIM", "UNKNOWN")},
 			"organizationLogins": &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
 			"query":              &graphql.ArgumentConfig{Type: graphql.String},
 		}),

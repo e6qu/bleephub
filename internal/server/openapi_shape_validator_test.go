@@ -674,6 +674,15 @@ func (v *shapeValidator) walk(schema map[string]any, val any, op, path string, o
 				v.walk(sub, member, op, path+"."+name, out, depth+1)
 				continue
 			}
+			// A member the schema requires is a member it declares, whether or
+			// not `properties` goes on to describe its type. GitHub's
+			// description does this (a pull request's labels require
+			// `archived_at` and describe only `archived_by`); calling such a
+			// member an invention would make the schema unsatisfiable, since
+			// leaving it out is `missing-required`.
+			if contains(required, name) {
+				continue
+			}
 			switch ap := additional.(type) {
 			case bool:
 				if !ap {

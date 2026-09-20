@@ -220,6 +220,9 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 	}
 	s.store.Mu.RUnlock()
 
+	if s.refuseByActionsPolicy(w, r, wf.RepoFullName, match.Path, wf.EventName) {
+		return
+	}
 	if err := s.rerunWorkflowAsNewAttempt(r, wf, match, def, serverURL, carryOver); err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "rerun submit: "+err.Error())
 		return

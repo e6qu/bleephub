@@ -59,6 +59,7 @@ DELETE /api/v3/orgs/{org}/actions/hosted-runners/{hosted_runner_id}
 DELETE /api/v3/orgs/{org}/actions/oidc/customization/properties/repo/{custom_property_name}
 DELETE /api/v3/orgs/{org}/actions/permissions/repositories/{repository_id}
 DELETE /api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}
+DELETE /api/v3/orgs/{org}/actions/policies/{policy_id}
 DELETE /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}
 DELETE /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories/{repository_id}
 DELETE /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners/{runner_id}
@@ -133,6 +134,7 @@ DELETE /api/v3/repos/{owner}/{repo}
 DELETE /api/v3/repos/{owner}/{repo}/actions/artifacts/{artifact_id}
 DELETE /api/v3/repos/{owner}/{repo}/actions/caches
 DELETE /api/v3/repos/{owner}/{repo}/actions/caches/{cache_id}
+DELETE /api/v3/repos/{owner}/{repo}/actions/policies/{policy_id}
 DELETE /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}
 DELETE /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels
 DELETE /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels/{name}
@@ -460,6 +462,8 @@ GET /api/v3/orgs/{org}/actions/permissions/selected-actions
 GET /api/v3/orgs/{org}/actions/permissions/self-hosted-runners
 GET /api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories
 GET /api/v3/orgs/{org}/actions/permissions/workflow
+GET /api/v3/orgs/{org}/actions/policies
+GET /api/v3/orgs/{org}/actions/policies/{policy_id}
 GET /api/v3/orgs/{org}/actions/runner-groups
 GET /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}
 GET /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/hosted-runners
@@ -497,6 +501,7 @@ GET /api/v3/orgs/{org}/bypass-requests/push-rules
 GET /api/v3/orgs/{org}/bypass-requests/secret-scanning
 GET /api/v3/orgs/{org}/campaigns
 GET /api/v3/orgs/{org}/campaigns/{campaign_number}
+GET /api/v3/orgs/{org}/code-scanning/ai-scan
 GET /api/v3/orgs/{org}/code-scanning/alerts
 GET /api/v3/orgs/{org}/code-security/configurations
 GET /api/v3/orgs/{org}/code-security/configurations/defaults
@@ -663,6 +668,8 @@ GET /api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approva
 GET /api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos
 GET /api/v3/repos/{owner}/{repo}/actions/permissions/selected-actions
 GET /api/v3/repos/{owner}/{repo}/actions/permissions/workflow
+GET /api/v3/repos/{owner}/{repo}/actions/policies
+GET /api/v3/repos/{owner}/{repo}/actions/policies/{policy_id}
 GET /api/v3/repos/{owner}/{repo}/actions/runners
 GET /api/v3/repos/{owner}/{repo}/actions/runners/deprecations/{version}
 GET /api/v3/repos/{owner}/{repo}/actions/runners/downloads
@@ -726,6 +733,7 @@ GET /api/v3/repos/{owner}/{repo}/check-suites/{id}/check-runs
 GET /api/v3/repos/{owner}/{repo}/code-quality/findings
 GET /api/v3/repos/{owner}/{repo}/code-quality/findings/{finding_number}
 GET /api/v3/repos/{owner}/{repo}/code-quality/setup
+GET /api/v3/repos/{owner}/{repo}/code-scanning/ai-scan
 GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts
 GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}
 GET /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix
@@ -1070,6 +1078,7 @@ PATCH /api/v3/orgs/{org}/actions/variables/{name}
 PATCH /api/v3/orgs/{org}/agents/variables/{name}
 PATCH /api/v3/orgs/{org}/announcement
 PATCH /api/v3/orgs/{org}/campaigns/{campaign_number}
+PATCH /api/v3/orgs/{org}/code-scanning/ai-scan
 PATCH /api/v3/orgs/{org}/code-security/configurations/{configuration_id}
 PATCH /api/v3/orgs/{org}/custom-repository-roles/{role_id}
 PATCH /api/v3/orgs/{org}/custom_roles/{role_id}
@@ -1103,6 +1112,7 @@ PATCH /api/v3/repos/{owner}/{repo}/bypass-requests/secret-scanning/{bypass_reque
 PATCH /api/v3/repos/{owner}/{repo}/check-runs/{id}
 PATCH /api/v3/repos/{owner}/{repo}/check-suites/preferences
 PATCH /api/v3/repos/{owner}/{repo}/code-quality/setup
+PATCH /api/v3/repos/{owner}/{repo}/code-scanning/ai-scan
 PATCH /api/v3/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}
 PATCH /api/v3/repos/{owner}/{repo}/code-scanning/default-setup
 PATCH /api/v3/repos/{owner}/{repo}/comments/{comment_id}
@@ -1205,6 +1215,7 @@ POST /api/v3/markdown/raw
 POST /api/v3/organizations/{org}/settings/billing/budgets
 POST /api/v3/orgs/{org}/actions/hosted-runners
 POST /api/v3/orgs/{org}/actions/oidc/customization/properties/repo
+POST /api/v3/orgs/{org}/actions/policies
 POST /api/v3/orgs/{org}/actions/runner-groups
 POST /api/v3/orgs/{org}/actions/runners/generate-jitconfig
 POST /api/v3/orgs/{org}/actions/runners/registration-token
@@ -1260,6 +1271,7 @@ POST /api/v3/projects/columns/{column_id}/moves
 POST /api/v3/projects/columns/{p1}/{p2}
 POST /api/v3/projects/{p1}/{p2}
 POST /api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}/rerun
+POST /api/v3/repos/{owner}/{repo}/actions/policies
 POST /api/v3/repos/{owner}/{repo}/actions/runners/generate-jitconfig
 POST /api/v3/repos/{owner}/{repo}/actions/runners/registration-token
 POST /api/v3/repos/{owner}/{repo}/actions/runners/remove-token
@@ -1438,6 +1450,7 @@ PUT /api/v3/orgs/{org}/actions/permissions/self-hosted-runners
 PUT /api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories
 PUT /api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}
 PUT /api/v3/orgs/{org}/actions/permissions/workflow
+PUT /api/v3/orgs/{org}/actions/policies/{policy_id}
 PUT /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories
 PUT /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories/{repository_id}
 PUT /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners
@@ -1495,6 +1508,7 @@ PUT /api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approva
 PUT /api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos
 PUT /api/v3/repos/{owner}/{repo}/actions/permissions/selected-actions
 PUT /api/v3/repos/{owner}/{repo}/actions/permissions/workflow
+PUT /api/v3/repos/{owner}/{repo}/actions/policies/{policy_id}
 PUT /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels
 PUT /api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}
 PUT /api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable

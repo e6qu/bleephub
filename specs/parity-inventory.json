@@ -388,17 +388,17 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 1816,
+      "bleephub_types": 1813,
       "compatibility_gap_count": 9,
-      "implemented_fields": 8365,
-      "official_fields": 8379,
-      "official_types": 1814,
-      "shared_types": 1809,
-      "signature_exact_fields": 8364
+      "implemented_fields": 8360,
+      "official_fields": 8374,
+      "official_types": 1811,
+      "shared_types": 1806,
+      "signature_exact_fields": 8359
     },
-    "introspection_snapshot_sha256": "69b36e78e2011019bc3a985df63b7e164ccb56111af7cf5b73c57f0224b26e52",
+    "introspection_snapshot_sha256": "0802ccfc051fd2d3e654b1bbc67cb6224d5f928f1c72d3d18782085224fe44b6",
     "official_schema": {
-      "content_sha256": "ee878de9ade05f0b88be0c29ea461755c23c3fd541d86d875a10aade686bbbc3",
+      "content_sha256": "8ecdb21a5c3affdeaa0e55bd9174536aa6c69cbb61f20ec796085aa1509c95df",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
     },
     "resolver_files": [
@@ -2503,6 +2503,58 @@
       },
       {
         "method": "GET",
+        "operation_id": "actions/get-org-actions-policies",
+        "path": "/orgs/{org}/actions/policies",
+        "statuses": [
+          "200",
+          "404",
+          "500"
+        ]
+      },
+      {
+        "method": "POST",
+        "operation_id": "actions/create-org-actions-policy",
+        "path": "/orgs/{org}/actions/policies",
+        "statuses": [
+          "201",
+          "404",
+          "422",
+          "500"
+        ]
+      },
+      {
+        "method": "DELETE",
+        "operation_id": "actions/delete-org-actions-policy",
+        "path": "/orgs/{org}/actions/policies/{policy_id}",
+        "statuses": [
+          "204",
+          "404",
+          "500"
+        ]
+      },
+      {
+        "method": "GET",
+        "operation_id": "actions/get-org-actions-policy",
+        "path": "/orgs/{org}/actions/policies/{policy_id}",
+        "statuses": [
+          "200",
+          "404",
+          "500"
+        ]
+      },
+      {
+        "method": "PUT",
+        "operation_id": "actions/update-org-actions-policy",
+        "path": "/orgs/{org}/actions/policies/{policy_id}",
+        "statuses": [
+          "200",
+          "404",
+          "422",
+          "500"
+        ]
+      },
+      {
+        "method": "GET",
         "operation_id": "actions/list-self-hosted-runner-groups-for-org",
         "path": "/orgs/{org}/actions/runner-groups",
         "statuses": [
@@ -3245,6 +3297,27 @@
       },
       {
         "method": "GET",
+        "operation_id": "code-scanning/get-ai-scan-enablement-for-org",
+        "path": "/orgs/{org}/code-scanning/ai-scan",
+        "statuses": [
+          "200",
+          "403",
+          "404"
+        ]
+      },
+      {
+        "method": "PATCH",
+        "operation_id": "code-scanning/update-ai-scan-enablement-for-org",
+        "path": "/orgs/{org}/code-scanning/ai-scan",
+        "statuses": [
+          "200",
+          "403",
+          "404",
+          "422"
+        ]
+      },
+      {
+        "method": "GET",
         "operation_id": "code-scanning/list-alerts-for-org",
         "path": "/orgs/{org}/code-scanning/alerts",
         "statuses": [
@@ -3331,7 +3404,8 @@
         "operation_id": "code-security/attach-configuration",
         "path": "/orgs/{org}/code-security/configurations/{configuration_id}/attach",
         "statuses": [
-          "202"
+          "202",
+          "403"
         ]
       },
       {
@@ -6002,6 +6076,58 @@
       },
       {
         "method": "GET",
+        "operation_id": "actions/get-repo-actions-policies",
+        "path": "/repos/{owner}/{repo}/actions/policies",
+        "statuses": [
+          "200",
+          "404",
+          "500"
+        ]
+      },
+      {
+        "method": "POST",
+        "operation_id": "actions/create-repo-actions-policy",
+        "path": "/repos/{owner}/{repo}/actions/policies",
+        "statuses": [
+          "201",
+          "404",
+          "422",
+          "500"
+        ]
+      },
+      {
+        "method": "DELETE",
+        "operation_id": "actions/delete-repo-actions-policy",
+        "path": "/repos/{owner}/{repo}/actions/policies/{policy_id}",
+        "statuses": [
+          "204",
+          "404",
+          "500"
+        ]
+      },
+      {
+        "method": "GET",
+        "operation_id": "actions/get-repo-actions-policy",
+        "path": "/repos/{owner}/{repo}/actions/policies/{policy_id}",
+        "statuses": [
+          "200",
+          "404",
+          "500"
+        ]
+      },
+      {
+        "method": "PUT",
+        "operation_id": "actions/update-repo-actions-policy",
+        "path": "/repos/{owner}/{repo}/actions/policies/{policy_id}",
+        "statuses": [
+          "200",
+          "404",
+          "422",
+          "500"
+        ]
+      },
+      {
+        "method": "GET",
         "operation_id": "actions/list-self-hosted-runners-for-repo",
         "path": "/repos/{owner}/{repo}/actions/runners",
         "statuses": [
@@ -7095,6 +7221,27 @@
       },
       {
         "method": "GET",
+        "operation_id": "code-scanning/get-ai-scan-enablement",
+        "path": "/repos/{owner}/{repo}/code-scanning/ai-scan",
+        "statuses": [
+          "200",
+          "403",
+          "404"
+        ]
+      },
+      {
+        "method": "PATCH",
+        "operation_id": "code-scanning/update-ai-scan-enablement",
+        "path": "/repos/{owner}/{repo}/code-scanning/ai-scan",
+        "statuses": [
+          "200",
+          "403",
+          "404",
+          "422"
+        ]
+      },
+      {
+        "method": "GET",
         "operation_id": "code-scanning/list-alerts-for-repo",
         "path": "/repos/{owner}/{repo}/code-scanning/alerts",
         "statuses": [
@@ -7585,6 +7732,8 @@
           "400",
           "404",
           "409",
+          "422",
+          "429",
           "500"
         ]
       },
@@ -7634,6 +7783,7 @@
           "404",
           "409",
           "422",
+          "429",
           "500",
           "503"
         ]
@@ -7687,6 +7837,7 @@
         "statuses": [
           "200",
           "404",
+          "422",
           "500",
           "503"
         ]
@@ -7771,7 +7922,8 @@
           "200",
           "304",
           "403",
-          "404"
+          "404",
+          "410"
         ]
       },
       {
@@ -7784,6 +7936,7 @@
           "403",
           "404",
           "409",
+          "410",
           "422"
         ]
       },
@@ -9629,6 +9782,7 @@
           "304",
           "404",
           "406",
+          "422",
           "500",
           "503"
         ]
@@ -12608,16 +12762,26 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1473,
+          "documented_operations": 1497,
           "missing_operations": [
+            "DELETE /enterprises/{}/actions/policies/{}",
             "DELETE /enterprises/{}/credential-authorizations",
+            "GET /enterprises/{}/actions/policies",
+            "GET /enterprises/{}/actions/policies/{}",
             "GET /enterprises/{}/actions/runners/deprecations/{}",
+            "GET /enterprises/{}/credentials",
+            "GET /enterprises/{}/credentials/exports/{}",
+            "GET /enterprises/{}/credentials/{}",
+            "POST /enterprises/{}/actions/policies",
+            "POST /enterprises/{}/credential-authorizations",
+            "POST /enterprises/{}/credentials/exports",
             "POST /orgs/{}/credential-authorizations/revoke-all",
             "POST /orgs/{}/credential-authorizations/revoke-credential-type",
             "POST /orgs/{}/credential-authorizations/{}/revoke",
-            "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type"
+            "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type",
+            "PUT /enterprises/{}/actions/policies/{}"
           ],
-          "represented_operations": 1467
+          "represented_operations": 1481
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -13316,6 +13480,12 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
+        "line": 28,
+        "method": "DELETE",
+        "path": "/api/v3/orgs/{org}/actions/policies/{policy_id}",
+        "source": "internal/server/gh_actions_policies.go"
+      },
+      {
         "line": 26,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}",
@@ -13758,6 +13928,12 @@
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/caches/{cache_id}",
         "source": "internal/server/artifacts.go"
+      },
+      {
+        "line": 22,
+        "method": "DELETE",
+        "path": "/api/v3/repos/{owner}/{repo}/actions/policies/{policy_id}",
+        "source": "internal/server/gh_actions_policies.go"
       },
       {
         "line": 43,
@@ -15722,6 +15898,18 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
+        "line": 24,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/actions/policies",
+        "source": "internal/server/gh_actions_policies.go"
+      },
+      {
+        "line": 26,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/actions/policies/{policy_id}",
+        "source": "internal/server/gh_actions_policies.go"
+      },
+      {
         "line": 18,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runner-groups",
@@ -15942,6 +16130,12 @@
         "method": "GET",
         "path": "/api/v3/orgs/{org}/campaigns/{campaign_number}",
         "source": "internal/server/gh_campaigns.go"
+      },
+      {
+        "line": 23,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/code-scanning/ai-scan",
+        "source": "internal/server/gh_code_scanning_ai_scan.go"
       },
       {
         "line": 76,
@@ -16940,6 +17134,18 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
+        "line": 18,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/actions/policies",
+        "source": "internal/server/gh_actions_policies.go"
+      },
+      {
+        "line": 20,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/actions/policies/{policy_id}",
+        "source": "internal/server/gh_actions_policies.go"
+      },
+      {
         "line": 37,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners",
@@ -17316,6 +17522,12 @@
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/code-quality/setup",
         "source": "internal/server/gh_code_quality.go"
+      },
+      {
+        "line": 15,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/code-scanning/ai-scan",
+        "source": "internal/server/gh_code_scanning_ai_scan.go"
       },
       {
         "line": 26,
@@ -19382,6 +19594,12 @@
         "source": "internal/server/gh_campaigns.go"
       },
       {
+        "line": 24,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/code-scanning/ai-scan",
+        "source": "internal/server/gh_code_scanning_ai_scan.go"
+      },
+      {
         "line": 26,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/code-security/configurations/{configuration_id}",
@@ -19578,6 +19796,12 @@
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/code-quality/setup",
         "source": "internal/server/gh_code_quality.go"
+      },
+      {
+        "line": 17,
+        "method": "PATCH",
+        "path": "/api/v3/repos/{owner}/{repo}/code-scanning/ai-scan",
+        "source": "internal/server/gh_code_scanning_ai_scan.go"
       },
       {
         "line": 30,
@@ -20192,6 +20416,12 @@
         "source": "internal/server/gh_actions_oidc_properties.go"
       },
       {
+        "line": 25,
+        "method": "POST",
+        "path": "/api/v3/orgs/{org}/actions/policies",
+        "source": "internal/server/gh_actions_policies.go"
+      },
+      {
         "line": 20,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runner-groups",
@@ -20520,6 +20750,12 @@
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}/rerun",
         "source": "internal/server/gh_actions_run_control.go"
+      },
+      {
+        "line": 19,
+        "method": "POST",
+        "path": "/api/v3/repos/{owner}/{repo}/actions/policies",
+        "source": "internal/server/gh_actions_policies.go"
       },
       {
         "line": 28,
@@ -21590,6 +21826,12 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
+        "line": 27,
+        "method": "PUT",
+        "path": "/api/v3/orgs/{org}/actions/policies/{policy_id}",
+        "source": "internal/server/gh_actions_policies.go"
+      },
+      {
         "line": 38,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories",
@@ -21930,6 +22172,12 @@
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/permissions/workflow",
         "source": "internal/server/gh_actions_permissions.go"
+      },
+      {
+        "line": 21,
+        "method": "PUT",
+        "path": "/api/v3/repos/{owner}/{repo}/actions/policies/{policy_id}",
+        "source": "internal/server/gh_actions_policies.go"
       },
       {
         "line": 204,
@@ -22286,7 +22534,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "144e659e6666eafe1eba78b696fc8594dc1b04b9ad4fbbebf14d767c74f6b656"
+    "vendored_openapi_sha256": "4939f186ab675d3626a8b3b7092c5544524c52695cd13aca87dfbb806b96765d"
   },
   "schema_version": 1,
   "sources": {

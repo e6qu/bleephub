@@ -177,7 +177,7 @@ func (r *Registry) defineCreateEnterpriseOrganizationInput() {
 		return graphql.InputObjectConfigFieldMap{
 			"adminLogins": {
 				Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("String")))),
-				Description: "The logins for the administrators of the new organization.",
+				Description: "The logins of additional organization owners. Listed users are invited unless\nowner invitations are disabled, in which case they are added directly.\nInstallation requests also add existing enterprise members directly.",
 			},
 			"billingEmail": {
 				Type:        graphql.NewNonNull(r.t("String")),

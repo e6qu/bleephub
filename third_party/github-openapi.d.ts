@@ -3433,6 +3433,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orgs/{org}/actions/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List organization Actions policies
+         * @description List all Actions policies for an organization.
+         */
+        get: operations["actions/get-org-actions-policies"];
+        put?: never;
+        /**
+         * Create an organization Actions policy
+         * @description Create an Actions policy for an organization.
+         *     Omitting `workflow_path` targets all workflows without storing an explicit condition.
+         */
+        post: operations["actions/create-org-actions-policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{org}/actions/policies/{policy_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an organization Actions policy
+         * @description Get a specific Actions policy for an organization.
+         */
+        get: operations["actions/get-org-actions-policy"];
+        /**
+         * Update an organization Actions policy
+         * @description Update an Actions policy for an organization.
+         *     Omitting `workflow_path` preserves the policy's existing workflow targeting.
+         */
+        put: operations["actions/update-org-actions-policy"];
+        post?: never;
+        /**
+         * Delete an organization Actions policy
+         * @description Delete an Actions policy for an organization.
+         */
+        delete: operations["actions/delete-org-actions-policy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/orgs/{org}/actions/runner-groups": {
         parameters: {
             query?: never;
@@ -4923,6 +4977,46 @@ export interface paths {
         patch: operations["campaigns/update-campaign"];
         trace?: never;
     };
+    "/orgs/{org}/code-scanning/ai-scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the AI Scan setting for an organization
+         * @description > [!NOTE]
+         *     > This endpoint is in public preview and is subject to change.
+         *
+         *     Gets the AI Scan setting stored on an organization.
+         *
+         *     The response reports the value stored on the organization. Organization respects enterprise policy.
+         *
+         *     The authenticated user must be an owner or security manager for the organization to use this endpoint.
+         *
+         *     OAuth app tokens and personal access tokens (classic) need the `admin:org`, `repo`, or `write:org` scope to use this endpoint. Organization owners can use `admin:org` or `repo`; security managers need `write:org`.
+         */
+        get: operations["code-scanning/get-ai-scan-enablement-for-org"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the AI Scan setting for an organization
+         * @description > [!NOTE]
+         *     > This endpoint is in public preview and is subject to change.
+         *
+         *     Updates the AI Scan setting stored on an organization.
+         *
+         *     The organization respects the enterprise policy, so enabling is rejected when the enterprise disallows AI Scan.
+         *
+         *     OAuth app tokens and personal access tokens (classic) need the `admin:org`, `repo`, or `write:org` scope to use this endpoint. Organization owners can use `admin:org` or `repo`; security managers need `write:org`.
+         */
+        patch: operations["code-scanning/update-ai-scan-enablement-for-org"];
+        trace?: never;
+    };
     "/orgs/{org}/code-scanning/alerts": {
         parameters: {
             query?: never;
@@ -5020,7 +5114,9 @@ export interface paths {
          *
          *     The authenticated user must be an administrator or security manager for the organization to use this endpoint.
          *
-         *     OAuth app tokens and personal access tokens (classic) need the `write:org` scope to use this endpoint.
+         *     Repositories with active enterprise-enforced attachments are skipped unless the authenticated user can manage the enterprise's code security settings; the rest are detached. Inactive enterprise-enforced attachments, such as failed attachments, are detached. The request still returns `204` if every repository is skipped.
+         *
+         *     OAuth app tokens and classic PATs require the `write:org` scope. Managing enterprise-enforced configurations also requires `admin:enterprise` and is not supported by fine-grained PATs or GitHub App access tokens.
          */
         delete: operations["code-security/detach-configuration"];
         options?: never;
@@ -5087,7 +5183,11 @@ export interface paths {
          *
          *     The authenticated user must be an administrator or security manager for the organization to use this endpoint.
          *
-         *     OAuth app tokens and personal access tokens (classic) need the `write:org` scope to use this endpoint.
+         *     Directly applying an enterprise-enforced configuration also requires permission to manage the enterprise's code security settings. Without it, the request returns `403` and no repositories change.
+         *
+         *     When applying a different configuration, repositories with active enterprise-enforced attachments are skipped unless the authenticated user can manage the enterprise's code security settings; the remaining repositories are updated. The request still returns `202` if every repository is skipped.
+         *
+         *     OAuth app tokens and classic PATs require the `write:org` scope. Directly applying an enterprise-enforced configuration also requires `admin:enterprise` and is not supported by fine-grained PATs or GitHub App access tokens.
          */
         post: operations["code-security/attach-configuration"];
         delete?: never;
@@ -5110,9 +5210,11 @@ export interface paths {
          *
          *     This configuration will be applied to the matching repository type (all, none, public, private and internal) by default when they are created.
          *
-         *     The authenticated user must be an administrator or security manager for the organization to use this endpoint.
+         *     The authenticated user must be an administrator or security manager for the organization to use this endpoint. Setting an enterprise-enforced configuration as the default also requires permission to manage the enterprise's code security settings.
          *
-         *     OAuth app tokens and personal access tokens (classic) need the `write:org` scope to use this endpoint.
+         *     A default set with this endpoint is an organization default, even if the configuration is owned or enforced by the enterprise. An enterprise-enforced configuration set as an enterprise-level default for the same repository visibility takes precedence.
+         *
+         *     OAuth app tokens and classic PATs require the `write:org` scope; setting an enterprise-enforced configuration as the default also requires `admin:enterprise`. Fine-grained PATs and GitHub App access tokens cannot perform that action.
          */
         put: operations["code-security/set-configuration-as-default"];
         post?: never;
@@ -9936,6 +10038,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{repo}/actions/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List repository Actions policies
+         * @description List all Actions policies for a repository.
+         */
+        get: operations["actions/get-repo-actions-policies"];
+        put?: never;
+        /**
+         * Create a repository Actions policy
+         * @description Create an Actions policy for a repository.
+         *     Omitting `workflow_path` targets all workflows without storing an explicit condition.
+         */
+        post: operations["actions/create-repo-actions-policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repos/{owner}/{repo}/actions/policies/{policy_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a repository Actions policy
+         * @description Get a specific Actions policy for a repository.
+         */
+        get: operations["actions/get-repo-actions-policy"];
+        /**
+         * Update a repository Actions policy
+         * @description Update an Actions policy for a repository.
+         *     Omitting `workflow_path` preserves the policy's existing workflow targeting.
+         */
+        put: operations["actions/update-repo-actions-policy"];
+        post?: never;
+        /**
+         * Delete a repository Actions policy
+         * @description Delete an Actions policy for a repository.
+         */
+        delete: operations["actions/delete-repo-actions-policy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{repo}/actions/runners": {
         parameters: {
             query?: never;
@@ -12129,6 +12285,40 @@ export interface paths {
          *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint with private or public repositories, or the `public_repo` scope to use this endpoint with only public repositories.
          */
         patch: operations["code-quality/update-setup"];
+        trace?: never;
+    };
+    "/repos/{owner}/{repo}/code-scanning/ai-scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get AI Scan enablement for a repository
+         * @description > [!NOTE]
+         *     > This endpoint is in public preview and is subject to change.
+         *
+         *     Gets whether AI Scan is enabled for a repository.
+         *
+         *     OAuth app tokens and personal access tokens (classic) need the `security_events` scope to use this endpoint with private or public repositories, or the `public_repo` scope to use this endpoint with only public repositories.
+         */
+        get: operations["code-scanning/get-ai-scan-enablement"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update AI Scan enablement for a repository
+         * @description > [!NOTE]
+         *     > This endpoint is in public preview and is subject to change.
+         *
+         *     Updates whether AI Scan is enabled for a repository.
+         *
+         *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint with private or public repositories, or the `public_repo` scope to use this endpoint with only public repositories.
+         */
+        patch: operations["code-scanning/update-ai-scan-enablement"];
         trace?: never;
     };
     "/repos/{owner}/{repo}/code-scanning/alerts": {
@@ -18146,7 +18336,9 @@ export interface paths {
          * List repository custom patterns
          * @description Lists secret scanning custom patterns for a repository.
          *
-         *     OAuth app tokens and personal access tokens (classic) need the `repo` or `security_events` scope to use this endpoint. If this endpoint is only used with public repositories, the token can use the `public_repo` scope instead.
+         *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint. If this endpoint is only used with public repositories, the token can use the `public_repo` scope instead.
+         *
+         *     Fine-grained access tokens require the `administration:write` repository permission.
          */
         get: operations["secret-scanning/list-repo-custom-patterns"];
         put?: never;
@@ -18154,14 +18346,18 @@ export interface paths {
          * Bulk create repository custom patterns
          * @description Bulk creates secret scanning custom patterns for a repository.
          *
-         *     OAuth app tokens and personal access tokens (classic) need the `repo` or `security_events` scope to use this endpoint. If this endpoint is only used with public repositories, the token can use the `public_repo` scope instead.
+         *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint. If this endpoint is only used with public repositories, the token can use the `public_repo` scope instead.
+         *
+         *     Fine-grained access tokens require the `administration:write` repository permission.
          */
         post: operations["secret-scanning/bulk-create-repo-custom-patterns"];
         /**
          * Bulk delete repository custom patterns
          * @description Bulk deletes secret scanning custom patterns for a repository.
          *
-         *     OAuth app tokens and personal access tokens (classic) need the `repo` or `security_events` scope to use this endpoint. If this endpoint is only used with public repositories, the token can use the `public_repo` scope instead.
+         *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint. If this endpoint is only used with public repositories, the token can use the `public_repo` scope instead.
+         *
+         *     Fine-grained access tokens require the `administration:write` repository permission.
          */
         delete: operations["secret-scanning/bulk-delete-repo-custom-patterns"];
         options?: never;
@@ -18186,7 +18382,9 @@ export interface paths {
          * Update a repository custom pattern
          * @description Updates a secret scanning custom pattern for a repository.
          *
-         *     OAuth app tokens and personal access tokens (classic) need the `repo` or `security_events` scope to use this endpoint. If this endpoint is only used with public repositories, the token can use the `public_repo` scope instead.
+         *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint. If this endpoint is only used with public repositories, the token can use the `public_repo` scope instead.
+         *
+         *     Fine-grained access tokens require the `administration:write` repository permission.
          */
         patch: operations["secret-scanning/update-repo-custom-pattern"];
         trace?: never;
@@ -24142,7 +24340,7 @@ export interface components {
              * @description The enforcement status for a security configuration
              * @enum {string}
              */
-            enforcement?: "enforced" | "unenforced";
+            enforcement?: "enforced" | "unenforced" | "enterprise_enforced";
             /**
              * Format: uri
              * @description The URL of the configuration
@@ -24430,7 +24628,7 @@ export interface components {
              * @description The attachment status of the code security configuration on the repository.
              * @enum {string}
              */
-            status?: "attached" | "attaching" | "detached" | "removed" | "enforced" | "failed" | "updating" | "removed_by_enterprise";
+            status?: "attached" | "attaching" | "detached" | "removed" | "enforced" | "failed" | "updating" | "removed_by_enterprise" | "enterprise_enforced";
             repository?: components["schemas"]["simple-repository"];
         };
         /**
@@ -25113,6 +25311,14 @@ export interface components {
              * @example true
              */
             default: boolean;
+            /**
+             * Format: date-time
+             * @description Timestamp indicating when the label was archived, or `null` if it has not been archived.
+             * @example 2023-01-01T12:00:00Z
+             */
+            archived_at: string | null;
+            /** @description The user who archived the label, or `null` if it has not been archived. */
+            archived_by: components["schemas"]["simple-user"] | null;
         };
         /**
          * Discussion
@@ -25673,6 +25879,8 @@ export interface components {
                 description?: string | null;
                 color?: string | null;
                 default?: boolean;
+                /** @description The user who archived the label, or `null` if it has not been archived. */
+                archived_by?: components["schemas"]["simple-user"] | null;
             })[];
             assignee: components["schemas"]["nullable-simple-user"];
             assignees?: components["schemas"]["simple-user"][];
@@ -27997,6 +28205,236 @@ export interface components {
             default_workflow_permissions?: components["schemas"]["actions-default-workflow-permissions"];
             can_approve_pull_request_reviews?: components["schemas"]["actions-can-approve-pull-request-reviews"];
         };
+        /**
+         * @description The enforcement level of the ruleset. `evaluate` allows admins to test rules before enforcing them. Admins can view insights on the Rule Insights page (`evaluate` is only available with GitHub Enterprise).
+         * @enum {string}
+         */
+        "repository-rule-enforcement": "disabled" | "active" | "evaluate";
+        /**
+         * Actions policy workflow path condition
+         * @description Parameters for an Actions policy workflow path condition. Omitting `workflow_path` when creating
+         *     a policy targets all workflows without storing an explicit condition. Omitting it when updating a
+         *     policy preserves the existing workflow targeting. For new or changed workflow conditions, the API
+         *     requires at least one included or excluded pattern. This is validated server-side rather than by
+         *     this schema, which can also describe existing stored conditions.
+         */
+        "actions-policy-workflow-path-condition": {
+            workflow_path?: {
+                /**
+                 * @description Array of workflow file paths or glob patterns to include. An empty array includes all
+                 *     workflows not matched by an excluded pattern. Use `~ALL` by itself to include all workflows.
+                 *     `~ALL` cannot be combined with other included patterns.
+                 */
+                include: string[];
+                /**
+                 * @description Array of workflow file paths or glob patterns to exclude. The condition will not pass
+                 *     if any of these patterns match. `~ALL` is not allowed in this array.
+                 */
+                exclude: string[];
+            };
+        };
+        /**
+         * Repository Actions policy conditions
+         * @description Conditions for a repository Actions policy. The object may be empty to preserve or use the
+         *     default workflow targeting, or contain only `workflow_path`.
+         */
+        "actions-policy-repo-conditions": Record<string, never> | WithRequired<components["schemas"]["actions-policy-workflow-path-condition"], "workflow_path">;
+        /**
+         * Repository ruleset conditions for repository names
+         * @description Parameters for a repository name condition
+         */
+        "repository-ruleset-conditions-repository-name-target": {
+            repository_name: {
+                /** @description Array of repository names or patterns to include. One of these patterns must match for the condition to pass. Also accepts `~ALL` to include all repositories. */
+                include?: string[];
+                /** @description Array of repository names or patterns to exclude. The condition will not pass if any of these patterns match. */
+                exclude?: string[];
+                /** @description Whether renaming of target repositories is prevented. */
+                protected?: boolean;
+            };
+        };
+        /**
+         * Repository ruleset conditions for repository IDs
+         * @description Parameters for a repository ID condition
+         */
+        "repository-ruleset-conditions-repository-id-target": {
+            repository_id: {
+                /** @description The repository IDs that the ruleset applies to. One of these IDs must match for the condition to pass. */
+                repository_ids?: number[];
+            };
+        };
+        /**
+         * Repository ruleset property targeting definition
+         * @description Parameters for a targeting a repository property
+         */
+        "repository-ruleset-conditions-repository-property-spec": {
+            /** @description The name of the repository property to target */
+            name: string;
+            /** @description The values to match for the repository property */
+            property_values: string[];
+            /**
+             * @description The source of the repository property. Defaults to 'custom' if not specified.
+             * @enum {string}
+             */
+            source?: "custom" | "system";
+        };
+        /**
+         * Repository ruleset conditions for repository properties
+         * @description Parameters for a repository property condition
+         */
+        "repository-ruleset-conditions-repository-property-target": {
+            repository_property: {
+                /** @description The repository properties and values to include. All of these properties must match for the condition to pass. */
+                include?: components["schemas"]["repository-ruleset-conditions-repository-property-spec"][];
+                /** @description The repository properties and values to exclude. The condition will not pass if any of these properties match. */
+                exclude?: components["schemas"]["repository-ruleset-conditions-repository-property-spec"][];
+            };
+        };
+        /**
+         * Organization Actions policy conditions
+         * @description Conditions for an organization Actions policy. The conditions object should contain one of
+         *     `repository_name`, `repository_id`, or `repository_property`, and may also contain `workflow_path`.
+         */
+        "actions-policy-org-conditions": (components["schemas"]["repository-ruleset-conditions-repository-name-target"] & components["schemas"]["actions-policy-workflow-path-condition"]) | (components["schemas"]["repository-ruleset-conditions-repository-id-target"] & components["schemas"]["actions-policy-workflow-path-condition"]) | (components["schemas"]["repository-ruleset-conditions-repository-property-target"] & components["schemas"]["actions-policy-workflow-path-condition"]);
+        /**
+         * Repository ruleset conditions for organization names
+         * @description Parameters for an organization name condition
+         */
+        "enterprise-ruleset-conditions-organization-name-target": {
+            organization_name: {
+                /** @description Array of organization names or patterns to include. One of these patterns must match for the condition to pass. Also accepts `~ALL` to include all organizations and ~EMUS to target all enterprise managed user accounts. */
+                include?: string[];
+                /** @description Array of organization names or patterns to exclude. The condition will not pass if any of these patterns match. */
+                exclude?: string[];
+            };
+        };
+        /**
+         * Repository ruleset conditions for organization IDs
+         * @description Parameters for an organization ID condition
+         */
+        "enterprise-ruleset-conditions-organization-id-target": {
+            organization_id: {
+                /** @description The organization IDs that the ruleset applies to. One of these IDs must match for the condition to pass. */
+                organization_ids?: number[];
+            };
+        };
+        /**
+         * Repository ruleset property targeting definition
+         * @description Parameters for a targeting a organization property
+         */
+        "enterprise-ruleset-conditions-organization-property-spec": {
+            /** @description The name of the organization property to target */
+            name: string;
+            /** @description The values to match for the organization property */
+            property_values: string[];
+        };
+        /**
+         * Repository ruleset conditions for organization properties
+         * @description Parameters for a organization property condition
+         */
+        "enterprise-ruleset-conditions-organization-property-target": {
+            organization_property: {
+                /** @description The organization properties and values to include. All of these properties must match for the condition to pass. */
+                include?: components["schemas"]["enterprise-ruleset-conditions-organization-property-spec"][];
+                /** @description The organization properties and values to exclude. The condition will not pass if any of these properties match. */
+                exclude?: components["schemas"]["enterprise-ruleset-conditions-organization-property-spec"][];
+            };
+        };
+        /**
+         * Enterprise Actions policy conditions
+         * @description Conditions for an enterprise Actions policy. The conditions object supports one organization
+         *     target (`organization_name`, `organization_id`, or `organization_property`) combined with one
+         *     repository target (`repository_name` or `repository_property`), and may also contain `workflow_path`.
+         */
+        "actions-policy-enterprise-conditions": (components["schemas"]["enterprise-ruleset-conditions-organization-name-target"] & components["schemas"]["repository-ruleset-conditions-repository-name-target"] & components["schemas"]["actions-policy-workflow-path-condition"]) | (components["schemas"]["enterprise-ruleset-conditions-organization-name-target"] & components["schemas"]["repository-ruleset-conditions-repository-property-target"] & components["schemas"]["actions-policy-workflow-path-condition"]) | (components["schemas"]["enterprise-ruleset-conditions-organization-id-target"] & components["schemas"]["repository-ruleset-conditions-repository-name-target"] & components["schemas"]["actions-policy-workflow-path-condition"]) | (components["schemas"]["enterprise-ruleset-conditions-organization-id-target"] & components["schemas"]["repository-ruleset-conditions-repository-property-target"] & components["schemas"]["actions-policy-workflow-path-condition"]) | (components["schemas"]["enterprise-ruleset-conditions-organization-property-target"] & components["schemas"]["repository-ruleset-conditions-repository-name-target"] & components["schemas"]["actions-policy-workflow-path-condition"]) | (components["schemas"]["enterprise-ruleset-conditions-organization-property-target"] & components["schemas"]["repository-ruleset-conditions-repository-property-target"] & components["schemas"]["actions-policy-workflow-path-condition"]);
+        /**
+         * Actor
+         * @description An actor authorized to trigger Actions workflows
+         */
+        "actions-rule-params-actor": {
+            /** @description ID of the actor authorized to trigger Actions workflows. */
+            id: number;
+            /**
+             * @description The type of the actor
+             * @enum {string}
+             */
+            type: "User" | "Bot" | "Team" | "BusinessTeam" | "EnterpriseTeam" | "IntegrationInstallation" | "App" | "RepositoryRole";
+        };
+        /**
+         * restrict_actions_actors
+         * @description Choose specific actors that are authorized to trigger Actions workflows.
+         */
+        "actions-rule-restrict-actions-actors": {
+            /** @enum {string} */
+            type: "restrict_actions_actors";
+            parameters?: {
+                /** @description Select the actors who can run Actions workflows. */
+                allowed_actors: components["schemas"]["actions-rule-params-actor"][];
+            };
+        };
+        /**
+         * restrict_action_events
+         * @description Choose specific GitHub events that will trigger Actions workflows.
+         */
+        "actions-rule-restrict-action-events": {
+            /** @enum {string} */
+            type: "restrict_action_events";
+            parameters?: {
+                /** @description Select the events that can trigger Actions workflows. */
+                allowed_events: ("branch_protection_rule" | "check_run" | "check_suite" | "create" | "delete" | "deployment" | "deployment_status" | "discussion" | "discussion_comment" | "fork" | "gollum" | "image_version" | "issue_comment" | "issues" | "label" | "merge_group" | "milestone" | "page_build" | "project" | "project_card" | "project_column" | "public" | "pull_request" | "pull_request_review" | "pull_request_review_comment" | "pull_request_target" | "push" | "registry_package" | "release" | "repository_dispatch" | "schedule" | "status" | "watch" | "workflow_call" | "workflow_dispatch" | "workflow_run")[];
+            };
+        };
+        /**
+         * Actions Rule
+         * @description An actions rule.
+         */
+        "actions-rule": components["schemas"]["actions-rule-restrict-actions-actors"] | components["schemas"]["actions-rule-restrict-action-events"];
+        /**
+         * Actions Policy
+         * @description An Actions policy defines rules for workflow execution protection.
+         */
+        "actions-policy": {
+            /** @description The ID of the policy */
+            id: number;
+            /** @description The name of the policy */
+            name: string;
+            /**
+             * @description The target of the policy
+             * @enum {string}
+             */
+            target: "actions";
+            /**
+             * @description The type of the source of the policy
+             * @enum {string}
+             */
+            source_type: "Repository" | "Organization" | "Enterprise";
+            /** @description The name of the source */
+            source: string;
+            enforcement: components["schemas"]["repository-rule-enforcement"];
+            /**
+             * @description When workflow path targeting is available, detailed responses represent an omitted stored
+             *     workflow condition as `workflow_path` with `include` set to `["~ALL"]` and `exclude` set to `[]`.
+             *     When workflow path targeting is unavailable, an omitted stored condition remains omitted.
+             */
+            conditions?: (components["schemas"]["actions-policy-repo-conditions"] | components["schemas"]["actions-policy-org-conditions"] | components["schemas"]["actions-policy-enterprise-conditions"]) | null;
+            /** @description An array of rules within the policy */
+            rules?: components["schemas"]["actions-rule"][];
+            node_id?: string;
+            _links?: {
+                self?: {
+                    /** @description The URL of the policy */
+                    href?: string;
+                };
+                html?: {
+                    /** @description The html URL of the policy */
+                    href?: string;
+                };
+            };
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
         "runner-groups-org": {
             id: number;
             name: string;
@@ -28431,6 +28869,30 @@ export interface components {
                 /** @description The number of in-progress alerts */
                 in_progress_count: number;
             };
+        };
+        /**
+         * Code scanning AI Scan organization settings
+         * @description The AI Scan organization setting
+         */
+        "code-scanning-ai-scan-org-settings": {
+            /**
+             * @description Whether AI Scan on pull requests is enabled for the organization. The organization setting respects enterprise policy, and repositories inherit it: when disabled, repositories cannot enable AI Scan; when enabled, repositories can still opt out.
+             * @example enabled
+             * @enum {string}
+             */
+            pr_scan: "enabled" | "disabled";
+        };
+        /**
+         * Code scanning AI Scan organization settings update
+         * @description The AI Scan organization setting to apply
+         */
+        "code-scanning-ai-scan-org-enablement-update": {
+            /**
+             * @description Whether AI Scan is enabled for the organization. Organization respects enterprise policy. Disabled organizations prevent repositories from enabling AI Scan. Enabled organizations enable AI Scan for their repositories, but individual repositories can opt out.
+             * @example enabled
+             * @enum {string}
+             */
+            pr_scan?: "enabled" | "disabled";
         };
         /** @description The name of the tool used to generate the code scanning analysis. */
         "code-scanning-analysis-tool-name": string;
@@ -30651,6 +31113,8 @@ export interface components {
                 description: string;
                 color: string;
                 default: boolean;
+                /** @description The user who archived the label, or `null` if it has not been archived. */
+                archived_by: components["schemas"]["simple-user"] | null;
             }[];
             milestone: components["schemas"]["nullable-milestone"];
             /** @example too heated */
@@ -31829,11 +32293,6 @@ export interface components {
             };
         };
         /**
-         * @description The enforcement level of the ruleset. `evaluate` allows admins to test rules before enforcing them. Admins can view insights on the Rule Insights page (`evaluate` is only available with GitHub Enterprise).
-         * @enum {string}
-         */
-        "repository-rule-enforcement": "disabled" | "active" | "evaluate";
-        /**
          * Repository Ruleset Bypass Actor
          * @description An actor that can bypass rules in a ruleset
          */
@@ -31862,57 +32321,6 @@ export interface components {
                 include?: string[];
                 /** @description Array of ref names or patterns to exclude. The condition will not pass if any of these patterns match. */
                 exclude?: string[];
-            };
-        };
-        /**
-         * Repository ruleset conditions for repository names
-         * @description Parameters for a repository name condition
-         */
-        "repository-ruleset-conditions-repository-name-target": {
-            repository_name: {
-                /** @description Array of repository names or patterns to include. One of these patterns must match for the condition to pass. Also accepts `~ALL` to include all repositories. */
-                include?: string[];
-                /** @description Array of repository names or patterns to exclude. The condition will not pass if any of these patterns match. */
-                exclude?: string[];
-                /** @description Whether renaming of target repositories is prevented. */
-                protected?: boolean;
-            };
-        };
-        /**
-         * Repository ruleset conditions for repository IDs
-         * @description Parameters for a repository ID condition
-         */
-        "repository-ruleset-conditions-repository-id-target": {
-            repository_id: {
-                /** @description The repository IDs that the ruleset applies to. One of these IDs must match for the condition to pass. */
-                repository_ids?: number[];
-            };
-        };
-        /**
-         * Repository ruleset property targeting definition
-         * @description Parameters for a targeting a repository property
-         */
-        "repository-ruleset-conditions-repository-property-spec": {
-            /** @description The name of the repository property to target */
-            name: string;
-            /** @description The values to match for the repository property */
-            property_values: string[];
-            /**
-             * @description The source of the repository property. Defaults to 'custom' if not specified.
-             * @enum {string}
-             */
-            source?: "custom" | "system";
-        };
-        /**
-         * Repository ruleset conditions for repository properties
-         * @description Parameters for a repository property condition
-         */
-        "repository-ruleset-conditions-repository-property-target": {
-            repository_property: {
-                /** @description The repository properties and values to include. All of these properties must match for the condition to pass. */
-                include?: components["schemas"]["repository-ruleset-conditions-repository-property-spec"][];
-                /** @description The repository properties and values to exclude. The condition will not pass if any of these properties match. */
-                exclude?: components["schemas"]["repository-ruleset-conditions-repository-property-spec"][];
             };
         };
         /**
@@ -32305,6 +32713,41 @@ export interface components {
             };
         };
         /**
+         * code_quality
+         * @description Choose which severity levels of code quality results should block pull request merges. When configured, a code quality analysis must be done on the pull request before the changes can be merged.
+         */
+        "repository-rule-code-quality": {
+            /** @enum {string} */
+            type: "code_quality";
+            parameters?: {
+                /**
+                 * @description The lowest severity level at which code quality reviews need to be resolved before commits can be merged.
+                 * @enum {string}
+                 */
+                severity: "errors" | "warnings" | "notes" | "all";
+            };
+        };
+        /**
+         * code_coverage
+         * @description Enforce minimum line coverage thresholds on pull requests. When configured, uploaded coverage data must meet the specified criteria before changes can be merged.
+         */
+        "repository-rule-code-coverage": {
+            /** @enum {string} */
+            type: "code_coverage";
+            parameters?: {
+                /**
+                 * Format: float
+                 * @description The maximum percentage points that line coverage may drop relative to the default branch. Pull requests that reduce line coverage by more than this amount will be blocked.
+                 */
+                max_coverage_drop?: number;
+                /**
+                 * Format: float
+                 * @description The absolute minimum line coverage percentage required. Pull requests with line coverage below this threshold will be blocked.
+                 */
+                minimum_coverage?: number;
+            };
+        };
+        /**
          * copilot_code_review
          * @description Request Copilot code review for new pull requests automatically if the author has access to Copilot code review and their premium requests quota has not reached the limit.
          */
@@ -32378,7 +32821,7 @@ export interface components {
          * Repository Rule
          * @description A repository rule.
          */
-        "repository-rule": components["schemas"]["repository-rule-creation"] | components["schemas"]["repository-rule-update"] | components["schemas"]["repository-rule-deletion"] | components["schemas"]["repository-rule-required-linear-history"] | components["schemas"]["repository-rule-merge-queue"] | components["schemas"]["repository-rule-required-deployments"] | components["schemas"]["repository-rule-required-signatures"] | components["schemas"]["repository-rule-pull-request"] | components["schemas"]["repository-rule-required-status-checks"] | components["schemas"]["repository-rule-non-fast-forward"] | components["schemas"]["repository-rule-commit-message-pattern"] | components["schemas"]["repository-rule-commit-author-email-pattern"] | components["schemas"]["repository-rule-committer-email-pattern"] | components["schemas"]["repository-rule-branch-name-pattern"] | components["schemas"]["repository-rule-tag-name-pattern"] | components["schemas"]["repository-rule-workflows"] | components["schemas"]["repository-rule-code-scanning"] | components["schemas"]["repository-rule-copilot-code-review"] | components["schemas"]["repository-rule-license-compliance-scanning"] | components["schemas"]["repository-rule-file-path-restriction"] | components["schemas"]["repository-rule-max-file-path-length"] | components["schemas"]["repository-rule-file-extension-restriction"] | components["schemas"]["repository-rule-max-file-size"];
+        "repository-rule": components["schemas"]["repository-rule-creation"] | components["schemas"]["repository-rule-update"] | components["schemas"]["repository-rule-deletion"] | components["schemas"]["repository-rule-required-linear-history"] | components["schemas"]["repository-rule-merge-queue"] | components["schemas"]["repository-rule-required-deployments"] | components["schemas"]["repository-rule-required-signatures"] | components["schemas"]["repository-rule-pull-request"] | components["schemas"]["repository-rule-required-status-checks"] | components["schemas"]["repository-rule-non-fast-forward"] | components["schemas"]["repository-rule-commit-message-pattern"] | components["schemas"]["repository-rule-commit-author-email-pattern"] | components["schemas"]["repository-rule-committer-email-pattern"] | components["schemas"]["repository-rule-branch-name-pattern"] | components["schemas"]["repository-rule-tag-name-pattern"] | components["schemas"]["repository-rule-workflows"] | components["schemas"]["repository-rule-code-scanning"] | components["schemas"]["repository-rule-code-quality"] | components["schemas"]["repository-rule-code-coverage"] | components["schemas"]["repository-rule-copilot-code-review"] | components["schemas"]["repository-rule-license-compliance-scanning"] | components["schemas"]["repository-rule-file-path-restriction"] | components["schemas"]["repository-rule-max-file-path-length"] | components["schemas"]["repository-rule-file-extension-restriction"] | components["schemas"]["repository-rule-max-file-size"];
         /**
          * Repository ruleset
          * @description A set of rules to apply when specified conditions are met.
@@ -35903,6 +36346,22 @@ export interface components {
             /** @description URL of the corresponding run. */
             run_url?: string;
         };
+        /** @description AI Scan enablement for a repository. */
+        "code-scanning-ai-scan-enablement": {
+            /**
+             * @description Whether AI Scan is enabled for the repository.
+             * @enum {string}
+             */
+            pr_scan: "enabled" | "disabled";
+        };
+        /** @description AI Scan enablement update for a repository. */
+        "code-scanning-ai-scan-enablement-update": {
+            /**
+             * @description Whether to enable or disable AI Scan for the repository.
+             * @enum {string}
+             */
+            pr_scan?: "enabled" | "disabled";
+        };
         "code-scanning-alert-items": {
             number: components["schemas"]["alert-number"];
             created_at: components["schemas"]["alert-created-at"];
@@ -36369,7 +36828,7 @@ export interface components {
              * @description The attachment status of the code security configuration on the repository.
              * @enum {string}
              */
-            status?: "attached" | "attaching" | "detached" | "removed" | "enforced" | "failed" | "updating" | "removed_by_enterprise";
+            status?: "attached" | "attaching" | "detached" | "removed" | "enforced" | "failed" | "updating" | "removed_by_enterprise" | "enterprise_enforced";
             configuration?: components["schemas"]["code-security-configuration"];
         };
         /**
@@ -36586,7 +37045,7 @@ export interface components {
              * @example read
              * @enum {string}
              */
-            permissions: "read" | "write" | "admin" | "triage" | "maintain";
+            permissions: "read" | "write" | "admin" | "triage" | "triage_plus" | "maintain";
             /**
              * Format: date-time
              * @example 2016-06-13T14:52:50-05:00
@@ -38245,6 +38704,8 @@ export interface components {
                 description?: string | null;
                 color?: string | null;
                 default?: boolean;
+                /** @description The user who archived the label, or `null` if it has not been archived. */
+                archived_by?: components["schemas"]["simple-user"] | null;
             })[];
             assignee: components["schemas"]["nullable-simple-user"];
             assignees?: components["schemas"]["simple-user"][];
@@ -39914,6 +40375,8 @@ export interface components {
                 description: string | null;
                 color: string;
                 default: boolean;
+                /** @description The user who archived the label, or `null` if it has not been archived. */
+                archived_by: components["schemas"]["simple-user"] | null;
             }[];
             milestone: components["schemas"]["nullable-milestone"];
             /** @example too heated */
@@ -40962,6 +41425,13 @@ export interface components {
                 color?: string;
                 default?: boolean;
                 description?: string | null;
+                /**
+                 * Format: date-time
+                 * @description Timestamp indicating when the label was archived, or `null` if it has not been archived.
+                 */
+                archived_at?: string | null;
+                /** @description The user who archived the label, or `null` if it has not been archived. */
+                archived_by?: components["schemas"]["simple-user"] | null;
             }[];
             sub_issues_summary?: components["schemas"]["sub-issues-summary"];
             issue_dependencies_summary?: components["schemas"]["issue-dependencies-summary"];
@@ -41017,6 +41487,13 @@ export interface components {
             color: string;
             default: boolean;
             description: string | null;
+            /**
+             * Format: date-time
+             * @description Timestamp indicating when the label was archived, or `null` if it has not been archived.
+             */
+            archived_at: string | null;
+            /** @description The user who archived the label, or `null` if it has not been archived. */
+            archived_by: components["schemas"]["simple-user"] | null;
             score: number;
             text_matches?: components["schemas"]["search-result-text-matches"];
         };
@@ -43129,6 +43606,13 @@ export interface components {
             color: string;
             default: boolean;
             description: string | null;
+            /**
+             * Format: date-time
+             * @description Timestamp indicating when the label was archived, or `null` if it has not been archived.
+             */
+            archived_at: string | null;
+            /** @description The user who archived the label, or `null` if it has not been archived. */
+            archived_by: components["schemas"]["simple-user"] | null;
             id: number;
             /** @description The name of the label. */
             name: string;
@@ -44210,6 +44694,26 @@ export interface components {
             url?: string;
             user_view_type?: string;
         } | null;
+        /** Archived label */
+        webhooks_label_archived: components["schemas"]["webhooks_label"] & {
+            /**
+             * Format: date-time
+             * @description Timestamp indicating when the label was archived.
+             */
+            archived_at: string;
+            /** @description The user who archived the label. */
+            archived_by: components["schemas"]["simple-user"];
+        };
+        /** Unarchived label */
+        webhooks_label_unarchived: components["schemas"]["webhooks_label"] & {
+            /**
+             * Format: date-time
+             * @description Timestamp indicating when the label was archived. This is `null` after the label is unarchived.
+             */
+            archived_at: string | null;
+            /** @description The user who archived the label. This is `null` after the label is unarchived. */
+            archived_by: components["schemas"]["simple-user"] | null;
+        };
         /** Marketplace Purchase */
         webhooks_marketplace_purchase: {
             account: {
@@ -57533,6 +58037,13 @@ export interface components {
                     color: string;
                     default: boolean;
                     description: string | null;
+                    /**
+                     * Format: date-time
+                     * @description Timestamp indicating when the label was archived, or `null` if it has not been archived.
+                     */
+                    archived_at: string | null;
+                    /** @description The user who archived the label, or `null` if it has not been archived. */
+                    archived_by: components["schemas"]["simple-user"] | null;
                     id: number;
                     /** @description The name of the label. */
                     name: string;
@@ -61435,6 +61946,17 @@ export interface components {
             repository: components["schemas"]["repository-webhooks"];
             sender: components["schemas"]["simple-user"];
         };
+        /** label archived event */
+        "webhook-label-archived": {
+            /** @enum {string} */
+            action: "archived";
+            enterprise?: components["schemas"]["enterprise-webhooks"];
+            installation?: components["schemas"]["simple-installation"];
+            label: components["schemas"]["webhooks_label_archived"];
+            organization?: components["schemas"]["organization-simple-webhooks"];
+            repository: components["schemas"]["repository-webhooks"];
+            sender: components["schemas"]["simple-user"];
+        };
         /** label created event */
         "webhook-label-created": {
             /** @enum {string} */
@@ -61479,6 +62001,17 @@ export interface components {
             enterprise?: components["schemas"]["enterprise-webhooks"];
             installation?: components["schemas"]["simple-installation"];
             label: components["schemas"]["webhooks_label"];
+            organization?: components["schemas"]["organization-simple-webhooks"];
+            repository: components["schemas"]["repository-webhooks"];
+            sender: components["schemas"]["simple-user"];
+        };
+        /** label unarchived event */
+        "webhook-label-unarchived": {
+            /** @enum {string} */
+            action: "unarchived";
+            enterprise?: components["schemas"]["enterprise-webhooks"];
+            installation?: components["schemas"]["simple-installation"];
+            label: components["schemas"]["webhooks_label_unarchived"];
             organization?: components["schemas"]["organization-simple-webhooks"];
             repository: components["schemas"]["repository-webhooks"];
             sender: components["schemas"]["simple-user"];
@@ -70349,6 +70882,13 @@ export interface components {
                     color: string;
                     default: boolean;
                     description: string | null;
+                    /**
+                     * Format: date-time
+                     * @description Timestamp indicating when the label was archived, or `null` if it has not been archived.
+                     */
+                    archived_at: string | null;
+                    /** @description The user who archived the label, or `null` if it has not been archived. */
+                    archived_by: components["schemas"]["simple-user"] | null;
                     id: number;
                     /** @description The name of the label. */
                     name: string;
@@ -98520,6 +99060,15 @@ export interface components {
                 "application/json": components["schemas"]["basic-error"];
             };
         };
+        /** @description The request could not be processed due to heavy server load. Please try again. */
+        server_load_try_again: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["basic-error"];
+            };
+        };
         /** @description Response for a private repository when GitHub Advanced Security is not enabled, or if used against a fork */
         dependency_review_forbidden: {
             headers: {
@@ -101852,7 +102401,7 @@ export interface operations {
                      * @default enforced
                      * @enum {string}
                      */
-                    enforcement?: "enforced" | "unenforced";
+                    enforcement?: "enforced" | "unenforced" | "enterprise_enforced";
                 };
             };
         };
@@ -102065,7 +102614,7 @@ export interface operations {
                      * @description The enforcement status for a security configuration
                      * @enum {string}
                      */
-                    enforcement?: "enforced" | "unenforced";
+                    enforcement?: "enforced" | "unenforced" | "enterprise_enforced";
                 };
             };
         };
@@ -102171,7 +102720,7 @@ export interface operations {
                 /**
                  * @description A comma-separated list of statuses. If specified, only repositories with these attachment statuses will be returned.
                  *
-                 *     Can be: `all`, `attached`, `attaching`, `removed`, `enforced`, `failed`, `updating`, `removed_by_enterprise`
+                 *     Can be: `all`, `attached`, `attaching`, `removed`, `enforced`, `failed`, `updating`, `removed_by_enterprise`, `enterprise_enforced`
                  */
                 status?: string;
             };
@@ -106711,6 +107260,173 @@ export interface operations {
             };
         };
     };
+    "actions/get-org-actions-policies": {
+        parameters: {
+            query?: {
+                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                per_page?: components["parameters"]["per-page"];
+                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                page?: components["parameters"]["page"];
+                /** @description Include policies configured at higher levels that apply to this organization */
+                has_parents?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The total number of Actions policies. */
+                        total_count: number;
+                        /** @description An array of Actions policies. */
+                        policies: components["schemas"]["actions-policy"][];
+                    };
+                };
+            };
+            404: components["responses"]["not_found"];
+            500: components["responses"]["internal_error"];
+        };
+    };
+    "actions/create-org-actions-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+            };
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The name of the policy. */
+                    name: string;
+                    enforcement: components["schemas"]["repository-rule-enforcement"];
+                    conditions?: components["schemas"]["actions-policy-org-conditions"];
+                    /** @description An array of rules within the policy. */
+                    rules?: components["schemas"]["actions-rule"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["actions-policy"];
+                };
+            };
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+            500: components["responses"]["internal_error"];
+        };
+    };
+    "actions/get-org-actions-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+                /** @description The ID of the policy. */
+                policy_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["actions-policy"];
+                };
+            };
+            404: components["responses"]["not_found"];
+            500: components["responses"]["internal_error"];
+        };
+    };
+    "actions/update-org-actions-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+                /** @description The ID of the policy. */
+                policy_id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The name of the policy. */
+                    name?: string;
+                    enforcement?: components["schemas"]["repository-rule-enforcement"];
+                    conditions?: components["schemas"]["actions-policy-org-conditions"];
+                    /** @description An array of rules within the policy. */
+                    rules?: components["schemas"]["actions-rule"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["actions-policy"];
+                };
+            };
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+            500: components["responses"]["internal_error"];
+        };
+    };
+    "actions/delete-org-actions-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+                /** @description The ID of the policy. */
+                policy_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["not_found"];
+            500: components["responses"]["internal_error"];
+        };
+    };
     "actions/list-self-hosted-runner-groups-for-org": {
         parameters: {
             query?: {
@@ -109848,6 +110564,61 @@ export interface operations {
             503: components["responses"]["service_unavailable"];
         };
     };
+    "code-scanning/get-ai-scan-enablement-for-org": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["code-scanning-ai-scan-org-settings"];
+                };
+            };
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+        };
+    };
+    "code-scanning/update-ai-scan-enablement-for-org": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["code-scanning-ai-scan-org-enablement-update"];
+            };
+        };
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["code-scanning-ai-scan-org-settings"];
+                };
+            };
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+        };
+    };
     "code-scanning/list-alerts-for-org": {
         parameters: {
             query?: {
@@ -110413,6 +111184,7 @@ export interface operations {
         };
         responses: {
             202: components["responses"]["accepted"];
+            403: components["responses"]["forbidden"];
         };
     };
     "code-security/set-configuration-as-default": {
@@ -110471,7 +111243,7 @@ export interface operations {
                 /**
                  * @description A comma-separated list of statuses. If specified, only repositories with these attachment statuses will be returned.
                  *
-                 *     Can be: `all`, `attached`, `attaching`, `detached`, `removed`, `enforced`, `failed`, `updating`, `removed_by_enterprise`
+                 *     Can be: `all`, `attached`, `attaching`, `detached`, `removed`, `enforced`, `failed`, `updating`, `removed_by_enterprise`, `enterprise_enforced`
                  */
                 status?: string;
             };
@@ -113583,6 +114355,8 @@ export interface operations {
                         enabled: boolean;
                         /** @description The maximum number of open pull requests a user can have at one time */
                         max_open_pull_requests: number;
+                        /** @description Whether draft pull requests count toward the pull request creation cap */
+                        include_drafts?: boolean;
                     };
                 };
             };
@@ -113616,6 +114390,8 @@ export interface operations {
                     enabled: boolean;
                     /** @description The maximum number of open pull requests a user can have at one time */
                     max_open_pull_requests?: number;
+                    /** @description Whether draft pull requests count toward the pull request creation cap */
+                    include_drafts?: boolean;
                 };
             };
         };
@@ -113631,6 +114407,8 @@ export interface operations {
                         enabled: boolean;
                         /** @description The maximum number of open pull requests a user can have at one time */
                         max_open_pull_requests: number;
+                        /** @description Whether draft pull requests count toward the pull request creation cap */
+                        include_drafts?: boolean;
                     };
                 };
             };
@@ -117441,7 +118219,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description The list of custom patterns to create. */
+                    /** @description The list of custom patterns to create (maximum 100). */
                     patterns: components["schemas"]["secret-scanning-custom-pattern-to-create"][];
                 };
             };
@@ -120105,6 +120883,183 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    "actions/get-repo-actions-policies": {
+        parameters: {
+            query?: {
+                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                per_page?: components["parameters"]["per-page"];
+                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                page?: components["parameters"]["page"];
+                /** @description Include policies configured at higher levels that apply to this repository */
+                has_parents?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The total number of Actions policies. */
+                        total_count: number;
+                        /** @description An array of Actions policies. */
+                        policies: components["schemas"]["actions-policy"][];
+                    };
+                };
+            };
+            404: components["responses"]["not_found"];
+            500: components["responses"]["internal_error"];
+        };
+    };
+    "actions/create-repo-actions-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+            };
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The name of the policy. */
+                    name: string;
+                    enforcement: components["schemas"]["repository-rule-enforcement"];
+                    conditions?: components["schemas"]["actions-policy-repo-conditions"];
+                    /** @description An array of rules within the policy. */
+                    rules?: components["schemas"]["actions-rule"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["actions-policy"];
+                };
+            };
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+            500: components["responses"]["internal_error"];
+        };
+    };
+    "actions/get-repo-actions-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+                /** @description The ID of the policy. */
+                policy_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["actions-policy"];
+                };
+            };
+            404: components["responses"]["not_found"];
+            500: components["responses"]["internal_error"];
+        };
+    };
+    "actions/update-repo-actions-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+                /** @description The ID of the policy. */
+                policy_id: number;
+            };
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The name of the policy. */
+                    name?: string;
+                    enforcement?: components["schemas"]["repository-rule-enforcement"];
+                    conditions?: components["schemas"]["actions-policy-repo-conditions"];
+                    /** @description An array of rules within the policy. */
+                    rules?: components["schemas"]["actions-rule"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["actions-policy"];
+                };
+            };
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+            500: components["responses"]["internal_error"];
+        };
+    };
+    "actions/delete-repo-actions-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+                /** @description The ID of the policy. */
+                policy_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["not_found"];
+            500: components["responses"]["internal_error"];
         };
     };
     "actions/list-self-hosted-runners-for-repo": {
@@ -124416,6 +125371,65 @@ export interface operations {
             503: components["responses"]["service_unavailable"];
         };
     };
+    "code-scanning/get-ai-scan-enablement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["code-scanning-ai-scan-enablement"];
+                };
+            };
+            403: components["responses"]["code_scanning_forbidden_read"];
+            404: components["responses"]["not_found"];
+        };
+    };
+    "code-scanning/update-ai-scan-enablement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["code-scanning-ai-scan-enablement-update"];
+            };
+        };
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["code-scanning-ai-scan-enablement"];
+                };
+            };
+            403: components["responses"]["code_scanning_forbidden_write"];
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+        };
+    };
     "code-scanning/list-alerts-for-repo": {
         parameters: {
             query?: {
@@ -125682,7 +126696,7 @@ export interface operations {
                 /** @description Filter collaborators returned by their affiliation. `outside` means all outside collaborators of an organization-owned repository. `direct` means all collaborators with permissions to an organization-owned repository, regardless of organization membership status. `all` means all collaborators the authenticated user can see. */
                 affiliation?: "outside" | "direct" | "all";
                 /** @description Filter collaborators by the permissions they have on the repository. If not specified, all collaborators will be returned. */
-                permission?: "pull" | "triage" | "push" | "maintain" | "admin";
+                permission?: "pull" | "triage" | "triage_plus" | "push" | "maintain" | "admin";
                 /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
                 per_page?: components["parameters"]["per-page"];
                 /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
@@ -125762,7 +126776,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /**
-                     * @description The permission to grant the collaborator. **Only valid on organization-owned repositories.** We accept the following permissions to be set: `pull`, `triage`, `push`, `maintain`, `admin` and you can also specify a custom repository role name, if the owning organization has defined any.
+                     * @description The permission to grant the collaborator. **Only valid on organization-owned repositories.** We accept the following permissions to be set: `pull`, `triage`, `triage_plus`, `push`, `maintain`, `admin` and you can also specify a custom repository role name, if the owning organization has defined any.
                      * @default push
                      */
                     permission?: string;
@@ -126136,6 +127150,8 @@ export interface operations {
             400: components["responses"]["bad_request"];
             404: components["responses"]["not_found"];
             409: components["responses"]["conflict"];
+            422: components["responses"]["validation_failed"];
+            429: components["responses"]["server_load_try_again"];
             500: components["responses"]["internal_error"];
         };
     };
@@ -126315,6 +127331,7 @@ export interface operations {
             404: components["responses"]["not_found"];
             409: components["responses"]["conflict"];
             422: components["responses"]["validation_failed"];
+            429: components["responses"]["server_load_try_again"];
             500: components["responses"]["internal_error"];
             503: components["responses"]["service_unavailable"];
         };
@@ -126530,6 +127547,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
             500: components["responses"]["internal_error"];
             503: components["responses"]["service_unavailable"];
         };
@@ -126946,6 +127964,7 @@ export interface operations {
             304: components["responses"]["not_modified"];
             403: components["responses"]["forbidden"];
             404: components["responses"]["not_found"];
+            410: components["responses"]["gone"];
         };
     };
     "dependabot/update-alert": {
@@ -127019,6 +128038,7 @@ export interface operations {
             403: components["responses"]["forbidden"];
             404: components["responses"]["not_found"];
             409: components["responses"]["conflict"];
+            410: components["responses"]["gone"];
             422: components["responses"]["validation_failed_simple"];
         };
     };
@@ -130138,6 +131158,8 @@ export interface operations {
                         enabled: boolean;
                         /** @description The maximum number of open pull requests a user can have at one time */
                         max_open_pull_requests: number;
+                        /** @description Whether draft pull requests count toward the pull request creation cap */
+                        include_drafts?: boolean;
                     };
                 };
             };
@@ -130173,6 +131195,8 @@ export interface operations {
                     enabled: boolean;
                     /** @description The maximum number of open pull requests a user can have at one time */
                     max_open_pull_requests?: number;
+                    /** @description Whether draft pull requests count toward the pull request creation cap */
+                    include_drafts?: boolean;
                 };
             };
         };
@@ -130188,6 +131212,8 @@ export interface operations {
                         enabled: boolean;
                         /** @description The maximum number of open pull requests a user can have at one time */
                         max_open_pull_requests: number;
+                        /** @description Whether draft pull requests count toward the pull request creation cap */
+                        include_drafts?: boolean;
                     };
                 };
             };
@@ -133935,6 +134961,7 @@ export interface operations {
             304: components["responses"]["not_modified"];
             404: components["responses"]["not_found"];
             406: components["responses"]["unacceptable"];
+            422: components["responses"]["validation_failed"];
             500: components["responses"]["internal_error"];
             503: components["responses"]["service_unavailable"];
         };
@@ -136283,7 +137310,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description The list of custom patterns to create. */
+                    /** @description The list of custom patterns to create (maximum 100). */
                     patterns: components["schemas"]["secret-scanning-custom-pattern-to-create"][];
                 };
             };
@@ -144208,3 +145235,6 @@ export interface operations {
         };
     };
 }
+type WithRequired<T, K extends keyof T> = T & {
+    [P in K]-?: T[P];
+};

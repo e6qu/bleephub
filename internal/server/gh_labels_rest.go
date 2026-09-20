@@ -558,7 +558,20 @@ func issueLabelToJSON(l *store.IssueLabel, baseURL, repoFullName string) map[str
 		"description": l.Description,
 		"color":       l.Color,
 		"default":     l.Default,
+		// GitHub reports when and by whom a label was archived. It offers no
+		// REST operation that archives one, so bleephub's labels never are.
+		"archived_at": nil,
+		"archived_by": nil,
 	}
+}
+
+// issueEmbeddedLabelToJSON renders a label as an issue carries it. GitHub
+// documents that shape with `archived_by` and without `archived_at`, unlike the
+// label resource itself, so the timestamp is left out here.
+func issueEmbeddedLabelToJSON(l *store.IssueLabel, baseURL, repoFullName string) map[string]interface{} {
+	label := issueLabelToJSON(l, baseURL, repoFullName)
+	delete(label, "archived_at")
+	return label
 }
 
 func (s *Server) resolveAssignableLabelNames(w http.ResponseWriter, repoID int, names []string) ([]int, bool) {

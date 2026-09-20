@@ -9,6 +9,7 @@ package graphqlapi
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/graphql-go/graphql"
@@ -137,6 +138,7 @@ func (s *Resolver) repositoryRulesetBypassActorConnectionType() *graphql.Object 
 			"deployKey":                gqlNonNull(graphql.Boolean),
 			"enterpriseOwner":          gqlNonNull(graphql.Boolean),
 			"enterpriseRole":           gqlNonNull(graphql.Boolean),
+			"enterpriseRoleDatabaseId": gqlField(s.graphQLStringScalar("BigInt")),
 			"organizationAdmin":        gqlNonNull(graphql.Boolean),
 			"repositoryRoleDatabaseId": gqlField(graphql.Int),
 			"repositoryRoleName":       gqlField(graphql.String),
@@ -164,8 +166,8 @@ func (s *Resolver) repositoryRulesetBypassActorConnectionType() *graphql.Object 
 }
 
 // bypassActorSource renders one stored bypass actor as its source map. The
-// boolean discriminators derive from the actor type; repositoryRoleDatabaseId is
-// set only for a repository-role actor.
+// boolean discriminators derive from the actor type; repositoryRoleDatabaseId
+// and enterpriseRoleDatabaseId are set only for an actor of that kind.
 func bypassActorSource(rulesetNodeID string, index int, actor store.RulesetBypassActor) map[string]interface{} {
 	node := map[string]interface{}{
 		"id":                fmt.Sprintf("%s:bypass:%d", rulesetNodeID, index),
@@ -179,6 +181,9 @@ func bypassActorSource(rulesetNodeID string, index int, actor store.RulesetBypas
 	}
 	if actor.ActorType == "RepositoryRole" {
 		node["repositoryRoleDatabaseId"] = actor.ActorID
+	}
+	if actor.ActorType == "EnterpriseRole" {
+		node["enterpriseRoleDatabaseId"] = strconv.Itoa(actor.ActorID)
 	}
 	return node
 }

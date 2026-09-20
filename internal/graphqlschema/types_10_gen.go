@@ -5,33 +5,6 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
-func (r *Registry) defineRepositoryConnection() {
-	r.object("RepositoryConnection", "A list of repositories owned by the subject.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"edges": {
-				Type:        graphql.NewList(r.t("RepositoryEdge")),
-				Description: "A list of edges.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("Repository")),
-				Description: "A list of nodes.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"totalCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the total count of items in the connection.",
-			},
-			"totalDiskUsage": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "The total size in kilobytes of all repositories in the connection. Value will\nnever be larger than max 32-bit signed integer.",
-			},
-		}
-	})
-}
-
 func (r *Registry) defineRepositoryContactLink() {
 	r.object("RepositoryContactLink", "A repository contact link.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -1545,6 +1518,10 @@ func (r *Registry) defineRepositoryRulesetBypassActor() {
 				Type:        graphql.NewNonNull(r.t("Boolean")),
 				Description: "This actor represents the ability for an enterprise role to bypass",
 			},
+			"enterpriseRoleDatabaseId": {
+				Type:        r.t("BigInt"),
+				Description: "If the actor is an enterprise role, the enterprise role's ID that can bypass",
+			},
 			"id": {
 				Type:        graphql.NewNonNull(r.t("ID")),
 				Description: "The Node ID of the RepositoryRulesetBypassActor object",
@@ -1625,7 +1602,7 @@ func (r *Registry) defineRepositoryRulesetBypassActorEdge() {
 }
 
 func (r *Registry) defineRepositoryRulesetBypassActorInput() {
-	r.input("RepositoryRulesetBypassActorInput", "Specifies the attributes for a new or updated ruleset bypass actor. Only one of\n`actor_id`, `repository_role_database_id`, `organization_admin`,\n`enterprise_owner`, or `deploy_key` should be specified.", func() graphql.InputObjectConfigFieldMap {
+	r.input("RepositoryRulesetBypassActorInput", "Specifies the attributes for a new or updated ruleset bypass actor. Exactly one\nof `actor_id`, `repository_role_database_id`, `organization_admin`,\n`enterprise_owner`, `enterprise_role_database_id`, or `deploy_key` should be specified.", func() graphql.InputObjectConfigFieldMap {
 		return graphql.InputObjectConfigFieldMap{
 			"actorId": {
 				Type:        r.t("ID"),
@@ -1646,6 +1623,10 @@ func (r *Registry) defineRepositoryRulesetBypassActorInput() {
 			"enterpriseRole": {
 				Type:        r.t("Boolean"),
 				Description: "For enterprise role bypasses, true. NOTE: This bypass actor is in beta.",
+			},
+			"enterpriseRoleDatabaseId": {
+				Type:        r.t("BigInt"),
+				Description: "For enterprise role bypasses, the enterprise role database ID. NOTE: This bypass actor is in beta.",
 			},
 			"organizationAdmin": {
 				Type:        r.t("Boolean"),
@@ -3325,5 +3306,14 @@ func (r *Registry) defineSavedReplyOrder() {
 				Description: "The field to order saved replies by.",
 			},
 		}
+	})
+}
+
+func (r *Registry) defineSavedReplyOrderField() {
+	r.enum("SavedReplyOrderField", "Properties by which saved reply connections can be ordered.", graphql.EnumValueConfigMap{
+		"UPDATED_AT": {
+			Value:       "UPDATED_AT",
+			Description: "Order saved reply by when they were updated.",
+		},
 	})
 }

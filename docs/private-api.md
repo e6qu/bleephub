@@ -19,8 +19,9 @@ regenerate them with `grep -rhoE 's\.route\("[A-Z]+ /<prefix>' internal/server/*
 
 **For:** the embedded React dashboard at `/ui/`. These endpoints back UI screens
 that GitHub either exposes only through its own web app or does not expose over
-REST at all (account security settings, blame, discussion pinning, classic-PAT
-creation, and similar), so they are served in a REST-style shape under
+REST at all (account security settings, an enterprise's proof-of-presence
+requirement, blame, discussion pinning, classic-PAT creation, and similar), so
+they are served in a REST-style shape under
 `/ui-data/` instead of being invented under `/api/v3/`.
 
 **Auth:** auto-authenticated as the signed-in browser session (the same session

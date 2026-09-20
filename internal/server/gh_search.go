@@ -2447,6 +2447,8 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 			"color":       l.Color,
 			"default":     l.Default,
 			"description": nullOrString(l.Description),
+			"archived_at": nil,
+			"archived_by": nil,
 			"score":       searchRelevanceScore(q.Terms, l.Name, l.Description),
 		})
 	}

@@ -1,15 +1,15 @@
 vendored: github.com/github/rest-api-description (descriptions/api.github.com/api.github.com.json, bundled api.github.com description)
-upstream commit: 3cef12e8a02d612ad032473d4fb87266f2befeae
-source: https://raw.githubusercontent.com/github/rest-api-description/3cef12e8a02d612ad032473d4fb87266f2befeae/descriptions/api.github.com/api.github.com.json
-content sha256: 531b05749a9f86c7be01330e6d89d052fd3102ff31df4e0c765d9550b11bbad8
-gzip sha256: 144e659e6666eafe1eba78b696fc8594dc1b04b9ad4fbbebf14d767c74f6b656
+upstream commit: 338cb199baa4f326790b0b1c246d8d4f481a82a0
+source: https://raw.githubusercontent.com/github/rest-api-description/338cb199baa4f326790b0b1c246d8d4f481a82a0/descriptions/api.github.com/api.github.com.json
+content sha256: 4fbdc7d0102276803a07f9880d14ed543ba1afc10a4c9fd7bd3782408d9abaf7
+gzip sha256: 4939f186ab675d3626a8b3b7092c5544524c52695cd13aca87dfbb806b96765d
 openapi info.version: 1.1.4
-paths: 813
-route index: ghec commit 3cef12e8a02d612ad032473d4fb87266f2befeae sha256 67c384e6fada6bcdfea4dc32417b50f4079745091a466b088eec0a63e17938b2, 1473 routes
-route index: ghes-3.21 commit 3cef12e8a02d612ad032473d4fb87266f2befeae sha256 6d8d1b5e70c167692e14338562cc6b7dae0f44b6ecc2c8950ae8d6d418666803, 1101 routes
-route index: ghes-3.13 commit 3cef12e8a02d612ad032473d4fb87266f2befeae sha256 c7a706c67b51c7317bd02b17d83972cdfb269cfde6257cc09062d9c38a950bf8, 974 routes
-route index: ghes-3.7 commit 3cef12e8a02d612ad032473d4fb87266f2befeae sha256 15db3fa0759b86138c21a21dafe4f796bf07665c13eca455e5a7b574fe6eb8a0, 828 routes
-route index: ghes-2.22 commit 3cef12e8a02d612ad032473d4fb87266f2befeae sha256 629f829cc1bbcba9785b2bcca4d0cec9119c963a20690fa550513cf209f777e6, 642 routes
+paths: 819
+route index: ghec commit 338cb199baa4f326790b0b1c246d8d4f481a82a0 sha256 26ac7197bee0cb4a805c00fe1d51aaedfb26f6dfed74bf57af5e7f9aa52d17fd, 1497 routes
+route index: ghes-3.21 commit 338cb199baa4f326790b0b1c246d8d4f481a82a0 sha256 f25ca73f07612b1037df5aef18da8ec8bd8496d29a1095ef904712069ded976b, 1101 routes
+route index: ghes-3.13 commit 338cb199baa4f326790b0b1c246d8d4f481a82a0 sha256 c7a706c67b51c7317bd02b17d83972cdfb269cfde6257cc09062d9c38a950bf8, 974 routes
+route index: ghes-3.7 commit 338cb199baa4f326790b0b1c246d8d4f481a82a0 sha256 15db3fa0759b86138c21a21dafe4f796bf07665c13eca455e5a7b574fe6eb8a0, 828 routes
+route index: ghes-2.22 commit 338cb199baa4f326790b0b1c246d8d4f481a82a0 sha256 629f829cc1bbcba9785b2bcca4d0cec9119c963a20690fa550513cf209f777e6, 642 routes
 route index: api-2022 commit 4f249d4b6f72c9bdd9a1eed4b797e4260a1b765e sha256 7dcf50fb93d26ad2021c9fdb48c88fe78a63ce3b187a78f30f509c7e75869c65, 1190 routes
-route index sha256: 4ac6f607c339447ff8453f493247562d13e32ab70499be20417ffc5bb89645d6
+route index sha256: c17a4d9fd5d201760ec205a2ab5e385a8958e1096839d6266dd97e21dfee949f
 refresh: scripts/update-github-openapi.sh

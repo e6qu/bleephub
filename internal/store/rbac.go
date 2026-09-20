@@ -197,7 +197,7 @@ func repoBaseRoleForOrgRoleLocked(st *Store, orgLogin string, roleID int) string
 // grants no more than read for access purposes and maintain no more than write.
 func orgRoleBaseGrants(baseRole, required string) bool {
 	switch baseRole {
-	case "read", "triage":
+	case "read", "triage", "triage_plus":
 		return repositoryPermissionAtLeast("read", required)
 	case "write", "maintain":
 		return repositoryPermissionAtLeast("write", required)
@@ -269,14 +269,17 @@ func RepoCollaboratorPermissionAtLeastLocked(st *Store, repoFullName, login, min
 // and "push" are the collaborator/team wire names for read/write.
 func repositoryPermissionAtLeast(granted, required string) bool {
 	levels := map[string]int{
-		"none":     0,
-		"read":     1,
-		"pull":     1,
-		"triage":   1, // triage grants read-level content access (plus issue/PR triage)
-		"write":    2,
-		"push":     2,
-		"maintain": 2, // maintain grants write-level content access
-		"admin":    3,
+		"none":   0,
+		"read":   1,
+		"pull":   1,
+		"triage": 1, // triage grants read-level content access (plus issue/PR triage)
+		// triage_plus sits between triage and write on GitHub's ladder: more
+		// triage authority, still no push.
+		"triage_plus": 1,
+		"write":       2,
+		"push":        2,
+		"maintain":    2, // maintain grants write-level content access
+		"admin":       3,
 	}
 	if granted == "" {
 		granted = "read"
