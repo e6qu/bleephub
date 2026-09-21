@@ -45,21 +45,22 @@ func TestAPushedPackIsStoredAsAPack(t *testing.T) {
 	}
 	spent := fake.Snapshot().Sub(before)
 
-	if loose := looseKeyCount(fake); loose != 0 {
-		t.Fatalf("a pushed pack left %d loose objects", loose)
+	if loose := looseLayoutKeys(fake); len(loose) != 0 {
+		t.Fatalf("a pushed pack left loose objects: %v", loose)
 	}
-	for _, extension := range []string{".pack", ".idx", ".bfilter"} {
-		if keys := packKeys(fake, extension); len(keys) != 1 {
-			t.Fatalf("push published %d %s keys, want 1: %v", len(keys), extension, keys)
-		}
+	if keys := fake.KeysWithPrefix("prefix/" + testRepo + "/objects/"); len(keys) != 2 ||
+		len(packKeys(fake, ".pack")) != 1 || len(packKeys(fake, sidecarSuffix)) != 1 {
+		t.Fatalf("push published %v, want one pack and its sidecar and nothing else", keys)
 	}
 	// The pack is content-named: what is stored is what the client sent.
 	stored, ok := fake.Get(packKeys(fake, ".pack")[0])
 	if !ok || !bytes.Equal(stored, pack) {
 		t.Fatal("the stored pack is not the pack that was pushed")
 	}
-	if spent.Put != 4 || spent.Copy != 0 || spent.Delete != 0 {
-		t.Fatalf("a push should cost four writes (index, filter, pack, and the manifest that makes them the repository's) and no staging: %s", spent)
+	// Three writes: the pack, its sidecar (index and filter in one object), and
+	// the conditional write of the manifest that makes them the repository's.
+	if spent.Put != 3 || spent.Copy != 0 || spent.Delete != 0 {
+		t.Fatalf("a push should cost three writes (pack, sidecar, and the manifest that makes them the repository's) and no staging: %s", spent)
 	}
 	if spent.Total() > 12 {
 		t.Fatalf("a push of %d objects cost %d requests; it must not scale with the object count: %s", len(hashes), spent.Total(), spent)
@@ -243,14 +244,16 @@ func TestAThinPackFromAStockGitClientIsCompleted(t *testing.T) {
 	}
 	spent := fake.Snapshot().Sub(before)
 
-	if loose := looseKeyCount(fake); loose != 0 {
-		t.Fatalf("a thin push left %d loose objects", loose)
+	if loose := looseLayoutKeys(fake); len(loose) != 0 {
+		t.Fatalf("a thin push left loose objects: %v", loose)
 	}
 	if packs := packKeys(fake, ".pack"); len(packs) != 2 {
 		t.Fatalf("two pushes published %d packs, want 2", len(packs))
 	}
-	if spent.Put != 4 || spent.Copy != 0 {
-		t.Fatalf("a thin push should still cost four writes: %s", spent)
+	// Completing the pack is local work: still the pack, its sidecar and the
+	// manifest, and nothing per object.
+	if spent.Put != 3 || spent.Copy != 0 {
+		t.Fatalf("a thin push should still cost three writes: %s", spent)
 	}
 
 	// The pushed bytes are kept, as git keeps them: the first pack is stored
@@ -399,14 +402,14 @@ func TestPacksToMergeKeepsTheSizesGeometric(t *testing.T) {
 }
 
 // TestSmallPushesMergeWithoutRewritingTheRepository drives the policy end to
-// end: a large first push, then enough small ones to cross the merge threshold.
+// end: a large first push, then enough small ones to make a compaction due.
 // The merge must fold the small packs together and leave the large one alone,
 // and a second compaction straight after must find nothing to do — before
 // retired packs were excluded, it re-merged everything on every run until
 // their grace period closed.
 func TestSmallPushesMergeWithoutRewritingTheRepository(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 
 	big, bigHashes := pushPack(t, 600)
@@ -416,7 +419,8 @@ func TestSmallPushesMergeWithoutRewritingTheRepository(t *testing.T) {
 	bigKey := packKeys(fake, ".pack")[0]
 
 	all := append([]plumbing.Hash(nil), bigHashes...)
-	for push := range compactionMergeThreshold + 1 {
+	const smallPushes = defaultCompactAfterPacks + 1
+	for push := range smallPushes {
 		client := memory.NewStorage()
 		var hashes []plumbing.Hash
 		for i := range 3 {
@@ -436,12 +440,12 @@ func TestSmallPushesMergeWithoutRewritingTheRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	if result.Merged != 3*(compactionMergeThreshold+1) {
-		t.Fatalf("merged %d objects, want only the %d from the small pushes", result.Merged, 3*(compactionMergeThreshold+1))
+	if result.Merged != 3*smallPushes {
+		t.Fatalf("merged %d objects, want only the %d from the small pushes", result.Merged, 3*smallPushes)
 	}
 	retired := storedManifest(t, fake).Retired
-	if len(retired) != compactionMergeThreshold+1 {
-		t.Fatalf("premise: the merge retired %d packs, want the %d small ones", len(retired), compactionMergeThreshold+1)
+	if len(retired) != smallPushes {
+		t.Fatalf("premise: the merge retired %d packs, want the %d small ones", len(retired), smallPushes)
 	}
 	for _, pack := range retired {
 		if strings.HasSuffix(bigKey, "/"+pack.Name+".pack") {
@@ -487,9 +491,10 @@ func storeBlob(t *testing.T, stor gitStorage.Storer, body string) plumbing.Hash 
 	return hash
 }
 
-// TestARunOfSmallPushesRequestsCompaction pins the second trigger. Small pushes
-// never add up to the object trigger, but each leaves a pack, and it is the
-// pack count that every packed lookup pays for.
+// TestARunOfSmallPushesRequestsCompaction pins the trigger. Each push leaves a
+// pack, and it is the pack count that every lookup that misses pays for: the
+// push that takes the repository past defaultCompactAfterPacks asks for a
+// compaction, and none before it does.
 func TestARunOfSmallPushesRequestsCompaction(t *testing.T) {
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
@@ -503,7 +508,7 @@ func TestARunOfSmallPushesRequestsCompaction(t *testing.T) {
 	})
 	t.Cleanup(func() { SetCompactionRequestHandler(nil) })
 
-	for push := range compactionMergeThreshold + 1 {
+	for push := range defaultCompactAfterPacks + 1 {
 		client := memory.NewStorage()
 		hash := storeBlob(t, client, fmt.Sprintf("small push %d", push))
 		var pack bytes.Buffer
@@ -516,14 +521,14 @@ func TestARunOfSmallPushesRequestsCompaction(t *testing.T) {
 		requestMu.Lock()
 		got := requested
 		requestMu.Unlock()
-		if want := 0; push < compactionMergeThreshold && got != want {
+		if want := 0; push < defaultCompactAfterPacks && got != want {
 			t.Fatalf("compaction requested after only %d pushes", push+1)
 		}
 	}
 	requestMu.Lock()
 	defer requestMu.Unlock()
 	if requested != 1 {
-		t.Fatalf("%d pushes requested %d compactions, want 1", compactionMergeThreshold+1, requested)
+		t.Fatalf("%d pushes requested %d compactions, want 1", defaultCompactAfterPacks+1, requested)
 	}
 }
 
@@ -561,10 +566,10 @@ func countCompactionRequests(t *testing.T) func() int {
 }
 
 // TestAPushToAWarmReplicaCostsItsUploadsAndNothingElse pins what a push spends
-// on the object store: the pack, its index and its filter, and the conditional
-// write of the manifest that makes them part of the repository. The handle holds
-// the manifest, so it reads nothing before it writes. It
-// used to spend a listing of the pack directory to adopt the pack, before that
+// on the object store: the pack, its sidecar (its index and its filter), and
+// the conditional write of the manifest that makes them part of the
+// repository. The handle holds the manifest, so it reads nothing before it
+// writes. It used to spend a listing of the pack directory to adopt the pack, before that
 // a listing of the loose tier and a second of the pack directory rebuilding a
 // membership index it had thrown away, and a read of the index it had just
 // uploaded — and the object pushed must still be readable without any of them.
@@ -576,8 +581,8 @@ func TestAPushToAWarmReplicaCostsItsUploadsAndNothingElse(t *testing.T) {
 	before := fake.Snapshot()
 	hash := smallPush(t, stor, "the push that is measured")
 	spent := fake.Snapshot().Sub(before)
-	if spent.Put != 4 || spent.Total() != 4 {
-		t.Fatalf("a push spent %s, want its three uploads, the commit of the manifest, and nothing else", spent)
+	if spent.Put != 3 || spent.Total() != 3 {
+		t.Fatalf("a push spent %s, want its two uploads, the commit of the manifest, and nothing else", spent)
 	}
 
 	before = fake.Snapshot()
@@ -600,7 +605,7 @@ func TestPacksLeftByAnEarlierProcessCountTowardCompaction(t *testing.T) {
 	fake := newFakeS3(t)
 	earlier := testPackedStorage(t, fake)
 	requested := countCompactionRequests(t)
-	for push := range compactionMergeThreshold {
+	for push := range defaultCompactAfterPacks {
 		smallPush(t, earlier, fmt.Sprintf("before the restart %d", push))
 	}
 	if got := requested(); got != 0 {
@@ -614,24 +619,46 @@ func TestPacksLeftByAnEarlierProcessCountTowardCompaction(t *testing.T) {
 	}
 }
 
-// TestAPushFoldsInALooseTierWorthPacking pins the other reason a push asks for
-// a compaction. Objects written through the API land loose, and stay below the
-// write trigger for a long time; a push is when they are packed, as they were
-// when every push ran a compaction.
-func TestAPushFoldsInALooseTierWorthPacking(t *testing.T) {
+// TestEveryWriteThatAddsAPackCountsTowardCompaction pins that it is not only
+// a push that asks. Objects written through the API land as a pack too — with
+// the reference commit that names them, or with a flush — and a repository
+// built through the API, which is never pushed to, would otherwise gather
+// packs without limit.
+func TestEveryWriteThatAddsAPackCountsTowardCompaction(t *testing.T) {
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	requested := countCompactionRequests(t)
-
-	smallPush(t, stor, "a push with nothing loose behind it")
+	for push := range defaultCompactAfterPacks {
+		smallPush(t, stor, fmt.Sprintf("push %d", push))
+	}
 	if got := requested(); got != 0 {
-		t.Fatalf("a push to a tidy repository requested %d compactions", got)
+		t.Fatalf("premise: %d compactions requested at the threshold", got)
 	}
-	for i := range compactionMinLooseObjects {
-		storeBlob(t, stor, fmt.Sprintf("written through the API %d", i))
+
+	written := storeBlob(t, stor, "written through the API, named by a branch")
+	if err := stor.SetReference(plumbing.NewHashReference(testBranch, written)); err != nil {
+		t.Fatalf("set reference: %v", err)
 	}
-	smallPush(t, stor, "a push with a loose tier behind it")
+	if live := len(storedManifest(t, fake).Packs); live != defaultCompactAfterPacks+1 {
+		t.Fatalf("premise: the reference commit left %d live packs, want it to have added one", live)
+	}
 	if got := requested(); got != 1 {
-		t.Fatalf("a push behind %d loose objects requested %d compactions, want 1", compactionMinLooseObjects, got)
+		t.Fatalf("a reference commit that carried a pack past the threshold requested %d compactions, want 1", got)
+	}
+
+	storeBlob(t, stor, "written through the API and flushed")
+	if err := stor.FlushObjects(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	if got := requested(); got != 2 {
+		t.Fatalf("a flush that added a pack past the threshold requested %d compactions in all, want 2", got)
+	}
+
+	// A reference commit that carries nothing adds no pack, and asks nothing.
+	if err := stor.SetReference(plumbing.NewHashReference("refs/heads/other", written)); err != nil {
+		t.Fatalf("set reference: %v", err)
+	}
+	if got := requested(); got != 2 {
+		t.Fatalf("a reference commit with nothing pending requested a compaction (%d in all)", got)
 	}
 }

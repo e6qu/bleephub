@@ -57,7 +57,7 @@ func (f *fakeCompactingStorer) Compact(ctx context.Context) (gitstore.Compaction
 	if f.fail != nil {
 		return gitstore.CompactionResult{}, f.fail
 	}
-	return gitstore.CompactionResult{Packed: 1, PackName: "pack-fake"}, nil
+	return gitstore.CompactionResult{Merged: 1, PackName: "pack-fake"}, nil
 }
 
 // awaitStart blocks until a compaction has begun, failing rather than hanging

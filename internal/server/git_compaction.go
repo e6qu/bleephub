@@ -114,7 +114,6 @@ func (s *Server) compactGitRepository(repo string, stor gitStorage.Storer) {
 	s.logger.Info().
 		Str("repo", repo).
 		Str("pack", result.PackName).
-		Int("packed", result.Packed).
 		Int("merged", result.Merged).
 		Int64("bytes", result.PackBytes).
 		Msg("git storage compaction published a pack")

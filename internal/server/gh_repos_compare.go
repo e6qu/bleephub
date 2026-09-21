@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -687,7 +688,9 @@ func (s *Server) refreshPullRequestPotentialMerge(repo *store.Repo, pr *store.Pu
 			if stor := s.store.GetGitStorage(owner, name); stor != nil {
 				if head := pullRequestHeadSHA(pr, s.store); head != "" {
 					sig := &object.Signature{Name: "bleephub", Email: "bleephub@bleephub.invalid", When: s.currentTime()}
-					if h, err := computeMergeCommitHash(stor, plumbing.NewBranchReferenceName(pr.BaseRefName), plumbing.NewHash(head), "Merge pull request", sig); err == nil && !h.IsZero() {
+					// The commit is published by its id alone, with no reference
+					// to carry it into the store, so it is flushed before it is.
+					if h, err := computeMergeCommitHash(stor, plumbing.NewBranchReferenceName(pr.BaseRefName), plumbing.NewHash(head), "Merge pull request", sig); err == nil && !h.IsZero() && gitstore.FlushObjects(stor) == nil {
 						sha = h.String()
 					}
 				}

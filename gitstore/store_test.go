@@ -13,8 +13,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// TestAStoreHandsOutOneHandlePerRepository pins what makes one request's listing
-// answer the next: a repository's snapshots belong to its handle, so the store
+// TestAStoreHandsOutOneHandlePerRepository pins what makes one request's read of
+// the manifest answer the next: a repository's state belongs to its handle, so the store
 // gives every caller the same one. A second handle would pay again to learn what
 // the first already knew.
 func TestAStoreHandsOutOneHandlePerRepository(t *testing.T) {
@@ -128,7 +128,7 @@ func TestCancellingTheBaseContextStopsStoreCalls(t *testing.T) {
 // rather than what its predecessor remembered.
 func TestARepositoryIsCopiedRenamedAndDeletedWhole(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	store := fake.store("prefix")
 	source, err := store.Repository("octocat/source")
 	if err != nil {
@@ -138,7 +138,9 @@ func TestARepositoryIsCopiedRenamedAndDeletedWhole(t *testing.T) {
 	if err := packfile.UpdateObjectStorage(source, bytes.NewReader(pack)); err != nil {
 		t.Fatalf("push: %v", err)
 	}
-	loose := storeBlob(t, source, "a loose object rides along")
+	// An object written through the API rides along, in the pack the reference
+	// commit below carries.
+	loose := storeBlob(t, source, "a written object rides along")
 	tip := hashes[len(hashes)-1]
 	if err := source.SetReference(plumbing.NewHashReference(testBranch, tip)); err != nil {
 		t.Fatalf("set: %v", err)
@@ -240,23 +242,25 @@ func TestARepositoryIsCopiedRenamedAndDeletedWhole(t *testing.T) {
 	}
 }
 
-// TestAListingFollowsEveryPage proves the engine reads a listing to its end. The
-// fake pages at a thousand keys as the real service does, which is also what
-// makes a listing's request count comparable to it.
+// TestAListingFollowsEveryPage proves the engine reads a listing to its end:
+// the one a compaction takes of objects/, which must see every upload in the
+// pack directory for the sweep to find the orphans among them. The fake pages at
+// a thousand keys as the real service does, which is also what makes a
+// listing's request count comparable to it.
 func TestAListingFollowsEveryPage(t *testing.T) {
 	fake := newFakeS3(t)
-	const objects = 2500
-	for i := range objects {
-		fake.Put(looseObjectKey("prefix/"+testRepo+"/", hashOf(i)), []byte("x"))
+	const keys = 2500
+	for i := range keys {
+		fake.Put("prefix/"+testRepo+"/objects/pack/pack-"+hashOf(i).String()+".pack", []byte("x"))
 	}
 	stor := testPackedStorage(t, fake)
 	before := fake.Snapshot()
-	listed, err := stor.loose.refresh()
-	if err != nil || len(listed.listing.loose) != objects {
-		t.Fatalf("listed %d loose objects (err %v), want %d", len(listed.listing.loose), err, objects)
+	listed, err := stor.listObjects()
+	if err != nil || len(listed.packDirectory) != keys {
+		t.Fatalf("listed %d keys of the pack directory (err %v), want %d", len(listed.packDirectory), err, keys)
 	}
 	if spent := fake.Snapshot().Sub(before); spent.List != 3 || spent.Total() != 3 {
-		t.Fatalf("listing %d keys cost %s, want 3 pages of 1000", objects, spent)
+		t.Fatalf("listing %d keys cost %s, want 3 pages of 1000", keys, spent)
 	}
 }
 

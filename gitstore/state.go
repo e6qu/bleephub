@@ -269,12 +269,12 @@ func (m *manifestStore) readSnapshot(key string) (*refSnapshot, error) {
 // describe addresses a pack from what the manifest says of it.
 func (m *manifestStore) describe(pack manifestPack) *storedPack {
 	return &storedPack{
-		name:          pack.Name,
-		objects:       pack.Objects,
-		pack:          m.extents(pack.Name+".pack", pack.Bytes),
-		index:         m.extents(pack.Name+".idx", pack.IndexBytes),
-		filtered:      pack.FilterBytes > 0,
-		filterExtents: m.extents(pack.Name+".bfilter", pack.FilterBytes),
+		name:        pack.Name,
+		objects:     pack.Objects,
+		pack:        m.extents(pack.Name+".pack", pack.Bytes),
+		sidecar:     m.extents(pack.Name+sidecarSuffix, pack.SidecarBytes),
+		indexBytes:  pack.IndexBytes,
+		filterBytes: pack.FilterBytes,
 	}
 }
 

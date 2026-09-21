@@ -537,31 +537,51 @@ func TestAColdAdvertisementCostsTheSameHoweverManyReferences(t *testing.T) {
 // migration code. A replica that met a manifest written by a later engine and
 // read what it could of it would serve a repository with references or packs
 // missing; it must refuse the repository instead, for reads and writes alike.
+// One written by an earlier engine is refused as outdated — Adopt converts it —
+// and is not read either.
 func TestAManifestOfAnotherFormatIsRefused(t *testing.T) {
-	fake := newFakeS3(t)
-	stor := testPackedStorage(t, fake)
-	seedReferences(t, stor, 1, 0)
-	data, _ := fake.Get(manifestKey)
-	fake.Put(manifestKey, bytes.Replace(data, []byte(`"format":1`), []byte(`"format":2`), 1))
-	if later, _ := fake.Get(manifestKey); bytes.Equal(later, data) {
-		t.Fatal("premise: the stored manifest's format was not changed")
-	}
+	current := []byte(fmt.Sprintf(`"format":%d`, manifestFormat))
+	for format, want := range map[int]error{manifestFormat + 1: ErrManifestFormat, 1: ErrManifestOutdated} {
+		fake := newFakeS3(t)
+		stor := testPackedStorage(t, fake)
+		seedReferences(t, stor, 1, 0)
+		data, _ := fake.Get(manifestKey)
+		fake.Put(manifestKey, bytes.Replace(data, current, []byte(fmt.Sprintf(`"format":%d`, format)), 1))
+		if later, _ := fake.Get(manifestKey); bytes.Equal(later, data) {
+			t.Fatal("premise: the stored manifest's format was not changed")
+		}
 
-	reader := testPackedStorage(t, fake)
-	failures := map[string]error{}
-	_, failures["Reference"] = reader.Reference(testBranch)
-	_, failures["IterReferences"] = reader.IterReferences()
-	failures["SetReference"] = reader.SetReference(plumbing.NewHashReference(testBranch, hashOf(3)))
-	failures["HasEncodedObject"] = reader.HasEncodedObject(hashOf(3))
-	_, failures["StoredPacks"] = reader.StoredPacks(context.Background())
-	_, failures["Compact"] = reader.Compact(context.Background())
-	for operation, err := range failures {
-		if !errors.Is(err, ErrManifestFormat) {
-			t.Errorf("%s answered %v, want ErrManifestFormat", operation, err)
+		reader := testPackedStorage(t, fake)
+		failures := map[string]error{}
+		_, failures["Reference"] = reader.Reference(testBranch)
+		_, failures["IterReferences"] = reader.IterReferences()
+		failures["SetReference"] = reader.SetReference(plumbing.NewHashReference(testBranch, hashOf(3)))
+		failures["HasEncodedObject"] = reader.HasEncodedObject(hashOf(3))
+		_, failures["StoredPacks"] = reader.StoredPacks(context.Background())
+		_, failures["Compact"] = reader.Compact(context.Background())
+		_, failures["ExistingRepository"] = fake.store("prefix").ExistingRepository(testRepo)
+		for operation, err := range failures {
+			if !errors.Is(err, want) {
+				t.Errorf("format %d: %s answered %v, want %v", format, operation, err, want)
+			}
 		}
 	}
-	for _, garbage := range []string{"", "not json", `{"format":1,"sequence":1,"surprise":true}`, `{"format":1,"packs":[{"name":"../../etc"}]}`,
-		`{"format":1,"refs":{"snapshot":"../other/repo/manifest"}}`, `{"format":1,"refs":{"changes":[{"name":"refs/heads/../x","value":"` + hashOf(1).String() + `"}]}}`} {
+	if errors.Is(ErrManifestOutdated, ErrManifestFormat) || errors.Is(ErrManifestFormat, ErrManifestOutdated) {
+		t.Fatal("premise: the two refusals are not told apart")
+	}
+
+	pack := func(sidecar int64) string {
+		return fmt.Sprintf(`{"format":%d,"packs":[{"name":"pack-%s","bytes":100,"sidecar_bytes":%d,"index_bytes":1100,"filter_bytes":20,"objects":3}]}`,
+			manifestFormat, hashOf(1), sidecar)
+	}
+	if _, err := decodeManifest([]byte(pack(sidecarBytes(1100, 20)))); err != nil {
+		t.Fatalf("premise: a well-formed pack entry was refused: %v", err)
+	}
+	current2 := string(current)
+	for _, garbage := range []string{"", "not json", `{"format":0}`, `{` + current2 + `,"sequence":1,"surprise":true}`, `{` + current2 + `,"packs":[{"name":"../../etc"}]}`,
+		`{` + current2 + `,"refs":{"snapshot":"../other/repo/manifest"}}`, `{` + current2 + `,"refs":{"changes":[{"name":"refs/heads/../x","value":"` + hashOf(1).String() + `"}]}}`,
+		// A pack whose sidecar is not its index, its filter and the footer.
+		pack(0), pack(1100 + 20), pack(sidecarBytes(1100, 20) + 1)} {
 		if _, err := decodeManifest([]byte(garbage)); !errors.Is(err, ErrManifestFormat) {
 			t.Errorf("decoding %q answered %v, want ErrManifestFormat", garbage, err)
 		}
@@ -725,8 +745,8 @@ func pushThrough(t *testing.T, stor *repository, pack []byte) PushTransaction {
 	return push
 }
 
-// TestAPushIsOneCommit prices a push and pins its shape: the pack, its index and
-// its filter, and ONE conditional write that adds the pack and moves the
+// TestAPushIsOneCommit prices a push and pins its shape: the pack, its sidecar
+// (its index and its filter), and ONE conditional write that adds the pack and moves the
 // reference together. Until that write nothing of the push is visible, to this
 // replica's readers or another's, though the transaction itself reads the pushed
 // objects — which is what lets a server decide a push before accepting it.
@@ -753,8 +773,8 @@ func TestAPushIsOneCommit(t *testing.T) {
 	if err != nil || refusals[0] != nil {
 		t.Fatalf("commit: %v, %v", err, refusals)
 	}
-	if spent := fake.Snapshot().Sub(before); spent.Put != 4 {
-		t.Fatalf("a push should write its pack, index, filter and the manifest once: %s", spent)
+	if spent := fake.Snapshot().Sub(before); spent.Put != 3 {
+		t.Fatalf("a push should write its pack, its sidecar and the manifest once: %s", spent)
 	}
 	stored := storedManifest(t, fake)
 	if len(stored.Packs) != 1 || stored.Packs[0].Source != packSourcePush || stored.Packs[0].Objects != len(hashes) || stored.Sequence != 2 {
@@ -784,13 +804,18 @@ func TestARefusedPushLeavesItsPackInvisible(t *testing.T) {
 	if err != nil || !errors.Is(refusals[0], gitStorage.ErrReferenceHasChanged) {
 		t.Fatalf("a push from a stale branch answered %v, %v; want ErrReferenceHasChanged", refusals, err)
 	}
-	if uploaded := packKeys(fake, ".pack"); len(uploaded) != 1 {
-		t.Fatalf("premise: the refused push uploaded %d packs, want 1", len(uploaded))
+	// The seeded objects are a pack of their own, which stays live throughout.
+	seeded := storedManifest(t, fake).Packs
+	if len(seeded) != 1 {
+		t.Fatalf("premise: the seeded objects are in %d packs, want 1", len(seeded))
+	}
+	if uploaded := packKeys(fake, ".pack"); len(uploaded) != 2 {
+		t.Fatalf("premise: the store holds %d packs, want the seeded one and the refused push's", len(uploaded))
 	}
 	for who, reader := range map[string]*repository{"the replica that took the push": stor, "another replica": testPackedStorage(t, fake)} {
 		packs, err := reader.StoredPacks(context.Background())
-		if err != nil || len(packs) != 0 {
-			t.Fatalf("%s lists %v as stored packs (%v), want none", who, packs, err)
+		if err != nil || len(packs) != 1 || packs[0].Name != seeded[0].Name {
+			t.Fatalf("%s lists %v as stored packs (%v), want only the seeded one", who, packs, err)
 		}
 		if err := reader.HasEncodedObject(tip); !errors.Is(err, plumbing.ErrObjectNotFound) {
 			t.Fatalf("%s can read the refused push's commit: %v", who, err)
@@ -808,11 +833,11 @@ func TestARefusedPushLeavesItsPackInvisible(t *testing.T) {
 		}
 		return result
 	}
-	if result := sweep("at once"); len(result.Orphans) != 0 || len(packKeys(fake, ".pack")) != 1 {
+	if result := sweep("at once"); len(result.Orphans) != 0 || len(packKeys(fake, ".pack")) != 2 {
 		t.Fatalf("a sweep took an upload of a moment ago for an orphan: %+v", result)
 	}
 	fake.clock.Advance(retiredPackGrace + time.Minute)
-	if result := sweep("after a grace period"); len(result.Orphans) != 1 || len(result.RetiredPacks) != 0 || len(packKeys(fake, ".pack")) != 1 {
+	if result := sweep("after a grace period"); len(result.Orphans) != 1 || len(result.RetiredPacks) != 0 || len(packKeys(fake, ".pack")) != 2 {
 		t.Fatalf("after a grace period the sweep should list the orphan and delete nothing: %+v", result)
 	}
 	if retired := storedManifest(t, fake).Retired; len(retired) != 1 || !retired[0].Orphan {
@@ -822,8 +847,12 @@ func TestARefusedPushLeavesItsPackInvisible(t *testing.T) {
 	if result := sweep("after another"); len(result.RetiredPacks) != 1 {
 		t.Fatalf("after its grace period as a retired orphan the upload should be deleted: %+v", result)
 	}
-	if left := fake.KeysWithPrefix("prefix/" + testRepo + "/objects/pack/"); len(left) != 0 {
-		t.Fatalf("the sweep left %v", left)
+	directory := "prefix/" + testRepo + "/objects/pack/"
+	if left := fake.KeysWithPrefix(directory); len(left) != len(packKeySuffixes) || !strings.HasPrefix(left[0], directory+seeded[0].Name+".") {
+		t.Fatalf("the sweep left %v, want the seeded pack's keys and nothing else", left)
+	}
+	if live := storedManifest(t, fake).Packs; len(live) != 1 || live[0].Name != seeded[0].Name {
+		t.Fatalf("the sweep changed the live packs to %+v", live)
 	}
 	if retired := storedManifest(t, fake).Retired; len(retired) != 0 {
 		t.Fatalf("the manifest still lists %+v as retired", retired)

@@ -70,17 +70,18 @@ func downloadPrefix(t *testing.T, fake *fakeS3, prefix, dir string) {
 	}
 }
 
-// TestTheBucketHoldsGitsOwnObjects pins what keeps a bucket's bulk portable: the
-// packs, their indexes and the loose objects are git's own files under git's
-// own names. A repository written by go-git's own storage onto a disk — loose
-// objects, a pack, loose and packed references, a symbolic HEAD — reads
-// correctly once its files are keys and Adopt has given it a manifest; and the
-// objects of a repository written through the engine read correctly through
-// go-git's own storage once its keys are files. The references are the
-// manifest's and travel in no other form.
+// TestTheBucketHoldsGitsOwnObjects pins what keeps a bucket's bulk portable: a
+// pack is git's own file under git's own name, and the head of its sidecar is
+// git's own index of it, byte for byte. A repository written by go-git's own
+// storage onto a disk — loose objects, a pack, loose and packed references, a
+// symbolic HEAD — reads correctly once its files are keys and Adopt has given
+// it a manifest, its loose objects packed; and the objects of a repository
+// written through the engine read correctly through go-git's own storage once
+// its packs are files and each sidecar's index is cut out as the pack's .idx.
+// The references are the manifest's and travel in no other form.
 func TestTheBucketHoldsGitsOwnObjects(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 
 	// From a disk into the bucket.
 	dir := t.TempDir()
@@ -111,11 +112,11 @@ func TestTheBucketHoldsGitsOwnObjects(t *testing.T) {
 		t.Fatalf("set config: %v", err)
 	}
 	uploadDirectory(t, fake, dir, "prefix/"+testRepo+"/")
-	if len(packKeys(fake, ".pack")) != 1 || looseKeyCount(fake) != 1 {
-		t.Fatalf("premise: the disk repository holds %d packs and %d loose objects, want one of each", len(packKeys(fake, ".pack")), looseKeyCount(fake))
+	if len(packKeys(fake, ".pack")) != 1 || len(looseLayoutKeys(fake)) != 1 {
+		t.Fatalf("premise: the disk repository holds %d packs and %d loose objects, want one of each", len(packKeys(fake, ".pack")), len(looseLayoutKeys(fake)))
 	}
-	if _, err := fake.store("prefix").Adopt(context.Background(), testRepo); err != nil {
-		t.Fatalf("adopt: %v", err)
+	if reports, err := fake.store("prefix").Adopt(context.Background(), testRepo); err != nil || len(reports) != 1 || reports[0].Loose != 1 {
+		t.Fatalf("adopt: %+v, %v; want the one loose object packed", reports, err)
 	}
 
 	fromDisk := testPackedStorage(t, fake)
@@ -144,9 +145,35 @@ func TestTheBucketHoldsGitsOwnObjects(t *testing.T) {
 	if err := packfile.UpdateObjectStorage(stor, bytes.NewReader(pack)); err != nil {
 		t.Fatalf("push: %v", err)
 	}
-	mine := storeBlob(t, stor, "a loose object written by the engine")
+	mine := storeBlob(t, stor, "an object written by the engine")
+	if err := FlushObjects(stor); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
 	out := t.TempDir()
 	downloadPrefix(t, fake, "prefix/"+written+"/", out)
+	// git reads a pack by its .idx: the head of the sidecar, as long as the
+	// sidecar's footer says.
+	sidecars := fake.KeysWithPrefix("prefix/" + written + "/objects/pack/")
+	cut := 0
+	for _, key := range sidecars {
+		name, isSidecar := strings.CutSuffix(key, sidecarSuffix)
+		if !isSidecar {
+			continue
+		}
+		sidecar, _ := fake.Get(key)
+		footer, err := decodeSidecarFooter(sidecar[len(sidecar)-sidecarFooterSize:])
+		if err != nil {
+			t.Fatalf("sidecar %s: %v", key, err)
+		}
+		index := filepath.Join(out, filepath.FromSlash(strings.TrimPrefix(name, "prefix/"+written+"/")+".idx"))
+		if err := os.WriteFile(index, sidecar[:footer.indexBytes], 0o600); err != nil {
+			t.Fatalf("write %s: %v", index, err)
+		}
+		cut++
+	}
+	if cut != 2 {
+		t.Fatalf("premise: the engine wrote %d sidecars, want the push's and the flush's", cut)
+	}
 	reopened := gitFilesystem.NewStorage(osfs.New(out), cache.NewObjectLRUDefault())
 	for _, hash := range append([]plumbing.Hash{mine}, packed...) {
 		if _, err := reopened.EncodedObject(plumbing.AnyObject, hash); err != nil {
@@ -158,65 +185,70 @@ func TestTheBucketHoldsGitsOwnObjects(t *testing.T) {
 // TestObjectsAreFoundInEitherTierByTypeAndSize covers the object reads a server
 // makes beside a plain fetch: by type, where the wrong type is "not found"; by
 // size, without the content; and walking every object once, however many
-// places hold it.
+// places hold it — what is pending and a pack on the handle that wrote it, two
+// packs once it is flushed.
 func TestObjectsAreFoundInEitherTierByTypeAndSize(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	pack, packed := pushPack(t, 40)
 	if err := packfile.UpdateObjectStorage(stor, bytes.NewReader(pack)); err != nil {
 		t.Fatalf("push: %v", err)
 	}
-	// One of the packed objects is written loose as well, so two places hold it.
-	looseBody := string(blobBody(0))
-	if got := storeBlob(t, stor, looseBody); got != packed[0] {
-		t.Fatalf("premise: the loose copy hashed to %s, the packed one to %s", got, packed[0])
+	// One of the packed objects is written again, so two places hold it.
+	pendingBody := string(blobBody(0))
+	if got := storeBlob(t, stor, pendingBody); got != packed[0] {
+		t.Fatalf("premise: the written copy hashed to %s, the packed one to %s", got, packed[0])
 	}
-	onlyLoose := storeBlob(t, stor, "only in the loose tier")
-	all := append([]plumbing.Hash{onlyLoose}, packed...)
+	onlyWritten := storeBlob(t, stor, "only written, never pushed")
+	all := append([]plumbing.Hash{onlyWritten}, packed...)
 
-	for _, handle := range []*repository{stor, testPackedStorage(t, fake)} {
+	check := func(who string, handle *repository) {
+		t.Helper()
 		if _, err := handle.EncodedObject(plumbing.BlobObject, packed[0]); err != nil {
-			t.Fatalf("a blob asked for as a blob: %v", err)
+			t.Fatalf("%s: a blob asked for as a blob: %v", who, err)
 		}
 		if _, err := handle.EncodedObject(plumbing.CommitObject, packed[0]); !errors.Is(err, plumbing.ErrObjectNotFound) {
-			t.Fatalf("a blob asked for as a commit: %v", err)
+			t.Fatalf("%s: a blob asked for as a commit: %v", who, err)
 		}
 		if _, err := handle.EncodedObject(plumbing.CommitObject, packed[len(packed)-1]); err != nil {
-			t.Fatalf("the commit asked for as a commit: %v", err)
+			t.Fatalf("%s: the commit asked for as a commit: %v", who, err)
 		}
-		for hash, wantSize := range map[plumbing.Hash]int{packed[0]: len(looseBody), onlyLoose: len("only in the loose tier")} {
+		if _, err := handle.EncodedObject(plumbing.CommitObject, onlyWritten); !errors.Is(err, plumbing.ErrObjectNotFound) {
+			t.Fatalf("%s: a written blob asked for as a commit: %v", who, err)
+		}
+		for hash, wantSize := range map[plumbing.Hash]int{packed[0]: len(pendingBody), onlyWritten: len("only written, never pushed")} {
 			if size, err := handle.EncodedObjectSize(hash); err != nil || size != int64(wantSize) {
-				t.Fatalf("size of %s: %d, %v; want %d", hash, size, err, wantSize)
+				t.Fatalf("%s: size of %s: %d, %v; want %d", who, hash, size, err, wantSize)
 			}
 		}
 		if _, err := handle.EncodedObjectSize(absentHash(5)); !errors.Is(err, plumbing.ErrObjectNotFound) {
-			t.Fatalf("size of an absent object: %v", err)
+			t.Fatalf("%s: size of an absent object: %v", who, err)
 		}
 
 		iter, err := handle.IterEncodedObjects(plumbing.AnyObject)
 		if err != nil {
-			t.Fatalf("walk: %v", err)
+			t.Fatalf("%s: walk: %v", who, err)
 		}
 		seen := map[plumbing.Hash]int{}
 		if err := iter.ForEach(func(object plumbing.EncodedObject) error {
 			seen[object.Hash()]++
 			return nil
 		}); err != nil {
-			t.Fatalf("walk: %v", err)
+			t.Fatalf("%s: walk: %v", who, err)
 		}
 		for _, hash := range all {
 			if seen[hash] != 1 {
-				t.Fatalf("the walk met %s %d times, want once", hash, seen[hash])
+				t.Fatalf("%s: the walk met %s %d times, want once", who, hash, seen[hash])
 			}
 		}
 		if len(seen) != len(all) {
-			t.Fatalf("the walk met %d objects, want %d", len(seen), len(all))
+			t.Fatalf("%s: the walk met %d objects, want %d", who, len(seen), len(all))
 		}
 
 		blobs, err := handle.IterEncodedObjects(plumbing.CommitObject)
 		if err != nil {
-			t.Fatalf("walk commits: %v", err)
+			t.Fatalf("%s: walk commits: %v", who, err)
 		}
 		commits := 0
 		for {
@@ -225,18 +257,27 @@ func TestObjectsAreFoundInEitherTierByTypeAndSize(t *testing.T) {
 				break
 			}
 			if err != nil {
-				t.Fatalf("walk commits: %v", err)
+				t.Fatalf("%s: walk commits: %v", who, err)
 			}
 			if object.Type() != plumbing.CommitObject {
-				t.Fatalf("a walk of commits met a %s", object.Type())
+				t.Fatalf("%s: a walk of commits met a %s", who, object.Type())
 			}
 			commits++
 		}
 		blobs.Close()
 		if commits != 1 {
-			t.Fatalf("the walk met %d commits, want 1", commits)
+			t.Fatalf("%s: the walk met %d commits, want 1", who, commits)
 		}
 	}
+
+	check("the writing handle, with two objects pending", stor)
+	if err := stor.FlushObjects(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	if live := len(storedManifest(t, fake).Packs); live != 2 {
+		t.Fatalf("premise: the push and the flush left %d packs, want 2", live)
+	}
+	check("another replica, after the flush", testPackedStorage(t, fake))
 
 	delta := &plumbing.MemoryObject{}
 	delta.SetType(plumbing.OFSDeltaObject)
@@ -324,61 +365,21 @@ func TestASubmoduleIsARepositoryOfItsOwn(t *testing.T) {
 	}
 }
 
-// TestAReaderFollowsAnObjectAnotherReplicaPacked covers the one way a snapshot
-// inside its freshness bound can be wrong about where an object is: it lists
-// the object as loose, and another replica has since packed it and deleted the
-// loose key. Finding the key gone is proof the snapshot is out of date, so the
-// reader lists again at once and finds the pack, rather than report an object
-// the repository holds as missing — which a git client is told as "not our ref".
-func TestAReaderFollowsAnObjectAnotherReplicaPacked(t *testing.T) {
-	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
-	fake.opts.IndexFreshness = time.Hour
-	fake.clock = newTestClock()
-	writer := testPackedStorage(t, fake)
-	hashes := seedObjects(t, writer, 100)
-
-	reader := testPackedStorage(t, fake)
-	if err := reader.HasEncodedObject(hashes[0]); err != nil {
-		t.Fatalf("premise: the reader takes its snapshot while the objects are loose: %v", err)
-	}
-	if _, err := CompactRepository(context.Background(), writer); err != nil {
-		t.Fatalf("compact: %v", err)
-	}
-	if looseKeyCount(fake) != 0 {
-		t.Fatal("premise: the compaction left loose objects")
-	}
-
-	// Separate cache directories would make this a second machine; a shared one
-	// must not be what rescues the read, so the reader's own cache is empty of
-	// the objects themselves and the snapshot is what is being corrected.
-	before := fake.Snapshot()
-	got := readObjects(t, reader, hashes[:3])
-	if len(got) != 3 {
-		t.Fatalf("read %d of 3 objects", len(got))
-	}
-	for _, hash := range hashes[3:6] {
-		if err := reader.HasEncodedObject(hash); err != nil {
-			t.Fatalf("an object another replica packed was reported missing: %v", err)
-		}
-	}
-	if spent := fake.Snapshot().Sub(before); spent.List != 1 {
-		t.Fatalf("following the objects into their pack took %d listings, want exactly one: %s", spent.List, spent)
-	}
-}
-
-// TestAReaderSurvivesThePacksItHoldsBeingRetired covers a replica whose snapshot
-// names packs that a merge elsewhere superseded and, a retention window later,
-// deleted. It never missed an object, so it never had cause to list again — and
-// then a pack it reads from is gone. That too is proof the snapshot is out of
-// date: it lists again and reads the object from the pack that replaced it.
+// TestAReaderSurvivesThePacksItHoldsBeingRetired covers a replica whose
+// manifest names packs that a merge elsewhere retired and, a grace period
+// later, deleted. It never missed an object, so it never had cause to read the
+// manifest again — and then a pack it reads from is gone. That too is proof the
+// manifest held is out of date: it reads it again and reads the object from the
+// pack that replaced it. The reader's first probe has already brought some of
+// the packs' sidecars into its cache — a filter and its index share an extent —
+// so for those it is the pack's own bytes it finds gone, not the index.
 func TestAReaderSurvivesThePacksItHoldsBeingRetired(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	fake.opts.IndexFreshness = time.Hour
 	writer := testPackedStorage(t, fake)
 	var small []plumbing.Hash
-	for push := range compactionMergeThreshold + 1 {
+	for push := range 4 {
 		small = append(small, smallPush(t, writer, "small push "+strings.Repeat("p", push)))
 	}
 
@@ -424,22 +425,17 @@ func TestAReaderSurvivesThePacksItHoldsBeingRetired(t *testing.T) {
 	}
 }
 
-// slowLister is a bucket whose listings take time: whatever it is told to do
-// happens after the store has answered a listing and before the caller hears.
-type slowLister struct {
+// slowRevalidator is a bucket whose conditional reads take time: whatever it is
+// told to do happens after the store has answered a conditional read and before
+// the caller hears.
+type slowRevalidator struct {
 	objstore.Bucket
 	mu        sync.Mutex
 	meanwhile func()
 }
 
-func (b *slowLister) List(ctx context.Context, prefix string, visit func(objstore.Entry) error) error {
-	var entries []objstore.Entry
-	if err := b.Bucket.List(ctx, prefix, func(entry objstore.Entry) error {
-		entries = append(entries, entry)
-		return nil
-	}); err != nil {
-		return err
-	}
+func (b *slowRevalidator) GetIfChanged(ctx context.Context, key string, held objstore.Version) (io.ReadCloser, objstore.Info, error) {
+	body, info, err := b.Bucket.GetIfChanged(ctx, key, held)
 	b.mu.Lock()
 	meanwhile := b.meanwhile
 	b.meanwhile = nil
@@ -447,58 +443,65 @@ func (b *slowLister) List(ctx context.Context, prefix string, visit func(objstor
 	if meanwhile != nil {
 		meanwhile()
 	}
-	for _, entry := range entries {
-		if err := visit(entry); err != nil {
-			return err
-		}
-	}
-	return nil
+	return body, info, err
 }
 
-// TestWhatIsWrittenDuringAListingIsNotLost covers the race between the two ways
-// a snapshot changes. A listing takes time; a pack this replica publishes, or an
-// object it writes, while one is in flight was not there when the store
-// answered, and the snapshot the listing becomes must hold it all the same — or
-// the push's own reference update, a moment later, finds its objects missing.
-func TestWhatIsWrittenDuringAListingIsNotLost(t *testing.T) {
+// TestWhatIsWrittenDuringARevalidationIsNotLost covers the race between the two
+// ways a handle's state changes. A revalidation takes time; a pack this replica
+// commits while one is in flight — a push, a flush of written objects — was not
+// in the manifest the store answered with, and the state the revalidation
+// would publish must not replace the newer one the commit published — or the
+// push's own reference update, a moment later, finds its objects missing.
+func TestWhatIsWrittenDuringARevalidationIsNotLost(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	fake.opts.IndexFreshness = time.Hour
 	clock := newTestClock()
-	bucket := &slowLister{Bucket: objstore.NewS3WithClient(fake.Client().Client, "bucket", 0)}
+	bucket := &slowRevalidator{Bucket: objstore.NewS3WithClient(fake.Client().Client, "bucket", 0)}
 	store := Open(bucket, "prefix", fake.opts)
 	store.shared.now = clock.Now
 	stor, err := store.Repository(testRepo)
 	if err != nil {
 		t.Fatalf("repository: %v", err)
 	}
-	warmed := smallPush(t, stor, "the push that gives the handle a snapshot")
+	warmed := smallPush(t, stor, "the push that gives the handle a manifest")
+	handle, ok := stor.(*repository)
+	if !ok {
+		t.Fatalf("unexpected storer type %T", stor)
+	}
 
 	var pushed, written plumbing.Hash
 	bucket.mu.Lock()
 	bucket.meanwhile = func() {
-		pushed = smallPush(t, stor, "pushed while the listing was in flight")
-		written = storeBlob(t, stor, "written while the listing was in flight")
+		pushed = smallPush(t, stor, "pushed while the revalidation was in flight")
+		written = storeBlob(t, stor, "written while the revalidation was in flight")
+		if err := handle.FlushObjects(); err != nil {
+			t.Errorf("flush: %v", err)
+		}
 	}
 	bucket.mu.Unlock()
 	clock.Advance(2 * time.Hour)
 	if err := stor.HasEncodedObject(absentHash(1)); !errors.Is(err, plumbing.ErrObjectNotFound) {
-		t.Fatalf("the probe that starts the listing: %v", err)
+		t.Fatalf("the probe that starts the revalidation: %v", err)
 	}
 	if pushed.IsZero() || written.IsZero() {
-		t.Fatal("premise: nothing was written while the listing was in flight")
+		t.Fatal("premise: nothing was written while the revalidation was in flight")
+	}
+	if _, pending := handle.pending.get(written); pending {
+		t.Fatal("premise: the written object is still pending, so no pack of it was committed")
 	}
 
-	// The snapshot is new by its own clock and an hour from stale, so nothing
-	// will list again: only the replay can have kept what the listing missed.
+	// The state held is new by its own clock and an hour from stale, so nothing
+	// will read the manifest again: only the commits' own states can hold what
+	// the revalidation's answer did not.
 	before := fake.Snapshot()
 	for _, hash := range []plumbing.Hash{warmed, pushed, written} {
 		if err := stor.HasEncodedObject(hash); err != nil {
-			t.Fatalf("what was written while a listing was in flight was lost from the snapshot: %v", err)
+			t.Fatalf("what was committed while a revalidation was in flight was lost from the state held: %v", err)
 		}
 	}
-	if spent := fake.Snapshot().Sub(before); spent.List != 0 {
-		t.Fatalf("premise: the objects were found by listing again: %s", spent)
+	if spent := fake.Snapshot().Sub(before); spent.Get != 0 {
+		t.Fatalf("premise: the objects were found by reading the manifest again: %s", spent)
 	}
 }
 

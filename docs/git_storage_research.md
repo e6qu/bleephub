@@ -777,3 +777,51 @@ repository, three uploads, two swaps). The server's push is the transaction: a
 pack, an index, a filter and one swap. `replica-start` rose by two because each
 of the two stores' startup probes now proves the conditional read, one request
 more apiece.
+
+## Step 3, as built: nothing loose, a pack and one sidecar (rule 3, and rule 8 as far as rule 7 allows)
+
+Built on 2026-09-21. `docs/git-storage.md` describes the result.
+
+**Rule 8 as written collides with rule 7.** A single self-describing object per
+segment — pack, index and filter together, with a footer — would make every
+write one upload. But a stored pack is also what a packfile-URI and a bundle URI
+hand to a client, as a presigned URL, and neither the URL nor the client can ask
+for a byte range: the client downloads the object whole and gives it to
+`index-pack`, which refuses anything after the pack's checksum. Verified with
+git 2.55: a pack with twelve bytes appended fails `git index-pack --stdin` and
+`git index-pack <file>` alike with "fatal: pack has junk at the end". So the
+pack stays an object of its own, byte for byte what git reads, and everything
+else about it goes in one **sidecar**: git's `.idx`, the membership filter, and
+a 44-byte footer (magic, the two lengths, the pack's checksum). A write is two
+uploads and a swap, where it was three and a swap; the manifest records the
+lengths so that a reader addresses the index and the filter as ranges of the
+sidecar without reading it first, and checks the footer — and the index's own
+pack checksum — against the pack's name when it loads the index, so a sidecar
+that is not the pack's is refused rather than trusted.
+
+**Nothing is written loose.** An object written one at a time is pending: held
+by the repository's handle, readable through it at once, and packed with the
+next reference commit of the repository — in the same swap, so objects and the
+reference naming them appear together — or on an explicit flush, or once 8 MiB
+is pending. The explicit flush is the durability point of a write that moves no
+reference, and the server calls it before it names such an object: the
+git-database create endpoints, a copy of one repository's objects into another,
+a pull request's test merge. The loose tier's listing on a miss, its per-
+directory cuckoo filters and its sweep are gone; the only listing left is the
+one a compaction takes to find orphans.
+
+**What it cost and bought.** A single-blob API write went from one PUT to two
+uploads and a swap, and in exchange every replica finds it by revalidating the
+manifest rather than by listing, and nothing is ever deleted from under a
+reader by a compaction's loose sweep. A multi-object write (a commit through
+the API: blobs, trees, the commit, the ref) went from a PUT per object and a
+swap to two uploads and one swap. At git level, a push went from 4 requests to
+3 and ten pushes, with the compaction they make due, from 49 to 38; clones and
+fetches are unchanged.
+
+**Migration.** Manifest format 2. A format-1 manifest is refused with
+`ErrManifestOutdated`, and `bleephub adopt` converts it — writing each live
+pack's sidecar from its `.idx` and `.bfilter`, packing the loose objects, and
+swapping the manifest on the condition that it is still the one read — as it
+converts the layout before the manifest. `adopt -remove-old-layout` then deletes
+the separate indexes, filters and loose objects.

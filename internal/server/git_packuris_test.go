@@ -15,6 +15,9 @@ import (
 
 	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/packfile"
+	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
 // Everything here runs against the object store: a packfile URI is a presigned
@@ -35,8 +38,8 @@ func newS3GitServerForTest(t *testing.T) *isolatedServer {
 	return newIsolatedServer(t)
 }
 
-// packURIHistoryCommits is deep enough that compaction publishes a pack; a
-// shallower fixture stays in the loose tier with no pack to address.
+// packURIHistoryCommits is deep enough that the pack the history is stored as
+// is worth offering by address rather than sending inline.
 const packURIHistoryCommits = 30
 
 // packURIWorktree is the file the fixture's tip checks out to.
@@ -50,7 +53,7 @@ func packURIWorktree() string {
 
 // seedS3Repo builds the fixture history at fixed instants so the object ids —
 // and therefore the pack — are the same on every run.
-func seedS3Repo(t *testing.T, srv *isolatedServer, name string, private bool) {
+func seedS3Repo(t *testing.T, srv *isolatedServer, name string, private bool) string {
 	t.Helper()
 	admin := srv.store.LookupUserByLogin("admin")
 	if admin == nil {
@@ -63,44 +66,60 @@ func seedS3Repo(t *testing.T, srv *isolatedServer, name string, private bool) {
 	if stor == nil {
 		t.Fatalf("repo %s has no git storage", name)
 	}
-	if _, err := initRepoWithFiles(stor, "main", "root", map[string]string{"f.txt": "l0\n"}, packReuseSignature(0)); err != nil {
+	// The history is built apart and stored as one pack, as one push would
+	// store it: committed a commit at a time, each commit would land as a pack
+	// of its own.
+	scratch, err := gitstore.OpenMemory("scratch/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := initRepoWithFiles(scratch, "main", "root", map[string]string{"f.txt": "l0\n"}, packReuseSignature(0)); err != nil {
 		t.Fatalf("seed the root commit: %v", err)
 	}
 	content := "l0\n"
+	tip := plumbing.ZeroHash
 	for commit := 1; commit < packURIHistoryCommits; commit++ {
 		content += "l" + strconv.Itoa(commit) + "\n"
-		if _, err := createFileCommit(stor, "main", "f.txt", content, "c"+strconv.Itoa(commit), packReuseSignature(commit)); err != nil {
+		if tip, err = createFileCommit(scratch, "main", "f.txt", content, "c"+strconv.Itoa(commit), packReuseSignature(commit)); err != nil {
 			t.Fatalf("seed commit c%d: %v", commit, err)
 		}
+	}
+	var hashes []plumbing.Hash
+	objects, err := scratch.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.ForEach(func(object plumbing.EncodedObject) error {
+		hashes = append(hashes, object.Hash())
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var pack bytes.Buffer
+	if _, err := packfile.NewEncoder(&pack, scratch, false).Encode(hashes, 10); err != nil {
+		t.Fatalf("encode the history: %v", err)
+	}
+	if err := packfile.UpdateObjectStorage(stor, &pack); err != nil {
+		t.Fatalf("store the history: %v", err)
+	}
+	if err := stor.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), tip)); err != nil {
+		t.Fatal(err)
 	}
 	if err := store.SetGitHeadBranch(stor, "main"); err != nil {
 		t.Fatalf("point git HEAD at main: %v", err)
 	}
+	packs, err := stor.(gitstore.PackSource).StoredPacks(context.Background())
+	if err != nil || len(packs) != 1 {
+		t.Fatalf("premise: the history is stored as %d packs (%v), want one", len(packs), err)
+	}
+	return packs[0].Name
 }
 
-// seedPackedS3Repo seeds a repository and compacts it so its objects are in one
-// published pack, returning that pack's name.
+// seedPackedS3Repo seeds a repository whose objects are all in one stored
+// pack, and returns that pack's name.
 func seedPackedS3Repo(t *testing.T, srv *isolatedServer, name string) string {
 	t.Helper()
-	seedS3Repo(t, srv, name, false)
-	return compactS3Repo(t, srv, name)
-}
-
-// compactS3Repo packs a repository's loose objects and returns the published pack's name.
-func compactS3Repo(t *testing.T, srv *isolatedServer, name string) string {
-	t.Helper()
-	stor := srv.store.GetGitStorage("admin", name)
-	if stor == nil {
-		t.Fatalf("repo %s has no git storage", name)
-	}
-	result, err := gitstore.CompactRepository(context.Background(), stor)
-	if err != nil {
-		t.Fatalf("compact %s: %v", name, err)
-	}
-	if result.PackName == "" {
-		t.Fatalf("compacting %s published no pack", name)
-	}
-	return result.PackName
+	return seedS3Repo(t, srv, name, false)
 }
 
 // gitPackEntryCount reads the entry count a packfile states in its header.
@@ -156,7 +175,7 @@ func gitPackURILines(sections []string) ([]string, bool) {
 }
 
 // TestPackfileURIsCarryTheStoredPackOfAFullClone is the central claim: a full
-// clone of a compacted repository is answered with the address of the stored
+// clone of a repository stored as one pack is answered with the address of the stored
 // pack and an empty packfile, and the address serves exactly those bytes to a
 // client holding none of this server's credentials.
 func TestPackfileURIsCarryTheStoredPackOfAFullClone(t *testing.T) {
@@ -332,7 +351,6 @@ func TestPackfileURIsNeedARepositoryTheCallerMayRead(t *testing.T) {
 	srv := newS3GitServerForTest(t)
 	const name = "packuris-private"
 	seedS3Repo(t, srv, name, true)
-	compactS3Repo(t, srv, name)
 
 	script := (&gitPktScript{}).
 		linef("command=fetch\n").
@@ -434,14 +452,13 @@ func TestGitClonesFromAPackfileURI(t *testing.T) {
 	git.run(clone, "fetch", "origin")
 	requireCommitCount(t, git, clone, "origin/main", packURIHistoryCommits)
 
-	// A commit that landed after the compaction is not in any stored pack, so
-	// the answer is both halves at once: the address of the pack, and a
-	// packfile carrying what the pack does not. The clone that results has to
-	// be as complete as the one that took its objects entirely by URI.
-	if _, err := createFileCommit(srv.store.GetGitStorage("admin", name), "main", "f.txt",
-		packURIWorktree()+"loose\n", "after the compaction", packReuseSignature(packURIHistoryCommits)); err != nil {
-		t.Fatalf("commit past the compaction: %v", err)
-	}
+	// A commit that lands afterwards arrives in a pack that also repeats an
+	// object of the history's pack. Offered packs must be disjoint, and the
+	// larger is taken first, so that pack cannot be offered and the answer is
+	// both halves at once: the address of the history's pack, and a packfile
+	// carrying what that pack does not. The clone that results has to be as
+	// complete as the one that took its objects entirely by URI.
+	addOverlappingCommit(t, srv.store.GetGitStorage("admin", name), packURIWorktree()+"loose\n")
 	mixed := filepath.Join(root, "mixed")
 	mixedTrace := git.with("GIT_TRACE_PACKET=1").run(root, "clone", cloneURL, mixed)
 	if !gitTraceCarriesPackURIsSection(mixedTrace) {
@@ -451,6 +468,56 @@ func TestGitClonesFromAPackfileURI(t *testing.T) {
 	git.run(mixed, "fsck", "--no-progress", "--strict")
 	if got, want := readFixtureFile(t, mixed, "f.txt"), packURIWorktree()+"loose\n"; got != want {
 		t.Fatalf("the mixed checkout is %q, want %q", got, want)
+	}
+}
+
+// addOverlappingCommit commits content to main in a pack that also carries the
+// commit it replaces, an object already in a stored pack.
+func addOverlappingCommit(t *testing.T, stor gitStorage.Storer, content string) {
+	t.Helper()
+	previous, err := stor.Reference(plumbing.NewBranchReferenceName("main"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scratch, err := gitstore.OpenMemory("scratch/overlap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CopyGitObjects(stor, scratch); err != nil {
+		t.Fatal(err)
+	}
+	if err := scratch.SetReference(previous); err != nil {
+		t.Fatal(err)
+	}
+	tip, err := createFileCommit(scratch, "main", "f.txt", content, "after the history", packReuseSignature(packURIHistoryCommits))
+	if err != nil {
+		t.Fatalf("commit past the history: %v", err)
+	}
+	carried := []plumbing.Hash{previous.Hash()}
+	objects, err := scratch.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.ForEach(func(object plumbing.EncodedObject) error {
+		if stor.HasEncodedObject(object.Hash()) != nil {
+			carried = append(carried, object.Hash())
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(carried) < 2 {
+		t.Fatal("premise: the commit added no object of its own")
+	}
+	var pack bytes.Buffer
+	if _, err := packfile.NewEncoder(&pack, scratch, false).Encode(carried, 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := packfile.UpdateObjectStorage(stor, &pack); err != nil {
+		t.Fatal(err)
+	}
+	if err := stor.CheckAndSetReference(plumbing.NewHashReference(previous.Name(), tip), previous); err != nil {
+		t.Fatal(err)
 	}
 }
 

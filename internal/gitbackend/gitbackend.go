@@ -202,10 +202,11 @@ func OpenOrInitGitStorage(ctx context.Context, fullName string) (gitStorage.Stor
 
 // OpenExistingGitStorage opens a repository the application already has a record
 // of, which is what a restart does with every one of them. In an object store
-// such a repository has a manifest, and one that has none is refused with
-// gitstore.ErrNoManifest rather than initialized over: it is either lost, or
-// was written by a version of the engine that kept references as objects and is
-// waiting for `bleephub adopt`. The other backends hold nothing a restart could
+// such a repository has a manifest of the current format, and one that has none
+// is refused with gitstore.ErrNoManifest rather than initialized over: it is
+// either lost, or was written by a version of the engine that kept references
+// as objects and is waiting for `bleephub adopt`, as is one whose manifest is of
+// an earlier format (gitstore.ErrManifestOutdated). The other backends hold nothing a restart could
 // mistake — a directory is reopened and a memory repository starts empty — and
 // are opened as ever.
 func OpenExistingGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
@@ -218,7 +219,7 @@ func OpenExistingGitStorage(ctx context.Context, fullName string) (gitStorage.St
 	}
 	if objectStore != nil {
 		stor, err := objectStore.ExistingRepository(fullName)
-		if errors.Is(err, gitstore.ErrNoManifest) {
+		if errors.Is(err, gitstore.ErrNoManifest) || errors.Is(err, gitstore.ErrManifestOutdated) {
 			// This is the error an operator meets on the first start after
 			// upgrading a store written by an earlier bleephub, and it stops the
 			// server. It has to say what to do, to someone who has not read the
@@ -274,12 +275,21 @@ func OptionsFromEnv() (gitstore.Options, error) {
 	}
 
 	opts := gitstore.Options{
-		ChunkBytes:        sized("BLEEPHUB_GITSTORE_CHUNK_BYTES"),
-		CacheDir:          packCacheDir(),
-		CacheBytes:        sized("BLEEPHUB_GITSTORE_CACHE_BYTES"),
-		MemoryCacheBytes:  zeroIsOff(count("BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES")),
-		CompactionTrigger: zeroIsOff(count("BLEEPHUB_GITSTORE_COMPACT_AFTER")),
-		MultipartBytes:    sized("BLEEPHUB_GITSTORE_MULTIPART_BYTES"),
+		ChunkBytes:       sized("BLEEPHUB_GITSTORE_CHUNK_BYTES"),
+		CacheDir:         packCacheDir(),
+		CacheBytes:       sized("BLEEPHUB_GITSTORE_CACHE_BYTES"),
+		MemoryCacheBytes: zeroIsOff(count("BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES")),
+		MultipartBytes:   sized("BLEEPHUB_GITSTORE_MULTIPART_BYTES"),
+	}
+	if packs, set := count("BLEEPHUB_GITSTORE_COMPACT_AFTER_PACKS"); set {
+		switch {
+		case packs == 0:
+			opts.CompactAfterPacks = -1
+		case packs > math.MaxInt32:
+			problems = append(problems, fmt.Errorf("BLEEPHUB_GITSTORE_COMPACT_AFTER_PACKS=%d: too large to be a count of packs", packs))
+		default:
+			opts.CompactAfterPacks = int(packs)
+		}
 	}
 	freshness, set, err := envDuration("BLEEPHUB_GITSTORE_INDEX_FRESHNESS")
 	if err != nil {

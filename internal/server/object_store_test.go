@@ -328,7 +328,7 @@ func TestDeleteRepositoryRemovesEveryObjectOfOneRepository(t *testing.T) {
 func TestRenameRepositoryMovesEveryObjectToTheNewName(t *testing.T) {
 	objects := newGitObjectStoreForTest(t)
 
-	const manifest = `{"format":1,"sequence":1,"packs":[],"retired":[],"refs":{"snapshot":"objects/refs/0000000000000001-0a0b0c0d0e0f1011","changes":[]}}`
+	const manifest = `{"format":2,"sequence":1,"packs":[],"retired":[],"refs":{"snapshot":"objects/refs/0000000000000001-0a0b0c0d0e0f1011","changes":[]}}`
 	putS3RawObject(t, objects, "git/owner/repo/manifest", []byte(manifest))
 	putS3RawObject(t, objects, "git/owner/repo/objects/pack/a.pack", []byte("pack-a"))
 	putS3RawObject(t, objects, "git/owner/repo/objects/refs/0000000000000001-0a0b0c0d0e0f1011", []byte("snapshot"))

@@ -22,7 +22,7 @@ import (
 // as "not our ref".
 func TestConcurrentFirstReadsOfAColdHandleFindEveryObject(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	writer := testPackedStorage(t, fake)
 
 	// One object per pack, several packs: the object a reader wants is, as

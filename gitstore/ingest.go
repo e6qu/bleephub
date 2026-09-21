@@ -13,18 +13,16 @@ import (
 //
 // go-git hands an incoming pack to storage through storer.PackfileWriter when
 // the storage offers it, and otherwise parses the pack and stores each object
-// separately. On a disk the second path is merely slower. On an object store it
-// turns one upload into several requests per object — a probe, a staged write,
-// a copy onto the final name, a delete — so a push of a few thousand objects
-// costs tens of thousands of round trips, and leaves a loose tier every read
-// pays for one GET at a time until a compaction packs it again.
+// separately. On an object store that would be a request per object, and an
+// object store keeps nothing that is not a pack.
 //
-// So the pack is kept: spooled to local disk as it arrives, uploaded as an
-// index, a filter and a pack, and then made part of the repository by a commit
-// of the manifest that names it (commit.go). Until that commit the three objects
-// are an upload nothing refers to. The spool is what makes two things possible. The pack's name is the hash of its contents, unknown until
-// the last byte; and whether the pack can be stored as it stands is unknown
-// until it has been parsed.
+// So the pack is kept: spooled to local disk as it arrives, uploaded as the pack
+// and its sidecar (sidecar.go), and then made part of the repository by a
+// commit of the manifest that names it (commit.go). Until that commit the two
+// objects are an upload nothing refers to. The spool is what makes two things
+// possible. The pack's name is the hash of its contents, unknown until the last
+// byte; and whether the pack can be stored as it stands is unknown until it has
+// been parsed.
 //
 // THIN PACKS. A stock git client pushes a thin pack: its deltas may name bases
 // the client knows the server already has and therefore left out. Such a pack

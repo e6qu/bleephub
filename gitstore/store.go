@@ -18,8 +18,7 @@ import (
 )
 
 // Store is a bucket prefix holding many repositories, each under
-// <prefix>/<owner>/<repo>/: a manifest, and the packs and loose objects it and
-// git's own key names say are there. It is the one value an
+// <prefix>/<owner>/<repo>/: a manifest, and the packs and sidecars it names. It is the one value an
 // application builds at startup; every repository handle, and every sibling
 // prefix made with Sub, shares its connection, its tunables, its circuit
 // breaker and its pack cache.
@@ -293,8 +292,8 @@ func (s *storeShared) call(parent context.Context, timeout time.Duration, do fun
 	return err
 }
 
-// getAll reads a whole object. It is for the small ones — references, the
-// config, a loose object — and reads the body inside the call so that the
+// getAll reads a whole object. It is for the small ones — the manifest, a
+// reference snapshot, the config — and reads the body inside the call so that the
 // timeout and the breaker cover the transfer and not only the headers.
 func (s *storeShared) getAll(parent context.Context, key string) ([]byte, objstore.Info, error) {
 	var data []byte

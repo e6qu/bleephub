@@ -17,7 +17,7 @@ func clearTunables(t *testing.T) {
 	for _, name := range []string{
 		"BLEEPHUB_GITSTORE_CHUNK_BYTES", "BLEEPHUB_GITSTORE_CACHE_DIR", "BLEEPHUB_GITSTORE_CACHE_BYTES",
 		"BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES", "BLEEPHUB_GITSTORE_INDEX_FRESHNESS",
-		"BLEEPHUB_GITSTORE_COMPACT_AFTER", "BLEEPHUB_GITSTORE_MULTIPART_BYTES",
+		"BLEEPHUB_GITSTORE_COMPACT_AFTER_PACKS", "BLEEPHUB_GITSTORE_MULTIPART_BYTES",
 		"BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD", "BLEEPHUB_OBJECT_STORE_BREAKER_COOLDOWN_MS",
 	} {
 		t.Setenv(name, "")
@@ -34,7 +34,7 @@ func TestOptionsFromEnvLeavesUnsetTunablesToTheLibrary(t *testing.T) {
 		t.Fatalf("an empty environment is an error: %v", err)
 	}
 	if opts.ChunkBytes != 0 || opts.CacheBytes != 0 || opts.MemoryCacheBytes != 0 ||
-		opts.IndexFreshness != 0 || opts.CompactionTrigger != 0 || opts.MultipartBytes != 0 ||
+		opts.IndexFreshness != 0 || opts.CompactAfterPacks != 0 || opts.MultipartBytes != 0 ||
 		opts.BreakerThreshold != 0 || opts.BreakerCooldown != 0 {
 		t.Fatalf("an empty environment overrode a library default: %+v", opts)
 	}
@@ -53,7 +53,7 @@ func TestOptionsFromEnvParsesEveryTunable(t *testing.T) {
 	t.Setenv("BLEEPHUB_GITSTORE_CACHE_BYTES", "2048")
 	t.Setenv("BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES", "1024")
 	t.Setenv("BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "2s")
-	t.Setenv("BLEEPHUB_GITSTORE_COMPACT_AFTER", "500")
+	t.Setenv("BLEEPHUB_GITSTORE_COMPACT_AFTER_PACKS", "500")
 	t.Setenv("BLEEPHUB_GITSTORE_MULTIPART_BYTES", "8388608")
 	t.Setenv("BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD", "9")
 	t.Setenv("BLEEPHUB_OBJECT_STORE_BREAKER_COOLDOWN_MS", "1500")
@@ -63,7 +63,7 @@ func TestOptionsFromEnvParsesEveryTunable(t *testing.T) {
 		t.Fatalf("valid settings are an error: %v", err)
 	}
 	if opts.ChunkBytes != 1048576 || opts.CacheDir != "/var/cache/packs" || opts.CacheBytes != 2048 ||
-		opts.MemoryCacheBytes != 1024 || opts.IndexFreshness != 2*time.Second || opts.CompactionTrigger != 500 ||
+		opts.MemoryCacheBytes != 1024 || opts.IndexFreshness != 2*time.Second || opts.CompactAfterPacks != 500 ||
 		opts.MultipartBytes != 8388608 || opts.BreakerThreshold != 9 || opts.BreakerCooldown != 1500*time.Millisecond {
 		t.Fatalf("parsed options = %+v", opts)
 	}
@@ -77,14 +77,14 @@ func TestOptionsFromEnvTranslatesZeroToOff(t *testing.T) {
 	clearTunables(t)
 	t.Setenv("BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES", "0")
 	t.Setenv("BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "0")
-	t.Setenv("BLEEPHUB_GITSTORE_COMPACT_AFTER", "0")
+	t.Setenv("BLEEPHUB_GITSTORE_COMPACT_AFTER_PACKS", "0")
 	t.Setenv("BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD", "0")
 
 	opts, err := OptionsFromEnv()
 	if err != nil {
 		t.Fatalf("turning tunables off is an error: %v", err)
 	}
-	if opts.MemoryCacheBytes >= 0 || opts.IndexFreshness >= 0 || opts.CompactionTrigger >= 0 || opts.BreakerThreshold >= 0 {
+	if opts.MemoryCacheBytes >= 0 || opts.IndexFreshness >= 0 || opts.CompactAfterPacks >= 0 || opts.BreakerThreshold >= 0 {
 		t.Fatalf("a tunable set to 0 was not translated to the library's off: %+v", opts)
 	}
 }

@@ -2,6 +2,7 @@ package gitstore
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,9 +22,6 @@ func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
 	fake.opts.ChunkBytes = 4096
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 4000)
-	if _, err := CompactRepository(context.Background(), stor); err != nil {
-		t.Fatalf("compact: %v", err)
-	}
 	packBytes := 0
 	for _, key := range packKeys(fake, ".pack") {
 		body, _ := fake.Get(key)
@@ -46,9 +44,9 @@ func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
 	if counts.GetRanged == 0 {
 		t.Fatal("reading one object issued no ranged read")
 	}
-	// The index and membership filter are read whole; only the packfile traffic
-	// must not scale with the pack.
-	packTraffic := counts.BytesDown - indexAndFilterBytes(fake)
+	// The sidecar is bounded by its own size — the read goes to the index, in
+	// extents — and only the packfile traffic must not scale with the pack.
+	packTraffic := counts.BytesDown - sidecarBytesStored(fake)
 	if packTraffic >= int64(packBytes)/4 {
 		t.Fatalf("reading one object pulled %d bytes of a %d byte pack; a ranged read must cost the extent, not the pack",
 			packTraffic, packBytes)
@@ -56,15 +54,13 @@ func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
 	t.Logf("one object out of a %d byte pack transferred %d bytes of packfile (%s)", packBytes, packTraffic, counts)
 }
 
-// indexAndFilterBytes is the fixed cost of opening a pack: its index and
-// membership filter, both read in full.
-func indexAndFilterBytes(fake *fakeS3) int64 {
+// sidecarBytesStored is the most opening the packs can cost: their sidecars,
+// the index, filter and footer of each, read in full.
+func sidecarBytesStored(fake *fakeS3) int64 {
 	total := int64(0)
-	for _, extension := range []string{".idx", ".bfilter"} {
-		for _, key := range packKeys(fake, extension) {
-			body, _ := fake.Get(key)
-			total += int64(len(body))
-		}
+	for _, key := range packKeys(fake, sidecarSuffix) {
+		body, _ := fake.Get(key)
+		total += int64(len(body))
 	}
 	return total
 }
@@ -78,9 +74,6 @@ func TestPackCacheSurvivesARestart(t *testing.T) {
 	fake.opts.CacheDir = dir
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 300)
-	if _, err := CompactRepository(context.Background(), stor); err != nil {
-		t.Fatalf("compact: %v", err)
-	}
 
 	warm := testPackedStorage(t, fake)
 	clonePack(t, warm, hashes)
@@ -177,18 +170,19 @@ func cachedFiles(t *testing.T, dir string) int {
 }
 
 // TestOnlyContentAddressedKeysAreCached pins the property that makes the cache
-// safe with no invalidation at all: a mutable key — a reference, the config — or
-// a loose object must never be read through the cached ranged path. Only a
-// pack, its index and its filter are, because only their names are the hash of
-// what they hold.
+// safe with no invalidation at all: a mutable key — the manifest, the config —
+// must never be read through the cached ranged path. Only a pack and its
+// sidecar are, because only their names are the hash of what they hold.
 func TestOnlyContentAddressedKeysAreCached(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 80)
 	if err := Init(stor); err != nil {
 		t.Fatalf("init: %v", err)
 	}
+	// The writer seeded the cache with what it uploaded; start from nothing.
+	clearPackCache(t, fake.opts.CacheDir)
 
 	reader := testPackedStorage(t, fake)
 	before := fake.Snapshot()
@@ -198,39 +192,34 @@ func TestOnlyContentAddressedKeysAreCached(t *testing.T) {
 	if _, err := reader.Config(); err != nil {
 		t.Fatalf("config: %v", err)
 	}
-	readObjects(t, reader, hashes)
 	spent := fake.Snapshot().Sub(before)
-	if spent.Get < int64(len(hashes)) {
-		t.Fatalf("premise: the loose objects were not read from the store: %s", spent)
+	if spent.Get < 2 {
+		t.Fatalf("premise: the manifest and the config were not read from the store: %s", spent)
 	}
 	if spent.GetRanged != 0 || cachedFiles(t, fake.opts.CacheDir) != 0 {
 		t.Fatalf("mutable keys were read through the pack cache: %s, %d cached files", spent, cachedFiles(t, fake.opts.CacheDir))
 	}
 
-	if _, err := CompactRepository(context.Background(), stor); err != nil {
-		t.Fatalf("compact: %v", err)
-	}
-	clearPackCache(t, fake.opts.CacheDir)
-	packed := testPackedStorage(t, fake)
-	if err := packed.HasEncodedObject(absentHash(1)); err == nil {
+	if err := reader.HasEncodedObject(absentHash(1)); err == nil {
 		t.Fatal("an absent object was reported present")
 	}
-	readObjects(t, packed, hashes)
-	// The filter the probe read, and the index and the pack the reads did: one
-	// extent each at this size.
-	if got := cachedFiles(t, fake.opts.CacheDir); got != 3 {
-		t.Fatalf("probing and reading a packed repository cached %d extents, want the pack, its index and its filter", got)
+	readObjects(t, reader, hashes)
+	// The sidecar the probe read the filter from and the reads the index, and
+	// the pack the reads decoded: one extent each at this size.
+	if got := cachedFiles(t, fake.opts.CacheDir); got != 2 {
+		t.Fatalf("probing and reading a packed repository cached %d extents, want the pack and its sidecar", got)
 	}
 }
 
-// TestWritesRequestCompactionWhenTheLooseTierFills pins that the write path
-// decides WHEN to flush (only it knows the loose tier filled) while the caller
-// decides who runs it. Objects also arrive through the REST git-database
-// endpoints, which never push, so an API-built repo depends on this signal
-// rather than post-receive scheduling.
-func TestWritesRequestCompactionWhenTheLooseTierFills(t *testing.T) {
+// TestWritesRequestCompactionWhenPacksAccumulate pins that the write path
+// decides WHEN a compaction is due (only it knows how many packs its writes
+// have left) while the caller decides who runs it. Objects also arrive through
+// the REST git-database endpoints, which never push and land as a pack per
+// flush, so an API-built repo depends on this signal rather than post-receive
+// scheduling.
+func TestWritesRequestCompactionWhenPacksAccumulate(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = 150
+	fake.opts.CompactAfterPacks = 2
 	stor := testPackedStorage(t, fake)
 
 	// The write path only signals; capture the signal and verify it names this
@@ -244,25 +233,35 @@ func TestWritesRequestCompactionWhenTheLooseTierFills(t *testing.T) {
 	})
 	t.Cleanup(func() { SetCompactionRequestHandler(nil) })
 
-	hashes := seedObjects(t, stor, 200)
+	var hashes []plumbing.Hash
+	for round := range 3 {
+		hashes = append(hashes, flushedBlobs(t, stor, fmt.Sprintf("round %d", round), 50)...)
+		requestMu.Lock()
+		got := len(requested)
+		requestMu.Unlock()
+		if round < 2 && got != 0 {
+			t.Fatalf("compaction requested with only %d packs", round+1)
+		}
+	}
 	requestMu.Lock()
 	defer requestMu.Unlock()
 
-	if len(requested) == 0 {
-		t.Fatal("writing past the compaction trigger never requested a compaction")
+	if len(requested) != 1 {
+		t.Fatalf("writing past the pack count requested %d compactions, want 1", len(requested))
 	}
 	for _, name := range requested {
 		if name != stor.name {
 			t.Fatalf("compaction requested for %q, want %q", name, stor.name)
 		}
 	}
-	// Run the handler inline and assert the pack; inline also avoids racing a
+	// Run the handler inline and assert the merge; inline also avoids racing a
 	// background goroutine against cleanup.
-	if _, err := CompactRepository(context.Background(), stor); err != nil {
+	result, err := CompactRepository(context.Background(), stor)
+	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	if len(packKeys(fake, ".pack")) == 0 {
-		t.Fatal("the requested compaction published no pack")
+	if result.PackName == "" || len(storedManifest(t, fake).Packs) != 1 {
+		t.Fatalf("the requested compaction merged nothing: %+v", result)
 	}
 
 	fresh := testPackedStorage(t, fake)

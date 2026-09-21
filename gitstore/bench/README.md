@@ -228,11 +228,11 @@ object. `go run . -level git -files 1000 -commits 30 -pushes 10 -latency 2ms -ru
 
 | Scenario | bleephub | walgit | git-remote-object-store | git-remote-s3 | git, local disk |
 |---|---|---|---|---|---|
-| `push-initial` | **4** requests, **0.14 s**, 978 KiB up | 9, **0.14 s**, 976 KiB up | 15, 0.27 s, 1.9 MiB up | 9, 0.32 s, 929 KiB up | 0.07 s |
+| `push-initial` | **3** requests, **0.11 s**, 978 KiB up | 9, **0.14 s**, 976 KiB up | 15, 0.27 s, 1.9 MiB up | 9, 0.32 s, 929 KiB up | 0.07 s |
 | `replica-start` | **27**, **0.21 s**, **2 KiB** down | **27**, 2.31 s, 975 KiB down | — | — | — |
 | `clone-cold` | **3**, **0.09 s**, 973 KiB down | 5, 0.12 s, **0 B** down | 15, 0.30 s, 3.6 MiB down | 7, 0.30 s, 1.8 MiB down | 0.08 s |
 | `clone-warm` | **1**, **0.08 s**, **0 B** down | 4, 0.11 s, 0 B down | 15, 0.30 s, 3.6 MiB down | 7, 0.30 s, 1.8 MiB down | 0.07 s |
-| `push-incremental` (10 pushes) | **49**, **0.52 s**, 310 KiB up | 70, 0.72 s, **186 KiB** up | 150, 2.24 s, 854 KiB up | 90, 2.81 s, 8.4 MiB up | 0.67 s |
+| `push-incremental` (10 pushes) | **38**, **0.50 s**, 310 KiB up | 70, 0.72 s, **186 KiB** up | 150, 2.24 s, 854 KiB up | 90, 2.81 s, 8.4 MiB up | 0.67 s |
 | `fetch-incremental` | **1**, **0.08 s**, **0 B** down | 4, 0.09 s, 0 B down | 26, 0.72 s, 147 KiB down | 5, 0.30 s, 849 KiB down | 0.09 s |
 | `clone-parallel` (8 clones) | **9**, **0.19 s**, 1.1 MiB down | 33, 0.24 s, **0 B** down | 440, 1.11 s, 31 MiB down | 56, 0.53 s, 13 MiB down | 0.21 s |
 
@@ -261,13 +261,13 @@ What it says:
   prefix, so walgit's second and third starts loaded the repositories of the
   runs before them, and its start and first push read 65 and 52 requests; each
   run now has a store of its own.
-- **A push through bleephub is 4 requests, all of them writes**: the pack, its
-  index and its filter, uploaded together, and one conditional write of the
-  repository's manifest that adds the pack and moves the branch in the same
+- **A push through bleephub is 3 requests, all of them writes**: the pack and
+  its sidecar (index and filter in one object), uploaded together, and one
+  conditional write of the repository's manifest that adds the pack and moves the branch in the same
   swap. Nothing is read — the lost condition is the verification — and nothing
-  is listed. The ten pushes' 49 include the compaction their packs make due.
+  is listed. The ten pushes' 38 include the compaction their packs make due.
   walgit, whose manifest-and-log design this borrows from, takes 7. Ten pushes
-  take bleephub 0.52 s and stock git, pushing to a bare repository on the same
+  take bleephub 0.50 s and stock git, pushing to a bare repository on the same
   machine's disk, 0.67 s: at 2 ms a request the object store has stopped being
   what a push waits for. It was 25 requests when this table was first drawn;
   see below. A push uploads a little more than it did (310 KiB for the ten, from

@@ -9,14 +9,12 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
-	"github.com/go-git/go-git/v5/plumbing/format/objfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -25,14 +23,15 @@ import (
 )
 
 // repository is go-git's storage.Storer implemented directly against the object
-// store, with no filesystem in between: packs, their indexes and filters and the
-// loose objects under git's own key names, and a manifest that says which packs
-// are live and what every reference holds (manifest.go).
+// store, with no filesystem in between: packs and their sidecars (sidecar.go),
+// and a manifest that says which packs are live and what every reference holds
+// (manifest.go). Every object is in a pack; what this replica has written and
+// not yet packed is pending (pending.go).
 //
 // It is one handle shared by every goroutine that touches the repository for
 // the life of the process, and it needs no lock to be so. What it knows of the
-// repository — the manifest, the loose tier — it holds as immutable values
-// swapped whole (state.go, objectindex.go), so a reader takes a pointer and is
+// repository — the manifest — it holds as an immutable value swapped whole
+// (state.go), so a reader takes a pointer and is
 // done. What it reads a pack through — go-git's packfile decoder, which is not
 // safe to share — it makes afresh for each call, over a pack index that is
 // parsed once and only ever read after that. Writers are arbitrated by the
@@ -46,15 +45,14 @@ type repository struct {
 
 	manifests *manifestStore
 	commits   *committer
-	loose     *looseTier
+	// pending holds the objects written and not yet packed, and flushing keeps
+	// this process to one pack of them at a time.
+	pending  pendingObjects
+	flushing sync.Mutex
 	// objectCache holds recently decoded objects, delta bases among them. It
 	// locks for itself, and what it hands out is shared read-only.
 	objectCache cache.Object
 
-	// looseWrites counts objects written into the loose tier since the last
-	// compaction request. Admitting one compaction at a time is the scheduler's
-	// job, not this counter's.
-	looseWrites atomic.Int64
 	// compacting keeps this process to one compaction of the repository at a
 	// time. Between replicas nothing does, and nothing needs to: see compact.go.
 	compacting sync.Mutex
@@ -80,7 +78,6 @@ func newRepository(shared *storeShared, name, prefix string) *repository {
 		prefix:      prefix,
 		manifests:   manifests,
 		commits:     &committer{manifests: manifests},
-		loose:       &looseTier{shared: shared, prefix: prefix},
 		objectCache: cache.NewObjectLRUDefault(),
 	}
 }
@@ -93,23 +90,20 @@ func (r *repository) NewEncodedObject() plumbing.EncodedObject { //nolint:iretur
 	return &plumbing.MemoryObject{}
 }
 
-func looseObjectKey(prefix string, hash plumbing.Hash) string {
-	text := hash.String()
-	return prefix + path.Join("objects", text[:2], text[2:])
-}
-
-// SetEncodedObject writes one object into the loose tier: one PUT. git writes
-// to a temporary name and renames, so that the object appears whole; a PUT
-// already is atomic. And it probes for the object first, to skip writing what is
-// there; the key is the hash of the bytes, so writing it again stores what it
-// already holds, and costs less than asking.
+// SetEncodedObject writes one object: it is pending, readable here at once, until
+// it lands in a pack (pending.go). A write that leaves more pending than
+// pendingFlushBytes packs it all then.
 func (r *repository) SetEncodedObject(object plumbing.EncodedObject) (plumbing.Hash, error) {
 	if object.Type() == plumbing.OFSDeltaObject || object.Type() == plumbing.REFDeltaObject {
 		return plumbing.ZeroHash, plumbing.ErrInvalidType
 	}
-	var encoded bytes.Buffer
-	writer := objfile.NewWriter(&encoded)
-	if err := writer.WriteHeader(object.Type(), object.Size()); err != nil {
+	// A copy the caller cannot change: what is pending is read by others, and
+	// hashed once, here.
+	held := &plumbing.MemoryObject{}
+	held.SetType(object.Type())
+	held.SetSize(object.Size())
+	writer, err := held.Writer()
+	if err != nil {
 		return plumbing.ZeroHash, err
 	}
 	content, err := object.Reader()
@@ -117,32 +111,26 @@ func (r *repository) SetEncodedObject(object plumbing.EncodedObject) (plumbing.H
 		return plumbing.ZeroHash, err
 	}
 	_, err = io.Copy(writer, content)
-	closeErr := content.Close()
-	if err = errors.Join(err, closeErr, writer.Close()); err != nil {
+	if err = errors.Join(err, content.Close(), writer.Close()); err != nil {
 		return plumbing.ZeroHash, err
 	}
-	hash := writer.Hash()
-
-	key := looseObjectKey(r.prefix, hash)
-	if _, err := r.shared.put(r.shared.baseContext(), storeWriteTimeout, key, bytes.NewReader(encoded.Bytes()), int64(encoded.Len()), objstore.Always); err != nil {
-		return plumbing.ZeroHash, err
+	if r.pending.add(held) > pendingFlushBytes {
+		if err := r.FlushObjects(); err != nil {
+			return plumbing.ZeroHash, err
+		}
 	}
-	r.loose.wrote(hash)
-	r.noteObjectWritten()
-	return hash, nil
+	return held.Hash(), nil
 }
 
 // lookup answers a question about one object. It looks through the packs of the
-// manifest held — and of quarantine, the packs of a push not yet committed —
-// and then the loose tier. An object that is found is returned whatever the age
-// of what found it, because packs and objects never change. An object that is
-// not found is believed absent only of a manifest and a loose listing inside the
-// freshness bound: otherwise the one that is out of date is fetched again and
-// the object looked for once more, because another replica may have published
-// the pack that holds it. Evidence that something held is out of date — a pack
-// the manifest names is gone, a loose key the listing showed is gone — fetches
-// both again whatever their age.
-func lookup[T any](r *repository, quarantine *quarantine, hash plumbing.Hash, probing bool, inPack func(*packHandle, int64) (T, error), inLoose func() (T, error)) (T, error) {
+// manifest held — and of quarantine, the packs of a push not yet committed. An
+// object that is found is returned whatever the age of the manifest that found
+// it, because packs never change. An object that is not found is believed
+// absent only of a manifest inside the freshness bound: otherwise the manifest
+// is read again and the object looked for once more, because another replica may
+// have published the pack that holds it. Evidence that the manifest held is out
+// of date — a pack it names is gone — reads it again whatever its age.
+func lookup[T any](r *repository, quarantine *quarantine, hash plumbing.Hash, probing bool, inPack func(*packHandle, int64) (T, error)) (T, error) {
 	var none T
 	// No object hashes to zero, and that question is not worth a request.
 	if hash.IsZero() {
@@ -152,41 +140,27 @@ func lookup[T any](r *repository, quarantine *quarantine, hash plumbing.Hash, pr
 	if err != nil {
 		return none, err
 	}
-	loose := r.loose.current.Load()
 	for attempt := 0; ; attempt++ {
-		answer, err := find(r, quarantine, state, loose, hash, probing, inPack, inLoose)
-		outdated := errors.Is(err, errStaleSnapshot) || errors.Is(err, errLooseKeyAbsent)
-		if err == nil || (!outdated && !errors.Is(err, plumbing.ErrObjectNotFound)) {
+		answer, err := find(r, quarantine, state, hash, probing, inPack)
+		stale := errors.Is(err, errStaleSnapshot)
+		if err == nil || (!stale && !errors.Is(err, plumbing.ErrObjectNotFound)) {
 			return answer, err
 		}
-		staleManifest := outdated || !r.manifests.fresh(state.at)
-		staleLoose := outdated || !r.loose.fresh(loose)
-		if attempt > 0 || (!staleManifest && !staleLoose) {
-			// A loose key that a listing taken a moment ago cannot vouch for
-			// either is the loose filter's false "maybe". The sentinel goes back
-			// bare, as go-git's callers compare it.
-			if errors.Is(err, errStaleSnapshot) {
+		if attempt > 0 || (!stale && r.manifests.fresh(state.at)) {
+			// The sentinel goes back bare, as go-git's callers compare it.
+			if stale {
 				return none, err
 			}
 			return none, plumbing.ErrObjectNotFound
 		}
-		if staleManifest {
-			if state, err = r.manifests.revalidate(); err != nil {
-				return none, err
-			}
-		}
-		if staleLoose {
-			listed, err := r.loose.refresh()
-			if err != nil {
-				return none, err
-			}
-			loose = listed.snapshot
+		if state, err = r.manifests.revalidate(); err != nil {
+			return none, err
 		}
 	}
 }
 
-// find is one pass of lookup over one manifest and one loose snapshot.
-func find[T any](r *repository, quarantine *quarantine, state *repoState, loose *looseSnapshot, hash plumbing.Hash, probing bool, inPack func(*packHandle, int64) (T, error), inLoose func() (T, error)) (T, error) {
+// find is one pass of lookup over one manifest.
+func find[T any](r *repository, quarantine *quarantine, state *repoState, hash plumbing.Hash, probing bool, inPack func(*packHandle, int64) (T, error)) (T, error) {
 	var none T
 	// Quarantined packs are decoded into a cache of the quarantine's own: what
 	// the repository's cache holds, every reader of the repository is served.
@@ -212,24 +186,20 @@ func find[T any](r *repository, quarantine *quarantine, state *repoState, loose 
 			answer, err := inPack(handle, offset)
 			_ = handle.decoder.Close()
 			if err != nil {
-				return none, handle.failure(err)
+				err = handle.failure(err)
+				// A pack the manifest names that the store no longer holds,
+				// however it was read — through the decoder or streamed — is
+				// proof that the manifest held is out of date.
+				if errors.Is(err, objstore.ErrNotFound) && !errors.Is(err, errStaleSnapshot) {
+					err = fmt.Errorf("%w: %w", errStaleSnapshot, err)
+				}
+				return none, err
 			}
 			return answer, nil
 		}
 	}
-	if loose == nil || !loose.mayHold(hash) {
-		return none, plumbing.ErrObjectNotFound
-	}
-	return inLoose()
+	return none, plumbing.ErrObjectNotFound
 }
-
-// errLooseKeyAbsent reports that the store holds no loose object under a key the
-// snapshot's filter could not rule out. From a snapshot that has been standing
-// a while it most likely means a compaction elsewhere packed the object and
-// deleted the key, so neither the listing nor the manifest held can say where
-// the object now is, and the answer is to fetch both again; from a listing just
-// taken it is the filter's rare false "maybe", and the object is not loose.
-var errLooseKeyAbsent = errors.New("no loose object under the key")
 
 // packHandle is a decoder over one pack for the length of one call.
 type packHandle struct {
@@ -276,8 +246,8 @@ func (h *packHandle) failure(err error) error {
 	}
 }
 
-// EncodedObject reads one object: from the cache, else from the pack that holds
-// it, else from the loose tier.
+// EncodedObject reads one object: from the cache, else from what is pending,
+// else from the pack that holds it.
 func (r *repository) EncodedObject(kind plumbing.ObjectType, hash plumbing.Hash) (plumbing.EncodedObject, error) { //nolint:ireturn
 	return r.encodedObject(noQuarantine, kind, hash)
 }
@@ -288,12 +258,14 @@ func (r *repository) encodedObject(quarantine *quarantine, kind plumbing.ObjectT
 		object, cached = quarantine.cache.Get(hash)
 	}
 	if !cached {
+		object, cached = r.pending.get(hash)
+	}
+	if !cached {
 		var err error
 		object, err = lookup(r, quarantine, hash, false,
 			func(handle *packHandle, offset int64) (plumbing.EncodedObject, error) {
 				return handle.object(hash, offset)
-			},
-			func() (plumbing.EncodedObject, error) { return r.looseObject(hash) })
+			})
 		if err != nil {
 			return nil, err
 		}
@@ -301,45 +273,6 @@ func (r *repository) encodedObject(quarantine *quarantine, kind plumbing.ObjectT
 	if kind != plumbing.AnyObject && object.Type() != kind {
 		return nil, plumbing.ErrObjectNotFound
 	}
-	return object, nil
-}
-
-// looseObject reads an object the snapshot's filter could not rule out of the
-// loose tier, or reports errLooseKeyAbsent.
-func (r *repository) looseObject(hash plumbing.Hash) (plumbing.EncodedObject, error) { //nolint:ireturn
-	data, _, err := r.shared.getAll(r.shared.baseContext(), looseObjectKey(r.prefix, hash))
-	if errors.Is(err, objstore.ErrNotFound) {
-		return nil, errLooseKeyAbsent
-	}
-	if err != nil {
-		return nil, err
-	}
-	reader, err := objfile.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("loose object %s: %w", hash, err)
-	}
-	defer func() { _ = reader.Close() }()
-	kind, size, err := reader.Header()
-	if err != nil {
-		return nil, fmt.Errorf("loose object %s: %w", hash, err)
-	}
-	object := &plumbing.MemoryObject{}
-	object.SetType(kind)
-	object.SetSize(size)
-	writer, err := object.Writer()
-	if err != nil {
-		return nil, err
-	}
-	if _, err := io.Copy(writer, reader); err != nil {
-		return nil, fmt.Errorf("loose object %s: %w", hash, err)
-	}
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-	if object.Hash() != hash {
-		return nil, fmt.Errorf("loose object %s: its content hashes to %s", hash, object.Hash())
-	}
-	r.objectCache.Put(object)
 	return object, nil
 }
 
@@ -355,13 +288,10 @@ func (r *repository) hasEncodedObject(quarantine *quarantine, hash plumbing.Hash
 	if _, cached := r.objectCache.Get(hash); cached {
 		return nil
 	}
-	_, err := lookup(r, quarantine, hash, true, nil, func() (struct{}, error) {
-		_, err := r.shared.head(r.shared.baseContext(), looseObjectKey(r.prefix, hash))
-		if errors.Is(err, objstore.ErrNotFound) {
-			return struct{}{}, errLooseKeyAbsent
-		}
-		return struct{}{}, err
-	})
+	if _, held := r.pending.get(hash); held {
+		return nil
+	}
+	_, err := lookup(r, quarantine, hash, true, func(*packHandle, int64) (struct{}, error) { return struct{}{}, nil })
 	return err
 }
 
@@ -375,36 +305,23 @@ func (r *repository) encodedObjectSize(quarantine *quarantine, hash plumbing.Has
 	if object, cached := r.objectCache.Get(hash); cached {
 		return object.Size(), nil
 	}
+	if object, held := r.pending.get(hash); held {
+		return object.Size(), nil
+	}
 	return lookup(r, quarantine, hash, false,
-		func(handle *packHandle, offset int64) (int64, error) { return handle.decoder.GetSizeByOffset(offset) },
-		func() (int64, error) {
-			object, err := r.looseObject(hash)
-			if err != nil {
-				return 0, err
-			}
-			return object.Size(), nil
-		})
+		func(handle *packHandle, offset int64) (int64, error) { return handle.decoder.GetSizeByOffset(offset) })
 }
 
-// IterEncodedObjects walks every object of a type, pack by pack and then the
-// loose tier, each object once however many places hold it. It starts from a
-// manifest the store has just vouched for and a listing of its own, since only
-// a listing names the loose objects, and reads lazily, so walking a large
-// repository never holds it in memory.
+// IterEncodedObjects walks every object of a type, what is pending and then
+// pack by pack, each object once however many places hold it. It starts from a
+// manifest the store has just vouched for, and reads the packs lazily, so
+// walking a large repository never holds it in memory.
 func (r *repository) IterEncodedObjects(kind plumbing.ObjectType) (storer.EncodedObjectIter, error) { //nolint:ireturn
 	state, err := r.manifests.revalidate()
 	if err != nil {
 		return nil, err
 	}
-	listed, err := r.loose.refresh()
-	if err != nil {
-		return nil, err
-	}
-	loose := make([]plumbing.Hash, 0, len(listed.listing.loose))
-	for _, object := range listed.listing.loose {
-		loose = append(loose, object.hash)
-	}
-	return &objectWalk{repository: r, kind: kind, packs: state.packs, loose: loose, seen: map[plumbing.Hash]struct{}{}}, nil
+	return &objectWalk{repository: r, kind: kind, pending: r.pending.snapshot(), packs: state.packs, seen: map[plumbing.Hash]struct{}{}}, nil
 }
 
 // objectWalk is the iterator IterEncodedObjects returns. Like every go-git
@@ -412,8 +329,8 @@ func (r *repository) IterEncodedObjects(kind plumbing.ObjectType) (storer.Encode
 type objectWalk struct {
 	repository *repository
 	kind       plumbing.ObjectType
+	pending    []plumbing.EncodedObject
 	packs      []*storedPack
-	loose      []plumbing.Hash
 	seen       map[plumbing.Hash]struct{}
 
 	handle  *packHandle
@@ -435,6 +352,13 @@ func (w *objectWalk) Next() (plumbing.EncodedObject, error) { //nolint:ireturn
 }
 
 func (w *objectWalk) next() (plumbing.EncodedObject, error) { //nolint:ireturn
+	for len(w.pending) > 0 {
+		object := w.pending[0]
+		w.pending = w.pending[1:]
+		if w.kind == plumbing.AnyObject || object.Type() == w.kind {
+			return object, nil
+		}
+	}
 	for {
 		if w.current != nil {
 			object, err := w.current.Next()
@@ -460,26 +384,6 @@ func (w *objectWalk) next() (plumbing.EncodedObject, error) { //nolint:ireturn
 				return nil, err
 			}
 			continue
-		}
-		for len(w.loose) > 0 {
-			hash := w.loose[0]
-			w.loose = w.loose[1:]
-			// A pack has already supplied it: no need to fetch the copy.
-			if _, met := w.seen[hash]; met {
-				continue
-			}
-			object, err := w.repository.looseObject(hash)
-			if errors.Is(err, errLooseKeyAbsent) {
-				// Packed and deleted since the listing: the walk of the packs
-				// either met it or the pack is newer than this walk.
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			if w.kind == plumbing.AnyObject || object.Type() == w.kind {
-				return object, nil
-			}
 		}
 		return nil, io.EOF
 	}
@@ -517,7 +421,7 @@ func (w *objectWalk) ForEach(visit func(plumbing.EncodedObject) error) error {
 
 func (w *objectWalk) Close() {
 	w.closePack()
-	w.packs, w.loose = nil, nil
+	w.pending, w.packs = nil, nil
 }
 
 // AddAlternate is not offered: an alternate is a path to another object
@@ -559,7 +463,7 @@ func (r *repository) IterReferences() (storer.ReferenceIter, error) { //nolint:i
 
 // SetReference writes a reference whatever it held before.
 func (r *repository) SetReference(ref *plumbing.Reference) error {
-	_, err := r.commits.commit(func(d *draft) error { return d.set(ref) })
+	_, err := r.commit(func(d *draft) error { return d.set(ref) })
 	return err
 }
 
@@ -569,7 +473,7 @@ func (r *repository) CheckAndSetReference(next, old *plumbing.Reference) error {
 	if err := checkSafeRefName(next.Name()); err != nil {
 		return err
 	}
-	_, err := r.commits.commit(func(d *draft) error {
+	_, err := r.commit(func(d *draft) error {
 		if old != nil {
 			current := d.reference(old.Name())
 			if current == nil {
@@ -589,7 +493,7 @@ func (r *repository) CreateReference(ref *plumbing.Reference) error {
 	if err := checkSafeRefName(ref.Name()); err != nil {
 		return err
 	}
-	_, err := r.commits.commit(func(d *draft) error {
+	_, err := r.commit(func(d *draft) error {
 		if d.reference(ref.Name()) != nil {
 			return ErrReferenceAlreadyExists
 		}
@@ -604,7 +508,7 @@ func (r *repository) RemoveReference(name plumbing.ReferenceName) error {
 	if err := checkSafeRefName(name); err != nil {
 		return err
 	}
-	_, err := r.commits.commit(func(d *draft) error {
+	_, err := r.commit(func(d *draft) error {
 		d.remove(name)
 		return nil
 	})
@@ -616,7 +520,7 @@ func (r *repository) RemoveReferenceCAS(old *plumbing.Reference) error {
 	if err := checkSafeRefName(old.Name()); err != nil {
 		return err
 	}
-	_, err := r.commits.commit(func(d *draft) error {
+	_, err := r.commit(func(d *draft) error {
 		current := d.reference(old.Name())
 		if current == nil {
 			return plumbing.ErrReferenceNotFound
@@ -637,7 +541,7 @@ func (r *repository) InitializeRepositoryReferences(branch *plumbing.Reference, 
 	if err := checkSafeRefName(branch.Name()); err != nil {
 		return err
 	}
-	_, err := r.commits.commit(func(d *draft) error {
+	_, err := r.commit(func(d *draft) error {
 		alreadyInitialized := false
 		for name := range d.references() {
 			if name.IsBranch() {
@@ -676,7 +580,7 @@ func (r *repository) create() error {
 	if _, err := state.reference(plumbing.HEAD); err == nil {
 		return nil
 	}
-	_, err = r.commits.commit(func(d *draft) error {
+	_, err = r.commit(func(d *draft) error {
 		if d.reference(plumbing.HEAD) != nil {
 			return nil
 		}
