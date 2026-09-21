@@ -46,8 +46,9 @@ Options:
 Environment overrides:
   BLEEPHUB_API_PORT, BLEEPHUB_UI_PORT, BLEEPHUB_DATA_DIR,
   BLEEPHUB_GIT_DIR, BLEEPHUB_ADMIN_TOKEN,
-  BLEEPHUB_OBJECT_S3_BUCKET, BLEEPHUB_OBJECT_S3_ENDPOINT,
-  BLEEPHUB_OBJECT_S3_PREFIX
+  BLEEPHUB_OBJECT_STORE (s3, gcs or azure), BLEEPHUB_OBJECT_BUCKET,
+  BLEEPHUB_OBJECT_PREFIX, and the chosen store's own settings, for example
+  BLEEPHUB_S3_ENDPOINT and BLEEPHUB_S3_REGION (see README.md, Configuration)
 
 Examples:
   $0 start
@@ -71,8 +72,8 @@ check_deps() {
 }
 
 require_object_storage() {
-  if [ -z "${BLEEPHUB_OBJECT_S3_BUCKET:-}" ]; then
-    die "BLEEPHUB_OBJECT_S3_BUCKET is required because local-dev starts persisted Bleephub; point it at an S3-compatible bucket such as MinIO for Actions artifacts, dependency caches, runner logs, release assets, package files, container-registry blobs, CodeQL database archives, CodeQL variant-analysis query packs, and artifact attestation bundles"
+  if [ -z "${BLEEPHUB_OBJECT_STORE:-}" ] || [ -z "${BLEEPHUB_OBJECT_BUCKET:-}" ] || [ -z "${BLEEPHUB_OBJECT_PREFIX:-}" ]; then
+    die "BLEEPHUB_OBJECT_STORE, BLEEPHUB_OBJECT_BUCKET and BLEEPHUB_OBJECT_PREFIX are required because local-dev starts persisted Bleephub; name an object store (for MinIO: BLEEPHUB_OBJECT_STORE=s3 with BLEEPHUB_S3_ENDPOINT and BLEEPHUB_S3_REGION) for Actions artifacts, dependency caches, runner logs, release assets, package files, container-registry blobs, CodeQL database archives, CodeQL variant-analysis query packs, and artifact attestation bundles"
   fi
 }
 
@@ -230,10 +231,7 @@ start() {
   printf 'Admin token: %s\n' "$ADMIN_TOKEN"
   printf 'Data dir:    %s\n' "$DATA_DIR"
   printf 'Git dir:     %s\n' "$GIT_DIR"
-  printf 'Object store bucket: %s\n' "$BLEEPHUB_OBJECT_S3_BUCKET"
-  if [ -n "${BLEEPHUB_OBJECT_S3_ENDPOINT:-}" ]; then
-    printf 'Object store endpoint: %s\n' "$BLEEPHUB_OBJECT_S3_ENDPOINT"
-  fi
+  printf 'Object store: %s, bucket %s, prefix %s\n' "$BLEEPHUB_OBJECT_STORE" "$BLEEPHUB_OBJECT_BUCKET" "$BLEEPHUB_OBJECT_PREFIX"
   printf 'Server log:  %s\n' "$SERVER_LOG"
   if [ "$DEV" -eq 1 ]; then
     printf 'UI log:      %s\n' "$UI_LOG"

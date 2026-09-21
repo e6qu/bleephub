@@ -69,3 +69,5 @@ require (
 )
 
 replace github.com/e6qu/bleephub/gitstore => ../
+
+replace github.com/e6qu/bleephub/gcsclient => ../../gcsclient

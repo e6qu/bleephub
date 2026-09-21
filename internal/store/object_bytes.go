@@ -41,7 +41,7 @@ type ActionsByteStore interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// S3ActionsByteStore keeps object bytes under one prefix of an object-store
+// ObjectStoreByteStore keeps object bytes under one prefix of an object-store
 // bucket. A stored object is exactly its content, and the SHA-256 of that content
 // is kept beside it as object metadata, so that a read can tell bytes the store
 // corrupted from bytes that were written. The digest is not inside the object
@@ -50,7 +50,7 @@ type ActionsByteStore interface {
 // store's version token because that is not a content hash that can be trusted
 // (see gitstore/objstore). An object with no digest beside it is not one this
 // store wrote, and reading it is an error.
-type S3ActionsByteStore struct {
+type ObjectStoreByteStore struct {
 	Objects *gitstore.Store `json:"-"`
 }
 
@@ -59,75 +59,64 @@ type S3ActionsByteStore struct {
 // objstore.Metadata.
 const ObjectChecksumMetadataName = "bleephubsha256"
 
+// NewActionsByteStoreFromEnv returns the byte store the environment configures,
+// or nil when the service's bytes are not kept in an object store. Which store,
+// and how it is reached, is gitbackend's to read: the byte store and the git
+// store are two prefixes of one deployment's object store.
 func NewActionsByteStoreFromEnv(ctx context.Context) (ActionsByteStore, error) {
-	bucket := os.Getenv("BLEEPHUB_OBJECT_S3_BUCKET")
-	if bucket == "" {
-		return nil, nil
-	}
-	endpoint := os.Getenv("BLEEPHUB_OBJECT_S3_ENDPOINT")
-	if endpoint == "" {
-		endpoint = os.Getenv("BLEEPHUB_S3_ENDPOINT")
-	}
-	prefix := os.Getenv("BLEEPHUB_OBJECT_S3_PREFIX")
-	if prefix == "" {
-		prefix = "objects"
-	}
-	objects, err := gitbackend.NewStore(ctx, endpoint, bucket, prefix)
+	objects, err := gitbackend.OpenByteStore(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// The same proof the git store must pass: a bucket that is missing, refuses
-	// this process's credentials or does not keep what it is given is found out
-	// here, not by the first artifact upload.
-	if err := gitbackend.Conform(ctx, objects); err != nil {
-		return nil, err
+	if objects == nil {
+		return nil, nil
 	}
-	return &S3ActionsByteStore{Objects: objects}, nil
+	return &ObjectStoreByteStore{Objects: objects}, nil
 }
 
-func (s *S3ActionsByteStore) Put(ctx context.Context, key string, data []byte) error {
+func (s *ObjectStoreByteStore) Put(ctx context.Context, key string, data []byte) error {
 	checksum := sha256.Sum256(data)
 	return s.putObject(ctx, key, bytes.NewReader(data), int64(len(data)), checksum[:])
 }
 
 // PutStream buffers the reader to a temp file (never the heap) while hashing it,
 // then uploads it behind its SHA-256 (STORE-019).
-func (s *S3ActionsByteStore) PutStream(ctx context.Context, key string, r io.Reader) error {
+func (s *ObjectStoreByteStore) PutStream(ctx context.Context, key string, r io.Reader) error {
 	tmp, err := os.CreateTemp("", "bleephub-object-*")
 	if err != nil {
-		return fmt.Errorf("s3 put %s: stage upload: %w", s.Key(key), err)
+		return fmt.Errorf("object store put %s: stage upload: %w", s.Key(key), err)
 	}
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
 	hasher := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(tmp, hasher), r); err != nil {
-		return fmt.Errorf("s3 put %s: buffer upload: %w", s.Key(key), err)
+		return fmt.Errorf("object store put %s: buffer upload: %w", s.Key(key), err)
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("s3 put %s: rewind upload: %w", s.Key(key), err)
+		return fmt.Errorf("object store put %s: rewind upload: %w", s.Key(key), err)
 	}
 	info, err := tmp.Stat()
 	if err != nil {
-		return fmt.Errorf("s3 put %s: size upload: %w", s.Key(key), err)
+		return fmt.Errorf("object store put %s: size upload: %w", s.Key(key), err)
 	}
 	return s.putObject(ctx, key, tmp, info.Size(), hasher.Sum(nil))
 }
 
 // PutStreamHashed uploads r directly with a caller-computed size and checksum,
 // skipping the temp-file staging PutStream does (the caller already staged it).
-func (s *S3ActionsByteStore) PutStreamHashed(ctx context.Context, key string, r io.Reader, size int64, sha256Sum []byte) error {
+func (s *ObjectStoreByteStore) PutStreamHashed(ctx context.Context, key string, r io.Reader, size int64, sha256Sum []byte) error {
 	return s.putObject(ctx, key, r, size, sha256Sum)
 }
 
-func (s *S3ActionsByteStore) putObject(ctx context.Context, key string, body io.Reader, size int64, checksum []byte) error {
+func (s *ObjectStoreByteStore) putObject(ctx context.Context, key string, body io.Reader, size int64, checksum []byte) error {
 	if len(checksum) != sha256.Size {
-		return fmt.Errorf("s3 put %s: checksum is %d bytes, want a SHA-256", s.Key(key), len(checksum))
+		return fmt.Errorf("object store put %s: checksum is %d bytes, want a SHA-256", s.Key(key), len(checksum))
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	metadata := objstore.Metadata{ObjectChecksumMetadataName: base64.RawStdEncoding.EncodeToString(checksum)}
 	if _, err := s.Objects.Bucket().Put(ctx, s.Key(key), body, size, objstore.Always, metadata); err != nil {
-		return fmt.Errorf("s3 put %s: %w", s.Key(key), err)
+		return fmt.Errorf("object store put %s: %w", s.Key(key), err)
 	}
 	return nil
 }
@@ -135,15 +124,15 @@ func (s *S3ActionsByteStore) putObject(ctx context.Context, key string, body io.
 // GetStream surfaces a missing object (and any other failure to reach it) as an
 // error the caller can handle, rather than a mid-stream body it has already
 // begun serving: the request is made, and the digest read, before it returns.
-func (s *S3ActionsByteStore) GetStream(ctx context.Context, key string) (io.ReadCloser, error) {
+func (s *ObjectStoreByteStore) GetStream(ctx context.Context, key string) (io.ReadCloser, error) {
 	body, info, err := s.Objects.Bucket().Get(ctx, s.Key(key))
 	if err != nil {
-		return nil, fmt.Errorf("s3 get %s: %w", s.Key(key), err)
+		return nil, fmt.Errorf("object store get %s: %w", s.Key(key), err)
 	}
 	expected, err := base64.RawStdEncoding.DecodeString(info.Metadata[ObjectChecksumMetadataName])
 	if err != nil || len(expected) != sha256.Size {
 		_ = body.Close()
-		return nil, fmt.Errorf("s3 get %s: the object has no SHA-256 beside it, so it is not one this store wrote", s.Key(key))
+		return nil, fmt.Errorf("object store get %s: the object has no SHA-256 beside it, so it is not one this store wrote", s.Key(key))
 	}
 	return &verifyingReadCloser{rc: body, hasher: sha256.New(), expected: expected, key: s.Key(key)}, nil
 }
@@ -167,7 +156,7 @@ func (v *verifyingReadCloser) Read(p []byte) (int, error) {
 	if err == io.EOF && !v.checked {
 		v.checked = true
 		if !hmac.Equal(v.expected, v.hasher.Sum(nil)) {
-			return n, fmt.Errorf("s3 get %s: stored SHA-256 checksum does not match object bytes", v.key)
+			return n, fmt.Errorf("object store get %s: stored SHA-256 checksum does not match object bytes", v.key)
 		}
 	}
 	return n, err
@@ -175,7 +164,7 @@ func (v *verifyingReadCloser) Read(p []byte) (int, error) {
 
 func (v *verifyingReadCloser) Close() error { return v.rc.Close() }
 
-func (s *S3ActionsByteStore) Get(ctx context.Context, key string) ([]byte, error) {
+func (s *ObjectStoreByteStore) Get(ctx context.Context, key string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	stream, err := s.GetStream(ctx, key)
@@ -185,16 +174,16 @@ func (s *S3ActionsByteStore) Get(ctx context.Context, key string) ([]byte, error
 	defer stream.Close()
 	data, err := io.ReadAll(stream)
 	if err != nil {
-		return nil, fmt.Errorf("s3 read %s: %w", s.Key(key), err)
+		return nil, fmt.Errorf("object store read %s: %w", s.Key(key), err)
 	}
 	return data, nil
 }
 
-func (s *S3ActionsByteStore) Delete(ctx context.Context, key string) error {
+func (s *ObjectStoreByteStore) Delete(ctx context.Context, key string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := s.Objects.Bucket().Delete(ctx, s.Key(key)); err != nil {
-		return fmt.Errorf("s3 delete %s: %w", s.Key(key), err)
+		return fmt.Errorf("object store delete %s: %w", s.Key(key), err)
 	}
 	return nil
 }
@@ -225,7 +214,7 @@ func StageUpload(r io.Reader) (f *os.File, size int64, sum []byte, err error) {
 	return tmp, n, hasher.Sum(nil), nil
 }
 
-func (s *S3ActionsByteStore) Key(key string) string {
+func (s *ObjectStoreByteStore) Key(key string) string {
 	return path.Join(s.Objects.Prefix(), strings.TrimPrefix(key, "/"))
 }
 
@@ -239,7 +228,7 @@ type ObjectListing struct {
 
 // listAll enumerates every stored object, keyed relative to the store prefix
 // (the inverse of Key), for the orphan reaper.
-func (s *S3ActionsByteStore) listAll(ctx context.Context) ([]ObjectListing, error) {
+func (s *ObjectStoreByteStore) listAll(ctx context.Context) ([]ObjectListing, error) {
 	listPrefix := s.Objects.Prefix()
 	if listPrefix != "" && !strings.HasSuffix(listPrefix, "/") {
 		listPrefix += "/"

@@ -1402,7 +1402,7 @@ func (st *Store) wirePersistence(p *Persistence) {
 	st.Mu.Unlock()
 	// Object-store git bytes have no advisory locking of their own; the shared
 	// durable store arbitrates concurrent ref updates.
-	if gitbackend.IsS3GitStorage() {
+	if gitbackend.GitStorageIsObjectStore() {
 		gitstore.SetGitObjectLocker(p)
 	}
 }

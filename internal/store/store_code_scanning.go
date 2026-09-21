@@ -1120,7 +1120,7 @@ func (st *Store) UpsertCodeQLDatabaseStream(repoKey, language, name, contentType
 	defer st.Mu.Unlock()
 
 	if st.Persist != nil && st.ObjectByteStore == nil {
-		return nil, fmt.Errorf("CodeQL database byte storage requires BLEEPHUB_OBJECT_S3_BUCKET when persistence is enabled")
+		return nil, fmt.Errorf("CodeQL database byte storage requires BLEEPHUB_OBJECT_BUCKET when persistence is enabled")
 	}
 
 	now := st.CurrentTime()
@@ -1337,7 +1337,7 @@ func (st *Store) CreateCodeQLVariantAnalysis(controllerRepoKey string, actorID i
 	defer st.Mu.Unlock()
 
 	if st.Persist != nil && st.ObjectByteStore == nil {
-		return nil, fmt.Errorf("CodeQL variant-analysis query-pack byte storage requires BLEEPHUB_OBJECT_S3_BUCKET when persistence is enabled")
+		return nil, fmt.Errorf("CodeQL variant-analysis query-pack byte storage requires BLEEPHUB_OBJECT_BUCKET when persistence is enabled")
 	}
 
 	now := st.CurrentTime()

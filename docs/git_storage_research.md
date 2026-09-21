@@ -376,9 +376,16 @@ objects by MD5.
   directory; server-side COPY; presigned GET. (The researcher suggested putting
   bulk delete and presigning behind a capability flag with a client-side
   substitute; we require them of every driver instead.)
-- **Never rely on:** an ETag being an MD5; conditional completion of a multipart
-  upload (unavailable on GCS); conditional DELETE or COPY; list ordering beyond
-  lexicographic.
+- **Never rely on:** an ETag being an MD5; conditional completion of a large
+  upload being *documented* everywhere; conditional DELETE or COPY; list ordering
+  beyond lexicographic. (On the second point, found when the drivers were
+  written: Azure documents that a Put Block List may be conditional. GCS does not
+  allow preconditions on its XML multipart uploads; its JSON resumable uploads
+  accept `ifGenerationMatch` when the upload is initiated, and the emulator holds
+  the upload to it at completion, but no documentation page says when it is
+  enforced. S3 accepts `If-Match` on CompleteMultipartUpload. A caller that needs
+  the condition to hold on every store states the object's size, so the write is
+  one request.)
 - **Probe at startup.** Create-if-absent twice must answer "condition not met";
   a stale version must too; a list after a write must show the key. On failure,
   fail closed. This is what catches GCS-over-HMAC, OSS, B2 and older Ceph or
@@ -653,6 +660,27 @@ Concretely: `objstore.Bucket` has no capabilities to ask about and no
 meaning; and `objstore.Conform` proves the guarantees against the live store at
 startup and refuses to run on one that fails them. A store that cannot arbitrate a
 write is not run on differently. It is not run on.
+
+**The server's configuration says the same thing, in the operator's words.**
+`BLEEPHUB_OBJECT_STORE` is `s3`, `gcs` or `azure`, required whenever a bucket is
+named and an error when none is. What is stored where has one name whichever
+driver — `BLEEPHUB_GIT_BUCKET` and `BLEEPHUB_GIT_PREFIX` for repositories,
+`BLEEPHUB_OBJECT_BUCKET` and `BLEEPHUB_OBJECT_PREFIX` for the byte store — and a
+prefix is required with its bucket, because the two may share one and nothing may
+guess where each lives. How the store is reached is named after the driver
+(`BLEEPHUB_S3_ENDPOINT`, `BLEEPHUB_S3_REGION`; `BLEEPHUB_AZURE_ENDPOINT`,
+`_ACCOUNT`, `_KEY`; `BLEEPHUB_GCS_ENDPOINT`, `_CREDENTIALS_FILE`), one endpoint
+per driver serves both stores, and only the chosen driver's settings may be set:
+another's is an error, since a configuration must say one thing. There are no
+defaults — not the byte store's old `objects` prefix, not the region's old
+`AWS_REGION`-then-`us-east-1` chain; an unset `BLEEPHUB_S3_ENDPOINT` is the one
+unset value with a meaning, AWS S3 itself in the stated region. The tunables
+keep one meaning across drivers (the breaker's became
+`BLEEPHUB_OBJECT_STORE_BREAKER_*`, and `BLEEPHUB_GITSTORE_MULTIPART_BYTES` is
+the part, block or chunk size, held by each driver to its own rule). Everything
+is validated together at startup and reported at once, the names the server read
+before this are not read at all, and the switch itself is one function,
+`openBucket` in `internal/gitbackend`.
 
 ## The order of work
 

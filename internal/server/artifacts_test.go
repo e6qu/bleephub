@@ -185,7 +185,7 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 func TestArtifactUploadWritesObjectStore(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.ObjectStoreByteStore{Objects: storedObjects}))
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
 	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", bytes.NewBufferString(`{"name":"object-artifact","version":4,"workflow_run_backend_id":"run-1"}`))
@@ -229,7 +229,7 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 func TestArtifactFinalizeClearsMemoryAndStreamsDownload(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.ObjectStoreByteStore{Objects: storedObjects}))
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 	const payload = "object-backed artifact payload"
 
@@ -376,7 +376,7 @@ func TestGetSignedArtifactURLScopesByWorkflowRunBackendID(t *testing.T) {
 
 func TestCacheUploadWritesObjectStore(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
-	st := store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects})
+	st := store.NewArtifactStoreWithByteStore("", &store.ObjectStoreByteStore{Objects: storedObjects})
 	entry := &store.CacheEntry{ID: 7, Repo: "octo/repo", Key: "linux-go", Version: "v1"}
 	entry.Data = []byte("cache archive bytes")
 

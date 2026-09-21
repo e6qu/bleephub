@@ -51,7 +51,13 @@ their dependency trees — never reach `gitstore`'s or bleephub's `go.mod`.
   `-latency` into each request. A driver that brings its own S3 client, or is
   not written in Go, is measured by the same rule as one that is. The proxy
   forwards the `Host` header untouched, so SigV4 signatures verify against a
-  real endpoint.
+  real endpoint. The bleephub server has one endpoint for everything it keeps in
+  the object store, so its byte store (artifacts, logs, packages) is behind the
+  meter as well as its repositories. No scenario writes to the byte store; what
+  it costs is the twelve requests of the conformance probe it runs when the
+  server starts, which are in `replica-start` and in no other row. Until the
+  server's configuration gave each driver a single endpoint, the harness
+  pointed the byte store past the meter and `replica-start` read 13.
 - **Verified reads.** Each clone checks the branch tip and the number of objects
   it walked, so a driver cannot win a read by losing data.
 
@@ -215,7 +221,7 @@ object. `go run . -level git -files 1000 -commits 30 -pushes 10 -latency 2ms -ru
 | Scenario | bleephub | walgit | git-remote-object-store | git-remote-s3 | git, local disk |
 |---|---|---|---|---|---|
 | `push-initial` | **8** requests, 0.19 s, 977 KiB up | 52, **0.14 s**, 976 KiB up | 15, 0.29 s, 1.9 MiB up | 9, 0.28 s, 929 KiB up | 0.07 s |
-| `replica-start` | **13**, **0.11 s**, **1 KiB** down | 65, 2.31 s, 2.1 MiB down | — | — | — |
+| `replica-start` | **25**, **0.21 s**, **2 KiB** down | 65, 2.31 s, 2.1 MiB down | — | — | — |
 | `clone-cold` | 7, **0.11 s**, 975 KiB down | **5**, 0.12 s, **3 KiB** down | 15, 0.31 s, 3.6 MiB down | 7, 0.29 s, 1.8 MiB down | 0.04 s |
 | `clone-warm` | **3**, **0.09 s**, **1 KiB** down | 4, 0.09 s, 2 KiB down | 15, 0.31 s, 3.6 MiB down | 7, 0.29 s, 1.8 MiB down | 0.04 s |
 | `push-incremental` (10 pushes) | 78, 0.79 s, 256 KiB up | **70**, **0.75 s**, **186 KiB** up | 150, 2.30 s, 854 KiB up | 90, 2.74 s, 8.4 MiB up | 0.68 s |
@@ -235,9 +241,10 @@ What it says:
 - **The two servers differ in when a replica pays.** walgit materializes its
   repositories on local disk as it starts — 2.3 s, 65 requests and the whole
   repository downloaded before it serves anything — and then answers its first
-  clone from disk. bleephub starts in 0.1 s, its thirteen requests being the
-  proof that the store keeps its promises, and leaves each pack in the store
-  until a clone reads it: the first clone fetches the extents it touches, 7
+  clone from disk. bleephub starts in 0.2 s, its twenty-five requests being the
+  proof that the store keeps its promises — made twice, for the prefix its
+  repositories live under and for the one its byte store does — and leaves each
+  pack in the store until a clone reads it: the first clone fetches the extents it touches, 7
   requests and 0.11 s. After that they are level. Which is better depends on how
   many repositories a replica hosts and how many of them anyone asks for: paying
   at start scales with the first number, paying at the first clone with the

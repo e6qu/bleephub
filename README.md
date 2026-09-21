@@ -163,11 +163,47 @@ BLEEPHUB_ADMIN_TOKEN=<token> ./bleephub-server --addr :80 --log-level info
 - `BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY` — **required when persistence is enabled.** A stable base64-encoded 32-byte key for AES-256-GCM encryption of credentials at rest; a missing or wrong key fails startup loudly. Terraform injects it via AWS Secrets Manager.
 - `BLEEPHUB_DATA_DIR` — directory for the SQLite database and local development metadata (default `.`).
 - `BLEEPHUB_GIT_DIR` — store git repos on the local filesystem (default: in-memory).
-- `BLEEPHUB_S3_BUCKET` / `BLEEPHUB_S3_ENDPOINT` / `BLEEPHUB_S3_PREFIX` / `BLEEPHUB_S3_REGION` — store git repos in S3-compatible object storage (bucket set ⇒ S3 wins over `BLEEPHUB_GIT_DIR`). At startup the bucket is probed for the guarantees git storage is built on — conditional writes above all — by writing and deleting one key under `<prefix>/.conformance/`; a store that fails the probe (Google Cloud Storage's S3-compatible endpoint does) is one bleephub refuses to start on. How bleephub drives real git over each of these backends — in-memory, filesystem, and object store — through go-git and its own object-store storage engine is described in [docs/git-storage.md](docs/git-storage.md).
-- `BLEEPHUB_OBJECT_S3_BUCKET` / `BLEEPHUB_OBJECT_S3_ENDPOINT` / `BLEEPHUB_OBJECT_S3_PREFIX` — store Actions artifacts, caches, runner logs, release assets, package files, container-registry blobs, CodeQL archives/query-packs, and attestation bundles in object storage.
+- `BLEEPHUB_GIT_BUCKET` + `BLEEPHUB_GIT_PREFIX` — store git repos in an object store (see **Object store** below). Setting this and `BLEEPHUB_GIT_DIR` together is an error: repositories live in one place, and the server does not choose between two. How bleephub drives real git over each of these backends — in-memory, filesystem, and object store — through go-git and its own object-store storage engine is described in [docs/git-storage.md](docs/git-storage.md).
+- `BLEEPHUB_OBJECT_BUCKET` + `BLEEPHUB_OBJECT_PREFIX` — store Actions artifacts, caches, runner logs, release assets, package files, container-registry blobs, CodeQL archives/query-packs, attestation bundles and Git LFS objects in an object store (the "byte store").
 - `BLEEPHUB_PAGES_JEKYLL_EXECUTABLE` — the Pages build binary (default `bleephub-pages-jekyll`).
 
-Database persistence **requires** durable git storage and `BLEEPHUB_OBJECT_S3_BUCKET`; reloading metadata against in-memory storage would resurrect every repo empty, so those combinations are startup errors, never a silent degraded mode.
+Database persistence **requires** durable git storage and `BLEEPHUB_OBJECT_BUCKET`; reloading metadata against in-memory storage would resurrect every repo empty, so those combinations are startup errors, never a silent degraded mode.
+
+**Object store** (unset by default; nothing here has a default, and nothing is inferred)
+
+| Variable | Meaning |
+|---|---|
+| `BLEEPHUB_OBJECT_STORE` | `s3`, `gcs` or `azure`: the kind of object store. **Required** whenever a bucket below is set; setting it with no bucket is an error, since it names a store nothing is kept in. It is never detected from an endpoint. |
+| `BLEEPHUB_GIT_BUCKET`, `BLEEPHUB_GIT_PREFIX` | Where git repositories live. |
+| `BLEEPHUB_OBJECT_BUCKET`, `BLEEPHUB_OBJECT_PREFIX` | Where the byte store lives. |
+
+A "bucket" is a container on Azure. A prefix is **required** with its bucket: the two stores may share a bucket, so where each lives in it is stated, and neither prefix may be inside the other. The bucket (or container) must already exist.
+
+How the store is reached is named after the driver. One endpoint per driver serves both stores, and **only the chosen driver's settings may be set** — `BLEEPHUB_AZURE_KEY` beside `BLEEPHUB_OBJECT_STORE=s3` is an error naming it, because a deployment's configuration must say one thing.
+
+| Driver | Variable | Meaning |
+|---|---|---|
+| `s3` | `BLEEPHUB_S3_REGION` | **Required.** The region to sign for; `AWS_REGION` is not read. S3-compatible servers (MinIO, R2, SeaweedFS, Ceph, Tigris) generally expect `us-east-1`. |
+| `s3` | `BLEEPHUB_S3_ENDPOINT` | The URL of an S3-compatible server, addressed path-style. Unset **means** AWS S3 itself in `BLEEPHUB_S3_REGION` — that is what unset says, not a guess. Credentials are the `AWS_*` environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`). Do not point it at Google Cloud Storage's S3-compatible endpoint, which ignores conditional writes; use `gcs`. |
+| `azure` | `BLEEPHUB_AZURE_ENDPOINT` | **Required.** The blob service URL, `https://<account>.blob.core.windows.net` (Azurite: `http://127.0.0.1:10000/devstoreaccount1`). |
+| `azure` | `BLEEPHUB_AZURE_ACCOUNT`, `BLEEPHUB_AZURE_KEY` | **Required.** The storage account's name and shared key, which authorizes every request and signs download URLs. |
+| `gcs` | `BLEEPHUB_GCS_ENDPOINT` | **Required.** `https://storage.googleapis.com`, or an emulator's URL. |
+| `gcs` | `BLEEPHUB_GCS_CREDENTIALS_FILE` | **Required.** Path to a service-account key file — the one Google credential that can sign a download URL locally. Application Default Credentials, workload identity and the metadata server are not looked for. |
+
+All of it is validated together at startup: every problem — a missing setting, another driver's setting, an unknown driver, a storage tunable that cannot be read — is reported in one error, and the server does not start. Then each configured store is probed for the guarantees bleephub is built on — conditional writes above all — by writing and deleting one key under `<prefix>/.conformance/`; a store that fails the probe is one bleephub refuses to start on. The storage tunables (`BLEEPHUB_GITSTORE_*`, `BLEEPHUB_OBJECT_STORE_BREAKER_*`) mean the same for every driver; see [docs/scaling.md](docs/scaling.md).
+
+> **Upgrade note — this configuration is a breaking change for every deployment that uses an object store.** The old names are not read. A server given only them refuses to start if `BLEEPHUB_S3_ENDPOINT` or `BLEEPHUB_S3_REGION` is among them (a driver's setting with no `BLEEPHUB_OBJECT_STORE`) or if `BLEEPHUB_PERSIST=true` (no durable storage); otherwise it starts with no object store at all. Rename:
+>
+> | Old | New |
+> |---|---|
+> | `BLEEPHUB_S3_BUCKET` | `BLEEPHUB_GIT_BUCKET` |
+> | `BLEEPHUB_S3_PREFIX` | `BLEEPHUB_GIT_PREFIX` |
+> | `BLEEPHUB_OBJECT_S3_BUCKET` | `BLEEPHUB_OBJECT_BUCKET` |
+> | `BLEEPHUB_OBJECT_S3_PREFIX` | `BLEEPHUB_OBJECT_PREFIX` — previously defaulted to `objects`; state it |
+> | `BLEEPHUB_OBJECT_S3_ENDPOINT` | gone: `BLEEPHUB_S3_ENDPOINT` serves both stores |
+> | `BLEEPHUB_S3_BREAKER_THRESHOLD`, `BLEEPHUB_S3_BREAKER_COOLDOWN_MS` | `BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD`, `BLEEPHUB_OBJECT_STORE_BREAKER_COOLDOWN_MS` |
+>
+> `BLEEPHUB_S3_ENDPOINT` and `BLEEPHUB_S3_REGION` keep their names. Two things are newly required: `BLEEPHUB_OBJECT_STORE=s3` (the driver is stated, never assumed), and explicit values where there used to be defaults — a prefix for each bucket (a git store that ran with no `BLEEPHUB_S3_PREFIX` kept its repositories at the top of the bucket; give it a bucket or a prefix of its own and move them) and `BLEEPHUB_S3_REGION`, which no longer falls back to `AWS_REGION` or `us-east-1`.
 
 **Git over SSH** (unset by default; the transport does not start without the first two)
 
@@ -259,6 +295,12 @@ anyone you let use a modified instance is entitled to that instance's source.
 Third-party material redistributed inside the published images is inventoried in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); all of it (MIT, CC-BY 4.0) is
 one-way compatible with AGPLv3, so inbound dependencies must stay that way.
+`scripts/check-dependency-licenses.py` enforces it in CI for every Go module
+linked into what ships: a licence that cannot be combined into an
+AGPL-3.0-or-later work — GPL-2.0-only, the source-available licences — or that
+the gate cannot identify, fails the build. A dependency that fails is replaced,
+by another library or by one written here as a library of its own at the top of
+this repository, as `gitstore/` is.
 
 ## Prior art
 

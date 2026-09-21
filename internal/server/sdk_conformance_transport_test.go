@@ -638,7 +638,7 @@ func TestGistURLsAreKeyedByGistID(t *testing.T) {
 // Git LFS without object storage
 
 // TestLFSWorksWithoutConfiguredObjectStorage pins that Git LFS is usable on a
-// deployment that never set BLEEPHUB_OBJECT_S3_BUCKET. `git lfs push` used to
+// deployment that never set BLEEPHUB_OBJECT_BUCKET. `git lfs push` used to
 // abort against "Git LFS object storage is not configured on this server",
 // while the repository's own lfs_enabled default said LFS was on. Real GitHub
 // always has LFS.

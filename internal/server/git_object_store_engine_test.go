@@ -15,19 +15,18 @@ import (
 )
 
 // newFakeObjectStoreGitServerForTest brings up a server whose repositories live
-// in an in-process object store, so the object-store git path is exercised
-// wherever the suite runs and not only where a MinIO container can be started.
-// It cannot be parallel: the storage backend is chosen from the process
+// in the in-process fake of one object-store driver, configured from the
+// environment as a deployment on that driver is, so the object-store git path is
+// exercised wherever the suite runs and not only where a container can be
+// started. It cannot be parallel: the storage backend is chosen from the process
 // environment.
-func newFakeObjectStoreGitServerForTest(t *testing.T) *isolatedServer {
+func newFakeObjectStoreGitServerForTest(t *testing.T, driver string) *isolatedServer {
 	t.Helper()
 	t.Setenv("BLEEPHUB_GIT_DIR", "")
-	t.Setenv("BLEEPHUB_S3_ENDPOINT", testutil.FakeS3Endpoint(t))
-	t.Setenv("BLEEPHUB_S3_BUCKET", "bleephub-test")
-	t.Setenv("BLEEPHUB_S3_PREFIX", "git")
+	testutil.ConfigureFakeObjectStore(t, driver, "bleephub-test")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "bleephub-test")
+	t.Setenv("BLEEPHUB_GIT_PREFIX", "git")
 	t.Setenv("BLEEPHUB_GITSTORE_CACHE_DIR", t.TempDir())
-	t.Setenv("AWS_ACCESS_KEY_ID", "bleephub-test")
-	t.Setenv("AWS_SECRET_ACCESS_KEY", "bleephub-test-secret")
 	resetGitObjectStoreForTest(t)
 	return newIsolatedServer(t)
 }
@@ -49,10 +48,22 @@ func largeIncompressibleFile(size int) []byte {
 // post buffer, landing as a pack in the bucket; a fresh clone served from it;
 // and a read of the file through the storage engine, which hands an object this
 // large out as a stream from its pack rather than as bytes in memory. Each of
-// those was a defect or a gap once, and none needs a container to check.
+// those was a defect or a gap once, and none needs a container to check. It
+// runs once for every driver a deployment can choose, because what it protects
+// is a property of the server on that driver and not of the engine alone: the
+// pack is an upload and the read a ranged request, and each store has its own
+// way of saying both.
 func TestStockGitRoundTripsALargeFileThroughTheObjectStoreEngine(t *testing.T) {
+	for _, driver := range testutil.ObjectStoreDrivers {
+		t.Run(driver, func(t *testing.T) {
+			stockGitRoundTripsALargeFile(t, driver)
+		})
+	}
+}
+
+func stockGitRoundTripsALargeFile(t *testing.T, driver string) {
 	git := requireGitCLI(t)
-	srv := newFakeObjectStoreGitServerForTest(t)
+	srv := newFakeObjectStoreGitServerForTest(t, driver)
 	const name = "large-file"
 	seedGitShallowRepo(t, srv.Server, name)
 

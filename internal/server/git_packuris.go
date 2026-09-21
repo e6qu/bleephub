@@ -220,5 +220,5 @@ const gitPackURIFetchArgument = "packfile-uris"
 // local-directory backends have no such address, so neither packfile-uris nor
 // bundle-uri is advertised there.
 func gitPackOffloadSupported() bool {
-	return gitbackend.IsS3GitStorage()
+	return gitbackend.GitStorageIsObjectStore()
 }

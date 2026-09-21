@@ -26,7 +26,12 @@ WORKDIR /src
 COPY . .
 COPY --from=ui-builder /src/web/dist/ ./internal/server/dist/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub ./cmd/bleephub && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-ssh-gateway ./ssh-gateway
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-ssh-gateway ./ssh-gateway && \
+    mkdir /build-info && \
+    BLEEPHUB_VERSION="${BLEEPHUB_VERSION}" BLEEPHUB_COMMIT="${BLEEPHUB_COMMIT}" BLEEPHUB_PUBLISHED_AT="${BLEEPHUB_PUBLISHED_AT}" \
+        scripts/write-build-info.sh /bleephub /build-info/bleephub.build-info.txt && \
+    BLEEPHUB_VERSION="${BLEEPHUB_VERSION}" BLEEPHUB_COMMIT="${BLEEPHUB_COMMIT}" BLEEPHUB_PUBLISHED_AT="${BLEEPHUB_PUBLISHED_AT}" \
+        scripts/write-build-info.sh /bleephub-ssh-gateway /build-info/bleephub-ssh-gateway.build-info.txt
 
 FROM golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS go-toolchain
 
@@ -42,13 +47,19 @@ RUN apt_transaction() { rm -rf /var/lib/apt/lists/*; apt-get update && DEBIAN_FR
     rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY go.mod go.sum ./
-# go.mod replaces the gitstore library with ./gitstore, and the module graph
-# cannot be loaded without the replacement's own go.mod.
+# go.mod replaces the gitstore and gcsclient libraries with ./gitstore and
+# ./gcsclient, and the module graph cannot be loaded without each replacement's
+# own go.mod.
 COPY gitstore/go.mod gitstore/go.sum ./gitstore/
+COPY gcsclient/go.mod gcsclient/go.sum ./gcsclient/
 RUN go mod download
 COPY dqlite-node ./dqlite-node
 COPY internal/dqliteaddr ./internal/dqliteaddr
-RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-dqlite-node ./dqlite-node
+COPY scripts/write-build-info.sh ./scripts/write-build-info.sh
+RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w -X main.version=${BLEEPHUB_VERSION} -X main.commit=${BLEEPHUB_COMMIT} -X main.publishedAt=${BLEEPHUB_PUBLISHED_AT}" -o /bleephub-dqlite-node ./dqlite-node && \
+    mkdir /build-info && \
+    BLEEPHUB_VERSION="${BLEEPHUB_VERSION}" BLEEPHUB_COMMIT="${BLEEPHUB_COMMIT}" BLEEPHUB_PUBLISHED_AT="${BLEEPHUB_PUBLISHED_AT}" \
+        scripts/write-build-info.sh /bleephub-dqlite-node /build-info/bleephub-dqlite-node.build-info.txt
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 # Jekyll and Sass read source files as the process's default external encoding;
@@ -79,6 +90,15 @@ COPY --from=builder /bleephub /usr/local/bin/bleephub
 COPY --from=builder /bleephub-ssh-gateway /usr/local/bin/bleephub-ssh-gateway
 COPY --from=dqlite-builder /bleephub-dqlite-node /usr/local/bin/bleephub-dqlite-node
 COPY pages-jekyll /usr/local/bin/bleephub-pages-jekyll
+# The terms of what these binaries contain, where someone holding only the image
+# can read them: bleephub's own licence, and the licence and attribution notices
+# of every module linked into it, which those licences require to accompany it.
+COPY LICENSE THIRD-PARTY-NOTICES.md THIRD-PARTY-LICENSES.txt /usr/share/doc/bleephub/
+# And what each binary was built from — release, commit, its own digest, every
+# module linked in with its version and checksum — read back out of the binary by
+# the toolchain that built it. The binaries are as they were; this sits beside them.
+COPY --from=builder /build-info/ /usr/share/doc/bleephub/
+COPY --from=dqlite-builder /build-info/ /usr/share/doc/bleephub/
 # Ubuntu ships an unowned ACME test-server binary in this base image. Bleephub
 # never invokes it, and retaining a network daemon with its own Go dependency
 # graph would expand both the runtime surface and vulnerability inventory.

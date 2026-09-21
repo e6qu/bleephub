@@ -14,7 +14,7 @@ import (
 // object younger than the grace period.
 func TestObjectReaperReclaimsOrphansSafely(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
-	byteStore := &store.S3ActionsByteStore{Objects: storedObjects}
+	byteStore := &store.ObjectStoreByteStore{Objects: storedObjects}
 	s := newTestServer()
 	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", byteStore))
 	s.store.ObjectByteStore = byteStore

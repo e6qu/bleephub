@@ -78,7 +78,7 @@ func OpenS3(_ context.Context, endpoint, bucket, prefix string, opts Options) (*
 		Region:      opts.Region,
 		Credentials: opts.Credentials,
 		Transport:   opts.Transport,
-		PartBytes:   uint64(opts.MultipartBytes), // #nosec G115 -- resolved() leaves it positive
+		PartBytes:   opts.UploadPieceBytes(),
 	})
 	if err != nil {
 		return nil, err

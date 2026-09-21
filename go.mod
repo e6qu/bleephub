@@ -6,6 +6,7 @@ require (
 	github.com/beevik/etree v1.8.0
 	github.com/canonical/go-dqlite/v3 v3.0.4
 	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/e6qu/bleephub/gcsclient v0.0.0
 	github.com/go-git/go-billy/v5 v5.9.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-jose/go-jose/v4 v4.1.5
@@ -38,9 +39,13 @@ require (
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/Rican7/retry v0.3.1 // indirect
+	github.com/apache/arrow-go/v18 v18.7.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -53,7 +58,9 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
+	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/renameio v1.0.1 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
@@ -69,6 +76,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/onsi/gomega v1.42.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.28 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -84,6 +92,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
@@ -106,3 +115,5 @@ require (
 )
 
 replace github.com/e6qu/bleephub/gitstore => ./gitstore
+
+replace github.com/e6qu/bleephub/gcsclient => ./gcsclient

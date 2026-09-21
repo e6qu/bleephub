@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/e6qu/bleephub/internal/store"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -581,7 +582,7 @@ func TestGitDeleteCleanup(t *testing.T) {
 func TestDeleteRepoReportsS3GitCleanupFailure(t *testing.T) {
 	resetGitObjectStoreForTest(t)
 	t.Setenv("BLEEPHUB_GIT_DIR", "")
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	testutil.ClearObjectStoreSettings(t)
 
 	st := store.NewStore()
 	st.SeedDefaultUser()
@@ -592,8 +593,11 @@ func TestDeleteRepoReportsS3GitCleanupFailure(t *testing.T) {
 	}
 
 	resetGitObjectStoreForTest(t)
-	t.Setenv("BLEEPHUB_S3_BUCKET", "bucket")
+	testutil.ConfigureS3ForTest(t)
+	t.Setenv("BLEEPHUB_OBJECT_STORE", "s3")
 	t.Setenv("BLEEPHUB_S3_ENDPOINT", "http://127.0.0.1:1")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "bucket")
+	t.Setenv("BLEEPHUB_GIT_PREFIX", "git")
 
 	deleted, err := st.DeleteRepo(admin.Login, repo.Name)
 	if err == nil {

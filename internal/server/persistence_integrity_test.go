@@ -119,7 +119,7 @@ func TestExpiredDurableLockIsTakenOver(t *testing.T) {
 // after a rename addresses the moved bytes, not the prefix they left.
 func TestRenameRepoRebindsGitStorageToNewPrefix(t *testing.T) {
 	gitDir := t.TempDir()
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	st := store.NewStore()
@@ -168,7 +168,7 @@ func TestRenameRepoRebindsGitStorageToNewPrefix(t *testing.T) {
 // could not be moved leaves the repository addressable under its old name.
 func TestRenameRepoAbortsWhenTheStorageMoveFails(t *testing.T) {
 	gitDir := t.TempDir()
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	st := store.NewStore()
@@ -196,7 +196,7 @@ func TestRenameRepoAbortsWhenTheStorageMoveFails(t *testing.T) {
 
 func TestTransferRepoRebindsGitStorageToNewOwnerPrefix(t *testing.T) {
 	gitDir := t.TempDir()
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	st := store.NewStore()
@@ -244,7 +244,7 @@ func TestTransferRepoRebindsGitStorageToNewOwnerPrefix(t *testing.T) {
 func TestInterruptedRepoDeleteIsFinishedOnRestart(t *testing.T) {
 	dataDir := t.TempDir()
 	gitDir := t.TempDir()
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	p1 := openTestPersistence(t, dataDir)
@@ -307,7 +307,7 @@ func TestInterruptedRepoDeleteIsFinishedOnRestart(t *testing.T) {
 func TestInterruptedOrgDeleteDoesNotPoisonBoot(t *testing.T) {
 	dataDir := t.TempDir()
 	gitDir := t.TempDir()
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	p1 := openTestPersistence(t, dataDir)
@@ -367,7 +367,7 @@ func TestInterruptedOrgDeleteDoesNotPoisonBoot(t *testing.T) {
 func TestDeleteOrgCascadesToItsRepositories(t *testing.T) {
 	dataDir := t.TempDir()
 	gitDir := t.TempDir()
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	p1 := openTestPersistence(t, dataDir)
@@ -488,7 +488,7 @@ func TestDeletedIdentifierIsNotReusedAcrossRestart(t *testing.T) {
 func TestDeletedRepositoryIdentifierIsNotReusedAcrossRestart(t *testing.T) {
 	dataDir := t.TempDir()
 	gitDir := t.TempDir()
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	p1 := openTestPersistence(t, dataDir)

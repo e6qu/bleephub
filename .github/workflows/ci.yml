@@ -214,6 +214,18 @@ jobs:
           go build -mod=readonly -modfile=.github/security-go.mod \
             -o "$RUNNER_TEMP/bin/staticcheck" honnef.co/go/tools/cmd/staticcheck
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # bleephub is AGPL-3.0-or-later, and compatibility with it runs one way and
+      # is version-specific. A new dependency's licence is read here before it
+      # is linked; one the gate cannot identify fails rather than passes.
+      - name: Refuse dependencies whose licence cannot be combined into an AGPL-3.0-or-later work
+        run: |
+          ./scripts/check-dependency-licenses.py --self-test
+          ./scripts/check-dependency-licenses.py
+      # Those licences ask that their text and attribution notices accompany the
+      # binaries. The file that does it is generated from what is linked, and a
+      # dependency added or bumped without regenerating it fails here.
+      - name: Check the attributions shipped with the binaries are current
+        run: ./scripts/generate-third-party-licenses.py --check
       - name: Enforce the dependency quarantine window
         run: ./scripts/check-dependency-age.py go nuget terraform docker actions runner
         env:
@@ -224,7 +236,7 @@ jobs:
       - name: Run staticcheck and gosec in every Go module
         run: |
           set -euo pipefail
-          for module in . gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
+          for module in . gcsclient gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
             echo "::group::$module"
             (cd "$module" && staticcheck ./...)
             # G101 treats public context keys and token-prefix constants as
@@ -235,7 +247,7 @@ jobs:
       - name: Reject reachable Go vulnerabilities in every module
         run: |
           set -euo pipefail
-          for module in . gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
+          for module in . gcsclient gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
             echo "::group::$module"
             (cd "$module" && govulncheck ./...)
             echo "::endgroup::"
@@ -334,6 +346,15 @@ jobs:
     name: Nested Go modules
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      # Where the object-store drivers find the emulators this job starts. The
+      # account and key are Azurite's published development ones, not a secret.
+      OBJSTORE_AZURE_TEST_ENDPOINT: http://127.0.0.1:10000/devstoreaccount1
+      OBJSTORE_AZURE_TEST_ACCOUNT: devstoreaccount1
+      OBJSTORE_AZURE_TEST_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
+      OBJSTORE_AZURE_TEST_CONTAINER: objstoretest
+      OBJSTORE_GCS_TEST_ENDPOINT: http://127.0.0.1:4443
+      OBJSTORE_GCS_TEST_BUCKET: objstoretest
     steps:
       - *checkout
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -354,7 +375,7 @@ jobs:
       - name: Build and vet every nested module
         run: |
           set -euo pipefail
-          for module in gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless test/conformance/drivers/gogithub; do
+          for module in gcsclient gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless test/conformance/drivers/gogithub; do
             echo "::group::$module"
             (cd "$module" && go build ./... && go vet ./...)
             echo "::endgroup::"
@@ -365,8 +386,65 @@ jobs:
       # (its subject is concurrent readers, writers and compaction) and against
       # its own non-regression floor, since it no longer counts toward the
       # server's.
+      # Each object-store driver is held to one suite, and passes it in-process
+      # against a fake of the store it drives. A fake is its author's reading of
+      # the store's documentation, written by the hand that wrote the driver, so
+      # the same suite is run here against the store's own emulator: a driver
+      # and a fake that agree with each other and not with the service are found
+      # out at this step and nowhere else. Azurite is Microsoft's emulator of
+      # Azure Blob Storage; its account and key are the published development
+      # ones. It lags the SDK's API version, which --skipApiVersionCheck allows.
+      - name: Start the Azure Blob Storage emulator
+        run: |
+          set -euo pipefail
+          docker run --detach --name azurite --publish 127.0.0.1:10000:10000 \
+            mcr.microsoft.com/azure-storage/azurite:3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5 \
+            azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose=false
+          for _ in $(seq 1 60); do
+            if curl --silent --output /dev/null "http://127.0.0.1:10000/devstoreaccount1?comp=list"; then exit 0; fi
+            sleep 1
+          done
+          docker logs azurite
+          echo "the Azure Blob Storage emulator did not start" >&2
+          exit 1
+      # fake-gcs-server is the community emulator of the Google Cloud Storage JSON
+      # API; Google publishes none. It checks neither credentials nor signed
+      # URLs, so what this run proves is the protocol — preconditions, resumable
+      # uploads, batch, rewrite, paging — against an implementation the driver's
+      # author did not write.
+      - name: Start the Google Cloud Storage emulator
+        run: |
+          set -euo pipefail
+          docker run --detach --name fake-gcs --publish 127.0.0.1:4443:4443 \
+            fsouza/fake-gcs-server:1.56.1@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef \
+            -scheme http -port 4443 -backend memory -public-host 127.0.0.1:4443 -external-url http://127.0.0.1:4443
+          for _ in $(seq 1 60); do
+            if curl --silent --fail --output /dev/null "http://127.0.0.1:4443/storage/v1/b"; then exit 0; fi
+            sleep 1
+          done
+          docker logs fake-gcs
+          echo "the Google Cloud Storage emulator did not start" >&2
+          exit 1
+      # The Google Cloud Storage client is a library of its own at the top of the
+      # repository, knowing nothing of git, with its own suite against its own
+      # in-process fake of the service.
+      - name: Test the gcsclient library under the race detector
+        run: cd gcsclient && go test -race -count=1 -timeout 10m ./...
       - name: Test the gitstore library under the race detector
         run: cd gitstore && go test -race -count=1 -timeout 10m -coverprofile="$RUNNER_TEMP/gitstore-coverage.out" ./...
+      # A skipped emulator run would look like a pass. The driver's test says
+      # which it did, and this step refuses the skip.
+      - name: Require that every driver ran against its emulator
+        run: |
+          set -euo pipefail
+          cd gitstore
+          for driver in azure gcs; do
+            go test -count=1 -timeout 10m -run 'AgainstARealEndpoint' -v "./objstore/$driver/" | tee "$RUNNER_TEMP/$driver-emulator.log"
+            if grep -q -- '--- SKIP' "$RUNNER_TEMP/$driver-emulator.log" || ! grep -q -- '--- PASS' "$RUNNER_TEMP/$driver-emulator.log"; then
+              echo "the $driver driver's emulator run was skipped or did not run" >&2
+              exit 1
+            fi
+          done
       - name: Enforce the gitstore coverage floor
         env:
           BLEEPHUB_GO_COVERAGE_MIN: '77.0'
@@ -395,7 +473,7 @@ jobs:
       - name: Assert every module is covered
         run: |
           set -euo pipefail
-          expected=$'./go.mod\n./gitstore/bench/go.mod\n./gitstore/go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/conformance/drivers/gogithub/go.mod\n./test/terraform-sockerless/go.mod'
+          expected=$'./go.mod\n./gcsclient/go.mod\n./gitstore/bench/go.mod\n./gitstore/go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/conformance/drivers/gogithub/go.mod\n./test/terraform-sockerless/go.mod'
           found=$(find . -name go.mod -not -path './web/*' | sort)
           if [ "$found" != "$(printf '%s' "$expected" | sort)" ]; then
             echo "Go modules changed. Found:"; echo "$found"

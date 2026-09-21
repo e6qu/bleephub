@@ -205,7 +205,7 @@ func TestTheGitLevelDrivesStockGitAndVerifiesWhatComesBack(t *testing.T) {
 	target, _ := url.Parse(fake.URL())
 	meter := NewMeter(target)
 	t.Cleanup(meter.Close)
-	env := Env{Endpoint: meter.URL(), DirectEndpoint: fake.URL(), Bucket: "bucket", Region: "us-east-1",
+	env := Env{Endpoint: meter.URL(), Bucket: "bucket", Region: "us-east-1",
 		AccessKey: "fake", SecretKey: "fake", Prefix: "git-level", TempDir: t.TempDir()}
 	ctx := context.Background()
 

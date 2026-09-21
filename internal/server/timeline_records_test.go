@@ -423,7 +423,7 @@ func TestLogfilesUpload_AppendsBlocks(t *testing.T) {
 func TestLogfilesUpload_WritesObjectStore(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.ObjectStoreByteStore{Objects: storedObjects}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
@@ -439,7 +439,7 @@ func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
 	newGitObjectStoreForTest(t)
 	storedObjects := deriveObjectStoreForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.ObjectStoreByteStore{Objects: storedObjects}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
@@ -468,7 +468,7 @@ func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
 func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.ObjectStoreByteStore{Objects: storedObjects}))
 	_, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
@@ -494,7 +494,7 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 
 func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
-	byteStore := &store.S3ActionsByteStore{Objects: storedObjects}
+	byteStore := &store.ObjectStoreByteStore{Objects: storedObjects}
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
 
@@ -547,7 +547,7 @@ func TestRunLogsDelete_ObjectStoreFailurePreservesState(t *testing.T) {
 	storedObjects := deriveObjectStoreForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
 	s.registerGHActionsPermissionsRoutes()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.ObjectStoreByteStore{Objects: storedObjects}))
 	wf, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
