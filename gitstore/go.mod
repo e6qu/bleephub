@@ -8,7 +8,6 @@ require (
 	github.com/e6qu/bleephub/gcsclient v0.0.0
 	github.com/go-git/go-billy/v5 v5.9.1
 	github.com/go-git/go-git/v5 v5.19.2
-	github.com/google/uuid v1.6.0
 	github.com/minio/minio-go/v7 v7.3.0
 	golang.org/x/sync v0.23.0
 )
@@ -28,6 +27,7 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/compress v1.19.2 // indirect

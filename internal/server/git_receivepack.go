@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -369,8 +370,14 @@ func gitStatusLine(text string) string {
 // Objects are ingested first because whether an update discards commits — what
 // force-push protection and "forced update" turn on — is only answerable once
 // the pushed commits are readable.
+//
+// Where the storage can take a push as one transaction — the object store —
+// the objects are ingested into quarantine, decided on through the transaction,
+// which alone can read them, and made part of the repository by the same commit
+// that moves the references. A push that is refused then leaves nothing a reader
+// can see. The other backends have no commit point to put the two behind: their
+// objects land first and their references after, one by one.
 func (s *Server) applyGitReceivePack(ctx context.Context, target *gitTarget, request *gitReceiveRequest) (*gitReceivePackOutcome, error) {
-	stor := target.stor
 	outcome := &gitReceivePackOutcome{report: &gitPushReport{unpackStatus: "ok", v2: request.reportStatusV2}}
 	// Echo the options back like a hook's output, so the pusher sees the server
 	// read exactly what it sent.
@@ -386,7 +393,26 @@ func (s *Server) applyGitReceivePack(ctx context.Context, target *gitTarget, req
 			new:       command.New,
 		})
 	}
-	if err := ingestPushedObjects(stor, request.packfile); err != nil {
+
+	// deciding is the target as the decisions read it, and apply is how what they
+	// allow is written: through the transaction where there is one.
+	deciding := target
+	apply := func() error { return s.applyGitPushCommands(target.stor, outcome, request.atomic) }
+	if transactor, transactional := target.stor.(gitstore.PushTransactor); transactional {
+		push, err := transactor.BeginPush()
+		if err != nil {
+			return nil, err
+		}
+		// Ending a transaction that has been committed changes nothing, so every
+		// way out of here that did not commit leaves the pack in quarantine.
+		defer push.Abort()
+		quarantined := *target
+		quarantined.stor = push
+		deciding = &quarantined
+		apply = func() error { return commitGitPushCommands(push, outcome, request.atomic) }
+	}
+
+	if err := ingestPushedObjects(deciding.stor, request.packfile); err != nil {
 		outcome.report.unpackStatus = gitStatusLine(err.Error())
 		outcome.messagef("error: %s", err.Error())
 		for _, status := range outcome.report.statuses {
@@ -394,7 +420,7 @@ func (s *Server) applyGitReceivePack(ctx context.Context, target *gitTarget, req
 		}
 		return outcome, nil
 	}
-	if err := s.decideGitPushCommands(ctx, target, outcome); err != nil {
+	if err := s.decideGitPushCommands(ctx, deciding, outcome); err != nil {
 		return nil, err
 	}
 	if !request.reportsStatus() {
@@ -407,7 +433,7 @@ func (s *Server) applyGitReceivePack(ctx context.Context, target *gitTarget, req
 	if request.atomic {
 		refuseGitPushAtomically(outcome.report.statuses)
 	}
-	if err := s.applyGitPushCommands(stor, outcome, request.atomic); err != nil {
+	if err := apply(); err != nil {
 		return nil, err
 	}
 	if !request.quiet {
@@ -417,6 +443,44 @@ func (s *Server) applyGitReceivePack(ctx context.Context, target *gitTarget, req
 	// leaves the repository due one (see git_compaction.go), and a run after
 	// every push spent a listing of the object tree finding nothing to do.
 	return outcome, nil
+}
+
+// commitGitPushCommands writes the references the verdicts allow, and the pushed
+// pack with them, as one commit of the repository. Each update carries the
+// old-oid its command asserted, so a reference the REST lane moved between
+// decision and commit refuses that update — and, under atomic, the push — and
+// nothing needs rolling back, because nothing was written.
+func commitGitPushCommands(push gitstore.PushTransaction, outcome *gitReceivePackOutcome, atomicPush bool) error {
+	var allowed []*gitPushStatus
+	var updates []gitstore.ReferenceUpdate
+	for _, status := range outcome.report.statuses {
+		if status.status == "" {
+			allowed = append(allowed, status)
+			updates = append(updates, gitstore.ReferenceUpdate{Name: status.command.Name, Old: status.command.Old, New: status.command.New})
+		}
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	refusals, err := push.Commit(updates, atomicPush)
+	if err != nil {
+		return err
+	}
+	for i, status := range allowed {
+		switch refusal := refusals[i]; {
+		case refusal == nil:
+			status.updated = true
+			outcome.applied = append(outcome.applied, status.command)
+		case !errors.Is(refusal, gitstore.ErrPushAborted):
+			status.status = gitStatusLine("failed to update ref: " + refusal.Error())
+		}
+	}
+	// What an atomic push's other updates were refused for is another update's
+	// refusal, and is worded as every such refusal is.
+	if atomicPush {
+		refuseGitPushAtomically(outcome.report.statuses)
+	}
+	return nil
 }
 
 // decideGitPushCommands gives every command its verdict without touching a

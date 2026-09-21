@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -70,7 +71,7 @@ func TestASubStoreSharesTheConnectionAndNotTheKeys(t *testing.T) {
 			t.Fatalf("set: %v", err)
 		}
 	}
-	if keys := strings.Join(fake.KeysWithPrefix(""), ","); keys != "bytes/"+testRepo+"/refs/heads/main,git/"+testRepo+"/refs/heads/main" {
+	if keys := strings.Join(fake.KeysWithPrefix(""), ","); keys != "bytes/"+testRepo+"/manifest,git/"+testRepo+"/manifest" {
 		t.Fatalf("the two stores wrote %s", keys)
 	}
 
@@ -108,7 +109,12 @@ func TestCancellingTheBaseContextStopsStoreCalls(t *testing.T) {
 	if err := stor.SetReference(plumbing.NewHashReference(testBranch, hashOf(2))); !errors.Is(err, context.Canceled) {
 		t.Fatalf("a write after shutdown: %v, want the cancellation", err)
 	}
-	if _, err := stor.Reference("refs/heads/unread"); !errors.Is(err, context.Canceled) {
+	// A handle that holds nothing has to ask the store, and cannot.
+	unread, err := store.Repository("octocat/unread")
+	if err != nil {
+		t.Fatalf("repository: %v", err)
+	}
+	if _, err := unread.Reference(testBranch); !errors.Is(err, context.Canceled) {
 		t.Fatalf("a read after shutdown: %v, want the cancellation", err)
 	}
 	if spent := fake.Snapshot().Sub(before); spent.Put != 0 {
@@ -137,6 +143,22 @@ func TestARepositoryIsCopiedRenamedAndDeletedWhole(t *testing.T) {
 	if err := source.SetReference(plumbing.NewHashReference(testBranch, tip)); err != nil {
 		t.Fatalf("set: %v", err)
 	}
+	// More references than a manifest carries inline, so that the manifest names
+	// a snapshot and the copy has one to carry.
+	tags := make([]ReferenceUpdate, 0, refChangeBound+1)
+	for i := range refChangeBound + 1 {
+		tags = append(tags, ReferenceUpdate{Name: plumbing.NewTagReferenceName(fmt.Sprintf("v%d", i)), New: tip})
+	}
+	push, err := source.(PushTransactor).BeginPush()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if _, err := push.Commit(tags, true); err != nil {
+		t.Fatalf("tag: %v", err)
+	}
+	if len(fake.KeysWithPrefix("prefix/octocat/source/"+refSnapshotDirectory)) != 1 {
+		t.Fatal("premise: the source's references were not folded into a snapshot")
+	}
 	sourceKeys := len(fake.KeysWithPrefix("prefix/octocat/source/"))
 
 	holds := func(name string) error {
@@ -150,6 +172,12 @@ func TestARepositoryIsCopiedRenamedAndDeletedWhole(t *testing.T) {
 		}
 		if ref.Hash() != tip {
 			t.Fatalf("%s: branch is %s, want %s", name, ref.Hash(), tip)
+		}
+		if _, err := store.ExistingRepository(name); err != nil {
+			return err
+		}
+		if tagged, err := stor.Reference(plumbing.NewTagReferenceName("v7")); err != nil || tagged.Hash() != tip {
+			t.Fatalf("%s: a reference of the snapshot is %v (%v), want %s", name, tagged, err, tip)
 		}
 		for _, hash := range append([]plumbing.Hash{loose}, hashes...) {
 			if _, err := stor.EncodedObject(plumbing.AnyObject, hash); err != nil {
@@ -189,6 +217,12 @@ func TestARepositoryIsCopiedRenamedAndDeletedWhole(t *testing.T) {
 	if _, err := gone.Reference(testBranch); !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		t.Fatalf("the renamed-away repository still resolves its branch: %v", err)
 	}
+	if _, err := store.ExistingRepository("octocat/copy"); !errors.Is(err, ErrNoManifest) {
+		t.Fatalf("the renamed-away repository still exists: %v", err)
+	}
+	if err := store.CopyRepository("octocat/copy", "octocat/from-nothing"); !errors.Is(err, ErrNoManifest) {
+		t.Fatalf("copying a repository that does not exist answered %v, want ErrNoManifest", err)
+	}
 
 	if err := store.DeleteRepository("octocat/source"); err != nil {
 		t.Fatalf("delete: %v", err)
@@ -211,29 +245,19 @@ func TestARepositoryIsCopiedRenamedAndDeletedWhole(t *testing.T) {
 // makes a listing's request count comparable to it.
 func TestAListingFollowsEveryPage(t *testing.T) {
 	fake := newFakeS3(t)
-	const references = 2500
-	for i := range references {
-		fake.Put(refKey(plumbing.NewBranchReferenceName(padHex(i))), []byte(hashOf(i).String()+"\n"))
+	const objects = 2500
+	for i := range objects {
+		fake.Put(looseObjectKey("prefix/"+testRepo+"/", hashOf(i)), []byte("x"))
 	}
 	stor := testPackedStorage(t, fake)
 	before := fake.Snapshot()
-	count, err := stor.CountLooseRefs()
-	if err != nil || count != references {
-		t.Fatalf("counted %d references (err %v), want %d", count, err, references)
+	listed, err := stor.loose.refresh()
+	if err != nil || len(listed.listing.loose) != objects {
+		t.Fatalf("listed %d loose objects (err %v), want %d", len(listed.listing.loose), err, objects)
 	}
 	if spent := fake.Snapshot().Sub(before); spent.List != 3 || spent.Total() != 3 {
-		t.Fatalf("listing %d keys cost %s, want 3 pages of 1000", references, spent)
+		t.Fatalf("listing %d keys cost %s, want 3 pages of 1000", objects, spent)
 	}
-}
-
-func padHex(i int) string {
-	const digits = "0123456789abcdef"
-	out := make([]byte, 8)
-	for pos := 7; pos >= 0; pos-- {
-		out[pos] = digits[i&0xf]
-		i >>= 4
-	}
-	return string(out)
 }
 
 // TestOpenS3ReachesAnEndpointByURL covers the constructor an application uses:
@@ -254,8 +278,8 @@ func TestOpenS3ReachesAnEndpointByURL(t *testing.T) {
 	if err := stor.SetReference(plumbing.NewHashReference(testBranch, hashOf(1))); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	if got, ok := fake.Get(refKey(testBranch)); !ok || strings.TrimSpace(string(got)) != hashOf(1).String() {
-		t.Fatalf("the branch in the bucket is %q", got)
+	if stored := storedManifest(t, fake); len(stored.Refs.Changes) != 1 || stored.Refs.Changes[0].Value != hashOf(1).String() {
+		t.Fatalf("the manifest in the bucket holds %+v", stored.Refs)
 	}
 	if _, err := OpenS3(context.Background(), "http://bad host/", "bucket", "prefix", Options{}); err == nil {
 		t.Fatal("an endpoint that is not a URL was accepted")

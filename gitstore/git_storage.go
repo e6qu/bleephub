@@ -49,8 +49,7 @@ func checkSafeRefName(name plumbing.ReferenceName) error {
 // push or REST write mutates them), and neither side holds Store.Mu, so mu
 // guards the backing go-git maps: RLock for reads, Lock for mutations. It is a
 // field, not a process-wide map, because the races are on this instance's Go
-// memory; cross-handle and cross-replica exclusion come from refMutationLocks
-// and the durable GitObjectLocker.
+// memory; exclusion between handles comes from refMutationLocks.
 //
 // The delegate is a named field, not an embedded interface: promotion would
 // silently leave any un-overridden method unguarded, whereas the named field
@@ -66,9 +65,9 @@ type atomicRefStorer struct {
 
 var _ gitStorage.Storer = (*atomicRefStorer)(nil)
 
-// WrapAtomicRefStorage makes a go-git storage safe to share: reference updates
-// become a compare-and-swap across goroutines and replicas, and reads and writes
-// of the storage's own maps are kept apart.
+// WrapAtomicRefStorage makes a go-git storage safe to share within a process:
+// reference updates become a compare-and-swap across goroutines, and reads and
+// writes of the storage's own maps are kept apart.
 func WrapAtomicRefStorage(repo string, stor gitStorage.Storer) gitStorage.Storer {
 	return &atomicRefStorer{storer: stor, repo: repo}
 }
@@ -565,8 +564,14 @@ func OpenMemory(fullName string) (gitStorage.Storer, error) {
 	return WrapAtomicRefStorage(fullName, memory.NewStorage()), nil
 }
 
-// Init makes stor a git repository if it is not one already.
+// Init makes stor a git repository if it is not one already. A repository in an
+// object store is made one by its first manifest, in one commit; go-git's own
+// initialization, which the other backends take, is a reference and then a
+// config, each a write of its own.
 func Init(stor gitStorage.Storer) error {
+	if inStore, ok := stor.(*repository); ok {
+		return inStore.create()
+	}
 	if _, err := git.Init(stor, nil); err != nil && !errors.Is(err, git.ErrRepositoryAlreadyExists) {
 		return fmt.Errorf("git init: %w", err)
 	}

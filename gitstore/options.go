@@ -43,12 +43,14 @@ type Options struct {
 	// selects 256 MiB; negative disables the tier.
 	MemoryCacheBytes int64
 
-	// IndexFreshness is how far a plain read may lag another replica's write:
-	// how long a snapshot of a repository's objects may answer "absent" before a
-	// miss re-lists, and how long a reference read or a listing of references may
-	// answer again. A read made in order to compare never relies on it. Zero
-	// selects 250ms; negative re-lists on every miss and reuses no reference
-	// read or listing at all.
+	// IndexFreshness is how far a read may lag another replica's write: how long
+	// the manifest a handle holds may answer reads of references, and how long
+	// it and a listing of the loose objects may answer "absent", before the
+	// store is asked again — for the manifest, by a conditional read that is
+	// usually answered "not modified". A write never relies on it: a commit is a
+	// conditional write, and the store refuses one made on an old manifest. Zero
+	// selects 250ms; negative revalidates on every read of a reference and every
+	// miss.
 	IndexFreshness time.Duration
 
 	// CompactionTrigger is the number of loose writes to one repository that

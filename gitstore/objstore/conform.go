@@ -63,6 +63,14 @@ func Conform(ctx context.Context, bucket Bucket, prefix string) error {
 	if err := expectContent(ctx, bucket, key, first, created); err != nil {
 		return fail("reading back what the refused write must not have changed", err)
 	}
+	// A reader revalidates the manifest it holds with this read, and believes
+	// the answer: "unchanged" must mean unchanged, and must cost no body.
+	if body, _, err := bucket.GetIfChanged(ctx, key, created); !errors.Is(err, ErrNotModified) {
+		if body != nil {
+			_ = body.Close()
+		}
+		return broken(fmt.Sprintf("a conditional read at the version just written answered %v, not \"not modified\": every revalidation would cost a whole read", err))
+	}
 	described, err := bucket.Head(ctx, key)
 	if err != nil {
 		return fail("describing an object", err)
@@ -84,8 +92,20 @@ func Conform(ctx context.Context, bucket Bucket, prefix string) error {
 	if _, err := bucket.Put(ctx, key, bytes.NewReader(third), int64(len(third)), IfVersion(created), nil); !errors.Is(err, ErrConditionNotMet) {
 		return broken(fmt.Sprintf("a replace-if-unchanged against a stale version answered %v, not a refusal: a lost update would go unnoticed", err))
 	}
-	if err := expectContent(ctx, bucket, key, second, replaced); err != nil {
-		return fail("reading back what the refused write must not have changed", err)
+	// What the refused write must not have changed is read back conditionally, at
+	// the version since replaced: a store that answered "not modified" to that
+	// would leave a replica serving what another had moved, for ever.
+	changed, changedInfo, err := bucket.GetIfChanged(ctx, key, created)
+	if err != nil {
+		return broken(fmt.Sprintf("a conditional read at a version since replaced answered %v, not the object: a replica would go on serving what another had moved", err))
+	}
+	moved, err := io.ReadAll(changed)
+	_ = changed.Close()
+	if err != nil {
+		return fail("a conditional read at a version since replaced", err)
+	}
+	if !bytes.Equal(moved, second) || changedInfo.Version != replaced {
+		return broken(fmt.Sprintf("after a refused replace, a conditional read at a version since replaced returned %q at version %q, want %q at %q", moved, changedInfo.Version, second, replaced))
 	}
 
 	ranged, info, err := bucket.GetRange(ctx, key, 7, 3)

@@ -66,7 +66,9 @@ func (r *repository) auxKey(name string) (string, error) {
 	top, rest, _ := strings.Cut(name, "/")
 	own := false
 	switch top {
-	case "HEAD", "config", "index", "shallow", packedRefsName, "refs", "modules":
+	// HEAD, refs and packed-refs are where an earlier layout kept references; a
+	// repository that has been through Adopt may still hold them.
+	case manifestName, "HEAD", "config", "index", "shallow", "packed-refs", "refs", "modules":
 		own = true
 	case "objects":
 		// Beside the fanout directories and the pack directory, objects/ is
@@ -93,7 +95,7 @@ func (r *repository) presign(ctx context.Context, key string, expiry time.Durati
 	return signed, err
 }
 
-// PackURL signs a URL for one of the snapshot's packs.
+// PackURL signs a URL for one of the live packs.
 func (r *repository) PackURL(ctx context.Context, name string, expiry time.Duration) (string, error) {
 	pack, err := r.storedPack(name)
 	if err != nil {

@@ -200,6 +200,36 @@ func OpenOrInitGitStorage(ctx context.Context, fullName string) (gitStorage.Stor
 	return stor, nil
 }
 
+// OpenExistingGitStorage opens a repository the application already has a record
+// of, which is what a restart does with every one of them. In an object store
+// such a repository has a manifest, and one that has none is refused with
+// gitstore.ErrNoManifest rather than initialized over: it is either lost, or
+// was written by a version of the engine that kept references as objects and is
+// waiting for `bleephub adopt`. The other backends hold nothing a restart could
+// mistake — a directory is reopened and a memory repository starts empty — and
+// are opened as ever.
+func OpenExistingGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
+	if err := gitstore.ValidateRepoStorageFullName(fullName); err != nil {
+		return nil, err
+	}
+	objectStore, err := GetStore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if objectStore != nil {
+		stor, err := objectStore.ExistingRepository(fullName)
+		if errors.Is(err, gitstore.ErrNoManifest) {
+			// This is the error an operator meets on the first start after
+			// upgrading a store written by an earlier bleephub, and it stops the
+			// server. It has to say what to do, to someone who has not read the
+			// engine's history.
+			return nil, fmt.Errorf("%w: if this store was written by an earlier bleephub, run `bleephub adopt` once against it and start again (README, \"Upgrade note\"; docs/git-storage.md); nothing has been changed", err)
+		}
+		return stor, err
+	}
+	return OpenOrInitGitStorage(ctx, fullName)
+}
+
 func openGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
 	if err := gitstore.ValidateRepoStorageFullName(fullName); err != nil {
 		return nil, err

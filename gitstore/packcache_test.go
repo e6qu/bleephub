@@ -40,8 +40,8 @@ func TestRangedReadsTransferOnlyTheExtentTouched(t *testing.T) {
 		t.Fatalf("read one object: %v", err)
 	}
 	counts := fake.Snapshot()
-	if counts.Get != 0 {
-		t.Fatalf("reading one object issued %d whole-object GETs, want ranged reads only", counts.Get)
+	if counts.Get != 1 {
+		t.Fatalf("reading one object issued %d whole-object GETs, want the manifest and ranged reads only", counts.Get)
 	}
 	if counts.GetRanged == 0 {
 		t.Fatal("reading one object issued no ranged read")
@@ -93,8 +93,8 @@ func TestPackCacheSurvivesARestart(t *testing.T) {
 	fake.Reset()
 	clonePack(t, restarted, hashes)
 	counts := fake.Snapshot()
-	if counts.GetRanged != 0 || counts.Get != 0 {
-		t.Fatalf("a clone after a restart re-fetched pack bytes: %s", counts)
+	if counts.GetRanged != 0 || counts.Get != 1 {
+		t.Fatalf("a clone after a restart should read the manifest and no pack bytes: %s", counts)
 	}
 	t.Logf("clone after restart cost %s", counts)
 }

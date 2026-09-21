@@ -38,6 +38,10 @@ var (
 	// ErrConditionNotMet reports that a conditional write lost: the object
 	// existed when it was to be absent, or was not at the version named.
 	ErrConditionNotMet = errors.New("object store condition not met")
+	// ErrNotModified reports that a conditional read found the object still at
+	// the version the reader holds, and so sent no body. It is an answer, not a
+	// failure: the reader's copy is the store's.
+	ErrNotModified = errors.New("object not modified")
 	// ErrRangeNotSatisfiable reports a ranged read that starts past the end.
 	ErrRangeNotSatisfiable = errors.New("range starts beyond the end of the object")
 )
@@ -131,6 +135,12 @@ func (c Condition) Conditional() bool { return c.absent || c.version != "" }
 type Bucket interface {
 	// Get reads a whole object.
 	Get(ctx context.Context, key string) (io.ReadCloser, Info, error)
+	// GetIfChanged reads a whole object unless it is still at the version held,
+	// in which case it answers ErrNotModified and moves no body: what a reader
+	// that keeps a copy of a small object pays to learn its copy is current. An
+	// object that is not there is ErrNotFound, whatever version was held. The
+	// version held must be one a read or a write of this key returned.
+	GetIfChanged(ctx context.Context, key string, held Version) (io.ReadCloser, Info, error)
 	// GetRange reads length bytes from offset; fewer if the object ends first.
 	// The Info it returns carries the object's whole size.
 	GetRange(ctx context.Context, key string, offset, length int64) (io.ReadCloser, Info, error)

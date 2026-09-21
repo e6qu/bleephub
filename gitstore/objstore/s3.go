@@ -107,6 +107,17 @@ func (b *s3Bucket) Get(ctx context.Context, key string) (io.ReadCloser, Info, er
 	return b.get(ctx, key, minio.GetObjectOptions{})
 }
 
+// GetIfChanged sends the version held as If-None-Match, which S3 answers with
+// 304 Not Modified when the object's ETag is still that one.
+// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html
+func (b *s3Bucket) GetIfChanged(ctx context.Context, key string, held Version) (io.ReadCloser, Info, error) {
+	var opts minio.GetObjectOptions
+	if err := opts.SetMatchETagExcept(string(held)); err != nil {
+		return nil, Info{}, fmt.Errorf("s3 get %s: %w", key, err)
+	}
+	return b.get(ctx, key, opts)
+}
+
 func (b *s3Bucket) GetRange(ctx context.Context, key string, offset, length int64) (io.ReadCloser, Info, error) {
 	if offset < 0 || length <= 0 {
 		return nil, Info{}, fmt.Errorf("s3 get %s: invalid range %d+%d", key, offset, length)
@@ -258,6 +269,8 @@ func (b *s3Bucket) translate(operation, key string, err error) error {
 	switch {
 	case response.StatusCode == http.StatusNotFound, response.Code == "NoSuchKey":
 		return fmt.Errorf("s3 %s %s: %w", operation, key, ErrNotFound)
+	case response.StatusCode == http.StatusNotModified:
+		return fmt.Errorf("s3 %s %s: %w", operation, key, ErrNotModified)
 	case response.StatusCode == http.StatusPreconditionFailed, response.Code == "PreconditionFailed",
 		// Two writers racing to create one key: S3 answers the loser 409.
 		response.Code == "ConditionalRequestConflict":

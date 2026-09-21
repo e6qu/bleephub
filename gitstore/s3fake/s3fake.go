@@ -47,6 +47,12 @@ type Server struct {
 	// fact about an object beside its bytes — a git object's type, say — read
 	// it back from here, and would misbehave against a store that dropped it.
 	metadata map[string]http.Header
+	// modified holds when each object was last written, by clock. A design that
+	// sweeps what nothing names any more tells an upload in flight from an orphan
+	// by its age, and would delete the first against a store that dated
+	// everything alike.
+	modified map[string]time.Time
+	clock    func() time.Time
 
 	// latency is slept before answering each request, standing in for the
 	// round trip to a real endpoint. A benchmark with zero latency measures
@@ -81,6 +87,8 @@ type Counts struct {
 	BytesDown   int64
 	BytesUp     int64
 	NotFoundGet int64
+	// NotModified counts the GETs answered 304; they are counted as GETs too.
+	NotModified int64
 }
 
 // Total is the number of requests of every kind.
@@ -102,6 +110,7 @@ func (c Counts) Sub(prev Counts) Counts {
 		BytesDown:   c.BytesDown - prev.BytesDown,
 		BytesUp:     c.BytesUp - prev.BytesUp,
 		NotFoundGet: c.NotFoundGet - prev.NotFoundGet,
+		NotModified: c.NotModified - prev.NotModified,
 	}
 }
 
@@ -116,6 +125,8 @@ func New() *Server {
 		objects:  map[string][]byte{},
 		uploads:  map[string]map[int][]byte{},
 		metadata: map[string]http.Header{},
+		modified: map[string]time.Time{},
+		clock:    time.Now,
 	}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	return f
@@ -156,6 +167,8 @@ func Listen(addr string) (*Server, error) {
 		objects:  map[string][]byte{},
 		uploads:  map[string]map[int][]byte{},
 		metadata: map[string]http.Header{},
+		modified: map[string]time.Time{},
+		clock:    time.Now,
 	}
 	f.server = httptest.NewUnstartedServer(http.HandlerFunc(f.serve))
 	_ = f.server.Listener.Close()
@@ -189,6 +202,19 @@ func (f *Server) SetLatency(d time.Duration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.latency = d
+}
+
+// SetClock makes the fake date what is written to it by clock, so that a test
+// which moves its own clock ages the store's objects with it.
+func (f *Server) SetClock(clock func() time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.clock = clock
+}
+
+// modifiedAt is when the object was last written. Must be called with f.mu held.
+func (f *Server) modifiedAt(key string) time.Time {
+	return f.modified[key].UTC()
 }
 
 // SetFailOn makes the requests fail selects answer 500; nil clears it.
@@ -232,6 +258,7 @@ func (f *Server) Put(key string, data []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.objects[key] = append([]byte(nil), data...)
+	f.modified[key] = f.clock()
 }
 
 // Get reads an object directly, uncounted.
@@ -247,6 +274,7 @@ func (f *Server) Remove(key string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.objects, key)
+	delete(f.modified, key)
 	delete(f.metadata, key)
 }
 
@@ -458,6 +486,19 @@ func (f *Server) serveGet(w http.ResponseWriter, r *http.Request, key string) {
 		return
 	}
 
+	// A read that names the tag it holds is answered 304 and no body while the
+	// object still has it: what a reader pays to learn that its copy is current.
+	// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html
+	if match := r.Header.Get("If-None-Match"); match != "" && sameETag(match, etagOf(data)) {
+		f.mu.Lock()
+		f.counts.Get++
+		f.counts.NotModified++
+		f.mu.Unlock()
+		w.Header().Set("ETag", etagOf(data))
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
 	rangeHeader := r.Header.Get("Range")
 	start, end := int64(0), int64(len(data))
 	ranged := false
@@ -480,10 +521,11 @@ func (f *Server) serveGet(w http.ResponseWriter, r *http.Request, key string) {
 	}
 	f.counts.BytesDown += int64(len(body))
 	f.writeUserMetadata(w, key)
+	modified := f.modifiedAt(key)
 	f.mu.Unlock()
 
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.Header().Set("Last-Modified", time.Unix(0, 0).UTC().Format(http.TimeFormat))
+	w.Header().Set("Last-Modified", modified.Format(http.TimeFormat))
 	w.Header().Set("ETag", etagOf(data))
 	if ranged {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end-1, len(data)))
@@ -528,13 +570,14 @@ func (f *Server) serveHead(w http.ResponseWriter, key string) {
 	if ok {
 		f.writeUserMetadata(w, key)
 	}
+	modified := f.modifiedAt(key)
 	f.mu.Unlock()
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.Header().Set("Last-Modified", time.Unix(0, 0).UTC().Format(http.TimeFormat))
+	w.Header().Set("Last-Modified", modified.Format(http.TimeFormat))
 	w.Header().Set("ETag", etagOf(data))
 	w.WriteHeader(http.StatusOK)
 }
@@ -554,6 +597,7 @@ func (f *Server) servePut(w http.ResponseWriter, r *http.Request, key string) {
 		return
 	}
 	f.objects[key] = body
+	f.modified[key] = f.clock()
 	f.metadata[key] = userMetadata(r.Header)
 	f.mu.Unlock()
 	w.Header().Set("ETag", etagOf(body))
@@ -564,6 +608,7 @@ func (f *Server) serveDelete(w http.ResponseWriter, key string) {
 	f.mu.Lock()
 	f.counts.Delete++
 	delete(f.objects, key)
+	delete(f.modified, key)
 	delete(f.metadata, key)
 	f.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
@@ -581,6 +626,7 @@ func (f *Server) serveCopy(w http.ResponseWriter, r *http.Request, key string) {
 	data, ok := f.objects[sourceKey]
 	if ok {
 		f.objects[key] = append([]byte(nil), data...)
+		f.modified[key] = f.clock()
 		// S3's default metadata directive is COPY.
 		f.metadata[key] = f.metadata[sourceKey].Clone()
 	}
@@ -632,11 +678,13 @@ func (f *Server) serveList(w http.ResponseWriter, query url.Values) {
 	keys := make([]string, 0, len(f.objects))
 	sizes := map[string]int64{}
 	etags := map[string]string{}
+	modified := map[string]time.Time{}
 	for key, data := range f.objects {
 		if strings.HasPrefix(key, prefix) {
 			keys = append(keys, key)
 			sizes[key] = int64(len(data))
 			etags[key] = etagOf(data)
+			modified[key] = f.modifiedAt(key)
 		}
 	}
 	f.mu.Unlock()
@@ -671,7 +719,7 @@ func (f *Server) serveList(w http.ResponseWriter, query url.Values) {
 		result.Contents = append(result.Contents, listContents{
 			Key:          key,
 			Size:         sizes[key],
-			LastModified: time.Unix(0, 0).UTC().Format(time.RFC3339),
+			LastModified: modified[key].Format(time.RFC3339),
 			ETag:         etags[key],
 		})
 		emitted++
@@ -705,6 +753,7 @@ func (f *Server) serveDeleteObjects(w http.ResponseWriter, r *http.Request) {
 	f.counts.Delete++
 	for _, obj := range req.Objects {
 		delete(f.objects, obj.Key)
+		delete(f.modified, obj.Key)
 		delete(f.metadata, obj.Key)
 	}
 	f.mu.Unlock()
@@ -778,6 +827,7 @@ func (f *Server) serveCompleteMultipart(w http.ResponseWriter, r *http.Request, 
 			assembled.Write(parts[number])
 		}
 		f.objects[key] = assembled.Bytes()
+		f.modified[key] = f.clock()
 		delete(f.uploads, uploadID)
 	}
 	f.mu.Unlock()

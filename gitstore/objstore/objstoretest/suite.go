@@ -32,6 +32,7 @@ func Run(t *testing.T, open func(t *testing.T) objstore.Bucket) {
 		"TheStartupProbePassesAndLeavesNothingBehind":   probePasses,
 		"ConditionalWritesArbitrateBetweenWriters":      conditionalWrites,
 		"AVersionIsTheSameTokenWhereverItIsLearned":     versionsAgree,
+		"AConditionalReadMovesNoBodyUntilTheObjectDoes": conditionalRead,
 		"MetadataTravelsWithAnObject":                   metadataTravels,
 		"AbsenceIsNotFoundAndARangeCarriesTheWholeSize": readsAndRanges,
 		"ListingsAreWholeOrderedAndFoldedByDirectory":   listings,
@@ -162,6 +163,60 @@ func versionsAgree(t *testing.T, bucket objstore.Bucket, prefix string) {
 	}
 	if rewritten := mustPut(t, bucket, key, "changed"); rewritten == written {
 		t.Error("an object's version did not change when its content did")
+	}
+}
+
+// conditionalRead holds a driver to the read a manifest's readers make most: is
+// the copy I hold still the object? A driver that answered "unchanged" for an
+// object that had moved would leave a replica serving references another had
+// since updated, for ever; one that sent the body every time would make every
+// revalidation cost what a read does; and one that reported a deleted object as
+// unchanged would keep serving a repository that is gone.
+func conditionalRead(t *testing.T, bucket objstore.Bucket, prefix string) {
+	ctx := context.Background()
+	key := prefix + "manifest"
+	if _, _, err := bucket.GetIfChanged(ctx, prefix+"absent", "1"); !errors.Is(err, objstore.ErrNotFound) {
+		t.Fatalf("a conditional read of an absent key answered %v, want ErrNotFound", err)
+	}
+	first := mustPut(t, bucket, key, "sequence one")
+	for _, from := range []string{"the write", "a read"} {
+		held := first
+		if from == "a read" {
+			_, info := read(t, bucket, key)
+			held = info.Version
+		}
+		body, _, err := bucket.GetIfChanged(ctx, key, held)
+		if !errors.Is(err, objstore.ErrNotModified) {
+			t.Fatalf("a conditional read at the version %s returned answered %v, want ErrNotModified", from, err)
+		}
+		if body != nil {
+			t.Fatalf("a conditional read at the version %s returned came with a body", from)
+		}
+	}
+
+	second := mustPut(t, bucket, key, "sequence two")
+	body, info, err := bucket.GetIfChanged(ctx, key, first)
+	if err != nil {
+		t.Fatalf("a conditional read at a stale version: %v", err)
+	}
+	content, err := io.ReadAll(body)
+	_ = body.Close()
+	if err != nil || string(content) != "sequence two" {
+		t.Fatalf("a conditional read at a stale version read %q, %v; want the new content", content, err)
+	}
+	if info.Version != second || info.Size != int64(len("sequence two")) {
+		t.Errorf("the changed object came described as version %q of %d bytes, want %q of %d: the reader could not hold it for the next revalidation",
+			info.Version, info.Size, second, len("sequence two"))
+	}
+	if _, _, err := bucket.GetIfChanged(ctx, key, info.Version); !errors.Is(err, objstore.ErrNotModified) {
+		t.Errorf("a conditional read at the version the last one returned answered %v, want ErrNotModified", err)
+	}
+
+	if err := bucket.Delete(ctx, key); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, _, err := bucket.GetIfChanged(ctx, key, second); !errors.Is(err, objstore.ErrNotFound) {
+		t.Errorf("a conditional read of a deleted object, at the version it last had, answered %v, want ErrNotFound", err)
 	}
 }
 

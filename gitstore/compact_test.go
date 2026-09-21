@@ -1,17 +1,21 @@
 package gitstore
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/storage"
 )
 
@@ -383,15 +387,15 @@ func TestCompactionMergesPacksOnceTheyAccumulate(t *testing.T) {
 		}
 	}
 
-	// A merged pack's predecessors are marked rather than deleted, so a
-	// request that began before the merge can still read them.
-	if len(packKeys(fake, ".superseded")) == 0 {
-		t.Fatal("merged packs were not marked superseded")
+	// A merged pack's predecessors are retired in the manifest rather than
+	// deleted, so a request that began before the merge can still read them.
+	retired := storedManifest(t, fake).Retired
+	if len(retired) == 0 {
+		t.Fatal("merged packs were not retired")
 	}
-	for _, key := range packKeys(fake, ".superseded") {
-		pack := strings.TrimSuffix(key, ".superseded") + ".pack"
-		if _, ok := fake.Get(pack); !ok {
-			t.Fatalf("superseded pack %s was deleted immediately instead of aging out", pack)
+	for _, pack := range retired {
+		if _, ok := fake.Get("prefix/" + testRepo + "/objects/pack/" + pack.Name + ".pack"); !ok {
+			t.Fatalf("retired pack %s was deleted immediately instead of aging out", pack.Name)
 		}
 	}
 }
@@ -643,5 +647,203 @@ func TestAnInterruptedMultipartUploadPublishesNothing(t *testing.T) {
 		if err := after.HasEncodedObject(hash); err != nil {
 			t.Fatalf("object %s lost: %v", hash, err)
 		}
+	}
+}
+
+// TestAFullyPackedRepositoryIsNeverListedOnTheReadPath pins the point of naming
+// the packs in the manifest. A LIST is priced like a write and returns a page of
+// a thousand keys however few are wanted; the engine that discovered packs by
+// listing paid one on every cold open. A clone of a repository whose objects are
+// all packed — refs, packs, every object — now reads the manifest and the packs
+// and lists nothing, on a cold replica and a warm one.
+func TestAFullyPackedRepositoryIsNeverListedOnTheReadPath(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.opts.IndexFreshness = -1
+	writer := testPackedStorage(t, fake)
+	pack, hashes := pushPack(t, 120)
+	if err := packfile.UpdateObjectStorage(writer, bytes.NewReader(pack)); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	if err := writer.SetReference(plumbing.NewHashReference(testBranch, hashes[len(hashes)-1])); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if looseKeyCount(fake) != 0 {
+		t.Fatal("premise: the repository holds loose objects")
+	}
+
+	// The reader has its own disk, so nothing of the pack is cached on it.
+	apart := newFakeS3(t)
+	apart.Server = fake.Server
+	apart.opts.IndexFreshness = -1
+	reader := testPackedStorage(t, apart)
+	before := fake.Snapshot()
+	for range 2 {
+		resolvesTo(t, "a clone", reader, testBranch, hashes[len(hashes)-1])
+		if packs, err := reader.StoredPacks(context.Background()); err != nil || len(packs) != 1 {
+			t.Fatalf("stored packs: %v, %v", packs, err)
+		}
+		clonePack(t, reader, hashes)
+		for _, hash := range hashes {
+			if err := reader.HasEncodedObject(hash); err != nil {
+				t.Fatalf("has %s: %v", hash, err)
+			}
+		}
+	}
+	spent := fake.Snapshot().Sub(before)
+	if spent.List != 0 {
+		t.Fatalf("reading a fully packed repository listed the store: %s", spent)
+	}
+	if spent.Get == 0 || spent.GetRanged == 0 {
+		t.Fatalf("premise: the reads did not reach the store: %s", spent)
+	}
+}
+
+// TestTwoCompactionsRacingLeaveOneMergeAndNoDebris covers what a lock service
+// used to prevent and the manifest now arbitrates. Two replicas merge the same
+// packs at once: both upload, one commits, and the other's commit finds the
+// packs it merged no longer live. It must refuse, and must not leave its upload
+// behind as a pack nothing names — nor delete the winner's, which, holding the
+// same objects, has the same name.
+func TestTwoCompactionsRacingLeaveOneMergeAndNoDebris(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.opts.CompactionTrigger = -1
+	writer := testPackedStorage(t, fake)
+	var all []plumbing.Hash
+	for push := range compactionMergeThreshold + 1 {
+		all = append(all, smallPush(t, writer, "small push "+strings.Repeat("p", push)))
+	}
+
+	// The second replica compacts while the first is between its upload and its
+	// commit: the hook runs when the first's manifest write arrives.
+	second := testPackedStorage(t, fake)
+	var raced CompactionResult
+	var racedErr error
+	var once sync.Once
+	fake.SetOnRequest(func(method, key string) {
+		if method == "PUT" && key == manifestKey {
+			once.Do(func() {
+				fake.SetOnRequest(nil)
+				raced, racedErr = second.Compact(context.Background())
+			})
+		}
+	})
+	t.Cleanup(func() { fake.SetOnRequest(nil) })
+	first, err := writer.Compact(context.Background())
+	if err != nil || racedErr != nil {
+		t.Fatalf("compactions: %v, %v", err, racedErr)
+	}
+	if raced.PackName == "" || first.PackName != "" {
+		t.Fatalf("premise: the replica that committed first reports %q and the one that lost %q, want the second to have won inside the first's commit", raced.PackName, first.PackName)
+	}
+
+	stored := storedManifest(t, fake)
+	if len(stored.Packs) != 1 || stored.Packs[0].Name != raced.PackName || len(stored.Retired) != len(all) {
+		t.Fatalf("after the race the manifest holds %d live and %d retired packs, want the one merge and the %d packs it replaced", len(stored.Packs), len(stored.Retired), len(all))
+	}
+	if packs := packKeys(fake, ".pack"); len(packs) != len(all)+1 {
+		t.Fatalf("the store holds %d packs, want the %d retired and the one live: the loser left its upload, or took the winner's", len(packs), len(all))
+	}
+	reader := testPackedStorage(t, fake)
+	for _, hash := range all {
+		if _, err := reader.EncodedObject(plumbing.AnyObject, hash); err != nil {
+			t.Fatalf("an object was lost to the race: %v", err)
+		}
+	}
+}
+
+// TestAnOrphanThatIsPushedAgainComesBack covers the one way a swept name can be
+// wanted: a pack is named by the digest of its contents, so a push that was
+// refused and is made again uploads the same name. While the orphan's entry in
+// the retired list is young no sweep can be deleting it, and the push takes the
+// name back; its objects must then be safe from the sweep for good.
+func TestAnOrphanThatIsPushedAgainComesBack(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.clock = newTestClock()
+	stor := testPackedStorage(t, fake)
+	seedObjects(t, stor, 1)
+	pack, hashes := pushPack(t, 20)
+	tip := hashes[len(hashes)-1]
+
+	refusals, err := pushThrough(t, stor, pack).Commit([]ReferenceUpdate{{Name: "refs/heads/topic", Old: hashOf(7), New: tip}}, false)
+	if err != nil || refusals[0] == nil {
+		t.Fatalf("premise: the first push was not refused: %v, %v", refusals, err)
+	}
+	fake.clock.Advance(retiredPackGrace + time.Minute)
+	if result, err := stor.Compact(context.Background()); err != nil || len(result.Orphans) != 1 {
+		t.Fatalf("premise: the sweep listed %v as orphans (%v)", result.Orphans, err)
+	}
+
+	refusals, err = pushThrough(t, stor, pack).Commit([]ReferenceUpdate{{Name: "refs/heads/topic", New: tip}}, false)
+	if err != nil || refusals[0] != nil {
+		t.Fatalf("the push made again: %v, %v", refusals, err)
+	}
+	if stored := storedManifest(t, fake); len(stored.Retired) != 0 || len(stored.Packs) != 1 {
+		t.Fatalf("after the push the manifest holds %d live and %d retired packs, want the pack live again", len(stored.Packs), len(stored.Retired))
+	}
+	fake.clock.Advance(3 * retiredPackGrace)
+	if result, err := stor.Compact(context.Background()); err != nil || len(result.RetiredPacks) != 0 || len(result.Orphans) != 0 {
+		t.Fatalf("a sweep long after took the live pack for debris: %+v, %v", result, err)
+	}
+	readObjects(t, testPackedStorage(t, fake), hashes)
+
+	// Past half its grace period an orphan's entry may be mid-deletion, and the
+	// name is refused rather than handed keys that are about to go.
+	other, otherHashes := pushPack(t, 21)
+	if refusals, err := pushThrough(t, stor, other).Commit([]ReferenceUpdate{{Name: "refs/heads/other", Old: hashOf(7), New: otherHashes[0]}}, false); err != nil || refusals[0] == nil {
+		t.Fatalf("premise: %v, %v", refusals, err)
+	}
+	fake.clock.Advance(retiredPackGrace + time.Minute)
+	if result, err := stor.Compact(context.Background()); err != nil || len(result.Orphans) != 1 {
+		t.Fatalf("premise: the sweep listed %v as orphans (%v)", result.Orphans, err)
+	}
+	fake.clock.Advance(retiredPackGrace/2 + time.Minute)
+	if _, err := pushThrough(t, stor, other).Commit([]ReferenceUpdate{{Name: "refs/heads/other", New: otherHashes[len(otherHashes)-1]}}, false); !errors.Is(err, errPackBeingSwept) {
+		t.Fatalf("a push of a name that may be mid-deletion answered %v, want it refused", err)
+	}
+}
+
+// TestASweepRemovesOnlySnapshotsNoManifestNames covers the reference snapshots a
+// fold leaves behind. The one the manifest names must never go; the ones it has
+// replaced go once they have lain a grace period, and no sooner, since a reader
+// that read the manifest a moment before the fold is about to fetch one.
+func TestASweepRemovesOnlySnapshotsNoManifestNames(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.clock = newTestClock()
+	stor := testPackedStorage(t, fake)
+	fold := func(round int) string {
+		t.Helper()
+		updates := make([]ReferenceUpdate, 0, refChangeBound+1)
+		for i := range refChangeBound + 1 {
+			name := plumbing.NewTagReferenceName(fmt.Sprintf("round-%d/v%d", round, i))
+			updates = append(updates, ReferenceUpdate{Name: name, New: hashOf(i)})
+		}
+		push, err := stor.BeginPush()
+		if err != nil {
+			t.Fatalf("begin: %v", err)
+		}
+		if _, err := push.Commit(updates, true); err != nil {
+			t.Fatalf("fold %d: %v", round, err)
+		}
+		return storedManifest(t, fake).Refs.Snapshot
+	}
+	first := fold(1)
+	second := fold(2)
+	snapshots := "prefix/" + testRepo + "/" + refSnapshotDirectory
+	if first == second || len(fake.KeysWithPrefix(snapshots)) != 2 {
+		t.Fatalf("premise: two folds left the snapshots %v", fake.KeysWithPrefix(snapshots))
+	}
+
+	if result, err := stor.Compact(context.Background()); err != nil || result.SweptSnapshots != 0 {
+		t.Fatalf("a sweep at once removed %d snapshots (%v)", result.SweptSnapshots, err)
+	}
+	fake.clock.Advance(retiredPackGrace + time.Minute)
+	if result, err := stor.Compact(context.Background()); err != nil || result.SweptSnapshots != 1 {
+		t.Fatalf("a sweep after a grace period removed %d snapshots (%v), want the replaced one", result.SweptSnapshots, err)
+	}
+	if left := fake.KeysWithPrefix(snapshots); len(left) != 1 || left[0] != "prefix/"+testRepo+"/"+second {
+		t.Fatalf("the sweep left %v, want the snapshot the manifest names", left)
+	}
+	if refs := advertise(t, testPackedStorage(t, fake)); len(refs) != 2*(refChangeBound+1) {
+		t.Fatalf("after the sweep the repository advertises %d references", len(refs))
 	}
 }

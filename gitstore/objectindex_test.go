@@ -108,27 +108,30 @@ func TestSaturatedFilterCannotHideAnObject(t *testing.T) {
 	if err := saturated.HasEncodedObject(absentHash(1)); err == nil {
 		t.Fatal("an object that was never written was reported present")
 	}
-	taken := saturated.tiers.current.Load()
+	taken := saturated.manifests.current.Load()
 	if len(taken.packs) == 0 {
-		t.Fatal("the test did not reach the state it is about: the snapshot holds no pack")
+		t.Fatal("the test did not reach the state it is about: the manifest held names no pack")
 	}
-	useless := &tierSnapshot{at: taken.at}
+	unfiltered := *taken
+	unfiltered.packs = nil
 	for _, pack := range taken.packs {
 		if pack.filter.Load() == nil {
 			t.Fatal("the test did not reach the state it is about: the probe did not read the pack's filter")
 		}
-		useless.packs = append(useless.packs, &storedPack{name: pack.name, pack: pack.pack, index: pack.index})
+		unfiltered.packs = append(unfiltered.packs, &storedPack{name: pack.name, objects: pack.objects, pack: pack.pack, index: pack.index})
 	}
-	for fanout := range useless.loose {
-		useless.loose[fanout] = &cuckooFilter{saturated: true}
+	saturated.manifests.current.Store(&unfiltered)
+	useless := &looseSnapshot{at: saturated.loose.current.Load().at}
+	for fanout := range useless.filters {
+		useless.filters[fanout] = &cuckooFilter{saturated: true}
 	}
-	saturated.tiers.current.Store(useless)
+	saturated.loose.current.Store(useless)
 
 	// A filter that matches everything must not change a single answer.
 	for _, key := range absentOIDs(64) {
 		var hash plumbing.Hash
 		copy(hash[:], key[:20])
-		if !useless.looseMayHold(hash) {
+		if !useless.mayHold(hash) {
 			t.Fatal("a saturated loose filter gave a negative answer")
 		}
 	}
@@ -337,13 +340,13 @@ func TestAFilterFalsePositiveIsStillNotFound(t *testing.T) {
 	present := writeBlob(t, stor, "the object the impostor is mistaken for")
 	impostor := present
 	impostor[len(impostor)-1] ^= 0xff
-	if snapshot := stor.tiers.current.Load(); snapshot == nil || !snapshot.looseMayHold(impostor) {
+	if snapshot := stor.loose.current.Load(); snapshot == nil || !snapshot.mayHold(impostor) {
 		// The handle takes its first snapshot on its first read.
 		if err := stor.HasEncodedObject(present); err != nil {
 			t.Fatalf("premise: %v", err)
 		}
 	}
-	if !stor.tiers.current.Load().looseMayHold(impostor) {
+	if !stor.loose.current.Load().mayHold(impostor) {
 		t.Fatal("premise: the loose filter rules the impostor out, so no false positive is exercised")
 	}
 
@@ -358,8 +361,10 @@ func TestAFilterFalsePositiveIsStillNotFound(t *testing.T) {
 		t.Fatalf("a size the filter could not rule out: %v, want ErrObjectNotFound", err)
 	}
 	// Each question asks the store about the key twice — once on the snapshot's
-	// word, once on a new listing's — and lists once.
-	if spent := fake.Snapshot().Sub(before); spent.List != 3 || spent.Total() != 9 {
-		t.Fatalf("three false positives cost %s, want a listing and two lookups each", spent)
+	// word, once on a new listing's — lists once, and revalidates the manifest
+	// once: a loose key that is gone usually means a compaction elsewhere packed
+	// it, and only the manifest says into what.
+	if spent := fake.Snapshot().Sub(before); spent.List != 3 || spent.Total() != 12 {
+		t.Fatalf("three false positives cost %s, want a listing, a revalidation and two lookups each", spent)
 	}
 }

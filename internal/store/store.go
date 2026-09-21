@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/gitbackend"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/rs/zerolog"
@@ -1400,11 +1399,6 @@ func (st *Store) wirePersistence(p *Persistence) {
 	st.MarketplaceProfiles.Persist = p
 	st.CopilotPolicies.Persist = p
 	st.Mu.Unlock()
-	// Object-store git bytes have no advisory locking of their own; the shared
-	// durable store arbitrates concurrent ref updates.
-	if gitbackend.GitStorageIsObjectStore() {
-		gitstore.SetGitObjectLocker(p)
-	}
 }
 
 // loadFromPersistence repopulates the in-memory maps from disk. The loadBucket
@@ -1436,7 +1430,7 @@ func (st *Store) openRepoStoragesConcurrently(fullNames []string) error {
 		go func(i int, fullName string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			stor, err := gitbackend.OpenOrInitGitStorage(context.Background(), fullName)
+			stor, err := gitbackend.OpenExistingGitStorage(context.Background(), fullName)
 			results[i] = opened{stor: stor, Err: err}
 		}(i, fullName)
 	}
