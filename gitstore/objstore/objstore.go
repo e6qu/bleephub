@@ -137,8 +137,10 @@ type Bucket interface {
 	// Head describes an object without reading it.
 	Head(ctx context.Context, key string) (Info, error)
 	// Put writes an object atomically, with the metadata given. A size below
-	// zero means unknown, and the body is then uploaded in parts, which no store
-	// lets be conditional.
+	// zero means unknown, and the body is then uploaded in parts. Not every
+	// store can complete such an upload conditionally — Azure can, Google Cloud
+	// Storage cannot — so a caller that needs the condition to hold states the
+	// size.
 	Put(ctx context.Context, key string, body io.Reader, size int64, condition Condition, metadata Metadata) (Version, error)
 	// Delete removes an object. Removing one that is not there is not an error.
 	Delete(ctx context.Context, key string) error

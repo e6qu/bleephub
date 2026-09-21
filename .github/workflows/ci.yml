@@ -346,6 +346,13 @@ jobs:
     name: Nested Go modules
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      # Where the object-store drivers find the emulators this job starts. The
+      # account and key are Azurite's published development ones, not a secret.
+      OBJSTORE_AZURE_TEST_ENDPOINT: http://127.0.0.1:10000/devstoreaccount1
+      OBJSTORE_AZURE_TEST_ACCOUNT: devstoreaccount1
+      OBJSTORE_AZURE_TEST_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
+      OBJSTORE_AZURE_TEST_CONTAINER: objstoretest
     steps:
       - *checkout
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -377,8 +384,40 @@ jobs:
       # (its subject is concurrent readers, writers and compaction) and against
       # its own non-regression floor, since it no longer counts toward the
       # server's.
+      # Each object-store driver is held to one suite, and passes it in-process
+      # against a fake of the store it drives. A fake is its author's reading of
+      # the store's documentation, written by the hand that wrote the driver, so
+      # the same suite is run here against the store's own emulator: a driver
+      # and a fake that agree with each other and not with the service are found
+      # out at this step and nowhere else. Azurite is Microsoft's emulator of
+      # Azure Blob Storage; its account and key are the published development
+      # ones. It lags the SDK's API version, which --skipApiVersionCheck allows.
+      - name: Start the Azure Blob Storage emulator
+        run: |
+          set -euo pipefail
+          docker run --detach --name azurite --publish 127.0.0.1:10000:10000 \
+            mcr.microsoft.com/azure-storage/azurite:3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5 \
+            azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose=false
+          for _ in $(seq 1 60); do
+            if curl --silent --output /dev/null "http://127.0.0.1:10000/devstoreaccount1?comp=list"; then exit 0; fi
+            sleep 1
+          done
+          docker logs azurite
+          echo "the Azure Blob Storage emulator did not start" >&2
+          exit 1
       - name: Test the gitstore library under the race detector
         run: cd gitstore && go test -race -count=1 -timeout 10m -coverprofile="$RUNNER_TEMP/gitstore-coverage.out" ./...
+      # A skipped emulator run would look like a pass. The driver's test says
+      # which it did, and this step refuses the skip.
+      - name: Require that the Azure driver ran against the emulator
+        run: |
+          set -euo pipefail
+          cd gitstore
+          go test -count=1 -timeout 10m -run 'RealEndpoint|RealService|Emulator' -v ./objstore/azure/ | tee "$RUNNER_TEMP/azure-emulator.log"
+          if grep -q -- '--- SKIP' "$RUNNER_TEMP/azure-emulator.log" || ! grep -q -- '--- PASS' "$RUNNER_TEMP/azure-emulator.log"; then
+            echo "the Azure driver's emulator run was skipped or did not run" >&2
+            exit 1
+          fi
       - name: Enforce the gitstore coverage floor
         env:
           BLEEPHUB_GO_COVERAGE_MIN: '77.0'

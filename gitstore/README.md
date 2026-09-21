@@ -74,6 +74,38 @@ copying a pack out (the object store and `OpenDir`) — and `Addressable` —
 presigned URLs for packs and for auxiliary objects such as bundles (the object
 store only).
 
+### Drivers
+
+A driver is what stands between `objstore.Bucket` and one store's native API.
+Each implements every operation with its whole meaning — there is no capability
+to ask about — and is admitted by passing
+[`objstoretest.Run`](objstore/objstoretest/suite.go), the same suite for all of
+them. Which one a deployment uses is its operator's to say; nothing infers it
+from an endpoint.
+
+| Driver | For | Needs |
+|---|---|---|
+| `objstore.NewS3` (what `OpenS3` builds) | S3 and the stores that honour its conditional writes: R2, MinIO, SeaweedFS, Ceph, Tigris. Not Google Cloud Storage's S3-compatible endpoint, which accepts a conditional PUT and ignores the condition. | A bucket that exists. Endpoint, region and credentials have the defaults above; `PartBytes` (16 MiB) is the size above which an upload goes in parts. |
+| [`azure.New`](objstore/azure/azure.go) | Azure Blob Storage, which has no S3 endpoint, through its own API. | A container that exists — a missing one is reported as itself, never as an object not found — and, with no defaults, `Endpoint` (`https://<account>.blob.core.windows.net`, or Azurite's `http://127.0.0.1:10000/devstoreaccount1`), `AccountName` and `AccountKey`. The shared key is the one way in, because it is also what signs a URL without asking the service. `BlockBytes` (16 MiB) is the size above which an upload goes in blocks. |
+
+```go
+bucket, err := azure.New("repositories", azure.Options{
+	Endpoint:    "https://myaccount.blob.core.windows.net",
+	AccountName: "myaccount",
+	AccountKey:  accountKey,
+})
+if err != nil { /* … */ }
+if err := objstore.Conform(ctx, bucket, "git/"); err != nil { /* do not start */ }
+```
+
+The two differ where the stores do, and only there. On Azure an upload of
+unknown size is staged in blocks and committed under the write's condition, so a
+streamed write can be conditional; S3 cannot complete a multipart upload
+conditionally. Azure copies asynchronously, so `Copy` waits for the copy to
+finish, for as long as its context allows. A version is an ETag on both, but
+Azure's changes with every write, even of the same bytes, and S3's need not —
+which is why `objstore.Version` promises neither.
+
 ### Configuration
 
 The library never reads the process environment. Everything is an
@@ -114,6 +146,15 @@ exact point in a sequence — which is how the suite reproduces a crash half way
 through a compaction, or another replica's write landing mid-operation. It is
 exported so that code outside this module can be measured by the same
 instrument.
+
+[`azfake`](azfake/azfake.go) is the same for Azure Blob Storage: enough of the
+Blob REST API for the official Go client as the Azure driver uses it. It refuses
+what the service refuses — a lost condition, a metadata name that is no
+identifier, block IDs of differing lengths, a shared access signature that does
+not verify, has expired or lacks the permission — and pages its listings. It is
+written from the service's documentation, so the driver's suite also runs
+against a real endpoint when `OBJSTORE_AZURE_TEST_ENDPOINT`, `_ACCOUNT`, `_KEY`
+and `_CONTAINER` are set: the Azurite emulator, or a storage account.
 
 ## Measuring it
 
