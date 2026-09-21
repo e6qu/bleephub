@@ -195,14 +195,17 @@ and nothing is arbitrated by a lock.
   atomically. A PUT already is atomic, and the key is the hash of the bytes, so
   an object written through the API is one PUT: no probe, no temporary key, no
   copy.
-- **Pack ingest** (`ingest.go`) — a push arrives as a packfile and is stored as
-  one: index, membership filter and pack, three uploads however many objects it
-  carries, and then the commit that names it. A stock git client sends
-  incremental pushes as *thin* packs, whose deltas lean on objects the server
-  already has; those cannot be stored as they stand, so they are completed —
-  resolved against the repository and re-encoded self-contained — before they
-  are uploaded. What lands in the bucket is always an ordinary git pack. Nothing
-  is listed, and nothing just uploaded is read back.
+- **Pack ingest** (`ingest.go`, `indexpack.go`) — a push arrives as a packfile
+  and is stored as one: index, membership filter and pack, three uploads however
+  many objects it carries, and then the commit that names it. The pack is
+  indexed as git's `index-pack` indexes one, in two passes, the first while the
+  push is still arriving, and held to the checksum it is named by. A stock git
+  client sends incremental pushes as *thin* packs, whose deltas lean on objects
+  the server already has; those cannot be stored as they stand, so they are
+  completed as `index-pack --fix-thin` completes them — the bases they left out
+  are read from the repository and appended, the pushed bytes kept. What lands
+  in the bucket is always an ordinary git pack. Nothing is listed, and nothing
+  just uploaded is read back.
 - **Compaction, retirement and the sweep** (`compact.go`) — loose objects are
   rolled into pack files, and the small packs pushes leave are merged, the same
   housekeeping `git gc` does. Merging is geometric, as in

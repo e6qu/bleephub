@@ -3,6 +3,7 @@ package gitstore
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"os/exec"
@@ -226,7 +227,7 @@ func TestAThinPackFromAStockGitClientIsCompleted(t *testing.T) {
 	if _, err := spool.Write(thinPack); err != nil {
 		t.Fatalf("spool: %v", err)
 	}
-	describeErr := probe.describe(spool)
+	describeErr := probe.describe(spool, layoutOf(spool), nil)
 	_ = spool.Close()
 	probe.cleanup()
 	if describeErr == nil {
@@ -252,6 +253,24 @@ func TestAThinPackFromAStockGitClientIsCompleted(t *testing.T) {
 		t.Fatalf("a thin push should still cost four writes: %s", spent)
 	}
 
+	// The pushed bytes are kept, as git keeps them: the first pack is stored
+	// exactly as sent, and the thin one is what was sent with the bases it left
+	// out appended after it.
+	thinCount := binary.BigEndian.Uint32(thinPack[8:12])
+	for _, key := range packKeys(fake, ".pack") {
+		body, _ := fake.Get(key)
+		if bytes.Equal(body, fullPack) {
+			continue
+		}
+		pushed := thinPack[12 : len(thinPack)-20]
+		if len(body) <= len(thinPack) || !bytes.Equal(body[12:12+len(pushed)], pushed) {
+			t.Fatalf("the stored thin push (%d bytes) does not begin with the %d objects pushed", len(body), thinCount)
+		}
+		if count := binary.BigEndian.Uint32(body[8:12]); count <= thinCount {
+			t.Fatalf("the stored thin push holds %d objects, want the %d pushed and the bases they need", count, thinCount)
+		}
+	}
+
 	// Every stored pack must be readable on its own: a fresh replica resolves
 	// the pushed file without the client's help.
 	fresh := testPackedStorage(t, fake)
@@ -269,12 +288,90 @@ func TestAThinPackFromAStockGitClientIsCompleted(t *testing.T) {
 		if _, err := spool.Write(body); err != nil {
 			t.Fatalf("spool: %v", err)
 		}
-		err = probe.describe(spool)
+		err = probe.describe(spool, layoutOf(spool), nil)
 		_ = spool.Close()
 		probe.cleanup()
 		if err != nil {
 			t.Fatalf("stored pack %s is not self-contained: %v", key, err)
 		}
+	}
+}
+
+// refDeltaBases lists the bases a pack's deltas name by id.
+func refDeltaBases(t *testing.T, pack []byte) []plumbing.Hash {
+	t.Helper()
+	scanner := packfile.NewScanner(bytes.NewReader(pack))
+	_, count, err := scanner.Header()
+	if err != nil {
+		t.Fatalf("read pack: %v", err)
+	}
+	var bases []plumbing.Hash
+	for range count {
+		header, err := scanner.NextObjectHeader()
+		if err != nil {
+			t.Fatalf("read pack: %v", err)
+		}
+		if header.Type == plumbing.REFDeltaObject {
+			bases = append(bases, header.Reference)
+		}
+	}
+	return bases
+}
+
+// TestABasePushedWholeIsNotAppendedAgain pins that completing a thin pack adds
+// only what the pack lacks. A client without ofs-delta names even the bases it
+// sends by id, so a named base is not by itself a missing one. Pushing the same
+// pack twice is the case where a careless completion goes wrong: by the second
+// push the repository holds every base the pack names, and appending them would
+// store them twice.
+func TestABasePushedWholeIsNotAppendedAgain(t *testing.T) {
+	client := newGitClient(t)
+	client.commit("main.go", sourceFile("first"), "first")
+	second := client.commit("main.go", sourceFile("second"), "second")
+	pack := client.run([]byte(second.String()+"\n"), "pack-objects", "--stdout", "--revs", "-q")
+	bases := refDeltaBases(t, pack)
+	if len(bases) == 0 {
+		t.Fatal("premise broken: git named no delta base by id, so a base pushed whole is not exercised")
+	}
+
+	fake := newFakeS3(t)
+	stor := testPackedStorage(t, fake)
+	for push := range 2 {
+		if err := packfile.UpdateObjectStorage(stor, bytes.NewReader(pack)); err != nil {
+			t.Fatalf("push %d: %v", push, err)
+		}
+	}
+	for _, base := range bases {
+		if err := stor.HasEncodedObject(base); err != nil {
+			t.Fatalf("premise broken: the repository does not hold the base %s: %v", base, err)
+		}
+	}
+	for _, key := range packKeys(fake, ".pack") {
+		if body, _ := fake.Get(key); !bytes.Equal(body, pack) {
+			t.Fatalf("a pack that carries every base it names was stored as %d bytes, want the %d pushed", len(body), len(pack))
+		}
+	}
+}
+
+// TestAThinPackWhoseBaseNobodyHasIsRefused pins the other side: a delta whose
+// base is neither in the pack nor in the repository cannot be stored, and the
+// push publishes nothing.
+func TestAThinPackWhoseBaseNobodyHasIsRefused(t *testing.T) {
+	client := newGitClient(t)
+	first := client.commit("main.go", sourceFile("first"), "first")
+	second := client.commit("main.go", sourceFile("second"), "second")
+	thinPack := client.run([]byte(second.String()+"\n^"+first.String()+"\n"), "pack-objects", "--stdout", "--revs", "--thin", "-q")
+	if len(refDeltaBases(t, thinPack)) == 0 {
+		t.Fatal("premise broken: git produced a pack that names no base outside it")
+	}
+
+	fake := newFakeS3(t)
+	stor := testPackedStorage(t, fake)
+	if err := packfile.UpdateObjectStorage(stor, bytes.NewReader(thinPack)); err == nil {
+		t.Fatal("a pack whose delta base exists nowhere was accepted")
+	}
+	if packs := packKeys(fake, ".pack"); len(packs) != 0 {
+		t.Fatalf("a refused pack published %d packs", len(packs))
 	}
 }
 

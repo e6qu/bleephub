@@ -301,7 +301,7 @@ func runStorerLevel(ctx context.Context, cfg config, env Env, meter *Meter, work
 			}
 			report.Drivers[name] = driver.Describe()
 			fmt.Fprintf(os.Stderr, "%s: run %d/%d…\n", name, runIndex+1, cfg.runs)
-			if err := driver.Setup(ctx, env); err != nil {
+			if err := driver.Setup(ctx, env.forRun(runIndex)); err != nil {
 				return fmt.Errorf("%s: setup: %w", name, err)
 			}
 			r := &runner{
@@ -346,11 +346,12 @@ func runGitLevel(ctx context.Context, cfg config, env Env, meter *Meter, workloa
 			driver, _ := newRemoteDriver(name)
 			report.Drivers[name] = driver.Describe()
 			fmt.Fprintf(os.Stderr, "%s: run %d/%d…\n", name, runIndex+1, cfg.runs)
-			if err := driver.Setup(ctx, env); err != nil {
+			runEnv := env.forRun(runIndex)
+			if err := driver.Setup(ctx, runEnv); err != nil {
 				return nil, fmt.Errorf("%s: setup: %w", name, err)
 			}
 			r := &gitRunner{
-				driver: driver, meter: meter, workload: workload, client: client, env: env,
+				driver: driver, meter: meter, workload: workload, client: client, env: runEnv,
 				repo: fmt.Sprintf("bench/repo-%d", runIndex),
 				run:  runIndex, parallel: cfg.parallel, selected: cfg.scenarios,
 			}

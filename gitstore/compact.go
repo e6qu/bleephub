@@ -650,7 +650,7 @@ func (r *repository) buildPackFrom(source storer.EncodedObjectStorer, hashes []p
 		built.cleanup()
 		return nil, fmt.Errorf("encode pack for %s: %w", r.name, err)
 	}
-	if err := built.describe(temp); err != nil {
+	if err := built.describe(temp, layoutOf(temp), nil); err != nil {
 		_ = temp.Close()
 		built.cleanup()
 		return nil, err
@@ -676,30 +676,19 @@ func (r *repository) stagePack(pattern string) (*os.File, *builtPack, error) {
 }
 
 // describe derives everything publication needs — name, size, index and
-// membership filter — by parsing the staged bytes, never from whoever wrote
-// them, so it can only describe the pack that exists byte for byte. It fails on
-// a pack that is not self-contained: a thin pack's deltas name bases outside
-// it, and a stored pack must be readable on its own.
-func (b *builtPack) describe(staged *os.File) error {
+// membership filter — by indexing the staged bytes, never from whoever wrote
+// them, so it can only describe the pack that exists byte for byte. layout is
+// the first pass over them. A delta's base the pack lacks is read from bases and
+// appended, and with bases nil the pack must be readable on its own: a stored
+// pack always is.
+func (b *builtPack) describe(staged *os.File, layout packLayout, bases storer.EncodedObjectStorer) error {
+	index, checksum, err := indexPack(staged, layout, bases)
+	if err != nil {
+		return fmt.Errorf("index staged pack: %w", err)
+	}
 	size, err := staged.Seek(0, io.SeekEnd)
 	if err != nil {
 		return fmt.Errorf("size staged pack: %w", err)
-	}
-	if _, err := staged.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("rewind staged pack: %w", err)
-	}
-	writer := new(idxfile.Writer)
-	parser, err := packfile.NewParser(packfile.NewScanner(staged), writer)
-	if err != nil {
-		return fmt.Errorf("parse staged pack: %w", err)
-	}
-	checksum, err := parser.Parse()
-	if err != nil {
-		return fmt.Errorf("parse staged pack: %w", err)
-	}
-	index, err := writer.Index()
-	if err != nil {
-		return fmt.Errorf("index staged pack: %w", err)
 	}
 
 	var encoded bytes.Buffer

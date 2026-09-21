@@ -18,10 +18,18 @@ type Env struct {
 	AccessKey string
 	SecretKey string
 	// Prefix is unique to this run, so runs against a shared bucket do not
-	// read each other's repositories.
+	// read each other's repositories: a design that loads what its store holds
+	// when it starts would otherwise load every earlier run's too.
 	Prefix string
 	// TempDir is scratch space the harness removes when the run ends.
 	TempDir string
+}
+
+// forRun is the environment of one of the runs of a driver, under a prefix of
+// its own.
+func (e Env) forRun(run int) Env {
+	e.Prefix = fmt.Sprintf("%s/run-%d", e.Prefix, run)
+	return e
 }
 
 // tempDir makes a scratch directory under the run's own.
