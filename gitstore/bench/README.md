@@ -272,6 +272,44 @@ What it says:
   replica that has served the repository revalidates the manifest with a
   conditional read and is answered "unchanged".
 
+### A larger repository
+
+The tables above are small enough that the object store dominates. At 20,000
+files, 120 commits then 20 pushes — 35,378 objects, a 29 MiB first pack — it no
+longer does, and what is left is each server's own work.
+`go run . -level git -git-drivers bleephub,walgit,git-local -files 20000 -file-lines 120 -commits 120 -pushes 20 -changes 40 -latency 2ms -runs 1 -parallel 4`
+
+| Scenario | bleephub | walgit | git, local disk |
+|---|---|---|---|
+| `push-initial` | 3.91 s, 6 requests | **0.94 s**, 11 | 0.65 s |
+| `clone-cold` | 0.97 s, 10 | **0.77 s**, 14 | 0.12 s |
+| `clone-warm` | **0.73 s**, 1 | 0.81 s, 5 | 0.12 s |
+| `push-incremental` (20 pushes) | 3.17 s, 97 | **1.96 s**, 140 | 1.45 s |
+| `fetch-incremental` | 0.35 s, 1 | **0.27 s**, 4 | 0.26 s |
+| `clone-parallel` (4 clones) | 1.26 s, 22 | 1.27 s, 26 | 0.25 s |
+
+The first run of this table found a push costing what the repository held rather
+than what it changed: secret scanning read every blob in the new tip's tree after
+every push, and push protection read every blob a push brought even with nothing
+enabled that could block. Twenty pushes took 17.1 s and the first push 6.8 s;
+both now scan only what a push adds, which is also what finds a secret a push
+adds and removes again.
+
+What is left, from a CPU profile of the server:
+
+- **A thin push is parsed twice and re-encoded.** Stock git sends thin packs; the
+  pack is first indexed as it stands, which fails at the first delta whose base
+  it left out, then parsed again against the repository and re-encoded whole —
+  about 65 ms of each incremental push. Canonical git keeps the pushed bytes and
+  appends the missing bases (`index-pack --fix-thin`); go-git's parser reads
+  in-pack bases back from its storage, which is what makes that more than a
+  small change here.
+- **A clone walks every tree in history** to learn what to send — about 60% of
+  it — before copying the stored packs. Reachability bitmaps are how git and
+  GitHub avoid the walk; go-git has none.
+- **A first push** also computes the per-commit file lists its webhook payload
+  carries and scans the whole new tree for secrets: real work, done once.
+
 The same comparison at a size where packs span read extents, against a real
 MinIO with 5 ms injected into every request — 3,000 larger files, 50 commits
 then 20 pushes, 6,265 objects, an 8 MiB initial pack:
