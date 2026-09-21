@@ -89,7 +89,7 @@ helpers are other people's programs.
 | Driver | What it is | Status |
 |---|---|---|
 | `bleephub` | This repository's server on `gitstore`, over smart HTTP. Built from the checkout, or `-bleephub-bin`. | Runs in CI. |
-| `git-local` | Stock git, bare repository on local disk. The ceiling. | Runs in CI. |
+| `git-local` | Stock git, bare repository on local disk, reached by a `file://` URL. The ceiling. (By path, `git clone` hardlinks the repository's files instead of transferring a pack; an earlier version of the harness did that, and its clones looked five times faster than any transfer.) | Runs in CI. |
 | `walgit` | [tobi/walgit](https://github.com/tobi/walgit) (Rust), a smart-HTTP server: packs plus a write-ahead log whose manifest it swaps by conditional write, repositories materialized to a local cache. The nearest design to `gitstore`. Needs git ≥ 2.46 and a store with conditional writes (the fake has them). `cargo build --release`, then `-walgit-bin` or `walgit` on `PATH`; the harness writes its configuration and restarts it with an empty cache for the cold scenarios. | Verified against this harness, commit `80e9a20`. |
 | `git-remote-s3` | [awslabs/git-remote-s3](https://github.com/awslabs/git-remote-s3) (Python): one full bundle per ref per push, so a push costs the repository, not the change. `pip install git-remote-s3`. | Verified against this harness, v0.4.2. |
 | `git-remote-object-store` | [dekobon/git-remote-object-store](https://github.com/dekobon/git-remote-object-store) (Rust), `packchain` engine: a manifest of packs. `cargo xtask install`. | Verified against this harness, v0.2.5. |
@@ -228,13 +228,13 @@ object. `go run . -level git -files 1000 -commits 30 -pushes 10 -latency 2ms -ru
 
 | Scenario | bleephub | walgit | git-remote-object-store | git-remote-s3 | git, local disk |
 |---|---|---|---|---|---|
-| `push-initial` | **4** requests, 0.20 s, 978 KiB up | 52, **0.14 s**, 976 KiB up | 15, 0.30 s, 1.9 MiB up | 9, 0.28 s, 929 KiB up | 0.07 s |
-| `replica-start` | **27**, **0.21 s**, **2 KiB** down | 65, 2.31 s, 2.1 MiB down | — | — | — |
-| `clone-cold` | **3**, **0.09 s**, 973 KiB down | 5, 0.11 s, **0 B** down | 15, 0.31 s, 3.6 MiB down | 7, 0.29 s, 1.8 MiB down | 0.04 s |
-| `clone-warm` | **1**, **0.08 s**, **0 B** down | 4, 0.09 s, 0 B down | 15, 0.31 s, 3.6 MiB down | 7, 0.28 s, 1.8 MiB down | 0.05 s |
-| `push-incremental` (10 pushes) | **47**, **0.66 s**, 268 KiB up | 70, 0.72 s, **186 KiB** up | 150, 2.27 s, 854 KiB up | 90, 2.76 s, 8.4 MiB up | 0.65 s |
-| `fetch-incremental` | **1**, **0.07 s**, **0 B** down | 4, 0.09 s, 0 B down | 26, 0.74 s, 147 KiB down | 5, 0.29 s, 849 KiB down | 0.08 s |
-| `clone-parallel` (8 clones) | **9**, **0.18 s**, 1.1 MiB down | 33, 0.25 s, **0 B** down | 440, 1.13 s, 31 MiB down | 56, 0.49 s, 13 MiB down | 0.58 s |
+| `push-initial` | **4** requests, **0.14 s**, 978 KiB up | 9, **0.14 s**, 976 KiB up | 15, 0.27 s, 1.9 MiB up | 9, 0.32 s, 929 KiB up | 0.07 s |
+| `replica-start` | **27**, **0.21 s**, **2 KiB** down | **27**, 2.31 s, 975 KiB down | — | — | — |
+| `clone-cold` | **3**, **0.09 s**, 973 KiB down | 5, 0.12 s, **0 B** down | 15, 0.30 s, 3.6 MiB down | 7, 0.30 s, 1.8 MiB down | 0.08 s |
+| `clone-warm` | **1**, **0.08 s**, **0 B** down | 4, 0.11 s, 0 B down | 15, 0.30 s, 3.6 MiB down | 7, 0.30 s, 1.8 MiB down | 0.07 s |
+| `push-incremental` (10 pushes) | **49**, **0.52 s**, 310 KiB up | 70, 0.72 s, **186 KiB** up | 150, 2.24 s, 854 KiB up | 90, 2.81 s, 8.4 MiB up | 0.67 s |
+| `fetch-incremental` | **1**, **0.08 s**, **0 B** down | 4, 0.09 s, 0 B down | 26, 0.72 s, 147 KiB down | 5, 0.30 s, 849 KiB down | 0.09 s |
+| `clone-parallel` (8 clones) | **9**, **0.19 s**, 1.1 MiB down | 33, 0.24 s, **0 B** down | 440, 1.11 s, 31 MiB down | 56, 0.53 s, 13 MiB down | 0.21 s |
 
 What it says:
 
@@ -247,7 +247,7 @@ What it says:
   uploads 8.4 MiB over ten one-commit pushes to a repository whose whole history
   is under 1 MiB; bleephub uploads 268 KiB.
 - **The two servers differ in when a replica pays.** walgit materializes its
-  repositories on local disk as it starts — 2.3 s, 65 requests and the whole
+  repositories on local disk as it starts — 2.3 s, 27 requests and the whole
   repository downloaded before it serves anything — and then answers its first
   clone from disk, downloading nothing. bleephub starts in 0.2 s, its 27
   requests being the proof, for each of its two stores, that the store keeps its
@@ -257,17 +257,23 @@ What it says:
   and how many of them anyone asks for: paying at start scales with the first
   number, paying at the first clone with the second. An earlier version of this
   table billed the start to the cold clone, which made walgit's cold clone look
-  like 2.5 s; it was its start.
+  like 2.5 s; it was its start. Another ran a driver's three runs under one
+  prefix, so walgit's second and third starts loaded the repositories of the
+  runs before them, and its start and first push read 65 and 52 requests; each
+  run now has a store of its own.
 - **A push through bleephub is 4 requests, all of them writes**: the pack, its
   index and its filter, uploaded together, and one conditional write of the
   repository's manifest that adds the pack and moves the branch in the same
   swap. Nothing is read — the lost condition is the verification — and nothing
-  is listed. The ten pushes' 47 include the compaction their packs make due.
+  is listed. The ten pushes' 49 include the compaction their packs make due.
   walgit, whose manifest-and-log design this borrows from, takes 7. Ten pushes
-  take bleephub 0.66 s, which is what they take stock git pushing to a bare
-  repository on the same machine's disk: at 2 ms a request the object store has
-  stopped being what a push waits for. It was 25 requests when this table was
-  first drawn; see below.
+  take bleephub 0.52 s and stock git, pushing to a bare repository on the same
+  machine's disk, 0.67 s: at 2 ms a request the object store has stopped being
+  what a push waits for. It was 25 requests when this table was first drawn;
+  see below. A push uploads a little more than it did (310 KiB for the ten, from
+  268): a thin pack is now stored as it was sent with the bases it left out
+  appended whole, as git stores one, rather than re-encoded, and the next
+  compaction deltifies them again.
 - **A warm read is one request that moves no body.** A clone or a fetch on a
   replica that has served the repository revalidates the manifest with a
   conditional read and is answered "unchanged".
@@ -277,16 +283,24 @@ What it says:
 The tables above are small enough that the object store dominates. At 20,000
 files, 120 commits then 20 pushes — 35,378 objects, a 29 MiB first pack — it no
 longer does, and what is left is each server's own work.
-`go run . -level git -git-drivers bleephub,walgit,git-local -files 20000 -file-lines 120 -commits 120 -pushes 20 -changes 40 -latency 2ms -runs 1 -parallel 4`
+`go run . -level git -git-drivers bleephub,walgit,git-local -files 20000 -file-lines 120 -commits 120 -pushes 20 -changes 40 -latency 2ms -runs 3 -parallel 4`
 
 | Scenario | bleephub | walgit | git, local disk |
 |---|---|---|---|
-| `push-initial` | 3.91 s, 6 requests | **0.94 s**, 11 | 0.65 s |
-| `clone-cold` | 0.97 s, 10 | **0.77 s**, 14 | 0.12 s |
-| `clone-warm` | **0.73 s**, 1 | 0.81 s, 5 | 0.12 s |
-| `push-incremental` (20 pushes) | 3.17 s, 97 | **1.96 s**, 140 | 1.45 s |
-| `fetch-incremental` | 0.35 s, 1 | **0.27 s**, 4 | 0.26 s |
-| `clone-parallel` (4 clones) | 1.26 s, 22 | 1.27 s, 26 | 0.25 s |
+| `push-initial` | 3.49 s, 6 requests | **0.77 s**, 11 | 0.61 s |
+| `replica-start` | **0.21 s**, 27 | 2.42 s, 17 | — |
+| `clone-cold` | 0.95 s, 10 | **0.67 s**, 14 | 0.67 s |
+| `clone-warm` | **0.66 s**, 1 | 0.73 s, 5 | 0.66 s |
+| `push-incremental` (20 pushes) | **1.72 s**, 91 | 1.89 s, 140 | 1.51 s |
+| `fetch-incremental` | 0.34 s, 7 | **0.28 s**, 4 | 0.29 s |
+| `clone-parallel` (4 clones) | 1.30 s, 22 | **1.09 s**, 26 | 1.14 s |
+
+A clone here is mostly the client's: stock git cloning from the same machine's
+disk takes as long as a warm clone from bleephub, since what both wait on is
+`index-pack` on the client resolving 35,000 objects. (bleephub's fetch counts a
+compaction the twenty pushes leave running as the fetch starts: 4 of its 7
+requests are that compaction's writes, and the pushes' and the fetch's
+together are 98 requests, as they were before the pushes got faster.)
 
 The first run of this table found a push costing what the repository held rather
 than what it changed: secret scanning read every blob in the new tip's tree after
@@ -295,20 +309,29 @@ enabled that could block. Twenty pushes took 17.1 s and the first push 6.8 s;
 both now scan only what a push adds, which is also what finds a secret a push
 adds and removes again.
 
+The second found a thin push parsed three times: indexed as it stood, which
+failed at the first delta whose base it left out; parsed again against the
+repository into loose objects on local disk; re-encoded whole, with a delta
+search, and indexed once more. Twenty pushes took 3.2 s. A pack is now indexed
+as git's `index-pack` indexes one (`gitstore/indexpack.go`): a first pass as the
+push arrives records every entry and hashes the objects stored whole, a second
+applies each delta to its base once, and the bases no object in the pack turns
+out to be are read from the repository and appended to it (`--fix-thin`). The
+pushed bytes are kept. On a 90 MB pack of this repository's history the two
+passes take 1.9 s where go-git's parser took 3.4 s, and produce the same index,
+object for object; a large object stored whole is never read a second time.
+
 What is left, from a CPU profile of the server:
 
-- **A thin push is parsed twice and re-encoded.** Stock git sends thin packs; the
-  pack is first indexed as it stands, which fails at the first delta whose base
-  it left out, then parsed again against the repository and re-encoded whole —
-  about 65 ms of each incremental push. Canonical git keeps the pushed bytes and
-  appends the missing bases (`index-pack --fix-thin`); go-git's parser reads
-  in-pack bases back from its storage, which is what makes that more than a
-  small change here.
-- **A clone walks every tree in history** to learn what to send — about 60% of
-  it — before copying the stored packs. Reachability bitmaps are how git and
-  GitHub avoid the walk; go-git has none.
-- **A first push** also computes the per-commit file lists its webhook payload
-  carries and scans the whole new tree for secrets: real work, done once.
+- **A first push** computes the per-commit file lists its webhook payload
+  carries — GitHub's push event lists the added, removed and modified paths of
+  up to 2,048 commits — and scans the whole new tree for secrets. The file lists
+  alone were 1.6 s of server CPU in the profile: real work, done once per branch.
+- **A clone walks every tree in history** to learn what to send, about 0.17 s of
+  server CPU per clone in the profile. It is not what a clone waits on: the
+  client needs 0.6 s to index what it receives. Remembering the walk per tip was
+  tried, and at git level measured no difference outside the run-to-run noise,
+  so it is not kept.
 
 The same comparison at a size where packs span read extents, against a real
 MinIO with 5 ms injected into every request — 3,000 larger files, 50 commits
@@ -327,7 +350,8 @@ then 20 pushes, 6,265 objects, an 8 MiB initial pack:
 (These rows were measured two engines ago — before the native engine and before
 the manifest — and with the replica's start still billed to its cold clone, so
 bleephub's and walgit's cold rows include a start, and bleephub's request counts
-are several times what they are now. They are kept for what they show about
+are several times what they are now. Stock git's column reached its repository
+by path, so its clones are hardlinks, not transfers. They are kept for what they show about
 size.) The shape holds, and the costs that grow with the repository show: a bundle per
 push is now 154 MiB of upload for twenty one-commit pushes. bleephub's twenty
 pushes include the compaction that more than eight packs make due, which

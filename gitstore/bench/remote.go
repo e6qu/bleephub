@@ -85,9 +85,11 @@ func init() {
 	})
 }
 
-// localRemote is a bare repository on local disk reached by path: stock git on
-// both ends and no network at all. It is the ceiling of this level, as go-git in
-// memory is of the other.
+// localRemote is a bare repository on local disk: stock git on both ends and no
+// network at all. It is the ceiling of this level, as go-git in memory is of the
+// other. It is reached by a file:// URL, not by its path: given a path, git clone
+// hardlinks the repository's files instead of transferring a pack, and so skips
+// the upload-pack and index-pack every other remote pays for.
 type localRemote struct {
 	root string
 }
@@ -106,14 +108,15 @@ func (d *localRemote) Setup(_ context.Context, env Env) error {
 
 func (d *localRemote) Remote(ctx context.Context, repo string) (string, error) {
 	dir := filepath.Join(d.root, filepath.FromSlash(repo)+".git")
+	remote := (&url.URL{Scheme: "file", Path: filepath.ToSlash(dir)}).String()
 	if _, err := os.Stat(dir); err == nil {
-		return dir, nil
+		return remote, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o750); err != nil {
 		return "", err
 	}
 	_, err := runGit(ctx, "", nil, nil, "init", "--quiet", "--bare", "--initial-branch=main", dir)
-	return dir, err
+	return remote, err
 }
 
 func (d *localRemote) GitEnv() []string              { return nil }
