@@ -330,6 +330,11 @@ jobs:
           persist-credentials: false
       - uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2
       - name: Build the Linux ARM64 wake-listener ZIP
+        env:
+          # Named in the build record that ships beside the binary in the ZIP.
+          BLEEPHUB_VERSION: ${{ needs.metadata.outputs.version || needs.metadata.outputs.tag }}
+          BLEEPHUB_COMMIT: ${{ github.sha }}
+          BLEEPHUB_PUBLISHED_AT: ${{ needs.metadata.outputs.published_at }}
         run: scripts/build-bleephub-wake.sh .build/bleephub-wake
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -382,6 +387,7 @@ jobs:
       - name: Rebuild the release bundles for attachment
         env:
           BLEEPHUB_VERSION: ${{ needs.metadata.outputs.version }}
+          BLEEPHUB_COMMIT: ${{ github.sha }}
           BLEEPHUB_PUBLISHED_AT: ${{ needs.metadata.outputs.published_at }}
         run: |
           set -euo pipefail
@@ -400,7 +406,7 @@ jobs:
           # since the previous tag is the changelog and this block is the
           # header above it.
           # shellcheck disable=SC2016  # the backticks are markdown code spans
-          notes=$(printf '## Container images\n\n```\ndocker pull %s:%s\ndocker pull %s:%s\n```\n\nBuilt from `%s`, also published as `%s:%s`.\n' \
+          notes=$(printf '## Container images\n\n```\ndocker pull %s:%s\ndocker pull %s:%s\n```\n\nBuilt from `%s`, also published as `%s:%s`.\n\n## Licences and provenance\n\nbleephub is AGPL-3.0-or-later. The binaries are unchanged by any of this; what describes them ships beside them. `THIRD-PARTY-LICENSES.txt` reproduces the licence and attribution notices of every Go module linked into them, and is attached here with `LICENSE` and `THIRD-PARTY-NOTICES.md`. In the server image the same files are in `/usr/share/doc/bleephub/`, with a `*.build-info.txt` for each binary: its SHA-256, this commit, and every linked module with its version and checksum, as the Go toolchain recorded them. The wake-listener ZIP carries its own as `BUILD-INFO.txt`. The publishing workflow signs each image with cosign (keyless, from this repository'"'"'s GitHub Actions identity) and attaches an SPDX SBOM of it as a signed OCI artifact.\n' \
             "$IMAGE" "$VERSION" "$RUNNER_IMAGE" "$VERSION" "$GITHUB_SHA" "$IMAGE" "$TAG")
           gh release create "v$VERSION" \
             --title "v$VERSION" \
@@ -408,7 +414,10 @@ jobs:
             --generate-notes \
             "${prerelease[@]}" \
             .build/bleephub-ecs/bleephub-startup.zip \
-            .build/bleephub-wake/bleephub-wake.zip
+            .build/bleephub-wake/bleephub-wake.zip \
+            LICENSE \
+            THIRD-PARTY-LICENSES.txt \
+            THIRD-PARTY-NOTICES.md
 
   prune:
     name: Retain 20 Bleephub releases

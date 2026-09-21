@@ -221,6 +221,11 @@ jobs:
         run: |
           ./scripts/check-dependency-licenses.py --self-test
           ./scripts/check-dependency-licenses.py
+      # Those licences ask that their text and attribution notices accompany the
+      # binaries. The file that does it is generated from what is linked, and a
+      # dependency added or bumped without regenerating it fails here.
+      - name: Check the attributions shipped with the binaries are current
+        run: ./scripts/generate-third-party-licenses.py --check
       - name: Enforce the dependency quarantine window
         run: ./scripts/check-dependency-age.py go nuget terraform docker actions runner
         env:
