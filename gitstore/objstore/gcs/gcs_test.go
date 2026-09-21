@@ -192,7 +192,7 @@ func throwawayCredentials(t *testing.T) []byte {
 		t.Fatalf("encode the key: %v", err)
 	}
 	file, err := json.Marshal(map[string]string{
-		"type":           "service_account",
+		"type":           storage.ServiceAccountKeyType,
 		"private_key_id": "throwaway",
 		"private_key":    string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})),
 		"client_email":   "objstoretest@objstoretest.iam.gserviceaccount.com",

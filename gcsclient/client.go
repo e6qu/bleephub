@@ -91,6 +91,12 @@ type Client struct {
 }
 
 // serviceAccountKey is a service-account key file, as much of it as is used.
+// ServiceAccountKeyType is the "type" of the one kind of credentials file this
+// client accepts: a service account's key. Google issues other kinds under other
+// types — an authorized user, an external account — and each is a different way
+// of obtaining a token; the client takes one way, and refuses the rest by name.
+const ServiceAccountKeyType = "service_account"
+
 type serviceAccountKey struct {
 	Type         string `json:"type"`
 	ClientEmail  string `json:"client_email"`
@@ -123,7 +129,7 @@ func New(opts Options) (*Client, error) {
 	}
 	// The other kinds of Google credential file — a user's, an external
 	// account's, an impersonation — hold no key to sign a URL with.
-	if file.Type != "service_account" {
+	if file.Type != ServiceAccountKeyType {
 		return nil, fmt.Errorf("gcsclient: credentials: the file's type is %q, and only a service_account key is taken", file.Type)
 	}
 	// A key file from Google always names its account and its token endpoint,

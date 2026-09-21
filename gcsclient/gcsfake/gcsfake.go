@@ -132,6 +132,12 @@ func (f *Server) URL() string { return f.server.URL }
 // Close shuts the server down.
 func (f *Server) Close() { f.server.Close() }
 
+// serviceAccountKeyType is what Google writes in the "type" of a service
+// account's key file. The fake states it for itself and does not take it from
+// the client, which it must not import: it is the service, and a service that
+// shared a definition with its client would agree with it by construction.
+const serviceAccountKeyType = "service_account"
+
 // CredentialsJSON is a service-account key file for the server's one service
 // account, in the form Google issues them. Its token_uri is the server's own
 // token endpoint, which issues an access token only for an assertion signed
@@ -143,7 +149,7 @@ func (f *Server) CredentialsJSON() []byte {
 		panic(err)
 	}
 	file, err := json.Marshal(map[string]string{
-		"type":           "service_account",
+		"type":           serviceAccountKeyType,
 		"project_id":     "gcsfake",
 		"private_key_id": f.keyID,
 		"private_key":    string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})),
