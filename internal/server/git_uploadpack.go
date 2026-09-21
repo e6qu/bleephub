@@ -701,15 +701,27 @@ type gitBandWriter struct {
 	mux      *sideband.Muxer
 	progress bool
 	err      error
+	// packet is the most pack data one packet carries.
+	packet int
 }
+
+// The most data a side-band packet carries: a pkt-line is at most 65520 bytes
+// on side-band-64k and 1000 on side-band, counting its 4-byte length, and the
+// band number takes one byte more. go-git's muxer counts the band byte but not
+// the length, so a write it is handed whole can make a packet 4 bytes too long,
+// which its own pkt-line encoder then refuses; the pack is cut to size here.
+const (
+	gitSideband64kData = 65520 - 4 - 1
+	gitSidebandData    = 1000 - 4 - 1
+)
 
 func newGitBandWriter(out io.Writer, mode gitSidebandMode, wantProgress bool) *gitBandWriter {
 	band := &gitBandWriter{raw: out, progress: wantProgress}
 	switch mode {
 	case gitSideband64k:
-		band.mux = sideband.NewMuxer(sideband.Sideband64k, out)
+		band.mux, band.packet = sideband.NewMuxer(sideband.Sideband64k, out), gitSideband64kData
 	case gitSideband:
-		band.mux = sideband.NewMuxer(sideband.Sideband, out)
+		band.mux, band.packet = sideband.NewMuxer(sideband.Sideband, out), gitSidebandData
 	}
 	if band.mux == nil {
 		band.progress = false
@@ -720,9 +732,25 @@ func newGitBandWriter(out io.Writer, mode gitSidebandMode, wantProgress bool) *g
 // pack returns the writer the packfile bytes go to.
 func (b *gitBandWriter) pack() io.Writer {
 	if b.mux != nil {
-		return b.mux
+		return gitBandPackWriter{b}
 	}
 	return b.raw
+}
+
+// gitBandPackWriter writes pack data on band 1, a packet at a time, however
+// much it is handed at once.
+type gitBandPackWriter struct{ band *gitBandWriter }
+
+func (w gitBandPackWriter) Write(p []byte) (int, error) {
+	written := 0
+	for written < len(p) {
+		n, err := w.band.mux.Write(p[written:min(len(p), written+w.band.packet)])
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+	return written, nil
 }
 
 // progressf sends one progress line on band 2. Progress is advisory, so a write
