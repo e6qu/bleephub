@@ -58,42 +58,35 @@ func errNoSuchPack(name string) error {
 	return fmt.Errorf("stored pack %q: %w", name, os.ErrNotExist)
 }
 
-// StoredPacks lists the packs of the current snapshot. It lists nothing in the
-// store to do so, unless this handle has never looked.
+// StoredPacks lists the packs of the manifest held, with the sizes and object
+// counts it records: nothing in the store is asked, unless this handle has
+// never read the manifest.
 func (r *repository) StoredPacks(context.Context) ([]StoredPack, error) {
-	snapshot, err := r.tiers.snapshot()
+	state, err := r.manifests.held()
 	if err != nil {
 		return nil, err
 	}
-	packs := make([]StoredPack, 0, len(snapshot.packs))
-	for _, pack := range snapshot.packs {
-		index, err := pack.loadIndex()
-		if err != nil {
-			return nil, err
-		}
-		count, err := index.Count()
-		if err != nil {
-			return nil, fmt.Errorf("index of %s: %w", pack.name, err)
-		}
-		packs = append(packs, StoredPack{Name: pack.name, Size: pack.pack.size, Objects: int(count)})
+	packs := make([]StoredPack, 0, len(state.packs))
+	for _, pack := range state.packs {
+		packs = append(packs, StoredPack{Name: pack.name, Size: pack.pack.size, Objects: pack.objects})
 	}
 	sort.Slice(packs, func(i, j int) bool { return packs[i].Name < packs[j].Name })
 	return packs, nil
 }
 
 func (r *repository) storedPack(name string) (*storedPack, error) {
-	snapshot, err := r.tiers.snapshot()
+	state, err := r.manifests.held()
 	if err != nil {
 		return nil, err
 	}
-	pack := snapshot.pack(name)
+	pack := state.pack(name)
 	if pack == nil {
 		return nil, errNoSuchPack(name)
 	}
 	return pack, nil
 }
 
-// PackIndex returns the parsed index of one of the snapshot's packs, reading it
+// PackIndex returns the parsed index of one of the live packs, reading it
 // if nothing has needed it yet.
 func (r *repository) PackIndex(_ context.Context, name string) (idxfile.Index, error) { //nolint:ireturn
 	pack, err := r.storedPack(name)
@@ -103,7 +96,7 @@ func (r *repository) PackIndex(_ context.Context, name string) (idxfile.Index, e
 	return pack.loadIndex()
 }
 
-// OpenPack opens one of the snapshot's packs for ranged, cached reads.
+// OpenPack opens one of the live packs for ranged, cached reads.
 func (r *repository) OpenPack(_ context.Context, name string) (PackReader, error) { //nolint:ireturn
 	pack, err := r.storedPack(name)
 	if err != nil {

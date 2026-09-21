@@ -17,8 +17,8 @@ import (
 )
 
 // mergedRepository pushes one large pack and enough small ones to cross the
-// merge threshold, then compacts, leaving the small packs superseded but still
-// in the bucket.
+// merge threshold, then compacts, leaving the small packs retired but still in
+// the bucket.
 func mergedRepository(t *testing.T, fake *fakeS3) []plumbing.Hash {
 	t.Helper()
 	fake.opts.CompactionTrigger = -1
@@ -46,17 +46,17 @@ func mergedRepository(t *testing.T, fake *fakeS3) []plumbing.Hash {
 	if result.Merged == 0 {
 		t.Fatal("fixture did not merge")
 	}
-	if len(packKeys(fake, ".superseded")) != compactionMergeThreshold+1 {
-		t.Fatalf("fixture superseded %d packs, want %d", len(packKeys(fake, ".superseded")), compactionMergeThreshold+1)
+	if retired := len(storedManifest(t, fake).Retired); retired != compactionMergeThreshold+1 {
+		t.Fatalf("fixture retired %d packs, want %d", retired, compactionMergeThreshold+1)
 	}
 	return all
 }
 
-// TestANewReaderDoesNotAdoptSupersededPacks pins that the retention window a
+// TestANewReaderDoesNotAdoptRetiredPacks pins that the grace period a
 // merged-away pack is kept for serves readers already holding it, and costs a
 // reader arriving afterwards nothing: it sees the live packs only, yet finds
 // every object.
-func TestANewReaderDoesNotAdoptSupersededPacks(t *testing.T) {
+func TestANewReaderDoesNotAdoptRetiredPacks(t *testing.T) {
 	fake := newFakeS3(t)
 	all := mergedRepository(t, fake)
 
@@ -69,11 +69,11 @@ func TestANewReaderDoesNotAdoptSupersededPacks(t *testing.T) {
 		t.Fatalf("a new reader lists %d packs of the %d stored, want the 2 live ones of %d", len(listed), stored, 2+compactionMergeThreshold+1)
 	}
 
-	// A superseded pack is hidden, not gone: a reader that adopted it before the
-	// merge still reads it by key.
-	superseded := strings.TrimSuffix(packKeys(fake, ".superseded")[0], ".superseded")
-	if _, ok := fake.Get(superseded + ".pack"); !ok {
-		t.Fatal("a superseded pack is no longer readable by key")
+	// A retired pack is hidden, not gone: a reader that held it before the merge
+	// still reads it by key.
+	retired := storedManifest(t, fake).Retired[0].Name
+	if _, ok := fake.Get("prefix/" + testRepo + "/objects/pack/" + retired + ".pack"); !ok {
+		t.Fatal("a retired pack is no longer readable by key")
 	}
 
 	fresh := testPackedStorage(t, fake)
@@ -87,10 +87,10 @@ func TestANewReaderDoesNotAdoptSupersededPacks(t *testing.T) {
 		t.Fatalf("absent object: %v", err)
 	}
 	spent := fake.Snapshot().Sub(before)
-	// Two live packs: an index and a filter each, plus listings. Adopting the
-	// superseded ones as well would add two reads for every one of them.
+	// The manifest, and two live packs: an index and a filter each. Adopting the
+	// retired ones as well would add two reads for every one of them.
 	if reads := spent.Get + spent.GetRanged; reads > 6 {
-		t.Fatalf("a new reader made %d reads, so it is still loading superseded packs: %s", reads, spent)
+		t.Fatalf("a new reader made %d reads, so it is still loading retired packs: %s", reads, spent)
 	}
 }
 
@@ -135,13 +135,14 @@ func TestConcurrentColdReadsShareOneFetch(t *testing.T) {
 
 	spent := fake.Snapshot().Sub(before)
 	packReads := spent.GetRanged
-	// One fetch each for the index and the pack's single extent is the floor; a
-	// herd that did not share would make several times that.
+	// One fetch each for the index and the pack's single extent is the floor, and
+	// one read of the manifest; a herd that did not share would make several
+	// times that. Nothing is listed: every object asked for is in the pack.
 	if packReads < 2 {
 		t.Fatalf("premise: the readers did not read the pack from the store: %s", spent)
 	}
-	if packReads > 2 || spent.List != 1 {
-		t.Fatalf("%d concurrent cold readers made %d ranged reads and %d listings; they did not share them: %s", readers, packReads, spent.List, spent)
+	if packReads > 2 || spent.Get != 1 || spent.List != 0 {
+		t.Fatalf("%d concurrent cold readers made %d ranged reads, %d reads of the manifest and %d listings; they did not share them: %s", readers, packReads, spent.Get, spent.List, spent)
 	}
 }
 
@@ -209,46 +210,42 @@ func TestACompactionWithNothingToDoIsCheap(t *testing.T) {
 		t.Fatalf("a repository of one pack was compacted into %s", result.PackName)
 	}
 	spent := fake.Snapshot().Sub(before)
-	// One listing of objects/ says what is loose and what is packed.
-	if spent.List != 1 || spent.Total() != 1 {
-		t.Fatalf("finding nothing to do should cost one listing: %s", spent)
+	// One listing of objects/ says what is loose and what lies unnamed in the
+	// pack directory, and one conditional read, answered "not modified", says
+	// the manifest held is the one the listing is to be judged against.
+	if spent.List != 1 || spent.NotModified != 1 || spent.Total() != 2 {
+		t.Fatalf("finding nothing to do should cost one listing and one revalidation: %s", spent)
 	}
 }
 
-// TestASupersededPackIsRetiredOnlyOnceItsRetentionWindowHasPassed pins the two
-// halves of "delete nothing a reader may still need". A pack merged away less
-// than the retention window ago keeps every one of its keys, for the request
-// that was reading it when the merge landed. One older than that is removed —
-// and its .pack key goes first, so that no reader arriving mid-removal adopts a
-// pack whose index has already gone. Age is measured between the store's own
-// modification times, never against this replica's clock.
-func TestASupersededPackIsRetiredOnlyOnceItsRetentionWindowHasPassed(t *testing.T) {
+// TestARetiredPackIsDeletedOnlyOnceItsGracePeriodHasPassed pins the two halves
+// of "delete nothing a reader may still need". A pack merged away less than the
+// grace period ago keeps every one of its keys, for the request that was
+// reading it when the merge landed. One older than that is removed — its .pack
+// key first, so that nothing arriving mid-removal finds a pack whose index has
+// already gone — and only then dropped from the manifest. A live pack is never
+// touched, however old.
+func TestARetiredPackIsDeletedOnlyOnceItsGracePeriodHasPassed(t *testing.T) {
 	fake := newFakeS3(t)
+	fake.clock = newTestClock()
+	fake.SetClock(fake.clock.Now)
 	all := mergedRepository(t, fake)
 	stor := testPackedStorage(t, fake)
-	listing, err := stor.tiers.list()
-	if err != nil {
-		t.Fatalf("list: %v", err)
+	directory := "prefix/" + testRepo + "/objects/pack/"
+	merged := storedManifest(t, fake)
+	if len(merged.Packs) != 2 {
+		t.Fatalf("premise: %d live packs, want the big one and the merged one", len(merged.Packs))
 	}
 
-	// The fake stamps every object with one instant, so the ages are given to
-	// the listing by hand: two markers were written long ago, the rest just now.
-	now := time.Date(2020, time.January, 1, 12, 0, 0, 0, time.UTC)
-	var aged, recent []string
-	for name, entry := range listing.packDirectory {
-		entry.modified = now
-		if pack, isMarker := strings.CutSuffix(name, ".superseded"); isMarker {
-			if len(aged) < 2 {
-				entry.modified = now.Add(-2 * supersededPackRetention)
-				aged = append(aged, pack)
-			} else {
-				recent = append(recent, pack)
-			}
-		}
-		listing.packDirectory[name] = entry
+	fake.clock.Advance(retiredPackGrace - time.Minute)
+	result, err := stor.Compact(context.Background())
+	if err != nil || len(result.RetiredPacks) != 0 {
+		t.Fatalf("inside the grace period a compaction deleted %v (err %v)", result.RetiredPacks, err)
 	}
-	if len(aged) != 2 || len(recent) == 0 {
-		t.Fatalf("premise: %d aged and %d recent superseded packs", len(aged), len(recent))
+	for _, pack := range merged.Retired {
+		if keys := fake.KeysWithPrefix(directory + pack.Name + "."); len(keys) != 3 {
+			t.Fatalf("a pack inside its grace period has %v left, want its pack, index and filter", keys)
+		}
 	}
 
 	var deleteMu sync.Mutex
@@ -260,33 +257,37 @@ func TestASupersededPackIsRetiredOnlyOnceItsRetentionWindowHasPassed(t *testing.
 			deleteMu.Unlock()
 		}
 	})
-	retired, err := stor.retireSupersededPacks(context.Background(), listing)
+	fake.clock.Advance(2 * time.Minute)
+	result, err = stor.Compact(context.Background())
 	fake.SetOnRequest(nil)
 	if err != nil {
-		t.Fatalf("retire: %v", err)
+		t.Fatalf("compact: %v", err)
 	}
-	sort.Strings(aged)
-	if strings.Join(retired, ",") != strings.Join(aged, ",") {
-		t.Fatalf("retired %v, want the two packs past their window: %v", retired, aged)
+	var want []string
+	for _, pack := range merged.Retired {
+		want = append(want, pack.Name)
 	}
-
-	directory := "prefix/" + testRepo + "/objects/pack/"
-	for _, pack := range aged {
-		if keys := fake.KeysWithPrefix(directory + pack + "."); len(keys) != 0 {
-			t.Fatalf("a retired pack left %v behind", keys)
+	sort.Strings(want)
+	if strings.Join(result.RetiredPacks, ",") != strings.Join(want, ",") {
+		t.Fatalf("deleted %v, want the packs past their grace period: %v", result.RetiredPacks, want)
+	}
+	for _, pack := range merged.Retired {
+		if keys := fake.KeysWithPrefix(directory + pack.Name + "."); len(keys) != 0 {
+			t.Fatalf("a deleted pack left %v behind", keys)
 		}
 	}
-	for _, pack := range recent {
-		if keys := fake.KeysWithPrefix(directory + pack + "."); len(keys) != 4 {
-			t.Fatalf("a pack inside its retention window has %v left, want its pack, index, filter and marker", keys)
+	for i := 0; i+2 < len(deleted); i += 3 {
+		if !strings.HasSuffix(deleted[i], ".pack") {
+			t.Fatalf("%s was deleted before its pack was: %v", deleted[i], deleted)
 		}
 	}
-	packsGone := 0
-	for _, key := range deleted {
-		if strings.HasSuffix(key, ".pack") {
-			packsGone++
-		} else if packsGone < len(aged) {
-			t.Fatalf("%s was deleted before every retired .pack key was: %v", key, deleted)
+	after := storedManifest(t, fake)
+	if len(after.Retired) != 0 || len(after.Packs) != 2 {
+		t.Fatalf("the manifest after the deletion lists %d retired and %d live packs, want 0 and 2", len(after.Retired), len(after.Packs))
+	}
+	for _, pack := range after.Packs {
+		if keys := fake.KeysWithPrefix(directory + pack.Name + "."); len(keys) != 3 {
+			t.Fatalf("the live pack %s has %v left", pack.Name, keys)
 		}
 	}
 
@@ -294,7 +295,7 @@ func TestASupersededPackIsRetiredOnlyOnceItsRetentionWindowHasPassed(t *testing.
 	fresh := testPackedStorage(t, fake)
 	for _, hash := range all {
 		if err := fresh.HasEncodedObject(hash); err != nil {
-			t.Fatalf("object %s was lost to the retirement: %v", hash, err)
+			t.Fatalf("object %s was lost to the deletion: %v", hash, err)
 		}
 	}
 }

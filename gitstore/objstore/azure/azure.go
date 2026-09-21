@@ -141,6 +141,34 @@ func (b *bucket) Get(ctx context.Context, key string) (io.ReadCloser, objstore.I
 	return response.Body, info, nil
 }
 
+// GetIfChanged sends the version held as If-None-Match, which a read operation
+// answers with 304 Not Modified when the blob's ETag is still that one.
+// https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations
+func (b *bucket) GetIfChanged(ctx context.Context, key string, held objstore.Version) (io.ReadCloser, objstore.Info, error) {
+	if held == "" {
+		return nil, objstore.Info{}, fmt.Errorf("azure get %s: no version held to compare with", key)
+	}
+	// A version is an ETag without its quotes, and the header wants them back.
+	tag := azcore.ETag(`"` + string(held) + `"`)
+	response, err := b.client.NewBlobClient(key).DownloadStream(ctx, &blob.DownloadStreamOptions{
+		AccessConditions: &blob.AccessConditions{ModifiedAccessConditions: &blob.ModifiedAccessConditions{IfNoneMatch: &tag}},
+	})
+	if err != nil {
+		return nil, objstore.Info{}, translate("get", key, err)
+	}
+	// The client reports a 304 not as an error but as a response with no body,
+	// carrying the code the service sent with it.
+	if response.Body == nil {
+		return nil, objstore.Info{}, fmt.Errorf("azure get %s: %w", key, objstore.ErrNotModified)
+	}
+	info, err := describe(key, response.ContentLength, response.ETag, response.LastModified, response.Metadata)
+	if err != nil {
+		_ = response.Body.Close()
+		return nil, objstore.Info{}, fmt.Errorf("azure get %s: %w", key, err)
+	}
+	return response.Body, info, nil
+}
+
 func (b *bucket) GetRange(ctx context.Context, key string, offset, length int64) (io.ReadCloser, objstore.Info, error) {
 	if offset < 0 || length <= 0 {
 		return nil, objstore.Info{}, fmt.Errorf("azure get %s: invalid range %d+%d", key, offset, length)

@@ -86,6 +86,34 @@ func (b *bucket) Get(ctx context.Context, key string) (io.ReadCloser, objstore.I
 	return body, describe(object), nil
 }
 
+// GetIfChanged asks for the object's description — one small request — and
+// downloads only if the generation it gives is not the one held. The service has
+// a precondition that would say as much in the status, ifGenerationNotMatch,
+// "If the values match, the request fails with a 304 Not Modified response"; it
+// is not used, because it is on the JSON API only, where the download documents
+// no headers to learn the new generation from; because the reference leaves open
+// what it answers for an object that is not there ("the precondition fails");
+// and because the emulator this driver is tested against does not implement it.
+// Comparing the generation the service reports is the same question, asked with
+// nothing but objects.get as documented. The download is described by its own
+// headers, so the two requests need not agree.
+// https://docs.cloud.google.com/storage/docs/request-preconditions
+// https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get
+func (b *bucket) GetIfChanged(ctx context.Context, key string, held objstore.Version) (io.ReadCloser, objstore.Info, error) {
+	generation, err := strconv.ParseInt(string(held), 10, 64)
+	if err != nil {
+		return nil, objstore.Info{}, fmt.Errorf("gcs get %s: version %q is not a generation", key, held)
+	}
+	object, err := b.client.Stat(ctx, b.name, key)
+	if err != nil {
+		return nil, objstore.Info{}, b.translate(ctx, key, err)
+	}
+	if object.Generation == generation {
+		return nil, objstore.Info{}, fmt.Errorf("gcs get %s: %w", key, objstore.ErrNotModified)
+	}
+	return b.Get(ctx, key)
+}
+
 func (b *bucket) GetRange(ctx context.Context, key string, offset, length int64) (io.ReadCloser, objstore.Info, error) {
 	body, object, err := b.client.GetRange(ctx, b.name, key, offset, length)
 	if err != nil {

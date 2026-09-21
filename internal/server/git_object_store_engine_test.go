@@ -2,7 +2,9 @@ package bleephub
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +13,9 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 
+	"github.com/e6qu/bleephub/gitstore"
+	"github.com/e6qu/bleephub/gitstore/objstore"
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
@@ -117,4 +122,93 @@ func stockGitRoundTripsALargeFile(t *testing.T, driver string) {
 	if err != nil || !bytes.Equal(read, payload) {
 		t.Fatalf("the engine read the blob back wrong (err %v, %d bytes)", err, len(read))
 	}
+}
+
+// TestARefusedStockGitPushLeavesItsObjectsInvisible drives the quarantine rule
+// with the stock git client. A push to a repository that has been archived is
+// refused after its pack has been uploaded — the server decides a push with the
+// pushed commits to hand — and what it uploaded must then be part
+// of nothing: not a stored pack, not a readable commit, only keys in the bucket
+// that no manifest names, for a compaction to sweep. When references and packs
+// were published separately the pack was live from the moment it landed.
+func TestARefusedStockGitPushLeavesItsObjectsInvisible(t *testing.T) {
+	git := requireGitCLI(t)
+	srv := newFakeObjectStoreGitServerForTest(t, "s3")
+	const name = "quarantine"
+	seedGitShallowRepo(t, srv.Server, name)
+	cloneURL := strings.Replace(srv.baseURL, "://", "://admin:"+defaultToken+"@", 1) + "/admin/" + name + ".git"
+	root := t.TempDir()
+	commitIn := func(dir, file string) string {
+		t.Helper()
+		git.run(root, "clone", cloneURL, dir)
+		git.run(dir, "config", "user.name", "Quarantine")
+		git.run(dir, "config", "user.email", "quarantine@bleephub.invalid")
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		git.run(dir, "add", file)
+		git.run(dir, "commit", "-m", file)
+		return strings.TrimSpace(git.run(dir, "rev-parse", "HEAD"))
+	}
+	first, second := filepath.Join(root, "first"), filepath.Join(root, "second")
+	winner := commitIn(first, "winner.txt")
+	loser := commitIn(second, "loser.txt")
+	git.run(first, "push", "origin", "HEAD:main")
+
+	stor, ok := srv.store.GetGitStorage("admin", name).(gitstore.PackSource)
+	if !ok {
+		t.Fatal("premise: the repository is not in the object store")
+	}
+	before, err := stor.StoredPacks(context.Background())
+	if err != nil {
+		t.Fatalf("stored packs: %v", err)
+	}
+	keysBefore := packKeysInBucket(t)
+
+	repo := srv.store.GetRepo("admin", name)
+	if repo == nil {
+		t.Fatal("premise: the repository has no record")
+	}
+	srv.store.Mu.Lock()
+	srv.store.Repos[repo.ID].Archived = true
+	srv.store.Mu.Unlock()
+	output, err := git.tryRun(second, "push", "--force", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(output, "archived") {
+		t.Fatalf("premise: a push to an archived repository was not refused: %v\n%s", err, output)
+	}
+	if uploaded := packKeysInBucket(t) - keysBefore; uploaded != 1 {
+		t.Fatalf("premise: the refused push uploaded %d packs, want the one that is now an orphan", uploaded)
+	}
+
+	after, err := stor.StoredPacks(context.Background())
+	if err != nil || len(after) != len(before) {
+		t.Fatalf("the refused push changed the stored packs from %v to %v (%v)", before, after, err)
+	}
+	full := srv.store.GetGitStorage("admin", name)
+	if err := full.HasEncodedObject(plumbing.NewHash(loser)); !errors.Is(err, plumbing.ErrObjectNotFound) {
+		t.Fatalf("the refused push's commit is readable: %v", err)
+	}
+	if ref, err := full.Reference("refs/heads/main"); err != nil || ref.Hash().String() != winner {
+		t.Fatalf("main is %v (%v), want the accepted push's %s", ref, err, winner)
+	}
+}
+
+// packKeysInBucket counts the .pack keys under the git prefix, named by a
+// manifest or not.
+func packKeysInBucket(t *testing.T) int {
+	t.Helper()
+	store, err := gitbackend.GetStore(context.Background())
+	if err != nil || store == nil {
+		t.Fatalf("the git store: %v", err)
+	}
+	packs := 0
+	if err := store.Bucket().List(context.Background(), store.Prefix()+"/", func(entry objstore.Entry) error {
+		if strings.HasSuffix(entry.Key, ".pack") {
+			packs++
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	return packs
 }

@@ -322,14 +322,17 @@ func TestDeleteRepositoryRemovesEveryObjectOfOneRepository(t *testing.T) {
 }
 
 // TestRenameRepositoryMovesEveryObjectToTheNewName pins that a rename leaves
-// nothing under the old name, everything byte for byte under the new one, and a
-// neighbouring repository alone.
+// nothing under the old name, everything byte for byte under the new one — the
+// manifest and the reference snapshot it names among it — and a neighbouring
+// repository alone; and that what has no manifest is not a repository to move.
 func TestRenameRepositoryMovesEveryObjectToTheNewName(t *testing.T) {
 	objects := newGitObjectStoreForTest(t)
 
+	const manifest = `{"format":1,"sequence":1,"packs":[],"retired":[],"refs":{"snapshot":"objects/refs/0000000000000001-0a0b0c0d0e0f1011","changes":[]}}`
+	putS3RawObject(t, objects, "git/owner/repo/manifest", []byte(manifest))
 	putS3RawObject(t, objects, "git/owner/repo/objects/pack/a.pack", []byte("pack-a"))
-	putS3RawObject(t, objects, "git/owner/repo/refs/heads/main", []byte("sha-main"))
-	putS3RawObject(t, objects, "git/owner/other/refs/heads/main", []byte("keep"))
+	putS3RawObject(t, objects, "git/owner/repo/objects/refs/0000000000000001-0a0b0c0d0e0f1011", []byte("snapshot"))
+	putS3RawObject(t, objects, "git/owner/other/manifest", []byte("keep"))
 
 	if err := objects.RenameRepository("owner/repo", "new-owner/new-repo"); err != nil {
 		t.Fatalf("RenameRepository: %v", err)
@@ -341,18 +344,24 @@ func TestRenameRepositoryMovesEveryObjectToTheNewName(t *testing.T) {
 	}
 	newKeys := listS3RawKeys(t, objects, "git/new-owner/new-repo/")
 	wantNew := []string{
+		"git/new-owner/new-repo/manifest",
 		"git/new-owner/new-repo/objects/pack/a.pack",
-		"git/new-owner/new-repo/refs/heads/main",
+		"git/new-owner/new-repo/objects/refs/0000000000000001-0a0b0c0d0e0f1011",
 	}
 	if strings.Join(newKeys, "\n") != strings.Join(wantNew, "\n") {
 		t.Fatalf("new repo keys = %v, want %v", newKeys, wantNew)
 	}
 	kept := listS3RawKeys(t, objects, "git/owner/other/")
-	if len(kept) != 1 || kept[0] != "git/owner/other/refs/heads/main" {
+	if len(kept) != 1 || kept[0] != "git/owner/other/manifest" {
 		t.Fatalf("unrelated repo keys = %v, want owner/other preserved", kept)
 	}
-	if got := string(getS3RawObject(t, objects, "git/new-owner/new-repo/refs/heads/main")); got != "sha-main" {
-		t.Fatalf("renamed ref content = %q, want sha-main", got)
+	if got := string(getS3RawObject(t, objects, "git/new-owner/new-repo/manifest")); got != manifest {
+		t.Fatalf("renamed manifest = %q, want it byte for byte", got)
+	}
+
+	putS3RawObject(t, objects, "git/owner/unmanifested/objects/pack/b.pack", []byte("pack-b"))
+	if err := objects.RenameRepository("owner/unmanifested", "owner/moved"); !errors.Is(err, gitstore.ErrNoManifest) {
+		t.Fatalf("renaming what has no manifest answered %v, want ErrNoManifest", err)
 	}
 }
 

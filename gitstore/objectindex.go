@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -18,32 +17,34 @@ import (
 	"github.com/e6qu/bleephub/gitstore/objstore"
 )
 
-// What a repository holds is known to a handle as a snapshot: the live packs,
-// each with its membership filter and its parsed index once something has
-// needed them; and the membership of the loose tier. A snapshot is immutable. Whatever
-// changes what the repository holds — a listing, a pack this replica published,
-// an object it wrote — builds a new snapshot and swaps it in whole, so a reader
-// takes one pointer and works from a consistent picture without a lock, and
-// there is nothing half-built for two readers to race on.
+// A repository's objects are in two tiers. The packs are named by the manifest
+// (state.go), never by a listing. The loose tier — one object a key, which is
+// how the API's single-object writes land until a compaction packs them — is
+// not in the manifest, because writing a loose object is one PUT and no commit;
+// it is discovered by listing objects/, and what a listing found is held as a
+// looseSnapshot: the membership of each objects/XX/ directory.
 //
-// A snapshot comes from ONE recursive listing of objects/, which names both
-// tiers. It answers "absent" on its own authority only while it is younger than
-// the freshness bound (Options.IndexFreshness); past that, a miss re-lists and
-// looks again before it is believed, because another replica may have published
-// a pack since. Listing after write is strongly consistent on every store this
-// package runs on, so within the bound the snapshot is the truth, and the bound
-// batches the questions a fetch negotiation asks about objects the repository
-// does not have into a few listings a second. What this replica writes itself
-// is added to the snapshot as it is written, so a writer is never stale about
-// itself whatever the bound.
+// The listing is taken only when it has to be: when an object is in none of the
+// packs and the snapshot held is older than the freshness bound
+// (Options.IndexFreshness), or there is none. A repository whose objects are all
+// packed is therefore never listed by a read that finds what it is looking for.
+// Listing after write is strongly consistent on every store this package runs
+// on, so within the bound the snapshot is the truth. What this replica writes
+// itself is added to the snapshot as it is written, so a writer is never stale
+// about itself whatever the bound.
+//
+// A snapshot is immutable: whatever changes it builds a new one and swaps it in
+// whole, so a reader takes one pointer and works from a consistent picture
+// without a lock, and there is nothing half-built for two readers to race on.
 //
 // Every membership answer is negative-only: a filter's "no" is proof, its "yes"
 // only sends the caller to look properly. See the filter invariant in filter.go.
 
 const defaultObjectIndexFreshness = 250 * time.Millisecond
 
-// storedPack is one live pack. It is shared, by pointer, between every snapshot
-// that lists it, so what has been read of it for one snapshot serves the next.
+// storedPack is one pack as this process reads it. It is shared, by pointer,
+// between every state whose manifest names it, so what has been read of it for
+// one serves the next.
 //
 // A pack is described by two things beside its bytes, and each is read when
 // something first needs it, not before. Its index says exactly where every
@@ -54,9 +55,11 @@ const defaultObjectIndexFreshness = 250 * time.Millisecond
 // all. Each is read at most once, under its own mutex, and published only when
 // complete: a reader sees it whole or not yet.
 type storedPack struct {
-	name  string
-	pack  packExtents
-	index packExtents
+	name string
+	// objects is how many objects the pack holds, as the manifest records it.
+	objects int
+	pack    packExtents
+	index   packExtents
 	// filtered says whether a filter lies beside the pack, and filterExtents
 	// where. A pack without one rules nothing out, and a probe goes to its index.
 	filtered      bool
@@ -149,97 +152,52 @@ func (p *storedPack) find(hash plumbing.Hash, probing bool) (*idxfile.MemoryInde
 	return index, offset, err
 }
 
-// tierSnapshot is what a repository held when a listing looked, plus what this
-// replica has added since. It is never modified once published.
-type tierSnapshot struct {
+// looseSnapshot is the loose tier as a listing found it, plus what this replica
+// has written since. It is never modified once published.
+type looseSnapshot struct {
 	// at is when the listing behind the snapshot began: the bound is on how old
 	// what it reports may be, and a long listing is old by the time it ends.
 	at time.Time
-	// packs are the live packs, largest first, since that is where an object
-	// most likely is.
-	packs []*storedPack
-	// loose is the membership of each objects/XX/ directory. Nil means the
+	// filters are the membership of each objects/XX/ directory. Nil means the
 	// directory is empty, which for a repository that pushes packs is all of them.
-	loose [256]*cuckooFilter
+	filters [256]*cuckooFilter
 }
 
-// looseMayHold reports whether the loose tier could hold the object.
-func (s *tierSnapshot) looseMayHold(hash plumbing.Hash) bool {
-	return s.loose[hash[0]].contains(oidKeyFrom(hash[:]))
+// mayHold reports whether the loose tier could hold the object.
+func (s *looseSnapshot) mayHold(hash plumbing.Hash) bool {
+	return s.filters[hash[0]].contains(oidKeyFrom(hash[:]))
 }
 
-// pack returns the live pack of that name, or nil.
-func (s *tierSnapshot) pack(name string) *storedPack {
-	for _, pack := range s.packs {
-		if pack.name == name {
-			return pack
-		}
-	}
-	return nil
-}
-
-// tierChange is something this replica did to the repository: it published a
-// pack, or wrote a loose object.
-type tierChange struct {
-	pack  *storedPack
-	loose plumbing.Hash
-}
-
-// with returns the snapshot as it is after change. The receiver is untouched:
-// only what the change reaches is copied.
-func (s *tierSnapshot) with(change tierChange) *tierSnapshot {
+// with returns the snapshot as it is after this replica wrote hash loose. The
+// receiver is untouched: only the one directory's filter is copied.
+func (s *looseSnapshot) with(hash plumbing.Hash) *looseSnapshot {
 	next := *s
-	if change.pack != nil {
-		next.packs = make([]*storedPack, 0, len(s.packs)+1)
-		for _, pack := range s.packs {
-			// A listing may have found the pack before its publisher got here;
-			// the publisher's copy has the index already parsed.
-			if pack.name != change.pack.name {
-				next.packs = append(next.packs, pack)
-			}
-		}
-		next.packs = append(next.packs, change.pack)
-		sortPacks(next.packs)
-		return &next
-	}
-	fanout := change.loose[0]
-	filter := s.loose[fanout].copyForWrite()
-	filter.insert(oidKeyFrom(change.loose[:]))
-	next.loose[fanout] = filter
+	fanout := hash[0]
+	filter := s.filters[fanout].copyForWrite()
+	filter.insert(oidKeyFrom(hash[:]))
+	next.filters[fanout] = filter
 	return &next
 }
 
-// without returns the snapshot with packs and loose objects removed that this
-// replica is retiring. Removing a loose object clears a fingerprint from a
-// filter, which is sound only for an object the filter was told of: clearing
-// one it never held could take a colliding object's fingerprint with it, and
-// turn a filter's "no" into a lie. So a compaction calls this BEFORE it deletes
-// the keys, while every listing there has ever been still shows them.
-func (s *tierSnapshot) without(packs []string, loose []plumbing.Hash) *tierSnapshot {
+// without returns the snapshot with loose objects removed that this replica has
+// packed. Removing one clears a fingerprint from a filter, which is sound only
+// for an object the filter was told of: clearing one it never held could take a
+// colliding object's fingerprint with it, and turn a filter's "no" into a lie.
+// So a compaction calls this BEFORE it deletes the keys, while every listing
+// there has ever been still shows them.
+func (s *looseSnapshot) without(loose []plumbing.Hash) *looseSnapshot {
 	next := *s
-	if len(packs) > 0 {
-		gone := make(map[string]bool, len(packs))
-		for _, name := range packs {
-			gone[name] = true
-		}
-		next.packs = make([]*storedPack, 0, len(s.packs))
-		for _, pack := range s.packs {
-			if !gone[pack.name] {
-				next.packs = append(next.packs, pack)
-			}
-		}
-	}
 	copied := map[byte]bool{}
 	for _, hash := range loose {
 		fanout := hash[0]
-		if next.loose[fanout] == nil {
+		if next.filters[fanout] == nil {
 			continue
 		}
 		if !copied[fanout] {
-			next.loose[fanout] = next.loose[fanout].copyForWrite()
+			next.filters[fanout] = next.filters[fanout].copyForWrite()
 			copied[fanout] = true
 		}
-		next.loose[fanout].remove(oidKeyFrom(hash[:]))
+		next.filters[fanout].remove(oidKeyFrom(hash[:]))
 	}
 	return &next
 }
@@ -259,107 +217,73 @@ type looseObject struct {
 	key  string
 }
 
-// packDirectoryEntry is one key of objects/pack/ as a listing reported it.
-type packDirectoryEntry struct {
+// listedObject is one key of objects/pack/ or of the reference snapshots as a
+// listing reported it.
+type listedObject struct {
 	modified time.Time
 	size     int64
 }
 
-// tierListing is one recursive listing of objects/, sorted into the two tiers.
-// A reader wants only the snapshot made from it; a compaction also wants the
-// raw entries — which loose keys to pack, which superseded packs have aged out.
-type tierListing struct {
+// objectsListing is one recursive listing of objects/. A reader wants only the
+// loose snapshot made from it; a compaction also wants the rest — which loose
+// keys to pack, and which packs and reference snapshots lie in the store that
+// the manifest does not name.
+type objectsListing struct {
 	at    time.Time
 	loose []looseObject
 	// packDirectory is every key of objects/pack/, by its name within it.
-	packDirectory map[string]packDirectoryEntry
+	packDirectory map[string]listedObject
+	// refSnapshots is every reference snapshot, by its key within the repository.
+	refSnapshots map[string]listedObject
 }
 
-// livePacks names the packs a reader may adopt: those whose .pack and .idx are
-// both there, which is what makes a pack visible all at once however its parts
-// were uploaded, and which carry no supersession marker. A superseded pack
-// stays readable by key for its retention window, for whoever was already
-// reading it, but holds nothing its replacement does not.
-func (l *tierListing) livePacks() []string {
-	var names []string
-	for entry := range l.packDirectory {
-		name, isPack := strings.CutSuffix(entry, ".pack")
-		if !isPack || !strings.HasPrefix(name, "pack-") {
-			continue
-		}
-		if _, indexed := l.packDirectory[name+".idx"]; !indexed {
-			continue
-		}
-		if _, superseded := l.packDirectory[name+".superseded"]; superseded {
-			continue
-		}
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
-// objectTiers owns a repository's snapshots: it takes the listings, publishes
-// what they and this replica's own writes add up to, and hands the current one
-// to readers.
-type objectTiers struct {
+// looseTier owns a repository's loose snapshots: it takes the listings,
+// publishes what they and this replica's own writes add up to, and hands the
+// current one to readers.
+type looseTier struct {
 	shared *storeShared
 	// prefix is the repository's key prefix, ending in "/".
 	prefix string
 
-	current atomic.Pointer[tierSnapshot]
+	current atomic.Pointer[looseSnapshot]
 
 	// mu serializes publication, so that two changes are never both built on the
 	// same predecessor and one of them lost.
 	mu sync.Mutex
 	// listings counts the listings in flight, and journal holds what this
-	// replica added while one was. A listing that began before such a write
+	// replica wrote while one was. A listing that began before such a write
 	// finished may not show it, so the write is replayed onto the snapshot the
 	// listing becomes.
 	listings int
-	journal  []tierChange
+	journal  []plumbing.Hash
 
-	// flight makes concurrent refreshes one listing. It is what keeps the first
-	// clones to arrive at a replica that has just started — all wanting a
-	// snapshot that does not exist yet — from each taking their own.
+	// flight makes concurrent refreshes one listing.
 	flight singleflight.Group
 }
 
-// refreshed is what one listing produced.
-type refreshed struct {
-	listing  *tierListing
-	snapshot *tierSnapshot
-}
-
-// snapshot returns the current snapshot, taking the first if there is none.
-func (t *objectTiers) snapshot() (*tierSnapshot, error) {
-	if current := t.current.Load(); current != nil {
-		return current, nil
-	}
-	result, err := t.refresh()
-	if err != nil {
-		return nil, err
-	}
-	return result.snapshot, nil
+// listedLoose is what one listing produced.
+type listedLoose struct {
+	listing  *objectsListing
+	snapshot *looseSnapshot
 }
 
 // fresh reports whether a snapshot may still answer "absent" by itself.
-func (t *objectTiers) fresh(snapshot *tierSnapshot) bool {
+func (t *looseTier) fresh(snapshot *looseSnapshot) bool {
 	freshness := t.shared.opts.IndexFreshness
-	return freshness > 0 && t.shared.now().Sub(snapshot.at) <= freshness
+	return snapshot != nil && freshness > 0 && t.shared.now().Sub(snapshot.at) <= freshness
 }
 
-// refresh lists the repository and publishes the snapshot that results.
-func (t *objectTiers) refresh() (refreshed, error) {
+// refresh lists objects/ and publishes the loose snapshot that results.
+func (t *looseTier) refresh() (listedLoose, error) {
 	result, err, _ := t.flight.Do("objects", func() (any, error) {
 		t.mu.Lock()
 		t.listings++
 		t.mu.Unlock()
 
 		listing, err := t.list()
-		var built *tierSnapshot
+		var built *looseSnapshot
 		if err == nil {
-			built = t.build(listing)
+			built = buildLooseSnapshot(listing)
 		}
 
 		t.mu.Lock()
@@ -372,26 +296,31 @@ func (t *objectTiers) refresh() (refreshed, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, change := range journal {
-			built = built.with(change)
+		for _, hash := range journal {
+			built = built.with(hash)
 		}
 		t.current.Store(built)
-		return refreshed{listing: listing, snapshot: built}, nil
+		return listedLoose{listing: listing, snapshot: built}, nil
 	})
 	if err != nil {
-		return refreshed{}, err
+		return listedLoose{}, err
 	}
-	return result.(refreshed), nil
+	return result.(listedLoose), nil
 }
 
-// list walks objects/ once and sorts what it finds into the two tiers.
-func (t *objectTiers) list() (*tierListing, error) {
+// list walks objects/ once and sorts what it finds.
+func (t *looseTier) list() (*objectsListing, error) {
 	prefix := t.prefix + "objects/"
 	packPrefix := prefix + "pack/"
-	listing := &tierListing{at: t.shared.now(), packDirectory: map[string]packDirectoryEntry{}}
+	snapshotPrefix := t.prefix + refSnapshotDirectory
+	listing := &objectsListing{at: t.shared.now(), packDirectory: map[string]listedObject{}, refSnapshots: map[string]listedObject{}}
 	err := t.shared.list(t.shared.baseContext(), prefix, func(entry objstore.Entry) {
 		if name, inPackDirectory := strings.CutPrefix(entry.Key, packPrefix); inPackDirectory {
-			listing.packDirectory[name] = packDirectoryEntry{modified: entry.ModTime, size: entry.Size}
+			listing.packDirectory[name] = listedObject{modified: entry.ModTime, size: entry.Size}
+			return
+		}
+		if strings.HasPrefix(entry.Key, snapshotPrefix) {
+			listing.refSnapshots[strings.TrimPrefix(entry.Key, t.prefix)] = listedObject{modified: entry.ModTime, size: entry.Size}
 			return
 		}
 		fanout, base, found := strings.Cut(strings.TrimPrefix(entry.Key, prefix), "/")
@@ -410,79 +339,53 @@ func (t *objectTiers) list() (*tierListing, error) {
 	return listing, nil
 }
 
-// build turns a listing into a snapshot. A pack the previous snapshot already
-// held is carried over with whatever has been read of it. Nothing is read here:
-// a pack's index and filter are read when something first needs them.
-func (t *objectTiers) build(listing *tierListing) *tierSnapshot {
-	snapshot := &tierSnapshot{at: listing.at}
-	previous := t.current.Load()
-	for _, name := range listing.livePacks() {
-		if previous != nil {
-			if known := previous.pack(name); known != nil {
-				snapshot.packs = append(snapshot.packs, known)
-				continue
-			}
-		}
-		filterEntry, filtered := listing.packDirectory[name+".bfilter"]
-		snapshot.packs = append(snapshot.packs, &storedPack{
-			name:          name,
-			pack:          t.extents(name+".pack", listing.packDirectory[name+".pack"].size),
-			index:         t.extents(name+".idx", listing.packDirectory[name+".idx"].size),
-			filtered:      filtered,
-			filterExtents: t.extents(name+".bfilter", filterEntry.size),
-		})
-	}
-	sortPacks(snapshot.packs)
-
+// buildLooseSnapshot turns a listing into a snapshot.
+func buildLooseSnapshot(listing *objectsListing) *looseSnapshot {
+	snapshot := &looseSnapshot{at: listing.at}
 	counts := [256]int{}
 	for _, object := range listing.loose {
 		counts[object.hash[0]]++
 	}
 	for _, object := range listing.loose {
 		fanout := object.hash[0]
-		if snapshot.loose[fanout] == nil {
-			snapshot.loose[fanout] = newCuckooFilter(max(counts[fanout], cuckooMinimumCapacity))
+		if snapshot.filters[fanout] == nil {
+			snapshot.filters[fanout] = newCuckooFilter(max(counts[fanout], cuckooMinimumCapacity))
 		}
-		snapshot.loose[fanout].insert(oidKeyFrom(object.hash[:]))
+		snapshot.filters[fanout].insert(oidKeyFrom(object.hash[:]))
 	}
 	return snapshot
 }
 
-// extents addresses one artefact of the pack directory.
-func (t *objectTiers) extents(name string, size int64) packExtents {
-	return packExtents{shared: t.shared, key: t.prefix + path.Join("objects", "pack", name), size: size}
-}
-
-// apply publishes a change this replica made and, if a listing is in flight,
-// keeps it to be replayed onto what that listing becomes. With no snapshot yet
-// there is nothing to update: the first listing comes after the write, and a
-// listing after a write shows it.
-func (t *objectTiers) apply(change tierChange) {
+// wrote publishes a loose object this replica wrote and, if a listing is in
+// flight, keeps it to be replayed onto what that listing becomes. With no
+// snapshot yet there is nothing to update: the first listing comes after the
+// write, and a listing after a write shows it.
+func (t *looseTier) wrote(hash plumbing.Hash) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if current := t.current.Load(); current != nil {
-		t.current.Store(current.with(change))
+		t.current.Store(current.with(hash))
 	}
 	if t.listings > 0 {
-		t.journal = append(t.journal, change)
+		t.journal = append(t.journal, hash)
 	}
 }
 
-// retire publishes the removal of packs and loose objects this replica is
-// retiring; see without for when that is sound. It is not journalled: a listing
-// in flight either still shows what was retired, which costs a read that finds
-// it gone and lists again, or no longer does, and replaying the removal onto it
-// would clear fingerprints it never inserted.
-func (t *objectTiers) retire(packs []string, loose []plumbing.Hash) {
+// packed publishes the removal of loose objects this replica has packed; see
+// without for when that is sound. It is not journalled: a listing in flight
+// either still shows what was packed, which costs a read that finds it gone and
+// lists again, or no longer does, and replaying the removal onto it would clear
+// fingerprints it never inserted.
+func (t *looseTier) packed(loose []plumbing.Hash) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if current := t.current.Load(); current != nil {
-		t.current.Store(current.without(packs, loose))
+		t.current.Store(current.without(loose))
 	}
 }
 
-// errStaleSnapshot reports that the store no longer holds a pack the snapshot
-// named: a merge elsewhere superseded it, and its retention window has since
-// run out. It is proof that the snapshot is out of date whatever its age, and
-// the answer to it is to list again.
-var errStaleSnapshot = errors.New("the repository changed underneath the snapshot")
+// errStaleSnapshot reports that the store no longer holds a pack the manifest
+// held names: a compaction elsewhere retired it, and its grace period has since
+// run out. It is proof that the manifest held is out of date whatever its age,
+// and the answer to it is to read the manifest again.
+var errStaleSnapshot = errors.New("the repository changed underneath the manifest held")

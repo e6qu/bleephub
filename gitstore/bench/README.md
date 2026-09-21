@@ -187,31 +187,39 @@ pushes: 1,787 objects, a 928 KiB initial pack.
 
 | Scenario | gitstore | ogit | go-git on local disk |
 |---|---|---|---|
-| `push-initial` | **10** requests, 0.08 s | 3,187 requests, 8.9 s | 0.04 s |
-| `clone-cold` | **5**, 0.67 s | 1,956, 6.0 s | 0.63 s |
-| `clone-warm` | **2**, 0.64 s | 1,956, 6.1 s | 0.63 s |
-| `push-incremental` (10 pushes) | **51**, 0.16 s | 408, 1.1 s | 0.03 s |
-| `fetch-incremental` | **0**, 0.05 s | 671, 2.0 s | 0.07 s |
-| `probe-absent` (1,000 probes) | **1**, 0.004 s | 1,000, 2.8 s | 0.009 s |
-| `maintain` | 14, 0.09 s | — | — |
-| `clone-cold-maintained` | 7, 0.72 s | — | — |
-| `clone-parallel` (8 clones) | **7**, 0.94 s | 18,112, 7.9 s | 1.00 s |
-| `refs-create` (200 references) | 201, 0.55 s | 200, 0.55 s | 0.02 s |
-| `refs-advertise` (4 clients, 201 references) | **213**, 1.28 s | 812, 3.53 s | 1.23 s |
+| `push-initial` | **7** requests, 0.07 s | 3,187 requests, 8.8 s | 0.04 s |
+| `clone-cold` | **3**, 0.66 s | 1,956, 5.9 s | 0.62 s |
+| `clone-warm` | **1**, 0.63 s | 1,956, 6.0 s | 0.62 s |
+| `push-incremental` (10 pushes) | **50**, 0.10 s | 408, 1.1 s | 0.03 s |
+| `fetch-incremental` | **0**, 0.05 s | 671, 1.9 s | 0.07 s |
+| `probe-absent` (1,000 probes) | **1**, 0.004 s | 1,000, 2.7 s | 0.015 s |
+| `maintain` | 6, 0.08 s | — | — |
+| `clone-cold-maintained` | 5, 0.72 s | — | — |
+| `clone-parallel` (8 clones) | **5**, 0.93 s | 18,112, 7.3 s | 0.94 s |
+| `refs-create` (200 references) | 200, 0.55 s | 200, 0.55 s | 0.02 s |
+| `refs-advertise` (4 clients, 201 references) | **4**, 1.22 s | 812, 3.44 s | 1.24 s |
 
 `refs-advertise` spends 1.2 s of its time in the pauses between clients, which
-every driver pays, so `gitstore`'s four advertisements cost 0.05 s over the
-ceiling: the cold replica lists `refs/` once and reads the 200 references it has
-never seen, sixteen at a time, and each client after it is one LIST. A reference
-write is one PUT in any design, which is why `refs-create` is a draw.
+every driver pays, so `gitstore`'s four advertisements cost nothing measurable
+over the ceiling: a repository's references are its manifest and one immutable
+snapshot object, so the cold replica reads two objects and each client after it
+revalidates the manifest with a conditional read that moves no body — four
+requests for four clients and 201 references, where it was 213 when every
+reference was an object of its own, and 812 for the design that still keeps
+them so. A reference write is one PUT in any design, which is why `refs-create`
+is a draw; here the PUT is the manifest, swapped on the condition that nobody
+else has moved it. At this level a push is five requests — the pack, its index,
+its filter, a swap that adds the pack and a swap that moves the branch — because
+the harness drives go-git's `Storer` a call at a time; through the server a push
+is one transaction, and four.
 
 A clone's time is dominated by the pack encode, which every driver pays (the
-in-memory ceiling is 0.63 s), so the read rows say that `gitstore`'s object-store
+in-memory ceiling is 0.62 s), so the read rows say that `gitstore`'s object-store
 overhead is a few tens of milliseconds while the one-object-per-key design's is
 the whole clone, ten times over. The gap scales with the round trip, since it
 is the request counts that differ: every extra millisecond of latency adds about
-two seconds to the 1,956-request clone and about five milliseconds to the
-5-request one. Rerun with a larger `-latency` to measure a farther region.
+two seconds to the 1,956-request clone and about three milliseconds to the
+3-request one. Rerun with a larger `-latency` to measure a farther region.
 
 ### Git level
 
@@ -220,45 +228,49 @@ object. `go run . -level git -files 1000 -commits 30 -pushes 10 -latency 2ms -ru
 
 | Scenario | bleephub | walgit | git-remote-object-store | git-remote-s3 | git, local disk |
 |---|---|---|---|---|---|
-| `push-initial` | **8** requests, 0.19 s, 977 KiB up | 52, **0.14 s**, 976 KiB up | 15, 0.29 s, 1.9 MiB up | 9, 0.28 s, 929 KiB up | 0.07 s |
-| `replica-start` | **25**, **0.21 s**, **2 KiB** down | 65, 2.31 s, 2.1 MiB down | — | — | — |
-| `clone-cold` | 7, **0.11 s**, 975 KiB down | **5**, 0.12 s, **3 KiB** down | 15, 0.31 s, 3.6 MiB down | 7, 0.29 s, 1.8 MiB down | 0.04 s |
-| `clone-warm` | **3**, **0.09 s**, **1 KiB** down | 4, 0.09 s, 2 KiB down | 15, 0.31 s, 3.6 MiB down | 7, 0.29 s, 1.8 MiB down | 0.04 s |
-| `push-incremental` (10 pushes) | 78, 0.79 s, 256 KiB up | **70**, **0.75 s**, **186 KiB** up | 150, 2.30 s, 854 KiB up | 90, 2.74 s, 8.4 MiB up | 0.68 s |
-| `fetch-incremental` | **3**, **0.09 s**, **1 KiB** down | 4, 0.09 s, 6 KiB down | 26, 0.74 s, 147 KiB down | 5, 0.30 s, 849 KiB down | 0.09 s |
-| `clone-parallel` (8 clones) | **20**, **0.19 s**, 1.1 MiB down | 33, 0.26 s, **118 KiB** down | 440, 1.15 s, 31 MiB down | 56, 0.47 s, 13 MiB down | 0.57 s |
+| `push-initial` | **4** requests, 0.20 s, 978 KiB up | 52, **0.14 s**, 976 KiB up | 15, 0.30 s, 1.9 MiB up | 9, 0.28 s, 929 KiB up | 0.07 s |
+| `replica-start` | **27**, **0.21 s**, **2 KiB** down | 65, 2.31 s, 2.1 MiB down | — | — | — |
+| `clone-cold` | **3**, **0.09 s**, 973 KiB down | 5, 0.11 s, **0 B** down | 15, 0.31 s, 3.6 MiB down | 7, 0.29 s, 1.8 MiB down | 0.04 s |
+| `clone-warm` | **1**, **0.08 s**, **0 B** down | 4, 0.09 s, 0 B down | 15, 0.31 s, 3.6 MiB down | 7, 0.28 s, 1.8 MiB down | 0.05 s |
+| `push-incremental` (10 pushes) | **47**, **0.66 s**, 268 KiB up | 70, 0.72 s, **186 KiB** up | 150, 2.27 s, 854 KiB up | 90, 2.76 s, 8.4 MiB up | 0.65 s |
+| `fetch-incremental` | **1**, **0.07 s**, **0 B** down | 4, 0.09 s, 0 B down | 26, 0.74 s, 147 KiB down | 5, 0.29 s, 849 KiB down | 0.08 s |
+| `clone-parallel` (8 clones) | **9**, **0.18 s**, 1.1 MiB down | 33, 0.25 s, **0 B** down | 440, 1.13 s, 31 MiB down | 56, 0.49 s, 13 MiB down | 0.58 s |
 
 What it says:
 
 - **A server that keeps state wins on bytes and time.** A remote helper starts
   from nothing on every invocation, so it downloads the repository to clone it
   and again to fetch into it; the two servers' warm clones and incremental
-  fetches move a kilobyte or two, because the packs are already in their caches.
-  Eight parallel clones cost the helpers eight downloads and the servers one.
+  fetches move nothing, because the packs are already in their caches. Eight
+  parallel clones cost the helpers eight downloads and the servers one.
 - **A bundle per push costs the repository, not the change.** `git-remote-s3`
   uploads 8.4 MiB over ten one-commit pushes to a repository whose whole history
-  is under 1 MiB; bleephub uploads 256 KiB.
+  is under 1 MiB; bleephub uploads 268 KiB.
 - **The two servers differ in when a replica pays.** walgit materializes its
   repositories on local disk as it starts — 2.3 s, 65 requests and the whole
   repository downloaded before it serves anything — and then answers its first
-  clone from disk. bleephub starts in 0.2 s, its twenty-five requests being the
-  proof that the store keeps its promises — made twice, for the prefix its
-  repositories live under and for the one its byte store does — and leaves each
-  pack in the store until a clone reads it: the first clone fetches the extents it touches, 7
-  requests and 0.11 s. After that they are level. Which is better depends on how
-  many repositories a replica hosts and how many of them anyone asks for: paying
-  at start scales with the first number, paying at the first clone with the
-  second. An earlier version of this table billed the start to the cold clone,
-  which made walgit's cold clone look like 2.5 s; it was its start.
-- **A push through bleephub is about 7 requests**: four writes — the pack, its
-  index, its filter and the branch — the branch read for the compare-and-set, a
-  listing of `refs/`, and on average less than one other read. The ten pushes'
-  78 include the one compaction their packs make due. walgit's 7 list nothing at
-  all, because its manifest names what a dotgit layout has to list a directory
-  to find. It was 25 when this table was first drawn; see below. The
-  first push to a brand-new repository is 8 where it was once 6: a handle that
-  has never listed cannot assume the repository is empty, and the branch's
-  compare-and-set reads `packed-refs` from the store.
+  clone from disk, downloading nothing. bleephub starts in 0.2 s, its 27
+  requests being the proof, for each of its two stores, that the store keeps its
+  promises, and leaves each pack in the store until a clone reads it: the first
+  clone is the manifest, the pack's index and the extents it touches, 3 requests
+  and 0.09 s. Which is better depends on how many repositories a replica hosts
+  and how many of them anyone asks for: paying at start scales with the first
+  number, paying at the first clone with the second. An earlier version of this
+  table billed the start to the cold clone, which made walgit's cold clone look
+  like 2.5 s; it was its start.
+- **A push through bleephub is 4 requests, all of them writes**: the pack, its
+  index and its filter, uploaded together, and one conditional write of the
+  repository's manifest that adds the pack and moves the branch in the same
+  swap. Nothing is read — the lost condition is the verification — and nothing
+  is listed. The ten pushes' 47 include the compaction their packs make due.
+  walgit, whose manifest-and-log design this borrows from, takes 7. Ten pushes
+  take bleephub 0.66 s, which is what they take stock git pushing to a bare
+  repository on the same machine's disk: at 2 ms a request the object store has
+  stopped being what a push waits for. It was 25 requests when this table was
+  first drawn; see below.
+- **A warm read is one request that moves no body.** A clone or a fetch on a
+  replica that has served the repository revalidates the manifest with a
+  conditional read and is answered "unchanged".
 
 The same comparison at a size where packs span read extents, against a real
 MinIO with 5 ms injected into every request — 3,000 larger files, 50 commits
@@ -274,9 +286,10 @@ then 20 pushes, 6,265 objects, an 8 MiB initial pack:
 | `fetch-incremental` | **3**, **0.21 s**, **1 KiB** down | 4, 0.23 s | 46, 1.35 s, 1.3 MiB down | 5, 0.49 s, 7.6 MiB down | 0.16 s |
 | `clone-parallel` (8 clones) | **44**, **0.72 s**, **9.8 MiB** down | 178, 5.48 s, 20 MiB down | 760, 2.75 s, 279 MiB down | 56, 0.98 s, 122 MiB down | 0.50 s |
 
-(These rows were measured before the engine in the next section was replaced,
-and with the replica's start still billed to its cold clone, so bleephub's and
-walgit's cold rows include a start. They are kept for what they show about
+(These rows were measured two engines ago — before the native engine and before
+the manifest — and with the replica's start still billed to its cold clone, so
+bleephub's and walgit's cold rows include a start, and bleephub's request counts
+are several times what they are now. They are kept for what they show about
 size.) The shape holds, and the costs that grow with the repository show: a bundle per
 push is now 154 MiB of upload for twenty one-commit pushes. bleephub's twenty
 pushes include the compaction that more than eight packs make due, which
@@ -421,3 +434,40 @@ two engines compare request for request:
   over an object store downloads the rest of the pack.
 - **The harness billed a replica's start to its first clone**, which is how it
   came to say walgit's cold clone took 2.5 s. Start is now a scenario of its own.
+
+Then the layout changed. The native engine still laid a repository out in the
+bucket like a bare git directory, so it still had to list to learn which packs
+were live and which references existed, still read a branch in order to move it,
+and still needed a lock service beside the store because nothing in the store
+arbitrated between two writers. Each repository now has one object, its
+manifest, that names its live packs and its references, and a change is visible
+when — and only when — a conditional write of that object succeeds:
+
+| Scenario | native engine, dotgit layout | manifest |
+|---|---|---|
+| Git level: one push | 8 requests | **4**, none of them a read |
+| `push-incremental` (10 pushes) | 78 | 47 |
+| `clone-cold` / `clone-warm` | 7 / 3 | 3 / 1 |
+| `fetch-incremental` | 3 | 1 |
+| `clone-parallel` (8 clones) | 20 | 9 |
+| Storer level: `refs-advertise` | 213 | 4 |
+| `maintain` | 14 | 6 |
+| `clone-cold` / `clone-warm` | 5 / 2 | 3 / 1 |
+
+- **The conditional write is the lock.** A commit applies its change to the
+  manifest it holds and writes on the condition that the version has not moved;
+  losing is how it learns that it must re-read. The durable SQL lock the server
+  took around every reference update is gone, and with it the read before every
+  write.
+- **A push is one transaction.** Its pack is ingested into quarantine and joins
+  the repository in the swap that moves its references, so a push whose
+  references are refused leaves nothing visible — it used to leave its pack —
+  and an atomic push is atomic.
+- **Commits to one repository share a swap.** An object takes about one
+  conditional overwrite a second on some stores, so mutations that arrive while
+  a swap is in flight go together in the next, each validated on its own.
+- **References are a snapshot and a few changes**, so a repository with a
+  thousand branches advertises them in the same two reads as one with three.
+- **Compaction lists once and swaps once**, retiring what it merged in the
+  manifest rather than with a marker object per pack; what a manifest names is
+  never deleted, and what none names is deleted only after a grace period.

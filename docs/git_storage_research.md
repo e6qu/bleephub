@@ -693,3 +693,87 @@ before this are not read at all, and the switch itself is one function,
    compare-and-swap (rules 2 and 4), no loose objects (3), reftable-style
    references (6), single-object segments with a footer (8), quarantine (5), side
    indexes (7).
+
+## Step 2, as built: the manifest and compare-and-swap (rules 1, 2, 4, 5, and the start of 6)
+
+Built on 2026-09-21. `docs/git-storage.md` describes the result; this records
+what was decided on the way and what was measured.
+
+**What was built.** One JSON object per repository, `manifest`, is the only
+commit point: `format`, `sequence`, the live `packs` (name, sizes of pack, index
+and filter, object count, what wrote it, when), the `retired` packs with the
+time of their retirement, and `refs` as a pointer to an immutable snapshot
+object plus an inline list of changes (a value or a tombstone), folded into a
+new snapshot past 512 changes. Every change is a mutation committed by
+`Put` … `IfVersion` with re-read, re-apply and jittered backoff on 412 (rule 2);
+commits to one repository that arrive during a swap share the next (walgit's
+group commit); a push is one transaction — pack and reference updates in one
+swap, decided on through a view that alone reads the quarantined pack (rule 5);
+compaction commits by one swap and retired packs are deleted a grace period
+later (rule 4). The per-reference objects, the `.superseded` markers, the
+in-process reference locks of the object-store backend and the durable SQL lock
+are gone. Pack, index, filter and loose-object keys did not move; loose objects
+remain (rule 3 is the next step), discovered by a listing taken only on a miss.
+
+**What the three stores' documentation says about a conditional read**, since
+revalidation leans on it: S3's GetObject takes `If-None-Match` and returns 304
+when the ETag matches
+([API_GetObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html));
+Azure's Get Blob does the same, and its table of response codes gives 304 for an
+unmet `If-None-Match` on a read
+([conditional headers](https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations));
+Google Cloud Storage's `ifGenerationNotMatch` "fails with a 304 Not Modified
+response" when the generation matches
+([request preconditions](https://docs.cloud.google.com/storage/docs/request-preconditions)).
+GCS's XML download — which the client uses because it alone documents the
+generation as a response header — has `If-None-Match` on the ETag but no
+generation-not-match header
+([XML headers](https://docs.cloud.google.com/storage/docs/xml-api/reference-headers)),
+and the version token is a generation. `ifGenerationNotMatch` was tried and
+dropped for three reasons: it is on the JSON API only, whose download documents
+no headers to learn the new generation from, so a second request is needed
+anyway; the JSON reference says of it that "if no live object exists, the
+precondition fails" without naming the status
+([objects.get](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get)),
+and a deleted manifest answered 304 would read as "unchanged"; and
+fake-gcs-server, the emulator the driver's suite runs against in CI, ignores the
+parameter on `objects.get` (read in its source, `fakestorage/object.go`, on
+2026-09-21). So the GCS driver asks for the object's description with a plain
+`objects.get` and compares the generation itself: one small request when nothing
+changed, two when something did, and nothing relied on but `objects.get` as
+documented. What it costs over a 304 is a response body of a couple of hundred
+bytes.
+
+**One thing the research did not foresee.** Pack names are digests of their
+contents, so a push that was refused and is made again uploads the same keys. A
+sweep that deleted an old unnamed upload between that re-upload and its commit
+would delete a live pack, and no store offers a conditional delete to prevent
+it. So an orphan is not deleted when found: it is entered in the manifest's
+`retired` list, and deleted a grace period later like any retired pack; a commit
+that wants the name back in the first half of that period takes it back, and
+after that is refused. Reference snapshots have keys no commit reuses and are
+deleted directly.
+
+**Measured** with the fakes, 2 ms injected latency, median of 3
+(`gitstore/bench`; S3 requests, before → after):
+
+| Storer level | before | after | | Git level (bleephub over smart HTTP) | before | after |
+|---|---|---|---|---|---|---|
+| push-initial | 10 | 7 | | push-initial | 8 | 4 |
+| clone-cold | 5 | 3 | | replica-start | 25 | 27 |
+| clone-warm | 2 | 1 | | clone-cold | 7 | 3 |
+| push-incremental (10 pushes) | 51 | 50 | | clone-warm | 3 | 1 |
+| fetch-incremental | 0 | 0 | | push-incremental (10 pushes) | 78 | 47 |
+| probe-absent | 1 | 1 | | fetch-incremental | 3 | 1 |
+| maintain | 14 | 6 | | clone-parallel | 20 | 9 |
+| clone-parallel | 7 | 5 | | | | |
+| refs-create (200) | 201 | 200 | | | | |
+| refs-advertise | 213 | 4 | | | | |
+
+The harness's Storer-level push is two calls — `packfile.UpdateObjectStorage`,
+then `CheckAndSetReference` — and so two swaps: five requests a push, and seven
+for the first (the read that finds no manifest, the swap that creates the
+repository, three uploads, two swaps). The server's push is the transaction: a
+pack, an index, a filter and one swap. `replica-start` rose by two because each
+of the two stores' startup probes now proves the conditional read, one request
+more apiece.

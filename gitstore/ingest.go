@@ -24,10 +24,10 @@ import (
 // costs tens of thousands of round trips, and leaves a loose tier every read
 // pays for one GET at a time until a compaction packs it again.
 //
-// So the pack is kept: spooled to local disk as it arrives, then published
-// through the same index → filter → pack sequence compaction uses, with the
-// same crash-safety argument (see compact.go). The spool is what makes two
-// things possible. The pack's name is the hash of its contents, unknown until
+// So the pack is kept: spooled to local disk as it arrives, uploaded as an
+// index, a filter and a pack, and then made part of the repository by a commit
+// of the manifest that names it (commit.go). Until that commit the three objects
+// are an upload nothing refers to. The spool is what makes two things possible. The pack's name is the hash of its contents, unknown until
 // the last byte; and whether the pack can be stored as it stands is unknown
 // until it has been parsed.
 //
@@ -49,13 +49,36 @@ func (s *atomicRefStorer) PackfileWriter() (io.WriteCloser, error) {
 	return s.newStreamingIngest(), nil
 }
 
-// PackfileWriter receives a pushed packfile and publishes it as a pack.
+// PackfileWriter receives a packfile and makes it part of the repository when it
+// is closed: a commit of its own, for the callers that write objects and
+// references one call at a time — imports, the API, the wiki. A push goes
+// through BeginPush instead, so that its pack and its references are one commit.
 func (r *repository) PackfileWriter() (io.WriteCloser, error) {
+	return r.newPackIngest(func(uploaded *uploadedPack) error {
+		return r.commitPack(uploaded, packSourceWrite)
+	})
+}
+
+// newPackIngest starts receiving a pack. uploaded is called once the pack is in
+// the store, and not at all for a packfile that held no objects.
+func (r *repository) newPackIngest(uploaded func(*uploadedPack) error) (*packIngest, error) {
 	spool, built, err := r.stagePack("ingest-*.pack")
 	if err != nil {
 		return nil, err
 	}
-	return &packIngest{repository: r, spool: spool, built: built}, nil
+	return &packIngest{repository: r, spool: spool, built: built, quarantine: noQuarantine, uploaded: uploaded}, nil
+}
+
+// commitPack makes an uploaded pack live, and asks for a compaction if that
+// leaves the repository due one.
+func (r *repository) commitPack(uploaded *uploadedPack, source string) error {
+	state, err := r.commits.commit(func(d *draft) error { return d.addPack(uploaded.entry(source)) })
+	if err != nil {
+		r.manifests.withdraw(uploaded.stored.name)
+		return err
+	}
+	r.notePackWritten(len(state.packs))
+	return nil
 }
 
 // streamingIngest parses a pack into the storage while it is still arriving, so
@@ -99,6 +122,10 @@ type packIngest struct {
 	spool      *os.File
 	built      *builtPack
 	wrote      int64
+	// quarantine are packs of the same push that are not live yet, which a thin
+	// pack arriving after them may lean on.
+	quarantine *quarantine
+	uploaded   func(*uploadedPack) error
 }
 
 func (i *packIngest) Write(p []byte) (int, error) {
@@ -117,7 +144,7 @@ func (i *packIngest) Close() error {
 
 	ready := i.built
 	if err := i.built.describe(i.spool); err != nil {
-		completed, completeErr := i.repository.completeThinPack(i.spool)
+		completed, completeErr := i.repository.completeThinPack(i.spool, i.quarantine)
 		if completeErr != nil {
 			// Whatever was wrong with the pack, the parse against the
 			// repository is the authoritative account of it.
@@ -130,30 +157,16 @@ func (i *packIngest) Close() error {
 		return nil
 	}
 
-	published, err := i.repository.publishPack(i.repository.shared.baseContext(), ready)
+	uploaded, err := i.repository.uploadPack(i.repository.shared.baseContext(), ready)
 	if err != nil {
 		return err
 	}
-	// The pack joins the snapshot this handle already holds: a push only adds,
-	// so everything the snapshot could answer before is still right, and nothing
-	// is listed to learn what is already known here. A handle with no snapshot
-	// yet takes its first, which the count of live packs below needs anyway.
-	snapshot, err := i.repository.tiers.snapshot()
-	if err != nil {
-		return err
-	}
-	i.repository.tiers.apply(tierChange{pack: published})
-	livePacks := len(snapshot.packs)
-	if snapshot.pack(published.name) == nil {
-		livePacks++
-	}
-	i.repository.notePackWritten(livePacks)
-	return nil
+	return i.uploaded(uploaded)
 }
 
 // completeThinPack turns a pack that leans on objects already in the repository
 // into a self-contained one holding exactly the objects pushed.
-func (r *repository) completeThinPack(spool *os.File) (*builtPack, error) {
+func (r *repository) completeThinPack(spool *os.File, quarantine *quarantine) (*builtPack, error) {
 	staging, err := r.compactionScratchDir()
 	if err != nil {
 		return nil, err
@@ -170,7 +183,7 @@ func (r *repository) completeThinPack(spool *os.File) (*builtPack, error) {
 	if _, err := spool.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("rewind pushed pack: %w", err)
 	}
-	if err := parsePackInto(spool, &thinBaseOverlay{Storage: scratch, repository: r}); err != nil {
+	if err := parsePackInto(spool, &thinBaseOverlay{Storage: scratch, repository: &quarantineView{repository: r, quarantine: quarantine}}); err != nil {
 		return nil, err
 	}
 

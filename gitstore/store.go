@@ -1,7 +1,9 @@
 package gitstore
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -16,7 +18,8 @@ import (
 )
 
 // Store is a bucket prefix holding many repositories, each under
-// <prefix>/<owner>/<repo>/ in git's own layout. It is the one value an
+// <prefix>/<owner>/<repo>/: a manifest, and the packs and loose objects it and
+// git's own key names say are there. It is the one value an
 // application builds at startup; every repository handle, and every sibling
 // prefix made with Sub, shares its connection, its tunables, its circuit
 // breaker and its pack cache.
@@ -138,6 +141,27 @@ func (s *Store) Repository(fullName string) (gitStorage.Storer, error) { //nolin
 	return handle, nil
 }
 
+// ExistingRepository returns the handle on a repository the caller knows to
+// exist, and ErrNoManifest if the store holds no manifest for it. It is how an
+// application opens what it created earlier: a repository without a manifest is
+// then either lost or — in a deployment that predates the manifest — one that
+// has not been through Adopt, and in neither case is it an empty repository to
+// be initialized over.
+func (s *Store) ExistingRepository(fullName string) (gitStorage.Storer, error) { //nolint:ireturn
+	handle, err := s.Repository(fullName)
+	if err != nil {
+		return nil, err
+	}
+	state, err := handle.(*repository).manifests.recent()
+	if err != nil {
+		return nil, err
+	}
+	if !state.exists() {
+		return nil, fmt.Errorf("%s: %w", fullName, ErrNoManifest)
+	}
+	return handle, nil
+}
+
 // forget drops the handles of repositories whose objects have just been moved
 // or removed underneath them, so the next Repository call learns the prefix
 // afresh rather than serve a snapshot of what is no longer there.
@@ -153,6 +177,14 @@ func (s *Store) forget(fullNames ...string) {
 // intact. A rename of a live repository runs it outside the application's store
 // lock so both names coexist and readers at the old one keep working; the caller
 // deletes the old repository after swapping its metadata.
+//
+// The manifest is read first and written last. Read first, it names only what
+// the listing taken after it will show — packs that were live then, which stay
+// in the store a grace period even if a compaction retires them meanwhile — and
+// a push that lands during the copy is not half carried over. Written last, the
+// copy becomes a repository in one step, when everything it names is in place.
+// A snapshot's key is relative to the repository, so the manifest is carried as
+// it stands.
 func (s *Store) CopyRepository(oldFull, newFull string) error {
 	for _, fullName := range []string{oldFull, newFull} {
 		if err := ValidateRepoStorageFullName(fullName); err != nil {
@@ -163,9 +195,18 @@ func (s *Store) CopyRepository(oldFull, newFull string) error {
 	newPrefix := s.repositoryPrefix(newFull)
 	ctx := s.shared.baseContext()
 
+	held, _, err := s.shared.getAll(ctx, oldPrefix+manifestName)
+	if errors.Is(err, objstore.ErrNotFound) {
+		return fmt.Errorf("copy %s: %w", oldFull, ErrNoManifest)
+	}
+	if err != nil {
+		return err
+	}
 	var keys []string
 	if err := s.shared.list(ctx, oldPrefix, func(entry objstore.Entry) {
-		keys = append(keys, entry.Key)
+		if relative := strings.TrimPrefix(entry.Key, oldPrefix); relative != manifestName {
+			keys = append(keys, entry.Key)
+		}
 	}); err != nil {
 		return err
 	}
@@ -173,6 +214,9 @@ func (s *Store) CopyRepository(oldFull, newFull string) error {
 		if err := s.shared.copyObject(ctx, key, newPrefix+strings.TrimPrefix(key, oldPrefix)); err != nil {
 			return err
 		}
+	}
+	if _, err := s.shared.put(ctx, storeWriteTimeout, newPrefix+manifestName, bytes.NewReader(held), int64(len(held)), objstore.Always); err != nil {
+		return err
 	}
 	s.forget(newFull)
 	return nil
@@ -189,7 +233,9 @@ func (s *Store) RenameRepository(oldFull, newFull string) error {
 	return s.DeleteRepository(oldFull)
 }
 
-// DeleteRepository removes every object of a repository.
+// DeleteRepository removes every object of a repository, the manifest first:
+// with it gone the repository is gone, in one step, and what is left is keys
+// nothing names.
 func (s *Store) DeleteRepository(fullName string) error {
 	if err := ValidateRepoStorageFullName(fullName); err != nil {
 		return err
@@ -197,6 +243,9 @@ func (s *Store) DeleteRepository(fullName string) error {
 	prefix := s.repositoryPrefix(fullName)
 	ctx := s.shared.baseContext()
 	defer s.forget(fullName)
+	if err := s.shared.deleteObject(ctx, prefix+manifestName); err != nil {
+		return err
+	}
 	// A writer that had not yet heard of the deletion may add a key while the
 	// listing is being emptied, so list again until a listing finds nothing.
 	for {
@@ -252,6 +301,28 @@ func (s *storeShared) getAll(parent context.Context, key string) ([]byte, objsto
 	var info objstore.Info
 	err := s.call(parent, storeReadTimeout, func(ctx context.Context) error {
 		body, described, err := s.bucket.Get(ctx, key)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = body.Close() }()
+		info = described
+		data, err = io.ReadAll(body)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", key, err)
+		}
+		return nil
+	})
+	return data, info, err
+}
+
+// getAllIfChanged is getAll for a reader that holds the object at a version: it
+// answers objstore.ErrNotModified, having moved no body, while the object is
+// still at it.
+func (s *storeShared) getAllIfChanged(parent context.Context, key string, held objstore.Version) ([]byte, objstore.Info, error) {
+	var data []byte
+	var info objstore.Info
+	err := s.call(parent, storeReadTimeout, func(ctx context.Context) error {
+		body, described, err := s.bucket.GetIfChanged(ctx, key, held)
 		if err != nil {
 			return err
 		}

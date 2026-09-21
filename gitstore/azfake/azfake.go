@@ -186,6 +186,10 @@ var (
 	errBlobNotFound      = &storageError{http.StatusNotFound, "BlobNotFound", "The specified blob does not exist."}
 	errContainerNotFound = &storageError{http.StatusNotFound, "ContainerNotFound", "The specified container does not exist."}
 	errConditionNotMet   = &storageError{http.StatusPreconditionFailed, "ConditionNotMet", "The condition specified using HTTP conditional header(s) is not met."}
+	// errNotModified is a read whose If-None-Match named the blob's own ETag. The
+	// service documents 304 for a read and the same code as a lost write.
+	// https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations
+	errNotModified       = &storageError{http.StatusNotModified, "ConditionNotMet", "The condition specified using HTTP conditional header(s) is not met."}
 	errBlobAlreadyExists = &storageError{http.StatusConflict, "BlobAlreadyExists", "The specified blob already exists."}
 	errAuthentication    = &storageError{http.StatusForbidden, "AuthenticationFailed", "Server failed to authenticate the request. Make sure the value of Authorization header is formed correctly including the signature."}
 	errPermission        = &storageError{http.StatusForbidden, "AuthorizationPermissionMismatch", "This request is not authorized to perform this operation using this permission."}
@@ -204,7 +208,8 @@ func writeError(w http.ResponseWriter, r *http.Request, refusal *storageError) {
 	w.Header().Set("x-ms-error-code", refusal.code)
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(refusal.status)
-	if r.Method != http.MethodHead {
+	// A 304 has no body, by HTTP's own rule; its code is in the header alone.
+	if r.Method != http.MethodHead && refusal.status != http.StatusNotModified {
 		_, _ = io.WriteString(w, xml.Header)
 		_ = xml.NewEncoder(w).Encode(errorBody{Code: refusal.code, Message: refusal.message})
 	}
@@ -495,6 +500,9 @@ func (held *containerState) getBlob(w http.ResponseWriter, r *http.Request, blob
 	blob, ok := held.blobs[blobName]
 	if !ok {
 		return errBlobNotFound
+	}
+	if match := r.Header.Get("If-None-Match"); match != "" && match == blob.etag {
+		return errNotModified
 	}
 	size := int64(len(blob.data))
 	// x-ms-range is the service's own header and wins where both are sent.

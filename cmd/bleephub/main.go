@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/e6qu/bleephub/internal/server"
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
@@ -38,7 +39,32 @@ func main() {
 	}
 }
 
+// adoptCommand is the subcommand an operator runs once against an object store
+// written before repositories had manifests. See gitbackend.Adopt.
+const adoptCommand = "adopt"
+
 func run() error {
+	if len(os.Args) > 1 && os.Args[1] == adoptCommand {
+		return runAdopt(os.Args[2:])
+	}
+	return serve()
+}
+
+// runAdopt is `bleephub adopt`: it reads the same BLEEPHUB_* storage settings the
+// server does, so that it adopts the store the server will then run on.
+func runAdopt(arguments []string) error {
+	flags := flag.NewFlagSet(adoptCommand, flag.ContinueOnError)
+	repository := flags.String("repository", "", "adopt this repository (owner/repo) only; every repository under the git prefix otherwise")
+	removeOldLayout := flags.Bool("remove-old-layout", false, "instead of adopting, delete the reference objects and supersession markers of repositories that have a manifest")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return gitbackend.Adopt(ctx, gitbackend.AdoptRequest{Repository: *repository, RemoveOldLayout: *removeOldLayout}, os.Stdout)
+}
+
+func serve() error {
 	addr := flag.String("addr", ":5555", "listen address")
 	logLevel := flag.String("log-level", "info", "log level (debug, info, warn, error)")
 	flag.Parse()

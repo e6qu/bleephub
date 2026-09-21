@@ -54,6 +54,39 @@ func TestAStoreThatIgnoresConditionsIsRefused(t *testing.T) {
 	}
 }
 
+// unrevalidating is a store whose conditional read is not conditional at all:
+// it sends the object whatever version the reader holds.
+type unrevalidating struct{ objstore.Bucket }
+
+func (u unrevalidating) GetIfChanged(ctx context.Context, key string, _ objstore.Version) (io.ReadCloser, objstore.Info, error) {
+	return u.Bucket.Get(ctx, key)
+}
+
+// complacent is a store that answers every conditional read "not modified",
+// which a cache in front of a store might.
+type complacent struct{ objstore.Bucket }
+
+func (complacent) GetIfChanged(context.Context, string, objstore.Version) (io.ReadCloser, objstore.Info, error) {
+	return nil, objstore.Info{}, objstore.ErrNotModified
+}
+
+// TestAStoreWhoseConditionalReadLiesIsRefused covers the read every replica
+// revalidates its manifest with. One that never says "not modified" makes every
+// revalidation a whole read, which is a cost; one that always says it leaves a
+// replica serving references another has moved, which is a lost push as seen by
+// every client of that replica. Neither is a store to start on.
+func TestAStoreWhoseConditionalReadLiesIsRefused(t *testing.T) {
+	bucket, _ := newBucket(t)
+	err := objstore.Conform(context.Background(), unrevalidating{bucket}, "probe/")
+	if err == nil || !strings.Contains(err.Error(), "not modified") {
+		t.Fatalf("a store that never answers \"not modified\" answered %v, want a refusal", err)
+	}
+	err = objstore.Conform(context.Background(), complacent{bucket}, "probe/")
+	if err == nil || !strings.Contains(err.Error(), "since replaced") {
+		t.Fatalf("a store that always answers \"not modified\" answered %v, want a refusal", err)
+	}
+}
+
 // TestConditionalWritesArbitrateBetweenWriters pins the two conditions the
 // engine's compare-and-swap is made of, and that a version read anywhere — from
 // a write, a read or a listing — is the same token.

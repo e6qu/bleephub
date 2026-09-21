@@ -40,6 +40,9 @@ func (f *fakeS3) store(prefix string) *Store {
 	}
 	store := Open(objstore.NewS3WithClient(f.Client().Client, "bucket", partBytes), prefix, f.opts)
 	if f.clock != nil {
+		// The fake dates what is written to it by the same clock, so that a test
+		// which moves time ages the store's objects with it.
+		f.SetClock(f.clock.Now)
 		store.shared.now = f.clock.Now
 	}
 	return store

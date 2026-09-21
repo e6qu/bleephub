@@ -57,8 +57,8 @@ func TestAPushedPackIsStoredAsAPack(t *testing.T) {
 	if !ok || !bytes.Equal(stored, pack) {
 		t.Fatal("the stored pack is not the pack that was pushed")
 	}
-	if spent.Put != 3 || spent.Copy != 0 || spent.Delete != 0 {
-		t.Fatalf("a push should cost three writes (index, filter, pack) and no staging: %s", spent)
+	if spent.Put != 4 || spent.Copy != 0 || spent.Delete != 0 {
+		t.Fatalf("a push should cost four writes (index, filter, pack, and the manifest that makes them the repository's) and no staging: %s", spent)
 	}
 	if spent.Total() > 12 {
 		t.Fatalf("a push of %d objects cost %d requests; it must not scale with the object count: %s", len(hashes), spent.Total(), spent)
@@ -248,8 +248,8 @@ func TestAThinPackFromAStockGitClientIsCompleted(t *testing.T) {
 	if packs := packKeys(fake, ".pack"); len(packs) != 2 {
 		t.Fatalf("two pushes published %d packs, want 2", len(packs))
 	}
-	if spent.Put != 3 || spent.Copy != 0 {
-		t.Fatalf("a thin push should still cost three writes: %s", spent)
+	if spent.Put != 4 || spent.Copy != 0 {
+		t.Fatalf("a thin push should still cost four writes: %s", spent)
 	}
 
 	// Every stored pack must be readable on its own: a fresh replica resolves
@@ -305,8 +305,8 @@ func TestPacksToMergeKeepsTheSizesGeometric(t *testing.T) {
 // end: a large first push, then enough small ones to cross the merge threshold.
 // The merge must fold the small packs together and leave the large one alone,
 // and a second compaction straight after must find nothing to do — before
-// superseded packs were excluded, it re-merged everything on every run until
-// their retention window closed.
+// retired packs were excluded, it re-merged everything on every run until
+// their grace period closed.
 func TestSmallPushesMergeWithoutRewritingTheRepository(t *testing.T) {
 	fake := newFakeS3(t)
 	fake.opts.CompactionTrigger = -1
@@ -342,8 +342,12 @@ func TestSmallPushesMergeWithoutRewritingTheRepository(t *testing.T) {
 	if result.Merged != 3*(compactionMergeThreshold+1) {
 		t.Fatalf("merged %d objects, want only the %d from the small pushes", result.Merged, 3*(compactionMergeThreshold+1))
 	}
-	for _, key := range packKeys(fake, ".superseded") {
-		if strings.TrimSuffix(key, ".superseded")+".pack" == bigKey {
+	retired := storedManifest(t, fake).Retired
+	if len(retired) != compactionMergeThreshold+1 {
+		t.Fatalf("premise: the merge retired %d packs, want the %d small ones", len(retired), compactionMergeThreshold+1)
+	}
+	for _, pack := range retired {
+		if strings.HasSuffix(bigKey, "/"+pack.Name+".pack") {
 			t.Fatal("the large pack was rewritten by a merge of small pushes")
 		}
 	}
@@ -460,8 +464,9 @@ func countCompactionRequests(t *testing.T) func() int {
 }
 
 // TestAPushToAWarmReplicaCostsItsUploadsAndNothingElse pins what a push spends
-// on the object store: the pack, its index and its filter. The handle owns the
-// set of live packs, so the pushed pack joins the snapshot it already holds. It
+// on the object store: the pack, its index and its filter, and the conditional
+// write of the manifest that makes them part of the repository. The handle holds
+// the manifest, so it reads nothing before it writes. It
 // used to spend a listing of the pack directory to adopt the pack, before that
 // a listing of the loose tier and a second of the pack directory rebuilding a
 // membership index it had thrown away, and a read of the index it had just
@@ -474,8 +479,8 @@ func TestAPushToAWarmReplicaCostsItsUploadsAndNothingElse(t *testing.T) {
 	before := fake.Snapshot()
 	hash := smallPush(t, stor, "the push that is measured")
 	spent := fake.Snapshot().Sub(before)
-	if spent.Put != 3 || spent.Total() != 3 {
-		t.Fatalf("a push spent %s, want 3 writes and nothing else", spent)
+	if spent.Put != 4 || spent.Total() != 4 {
+		t.Fatalf("a push spent %s, want its three uploads, the commit of the manifest, and nothing else", spent)
 	}
 
 	before = fake.Snapshot()

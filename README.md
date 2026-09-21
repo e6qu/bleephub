@@ -205,6 +205,15 @@ All of it is validated together at startup: every problem — a missing setting,
 >
 > `BLEEPHUB_S3_ENDPOINT` and `BLEEPHUB_S3_REGION` keep their names. Two things are newly required: `BLEEPHUB_OBJECT_STORE=s3` (the driver is stated, never assumed), and explicit values where there used to be defaults — a prefix for each bucket (a git store that ran with no `BLEEPHUB_S3_PREFIX` kept its repositories at the top of the bucket; give it a bucket or a prefix of its own and move them) and `BLEEPHUB_S3_REGION`, which no longer falls back to `AWS_REGION` or `us-east-1`.
 
+> **Upgrade note — repositories in an object store need a manifest; run `bleephub adopt` once.** A repository's references, and which of its packs are live, are now one object, `<prefix>/<owner>/<repo>/manifest`, swapped by conditional write; they used to be an object per reference under `refs/` (with `HEAD` and `packed-refs`) and `.superseded` marker objects. The server does not read that layout. A server started on a bucket written that way **refuses to start**, naming the first repository without a manifest, rather than guess — taking such a repository for an empty one would initialize over its branches. Before starting the new server, with the old one stopped and the same `BLEEPHUB_*` storage settings in the environment:
+>
+> ```sh
+> bleephub adopt                          # every repository under BLEEPHUB_GIT_PREFIX
+> bleephub adopt -repository owner/repo   # or one
+> ```
+>
+> For each repository (and each submodule repository under it) it reads the old layout — live packs are those with a `.pack` and an `.idx` and no `.superseded` marker; superseded packs are entered as retired at their marker's time and deleted an hour after it, as they would have been; references come from `refs/**`, `HEAD` and `packed-refs` with git's precedence — writes the manifest on the condition that there is none, and prints what it wrote. A repository that already has a manifest is refused and reported, so the command is safe to run again. It moves no pack and deletes nothing: the old reference objects stay where they are, unread. Once the new server is serving, `bleephub adopt -remove-old-layout` deletes them, and the markers, from repositories that have a manifest. The durable SQL lock the server took around reference updates in an object store is gone with the old layout; the object store's conditional write is the only arbiter. See [docs/git-storage.md](docs/git-storage.md#upgrading-a-store-written-before-the-manifest).
+
 **Git over SSH** (unset by default; the transport does not start without the first two)
 
 - `BLEEPHUB_SSH_ADDR` — listen address.

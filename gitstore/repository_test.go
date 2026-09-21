@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -71,14 +70,15 @@ func downloadPrefix(t *testing.T, fake *fakeS3, prefix, dir string) {
 	}
 }
 
-// TestTheBucketHoldsGitsOwnLayout pins the contract that made swapping the
-// engine verifiable, and keeps a bucket portable: what is in the bucket is a
-// bare git repository, file for file. A repository written by go-git's own
-// storage onto a disk — loose objects, a pack, loose and packed references, a
-// symbolic HEAD, a config — reads correctly once its files are keys; and a
-// repository written through the engine reads correctly through go-git's own
-// storage once its keys are files.
-func TestTheBucketHoldsGitsOwnLayout(t *testing.T) {
+// TestTheBucketHoldsGitsOwnObjects pins what keeps a bucket's bulk portable: the
+// packs, their indexes and the loose objects are git's own files under git's
+// own names. A repository written by go-git's own storage onto a disk — loose
+// objects, a pack, loose and packed references, a symbolic HEAD — reads
+// correctly once its files are keys and Adopt has given it a manifest; and the
+// objects of a repository written through the engine read correctly through
+// go-git's own storage once its keys are files. The references are the
+// manifest's and travel in no other form.
+func TestTheBucketHoldsGitsOwnObjects(t *testing.T) {
 	fake := newFakeS3(t)
 	fake.opts.CompactionTrigger = -1
 
@@ -114,6 +114,9 @@ func TestTheBucketHoldsGitsOwnLayout(t *testing.T) {
 	if len(packKeys(fake, ".pack")) != 1 || looseKeyCount(fake) != 1 {
 		t.Fatalf("premise: the disk repository holds %d packs and %d loose objects, want one of each", len(packKeys(fake, ".pack")), looseKeyCount(fake))
 	}
+	if _, err := fake.store("prefix").Adopt(context.Background(), testRepo); err != nil {
+		t.Fatalf("adopt: %v", err)
+	}
 
 	fromDisk := testPackedStorage(t, fake)
 	want := map[string]string{"refs/heads/main": tip.String(), "refs/heads/packed": tip.String(), "refs/tags/v1": tip.String()}
@@ -142,12 +145,6 @@ func TestTheBucketHoldsGitsOwnLayout(t *testing.T) {
 		t.Fatalf("push: %v", err)
 	}
 	mine := storeBlob(t, stor, "a loose object written by the engine")
-	if err := stor.SetReference(plumbing.NewHashReference(testBranch, tip)); err != nil {
-		t.Fatalf("set: %v", err)
-	}
-	if err := stor.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, testBranch)); err != nil {
-		t.Fatalf("set HEAD: %v", err)
-	}
 	out := t.TempDir()
 	downloadPrefix(t, fake, "prefix/"+written+"/", out)
 	reopened := gitFilesystem.NewStorage(osfs.New(out), cache.NewObjectLRUDefault())
@@ -155,12 +152,6 @@ func TestTheBucketHoldsGitsOwnLayout(t *testing.T) {
 		if _, err := reopened.EncodedObject(plumbing.AnyObject, hash); err != nil {
 			t.Fatalf("git cannot read %s out of what the engine wrote: %v", hash, err)
 		}
-	}
-	if head, err := storer.ResolveReference(reopened, plumbing.HEAD); err != nil || head.Hash() != tip {
-		t.Fatalf("git resolves HEAD of what the engine wrote to %v (%v), want %s", head, err, tip)
-	}
-	if read, err := reopened.Config(); err != nil || !read.Core.IsBare {
-		t.Fatalf("git reads the config the engine wrote as %+v, %v", read, err)
 	}
 }
 
@@ -400,7 +391,7 @@ func TestAReaderSurvivesThePacksItHoldsBeingRetired(t *testing.T) {
 	if err := reader.HasEncodedObject(small[0]); err != nil {
 		t.Fatalf("premise: the reader takes its snapshot before the merge: %v", err)
 	}
-	if held := len(reader.tiers.current.Load().packs); held != len(small) {
+	if held := len(reader.manifests.current.Load().packs); held != len(small) {
 		t.Fatalf("premise: the reader holds %d packs, want %d", held, len(small))
 	}
 
@@ -408,12 +399,15 @@ func TestAReaderSurvivesThePacksItHoldsBeingRetired(t *testing.T) {
 	if err != nil || result.Merged != len(small) {
 		t.Fatalf("premise: the merge rewrote %d objects (err %v), want %d", result.Merged, err, len(small))
 	}
-	// The retention window passes and a later compaction retires the packs:
+	// The grace period passes and a later compaction deletes the retired packs:
 	// their keys are gone.
-	for _, marker := range packKeys(fake, ".superseded") {
-		pack := strings.TrimSuffix(marker, ".superseded")
-		for _, extension := range []string{".pack", ".idx", ".bfilter", ".superseded"} {
-			fake.Remove(pack + extension)
+	retired := writer.manifests.current.Load().manifest.Retired
+	if len(retired) != len(small) {
+		t.Fatalf("premise: the merge retired %d packs, want %d", len(retired), len(small))
+	}
+	for _, pack := range retired {
+		for _, extension := range packKeySuffixes {
+			fake.Remove("prefix/" + testRepo + "/objects/pack/" + pack.Name + extension)
 		}
 	}
 	if len(packKeys(fake, ".pack")) != 1 {
@@ -425,7 +419,7 @@ func TestAReaderSurvivesThePacksItHoldsBeingRetired(t *testing.T) {
 			t.Fatalf("an object whose pack was retired under the reader: %v", err)
 		}
 	}
-	if held := len(reader.tiers.current.Load().packs); held != 1 {
+	if held := len(reader.manifests.current.Load().packs); held != 1 {
 		t.Fatalf("the reader still holds %d packs", held)
 	}
 }
@@ -616,11 +610,11 @@ func TestAPackFileIsReadSequentiallyToo(t *testing.T) {
 	if err := packfile.UpdateObjectStorage(stor, bytes.NewReader(pack)); err != nil {
 		t.Fatalf("push: %v", err)
 	}
-	snapshot, err := stor.tiers.snapshot()
+	state, err := stor.manifests.held()
 	if err != nil {
-		t.Fatalf("snapshot: %v", err)
+		t.Fatalf("manifest: %v", err)
 	}
-	file := newPackFile(snapshot.packs[0].pack, "pack")
+	file := newPackFile(state.packs[0].pack, "pack")
 	whole, err := io.ReadAll(file)
 	if err != nil || !bytes.Equal(whole, pack) {
 		t.Fatalf("a sequential read returned %d bytes (err %v), want the %d pushed", len(whole), err, len(pack))
@@ -690,35 +684,31 @@ func TestInitIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestARepositoryIsNeverSeenWithABranchItsHeadDoesNotName pins the order a
-// repository's first branch and its HEAD are written in. They are two objects
-// and no store writes two at once, so a reader can arrive between them; what it
-// finds then must be a state a repository can properly be in. HEAD naming a
-// branch not yet born is one — it is an empty repository. A branch in a
-// repository whose HEAD still names some other, unborn branch is not: a clone at
-// that moment checks out nothing and warns that HEAD refers to a nonexistent
-// ref.
+// TestARepositoryIsNeverSeenWithABranchItsHeadDoesNotName pins what a reader
+// may find while a repository is given its first branch. A branch in a
+// repository whose HEAD still names some other, unborn branch is a state no
+// repository should be in: a clone at that moment checks out nothing and warns
+// that HEAD refers to a nonexistent ref. When references were objects the two
+// were two writes, ordered with care; they are now one commit of the manifest,
+// so there is no moment between them.
 func TestARepositoryIsNeverSeenWithABranchItsHeadDoesNotName(t *testing.T) {
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	branch := plumbing.NewHashReference(plumbing.NewBranchReferenceName("trunk"), plumbing.NewHash("1111111111111111111111111111111111111111"))
 
-	var headWhenTheBranchLanded string
-	fake.SetOnRequest(func(method, key string) {
-		if method == http.MethodPut && strings.HasSuffix(key, "/refs/heads/trunk") {
-			head, _ := fake.Get("prefix/" + testRepo + "/HEAD")
-			headWhenTheBranchLanded = string(head)
-		}
-	})
+	writes := countManifestWrites(fake)
 	t.Cleanup(func() { fake.SetOnRequest(nil) })
-
 	if err := stor.InitializeRepositoryReferences(branch, true); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	if want := "ref: refs/heads/trunk\n"; headWhenTheBranchLanded != want {
-		t.Fatalf("when the branch was written HEAD was %q, want %q already", headWhenTheBranchLanded, want)
+	if got := writes(); got != 1 {
+		t.Fatalf("the first branch and HEAD took %d writes of the manifest, want one", got)
 	}
-	head, err := stor.Reference(plumbing.HEAD)
+	first := storedManifest(t, fake)
+	if first.Sequence != 1 || len(first.Refs.Changes) != 2 {
+		t.Fatalf("the first manifest is sequence %d with %+v, want HEAD and the branch together", first.Sequence, first.Refs.Changes)
+	}
+	head, err := testPackedStorage(t, fake).Reference(plumbing.HEAD)
 	if err != nil || head.Target() != branch.Name() {
 		t.Fatalf("HEAD is %v (%v), want a symbolic reference to %s", head, err, branch.Name())
 	}

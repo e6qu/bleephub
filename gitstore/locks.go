@@ -6,51 +6,11 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 )
 
-// GitObjectLocker grants exclusive use of one named lock across replicas. An
-// object store has no advisory locking, so the reference compare-and-set and
-// the single-writer rule of compaction borrow the durable store that already
-// serializes the application's shared state.
-type GitObjectLocker interface {
-	AcquireLock(name, owner string, ttl time.Duration) (bool, error)
-	ReleaseLock(name, owner string) error
-}
-
-var (
-	gitObjectLockerMu sync.RWMutex
-	gitObjectLockerV  GitObjectLocker
-)
-
-// SetGitObjectLocker installs the durable lock manager. Until one is installed there is no shared durable state, so the process-local lock is the whole lock.
-func SetGitObjectLocker(l GitObjectLocker) {
-	gitObjectLockerMu.Lock()
-	defer gitObjectLockerMu.Unlock()
-	gitObjectLockerV = l
-}
-
-func currentGitObjectLocker() GitObjectLocker {
-	gitObjectLockerMu.RLock()
-	defer gitObjectLockerMu.RUnlock()
-	return gitObjectLockerV
-}
-
-// ClearGitObjectLocker uninstalls l if it is the currently installed manager. A closed locker left installed would fail every ref update.
-func ClearGitObjectLocker(l GitObjectLocker) {
-	gitObjectLockerMu.Lock()
-	defer gitObjectLockerMu.Unlock()
-	if gitObjectLockerV == l {
-		gitObjectLockerV = nil
-	}
-}
-
-const (
-	gitObjectLockTTL  = 2 * time.Minute
-	gitObjectLockWait = 30 * time.Second
-	gitObjectLockPoll = 50 * time.Millisecond
-)
+// gitObjectLockWait is how long a writer waits for another in this process to
+// let go of a lock before it gives up.
+const gitObjectLockWait = 30 * time.Second
 
 // s3KeyLocks serializes holders of one lock name within this process. Entries are reference counted so an idle name costs nothing.
 type s3KeyLocks struct {
@@ -112,48 +72,22 @@ func (l *s3KeyLocks) drop(key string) {
 	}
 }
 
-// withLockName runs mutate holding the named lock: the process-local one always,
-// and the durable one on top of it when a locker is installed. The local lock
-// comes first so that goroutines of one process queue here rather than poll the
-// durable store against each other.
+// withLockName runs mutate holding the named process-local lock. It serves the
+// local-directory and memory backends, whose storage is go-git's own and has no
+// compare-and-swap of its own to offer. The object-store backend takes no lock
+// at all: the store arbitrates its writers, in this process and across replicas,
+// by conditional write of the repository's manifest (commit.go).
 func withLockName(name string, mutate func() error) error {
 	if err := refMutationLocks.acquire(name, gitObjectLockWait); err != nil {
 		return err
 	}
 	defer refMutationLocks.release(name)
-	locker := currentGitObjectLocker()
-	if locker == nil {
-		return mutate()
-	}
-	owner := uuid.New().String()
-	deadline := time.Now().Add(gitObjectLockWait)
-	for {
-		acquired, err := locker.AcquireLock(name, owner, gitObjectLockTTL)
-		if err != nil {
-			return err
-		}
-		if acquired {
-			mutationErr := mutate()
-			releaseErr := locker.ReleaseLock(name, owner)
-			if mutationErr != nil {
-				return mutationErr
-			}
-			if releaseErr != nil {
-				return fmt.Errorf("release lock %s: %w", name, releaseErr)
-			}
-			return nil
-		}
-		if !time.Now().Before(deadline) {
-			return fmt.Errorf("lock %s: another replica still holds it after %s", name, gitObjectLockWait)
-		}
-		time.Sleep(gitObjectLockPoll)
-	}
+	return mutate()
 }
 
 // lockNameFor derives the name of a lock from the repository it guards and what
-// within it is being guarded. The digest keeps an arbitrary reference name out
-// of the lock table's key space, and the kind prefix keeps a reference lock from
-// ever colliding with a compaction lock.
+// within it is being guarded. The digest gives every name one bounded shape,
+// whatever the reference is called.
 func lockNameFor(kind, repo, subject string) string {
 	digest := sha256.Sum256([]byte(repo + "\x00" + subject))
 	return kind + ":" + hex.EncodeToString(digest[:])

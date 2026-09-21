@@ -63,7 +63,7 @@ func (b *s3Breaker) check() error {
 
 // record folds one completed call's outcome into the breaker. Success, and
 // every answer that shows the store is there and working — absence, a refused
-// condition, a range past the end — reset the failure run; a caller that went
+// condition, an object not modified, a range past the end — reset the failure run; a caller that went
 // away says nothing either way; anything else (timeout, throttle, 5xx, network)
 // advances the run.
 func (b *s3Breaker) record(err error) {
@@ -73,7 +73,7 @@ func (b *s3Breaker) record(err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err == nil || errors.Is(err, objstore.ErrNotFound) || errors.Is(err, objstore.ErrConditionNotMet) ||
-		errors.Is(err, objstore.ErrRangeNotSatisfiable) {
+		errors.Is(err, objstore.ErrNotModified) || errors.Is(err, objstore.ErrRangeNotSatisfiable) {
 		b.fails = 0
 		b.openUntil = time.Time{}
 		return
