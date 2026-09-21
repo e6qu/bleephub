@@ -214,6 +214,13 @@ jobs:
           go build -mod=readonly -modfile=.github/security-go.mod \
             -o "$RUNNER_TEMP/bin/staticcheck" honnef.co/go/tools/cmd/staticcheck
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # bleephub is AGPL-3.0-or-later, and compatibility with it runs one way and
+      # is version-specific. A new dependency's licence is read here before it
+      # is linked; one the gate cannot identify fails rather than passes.
+      - name: Refuse dependencies whose licence cannot be combined into an AGPL-3.0-or-later work
+        run: |
+          ./scripts/check-dependency-licenses.py --self-test
+          ./scripts/check-dependency-licenses.py
       - name: Enforce the dependency quarantine window
         run: ./scripts/check-dependency-age.py go nuget terraform docker actions runner
         env:

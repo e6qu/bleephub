@@ -259,6 +259,12 @@ anyone you let use a modified instance is entitled to that instance's source.
 Third-party material redistributed inside the published images is inventoried in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); all of it (MIT, CC-BY 4.0) is
 one-way compatible with AGPLv3, so inbound dependencies must stay that way.
+`scripts/check-dependency-licenses.py` enforces it in CI for every Go module
+linked into what ships: a licence that cannot be combined into an
+AGPL-3.0-or-later work — GPL-2.0-only, the source-available licences — or that
+the gate cannot identify, fails the build. A dependency that fails is replaced,
+by another library or by one written here as a library of its own at the top of
+this repository, as `gitstore/` is.
 
 ## Prior art
 
