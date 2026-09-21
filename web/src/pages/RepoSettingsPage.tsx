@@ -2919,12 +2919,13 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
       prev.some((r) => r.type === draft.type && r.id === draft.id) ? prev : [...prev, draft],
     );
 
+  // The body is built from the state of the render that was clicked and handed
+  // to mutate, not read by mutationFn from a closure: useMutation adopts a new
+  // mutationFn only in an effect after each render, so a click that lands
+  // between the render showing the reviewers and that effect would save the
+  // list as it was before them.
   const saveWait = useMutation({
-    mutationFn: () =>
-      putEnvironment(owner, repo, env, {
-        wait_timer: Number(waitTimer) || 0,
-        reviewers: reviewers.map((r) => ({ type: r.type, id: r.id })),
-      }),
+    mutationFn: (body: Parameters<typeof putEnvironment>[3]) => putEnvironment(owner, repo, env, body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["environments-detail", owner, repo] }),
   });
   const vars = useQuery({ queryKey: ["env-vars", owner, repo, env], queryFn: () => fetchEnvVariables(owner, repo, env) });
@@ -3041,7 +3042,12 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
                 style={settingsInputStyle}
               />
             </label>
-            <Button size="sm" variant="secondary" disabled={saveWait.isPending} onClick={() => saveWait.mutate()}>
+            <Button size="sm" variant="secondary" disabled={saveWait.isPending} onClick={() =>
+                saveWait.mutate({
+                  wait_timer: Number(waitTimer) || 0,
+                  reviewers: reviewers.map((r) => ({ type: r.type, id: r.id })),
+                })
+              }>
               {saveWait.isPending ? "Saving…" : "Save protection"}
             </Button>
           </div>
