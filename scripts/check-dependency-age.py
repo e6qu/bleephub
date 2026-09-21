@@ -111,6 +111,7 @@ def go_dependencies() -> dict[str, dt.datetime]:
     dependencies: dict[str, dt.datetime] = {}
     modules = (
         (ROOT, ROOT / "go.mod", []),
+        (ROOT / "gcsclient", ROOT / "gcsclient/go.mod", []),
         (ROOT / "gitstore", ROOT / "gitstore/go.mod", []),
         (ROOT / "gitstore/bench", ROOT / "gitstore/bench/go.mod", []),
         (ROOT / "sdk-tests", ROOT / "sdk-tests/go.mod", []),

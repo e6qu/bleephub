@@ -87,6 +87,7 @@ from an endpoint.
 |---|---|---|
 | `objstore.NewS3` (what `OpenS3` builds) | S3 and the stores that honour its conditional writes: R2, MinIO, SeaweedFS, Ceph, Tigris. Not Google Cloud Storage's S3-compatible endpoint, which accepts a conditional PUT and ignores the condition. | A bucket that exists. Endpoint, region and credentials have the defaults above; `PartBytes` (16 MiB) is the size above which an upload goes in parts. |
 | [`azure.New`](objstore/azure/azure.go) | Azure Blob Storage, which has no S3 endpoint, through its own API. | A container that exists — a missing one is reported as itself, never as an object not found — and, with no defaults, `Endpoint` (`https://<account>.blob.core.windows.net`, or Azurite's `http://127.0.0.1:10000/devstoreaccount1`), `AccountName` and `AccountKey`. The shared key is the one way in, because it is also what signs a URL without asking the service. `BlockBytes` (16 MiB) is the size above which an upload goes in blocks. |
+| [`gcs.New`](objstore/gcs/gcs.go) | Google Cloud Storage, through its JSON API — never through its S3-compatible endpoint, for the reason above. The client is [`gcsclient`](../gcsclient), this repository's own: Google's brings gRPC, xDS and OpenTelemetry with it, some hundreds of packages, for nine operations. | A bucket that exists — a missing one is reported as itself, never as an object not found — and, with no defaults, `Endpoint` (`https://storage.googleapis.com`, or an emulator's URL) and `CredentialsJSON`, a service-account key file's bytes. The key is the one way in, because it is the one Google credential that can sign a URL without asking the service: workload identity, the metadata server and Application Default Credentials are not looked for. `ChunkBytes` (16 MiB, a multiple of 256 KiB) is the size above which an upload goes in chunks. |
 
 ```go
 bucket, err := azure.New("repositories", azure.Options{
@@ -98,13 +99,29 @@ if err != nil { /* … */ }
 if err := objstore.Conform(ctx, bucket, "git/"); err != nil { /* do not start */ }
 ```
 
-The two differ where the stores do, and only there. On Azure an upload of
-unknown size is staged in blocks and committed under the write's condition, so a
-streamed write can be conditional; S3 cannot complete a multipart upload
-conditionally. Azure copies asynchronously, so `Copy` waits for the copy to
-finish, for as long as its context allows. A version is an ETag on both, but
-Azure's changes with every write, even of the same bytes, and S3's need not —
-which is why `objstore.Version` promises neither.
+```go
+key, err := os.ReadFile("/run/secrets/gcs-service-account.json")
+if err != nil { /* … */ }
+bucket, err := gcs.New("repositories", gcs.Options{
+	Endpoint:        "https://storage.googleapis.com",
+	CredentialsJSON: key,
+})
+if err != nil { /* … */ }
+if err := objstore.Conform(ctx, bucket, "git/"); err != nil { /* do not start */ }
+```
+
+They differ where the stores do, and only there. On Azure an upload of unknown
+size is staged in blocks and committed under the write's condition, and on
+Google Cloud Storage a resumable upload carries the precondition it was begun
+with to the write that completes it, so on both a streamed write can be
+conditional; S3 cannot complete a multipart upload conditionally. Azure copies
+asynchronously, and Cloud Storage copies a large object over several calls, so
+`Copy` waits for the copy to finish, for as long as its context allows. A
+version is an ETag on S3 and Azure and a generation number on Cloud Storage;
+Azure's and Cloud Storage's change with every write, even of the same bytes,
+and S3's need not — which is why `objstore.Version` promises neither. Cloud
+Storage answers 404 alike for a missing object and a missing bucket, so the
+first 404 a bucket gives costs its driver one listing to tell which.
 
 ### Configuration
 
@@ -155,6 +172,18 @@ not verify, has expired or lacks the permission — and pages its listings. It i
 written from the service's documentation, so the driver's suite also runs
 against a real endpoint when `OBJSTORE_AZURE_TEST_ENDPOINT`, `_ACCOUNT`, `_KEY`
 and `_CONTAINER` are set: the Azurite emulator, or a storage account.
+
+[`gcsfake`](../gcsclient/gcsfake/gcsfake.go) is the same for Google Cloud
+Storage, and lives with the client it is the fake of, in the
+[`gcsclient`](../gcsclient) module. It issues access tokens only for an
+assertion the service account signed, and refuses a request without one, a lost
+precondition, a chunk out of its place or not a multiple of 256 KiB, a batch of
+more than a hundred calls, a signed URL that does not verify, and any parameter
+it does not implement. The Cloud Storage driver's suite runs against an emulator
+as well when `OBJSTORE_GCS_TEST_ENDPOINT` and `_BUCKET` are set. That is
+fake-gcs-server, which checks neither credentials nor signatures — so the test
+brings a throwaway key and a token endpoint of its own, and `gcsfake` remains
+the only place short of the service where a signed URL is verified.
 
 ## Measuring it
 

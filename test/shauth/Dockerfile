@@ -5,9 +5,11 @@ ENV GOTOOLCHAIN=auto
 ARG BLEEPHUB_TEST_REVISION
 WORKDIR /src
 COPY go.mod go.sum ./
-# go.mod replaces the gitstore library with ./gitstore, so the module graph
-# cannot be loaded, nor the server built, without it.
+# go.mod replaces the gitstore and gcsclient libraries with ./gitstore and
+# ./gcsclient, so the module graph cannot be loaded, nor the server built,
+# without them.
 COPY gitstore ./gitstore
+COPY gcsclient ./gcsclient
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd ./cmd
 COPY internal ./internal

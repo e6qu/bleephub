@@ -139,8 +139,9 @@ type Bucket interface {
 	// Put writes an object atomically, with the metadata given. A size below
 	// zero means unknown, and the body is then uploaded in parts. Not every
 	// store can complete such an upload conditionally — Azure can, Google Cloud
-	// Storage cannot — so a caller that needs the condition to hold states the
-	// size.
+	// Storage holds a resumable upload to its precondition though its
+	// documentation does not promise to, and S3 cannot — so a caller that needs
+	// the condition to hold states the size.
 	Put(ctx context.Context, key string, body io.Reader, size int64, condition Condition, metadata Metadata) (Version, error)
 	// Delete removes an object. Removing one that is not there is not an error.
 	Delete(ctx context.Context, key string) error

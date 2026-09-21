@@ -376,9 +376,16 @@ objects by MD5.
   directory; server-side COPY; presigned GET. (The researcher suggested putting
   bulk delete and presigning behind a capability flag with a client-side
   substitute; we require them of every driver instead.)
-- **Never rely on:** an ETag being an MD5; conditional completion of a multipart
-  upload (unavailable on GCS); conditional DELETE or COPY; list ordering beyond
-  lexicographic.
+- **Never rely on:** an ETag being an MD5; conditional completion of a large
+  upload being *documented* everywhere; conditional DELETE or COPY; list ordering
+  beyond lexicographic. (On the second point, found when the drivers were
+  written: Azure documents that a Put Block List may be conditional. GCS does not
+  allow preconditions on its XML multipart uploads; its JSON resumable uploads
+  accept `ifGenerationMatch` when the upload is initiated, and the emulator holds
+  the upload to it at completion, but no documentation page says when it is
+  enforced. S3 accepts `If-Match` on CompleteMultipartUpload. A caller that needs
+  the condition to hold on every store states the object's size, so the write is
+  one request.)
 - **Probe at startup.** Create-if-absent twice must answer "condition not met";
   a stale version must too; a list after a write must show the key. On failure,
   fail closed. This is what catches GCS-over-HMAC, OSS, B2 and older Ceph or

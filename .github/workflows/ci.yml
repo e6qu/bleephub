@@ -236,7 +236,7 @@ jobs:
       - name: Run staticcheck and gosec in every Go module
         run: |
           set -euo pipefail
-          for module in . gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
+          for module in . gcsclient gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
             echo "::group::$module"
             (cd "$module" && staticcheck ./...)
             # G101 treats public context keys and token-prefix constants as
@@ -247,7 +247,7 @@ jobs:
       - name: Reject reachable Go vulnerabilities in every module
         run: |
           set -euo pipefail
-          for module in . gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
+          for module in . gcsclient gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless; do
             echo "::group::$module"
             (cd "$module" && govulncheck ./...)
             echo "::endgroup::"
@@ -353,6 +353,8 @@ jobs:
       OBJSTORE_AZURE_TEST_ACCOUNT: devstoreaccount1
       OBJSTORE_AZURE_TEST_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
       OBJSTORE_AZURE_TEST_CONTAINER: objstoretest
+      OBJSTORE_GCS_TEST_ENDPOINT: http://127.0.0.1:4443
+      OBJSTORE_GCS_TEST_BUCKET: objstoretest
     steps:
       - *checkout
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -373,7 +375,7 @@ jobs:
       - name: Build and vet every nested module
         run: |
           set -euo pipefail
-          for module in gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless test/conformance/drivers/gogithub; do
+          for module in gcsclient gitstore gitstore/bench sdk-tests terraform/wake test/terraform-sockerless test/conformance/drivers/gogithub; do
             echo "::group::$module"
             (cd "$module" && go build ./... && go vet ./...)
             echo "::endgroup::"
@@ -405,19 +407,44 @@ jobs:
           docker logs azurite
           echo "the Azure Blob Storage emulator did not start" >&2
           exit 1
+      # fake-gcs-server is the community emulator of the Google Cloud Storage JSON
+      # API; Google publishes none. It checks neither credentials nor signed
+      # URLs, so what this run proves is the protocol — preconditions, resumable
+      # uploads, batch, rewrite, paging — against an implementation the driver's
+      # author did not write.
+      - name: Start the Google Cloud Storage emulator
+        run: |
+          set -euo pipefail
+          docker run --detach --name fake-gcs --publish 127.0.0.1:4443:4443 \
+            fsouza/fake-gcs-server:1.56.1@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef \
+            -scheme http -port 4443 -backend memory -public-host 127.0.0.1:4443 -external-url http://127.0.0.1:4443
+          for _ in $(seq 1 60); do
+            if curl --silent --fail --output /dev/null "http://127.0.0.1:4443/storage/v1/b"; then exit 0; fi
+            sleep 1
+          done
+          docker logs fake-gcs
+          echo "the Google Cloud Storage emulator did not start" >&2
+          exit 1
+      # The Google Cloud Storage client is a library of its own at the top of the
+      # repository, knowing nothing of git, with its own suite against its own
+      # in-process fake of the service.
+      - name: Test the gcsclient library under the race detector
+        run: cd gcsclient && go test -race -count=1 -timeout 10m ./...
       - name: Test the gitstore library under the race detector
         run: cd gitstore && go test -race -count=1 -timeout 10m -coverprofile="$RUNNER_TEMP/gitstore-coverage.out" ./...
       # A skipped emulator run would look like a pass. The driver's test says
       # which it did, and this step refuses the skip.
-      - name: Require that the Azure driver ran against the emulator
+      - name: Require that every driver ran against its emulator
         run: |
           set -euo pipefail
           cd gitstore
-          go test -count=1 -timeout 10m -run 'RealEndpoint|RealService|Emulator' -v ./objstore/azure/ | tee "$RUNNER_TEMP/azure-emulator.log"
-          if grep -q -- '--- SKIP' "$RUNNER_TEMP/azure-emulator.log" || ! grep -q -- '--- PASS' "$RUNNER_TEMP/azure-emulator.log"; then
-            echo "the Azure driver's emulator run was skipped or did not run" >&2
-            exit 1
-          fi
+          for driver in azure gcs; do
+            go test -count=1 -timeout 10m -run 'AgainstARealEndpoint' -v "./objstore/$driver/" | tee "$RUNNER_TEMP/$driver-emulator.log"
+            if grep -q -- '--- SKIP' "$RUNNER_TEMP/$driver-emulator.log" || ! grep -q -- '--- PASS' "$RUNNER_TEMP/$driver-emulator.log"; then
+              echo "the $driver driver's emulator run was skipped or did not run" >&2
+              exit 1
+            fi
+          done
       - name: Enforce the gitstore coverage floor
         env:
           BLEEPHUB_GO_COVERAGE_MIN: '77.0'
@@ -446,7 +473,7 @@ jobs:
       - name: Assert every module is covered
         run: |
           set -euo pipefail
-          expected=$'./go.mod\n./gitstore/bench/go.mod\n./gitstore/go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/conformance/drivers/gogithub/go.mod\n./test/terraform-sockerless/go.mod'
+          expected=$'./go.mod\n./gcsclient/go.mod\n./gitstore/bench/go.mod\n./gitstore/go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/conformance/drivers/gogithub/go.mod\n./test/terraform-sockerless/go.mod'
           found=$(find . -name go.mod -not -path './web/*' | sort)
           if [ "$found" != "$(printf '%s' "$expected" | sort)" ]; then
             echo "Go modules changed. Found:"; echo "$found"
