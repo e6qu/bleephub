@@ -1083,7 +1083,7 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 // else in the tree was scanned when it arrived. Scanning the whole tip on every
 // update made a one-file push to a large repository read every blob in it.
 func (s *Server) scanRefForSecretScanning(repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, old, target plumbing.Hash, baseURL string) error {
-	if !strings.HasPrefix(string(ref), "refs/heads/") {
+	if !secretScanningEnabled(repo) || !strings.HasPrefix(string(ref), "refs/heads/") {
 		return nil
 	}
 	if _, err := object.GetCommit(stor, target); err != nil {

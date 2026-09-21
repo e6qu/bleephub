@@ -167,7 +167,10 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 		// LFS is on for every new repo, as on github.com; the per-repo toggle
 		// turns it off. A false default would break `git lfs push` until an
 		// enterprise-only endpoint was called.
-		LFSEnabled:                true,
+		LFSEnabled: true,
+		// GitHub scans a public repository for secrets automatically; a private
+		// one only once Secret Protection is enabled for it.
+		SecretScanningEnabled:     !private,
 		AllowSquashMerge:          true,
 		AllowMergeCommit:          true,
 		AllowRebaseMerge:          true,
@@ -341,6 +344,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		OwnerID:                   owner.ID,
 		OwnerType:                 "User",
 		Private:                   source.Private,
+		SecretScanningEnabled:     !source.Private,
 		Fork:                      true,
 		Archived:                  source.Archived,
 		ArchivedAt:                cloneTimePtr(source.ArchivedAt),

@@ -123,9 +123,11 @@ func TestRepoSecurityAndAnalysis_NonAdminRefused(t *testing.T) {
 	s.store.Tokens[otherTok.Value] = otherTok
 	s.store.Mu.Unlock()
 
+	before := saStatus(t, decodeJSON(t, s.get(t, repoPath, defaultToken)), "secret_scanning")
+	flipped := map[string]string{"enabled": "disabled", "disabled": "enabled"}[before]
 	resp := s.patch(t, repoPath, otherTok.Value, map[string]interface{}{
 		"security_and_analysis": map[string]interface{}{
-			"secret_scanning": map[string]interface{}{"status": "enabled"},
+			"secret_scanning": map[string]interface{}{"status": flipped},
 		},
 	})
 	defer resp.Body.Close()
@@ -134,7 +136,7 @@ func TestRepoSecurityAndAnalysis_NonAdminRefused(t *testing.T) {
 	}
 
 	repoJSON := decodeJSON(t, s.get(t, repoPath, defaultToken))
-	if got := saStatus(t, repoJSON, "secret_scanning"); got != "disabled" {
-		t.Errorf("secret_scanning after refused PATCH = %q, want disabled", got)
+	if got := saStatus(t, repoJSON, "secret_scanning"); got != before {
+		t.Errorf("secret_scanning after refused PATCH = %q, want it unchanged at %q", got, before)
 	}
 }
