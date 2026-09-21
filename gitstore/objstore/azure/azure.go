@@ -158,6 +158,16 @@ func (b *bucket) GetRange(ctx context.Context, key string, offset, length int64)
 		_ = response.Body.Close()
 		return nil, objstore.Info{}, fmt.Errorf("azure get %s: %w", key, err)
 	}
+	// The interface says a range that starts at or past the end is not
+	// satisfiable, and a reader walking a pack to its end depends on being told
+	// so. The service says it with 416, translated above. Azurite, the emulator,
+	// answers a range that starts exactly at the end with success and no bytes,
+	// which CI found; the response carries the blob's whole size, so the rule is
+	// held here by that fact rather than by which of them answered.
+	if offset >= info.Size {
+		_ = response.Body.Close()
+		return nil, objstore.Info{}, fmt.Errorf("azure get %s: range starts at %d of %d bytes: %w", key, offset, info.Size, objstore.ErrRangeNotSatisfiable)
+	}
 	return response.Body, info, nil
 }
 

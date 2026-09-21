@@ -377,3 +377,39 @@ func TestADirectoryListingStaysInOrderAcrossPages(t *testing.T) {
 		t.Fatalf("the directory listing returned %d entries, want the %d written with each blob before the prefix that extends its name", len(got), len(want))
 	}
 }
+
+// TestARangeAtTheEndIsNotSatisfiableWhateverTheStoreAnswers pins a rule the
+// driver holds itself. The interface says a range that starts at the end of an
+// object is not satisfiable, and the engine's pack reader reads to a pack's end
+// by being told so. The service says it with a 416; Azurite answers success
+// with no bytes, which the suite found the first time it ran against the
+// emulator. The response carries the blob's whole size either way, so the
+// driver decides by that.
+func TestARangeAtTheEndIsNotSatisfiableWhateverTheStoreAnswers(t *testing.T) {
+	fake := azfake.New()
+	t.Cleanup(fake.Close)
+	fake.CreateContainer("c")
+	fake.Put("c", "pack", []byte("0123456789"))
+	bucket, err := New("c", Options{Endpoint: fake.URL(), AccountName: fake.AccountName(), AccountKey: fake.AccountKey()})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	ctx := context.Background()
+
+	if _, _, err := bucket.GetRange(ctx, "pack", 10, 4); !errors.Is(err, objstore.ErrRangeNotSatisfiable) {
+		t.Fatalf("premise: a store that answers 416 gave %v", err)
+	}
+	fake.AnswerARangeAtTheEndWithNoBytes()
+	if _, _, err := bucket.GetRange(ctx, "pack", 10, 4); !errors.Is(err, objstore.ErrRangeNotSatisfiable) {
+		t.Fatalf("a store that answers success with no bytes gave %v, want ErrRangeNotSatisfiable", err)
+	}
+	body, info, err := bucket.GetRange(ctx, "pack", 9, 4)
+	if err != nil {
+		t.Fatalf("the last byte: %v", err)
+	}
+	last, _ := io.ReadAll(body)
+	_ = body.Close()
+	if string(last) != "9" || info.Size != 10 {
+		t.Fatalf("the last byte read as %q of %d", last, info.Size)
+	}
+}

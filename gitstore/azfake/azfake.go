@@ -64,6 +64,9 @@ type Server struct {
 	// pendingPolls is how many times a blob copied from now on reports its copy
 	// as still pending before reporting success.
 	pendingPolls int
+	// emptyRangeAtEnd makes a range that starts exactly at a blob's end succeed
+	// with no bytes, where the service refuses it.
+	emptyRangeAtEnd bool
 }
 
 type containerState struct {
@@ -127,6 +130,18 @@ func (f *Server) SetPendingCopyPolls(polls int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.pendingPolls = polls
+}
+
+// AnswerARangeAtTheEndWithNoBytes makes a ranged read that starts exactly at a
+// blob's end succeed with an empty body, where the service answers 416. Azurite,
+// Microsoft's emulator, was found to do this when the driver first met it in
+// CI; the switch is how a client's handling of such an answer is tested without
+// the emulator. What Azurite's response looks like beyond that is not claimed
+// here.
+func (f *Server) AnswerARangeAtTheEndWithNoBytes() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.emptyRangeAtEnd = true
 }
 
 // Put stores a blob directly, without a request, in a container already made.
@@ -244,7 +259,7 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPut:
 		refusal = f.putBlob(w, r, held, blobName, body)
 	case r.Method == http.MethodGet && !query.Has("comp"):
-		refusal = held.getBlob(w, r, blobName)
+		refusal = held.getBlob(w, r, blobName, f.emptyRangeAtEnd)
 	case r.Method == http.MethodHead && !query.Has("comp"):
 		refusal = held.getProperties(w, blobName)
 	case r.Method == http.MethodDelete:
@@ -476,7 +491,7 @@ func (blob *blobState) describe(w http.ResponseWriter) {
 	}
 }
 
-func (held *containerState) getBlob(w http.ResponseWriter, r *http.Request, blobName string) *storageError {
+func (held *containerState) getBlob(w http.ResponseWriter, r *http.Request, blobName string, emptyAtEnd bool) *storageError {
 	blob, ok := held.blobs[blobName]
 	if !ok {
 		return errBlobNotFound
@@ -494,6 +509,13 @@ func (held *containerState) getBlob(w http.ResponseWriter, r *http.Request, blob
 		return nil
 	}
 	start, end, ok := byteRange(requested, size)
+	if !ok && emptyAtEnd && strings.HasPrefix(requested, fmt.Sprintf("bytes=%d-", size)) {
+		blob.describe(w)
+		w.Header().Set("Content-Length", "0")
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", size))
+		w.WriteHeader(http.StatusPartialContent)
+		return nil
+	}
 	if !ok {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", size))
 		return &storageError{http.StatusRequestedRangeNotSatisfiable, "InvalidRange", "The range specified is invalid for the current size of the resource."}
