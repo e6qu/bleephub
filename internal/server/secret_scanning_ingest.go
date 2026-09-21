@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -56,21 +57,100 @@ func (s *Server) scanCommitForSecretScanning(repo *store.Repo, stor storer.Store
 		if err != nil {
 			return fmt.Errorf("walk secret scanning tree %s: %w", commit.TreeHash, err)
 		}
-		reader, err := file.Reader()
+		body, err := readSecretScanningBlob(&file.Blob)
 		if err != nil {
-			return fmt.Errorf("read secret scanning blob %s: %w", file.Hash, err)
+			return err
 		}
-		body, readErr := io.ReadAll(io.LimitReader(reader, secretScanningMaxFileBytes))
-		closeErr := reader.Close()
-		if readErr != nil {
-			return fmt.Errorf("read secret scanning blob %s: %w", file.Hash, readErr)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close secret scanning blob %s: %w", file.Hash, closeErr)
-		}
-		s.scanSecretScanningFile(repo, commitHash.String(), file.Name, file.Hash.String(), string(body), baseURL)
+		s.scanSecretScanningFile(repo, commitHash.String(), file.Name, file.Hash.String(), body, baseURL)
 	}
 	return nil
+}
+
+// scanRangeForSecretScanning scans the files that the commits reachable from
+// target and not from old add or change relative to their first parent, each
+// blob once however many commits carry it, and records every match against the
+// commit that introduced it. The walk is bounded as push protection's is, and
+// covers the newest commits first.
+func (s *Server) scanRangeForSecretScanning(repo *store.Repo, stor storer.Storer, old, target plumbing.Hash, baseURL string) error {
+	tip, err := object.GetCommit(stor, target)
+	if err != nil {
+		return fmt.Errorf("load secret scanning commit %s: %w", target, err)
+	}
+	iter := object.NewCommitPreorderIter(tip, nil, []plumbing.Hash{old})
+	defer iter.Close()
+	scanned := map[plumbing.Hash]bool{}
+	commits := 0
+	walkErr := iter.ForEach(func(c *object.Commit) error {
+		commits++
+		if commits > secretScanningPushProtectionMaxCommits {
+			return storer.ErrStop
+		}
+		files, err := commitIntroducedFiles(c)
+		if err != nil {
+			return err
+		}
+		for _, file := range files {
+			if scanned[file.hash] {
+				continue
+			}
+			scanned[file.hash] = true
+			blob, err := object.GetBlob(stor, file.hash)
+			if err != nil {
+				// A gitlink names a commit in another repository: nothing to read.
+				continue
+			}
+			body, err := readSecretScanningBlob(blob)
+			if err != nil {
+				return err
+			}
+			s.scanSecretScanningFile(repo, c.Hash.String(), file.path, file.hash.String(), body, baseURL)
+		}
+		return nil
+	})
+	if walkErr != nil && !errors.Is(walkErr, storer.ErrStop) {
+		return walkErr
+	}
+	return nil
+}
+
+// introducedFile is a path a commit adds or changes, and the blob it now holds.
+type introducedFile struct {
+	path string
+	hash plumbing.Hash
+}
+
+// commitIntroducedFiles returns the files a commit adds or modifies relative to
+// its first parent — a root commit's entire tree — with their paths.
+func commitIntroducedFiles(c *object.Commit) ([]introducedFile, error) {
+	changes, err := commitChanges(c)
+	if err != nil {
+		return nil, err
+	}
+	var out []introducedFile
+	for _, ch := range changes {
+		// The "to" side of an addition or modification; a deletion has mode 0.
+		if ch.To.TreeEntry.Mode != 0 {
+			out = append(out, introducedFile{path: ch.To.Name, hash: ch.To.TreeEntry.Hash})
+		}
+	}
+	return out, nil
+}
+
+// readSecretScanningBlob reads as much of a blob as secret scanning looks at.
+func readSecretScanningBlob(blob *object.Blob) (string, error) {
+	reader, err := blob.Reader()
+	if err != nil {
+		return "", fmt.Errorf("read secret scanning blob %s: %w", blob.Hash, err)
+	}
+	body, readErr := io.ReadAll(io.LimitReader(reader, secretScanningMaxFileBytes))
+	closeErr := reader.Close()
+	if readErr != nil {
+		return "", fmt.Errorf("read secret scanning blob %s: %w", blob.Hash, readErr)
+	}
+	if closeErr != nil {
+		return "", fmt.Errorf("close secret scanning blob %s: %w", blob.Hash, closeErr)
+	}
+	return string(body), nil
 }
 
 func (s *Server) scanSecretScanningFile(repo *store.Repo, commitSHA, path, blobSHA, body, baseURL string) {
@@ -179,33 +259,41 @@ func (s *Server) secretScanningPushProtectionMatchesForRange(stor storer.Storer,
 // commitIntroducedBlobs returns the hashes of the blobs a commit adds or
 // modifies relative to its first parent — a root commit's entire tree.
 func commitIntroducedBlobs(c *object.Commit) ([]plumbing.Hash, error) {
+	files, err := commitIntroducedFiles(c)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]plumbing.Hash, 0, len(files))
+	for _, file := range files {
+		out = append(out, file.hash)
+	}
+	return out, nil
+}
+
+// commitChanges diffs a commit's tree against its first parent's, or against an
+// empty tree for a root commit. Equal subtrees are skipped by hash, so the cost
+// follows the size of the change, not of the tree.
+func commitChanges(c *object.Commit) (object.Changes, error) {
 	headTree, err := c.Tree()
 	if err != nil {
-		return nil, fmt.Errorf("load secret scanning push-protection tree %s: %w", c.TreeHash, err)
+		return nil, fmt.Errorf("load secret scanning tree %s: %w", c.TreeHash, err)
 	}
 	parentTree := &object.Tree{}
 	if c.NumParents() > 0 {
 		parent, err := c.Parent(0)
 		if err != nil {
-			return nil, fmt.Errorf("load secret scanning push-protection parent of %s: %w", c.Hash, err)
+			return nil, fmt.Errorf("load secret scanning parent of %s: %w", c.Hash, err)
 		}
 		parentTree, err = parent.Tree()
 		if err != nil {
-			return nil, fmt.Errorf("load secret scanning push-protection parent tree %s: %w", parent.TreeHash, err)
+			return nil, fmt.Errorf("load secret scanning parent tree %s: %w", parent.TreeHash, err)
 		}
 	}
 	changes, err := object.DiffTree(parentTree, headTree)
 	if err != nil {
-		return nil, fmt.Errorf("diff secret scanning push-protection commit %s: %w", c.Hash, err)
+		return nil, fmt.Errorf("diff secret scanning commit %s: %w", c.Hash, err)
 	}
-	var out []plumbing.Hash
-	for _, ch := range changes {
-		// The "to" side of an addition or modification; a deletion has mode 0.
-		if ch.To.TreeEntry.Mode != 0 {
-			out = append(out, ch.To.TreeEntry.Hash)
-		}
-	}
-	return out, nil
+	return changes, nil
 }
 
 // scanBlobForSecretMatches reads one blob (bounded) and returns the secret
@@ -217,20 +305,12 @@ func (s *Server) scanBlobForSecretMatches(stor storer.Storer, hash plumbing.Hash
 	if err != nil {
 		return nil, nil
 	}
-	reader, err := blob.Reader()
+	body, err := readSecretScanningBlob(blob)
 	if err != nil {
-		return nil, fmt.Errorf("read secret scanning push-protection blob %s: %w", hash, err)
-	}
-	body, readErr := io.ReadAll(io.LimitReader(reader, secretScanningMaxFileBytes))
-	closeErr := reader.Close()
-	if readErr != nil {
-		return nil, fmt.Errorf("read secret scanning push-protection blob %s: %w", hash, readErr)
-	}
-	if closeErr != nil {
-		return nil, fmt.Errorf("close secret scanning push-protection blob %s: %w", hash, closeErr)
+		return nil, err
 	}
 	var out []secretScanningContentMatch
-	for _, match := range secretScanningContentMatches(string(body)) {
+	for _, match := range secretScanningContentMatches(body) {
 		if seenTypes[match.secretType] {
 			continue
 		}
@@ -253,8 +333,26 @@ func (s *Server) createSecretScanningPushProtectionPlaceholder(repo *store.Repo,
 	return nil
 }
 
+// secretScanningPushProtectionCanBlock reports whether any pattern could block
+// a push to repo.
+func (s *Server) secretScanningPushProtectionCanBlock(repo *store.Repo) bool {
+	for _, pattern := range secretScanningContentPatterns {
+		if s.store.SecretScanningPushProtectionEnabled(repo, pattern.patternID) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) secretScanningPushProtectionPlaceholderForRef(repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, old, target plumbing.Hash) (*store.SecretScanningPushProtectionPlaceholder, error) {
 	if !strings.HasPrefix(string(ref), "refs/heads/") {
+		return nil, nil
+	}
+	// A match can only block through a pattern push protection is enabled for
+	// on this repository; with none, everything the scan found would be
+	// discarded, and it would have read every blob the push brings to find it —
+	// the whole history, on a repository's first push.
+	if !s.secretScanningPushProtectionCanBlock(repo) {
 		return nil, nil
 	}
 	matches, err := s.secretScanningPushProtectionMatchesForRange(stor, old, target)

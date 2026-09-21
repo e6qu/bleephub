@@ -69,7 +69,7 @@ func (s *Server) createGitRef(ctx context.Context, repo *store.Repo, stor gitSto
 		}
 		return &gitRefWriteFailure{status: http.StatusInternalServerError, message: err.Error()}
 	}
-	if err := s.scanRefForSecretScanning(repo, stor, fullRef, target, baseURL); err != nil {
+	if err := s.scanRefForSecretScanning(repo, stor, fullRef, plumbing.ZeroHash, target, baseURL); err != nil {
 		return &gitRefWriteFailure{status: http.StatusInternalServerError, message: err.Error()}
 	}
 	if fullRef.IsBranch() {
@@ -124,7 +124,7 @@ func (s *Server) updateGitRef(ctx context.Context, repo *store.Repo, stor gitSto
 		}
 		return &gitRefWriteFailure{status: http.StatusInternalServerError, message: err.Error()}
 	}
-	if err := s.scanRefForSecretScanning(repo, stor, fullRef, target, baseURL); err != nil {
+	if err := s.scanRefForSecretScanning(repo, stor, fullRef, oldRef.Hash(), target, baseURL); err != nil {
 		return &gitRefWriteFailure{status: http.StatusInternalServerError, message: err.Error()}
 	}
 	if fullRef.IsBranch() {

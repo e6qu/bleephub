@@ -1052,14 +1052,26 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, refToJSON(stor, s.baseURL(r), repo.FullName, ref))
 }
 
-func (s *Server) scanRefForSecretScanning(repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, target plumbing.Hash, baseURL string) error {
+// scanRefForSecretScanning raises secret-scanning alerts for what moving a
+// branch from old to target added to it. A branch that did not exist before, or
+// whose old tip is not a commit, has everything in its tip tree scanned; an
+// update has only the files its new commits add or change, since everything
+// else in the tree was scanned when it arrived. Scanning the whole tip on every
+// update made a one-file push to a large repository read every blob in it.
+func (s *Server) scanRefForSecretScanning(repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, old, target plumbing.Hash, baseURL string) error {
 	if !strings.HasPrefix(string(ref), "refs/heads/") {
 		return nil
 	}
 	if _, err := object.GetCommit(stor, target); err != nil {
 		return nil
 	}
-	return s.scanCommitForSecretScanning(repo, stor, target, baseURL)
+	if old.IsZero() {
+		return s.scanCommitForSecretScanning(repo, stor, target, baseURL)
+	}
+	if _, err := object.GetCommit(stor, old); err != nil {
+		return s.scanCommitForSecretScanning(repo, stor, target, baseURL)
+	}
+	return s.scanRangeForSecretScanning(repo, stor, old, target, baseURL)
 }
 
 type gitPerson struct {
