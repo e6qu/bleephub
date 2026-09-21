@@ -18,6 +18,7 @@ reading.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -64,6 +65,11 @@ REVIEWED_FILES: dict[tuple[str, str], str] = {
 }
 
 LICENCE_FILE = re.compile(r"(?i)^(licen[sc]e|copying|unlicense|notice)")
+
+# What the web UI's build bundled, as Vite reported it: each package's name,
+# version, declared licence and licence text. CI holds this copy to the build's
+# own output, so it is what ships.
+WEB_BUNDLE = ROOT / "web" / "third-party-licenses.json"
 MPL_OPT_OUT = "Incompatible With Secondary Licenses"
 
 
@@ -159,6 +165,8 @@ def self_test() -> int:
         "a Commons Clause rider is refused": not classify("\"Commons Clause\" License Condition v1.0 ... Apache License Version 2.0") <= COMPATIBLE,
         "an unrecognised text names nothing": classify("All rights reserved. Ask us before using this.") == set(),
         "MIT is recognised": classify("Permission is hereby granted, free of charge, to any person") == {"MIT"},
+        "an SPDX choice is read as a choice": declared_ids("(MIT OR GPL-2.0)") == ({"MIT", "GPL-2.0"}, True),
+        "an SPDX conjunction is read as one": declared_ids("MIT AND GPL-2.0") == ({"MIT", "GPL-2.0"}, False),
     }
     failed = [name for name, passed in cases.items() if not passed]
     if failed:
@@ -168,6 +176,38 @@ def self_test() -> int:
         return 1
     print(f"licence gate self-test: OK ({len(cases)} cases)")
     return 0
+
+
+def declared_ids(identifier: str) -> tuple[set[str], bool]:
+    """The licence identifiers an SPDX expression names, and whether it offers a
+    choice (OR) rather than requiring all of them (AND)."""
+    ids = {token for token in re.split(r"[\s()]+", identifier) if token and token not in {"AND", "OR", "WITH"}}
+    return ids, " OR " in f" {identifier} "
+
+
+def web_problems(tally: dict[str, int]) -> tuple[int, list[str]]:
+    """Checks every package the web UI bundles: its licence text must be one this
+    gate recognises and can combine, and so must what its package.json declares."""
+    problems: list[str] = []
+    entries = json.loads(WEB_BUNDLE.read_text())
+    for entry in entries:
+        label = f"web: {entry.get('name')} {entry.get('version')}"
+        text = entry.get("text") or ""
+        licences = classify(text)
+        if not licences:
+            problems.append(f"{label}: its licence text is not one this gate recognises; read it")
+            continue
+        refused = sorted(licences - COMPATIBLE)
+        if refused:
+            problems.append(f"{label}: {', '.join(refused)} cannot be combined into an AGPL-3.0-or-later work")
+        ids, choice = declared_ids(entry.get("identifier") or "")
+        if not ids:
+            problems.append(f"{label}: package.json declares no licence")
+        elif (not ids & COMPATIBLE) if choice else (not ids <= COMPATIBLE):
+            problems.append(f"{label}: package.json declares {entry.get('identifier')!r}, which cannot be combined into an AGPL-3.0-or-later work")
+        key = "web " + " + ".join(sorted(licences))
+        tally[key] = tally.get(key, 0) + 1
+    return len(entries), problems
 
 
 def main() -> int:
@@ -200,13 +240,16 @@ def main() -> int:
         key = " + ".join(sorted(licences))
         tally[key] = tally.get(key, 0) + 1
 
+    web_count, found = web_problems(tally)
+    problems += found
+
     if problems:
         print("FAIL: dependency licences:")
         for problem in problems:
             print(f"  {problem}")
         return 1
     summary = ", ".join(f"{count} {name}" for name, count in sorted(tally.items(), key=lambda item: -item[1]))
-    print(f"verified the licences of {len(modules)} linked modules are compatible with AGPL-3.0-or-later ({summary})")
+    print(f"verified the licences of {len(modules)} linked Go modules and {web_count} bundled web packages are compatible with AGPL-3.0-or-later ({summary})")
     return 0
 
 

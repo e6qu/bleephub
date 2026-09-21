@@ -162,7 +162,19 @@ in CI against the dependency list, and shipped at `/usr/share/doc/bleephub/` in
 the server image, beside `LICENSE` and this file, and inside the wake-listener
 ZIP.
 
-## Web dependencies
+## Web dependencies — **bundled into the UI, which the server binary embeds**
 
 Declared in `web/package.json` and pinned by `web/bun.lock`, which
 `Dockerfile.release` installs with `bun install --frozen-lockfile`.
+
+The UI is redistributed twice: inside the server binary, and to every browser
+that opens it. What the Vite build actually bundled — 85 packages after tree
+shaking, not the whole lockfile — is written by the build with each package's
+declared licence and licence text, served beside the UI at
+`/ui/third-party-licenses.json`, and kept in the repository as
+[web/third-party-licenses.json](web/third-party-licenses.json), which CI holds to
+the build's output. `scripts/check-dependency-licenses.py` checks each package's
+licence text and declared licence for compatibility with AGPL-3.0-or-later (all
+are MIT, ISC or BSD-3-Clause), and
+[THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt) reproduces them in its
+second part.

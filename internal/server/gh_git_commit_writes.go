@@ -105,7 +105,7 @@ func (s *Server) createCommitOnBranch(ctx context.Context, repo *store.Repo, sto
 		}
 		return plumbing.ZeroHash, &gitRefWriteFailure{status: http.StatusUnprocessableEntity, message: err.Error()}
 	}
-	if err := s.scanRefForSecretScanning(repo, stor, fullRef, commitHash, baseURL); err != nil {
+	if err := s.scanRefForSecretScanning(repo, stor, fullRef, expected, commitHash, baseURL); err != nil {
 		return plumbing.ZeroHash, &gitRefWriteFailure{status: http.StatusInternalServerError, message: err.Error()}
 	}
 	s.afterCommittedRefUpdate(repo, sender, fullRef.String(), expected.String(), commitHash.String(), baseURL)

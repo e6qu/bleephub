@@ -751,7 +751,7 @@ func (s *Server) afterGitReceivePack(repo *store.Repo, user *store.User, applied
 	s.repairGitHead(owner, repo, stor)
 	for _, command := range applied {
 		if !command.New.IsZero() {
-			if err := s.scanRefForSecretScanning(repo, stor, command.Name, command.New, baseURL); err != nil {
+			if err := s.scanRefForSecretScanning(repo, stor, command.Name, command.Old, command.New, baseURL); err != nil {
 				s.logger.Error().Err(err).Str("repo", repo.FullName).Str("ref", command.Name.String()).
 					Msg("could not scan a pushed ref for secrets")
 			}
