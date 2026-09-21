@@ -27,6 +27,16 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), bundleBudget()],
   base: "/ui/",
   build: {
+    // The bundle is redistributed — embedded in the server binary and sent to
+    // every browser that opens the UI — so the licence of each package it
+    // contains goes with it. Vite writes what it actually bundled, after tree
+    // shaking, with each package's declared licence and licence text. The
+    // repository keeps a copy (web/third-party-licenses.json) that CI holds to
+    // this output, which scripts/check-dependency-licenses.py checks for
+    // compatibility with AGPL-3.0-or-later and
+    // scripts/generate-third-party-licenses.py folds into the attributions
+    // shipped beside the binaries.
+    license: { fileName: "third-party-licenses.json" },
     rollupOptions: {
       output: {
         manualChunks(id) {

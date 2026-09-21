@@ -613,6 +613,17 @@ jobs:
       # production build fails CI.
       - name: Build the web application
         run: cd web && bun run build
+      # The build writes the licence of every package it bundled; the repository
+      # keeps a copy, which the licence gate checks and the attribution file
+      # shipped beside the binaries reproduces. A dependency added or bumped
+      # without refreshing the copy fails here.
+      - name: Check the record of what the web bundle contains is current
+        run: |
+          set -euo pipefail
+          if ! cmp --silent web/dist/third-party-licenses.json web/third-party-licenses.json; then
+            echo "web/third-party-licenses.json is out of date with the build. Run: cd web && bun run build && cp dist/third-party-licenses.json third-party-licenses.json && cd .. && ./scripts/generate-third-party-licenses.py" >&2
+            exit 1
+          fi
       # The web counterparts of the same two orphaned gates. knip reported
       # e2e/shauth-sso.mjs as an unused file because it is launched by
       # scripts/test-shauth-sso.sh rather than imported; it is declared as an
