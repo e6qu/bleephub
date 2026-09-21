@@ -183,7 +183,7 @@ func run() error {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	env := Env{
-		Endpoint: meter.URL(), DirectEndpoint: target, Bucket: cfg.bucket, Region: cfg.region,
+		Endpoint: meter.URL(), Bucket: cfg.bucket, Region: cfg.region,
 		AccessKey: accessKey, SecretKey: secretKey,
 		Prefix:  fmt.Sprintf("bench-%d", time.Now().UnixNano()),
 		TempDir: tempDir,

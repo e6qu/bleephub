@@ -7,7 +7,7 @@ import (
 
 func TestPersistentServerStorageRequiresDurableGitAndObjectBytes(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", "")
-	t.Setenv("BLEEPHUB_S3_BUCKET", "")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "")
 	if err := validatePersistentServerStorage(true); err == nil {
 		t.Fatal("expected missing durable git storage to fail")
 	} else if !strings.Contains(err.Error(), "git storage is in-memory") {

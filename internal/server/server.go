@@ -317,7 +317,7 @@ func (s *Server) authenticateUIData(next http.HandlerFunc) http.HandlerFunc {
 // ("true" enables SQLite-backed state). Persistence that fails to open is fatal.
 //
 // Persistence requires durable git storage (BLEEPHUB_GIT_DIR or
-// BLEEPHUB_S3_BUCKET) and object-backed byte storage (BLEEPHUB_OBJECT_S3_BUCKET);
+// BLEEPHUB_GIT_BUCKET) and object-backed byte storage (BLEEPHUB_OBJECT_BUCKET);
 // reloading repo metadata against in-memory git would resurrect every repo
 // empty, and SQLite persists metadata only, not byte content — so either
 // combination is a startup error, not a silent degraded mode.
@@ -339,7 +339,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	dataDir := os.Getenv("BLEEPHUB_DATA_DIR")
 	byteStore, err := store.NewActionsByteStoreFromEnv(context.Background())
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to initialize BLEEPHUB_OBJECT_S3_* byte storage")
+		logger.Fatal().Err(err).Msg("failed to open the object store the environment configures")
 	}
 	s := newServerState(addr, logger, serverConstruction{
 		byteStore:              byteStore,
@@ -414,14 +414,14 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 }
 
 func validatePersistentServerStorage(serviceByteStoreReady bool) error {
-	if gitbackend.GitDataDir() == "" && !gitbackend.IsS3GitStorage() {
+	if gitbackend.GitDataDir() == "" && !gitbackend.GitStorageIsObjectStore() {
 		return errors.New("persistence is enabled (BLEEPHUB_PERSIST=true) but git storage is in-memory: " +
 			"repo metadata would survive a restart while every git repo reloads empty. " +
-			"Configure durable git storage (BLEEPHUB_GIT_DIR=<dir> or BLEEPHUB_S3_BUCKET=<bucket>) or disable persistence")
+			"Configure durable git storage (BLEEPHUB_GIT_DIR=<dir>, or BLEEPHUB_GIT_BUCKET=<bucket> with BLEEPHUB_GIT_PREFIX and BLEEPHUB_OBJECT_STORE) or disable persistence")
 	}
 	if !serviceByteStoreReady {
 		return errors.New("persistence is enabled (BLEEPHUB_PERSIST=true) but service byte storage is not object-backed: " +
-			"GitHub Actions artifacts, dependency caches, runner logs, release assets, package files, container-registry blobs, CodeQL database archives, CodeQL variant-analysis query packs, artifact attestation bundles, and Git LFS objects require BLEEPHUB_OBJECT_S3_BUCKET")
+			"GitHub Actions artifacts, dependency caches, runner logs, release assets, package files, container-registry blobs, CodeQL database archives, CodeQL variant-analysis query packs, artifact attestation bundles, and Git LFS objects require BLEEPHUB_OBJECT_BUCKET, with BLEEPHUB_OBJECT_PREFIX and BLEEPHUB_OBJECT_STORE")
 	}
 	return nil
 }
@@ -764,16 +764,19 @@ func (s *Server) handleInternalStorage(w http.ResponseWriter, r *http.Request) {
 	gitBackend := "memory"
 	gitDetails := map[string]string{}
 	gitDir := gitbackend.GitDataDir()
-	if gitbackend.IsS3GitStorage() {
-		gitBackend = "s3"
-		if bucket := os.Getenv("BLEEPHUB_S3_BUCKET"); bucket != "" {
-			gitDetails["bucket"] = bucket
+	if gitbackend.GitStorageIsObjectStore() {
+		// The server did not start unless these settings read cleanly, so an error
+		// here is an environment changed underneath a running process.
+		settings, err := gitbackend.SettingsFromEnv()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"message": err.Error()})
+			return
 		}
-		if endpoint := os.Getenv("BLEEPHUB_S3_ENDPOINT"); endpoint != "" {
-			gitDetails["endpoint"] = endpoint
-		}
-		if prefix := os.Getenv("BLEEPHUB_S3_PREFIX"); prefix != "" {
-			gitDetails["prefix"] = prefix
+		gitBackend = settings.Driver
+		gitDetails["bucket"] = settings.GitBucket
+		gitDetails["prefix"] = settings.GitPrefix
+		if settings.Endpoint != "" {
+			gitDetails["endpoint"] = settings.Endpoint
 		}
 	} else if gitDir != "" {
 		gitBackend = "filesystem"

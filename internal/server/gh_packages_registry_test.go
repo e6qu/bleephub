@@ -94,7 +94,7 @@ func TestContainerRegistryPublishCreatesPackageVersion(t *testing.T) {
 func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
+	s.store.ObjectByteStore = &store.ObjectStoreByteStore{Objects: storedObjects}
 	admin := s.store.UsersByLogin["admin"]
 	pkg, _ := s.store.CreatePackage("User", admin.Login, "container", "object-package", "public")
 	version, err := s.store.CreatePackageVersion("User", admin.Login, "container", pkg.Name, "1.0.0", "", nil, []store.PackageFileInput{{
@@ -153,7 +153,7 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 func TestDeleteRepoPurgesRepositoryPackageObjectBytes(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
+	s.store.ObjectByteStore = &store.ObjectStoreByteStore{Objects: storedObjects}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "repo-package-objects", "", false)
 	pkg, _ := s.store.CreatePackage("Repository", repo.FullName, "container", "image", "private")

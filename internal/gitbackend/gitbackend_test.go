@@ -10,32 +10,15 @@ import (
 	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
-func TestS3Region(t *testing.T) {
-	t.Setenv("BLEEPHUB_S3_REGION", "eu-west-1")
-	t.Setenv("AWS_REGION", "us-east-1")
-	if got := s3Region(); got != "eu-west-1" {
-		t.Fatalf("explicit Bleephub S3 region = %q, want eu-west-1", got)
-	}
-	t.Setenv("BLEEPHUB_S3_REGION", "")
-	if got := s3Region(); got != "us-east-1" {
-		t.Fatalf("AWS S3 region = %q, want us-east-1", got)
-	}
-	t.Setenv("AWS_REGION", "")
-	if got := s3Region(); got != "us-east-1" {
-		t.Fatalf("default S3 region = %q, want us-east-1", got)
-	}
-}
-
 // clearTunables pins every storage tunable to unset, so a developer's shell
 // cannot leak into the assertions.
 func clearTunables(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{
-		"BLEEPHUB_S3_REGION", "AWS_REGION",
 		"BLEEPHUB_GITSTORE_CHUNK_BYTES", "BLEEPHUB_GITSTORE_CACHE_DIR", "BLEEPHUB_GITSTORE_CACHE_BYTES",
 		"BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES", "BLEEPHUB_GITSTORE_INDEX_FRESHNESS",
 		"BLEEPHUB_GITSTORE_COMPACT_AFTER", "BLEEPHUB_GITSTORE_MULTIPART_BYTES",
-		"BLEEPHUB_S3_BREAKER_THRESHOLD", "BLEEPHUB_S3_BREAKER_COOLDOWN_MS",
+		"BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD", "BLEEPHUB_OBJECT_STORE_BREAKER_COOLDOWN_MS",
 	} {
 		t.Setenv(name, "")
 	}
@@ -55,8 +38,8 @@ func TestOptionsFromEnvLeavesUnsetTunablesToTheLibrary(t *testing.T) {
 		opts.BreakerThreshold != 0 || opts.BreakerCooldown != 0 {
 		t.Fatalf("an empty environment overrode a library default: %+v", opts)
 	}
-	if opts.Region != "us-east-1" {
-		t.Fatalf("region = %q, want us-east-1", opts.Region)
+	if opts.Region != "" {
+		t.Fatalf("region = %q: how the store is reached is not a tunable", opts.Region)
 	}
 	if filepath.Base(opts.CacheDir) != "bleephub-gitstore-cache" {
 		t.Fatalf("cache dir = %q, want bleephub's own directory under the temp dir", opts.CacheDir)
@@ -72,8 +55,8 @@ func TestOptionsFromEnvParsesEveryTunable(t *testing.T) {
 	t.Setenv("BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "2s")
 	t.Setenv("BLEEPHUB_GITSTORE_COMPACT_AFTER", "500")
 	t.Setenv("BLEEPHUB_GITSTORE_MULTIPART_BYTES", "8388608")
-	t.Setenv("BLEEPHUB_S3_BREAKER_THRESHOLD", "9")
-	t.Setenv("BLEEPHUB_S3_BREAKER_COOLDOWN_MS", "1500")
+	t.Setenv("BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD", "9")
+	t.Setenv("BLEEPHUB_OBJECT_STORE_BREAKER_COOLDOWN_MS", "1500")
 
 	opts, err := OptionsFromEnv()
 	if err != nil {
@@ -95,7 +78,7 @@ func TestOptionsFromEnvTranslatesZeroToOff(t *testing.T) {
 	t.Setenv("BLEEPHUB_GITSTORE_MEMORY_CACHE_BYTES", "0")
 	t.Setenv("BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "0")
 	t.Setenv("BLEEPHUB_GITSTORE_COMPACT_AFTER", "0")
-	t.Setenv("BLEEPHUB_S3_BREAKER_THRESHOLD", "0")
+	t.Setenv("BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD", "0")
 
 	opts, err := OptionsFromEnv()
 	if err != nil {
@@ -118,14 +101,14 @@ func TestOptionsFromEnvRefusesASettingItCannotRead(t *testing.T) {
 	t.Setenv("BLEEPHUB_GITSTORE_CACHE_BYTES", "-5")
 	t.Setenv("BLEEPHUB_GITSTORE_MULTIPART_BYTES", "0")
 	t.Setenv("BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "750")
-	t.Setenv("BLEEPHUB_S3_BREAKER_THRESHOLD", "3.5")
+	t.Setenv("BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD", "3.5")
 	_, err := OptionsFromEnv()
 	if err == nil {
 		t.Fatal("settings that cannot be read were accepted")
 	}
 	for _, name := range []string{
 		"BLEEPHUB_GITSTORE_CHUNK_BYTES", "BLEEPHUB_GITSTORE_CACHE_BYTES", "BLEEPHUB_GITSTORE_MULTIPART_BYTES",
-		"BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "BLEEPHUB_S3_BREAKER_THRESHOLD",
+		"BLEEPHUB_GITSTORE_INDEX_FRESHNESS", "BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD",
 	} {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("the error does not name %s: %v", name, err)
@@ -133,17 +116,10 @@ func TestOptionsFromEnvRefusesASettingItCannotRead(t *testing.T) {
 	}
 }
 
-// pointGitStorageAt configures the process-wide git object store from the
-// environment, as a deployment does, and forgets whatever an earlier test opened.
-func pointGitStorageAt(t *testing.T, endpoint string) {
+// forgetOpenedStore drops whatever git store an earlier test opened, now and
+// when the test ends.
+func forgetOpenedStore(t *testing.T) {
 	t.Helper()
-	clearTunables(t)
-	t.Setenv("BLEEPHUB_S3_ENDPOINT", endpoint)
-	t.Setenv("BLEEPHUB_S3_BUCKET", "bleephub-test")
-	t.Setenv("BLEEPHUB_S3_PREFIX", "git")
-	t.Setenv("BLEEPHUB_GITSTORE_CACHE_DIR", t.TempDir())
-	t.Setenv("AWS_ACCESS_KEY_ID", "bleephub-test")
-	t.Setenv("AWS_SECRET_ACCESS_KEY", "bleephub-test-secret")
 	reset := func() {
 		StoreCache.Mu.Lock()
 		StoreCache.Store = nil
@@ -152,6 +128,22 @@ func pointGitStorageAt(t *testing.T, endpoint string) {
 	}
 	reset()
 	t.Cleanup(reset)
+}
+
+// pointGitStorageAt configures the process-wide git object store from the
+// environment, as a deployment on S3 does, and forgets whatever an earlier test
+// opened.
+func pointGitStorageAt(t *testing.T, endpoint string) {
+	t.Helper()
+	clearTunables(t)
+	testutil.ClearObjectStoreSettings(t)
+	testutil.ConfigureS3ForTest(t)
+	t.Setenv("BLEEPHUB_OBJECT_STORE", "s3")
+	t.Setenv("BLEEPHUB_S3_ENDPOINT", endpoint)
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "bleephub-test")
+	t.Setenv("BLEEPHUB_GIT_PREFIX", "git")
+	t.Setenv("BLEEPHUB_GITSTORE_CACHE_DIR", t.TempDir())
+	forgetOpenedStore(t)
 }
 
 // TestGetStoreOpensAConformingObjectStore pins the ordinary start: a store that

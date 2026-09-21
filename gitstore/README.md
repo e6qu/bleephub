@@ -136,7 +136,7 @@ The library never reads the process environment. Everything is an
 | `MemoryCacheBytes` | 256 MiB | In-memory tier of the pack cache. Negative disables it. |
 | `IndexFreshness` | 250ms | How far a plain read may lag another replica's write: how long a snapshot may answer "absent" before a miss re-lists, and how long a fetched reference or a listing of `refs/` may answer again. Negative re-lists on every miss and reads every reference from the store each time. |
 | `CompactionTrigger` | 4096 | Loose writes to one repository that request a compaction. A push requests one sooner: when it leaves more than 8 live packs, or lands behind 64 or more loose writes. Negative never requests one. |
-| `MultipartBytes` | 64 MiB | Pack size above which a pack is published by multipart upload, and the size of its parts (`OpenS3`; a bucket handed to `Open` brings its own). |
+| `MultipartBytes` | 64 MiB | Pack size above which a pack is published by multipart upload, and the size of its parts (`OpenS3`; a bucket handed to `Open` brings its own, and `Options.UploadPieceBytes` tells whoever builds one this value with its default applied). |
 | `BreakerThreshold`, `BreakerCooldown` | 5, 5s | Circuit breaker. A negative threshold disables it. |
 
 Where a tunable has a meaningful "off", zero still means "default" and a negative

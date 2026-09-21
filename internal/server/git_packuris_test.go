@@ -26,9 +26,11 @@ func newS3GitServerForTest(t *testing.T) *isolatedServer {
 	t.Helper()
 	objects := newGitObjectStoreForTest(t)
 	t.Setenv("BLEEPHUB_GIT_DIR", "")
+	t.Setenv("BLEEPHUB_OBJECT_STORE", "s3")
 	t.Setenv("BLEEPHUB_S3_ENDPOINT", s3ServerEndpoint)
-	t.Setenv("BLEEPHUB_S3_BUCKET", objects.Bucket().Name())
-	t.Setenv("BLEEPHUB_S3_PREFIX", "git")
+	t.Setenv("BLEEPHUB_S3_REGION", s3ServerRegion)
+	t.Setenv("BLEEPHUB_GIT_BUCKET", objects.Bucket().Name())
+	t.Setenv("BLEEPHUB_GIT_PREFIX", "git")
 	resetGitObjectStoreForTest(t)
 	return newIsolatedServer(t)
 }

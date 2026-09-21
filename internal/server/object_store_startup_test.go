@@ -17,12 +17,13 @@ import (
 func TestStartupRefusesAGitObjectStoreThatFailsConformance(t *testing.T) {
 	t.Setenv("BLEEPHUB_SSH_ADDR", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", "")
+	testutil.ClearObjectStoreSettings(t)
+	testutil.ConfigureS3ForTest(t)
+	t.Setenv("BLEEPHUB_OBJECT_STORE", "s3")
 	t.Setenv("BLEEPHUB_S3_ENDPOINT", testutil.S3EndpointIgnoringConditions(t))
-	t.Setenv("BLEEPHUB_S3_BUCKET", "bleephub-test")
-	t.Setenv("BLEEPHUB_S3_PREFIX", "git")
+	t.Setenv("BLEEPHUB_GIT_BUCKET", "bleephub-test")
+	t.Setenv("BLEEPHUB_GIT_PREFIX", "git")
 	t.Setenv("BLEEPHUB_GITSTORE_CACHE_DIR", t.TempDir())
-	t.Setenv("AWS_ACCESS_KEY_ID", "bleephub-test")
-	t.Setenv("AWS_SECRET_ACCESS_KEY", "bleephub-test-secret")
 	resetGitObjectStoreForTest(t)
 
 	srv := NewServer("127.0.0.1:0", zerolog.New(io.Discard))

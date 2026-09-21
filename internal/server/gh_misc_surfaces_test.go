@@ -315,7 +315,7 @@ func TestPagesBuildsCRUD(t *testing.T) {
 	s.registerGHRepoObjectRoutes()
 	s.registerGHGitDataRoutes()
 	storedObjects := newGitObjectStoreForTest(t).Sub("pages-build-objects")
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
+	s.store.ObjectByteStore = &store.ObjectStoreByteStore{Objects: storedObjects}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-build-test", "", false)
 	commitHash, err := initRepoWithFiles(s.store.GetGitStorage("admin", "pages-build-test"), repo.DefaultBranch, "init", map[string]string{
@@ -500,7 +500,7 @@ func TestPagesJekyllBuildPublishesGeneratedSite(t *testing.T) {
 	s.registerGHMiscEndpoints()
 	s.pagesJekyllExecutable = realPagesJekyllExecutable(t)
 	storedObjects := newGitObjectStoreForTest(t).Sub("pages-jekyll-objects")
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
+	s.store.ObjectByteStore = &store.ObjectStoreByteStore{Objects: storedObjects}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-jekyll-test", "", false)
 	commitHash, err := initRepoWithFiles(s.store.GetGitStorage("admin", repo.Name), repo.DefaultBranch, "Jekyll source", map[string]string{

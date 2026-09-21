@@ -42,6 +42,10 @@ var (
 // out from under a concurrently running suite.
 const s3TestOwnerLabel = "bleephub-test-s3-owner"
 
+// s3ServerRegion is the region the shared MinIO server's buckets are made in,
+// and so the one every client of it signs for.
+const s3ServerRegion = "us-east-1"
+
 const (
 	dockerProbeTimeout  = 5 * time.Second
 	dockerRemoveTimeout = 30 * time.Second
@@ -145,12 +149,12 @@ func newGitObjectStoreForTest(t *testing.T) *gitstore.Store {
 	bucket := fmt.Sprintf("bleephub-test-%d", testutil.NextTestID())
 	client, err := minio.New(strings.TrimPrefix(endpoint, "http://"), &minio.Options{
 		Creds:  credentials.NewEnvAWS(),
-		Region: "us-east-1",
+		Region: s3ServerRegion,
 	})
 	if err != nil {
 		t.Fatalf("S3 client: %v", err)
 	}
-	if err := client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: "us-east-1"}); err != nil {
+	if err := client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: s3ServerRegion}); err != nil {
 		t.Fatalf("MakeBucket: %v", err)
 	}
 	return deriveObjectStoreForTest(t, bucket, "git")
@@ -161,16 +165,23 @@ func newGitObjectStoreForTest(t *testing.T) *gitstore.Store {
 func newObjectByteStoreForTest(t *testing.T) (*gitstore.Store, store.ActionsByteStore) {
 	t.Helper()
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
-	return storedObjects, &store.S3ActionsByteStore{Objects: storedObjects}
+	return storedObjects, &store.ObjectStoreByteStore{Objects: storedObjects}
 }
 
 // deriveObjectStoreForTest opens a store on a named bucket of the shared server,
-// which is how a test reaches a bucket that does not exist.
+// which is how a test reaches a bucket that does not exist. It is opened
+// directly rather than from the environment, because a test holds several at
+// once and the environment names one; the tunables are still the environment's.
 func deriveObjectStoreForTest(t *testing.T, bucket, prefix string) *gitstore.Store {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	opened, err := gitbackend.NewStore(ctx, s3ServerEndpoint, bucket, prefix)
+	opts, err := gitbackend.OptionsFromEnv()
+	if err != nil {
+		t.Fatalf("storage tunables: %v", err)
+	}
+	opts.Region = s3ServerRegion
+	opened, err := gitstore.OpenS3(ctx, s3ServerEndpoint, bucket, prefix, opts)
 	if err != nil {
 		t.Fatalf("open object store: %v", err)
 	}

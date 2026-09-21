@@ -632,7 +632,7 @@ func TestCodeQLDatabaseUpload_ObjectFailurePreservesPreviousDatabase(t *testing.
 	databaseID := int(created["id"].(float64))
 	secondCommit := s.putRepoFile(t, repo.FullName, "second.go", "package main\n", "add second source")
 	secondBundle := testCodeQLDatabaseBundle(t, "go", "replacement dataset")
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: deriveObjectStoreForTest(t, "missing-bucket", storedObjects.Prefix())}
+	s.store.ObjectByteStore = &store.ObjectStoreByteStore{Objects: deriveObjectStoreForTest(t, "missing-bucket", storedObjects.Prefix())}
 
 	resp := s.postCodeQLDatabase(t, defaultToken, repo.FullName, "go", "replacement", secondCommit, "application/zip", secondBundle)
 	body, _ := io.ReadAll(resp.Body)

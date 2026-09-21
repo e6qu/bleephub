@@ -404,7 +404,7 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 func TestReleases_AssetBytesUseObjectStore(t *testing.T) {
 	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
+	s.store.ObjectByteStore = &store.ObjectStoreByteStore{Objects: storedObjects}
 	s.store.Releases.ByteStore = s.store.ObjectByteStore
 	s.registerGHReleasesRoutes()
 

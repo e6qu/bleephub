@@ -309,7 +309,7 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	if deployment.ArtifactKey == "" {
 		t.Fatal("deployment did not retain Pages artifact object key")
 	}
-	if got := readStoredObjectForTest(t, byteStore.(*store.S3ActionsByteStore).Objects, deployment.ArtifactKey); !bytes.Equal(got, artifactBytes) {
+	if got := readStoredObjectForTest(t, byteStore.(*store.ObjectStoreByteStore).Objects, deployment.ArtifactKey); !bytes.Equal(got, artifactBytes) {
 		t.Fatal("published Pages artifact bytes differ from deployment artifact")
 	}
 	for requestPath, want := range map[string]struct {

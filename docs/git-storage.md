@@ -28,7 +28,7 @@ interface (`internal/gitbackend`, `OpenOrInitGitStorage`):
 |---|---|---|
 | In-memory | default (no config) | `gitstore.OpenMemory` — go-git's `memory.NewStorage()` |
 | Local filesystem | `BLEEPHUB_GIT_DIR` set | `gitstore.OpenDir` — go-git's filesystem storage over `<dir>/<owner>/<repo>` |
-| Object store | `BLEEPHUB_S3_BUCKET` set | `gitstore.Store.Repository` — the storage engine (below) |
+| Object store | `BLEEPHUB_GIT_BUCKET` set | `gitstore.Store.Repository` — the storage engine (below) |
 
 The first two are go-git's own storage behind a wrapper (`atomicRefStorer`) that
 makes one handle safe to share between requests and makes a reference update a
@@ -165,7 +165,15 @@ write, a presigned URL and a delete behave, and removes the key.
 does not honour them would otherwise run for weeks, until two replicas were each
 told they had moved a branch; there is nothing to fall back to, so the answer to
 a failed probe is not to serve. The service byte store
-(`BLEEPHUB_OBJECT_S3_BUCKET`) is held to the same probe.
+(`BLEEPHUB_OBJECT_BUCKET`) is held to the same probe.
+
+Which object store that is, the operator states: `BLEEPHUB_OBJECT_STORE` is
+`s3`, `gcs` or `azure`, and `internal/gitbackend` holds the one switch in the
+server that turns the name into a driver (`openBucket`). Above it everything
+holds an `objstore.Bucket`; both the git store and the byte store are
+`gitstore.Open` over a bucket it built. Nothing is detected or defaulted — not
+the driver, not a prefix, not a region — and a setting of a driver that was not
+chosen is an error; the README's **Object store** section lists the variables.
 
 ## Concurrency
 

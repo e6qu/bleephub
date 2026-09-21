@@ -58,7 +58,8 @@ type Options struct {
 	// MultipartBytes is the pack size above which a pack is published through a
 	// multipart upload, and the size of its parts. Zero selects 64 MiB. It
 	// configures the driver OpenS3 builds; a bucket handed to Open was
-	// configured by whoever built it.
+	// configured by whoever built it, who asks UploadPieceBytes what to build it
+	// with.
 	MultipartBytes int64
 
 	// BreakerThreshold is the run of consecutive hard failures that opens the
@@ -77,6 +78,14 @@ const (
 
 // resolved returns o with every zero field replaced by its default and every
 // "off" sentinel normalised to the value the consuming code treats as off.
+// UploadPieceBytes is MultipartBytes with its default applied: the size a driver
+// is to send an upload too large for one request in pieces of — parts on S3,
+// blocks on Azure, chunks on Cloud Storage. It is for whoever builds the bucket
+// they hand to Open, so that the default is this library's and stated once.
+func (o Options) UploadPieceBytes() uint64 {
+	return uint64(o.resolved().MultipartBytes) // #nosec G115 -- resolved() leaves it positive
+}
+
 func (o Options) resolved() Options {
 	if o.Region == "" {
 		o.Region = defaultRegion

@@ -1,7 +1,8 @@
-// Package gitbackend selects and configures bleephub's git storage from the
-// process environment. The gitstore library it configures never reads the
-// environment itself; this is the one place BLEEPHUB_* storage settings are
-// parsed.
+// Package gitbackend selects and configures bleephub's git storage, and the
+// object store its service bytes share with it, from the process environment.
+// The gitstore library it configures never reads the environment itself; this
+// is the one place BLEEPHUB_* storage settings are parsed, and the one place
+// that chooses between object-store drivers (openBucket).
 package gitbackend
 
 import (
@@ -19,6 +20,8 @@ import (
 
 	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/gitstore/objstore"
+	"github.com/e6qu/bleephub/gitstore/objstore/azure"
+	"github.com/e6qu/bleephub/gitstore/objstore/gcs"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
@@ -54,16 +57,16 @@ func GetStore(ctx context.Context) (*gitstore.Store, error) {
 	if StoreCache.Inited {
 		return StoreCache.Store, nil
 	}
-	bucket := os.Getenv("BLEEPHUB_S3_BUCKET")
-	if bucket == "" {
-		StoreCache.Inited = true
-		return nil, nil
-	}
-	opened, err := NewStore(ctx, os.Getenv("BLEEPHUB_S3_ENDPOINT"), bucket, os.Getenv("BLEEPHUB_S3_PREFIX"))
+	settings, err := SettingsFromEnv()
 	if err != nil {
 		return nil, err
 	}
-	if err := Conform(ctx, opened); err != nil {
+	if settings.GitBucket == "" {
+		StoreCache.Inited = true
+		return nil, nil
+	}
+	opened, err := openConforming(ctx, settings, settings.GitBucket, settings.GitPrefix)
+	if err != nil {
 		return nil, err
 	}
 	StoreCache.Store = opened
@@ -71,29 +74,116 @@ func GetStore(ctx context.Context) (*gitstore.Store, error) {
 	return opened, nil
 }
 
-// NewStore opens an object store tuned from the environment.
-func NewStore(ctx context.Context, endpoint, bucket, prefix string) (*gitstore.Store, error) {
-	opts, err := OptionsFromEnv()
+// OpenByteStore opens the store the service's bytes are kept in — artifacts,
+// logs, packages, LFS objects, release assets — or returns nil when they are not
+// in an object store. It is held to the same proof as the git store: a bucket
+// that is missing, refuses this process's credentials or does not keep what it
+// is given is found out here, not by the first artifact upload.
+func OpenByteStore(ctx context.Context) (*gitstore.Store, error) {
+	settings, err := SettingsFromEnv()
 	if err != nil {
 		return nil, err
 	}
-	return gitstore.OpenS3(ctx, endpoint, bucket, prefix, opts)
+	if settings.ObjectBucket == "" {
+		return nil, nil
+	}
+	return openConforming(ctx, settings, settings.ObjectBucket, settings.ObjectPrefix)
 }
 
-// Conform runs the object-store conformance probe under a prefix of its own
-// inside the store's prefix. The probe writes and deletes a single key there.
-func Conform(ctx context.Context, opened *gitstore.Store) error {
+// openConforming opens the store kept under prefix in the named bucket and runs
+// the conformance probe under a prefix of its own inside it. The probe writes
+// and deletes a single key there.
+func openConforming(ctx context.Context, settings Settings, bucketName, prefix string) (*gitstore.Store, error) {
+	bucket, err := openBucket(settings, bucketName)
+	if err != nil {
+		return nil, err
+	}
+	opened := gitstore.Open(bucket, prefix, settings.Options)
 	ctx, cancel := context.WithTimeout(ctx, conformanceTimeout)
 	defer cancel()
-	return objstore.Conform(ctx, opened.Bucket(), path.Join(opened.Prefix(), conformancePrefix)+"/")
+	if err := objstore.Conform(ctx, opened.Bucket(), path.Join(opened.Prefix(), conformancePrefix)+"/"); err != nil {
+		return nil, err
+	}
+	return opened, nil
+}
+
+// openBucket builds the driver the deployment named, for one of its buckets. It
+// is the one place that knows there is more than one kind of object store:
+// everything above it holds an objstore.Bucket, and everything below it is one
+// driver. Only the chosen driver's settings are read, and SettingsFromEnv has
+// already refused a deployment that set another's.
+//
+// BLEEPHUB_GITSTORE_MULTIPART_BYTES is the size an upload too large for one
+// request goes in pieces of, whatever the driver calls a piece. Each driver has
+// a constraint of its own on that size — S3 no part under 5 MiB, Azure no block
+// over 4000 MiB, Cloud Storage a multiple of 256 KiB — and states it in the
+// error returned here.
+func openBucket(settings Settings, bucketName string) (objstore.Bucket, error) {
+	pieceBytes := settings.Options.UploadPieceBytes()
+	var bucket objstore.Bucket
+	var err error
+	switch settings.Driver {
+	case driverS3:
+		bucket, err = objstore.NewS3(bucketName, objstore.S3Options{
+			Endpoint:  settings.Endpoint,
+			Region:    setting(envS3Region),
+			PartBytes: pieceBytes,
+		})
+	case driverAzure:
+		bucket, err = azure.New(bucketName, azure.Options{
+			Endpoint:    settings.Endpoint,
+			AccountName: setting(envAzureAccount),
+			AccountKey:  setting(envAzureKey),
+			BlockBytes:  pieceBytes,
+		})
+	case driverGCS:
+		var credentialsJSON []byte
+		credentialsJSON, err = readCredentialsFile(setting(envGCSCredentialsFile))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", envGCSCredentialsFile, err)
+		}
+		// The tunable was read as an int64, so this holds; it is checked because
+		// Cloud Storage's driver counts in signed bytes and the library's
+		// accessor in unsigned ones.
+		if pieceBytes > math.MaxInt64 {
+			return nil, fmt.Errorf("BLEEPHUB_GITSTORE_MULTIPART_BYTES=%d: too large to be a chunk size", pieceBytes)
+		}
+		bucket, err = gcs.New(bucketName, gcs.Options{
+			Endpoint:        settings.Endpoint,
+			CredentialsJSON: credentialsJSON,
+			ChunkBytes:      int64(pieceBytes),
+		})
+	default:
+		return nil, fmt.Errorf("%s=%q: no such driver", envObjectStore, settings.Driver)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s=%s, bucket %q, uploading in pieces of %d bytes (BLEEPHUB_GITSTORE_MULTIPART_BYTES): %w",
+			envObjectStore, settings.Driver, bucketName, pieceBytes, err)
+	}
+	return bucket, nil
+}
+
+// readCredentialsFile reads the service-account key file the operator named. It
+// is opened through a root on its own directory, so the name reaches the file
+// system as one path element and nothing in it can walk anywhere else.
+func readCredentialsFile(name string) ([]byte, error) {
+	root, err := os.OpenRoot(filepath.Dir(name))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	return root.ReadFile(filepath.Base(name))
 }
 
 func GitDataDir() string {
 	return os.Getenv("BLEEPHUB_GIT_DIR")
 }
 
-func IsS3GitStorage() bool {
-	return os.Getenv("BLEEPHUB_S3_BUCKET") != ""
+// GitStorageIsObjectStore reports whether the deployment keeps its git
+// repositories in an object store, whichever one: naming a bucket for them is
+// what says so.
+func GitStorageIsObjectStore() bool {
+	return setting(envGitBucket) != ""
 }
 
 // OpenOrInitGitStorage opens the repository on whichever backend the
@@ -128,7 +218,9 @@ func openGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, er
 }
 
 // OptionsFromEnv maps the BLEEPHUB_* storage tunables onto the library's
-// options. An unset variable leaves the library's documented default in force.
+// options. They mean the same whichever driver the deployment chose, and how the
+// store is reached is not among them: see openBucket. An unset variable leaves
+// the library's documented default in force.
 // A variable that is set and cannot be read is an error, and the server does not
 // start: an operator who wrote BLEEPHUB_GITSTORE_CACHE_BYTES=8G meant something,
 // and running on the default instead is a decision nobody made. The library
@@ -152,7 +244,6 @@ func OptionsFromEnv() (gitstore.Options, error) {
 	}
 
 	opts := gitstore.Options{
-		Region:            s3Region(),
 		ChunkBytes:        sized("BLEEPHUB_GITSTORE_CHUNK_BYTES"),
 		CacheDir:          packCacheDir(),
 		CacheBytes:        sized("BLEEPHUB_GITSTORE_CACHE_BYTES"),
@@ -170,32 +261,20 @@ func OptionsFromEnv() (gitstore.Options, error) {
 			opts.IndexFreshness = -1
 		}
 	}
-	if threshold, set := count("BLEEPHUB_S3_BREAKER_THRESHOLD"); set {
+	if threshold, set := count("BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD"); set {
 		switch {
 		case threshold == 0:
 			opts.BreakerThreshold = -1
 		case threshold > math.MaxInt32:
-			problems = append(problems, fmt.Errorf("BLEEPHUB_S3_BREAKER_THRESHOLD=%d: too large to be a count of failures", threshold))
+			problems = append(problems, fmt.Errorf("BLEEPHUB_OBJECT_STORE_BREAKER_THRESHOLD=%d: too large to be a count of failures", threshold))
 		default:
 			opts.BreakerThreshold = int(threshold)
 		}
 	}
-	if millis, set := count("BLEEPHUB_S3_BREAKER_COOLDOWN_MS"); set {
+	if millis, set := count("BLEEPHUB_OBJECT_STORE_BREAKER_COOLDOWN_MS"); set {
 		opts.BreakerCooldown = time.Duration(millis) * time.Millisecond
 	}
 	return opts, errors.Join(problems...)
-}
-
-// s3Region selects the AWS region: explicit BLEEPHUB_S3_REGION, then
-// ECS-supplied AWS_REGION, then a local-simulator default.
-func s3Region() string {
-	if region := strings.TrimSpace(os.Getenv("BLEEPHUB_S3_REGION")); region != "" {
-		return region
-	}
-	if region := strings.TrimSpace(os.Getenv("AWS_REGION")); region != "" {
-		return region
-	}
-	return "us-east-1"
 }
 
 func packCacheDir() string {

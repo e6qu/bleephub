@@ -39,10 +39,6 @@ type bleephubRemote struct {
 	exited  chan error
 	output  bytes.Buffer
 	created map[string]bool
-	// objectEndpoint is where the server keeps everything that is not git
-	// (artifacts, logs). It bypasses the meter: that traffic is not git
-	// storage, and no other driver has a counterpart to it.
-	objectEndpoint string
 }
 
 func (d *bleephubRemote) Name() string { return "bleephub" }
@@ -65,7 +61,6 @@ func (d *bleephubRemote) Available() error {
 
 func (d *bleephubRemote) Setup(ctx context.Context, env Env) error {
 	d.env, d.created = env, map[string]bool{}
-	d.objectEndpoint = env.DirectEndpoint
 	dataDir, err := env.tempDir("bleephub-data-*")
 	if err != nil {
 		return err
@@ -120,18 +115,24 @@ func (d *bleephubRemote) start(ctx context.Context) error {
 	d.cmd = exec.Command(d.binary, "-addr", fmt.Sprintf("127.0.0.1:%d", d.port), "-log-level", "warn")
 	d.output.Reset()
 	d.cmd.Stdout, d.cmd.Stderr = &d.output, &d.output
+	// A deployment has one endpoint per driver, which serves the git store and
+	// the byte store (artifacts, logs, packages) alike, so the byte store is
+	// behind the meter too. What it adds to a git benchmark is the conformance
+	// probe it runs when the server starts — the same dozen or so requests the
+	// git store's probe makes — and nothing per git operation: no scenario here
+	// uploads an artifact, a log or a package.
 	d.cmd.Env = append(os.Environ(),
 		"BLEEPHUB_ADMIN_TOKEN="+d.token,
 		"BLEEPHUB_PERSIST=true",
 		"BLEEPHUB_DATA_DIR="+d.dataDir,
 		"BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY="+d.key,
+		"BLEEPHUB_OBJECT_STORE=s3",
 		"BLEEPHUB_S3_ENDPOINT="+d.env.Endpoint,
-		"BLEEPHUB_S3_BUCKET="+d.env.Bucket,
-		"BLEEPHUB_S3_PREFIX="+d.env.Prefix+"/bleephub",
 		"BLEEPHUB_S3_REGION="+d.env.Region,
-		"BLEEPHUB_OBJECT_S3_ENDPOINT="+d.objectEndpoint,
-		"BLEEPHUB_OBJECT_S3_BUCKET="+d.env.Bucket,
-		"BLEEPHUB_OBJECT_S3_PREFIX="+d.env.Prefix+"/bleephub-objects",
+		"BLEEPHUB_GIT_BUCKET="+d.env.Bucket,
+		"BLEEPHUB_GIT_PREFIX="+d.env.Prefix+"/bleephub",
+		"BLEEPHUB_OBJECT_BUCKET="+d.env.Bucket,
+		"BLEEPHUB_OBJECT_PREFIX="+d.env.Prefix+"/bleephub-objects",
 		"BLEEPHUB_GITSTORE_CACHE_DIR="+cacheDir,
 		"AWS_ACCESS_KEY_ID="+d.env.AccessKey,
 		"AWS_SECRET_ACCESS_KEY="+d.env.SecretKey,

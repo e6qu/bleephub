@@ -70,7 +70,7 @@ type ReapReport struct {
 // ReapOrphanObjects performs one reaper pass. It is a no-op unless the object
 // store is S3-backed.
 func (st *Store) ReapOrphanObjects(ctx context.Context, opts ReapOptions) (ReapReport, error) {
-	s3bs, ok := st.ObjectByteStore.(*S3ActionsByteStore)
+	s3bs, ok := st.ObjectByteStore.(*ObjectStoreByteStore)
 	if !ok || s3bs == nil {
 		return ReapReport{ObjectBacked: false}, nil
 	}

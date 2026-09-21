@@ -1451,7 +1451,7 @@ func (st *Store) repoDeletionIntentLocked(repo *Repo) PendingDeletion {
 // path. An in-memory storer does not, so it survives a rename in place while a
 // path-bound one must be reopened.
 func repoGitStorageIsPathBound() bool {
-	return gitbackend.GitDataDir() != "" || gitbackend.IsS3GitStorage()
+	return gitbackend.GitDataDir() != "" || gitbackend.GitStorageIsObjectStore()
 }
 
 // moveRepoGitStorage moves a repo's git bytes and its wiki's; the wiki lives at
@@ -1489,7 +1489,7 @@ func moveOneGitStoragePrefix(oldFull, newFull string) error {
 			return fmt.Errorf("move git directory %s -> %s: %w", oldDir, newDir, err)
 		}
 	}
-	if !gitbackend.IsS3GitStorage() {
+	if !gitbackend.GitStorageIsObjectStore() {
 		return nil
 	}
 	objectStore, err := gitbackend.GetStore(context.Background())
@@ -1526,7 +1526,7 @@ func deleteOneGitStoragePrefix(fullName string) error {
 			return fmt.Errorf("remove filesystem git directory %s: %w", repoDir, err)
 		}
 	}
-	if !gitbackend.IsS3GitStorage() {
+	if !gitbackend.GitStorageIsObjectStore() {
 		return nil
 	}
 	objectStore, err := gitbackend.GetStore(context.Background())
@@ -1549,7 +1549,7 @@ func (st *Store) renameNeedsSlowMove() bool {
 	if st.RepoPrefixCopy != nil {
 		return true
 	}
-	return gitbackend.IsS3GitStorage() && gitbackend.GitDataDir() == ""
+	return gitbackend.GitStorageIsObjectStore() && gitbackend.GitDataDir() == ""
 }
 
 // copyRepoPrefixBytes/deleteRepoPrefixBytes run the slow object-store prefix
@@ -2328,7 +2328,7 @@ func (st *Store) GitStorageForRepoID(repoID int) (gitStorage.Storer, string) {
 // RepoSize returns the git storage size in kilobytes (GitHub's `size` unit).
 // In-memory and S3-backed storage report 0 (S3 until a list-objects sum lands).
 func (st *Store) RepoSize(fullName string) int64 {
-	if gitbackend.IsS3GitStorage() {
+	if gitbackend.GitStorageIsObjectStore() {
 		return 0
 	}
 	gitDir := gitbackend.GitDataDir()

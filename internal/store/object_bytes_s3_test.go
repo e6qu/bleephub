@@ -16,13 +16,13 @@ import (
 
 // newFakeS3ByteStore returns the object-store byte store on an in-process
 // object store, and that store so a test can reach under the byte store.
-func newFakeS3ByteStore(t *testing.T) (*S3ActionsByteStore, *s3fake.Server) {
+func newFakeS3ByteStore(t *testing.T) (*ObjectStoreByteStore, *s3fake.Server) {
 	t.Helper()
 	fake := s3fake.New()
 	t.Cleanup(fake.Close)
 	bucket := objstore.NewS3WithClient(fake.Client().Client, "bleephub-test", 0)
 	objects := gitstore.Open(bucket, "objects", gitstore.Options{CacheDir: t.TempDir()})
-	return &S3ActionsByteStore{Objects: objects}, fake
+	return &ObjectStoreByteStore{Objects: objects}, fake
 }
 
 // TestS3ByteStoreReturnsWhatEachWritePathStored covers the three ways bytes
