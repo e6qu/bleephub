@@ -7,6 +7,7 @@ import (
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -128,7 +129,7 @@ func pushCommitPayloads(stor gitStorage.Storer, before, after plumbing.Hash, rep
 	out := make([]map[string]interface{}, 0, len(commits))
 	for i := len(commits) - 1; i >= 0; i-- {
 		commit := commits[i]
-		added, removed, modified := commitFileChanges(commit)
+		added, removed, modified := commitFileChanges(stor, commit)
 		out = append(out, map[string]interface{}{
 			"id":        commit.Hash.String(),
 			"tree_id":   commit.TreeHash.String(),
@@ -156,43 +157,113 @@ func pushCommitPayloads(stor gitStorage.Storer, before, after plumbing.Hash, rep
 
 // commitFileChanges diffs a commit against its first parent for a push event's
 // per-commit added/removed/modified paths, which consumers (CI path filters,
-// deploy bots) branch on. A root commit reports every file as added.
-func commitFileChanges(commit *object.Commit) (added, removed, modified []string) {
-	added, removed, modified = []string{}, []string{}, []string{}
-	commitTree, err := commit.Tree()
+// deploy bots) branch on. A root commit reports every file as added. Only trees
+// are read, and a subtree whose id did not change is not read at all: a push
+// payload lists the changes of up to 2,048 commits, and listing a path needs
+// neither its content nor the parts of the tree nobody touched.
+func commitFileChanges(stor storer.EncodedObjectStorer, commit *object.Commit) (added, removed, modified []string) {
+	var parentTree plumbing.Hash
+	if commit.NumParents() > 0 {
+		parent, err := object.GetCommit(stor, commit.ParentHashes[0])
+		if err != nil {
+			return []string{}, []string{}, []string{}
+		}
+		parentTree = parent.TreeHash
+	}
+	changes := &treeChanges{stor: stor, added: []string{}, removed: []string{}, modified: []string{}}
+	if err := changes.diff(parentTree, commit.TreeHash, ""); err != nil {
+		return []string{}, []string{}, []string{}
+	}
+	return changes.added, changes.removed, changes.modified
+}
+
+// treeChanges collects the paths that differ between two trees.
+type treeChanges struct {
+	stor                     storer.EncodedObjectStorer
+	added, removed, modified []string
+}
+
+// entries reads a tree's entries; the zero id is the empty tree.
+func (c *treeChanges) entries(tree plumbing.Hash) ([]object.TreeEntry, error) {
+	if tree.IsZero() {
+		return nil, nil
+	}
+	read, err := object.GetTree(c.stor, tree)
 	if err != nil {
-		return
+		return nil, err
 	}
-	if commit.NumParents() == 0 {
-		_ = commitTree.Files().ForEach(func(f *object.File) error {
-			added = append(added, f.Name)
-			return nil
-		})
-		return
+	return read.Entries, nil
+}
+
+// diff records what changed from the tree from to the tree to, both under
+// prefix.
+func (c *treeChanges) diff(from, to plumbing.Hash, prefix string) error {
+	if from == to {
+		return nil
 	}
-	parent, err := commit.Parent(0)
+	before, err := c.entries(from)
 	if err != nil {
-		return
+		return err
 	}
-	parentTree, err := parent.Tree()
+	after, err := c.entries(to)
 	if err != nil {
-		return
+		return err
 	}
-	changes, err := object.DiffTree(parentTree, commitTree)
-	if err != nil {
-		return
+	previous := make(map[string]object.TreeEntry, len(before))
+	for _, entry := range before {
+		previous[entry.Name] = entry
 	}
-	for _, c := range changes {
+	for _, entry := range after {
+		old, existed := previous[entry.Name]
+		delete(previous, entry.Name)
+		path := prefix + entry.Name
+		isTree, wasTree := entry.Mode == filemode.Dir, old.Mode == filemode.Dir
 		switch {
-		case c.From.Name == "":
-			added = append(added, c.To.Name)
-		case c.To.Name == "":
-			removed = append(removed, c.From.Name)
+		case !existed:
+			err = c.all(entry, path, &c.added)
+		case old.Hash == entry.Hash && old.Mode == entry.Mode:
+		case isTree && wasTree:
+			err = c.diff(old.Hash, entry.Hash, path+"/")
+		case !isTree && !wasTree:
+			c.modified = append(c.modified, path)
 		default:
-			modified = append(modified, c.To.Name)
+			// A file became a directory or the other way round: what was
+			// there went, and what is there came.
+			if err = c.all(old, path, &c.removed); err == nil {
+				err = c.all(entry, path, &c.added)
+			}
+		}
+		if err != nil {
+			return err
 		}
 	}
-	return
+	for _, entry := range before {
+		if _, gone := previous[entry.Name]; gone {
+			if err := c.all(entry, prefix+entry.Name, &c.removed); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// all appends to paths the entry at path, or every path under it if it is a
+// directory.
+func (c *treeChanges) all(entry object.TreeEntry, path string, paths *[]string) error {
+	if entry.Mode != filemode.Dir {
+		*paths = append(*paths, path)
+		return nil
+	}
+	entries, err := c.entries(entry.Hash)
+	if err != nil {
+		return err
+	}
+	for _, child := range entries {
+		if err := c.all(child, path+"/"+child.Name, paths); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func coalesceUserLogin(user *store.User) string {

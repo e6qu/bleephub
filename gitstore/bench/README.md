@@ -287,13 +287,13 @@ longer does, and what is left is each server's own work.
 
 | Scenario | bleephub | walgit | git, local disk |
 |---|---|---|---|
-| `push-initial` | 3.49 s, 6 requests | **0.77 s**, 11 | 0.61 s |
-| `replica-start` | **0.21 s**, 27 | 2.42 s, 17 | — |
-| `clone-cold` | 0.95 s, 10 | **0.67 s**, 14 | 0.67 s |
-| `clone-warm` | **0.66 s**, 1 | 0.73 s, 5 | 0.66 s |
-| `push-incremental` (20 pushes) | **1.72 s**, 91 | 1.89 s, 140 | 1.51 s |
-| `fetch-incremental` | 0.34 s, 7 | **0.28 s**, 4 | 0.29 s |
-| `clone-parallel` (4 clones) | 1.30 s, 22 | **1.09 s**, 26 | 1.14 s |
+| `push-initial` | 1.81 s, 6 requests | **0.80 s**, 12 | 0.61 s |
+| `replica-start` | **0.22 s**, 27 | 2.31 s, 17 | — |
+| `clone-cold` | 0.96 s, 10 | **0.68 s**, 14 | 0.66 s |
+| `clone-warm` | **0.66 s**, 1 | 0.74 s, 5 | 0.68 s |
+| `push-incremental` (20 pushes) | **1.59 s**, 89 | 1.92 s, 140 | 1.48 s |
+| `fetch-incremental` | 0.37 s, 7 | **0.26 s**, 4 | 0.27 s |
+| `clone-parallel` (4 clones) | 1.41 s, 22 | **1.09 s**, 26 | 1.25 s |
 
 A clone here is mostly the client's: stock git cloning from the same machine's
 disk takes as long as a warm clone from bleephub, since what both wait on is
@@ -321,12 +321,20 @@ pushed bytes are kept. On a 90 MB pack of this repository's history the two
 passes take 1.9 s where go-git's parser took 3.4 s, and produce the same index,
 object for object; a large object stored whole is never read a second time.
 
+The third found the first push of a branch waiting on its webhook payload.
+GitHub's push event lists the added, removed and modified paths of up to 2,048
+commits, and they were computed with go-git's tree diff, which for the root
+commit read every one of the 20,000 blobs to learn their names and for the rest
+went through its generic merkle-trie comparison: 1.1 s of the push. They are now
+read from trees alone, skipping every subtree whose id did not change, and
+checked against go-git's diff path for path; the first push went from 3.4 s to
+1.8 s, and twenty pushes to what stock git takes.
+
 What is left, from a CPU profile of the server:
 
-- **A first push** computes the per-commit file lists its webhook payload
-  carries — GitHub's push event lists the added, removed and modified paths of
-  up to 2,048 commits — and scans the whole new tree for secrets. The file lists
-  alone were 1.6 s of server CPU in the profile: real work, done once per branch.
+- **A first push scans the whole new tree for secrets**, reading every blob: the
+  largest part of what the server does for it (0.37 s of CPU here), and real
+  work — a new branch's content has not been scanned before.
 - **A clone walks every tree in history** to learn what to send, about 0.17 s of
   server CPU per clone in the profile. It is not what a clone waits on: the
   client needs 0.6 s to index what it receives. Remembering the walk per tip was
