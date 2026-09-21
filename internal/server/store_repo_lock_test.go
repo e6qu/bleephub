@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
 	gitStorage "github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 func TestRepositoryStorageInitializationDoesNotHoldStoreLock(t *testing.T) {
@@ -16,10 +16,10 @@ func TestRepositoryStorageInitializationDoesNotHoldStoreLock(t *testing.T) {
 	owner := st.UsersByLogin["admin"]
 	started := make(chan struct{})
 	release := make(chan struct{})
-	st.RepoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
+	st.RepoStorageOpen = func(_ context.Context, fullName string) (gitStorage.Storer, error) {
 		close(started)
 		<-release
-		return memory.NewStorage(), nil
+		return gitstore.OpenMemory(fullName)
 	}
 
 	created := make(chan *store.Repo, 1)
@@ -56,10 +56,10 @@ func TestRepositoryForkCopyDoesNotHoldStoreLock(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	st.RepoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
+	st.RepoStorageOpen = func(_ context.Context, fullName string) (gitStorage.Storer, error) {
 		close(started)
 		<-release
-		return memory.NewStorage(), nil
+		return gitstore.OpenMemory(fullName)
 	}
 
 	created := make(chan *store.Repo, 1)
