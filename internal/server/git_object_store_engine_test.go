@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/gitstore/objstore"
@@ -211,4 +214,66 @@ func packKeysInBucket(t *testing.T) int {
 		t.Fatalf("list: %v", err)
 	}
 	return packs
+}
+
+// TestAnObjectTheAPINamesIsInTheStoreWhenItIsNamed pins the durability point of
+// a write that moves no reference. An object written through the git database
+// API is held by the replica that wrote it until something packs it, and the
+// response names it by id — which another client may take to another replica.
+// So the replica that answered must have made it durable first: a store opened
+// afresh on the same bucket, with nothing held in memory, reads it at once.
+func TestAnObjectTheAPINamesIsInTheStoreWhenItIsNamed(t *testing.T) {
+	srv := newFakeObjectStoreGitServerForTest(t, "s3")
+	const name = "named-objects"
+	seedGitShallowRepo(t, srv.Server, name)
+
+	content := "written through the API, and named in the answer\n"
+	body, err := json.Marshal(map[string]string{"content": content})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := doMiscReq(srv.Server, http.MethodPost, "/api/v3/repos/admin/"+name+"/git/blobs", string(body))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create blob: %d %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	// Another replica: the same bucket through a store that has held nothing.
+	gitbackend.StoreCache.Mu.Lock()
+	serving := gitbackend.StoreCache.Store
+	gitbackend.StoreCache.Store, gitbackend.StoreCache.Inited = nil, false
+	gitbackend.StoreCache.Mu.Unlock()
+	t.Cleanup(func() {
+		gitbackend.StoreCache.Mu.Lock()
+		gitbackend.StoreCache.Store, gitbackend.StoreCache.Inited = serving, true
+		gitbackend.StoreCache.Mu.Unlock()
+	})
+	other, err := gitbackend.GetStore(context.Background())
+	if err != nil || other == nil || other == serving {
+		t.Fatalf("premise: no second store over the bucket (%v)", err)
+	}
+	stor, err := other.Repository("admin/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := object.GetBlob(stor, plumbing.NewHash(created.SHA))
+	if err != nil {
+		t.Fatalf("another replica cannot read the blob the API named: %v", err)
+	}
+	reader, err := blob.Reader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := io.ReadAll(reader)
+	if closeErr := reader.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil || string(read) != content {
+		t.Fatalf("another replica read %q (%v), want %q", read, err, content)
+	}
 }

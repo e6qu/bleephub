@@ -55,23 +55,32 @@ func readObjects(t *testing.T, stor *repository, hashes []plumbing.Hash) map[plu
 	return out
 }
 
-// TestCompactionPreservesEveryObject asserts the pack tier returns every object
-// byte-for-byte, read through a storer that has never seen the loose form.
+// TestCompactionPreservesEveryObject asserts a merge returns every object
+// byte-for-byte, read through a storer that has never seen the packs merged.
 func TestCompactionPreservesEveryObject(t *testing.T) {
 	fake := newFakeS3(t)
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 300)
+	hashes = append(hashes, flushedBlobs(t, stor, "second", 150)...)
+	hashes = append(hashes, flushedBlobs(t, stor, "third", 150)...)
 	want := readObjects(t, stor, hashes)
+	if live := len(storedManifest(t, fake).Packs); live != 3 {
+		t.Fatalf("premise: the repository holds %d packs, want 3 to merge", live)
+	}
 
 	result, err := CompactRepository(context.Background(), stor)
 	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	if result.Packed != len(hashes) {
-		t.Fatalf("packed %d of %d objects", result.Packed, len(hashes))
+	if result.Merged != len(hashes) || result.PackName == "" {
+		t.Fatalf("merged %d of %d objects into %q", result.Merged, len(hashes), result.PackName)
 	}
-	if remaining := looseKeyCount(fake); remaining != 0 {
-		t.Fatalf("%d loose object keys survived compaction", remaining)
+	if live := storedManifest(t, fake).Packs; len(live) != 1 || live[0].Name != result.PackName {
+		t.Fatalf("after the merge the manifest names %+v, want the one merged pack", live)
+	}
+	if loose := looseLayoutKeys(fake); len(loose) != 0 {
+		t.Fatalf("the store holds loose objects: %v", loose)
 	}
 
 	fresh := testPackedStorage(t, fake)
@@ -88,8 +97,8 @@ func TestCompactionPreservesEveryObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reference after compaction: %v", err)
 	}
-	if ref.Hash() != hashes[len(hashes)-1] {
-		t.Fatalf("reference points at %s, want %s", ref.Hash(), hashes[len(hashes)-1])
+	if ref.Hash() != hashes[301] {
+		t.Fatalf("reference points at %s, want %s", ref.Hash(), hashes[301])
 	}
 	for _, hash := range hashes {
 		if err := fresh.HasEncodedObject(hash); err != nil {
@@ -98,25 +107,57 @@ func TestCompactionPreservesEveryObject(t *testing.T) {
 	}
 }
 
-func looseKeyCount(fake *fakeS3) int {
-	prefix := "prefix/" + testRepo + "/objects/"
-	count := 0
-	for _, key := range fake.KeysWithPrefix(prefix) {
-		if !strings.HasPrefix(key, prefix+"pack/") {
-			count++
+// looseLayoutKeys returns every key of the test repository where the earlier
+// layouts kept a loose object, objects/XX/ and 38 hex digits. The engine writes
+// none: every object it stores is in a pack.
+func looseLayoutKeys(fake *fakeS3) []string {
+	prefix := "prefix/" + testRepo + "/"
+	var loose []string
+	for _, key := range fake.KeysWithPrefix(prefix + "objects/") {
+		if isLooseObjectKey(strings.TrimPrefix(key, prefix)) {
+			loose = append(loose, key)
 		}
 	}
-	return count
+	return loose
+}
+
+// flushedBlobs writes n blobs through SetEncodedObject and flushes them, which
+// lands them as one pack of their own.
+func flushedBlobs(t *testing.T, stor *repository, label string, n int) []plumbing.Hash {
+	t.Helper()
+	hashes := make([]plumbing.Hash, 0, n)
+	for i := range n {
+		hashes = append(hashes, writeBlob(t, stor, fmt.Sprintf("%s object %d\n%s", label, i, blobBody(i))))
+	}
+	if err := stor.FlushObjects(); err != nil {
+		t.Fatalf("flush %s: %v", label, err)
+	}
+	return hashes
+}
+
+// livePackNames is the set of packs the stored manifest names as live.
+func livePackNames(t *testing.T, fake *fakeS3) map[string]bool {
+	t.Helper()
+	names := map[string]bool{}
+	for _, pack := range storedManifest(t, fake).Packs {
+		names[pack.Name] = true
+	}
+	return names
 }
 
 // TestCompactionCrashBeforeThePackIsPublishedLosesNothing interrupts compaction
-// with the index and filter stored but the .pack key absent; the repository must
-// still read entirely from loose objects and a retry must succeed.
+// with the sidecar stored but the .pack upload failed. The manifest must still
+// name the packs that were to be merged, every object must read from them, and
+// a retry must succeed.
 func TestCompactionCrashBeforeThePackIsPublishedLosesNothing(t *testing.T) {
 	fake := newFakeS3(t)
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
+	hashes = append(hashes, flushedBlobs(t, stor, "second", 100)...)
 	want := readObjects(t, stor, hashes)
+	liveBefore := livePackNames(t, fake)
+	sidecarsBefore := len(packKeys(fake, sidecarSuffix))
 
 	fake.SetFailOn(func(method, key string) bool {
 		return method == "PUT" && strings.HasSuffix(key, ".pack")
@@ -126,16 +167,14 @@ func TestCompactionCrashBeforeThePackIsPublishedLosesNothing(t *testing.T) {
 	}
 	fake.SetFailOn(nil)
 
-	if looseKeyCount(fake) != len(hashes) {
-		t.Fatalf("a compaction that never published its pack removed loose objects: %d of %d remain",
-			looseKeyCount(fake), len(hashes))
+	if len(packKeys(fake, sidecarSuffix)) == sidecarsBefore {
+		t.Fatal("the test did not reach the state it is about: no sidecar was uploaded")
 	}
-	packs := packKeys(fake, ".pack")
-	if len(packs) != 0 {
+	if packs := packKeys(fake, ".pack"); len(packs) != len(liveBefore) {
 		t.Fatalf("a packfile became visible although its upload failed: %v", packs)
 	}
-	if len(packKeys(fake, ".idx")) == 0 {
-		t.Fatal("the test did not reach the state it is about: no index was uploaded")
+	if live := livePackNames(t, fake); len(live) != len(liveBefore) {
+		t.Fatalf("a compaction that never published its pack changed the live packs: %v, was %v", live, liveBefore)
 	}
 
 	fresh := testPackedStorage(t, fake)
@@ -147,8 +186,8 @@ func TestCompactionCrashBeforeThePackIsPublishedLosesNothing(t *testing.T) {
 	}
 
 	retry := testPackedStorage(t, fake)
-	if _, err := CompactRepository(context.Background(), retry); err != nil {
-		t.Fatalf("retry after an interrupted compaction: %v", err)
+	if result, err := CompactRepository(context.Background(), retry); err != nil || result.PackName == "" {
+		t.Fatalf("retry after an interrupted compaction: %+v, %v", result, err)
 	}
 	after := testPackedStorage(t, fake)
 	got = readObjects(t, after, hashes)
@@ -159,44 +198,49 @@ func TestCompactionCrashBeforeThePackIsPublishedLosesNothing(t *testing.T) {
 	}
 }
 
-// TestCompactionCrashDuringLooseDeletionLosesNothing interrupts after the pack
-// is published with the loose keys only partly deleted; both copies stay
-// readable and the objects must come back unchanged.
-func TestCompactionCrashDuringLooseDeletionLosesNothing(t *testing.T) {
+// TestCompactionWhoseCommitFailsLosesNothing interrupts after the merged pack
+// and its sidecar are uploaded, at the one write that would make them the
+// repository's: the manifest swap. Nothing may change for a reader — the packs
+// that were to be merged stay live — and a retry, which uploads the same
+// content-named pack again, must succeed.
+func TestCompactionWhoseCommitFailsLosesNothing(t *testing.T) {
 	fake := newFakeS3(t)
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
+	hashes = append(hashes, flushedBlobs(t, stor, "second", 100)...)
 	want := readObjects(t, stor, hashes)
+	liveBefore := livePackNames(t, fake)
 
-	fake.SetFailOn(func(method, key string) bool { return method == "POST" && key == "" })
+	fake.SetFailOn(func(method, key string) bool { return method == "PUT" && key == manifestKey })
 	if _, err := CompactRepository(context.Background(), stor); err == nil {
-		t.Fatal("compaction reported success although the loose deletion failed")
+		t.Fatal("compaction reported success although its commit failed")
 	}
 	fake.SetFailOn(nil)
 
-	if len(packKeys(fake, ".pack")) != 1 {
-		t.Fatalf("expected the packfile to be published before deletion was attempted, found %v",
-			packKeys(fake, ".pack"))
+	if packs := packKeys(fake, ".pack"); len(packs) != len(liveBefore)+1 {
+		t.Fatalf("premise: the merged pack was not uploaded before the commit: %v", packs)
 	}
-	if looseKeyCount(fake) != len(hashes) {
-		t.Fatal("loose objects disappeared although their deletion failed")
+	if live := livePackNames(t, fake); len(live) != len(liveBefore) {
+		t.Fatalf("a compaction whose commit failed changed the live packs: %v, was %v", live, liveBefore)
 	}
-
 	fresh := testPackedStorage(t, fake)
 	got := readObjects(t, fresh, hashes)
 	for hash, body := range want {
 		if got[hash] != body {
-			t.Fatalf("object %s changed when both copies existed", hash)
+			t.Fatalf("object %s changed when the commit failed", hash)
 		}
 	}
 
 	retry := testPackedStorage(t, fake)
-	if _, err := CompactRepository(context.Background(), retry); err != nil {
-		t.Fatalf("retry after an interrupted deletion: %v", err)
+	result, err := CompactRepository(context.Background(), retry)
+	if err != nil || result.PackName == "" {
+		t.Fatalf("retry after a failed commit: %+v, %v", result, err)
 	}
-	if looseKeyCount(fake) != 0 {
-		t.Fatalf("%d loose keys survived the retried compaction", looseKeyCount(fake))
+	if live := livePackNames(t, fake); len(live) != 1 || !live[result.PackName] {
+		t.Fatalf("after the retry the manifest names %v, want only %s", live, result.PackName)
 	}
+	readObjects(t, testPackedStorage(t, fake), hashes)
 }
 
 func packKeys(fake *fakeS3, extension string) []string {
@@ -207,48 +251,6 @@ func packKeys(fake *fakeS3, extension string) []string {
 		}
 	}
 	return out
-}
-
-// TestCompactionDeletesOnlyWhatItPacked is the invariant that makes a push
-// concurrent with a compaction safe. Objects written after the compaction took
-// its listing are not in the pack, so they must still be loose afterwards.
-func TestCompactionDeletesOnlyWhatItPacked(t *testing.T) {
-	fake := newFakeS3(t)
-	stor := testPackedStorage(t, fake)
-	hashes := seedObjects(t, stor, 200)
-
-	// Reproduce a push landing between the listing and the deletion without
-	// interleaving goroutines: the second compaction lists a superset and must
-	// still leave nothing behind.
-	late := writeBlob(t, stor, "written after the compaction listing")
-	result, err := CompactRepository(context.Background(), stor)
-	if err != nil {
-		t.Fatalf("compact: %v", err)
-	}
-	if result.Packed != len(hashes)+1 {
-		t.Fatalf("packed %d objects, want %d", result.Packed, len(hashes)+1)
-	}
-
-	fresh := testPackedStorage(t, fake)
-	if err := fresh.HasEncodedObject(late); err != nil {
-		t.Fatalf("object pushed alongside a compaction was lost: %v", err)
-	}
-
-	// Now the real shape: a loose object that no compaction has listed must
-	// survive one that runs after it.
-	later := writeBlob(t, fresh, "written after the pack was published")
-	if _, err := CompactRepository(context.Background(), fresh); err != nil {
-		t.Fatalf("second compact: %v", err)
-	}
-	after := testPackedStorage(t, fake)
-	if err := after.HasEncodedObject(later); err != nil {
-		t.Fatalf("object written between compactions was lost: %v", err)
-	}
-}
-
-func looseKeyOf(hash plumbing.Hash) string {
-	text := hash.String()
-	return "prefix/" + testRepo + "/objects/" + text[:2] + "/" + text[2:]
 }
 
 func writeBlob(t *testing.T, stor *repository, body string) plumbing.Hash {
@@ -273,53 +275,16 @@ func writeBlob(t *testing.T, stor *repository, body string) plumbing.Hash {
 	return hash
 }
 
-// TestCompactionToleratesAnObjectAnotherReplicaAlreadyPacked: this replica lists
-// a loose key that another replica packs and deletes before this one reads it;
-// compaction must complete and must not delete a key it did not pack.
-func TestCompactionToleratesAnObjectAnotherReplicaAlreadyPacked(t *testing.T) {
-	fake := newFakeS3(t)
-	stor := testPackedStorage(t, fake)
-	hashes := seedObjects(t, stor, 200)
-
-	// The other replica deletes the loose key after this one listed it and while
-	// it reads objects into its pack — an interleaving a pre-build probe misses.
-	vanished := hashes[7]
-	vanishedKey := looseKeyOf(vanished)
-	var once sync.Once
-	fake.SetOnRequest(func(method, key string) {
-		if method != "GET" || key == vanishedKey || !strings.Contains(key, "/objects/") {
-			return
-		}
-		once.Do(func() { fake.Remove(vanishedKey) })
-	})
-
-	result, err := CompactRepository(context.Background(), stor)
-	fake.SetOnRequest(nil)
-	if err != nil {
-		t.Fatalf("compaction failed on an object another replica had already packed: %v", err)
-	}
-	if result.Packed != len(hashes)-1 {
-		t.Fatalf("packed %d objects, want %d", result.Packed, len(hashes)-1)
-	}
-
-	fresh := testPackedStorage(t, fake)
-	for _, hash := range hashes {
-		if hash == vanished {
-			continue
-		}
-		if err := fresh.HasEncodedObject(hash); err != nil {
-			t.Fatalf("object %s lost: %v", hash, err)
-		}
-	}
-}
-
 // TestConcurrentCompactionAndWritesLoseNothing runs compaction against live
 // writers on the same repository handle, which is the shape a scheduled
-// compaction and an ongoing push have.
+// compaction and an ongoing stream of API writes have: the writes flush packs
+// while the compaction merges others.
 func TestConcurrentCompactionAndWritesLoseNothing(t *testing.T) {
 	fake := newFakeS3(t)
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	seeded := seedObjects(t, stor, 150)
+	seeded = append(seeded, flushedBlobs(t, stor, "second", 150)...)
 
 	var mu sync.Mutex
 	written := append([]plumbing.Hash(nil), seeded...)
@@ -333,6 +298,12 @@ func TestConcurrentCompactionAndWritesLoseNothing(t *testing.T) {
 			mu.Lock()
 			written = append(written, hash)
 			mu.Unlock()
+			if i%20 == 19 {
+				if err := stor.FlushObjects(); err != nil {
+					t.Errorf("flush during compaction: %v", err)
+					return
+				}
+			}
 		}
 	}()
 	var compactErr error
@@ -343,6 +314,9 @@ func TestConcurrentCompactionAndWritesLoseNothing(t *testing.T) {
 	group.Wait()
 	if compactErr != nil {
 		t.Fatalf("compaction during writes: %v", compactErr)
+	}
+	if err := stor.FlushObjects(); err != nil {
+		t.Fatalf("flush: %v", err)
 	}
 
 	fresh := testPackedStorage(t, fake)
@@ -355,21 +329,20 @@ func TestConcurrentCompactionAndWritesLoseNothing(t *testing.T) {
 	}
 }
 
-// TestCompactionMergesPacksOnceTheyAccumulate: a repository compacted many times
-// must fold its packs together rather than grow an index per push, and every
-// object must survive the fold.
+// TestCompactionMergesPacksOnceTheyAccumulate: a repository written to many
+// times must fold its packs together rather than keep an index per write, and
+// every object must survive the fold.
 func TestCompactionMergesPacksOnceTheyAccumulate(t *testing.T) {
 	fake := newFakeS3(t)
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 
 	var all []plumbing.Hash
-	for round := range compactionMergeThreshold + 1 {
-		for i := range compactionMinLooseObjects + 1 {
-			all = append(all, writeBlob(t, stor, "round "+strings.Repeat("r", round)+" object "+strings.Repeat("o", i)))
-		}
-		if _, err := CompactRepository(context.Background(), stor); err != nil {
-			t.Fatalf("compact round %d: %v", round, err)
-		}
+	for round := range 5 {
+		all = append(all, flushedBlobs(t, stor, "round "+strings.Repeat("r", round), 20)...)
+	}
+	if live := len(storedManifest(t, fake).Packs); live != 5 {
+		t.Fatalf("premise: five flushes left %d packs", live)
 	}
 
 	result, err := CompactRepository(context.Background(), stor)
@@ -377,7 +350,7 @@ func TestCompactionMergesPacksOnceTheyAccumulate(t *testing.T) {
 		t.Fatalf("merging compaction: %v", err)
 	}
 	if result.Merged == 0 {
-		t.Fatalf("a repository with more than %d packs did not merge them", compactionMergeThreshold)
+		t.Fatal("a repository of five packs of a size did not merge them")
 	}
 
 	fresh := testPackedStorage(t, fake)
@@ -394,25 +367,32 @@ func TestCompactionMergesPacksOnceTheyAccumulate(t *testing.T) {
 		t.Fatal("merged packs were not retired")
 	}
 	for _, pack := range retired {
-		if _, ok := fake.Get("prefix/" + testRepo + "/objects/pack/" + pack.Name + ".pack"); !ok {
-			t.Fatalf("retired pack %s was deleted immediately instead of aging out", pack.Name)
+		for _, suffix := range packKeySuffixes {
+			if _, ok := fake.Get("prefix/" + testRepo + "/objects/pack/" + pack.Name + suffix); !ok {
+				t.Fatalf("retired pack %s lost its %s at once instead of aging out", pack.Name, suffix)
+			}
 		}
 	}
 }
 
-// TestCompactionSkipsRepositoriesWithLittleToGain pins that a handful of loose
-// objects is left alone, since publishing a pack costs three uploads.
-func TestCompactionSkipsRepositoriesWithLittleToGain(t *testing.T) {
+// TestCompactionLeavesAGeometricRepositoryAlone pins that a compaction with
+// nothing to merge — one pack, which would only be rewritten into itself —
+// writes nothing: publishing a pack costs two uploads and a swap.
+func TestCompactionLeavesAGeometricRepositoryAlone(t *testing.T) {
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	seedObjects(t, stor, 4)
 
+	before := fake.Snapshot()
 	result, err := CompactRepository(context.Background(), stor)
 	if err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	if result.PackName != "" {
-		t.Fatalf("a repository with six objects was packed into %s", result.PackName)
+	if result.PackName != "" || result.Merged != 0 {
+		t.Fatalf("a repository of one pack was merged into %s", result.PackName)
+	}
+	if spent := fake.Snapshot().Sub(before); spent.Put != 0 || spent.Delete != 0 {
+		t.Fatalf("a compaction with nothing to do wrote to the store: %s", spent)
 	}
 }
 
@@ -432,34 +412,53 @@ func TestCompactRepositoryIgnoresStorageWithoutAPackTier(t *testing.T) {
 		if err != nil {
 			t.Fatalf("compact: %v", err)
 		}
-		if result.PackName != "" || result.Packed != 0 {
+		if result.PackName != "" || result.Merged != 0 {
 			t.Fatalf("non-object-store storage reported a compaction: %+v", result)
 		}
 	}
 }
 
 // TestCompactionSurfacesAnObjectStoreOutage pins that a compaction that could
-// not read the object store fails loudly rather than publishing a pack that is
-// missing whatever it could not read.
+// not read the packs it merges fails loudly rather than publishing a pack that
+// is missing whatever it could not read, and changes nothing.
 func TestCompactionSurfacesAnObjectStoreOutage(t *testing.T) {
 	fake := newFakeS3(t)
-	stor := testPackedStorage(t, fake)
-	hashes := seedObjects(t, stor, 200)
+	fake.opts.CompactAfterPacks = -1
+	writer := testPackedStorage(t, fake)
+	hashes := seedObjects(t, writer, 200)
+	hashes = append(hashes, flushedBlobs(t, writer, "second", 100)...)
+	liveBefore := livePackNames(t, fake)
 
+	// A replica with a disk of its own, so that the packs are read from the
+	// store and not from the cache the writer seeded.
+	apart := newFakeS3(t)
+	apart.Server = fake.Server
+	apart.opts.CompactAfterPacks = -1
+	stor := testPackedStorage(t, apart)
+
+	var failed atomic.Int64
 	fake.SetFailOn(func(method, key string) bool {
-		return method == "GET" && strings.Contains(key, "/objects/") && !strings.Contains(key, "/pack/")
+		if method == "GET" && strings.Contains(key, "/objects/pack/") {
+			failed.Add(1)
+			return true
+		}
+		return false
 	})
 	_, err := CompactRepository(context.Background(), stor)
 	fake.SetFailOn(nil)
+	if failed.Load() == 0 {
+		t.Fatal("premise: the compaction read nothing of the packs it merges")
+	}
 	if err == nil {
 		t.Fatal("compaction reported success although it could not read the objects")
 	}
-	if errors.Is(err, os.ErrNotExist) {
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, plumbing.ErrObjectNotFound) {
 		t.Fatalf("a transient outage was reported as a missing object: %v", err)
 	}
-	if looseKeyCount(fake) != len(hashes) {
-		t.Fatal("a failed compaction removed loose objects")
+	if live := livePackNames(t, fake); len(live) != len(liveBefore) {
+		t.Fatalf("a failed compaction changed the live packs: %v, was %v", live, liveBefore)
 	}
+	readObjects(t, testPackedStorage(t, apart), hashes)
 }
 
 // TestConcurrentReadsWritesAndCompactionAreRaceFree drives a clone, a push, and
@@ -468,7 +467,7 @@ func TestCompactionSurfacesAnObjectStoreOutage(t *testing.T) {
 // assertions only check no object is lost.
 func TestConcurrentReadsWritesAndCompactionAreRaceFree(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	seeded := seedObjects(t, stor, 120)
 
@@ -485,6 +484,13 @@ func TestConcurrentReadsWritesAndCompactionAreRaceFree(t *testing.T) {
 			mu.Lock()
 			written = append(written, hash)
 			mu.Unlock()
+			// Every few writes land as a pack, for the compactions to merge.
+			if i%10 == 9 {
+				if err := stor.FlushObjects(); err != nil {
+					t.Errorf("flush: %v", err)
+					return
+				}
+			}
 		}
 	}()
 	go func() {
@@ -534,6 +540,9 @@ func TestConcurrentReadsWritesAndCompactionAreRaceFree(t *testing.T) {
 	if t.Failed() {
 		return
 	}
+	if err := stor.FlushObjects(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
 
 	fresh := testPackedStorage(t, fake)
 	mu.Lock()
@@ -550,12 +559,13 @@ func TestConcurrentReadsWritesAndCompactionAreRaceFree(t *testing.T) {
 const smallestPartBytes = 5 << 20
 
 // writeIncompressibleBlob writes a blob that zlib cannot shrink, so that the
-// pack holding it is at least as large. The bytes are a hash chain: fixed from
-// run to run, and with no structure to compress.
-func writeIncompressibleBlob(t *testing.T, stor *repository, size int) plumbing.Hash {
+// pack holding it is at least as large. The bytes are a hash chain from seed:
+// fixed from run to run, with no structure to compress, and — from different
+// seeds — nothing for a delta to share.
+func writeIncompressibleBlob(t *testing.T, stor *repository, seed string, size int) plumbing.Hash {
 	t.Helper()
 	body := make([]byte, 0, size+sha256.Size)
-	link := sha256.Sum256([]byte("incompressible"))
+	link := sha256.Sum256([]byte("incompressible " + seed))
 	for len(body) < size {
 		body = append(body, link[:]...)
 		link = sha256.Sum256(link[:])
@@ -563,18 +573,32 @@ func writeIncompressibleBlob(t *testing.T, stor *repository, size int) plumbing.
 	return writeBlob(t, stor, string(body[:size]))
 }
 
+// largePackedRepository seeds a repository of three packs — the seeded history
+// and two incompressible blobs, each flushed as a pack of its own and each
+// smaller than one part of a multipart upload — whose merge is larger than one.
+func largePackedRepository(t *testing.T, stor *repository) []plumbing.Hash {
+	t.Helper()
+	hashes := seedObjects(t, stor, 300)
+	for i, size := range []int{smallestPartBytes/2 + 1<<20, smallestPartBytes/2 + 2<<20} {
+		hashes = append(hashes, writeIncompressibleBlob(t, stor, fmt.Sprint(i), size))
+		if err := stor.FlushObjects(); err != nil {
+			t.Fatalf("flush: %v", err)
+		}
+	}
+	return hashes
+}
+
 // TestLargePacksAreUploadedInParts covers a monorepo's pack: too large for one
 // request, it appears only on multipart-upload completion, so this path must
 // publish atomically too.
 func TestLargePacksAreUploadedInParts(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
-	// The threshold is as low as the protocol allows, and one blob larger than
-	// it takes the pack over.
+	fake.opts.CompactAfterPacks = -1
+	// The threshold is as low as the protocol allows, and the merge of the
+	// blobs' packs takes the merged pack over it.
 	fake.opts.MultipartBytes = smallestPartBytes
 	stor := testPackedStorage(t, fake)
-	hashes := seedObjects(t, stor, 300)
-	hashes = append(hashes, writeIncompressibleBlob(t, stor, smallestPartBytes+1<<20))
+	hashes := largePackedRepository(t, stor)
 	want := readObjects(t, stor, hashes)
 
 	before := fake.Snapshot()
@@ -586,17 +610,13 @@ func TestLargePacksAreUploadedInParts(t *testing.T) {
 	if counts.Multipart == 0 {
 		t.Fatalf("the packfile was not uploaded in parts: %s", counts)
 	}
-
-	packs := packKeys(fake, ".pack")
-	if len(packs) != 1 {
-		t.Fatalf("expected one published pack, found %v", packs)
-	}
-	body, _ := fake.Get(packs[0])
-	if int64(len(body)) != result.PackBytes {
-		t.Fatalf("the assembled pack is %d bytes, want %d", len(body), result.PackBytes)
-	}
 	if result.PackBytes <= smallestPartBytes {
 		t.Fatalf("premise: the pack is %d bytes, not large enough to need parts", result.PackBytes)
+	}
+
+	body, ok := fake.Get("prefix/" + testRepo + "/objects/pack/" + result.PackName + ".pack")
+	if !ok || int64(len(body)) != result.PackBytes {
+		t.Fatalf("the assembled pack is %d bytes (stored: %v), want %d", len(body), ok, result.PackBytes)
 	}
 
 	fresh := testPackedStorage(t, fake)
@@ -609,15 +629,16 @@ func TestLargePacksAreUploadedInParts(t *testing.T) {
 }
 
 // TestAnInterruptedMultipartUploadPublishesNothing pins the multipart commit
-// point: a pack whose completion never ran must be invisible, and the loose
-// objects it was built from must be untouched.
+// point: a pack whose completion never ran must be invisible, and the packs it
+// was built from must stay live.
 func TestAnInterruptedMultipartUploadPublishesNothing(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	fake.opts.MultipartBytes = smallestPartBytes
 	stor := testPackedStorage(t, fake)
-	hashes := seedObjects(t, stor, 300)
-	hashes = append(hashes, writeIncompressibleBlob(t, stor, smallestPartBytes+1<<20))
+	hashes := largePackedRepository(t, stor)
+	packsBefore := packKeys(fake, ".pack")
+	liveBefore := livePackNames(t, fake)
 
 	// Failing a part upload leaves the multipart upload incomplete, which is
 	// the same state a crashed replica leaves behind.
@@ -631,11 +652,11 @@ func TestAnInterruptedMultipartUploadPublishesNothing(t *testing.T) {
 	if err == nil {
 		t.Fatal("compaction reported success although a part upload failed")
 	}
-	if packs := packKeys(fake, ".pack"); len(packs) != 0 {
-		t.Fatalf("an incomplete multipart upload published a pack: %v", packs)
+	if packs := packKeys(fake, ".pack"); len(packs) != len(packsBefore) {
+		t.Fatalf("an incomplete multipart upload published a pack: %v, was %v", packs, packsBefore)
 	}
-	if looseKeyCount(fake) != len(hashes) {
-		t.Fatal("an interrupted multipart publication removed loose objects")
+	if live := livePackNames(t, fake); len(live) != len(liveBefore) {
+		t.Fatalf("an interrupted multipart publication changed the live packs: %v, was %v", live, liveBefore)
 	}
 
 	retry := testPackedStorage(t, fake)
@@ -667,8 +688,8 @@ func TestAFullyPackedRepositoryIsNeverListedOnTheReadPath(t *testing.T) {
 	if err := writer.SetReference(plumbing.NewHashReference(testBranch, hashes[len(hashes)-1])); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	if looseKeyCount(fake) != 0 {
-		t.Fatal("premise: the repository holds loose objects")
+	if loose := looseLayoutKeys(fake); len(loose) != 0 {
+		t.Fatalf("premise: the repository holds loose objects: %v", loose)
 	}
 
 	// The reader has its own disk, so nothing of the pack is cached on it.
@@ -706,10 +727,10 @@ func TestAFullyPackedRepositoryIsNeverListedOnTheReadPath(t *testing.T) {
 // same objects, has the same name.
 func TestTwoCompactionsRacingLeaveOneMergeAndNoDebris(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	writer := testPackedStorage(t, fake)
 	var all []plumbing.Hash
-	for push := range compactionMergeThreshold + 1 {
+	for push := range 4 {
 		all = append(all, smallPush(t, writer, "small push "+strings.Repeat("p", push)))
 	}
 
@@ -777,8 +798,9 @@ func TestAnOrphanThatIsPushedAgainComesBack(t *testing.T) {
 	if err != nil || refusals[0] != nil {
 		t.Fatalf("the push made again: %v, %v", refusals, err)
 	}
-	if stored := storedManifest(t, fake); len(stored.Retired) != 0 || len(stored.Packs) != 1 {
-		t.Fatalf("after the push the manifest holds %d live and %d retired packs, want the pack live again", len(stored.Packs), len(stored.Retired))
+	// Live: the seeded pack and the pushed one, taken back from the retired list.
+	if stored := storedManifest(t, fake); len(stored.Retired) != 0 || len(stored.Packs) != 2 {
+		t.Fatalf("after the push the manifest holds %d live and %d retired packs, want the pack live again beside the seeded one", len(stored.Packs), len(stored.Retired))
 	}
 	fake.clock.Advance(3 * retiredPackGrace)
 	if result, err := stor.Compact(context.Background()); err != nil || len(result.RetiredPacks) != 0 || len(result.Orphans) != 0 {

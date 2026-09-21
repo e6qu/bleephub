@@ -436,6 +436,18 @@ func refUpdateIsFastForward(stor storer.Storer, current, target plumbing.Hash) (
 	return ancestor, nil
 }
 
+// flushGitObjects makes the objects a request has written durable and readable
+// by every replica before the response names them (gitstore.FlushObjects). A
+// write that moves no reference has nothing else to carry its objects into the
+// store; on failure it answers 500 and reports false.
+func flushGitObjects(w http.ResponseWriter, stor gitStorage.Storer) bool {
+	if err := gitstore.FlushObjects(stor); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return false
+	}
+	return true
+}
+
 func (s *Server) gitDataContext(w http.ResponseWriter, r *http.Request) (owner, repoName string, repo *store.Repo, stor gitStorage.Storer) {
 	owner = r.PathValue("owner")
 	repoName = r.PathValue("repo")
@@ -518,6 +530,9 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 	}
 	base := s.baseURL(r)
 	blobURL := base + "/api/v3/repos/" + repo.FullName + "/git/blobs/" + hash.String()
+	if !flushGitObjects(w, stor) {
+		return
+	}
 	writeJSONCreated(w, blobURL, map[string]interface{}{
 		"sha": hash.String(),
 		"url": blobURL,
@@ -716,6 +731,9 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 		entries = append(entries, gitTreeEntryJSON(stor, s.baseURL(r), repo.FullName, e.Name, e))
 	}
 	treeURL := s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/git/trees/" + hash.String()
+	if !flushGitObjects(w, stor) {
+		return
+	}
 	writeJSONCreated(w, treeURL, map[string]interface{}{
 		"sha":       hash.String(),
 		"url":       treeURL,
@@ -868,6 +886,9 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	commitJSON := gitCommitToJSON(s.baseURL(r), repo.FullName, hash.String(), commit)
+	if !flushGitObjects(w, stor) {
+		return
+	}
 	writeJSONCreated(w, jsonStringField(commitJSON, "url"), commitJSON)
 }
 
@@ -950,6 +971,9 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tagJSON := gitTagToJSON(s.baseURL(r), repo.FullName, hash.String(), tag)
+	if !flushGitObjects(w, stor) {
+		return
+	}
 	writeJSONCreated(w, jsonStringField(tagJSON, "url"), tagJSON)
 }
 

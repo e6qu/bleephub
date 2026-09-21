@@ -39,8 +39,11 @@ import (
 const (
 	// manifestName is the manifest's key within the repository.
 	manifestName = "manifest"
-	// manifestFormat is the only format this engine reads or writes.
-	manifestFormat = 1
+	// manifestFormat is the only format this engine reads or writes. Format 1
+	// kept a pack's index and filter as objects of their own, and objects written
+	// through the API loose beside the packs; Adopt converts a repository
+	// written that way.
+	manifestFormat = 2
 	// refSnapshotDirectory holds the reference snapshots. It is under objects/ so
 	// that the one listing a compaction takes shows the snapshots no manifest
 	// names any more beside the packs of which that is true.
@@ -71,6 +74,11 @@ const (
 // number, or not a manifest at all. The repository is refused whole.
 var ErrManifestFormat = errors.New("gitstore: unreadable repository manifest")
 
+// ErrManifestOutdated reports a manifest of a format an earlier version of this
+// engine wrote, which Adopt converts. The repository is refused whole until it
+// has been.
+var ErrManifestOutdated = errors.New("gitstore: the repository manifest is of an earlier format, which `adopt` converts")
+
 // ErrNoManifest reports a repository the store holds no manifest for where one
 // was required: it was never created, or it was written by a version of this
 // engine that kept references as objects and has not been through Adopt.
@@ -91,14 +99,16 @@ type manifest struct {
 }
 
 // manifestPack is one live pack. The sizes are what let a reader address the
-// pack, its index and its filter by extent without asking the store about them.
+// pack, and the index and filter in its sidecar (sidecar.go), by extent without
+// asking the store about them.
 type manifestPack struct {
-	Name        string `json:"name"`
-	Bytes       int64  `json:"bytes"`
-	IndexBytes  int64  `json:"index_bytes"`
-	FilterBytes int64  `json:"filter_bytes"`
-	Objects     int    `json:"objects"`
-	Source      string `json:"source"`
+	Name         string `json:"name"`
+	Bytes        int64  `json:"bytes"`
+	SidecarBytes int64  `json:"sidecar_bytes"`
+	IndexBytes   int64  `json:"index_bytes"`
+	FilterBytes  int64  `json:"filter_bytes"`
+	Objects      int    `json:"objects"`
+	Source       string `json:"source"`
 	// Added is when the commit that added the pack was made, by the clock of the
 	// replica that made it.
 	Added time.Time `json:"added"`
@@ -138,6 +148,9 @@ func decodeManifest(data []byte) (*manifest, error) {
 	if err := json.Unmarshal(data, &header); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrManifestFormat, err)
 	}
+	if header.Format > 0 && header.Format < manifestFormat {
+		return nil, fmt.Errorf("%w: format %d, and this engine reads format %d only", ErrManifestOutdated, header.Format, manifestFormat)
+	}
 	if header.Format != manifestFormat {
 		return nil, fmt.Errorf("%w: format %d, and this engine reads format %d only", ErrManifestFormat, header.Format, manifestFormat)
 	}
@@ -148,8 +161,10 @@ func decodeManifest(data []byte) (*manifest, error) {
 		return nil, fmt.Errorf("%w: %w", ErrManifestFormat, err)
 	}
 	for _, pack := range decoded.Packs {
-		if !validPackName(pack.Name) || pack.Bytes <= 0 || pack.IndexBytes <= 0 || pack.FilterBytes < 0 {
-			return nil, fmt.Errorf("%w: live pack %q of %d bytes, index %d, filter %d", ErrManifestFormat, pack.Name, pack.Bytes, pack.IndexBytes, pack.FilterBytes)
+		if !validPackName(pack.Name) || pack.Bytes <= 0 || pack.IndexBytes <= 0 || pack.FilterBytes < 0 ||
+			pack.SidecarBytes != sidecarBytes(pack.IndexBytes, pack.FilterBytes) {
+			return nil, fmt.Errorf("%w: live pack %q of %d bytes, sidecar %d holding index %d and filter %d",
+				ErrManifestFormat, pack.Name, pack.Bytes, pack.SidecarBytes, pack.IndexBytes, pack.FilterBytes)
 		}
 	}
 	for _, pack := range decoded.Retired {

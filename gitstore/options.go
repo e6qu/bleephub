@@ -44,19 +44,20 @@ type Options struct {
 	MemoryCacheBytes int64
 
 	// IndexFreshness is how far a read may lag another replica's write: how long
-	// the manifest a handle holds may answer reads of references, and how long
-	// it and a listing of the loose objects may answer "absent", before the
-	// store is asked again — for the manifest, by a conditional read that is
-	// usually answered "not modified". A write never relies on it: a commit is a
+	// the manifest a handle holds may answer reads of references, and "absent"
+	// for an object, before the store is asked again, by a conditional read
+	// that is usually answered "not modified". A write never relies on it: a commit is a
 	// conditional write, and the store refuses one made on an old manifest. Zero
 	// selects 250ms; negative revalidates on every read of a reference and every
 	// miss.
 	IndexFreshness time.Duration
 
-	// CompactionTrigger is the number of loose writes to one repository that
-	// requests a compaction through the installed handler. Zero selects 4096;
-	// negative never requests one.
-	CompactionTrigger int64
+	// CompactAfterPacks is the number of live packs above which a write to a
+	// repository requests a compaction through the installed handler. Every push
+	// and every flush of written objects adds a pack, and every lookup that
+	// misses asks every pack. Zero selects 8; negative never requests a
+	// compaction. What a compaction merges is decided by the packs' sizes alone.
+	CompactAfterPacks int
 	// MultipartBytes is the pack size above which a pack is published through a
 	// multipart upload, and the size of its parts. Zero selects 64 MiB. It
 	// configures the driver OpenS3 builds; a bucket handed to Open was
@@ -114,10 +115,10 @@ func (o Options) resolved() Options {
 		o.IndexFreshness = 0
 	}
 	switch {
-	case o.CompactionTrigger == 0:
-		o.CompactionTrigger = defaultCompactionTrigger
-	case o.CompactionTrigger < 0:
-		o.CompactionTrigger = 0
+	case o.CompactAfterPacks == 0:
+		o.CompactAfterPacks = defaultCompactAfterPacks
+	case o.CompactAfterPacks < 0:
+		o.CompactAfterPacks = 0
 	}
 	if o.MultipartBytes <= 0 {
 		o.MultipartBytes = defaultMultipartThreshold

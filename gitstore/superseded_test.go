@@ -16,18 +16,22 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
-// mergedRepository pushes one large pack and enough small ones to cross the
-// merge threshold, then compacts, leaving the small packs retired but still in
+// smallPushes is how many small pushes mergedRepository makes: enough that the
+// last of them asks for a compaction.
+const smallPushes = defaultCompactAfterPacks + 1
+
+// mergedRepository pushes one large pack and enough small ones to make a
+// compaction due, then compacts, leaving the small packs retired but still in
 // the bucket.
 func mergedRepository(t *testing.T, fake *fakeS3) []plumbing.Hash {
 	t.Helper()
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	big, all := pushPack(t, 400)
 	if err := packfile.UpdateObjectStorage(stor, bytes.NewReader(big)); err != nil {
 		t.Fatalf("big push: %v", err)
 	}
-	for push := range compactionMergeThreshold + 1 {
+	for push := range smallPushes {
 		client := memory.NewStorage()
 		hash := storeBlob(t, client, fmt.Sprintf("small push %d", push))
 		var pack bytes.Buffer
@@ -46,8 +50,8 @@ func mergedRepository(t *testing.T, fake *fakeS3) []plumbing.Hash {
 	if result.Merged == 0 {
 		t.Fatal("fixture did not merge")
 	}
-	if retired := len(storedManifest(t, fake).Retired); retired != compactionMergeThreshold+1 {
-		t.Fatalf("fixture retired %d packs, want %d", retired, compactionMergeThreshold+1)
+	if retired := len(storedManifest(t, fake).Retired); retired != smallPushes {
+		t.Fatalf("fixture retired %d packs, want %d", retired, smallPushes)
 	}
 	return all
 }
@@ -65,8 +69,8 @@ func TestANewReaderDoesNotAdoptRetiredPacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list packs: %v", err)
 	}
-	if stored := len(packKeys(fake, ".pack")); len(listed) != 2 || stored != 2+compactionMergeThreshold+1 {
-		t.Fatalf("a new reader lists %d packs of the %d stored, want the 2 live ones of %d", len(listed), stored, 2+compactionMergeThreshold+1)
+	if stored := len(packKeys(fake, ".pack")); len(listed) != 2 || stored != 2+smallPushes {
+		t.Fatalf("a new reader lists %d packs of the %d stored, want the 2 live ones of %d", len(listed), stored, 2+smallPushes)
 	}
 
 	// A retired pack is hidden, not gone: a reader that held it before the merge
@@ -87,9 +91,10 @@ func TestANewReaderDoesNotAdoptRetiredPacks(t *testing.T) {
 		t.Fatalf("absent object: %v", err)
 	}
 	spent := fake.Snapshot().Sub(before)
-	// The manifest, and two live packs: an index and a filter each. Adopting the
-	// retired ones as well would add two reads for every one of them.
-	if reads := spent.Get + spent.GetRanged; reads > 6 {
+	// The manifest, and two live packs: a sidecar each, which at the default
+	// extent size is one read however much of it the probes want. Adopting the
+	// retired ones as well would add a read for every one of them.
+	if reads := spent.Get + spent.GetRanged; reads > 3 {
 		t.Fatalf("a new reader made %d reads, so it is still loading retired packs: %s", reads, spent)
 	}
 }
@@ -135,7 +140,7 @@ func TestConcurrentColdReadsShareOneFetch(t *testing.T) {
 
 	spent := fake.Snapshot().Sub(before)
 	packReads := spent.GetRanged
-	// One fetch each for the index and the pack's single extent is the floor, and
+	// One fetch each for the sidecar's and the pack's single extent is the floor, and
 	// one read of the manifest; a herd that did not share would make several
 	// times that. Nothing is listed: every object asked for is in the pack.
 	if packReads < 2 {
@@ -163,7 +168,7 @@ func TestRangedReadsHonourTheCircuitBreaker(t *testing.T) {
 	cold.Server = fake.Server
 	cold.opts.BreakerThreshold = 2
 	replica := testPackedStorage(t, cold)
-	// The snapshot, the index and the filter arrive while the store is well; it
+	// The manifest and the sidecar arrive while the store is well; it
 	// is the pack's own bytes that the outage catches.
 	if err := replica.HasEncodedObject(hashes[0]); err != nil {
 		t.Fatalf("probe: %v", err)
@@ -189,12 +194,12 @@ func TestRangedReadsHonourTheCircuitBreaker(t *testing.T) {
 	}
 }
 
-// TestACompactionWithNothingToDoIsCheap prices the common case. A server asks
-// for a compaction after every push, and nearly every time there is nothing to
-// pack or merge; what that costs is paid on every push.
+// TestACompactionWithNothingToDoIsCheap prices the common case. A compaction
+// that is asked for — by a write, by an operator — may find nothing to merge,
+// and what that costs is paid every time it does.
 func TestACompactionWithNothingToDoIsCheap(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	pack, _ := pushPack(t, 50)
 	if err := packfile.UpdateObjectStorage(stor, bytes.NewReader(pack)); err != nil {
@@ -210,8 +215,8 @@ func TestACompactionWithNothingToDoIsCheap(t *testing.T) {
 		t.Fatalf("a repository of one pack was compacted into %s", result.PackName)
 	}
 	spent := fake.Snapshot().Sub(before)
-	// One listing of objects/ says what is loose and what lies unnamed in the
-	// pack directory, and one conditional read, answered "not modified", says
+	// One listing of objects/ says what lies unnamed in the pack directory and
+	// among the reference snapshots, and one conditional read, answered "not modified", says
 	// the manifest held is the one the listing is to be judged against.
 	if spent.List != 1 || spent.NotModified != 1 || spent.Total() != 2 {
 		t.Fatalf("finding nothing to do should cost one listing and one revalidation: %s", spent)
@@ -222,9 +227,9 @@ func TestACompactionWithNothingToDoIsCheap(t *testing.T) {
 // of "delete nothing a reader may still need". A pack merged away less than the
 // grace period ago keeps every one of its keys, for the request that was
 // reading it when the merge landed. One older than that is removed — its .pack
-// key first, so that nothing arriving mid-removal finds a pack whose index has
-// already gone — and only then dropped from the manifest. A live pack is never
-// touched, however old.
+// key first, so that nothing arriving mid-removal finds a pack whose sidecar
+// has already gone — and only then dropped from the manifest. A live pack is
+// never touched, however old.
 func TestARetiredPackIsDeletedOnlyOnceItsGracePeriodHasPassed(t *testing.T) {
 	fake := newFakeS3(t)
 	fake.clock = newTestClock()
@@ -243,8 +248,8 @@ func TestARetiredPackIsDeletedOnlyOnceItsGracePeriodHasPassed(t *testing.T) {
 		t.Fatalf("inside the grace period a compaction deleted %v (err %v)", result.RetiredPacks, err)
 	}
 	for _, pack := range merged.Retired {
-		if keys := fake.KeysWithPrefix(directory + pack.Name + "."); len(keys) != 3 {
-			t.Fatalf("a pack inside its grace period has %v left, want its pack, index and filter", keys)
+		if keys := fake.KeysWithPrefix(directory + pack.Name + "."); len(keys) != len(packKeySuffixes) {
+			t.Fatalf("a pack inside its grace period has %v left, want its pack and sidecar", keys)
 		}
 	}
 
@@ -276,7 +281,10 @@ func TestARetiredPackIsDeletedOnlyOnceItsGracePeriodHasPassed(t *testing.T) {
 			t.Fatalf("a deleted pack left %v behind", keys)
 		}
 	}
-	for i := 0; i+2 < len(deleted); i += 3 {
+	if len(deleted) != len(packKeySuffixes)*len(merged.Retired) {
+		t.Fatalf("premise: the deletion made %d requests, want one for each key of the %d retired packs: %v", len(deleted), len(merged.Retired), deleted)
+	}
+	for i := 0; i < len(deleted); i += len(packKeySuffixes) {
 		if !strings.HasSuffix(deleted[i], ".pack") {
 			t.Fatalf("%s was deleted before its pack was: %v", deleted[i], deleted)
 		}
@@ -286,7 +294,7 @@ func TestARetiredPackIsDeletedOnlyOnceItsGracePeriodHasPassed(t *testing.T) {
 		t.Fatalf("the manifest after the deletion lists %d retired and %d live packs, want 0 and 2", len(after.Retired), len(after.Packs))
 	}
 	for _, pack := range after.Packs {
-		if keys := fake.KeysWithPrefix(directory + pack.Name + "."); len(keys) != 3 {
+		if keys := fake.KeysWithPrefix(directory + pack.Name + "."); len(keys) != len(packKeySuffixes) {
 			t.Fatalf("the live pack %s has %v left", pack.Name, keys)
 		}
 	}

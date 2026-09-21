@@ -7,24 +7,24 @@ import (
 	"time"
 )
 
-// TestLooseAbsentIsRaceFreeAgainstConcurrentWrites exercises the exact
-// read-during-write pattern the object index exists for — a clone (read path)
-// while a push (write path) is in flight. looseAbsent used to dereference the
-// shared roots map and cuckoo filter AFTER releasing i.mu, so a concurrent
-// noteLooseWrite mutating them under the lock triggered a fatal concurrent
-// map read/write (and a torn filter read that could drop a present object).
-// A short freshness window forces every probe down the refresh path where the
-// unlocked reads lived. Run under -race, this must stay clean.
-func TestLooseAbsentIsRaceFreeAgainstConcurrentWrites(t *testing.T) {
+// TestProbesAreRaceFreeAgainstConcurrentWritesAndFlushes exercises the
+// read-during-write pattern a replica lives with — a clone's negotiation (the
+// read path) while objects are written through the API and flushed as packs
+// (the write path). Readers probe what is pending and the packs of the state
+// held while a writer adds to the one and swaps in a new state for the other.
+// A short freshness window sends every miss down the revalidation path as
+// well. Run under -race, this must stay clean.
+func TestProbesAreRaceFreeAgainstConcurrentWritesAndFlushes(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.IndexFreshness = time.Millisecond // stale immediately → refresh path
+	fake.opts.IndexFreshness = time.Millisecond // stale almost at once: misses revalidate
+	fake.opts.CompactAfterPacks = -1
 	stor := testPackedStorage(t, fake)
 	seedObjects(t, stor, 50)
 
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
-	// Readers hammer looseAbsent through HasEncodedObject (no t.* calls in the
-	// goroutines, so they are goroutine-safe).
+	// Readers probe through HasEncodedObject (no t.* calls in the goroutines,
+	// so they are goroutine-safe).
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func(n int) {
@@ -39,10 +39,14 @@ func TestLooseAbsentIsRaceFreeAgainstConcurrentWrites(t *testing.T) {
 			}
 		}(i)
 	}
-	// The writer runs on the test goroutine (writeBlob may call t.Fatalf); each
-	// write calls noteLooseWrite, mutating the shared map + filter the readers probe.
+	// The writer runs on the test goroutine (writeBlob may call t.Fatalf).
 	for i := 0; i < 300; i++ {
 		writeBlob(t, stor, fmt.Sprintf("race-blob-%d", i))
+		if i%50 == 49 {
+			if err := stor.FlushObjects(); err != nil {
+				t.Fatalf("flush: %v", err)
+			}
+		}
 	}
 	close(stop)
 	wg.Wait()

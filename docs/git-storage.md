@@ -52,24 +52,29 @@ measured, what other systems do, and why this is the design that was chosen.
 <prefix>/<owner>/<repo>/
   manifest                          the only commit point (JSON)
   objects/pack/pack-<sha>.pack      ordinary, self-contained git packs
-  objects/pack/pack-<sha>.idx       git's own pack index
-  objects/pack/pack-<sha>.bfilter   the pack's membership filter
-  objects/<xx>/<38 hex>             loose objects, as git writes them
+  objects/pack/pack-<sha>.sidecar   the pack's index, its membership filter, a footer
   objects/refs/<sequence>-<nonce>   reference snapshots the manifests have named
   config, shallow, index            git's small files, where a caller wrote them
   objects/bundle/…, and the like    auxiliary objects the server keeps beside them
   modules/<name>/…                  a submodule: a repository of its own, laid out the same
 ```
 
-Packs, indexes and loose objects are git's own files under git's own names, so a
-bucket's bulk can be read with `git` itself. What says which of them are the
-repository is the **manifest** (`manifest.go`):
+Every object is in a pack, and a pack is two objects. The `.pack` is git's own
+file, exactly as git reads one, because it is handed to clients as it stands —
+a packfile-URI or a bundle is a presigned URL to it, which carries no byte range,
+and git refuses a pack with anything after its checksum. Everything a reader
+needs to find its way into the pack is in its **sidecar** (`sidecar.go`): the
+pack's index (git's `.idx`, version 2), its membership filter, and a footer
+naming their lengths and the pack's checksum, so that a sidecar says by itself
+what it describes and one that is not the pack's is refused. What says which
+packs are the repository is the **manifest** (`manifest.go`):
 
 ```json
 {
-  "format": 1,
+  "format": 2,
   "sequence": 42,
-  "packs": [{"name": "pack-<sha>", "bytes": 950611, "index_bytes": 45676, "filter_bytes": 2072,
+  "packs": [{"name": "pack-<sha>", "bytes": 950611, "sidecar_bytes": 47792,
+             "index_bytes": 45676, "filter_bytes": 2072,
              "objects": 1593, "source": "push", "added": "2026-09-21T10:00:00Z"}],
   "retired": [{"name": "pack-<sha>", "retired": "2026-09-21T09:30:00Z", "orphan": false}],
   "refs": {
@@ -83,12 +88,12 @@ repository is the **manifest** (`manifest.go`):
 
 - `format` is the only format the engine reads; any other number is an error,
   for reads and writes alike. There is no migration code in the engine (see
-  *Upgrading a store written before the manifest*, below).
+  *Upgrading a store written by an earlier bleephub*, below).
 - `sequence` increases by one with every successful swap.
 - `packs` are the live packs, with the sizes that let a reader address a pack,
-  its index and its filter by extent without asking the store about them, the
-  object count, and what wrote it: `push`, `write` (an import or the API, through
-  `PackfileWriter`), `compaction` or `adoption`.
+  and the index and filter within its sidecar, by extent without asking the
+  store about them, the object count, and what wrote it: `push`, `write` (an
+  import, or objects written through the API), `compaction` or `adoption`.
 - `retired` are packs no new reader adopts. A compaction's merged-away packs are
   kept an hour — longer than any request runs — for the requests that were
   already reading them. An `orphan` is an upload no manifest ever named (a
@@ -104,16 +109,16 @@ repository is the **manifest** (`manifest.go`):
   `HEAD` or `packed-refs`.
 
 A change to a repository is visible when, and only when, a conditional write of
-the manifest succeeds. Nothing is discovered by listing except the loose tier,
-and nothing is arbitrated by a lock.
+the manifest succeeds. Nothing a reader needs is discovered by listing, and
+nothing is arbitrated by a lock.
 
 ### How it is read and written
 
-- **Immutable state, swapped whole** (`state.go`, `objectindex.go`) — there is
+- **Immutable state, swapped whole** (`state.go`, `storedpack.go`) — there is
   one handle per repository for the life of the process (`Store.Repository`
   memoises it), shared by every request. What it knows of the repository — the
-  manifest and the snapshot it names, the live packs, the membership of the
-  loose tier — it holds as immutable values. A reader takes a pointer and is
+  manifest and the snapshot it names, the live packs — it holds as immutable
+  values. A reader takes a pointer and is
   done; whatever learns of a newer manifest builds the next state and swaps it
   in. There is nothing half-built for two readers to race on, and so no lock on
   the read path at all.
@@ -123,6 +128,19 @@ and nothing is arbitrated by a lock.
   (`objstore.Bucket.GetIfChanged`): one small request that the store usually
   answers "not modified", with no body. `IndexFreshness < 0` revalidates on
   every read of a reference and every miss. A write never reads first.
+- **Everything written is a pack** (`pending.go`) — an object written one at a
+  time (the REST git-database endpoints, web edits, the wiki, a template's copy)
+  is not given a key of its own. It is *pending*: held in memory by the
+  repository's handle and readable through it at once, until it lands in a pack
+  and sidecar. That happens with the next reference commit of the repository —
+  which carries the pack in the same swap, so that the objects and the
+  reference that names them become visible together — or when the application
+  flushes (`gitstore.FlushObjects`, which the server calls before it answers
+  with the id of an object it wrote without moving a reference: the
+  git-database create endpoints, a copy of one repository's objects into
+  another, a pull request's test merge), or as soon as more than 8 MiB is
+  pending. A write of one blob is two uploads and a swap; another replica finds
+  it by revalidating the manifest, never by listing.
 - **Commits are compare-and-swap** (`commit.go`) — a change is a mutation: a
   function from a manifest to a manifest that may refuse (a reference is not at
   the value the caller expected → `storage.ErrReferenceHasChanged`; a pack to
@@ -148,8 +166,9 @@ and nothing is arbitrated by a lock.
   push's reference updates were accepted (git's quarantine rule), an `atomic`
   push is atomic because it is one write, and a refused push leaves only an
   upload for a later sweep. Every other caller — the REST git-database
-  endpoints, web edits, the wiki, imports — still uses `PackfileWriter` and
-  `SetReference` / `CheckAndSetReference` one call at a time, each its own swap.
+  endpoints, web edits, the wiki, imports — writes objects and then calls
+  `SetReference` / `CheckAndSetReference`, and that swap carries the pack of
+  what it wrote.
 - **Per-call decoders over shared indexes** (`repository.go`, `packreader.go`) —
   go-git's packfile decoder is not safe to share, so one is made for each call
   that reads a pack. What the calls share is everything expensive: a pack index
@@ -162,22 +181,16 @@ and nothing is arbitrated by a lock.
   is folded into the cache key so a reconfigured replica never confuses them.
   Concurrent fetches of one extent are one request, so a replica that starts
   cold under load downloads each extent once rather than once per clone.
-- **The loose tier, and refresh on a miss** (`objectindex.go`, `repository.go`)
-  — loose objects (the API's single-object writes) are not in the manifest: one
-  PUT each, no commit. They are discovered by one recursive listing of
-  `objects/`, taken only when an object is in none of the packs and the listing
-  held is older than the freshness bound — so a repository whose objects are all
-  packed is never listed by a read that finds what it is looking for. "Does the
-  repository have this?" — which a fetch negotiation mostly asks about objects it
-  does not — is answered from a membership filter per pack and per loose
-  directory, without reading an index or asking the store; the filters are
-  negative-only, so a "maybe" always goes on to the exact lookup. An object that
-  is found is returned whatever the age of what found it, since packs never
-  change; one that is not is believed absent only of a manifest and a listing
-  inside the bound. Evidence that what is held is out of date — a loose key
-  since packed, or a pack the manifest names that is gone (404) because another
-  replica retired and then deleted it — reads the manifest again and retries,
-  once.
+- **Refresh on a miss** (`repository.go`, `storedpack.go`) — "Does the
+  repository have this?" — which a fetch negotiation mostly asks about objects
+  it does not — is answered from each pack's membership filter, without reading
+  an index or asking the store; the filters are negative-only, so a "maybe"
+  always goes on to the exact lookup. An object that is found is returned
+  whatever the age of the manifest that found it, since packs never change; one
+  that is not is believed absent only of a manifest inside the freshness bound.
+  Evidence that the manifest held is out of date — a pack it names is gone (404)
+  because another replica retired and then deleted it — reads it again and
+  retries, once.
 - **Streamed large objects** (`streamedobject.go`) — an object above 8 MiB that
   a pack stores whole is handed out as a stream inflated from the pack as it is
   read, not as bytes in memory: a server reads on behalf of anyone who asks, and
@@ -190,14 +203,9 @@ and nothing is arbitrated by a lock.
   cold replica advertises a repository of any number of references for two
   requests, the manifest and the snapshot, where it used to list `refs/` and
   read every reference.
-- **One request per object written** (`repository.go`) — git writes an object to
-  a temporary name and renames it into place, which on a disk makes it appear
-  atomically. A PUT already is atomic, and the key is the hash of the bytes, so
-  an object written through the API is one PUT: no probe, no temporary key, no
-  copy.
 - **Pack ingest** (`ingest.go`, `indexpack.go`) — a push arrives as a packfile
-  and is stored as one: index, membership filter and pack, three uploads however
-  many objects it carries, and then the commit that names it. The pack is
+  and is stored as one: pack and sidecar, two uploads however many objects it
+  carries, and then the commit that names it. The pack is
   indexed as git's `index-pack` indexes one, in two passes, the first while the
   push is still arriving, and held to the checksum it is named by. A stock git
   client sends incremental pushes as *thin* packs, whose deltas lean on objects
@@ -206,15 +214,13 @@ and nothing is arbitrated by a lock.
   are read from the repository and appended, the pushed bytes kept. What lands
   in the bucket is always an ordinary git pack. Nothing is listed, and nothing
   just uploaded is read back.
-- **Compaction, retirement and the sweep** (`compact.go`) — loose objects are
-  rolled into pack files, and the small packs pushes leave are merged, the same
-  housekeeping `git gc` does. Merging is geometric, as in
+- **Compaction, retirement and the sweep** (`compact.go`) — the small packs
+  pushes and writes leave are merged, the housekeeping `git gc` does. Merging is geometric, as in
   `git repack --geometric`: a pack is left alone while it is at least twice the
   size of everything smaller than it, so a run of small pushes never causes the
   repository's large packs to be rewritten, and the pack count stays logarithmic
   in the repository's size. A compaction commits by ONE swap that adds the new
-  pack and retires the ones it merged; only after it are the loose keys it
-  packed deleted. Two compactions racing need no lock: the loser's mutation finds
+  pack and retires the ones it merged. Two compactions racing need no lock: the loser's mutation finds
   the packs it merged no longer live, refuses, and the loser deletes the pack it
   uploaded (unless it is the winner's pack, byte for byte and so name for name).
   The same run sweeps: retired packs are deleted a grace period (an hour) after
@@ -228,9 +234,9 @@ and nothing is arbitrated by a lock.
   the name back in the first half of that period takes it back, and after that
   is refused. Nothing a manifest names, live or retired within grace, is ever
   deleted. The engine asks for a compaction when a write leaves the repository
-  due one — more than eight live packs, a push landing behind a loose tier worth
-  packing, or the loose-write trigger — and the server runs it in the
-  background; the library owns no goroutines.
+  more than `Options.CompactAfterPacks` (eight) live packs, and the server runs
+  it in the background; the library owns no goroutines. The listing a compaction
+  opens with is the only one the engine takes, and only for the sweep.
 - **Copy, rename, delete** (`store.go`) — a fork or rename reads the manifest
   first, copies every other key, and writes the manifest last, so the copy names
   only what the listing showed and becomes a repository in one step. A delete
@@ -378,9 +384,13 @@ to share for git:
   believed. A replica holding a manifest whose pack has since been retired and
   deleted elsewhere gets a 404, reads the manifest again, and retries.
 - **Compaction needs no single writer** — see above: the loser of a race refuses
-  and cleans up after itself, and loose keys are deleted only after the commit
-  of the pack that holds them, so a reader on another replica never sees an
-  object in neither tier.
+  and cleans up after itself, and a merged-away pack outlives the commit that
+  retired it by the grace period, so a reader on another replica never looks
+  for an object where it no longer is.
+- **Written objects reach other replicas through the manifest** — an object
+  pending on one replica is in no pack another can see; it becomes visible with
+  the swap that commits its pack, which is why the server flushes before it
+  names an object that no reference points at.
 - **Outage resilience** — every object-store call goes through one chokepoint
   (`storeShared.call`): it derives its timeout from the server-lifetime context
   (cancelled on shutdown) and passes through a circuit breaker: after a run
@@ -389,27 +399,34 @@ to share for git:
   timeout. The breaker's open error is transient, never "object absent", so go-git
   can't mistake an outage for a deleted ref.
 
-## Upgrading a store written before the manifest
+## Upgrading a store written by an earlier bleephub
 
-Before the manifest, a repository in the bucket kept every reference as an
-object of its own (`refs/**`, `HEAD`, a read-only `packed-refs`) and said which
-packs were live by which keys lay beside them (`.superseded` markers). The
-engine does not read that layout, and a server started on such a bucket refuses
-it: `gitbackend.OpenExistingGitStorage`, which a restart opens every known
-repository with, answers `gitstore.ErrNoManifest` rather than take the repository
-for an empty one and initialize over it.
+Two earlier layouts are not read. Before the manifest, a repository in the
+bucket kept every reference as an object of its own (`refs/**`, `HEAD`, a
+read-only `packed-refs`) and said which packs were live by which keys lay beside
+them (`.superseded` markers). Manifest format 1 kept a pack's index (`.idx`) and
+filter (`.bfilter`) as objects of their own, and objects written through the API
+loose under `objects/<xx>/`, found by listing. A server started on a bucket
+written either way refuses it: `gitbackend.OpenExistingGitStorage`, which a
+restart opens every known repository with, answers `gitstore.ErrNoManifest` or
+`gitstore.ErrManifestOutdated` rather than take the repository for an empty one
+and initialize over it.
 
 `bleephub adopt` is the one-off operation that brings such a store up to date. It
 reads the same `BLEEPHUB_*` storage settings as the server and, for every
 repository under the git prefix (or the one named with `-repository owner/repo`),
-reads the old layout — live packs are those with a `.pack` and an `.idx` and no
-`.superseded` marker; superseded ones become `retired` at their marker's time;
-references come from `refs/**`, `HEAD` and `packed-refs` with git's precedence —
-and writes the manifest with `IfAbsent`. It refuses a repository that already has
-a manifest, reports what it did for each, handles submodule repositories, and
-leaves every old key in place. `bleephub adopt -remove-old-layout` is the second,
-explicit step: it deletes the old reference objects and markers of repositories
-that have a manifest. The library functions are `Store.Adopt`,
+reads the old layout — a format-1 manifest, or before the manifest: live packs
+are those with a `.pack` and an `.idx` and no `.superseded` marker, superseded
+ones become `retired` at their marker's time, references come from `refs/**`,
+`HEAD` and `packed-refs` with git's precedence — writes each live pack's sidecar
+from its `.idx` and `.bfilter`, packs every loose object into one pack, and
+writes the format-2 manifest on the condition that the manifest is still the one
+it read (`IfVersion`), or that there is none (`IfAbsent`). It refuses a
+repository already in the current layout, reports what it did for each, handles
+submodule repositories, and deletes nothing. `bleephub adopt -remove-old-layout`
+is the second, explicit step: it deletes the old reference objects, the markers,
+the separate `.idx` and `.bfilter` objects and the loose objects of repositories
+that have been adopted. The library functions are `Store.Adopt`,
 `Store.RemoveAdoptedLayout` and `Store.Repositories` (`gitstore/adopt.go`).
 
 ## Why it is arranged this way

@@ -61,17 +61,26 @@ func (e packExtents) extent(index int64) ([]byte, error) {
 	return fetched.([]byte), nil
 }
 
-// readAll returns the whole artefact. It is for indexes and filters, which are
-// parsed whole; going through the extents is what lets a restarted replica
-// find them on its own disk.
-func (e packExtents) readAll() ([]byte, error) {
-	data := make([]byte, 0, e.size)
-	for index := int64(0); int64(len(data)) < e.size; index++ {
+// readRange returns n bytes of the artefact from off.
+func (e packExtents) readRange(off, n int64) ([]byte, error) {
+	if off < 0 || n < 0 || off+n > e.size {
+		return nil, fmt.Errorf("read %s: range %d+%d is outside its %d bytes", e.key, off, n, e.size)
+	}
+	chunkSize := e.shared.opts.ChunkBytes
+	data := make([]byte, 0, n)
+	for position := off; position < off+n; {
+		index := position / chunkSize
 		extent, err := e.extent(index)
 		if err != nil {
 			return nil, err
 		}
-		data = append(data, extent...)
+		within := position - index*chunkSize
+		if within >= int64(len(extent)) {
+			return nil, fmt.Errorf("read %s: extent %d holds %d bytes, short of offset %d", e.key, index, len(extent), within)
+		}
+		part := extent[within:min(int64(len(extent)), within+off+n-position)]
+		data = append(data, part...)
+		position += int64(len(part))
 	}
 	return data, nil
 }

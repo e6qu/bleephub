@@ -16,9 +16,9 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
-// The benchmarks here are the measurement the design is argued from. They run the two tiers — a repository whose objects
-// are all loose, and the same repository packed — against one in-process object store that counts every request and
-// byte, both built in the same binary from the same code, so the numbers compare.
+// The benchmarks here are the measurement the design is argued from. They run against one in-process object store
+// that counts every request and byte, so the numbers compare: objects written one at a time through the API, the same
+// objects pushed as a pack, the compaction that merges packs, and clones served cold and warm.
 //
 // Each reports three metrics beside per-operation time: the object store requests one clone/push costs, the same per
 // object, and bytes transferred. Request count is the quantity of interest: the cost removed is a network round trip, a fixed toll no local speed pays off.
@@ -71,13 +71,14 @@ func report(b *testing.B, counts s3fake.Counts, objects int) {
 func newBenchFakeS3(b *testing.B) *fakeS3 {
 	b.Helper()
 	fake := newFakeS3(b)
-	fake.opts.CompactionTrigger = -1
+	fake.opts.CompactAfterPacks = -1
 	return fake
 }
 
-// BenchmarkPushLoose measures writing objects one at a time into the loose tier, which is what the REST git-database
-// endpoints and web edits cost. A push does not take this path: see BenchmarkPushPack.
-func BenchmarkPushLoose(b *testing.B) {
+// BenchmarkWriteObjects measures writing objects one at a time, which is what the REST git-database endpoints and web
+// edits do: every object is held pending on the handle and lands, with the reference that names it, as one pack. A push
+// does not take this path: see BenchmarkPushPack.
+func BenchmarkWriteObjects(b *testing.B) {
 	objects := benchObjects(b)
 	var counts s3fake.Counts
 	seeded := 1
@@ -88,6 +89,7 @@ func BenchmarkPushLoose(b *testing.B) {
 		if err != nil {
 			b.Fatalf("storage: %v", err)
 		}
+		before := fake.Snapshot()
 		fake.SetLatency(benchLatency(b))
 		b.StartTimer()
 
@@ -95,8 +97,15 @@ func BenchmarkPushLoose(b *testing.B) {
 
 		b.StopTimer()
 		fake.SetLatency(0)
-		counts = fake.Snapshot()
+		counts = fake.Snapshot().Sub(before)
 		seeded = len(hashes)
+		// However many objects: the pack of them, its sidecar, and the one
+		// manifest swap that carries the pack and the reference together — and,
+		// the handle being new, the one read that tells it the repository has no
+		// manifest yet. Writing the objects asks nothing of the store.
+		if counts.Put != 3 || counts.Total() != 4 {
+			b.Fatalf("writing %d objects and a reference cost %s, want a read of the manifest and three writes", seeded, counts)
+		}
 		b.StartTimer()
 	}
 	report(b, counts, seeded)
@@ -136,42 +145,13 @@ func BenchmarkPushPack(b *testing.B) {
 	report(b, counts, len(hashes))
 }
 
-// BenchmarkCloneLoose is the baseline: a clone served entirely out of the loose tier, where every object is one whole-object GET.
-func BenchmarkCloneLoose(b *testing.B) {
-	fake := newBenchFakeS3(b)
-	stor, err := packedStorage(fake, benchRepo)
-	if err != nil {
-		b.Fatalf("storage: %v", err)
-	}
-	hashes := seedObjects(b, stor, benchObjects(b))
-
-	var counts s3fake.Counts
-	for b.Loop() {
-		b.StopTimer()
-		// A clone is served by a storer opened for the request, so the writing handle's warm in-process object cache must not be counted as a saving the read path actually has.
-		readStor, err := packedStorage(fake, benchRepo)
-		if err != nil {
-			b.Fatalf("storage: %v", err)
-		}
-		before := fake.Snapshot()
-		fake.SetLatency(benchLatency(b))
-		b.StartTimer()
-
-		clonePack(b, readStor, hashes)
-
-		b.StopTimer()
-		fake.SetLatency(0)
-		counts = fake.Snapshot().Sub(before)
-		b.StartTimer()
-	}
-	report(b, counts, len(hashes))
-}
-
-// BenchmarkCompaction measures moving a repository's loose tier into a pack. It is the cost the read path's saving is bought with, paid once per batch of objects rather than once per clone.
+// BenchmarkCompaction measures merging four packs of a quarter of the repository each into one. It is the cost the read
+// path's saving is bought with — every lookup that misses asks every pack — paid once per run of writes rather than once
+// per clone.
 func BenchmarkCompaction(b *testing.B) {
 	objects := benchObjects(b)
 	var counts s3fake.Counts
-	packed := 1
+	merged := 1
 	for b.Loop() {
 		b.StopTimer()
 		fake := newBenchFakeS3(b)
@@ -179,7 +159,32 @@ func BenchmarkCompaction(b *testing.B) {
 		if err != nil {
 			b.Fatalf("storage: %v", err)
 		}
-		hashes := seedObjects(b, stor, objects)
+		written := 0
+		for round := range 4 {
+			for i := range max(objects/4, 1) {
+				body := append([]byte("round "+strconv.Itoa(round)+"\n"), blobBody(i)...)
+				object := stor.NewEncodedObject()
+				object.SetType(plumbing.BlobObject)
+				object.SetSize(int64(len(body)))
+				writer, err := object.Writer()
+				if err != nil {
+					b.Fatalf("blob writer: %v", err)
+				}
+				if _, err := writer.Write(body); err != nil {
+					b.Fatalf("blob write: %v", err)
+				}
+				if err := writer.Close(); err != nil {
+					b.Fatalf("blob close: %v", err)
+				}
+				if _, err := stor.SetEncodedObject(object); err != nil {
+					b.Fatalf("set blob: %v", err)
+				}
+				written++
+			}
+			if err := stor.FlushObjects(); err != nil {
+				b.Fatalf("flush: %v", err)
+			}
+		}
 		before := fake.Snapshot()
 		fake.SetLatency(benchLatency(b))
 		b.StartTimer()
@@ -191,14 +196,14 @@ func BenchmarkCompaction(b *testing.B) {
 		if err != nil {
 			b.Fatalf("compact: %v", err)
 		}
-		if result.Packed != len(hashes) {
-			b.Fatalf("packed %d of %d objects", result.Packed, len(hashes))
+		if result.Merged != written {
+			b.Fatalf("merged %d of %d objects", result.Merged, written)
 		}
 		counts = fake.Snapshot().Sub(before)
-		packed = len(hashes)
+		merged = written
 		b.StartTimer()
 	}
-	report(b, counts, packed)
+	report(b, counts, merged)
 }
 
 // BenchmarkClonePackedColdCache is the number the design exists to move: a clone of a packed repository served by a
@@ -284,7 +289,7 @@ func BenchmarkHasEncodedObjectAbsent(b *testing.B) {
 	report(b, fake.Snapshot().Sub(before), max(probes, 1))
 }
 
-// benchPackedRepository seeds and compacts a repository, returning the store it lives in and every object in it.
+// benchPackedRepository seeds a repository of one pack, returning the store it lives in and every object in it.
 func benchPackedRepository(b *testing.B) (*fakeS3, []plumbing.Hash) {
 	b.Helper()
 	fake := newBenchFakeS3(b)
@@ -293,12 +298,8 @@ func benchPackedRepository(b *testing.B) (*fakeS3, []plumbing.Hash) {
 		b.Fatalf("storage: %v", err)
 	}
 	hashes := seedObjects(b, stor, benchObjects(b))
-	result, err := CompactRepository(context.Background(), stor)
-	if err != nil {
-		b.Fatalf("compact: %v", err)
-	}
-	if result.Packed != len(hashes) {
-		b.Fatalf("packed %d of %d objects", result.Packed, len(hashes))
+	if packs, err := stor.StoredPacks(context.Background()); err != nil || len(packs) != 1 {
+		b.Fatalf("the seeded repository holds the packs %v (%v), want one", packs, err)
 	}
 	return fake, hashes
 }

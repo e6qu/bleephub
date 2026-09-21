@@ -14,21 +14,23 @@ type AdoptRequest struct {
 	// Repository names one repository, owner/repo. Empty means every repository
 	// under the git prefix.
 	Repository string
-	// RemoveOldLayout asks for the second step instead of the first: deleting the
-	// reference objects and supersession markers of repositories that already
-	// have a manifest.
+	// RemoveOldLayout asks for the second step instead of the first: deleting
+	// what only the earlier layouts used — reference objects, supersession
+	// markers, separate pack indexes and filters, loose objects — from
+	// repositories that have been adopted.
 	RemoveOldLayout bool
 }
 
-// Adopt runs the one-off operation that brings an object store written before
-// the manifest existed up to it, against the store the environment names. For
-// each repository it writes the manifest that says what the old layout said —
-// which packs were live, which were superseded and when, and what every
-// reference held — and reports what it did on out. A repository that already
-// has a manifest is reported and left alone; any other failure ends the run.
-// With RemoveOldLayout it instead deletes what only the old layout used, from
-// repositories that have a manifest. The server itself never reads the old
-// layout: it refuses to start on a repository without a manifest.
+// Adopt runs the one-off operation that brings an object store written by an
+// earlier bleephub up to the current layout, against the store the environment
+// names. For each repository it writes the manifest that says what the old
+// layout said — which packs were live, which were superseded and when, and what
+// every reference held — with each pack's index and filter joined into its
+// sidecar and any loose objects packed, and reports what it did on out. A
+// repository already in the current layout is reported and left alone; any
+// other failure ends the run. With RemoveOldLayout it instead deletes what only
+// the earlier layouts used, from repositories that have been adopted. The server
+// itself never reads an earlier layout: it refuses to start on one.
 func Adopt(ctx context.Context, request AdoptRequest, out io.Writer) error {
 	settings, err := SettingsFromEnv()
 	if err != nil {
@@ -62,7 +64,7 @@ func Adopt(ctx context.Context, request AdoptRequest, out io.Writer) error {
 		}
 		reports, err := store.Adopt(ctx, repository)
 		if errors.Is(err, gitstore.ErrAlreadyAdopted) {
-			if _, err := fmt.Fprintf(out, "%s: refused, it already has a manifest\n", repository); err != nil {
+			if _, err := fmt.Fprintf(out, "%s: refused, it is already in the current layout\n", repository); err != nil {
 				return err
 			}
 			continue
@@ -71,13 +73,20 @@ func Adopt(ctx context.Context, request AdoptRequest, out io.Writer) error {
 			return err
 		}
 		for _, report := range reports {
-			if _, err := fmt.Fprintf(out, "%s: manifest written with %d live packs, %d retired packs and %d references%s\n",
-				report.Repository, report.Packs, report.Retired, report.References, snapshotNote(report.Snapshot)); err != nil {
+			if _, err := fmt.Fprintf(out, "%s: manifest written with %d live packs, %d retired packs and %d references%s%s\n",
+				report.Repository, report.Packs, report.Retired, report.References, snapshotNote(report.Snapshot), looseNote(report.Loose)); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func looseNote(loose int) string {
+	if loose == 0 {
+		return ""
+	}
+	return fmt.Sprintf("; %d loose objects packed", loose)
 }
 
 func snapshotNote(snapshot string) string {

@@ -295,6 +295,10 @@ func (s *atomicRefStorer) SetEncodedObject(obj plumbing.EncodedObject) (plumbing
 	return s.storer.SetEncodedObject(obj)
 }
 
+// FlushObjects has nothing to do: go-git's own storage has written an object by
+// the time SetEncodedObject returns.
+func (s *atomicRefStorer) FlushObjects() error { return nil }
+
 func (s *atomicRefStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) { //nolint:ireturn
 	s.prime()
 	s.mu.RLock()

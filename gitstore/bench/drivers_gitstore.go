@@ -50,7 +50,7 @@ func (d *gitstoreDriver) newStore(ctx context.Context) (*gitstore.Store, error) 
 		CacheDir:    cacheDir,
 		// The harness decides when maintenance runs, so that its cost lands in
 		// the maintenance phase and not in whichever push crossed the trigger.
-		CompactionTrigger: -1,
+		CompactAfterPacks: -1,
 		ChunkBytes:        gitstoreTuning.ChunkBytes,
 		MultipartBytes:    gitstoreTuning.MultipartBytes,
 		MemoryCacheBytes:  gitstoreTuning.MemoryCacheBytes,

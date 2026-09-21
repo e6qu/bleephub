@@ -24,8 +24,8 @@ import (
 	"github.com/e6qu/bleephub/gitstore/objstore"
 )
 
-// Compaction turns the loose tier into the pack tier, merges small packs, and
-// removes what the repository no longer needs.
+// Compaction merges small packs, and removes what the repository no longer
+// needs.
 //
 // ORDERING / CRASH SAFETY. Nothing a compaction uploads is part of the
 // repository until the manifest names it, and the manifest changes by one
@@ -35,32 +35,20 @@ import (
 //	2. delete the packs the manifest retired more than a grace period ago, and
 //	   the reference snapshots no manifest names; list the uploads no manifest
 //	   names as retired orphans; drop what was deleted from the manifest
-//	3. build the new pack and its index on local disk
-//	4. upload pack-<sha>.idx, pack-<sha>.bfilter, pack-<sha>.pack
+//	3. build the new pack and its sidecar on local disk
+//	4. upload pack-<sha>.sidecar and pack-<sha>.pack
 //	5. commit: the manifest gains the new pack and retires the packs it merged
-//	6. delete the loose keys that step 3 actually packed
 //
-// Crash before step 5: the loose objects and the old packs stay authoritative,
-// and the upload is an orphan for a later compaction to sweep. Crash between 5
-// and 6: pack and loose objects both exist; a reader takes the packed copy and
-// the next compaction removes the duplicates. No object is ever in neither
-// place, because a loose delete strictly follows the commit of the pack holding
-// it, and a retired pack's bytes outlive the commit that retired it by the grace
-// period.
+// Crash before step 5: the old packs stay authoritative, and the upload is an
+// orphan for a later compaction to sweep. A retired pack's bytes outlive the
+// commit that retired it by the grace period, so a reader that began before the
+// commit still finds them.
 //
 // CONCURRENCY. No lock is held, in process or out. Two replicas may compact one
-// repository at once. If both merge, both mutations retire the same packs, and
-// the one that commits second finds them no longer live: it refuses, and that
-// replica deletes the pack it uploaded — unless the two packs are the same pack,
-// named alike because they hold the same objects, in which case it is live and
-// stays. If they only pack loose objects, both commit; each deletes only the
-// keys it listed and packed, so every deleted key is in some live pack. If one
-// reads a loose object the other already deleted mid-build, the read finds
-// nothing and buildPackTolerantly drops it and rebuilds — safe because the only
-// way that key is gone is that the other replica already packed it. A reader on
-// another replica that still lists an object as loose finds the key gone, takes
-// that as proof that what it holds is out of date, reads the manifest again, and
-// finds the pack.
+// repository at once. Both mutations retire the same packs, and the one that
+// commits second finds them no longer live: it refuses, and that replica
+// deletes the pack it uploaded — unless the two packs are the same pack, named
+// alike because they hold the same objects, in which case it is live and stays.
 //
 // WHAT IS NEVER DELETED. A pack the manifest names as live. A pack it names as
 // retired, until a grace period after the retirement. An upload it does not
@@ -73,15 +61,12 @@ import (
 // back (draft.addPack), and after that is refused.
 
 const (
-	// compactionMinLooseObjects is the loose count below which packing isn't worth its round trips.
-	compactionMinLooseObjects = 64
 	// compactionPackWindow is the delta window the pack encoder searches.
 	compactionPackWindow = 10
-	// compactionMergeThreshold is the live pack count above which a compaction
-	// also rewrites existing packs. go-git loads every pack's index before
-	// answering any packed lookup, so one-pack-per-push would give back what
-	// packing bought.
-	compactionMergeThreshold = 8
+	// defaultCompactAfterPacks is the live pack count above which a write asks
+	// for a compaction (Options.CompactAfterPacks). Every lookup that misses
+	// asks every pack, so a pack per write would give back what packing bought.
+	defaultCompactAfterPacks = 8
 	// compactionGeometricFactor shapes which packs a merge rewrites: a pack is
 	// left alone while it is at least this many times the size of everything
 	// smaller than it put together. A push lands as a pack of its own, so
@@ -104,9 +89,8 @@ const (
 
 // CompactionResult reports what one compaction did.
 type CompactionResult struct {
-	// Packed is the number of loose objects written into the new pack.
-	Packed int
-	// Merged is the number of previously packed objects rewritten into it.
+	// Merged is the number of previously packed objects rewritten into the new
+	// pack.
 	Merged int
 	// PackName is the published pack-<sha> base name; empty when nothing to do.
 	PackName string
@@ -123,15 +107,14 @@ type CompactionResult struct {
 	FilterBytes int
 }
 
-// Compactor is a git storage handle that can pack its own loose objects.
-// Local-filesystem storage does not implement it: git's own maintenance owns
-// that layout and a loose object there is one file open, not a round trip.
+// Compactor is a git storage handle that merges its own packs. Local-filesystem
+// storage does not implement it: git's own maintenance owns that layout.
 type Compactor interface {
 	Compact(ctx context.Context) (CompactionResult, error)
 }
 
-// CompactRepository packs a repository's loose objects when its storage
-// supports it, reporting an empty result otherwise.
+// CompactRepository compacts a repository when its storage supports it,
+// reporting an empty result otherwise.
 func CompactRepository(ctx context.Context, stor gitStorage.Storer) (CompactionResult, error) {
 	compactor, ok := stor.(Compactor)
 	if !ok {
@@ -140,46 +123,21 @@ func CompactRepository(ctx context.Context, stor gitStorage.Storer) (CompactionR
 	return compactor.Compact(ctx)
 }
 
-// defaultCompactionTrigger is deliberately larger than an ordinary push, so the
-// once-per-object read a compaction costs is amortized over a batch worth
-// packing.
-const defaultCompactionTrigger = 4096
-
-// noteObjectWritten counts a loose write and asks for a compaction once enough
-// accumulate. Only one compaction per repository runs at a time in this process;
-// one already running absorbs concurrent writes, since it deletes only the keys
-// it listed.
-func (r *repository) noteObjectWritten() {
-	trigger := r.shared.opts.CompactionTrigger
-	if trigger <= 0 || r.looseWrites.Add(1) < trigger {
-		return
-	}
-	r.requestCompaction()
-}
-
-// notePackWritten decides, as a push lands, whether the repository is due a
+// notePackWritten decides, as a pack lands, whether the repository is due a
 // compaction, and asks for one only then. A compaction opens with a listing of
-// the whole object tree, so one run after every push to find nothing to do was
-// a request per push; what it would find is already known here.
-//
-// Two things make one due. Packs: a run of small pushes leaves a pack each, and
-// every lookup asks every pack. The count is the snapshot's — the repository's
-// live packs, not a tally of this process's pushes — so packs an earlier process
-// left are counted after a restart. And loose objects: the API's object writes
-// land loose, below the write trigger for a long time, and a push is the natural
-// moment to fold in a tier worth packing.
+// the whole object tree, so one run after every write to find nothing to do was
+// a request per write; what it would find is already known here. The count is
+// the manifest's — the repository's live packs, not a tally of this process's
+// writes — so packs an earlier process left are counted after a restart.
 func (r *repository) notePackWritten(livePacks int) {
-	if r.shared.opts.CompactionTrigger <= 0 {
-		return
-	}
-	if livePacks <= compactionMergeThreshold && r.looseWrites.Load() < compactionMinLooseObjects {
+	threshold := r.shared.opts.CompactAfterPacks
+	if threshold <= 0 || livePacks <= threshold {
 		return
 	}
 	r.requestCompaction()
 }
 
 func (r *repository) requestCompaction() {
-	r.looseWrites.Store(0)
 	RequestCompaction(r.name, r)
 }
 
@@ -196,18 +154,17 @@ func RequestCompaction(repo string, stor gitStorage.Storer) bool {
 	return true
 }
 
-// compactionRequestFunc is invoked when a repository's loose tier fills. The
-// package owns no goroutine lifecycle, so the flush is delegated to an installed
-// handler: the server's scheduler runs one supervised, cancel-at-shutdown
-// compaction per repository. Left unset (tests, embeddings), the loose tier just
-// accumulates — slower, not broken. Needed because the REST git-database
-// endpoints write objects directly, outside the post-receive path.
+// compactionRequestFunc is invoked when a repository's packs are due a merge.
+// The package owns no goroutine lifecycle, so the compaction is delegated to an
+// installed handler: the server's scheduler runs one supervised,
+// cancel-at-shutdown compaction per repository. Left unset (tests, embeddings),
+// packs just accumulate — slower, not broken.
 var (
 	compactionRequestMu   sync.RWMutex
 	compactionRequestFunc func(repo string, stor gitStorage.Storer)
 )
 
-// SetCompactionRequestHandler installs the loose-tier-full handler; nil removes it.
+// SetCompactionRequestHandler installs the compaction handler; nil removes it.
 func SetCompactionRequestHandler(request func(repo string, stor gitStorage.Storer)) {
 	compactionRequestMu.Lock()
 	defer compactionRequestMu.Unlock()
@@ -228,11 +185,11 @@ func (r *repository) Compact(ctx context.Context) (CompactionResult, error) {
 	var result CompactionResult
 
 	// One listing of objects/ answers everything a compaction asks of the store
-	// before it decides: what is loose, and what lies in the pack directory and
-	// among the reference snapshots. The manifest is revalidated AFTER it: what
-	// the manifest read then does not name, and the listing shows as old, was
-	// not named by any manifest while the listing was taken.
-	listed, err := r.loose.refresh()
+	// before it decides: what lies in the pack directory and among the reference
+	// snapshots. The manifest is revalidated AFTER it: what the manifest read
+	// then does not name, and the listing shows as old, was not named by any
+	// manifest while the listing was taken.
+	listing, err := r.listObjects()
 	if err != nil {
 		return result, err
 	}
@@ -240,99 +197,64 @@ func (r *repository) Compact(ctx context.Context) (CompactionResult, error) {
 	if err != nil {
 		return result, err
 	}
-	if state, err = r.sweep(ctx, state, listed.listing, &result); err != nil {
+	if state, err = r.sweep(ctx, state, listing, &result); err != nil {
 		return result, err
 	}
 
+	// What is merged is what the geometric rule picks; how many packs make a
+	// compaction due is the business of whoever asked for this one.
 	live := make([]livePack, 0, len(state.packs))
 	for _, pack := range state.packs {
 		live = append(live, livePack{name: pack.name, size: pack.pack.size})
 	}
-	var existing []string
-	if len(live) > compactionMergeThreshold {
-		existing = packsToMerge(live)
-	}
-	merge := len(existing) > 0
-
-	loose := listed.listing.loose
-	if len(loose) < compactionMinLooseObjects && !merge {
+	existing := packsToMerge(live)
+	if len(existing) == 0 {
 		return result, nil
 	}
-
-	var mergedHashes []plumbing.Hash
-	if merge {
-		mergedHashes, err = hashesInPacks(state, existing)
-		if err != nil {
-			return result, err
+	hashes, err := hashesInPacks(state, existing)
+	if err != nil {
+		return result, err
+	}
+	seen := make(map[plumbing.Hash]bool, len(hashes))
+	unique := hashes[:0]
+	for _, hash := range hashes {
+		if !seen[hash] {
+			seen[hash] = true
+			unique = append(unique, hash)
 		}
 	}
-
-	hashes := make([]plumbing.Hash, 0, len(loose)+len(mergedHashes))
-	seen := make(map[plumbing.Hash]bool, len(loose)+len(mergedHashes))
-	packedLoose := make([]looseObject, 0, len(loose))
-	for _, obj := range loose {
-		if seen[obj.hash] {
-			continue
-		}
-		seen[obj.hash] = true
-		hashes = append(hashes, obj.hash)
-		packedLoose = append(packedLoose, obj)
-	}
-	for _, hash := range mergedHashes {
-		if seen[hash] {
-			continue
-		}
-		seen[hash] = true
-		hashes = append(hashes, hash)
-		result.Merged++
-	}
-	if len(hashes) == 0 {
+	if len(unique) == 0 {
 		return result, nil
 	}
+	result.Merged = len(unique)
 
-	built, survivors, err := r.buildPackTolerantly(hashes)
+	built, err := r.buildPack(unique)
 	if err != nil {
 		return result, err
 	}
 	defer built.cleanup()
-	packedLoose = retainPacked(packedLoose, survivors)
 
 	uploaded, err := r.uploadPack(ctx, built)
 	if err != nil {
 		return result, err
 	}
 	retiring := slices.DeleteFunc(existing, func(name string) bool { return name == built.name })
-	committed, err := r.commits.commit(func(d *draft) error {
+	if _, err := r.commits.commit(func(d *draft) error {
 		if err := d.retire(retiring, false); err != nil {
 			return err
 		}
 		return d.addPack(uploaded.entry(packSourceCompaction))
-	})
-	if err != nil {
+	}); err != nil {
 		r.manifests.withdraw(built.name)
 		if errors.Is(err, errCompactionLostRace) {
 			return result, r.discardUpload(ctx, uploaded)
 		}
 		return result, err
 	}
-	result.Packed = len(packedLoose)
 	result.PackName = built.name
 	result.PackBytes = built.packSize
 	result.FilterBytes = built.filterBits / 8
-
-	// The pack is live, and only now may any loose key it packed be deleted: a
-	// reader never looks only where the object no longer is. The loose snapshot
-	// forgets the keys while every listing there has been still shows them,
-	// which is what makes forgetting them sound.
-	if committed.pack(built.name) == nil {
-		return result, fmt.Errorf("compact %s: the commit did not make %s live", r.name, built.name)
-	}
-	packedHashes := make([]plumbing.Hash, 0, len(packedLoose))
-	for _, object := range packedLoose {
-		packedHashes = append(packedHashes, object.hash)
-	}
-	r.loose.packed(packedHashes)
-	return result, r.deleteLooseObjects(ctx, packedLoose)
+	return result, nil
 }
 
 // discardUpload removes the pack of a compaction that lost its race, unless the
@@ -351,8 +273,8 @@ func (r *repository) discardUpload(ctx context.Context, uploaded *uploadedPack) 
 }
 
 // packKeySuffixes are the objects a pack is made of. The pack goes first when
-// they are deleted: once it has gone, nothing looks for its index or filter.
-var packKeySuffixes = []string{".pack", ".idx", ".bfilter"}
+// they are deleted: once it has gone, nothing looks for its sidecar.
+var packKeySuffixes = []string{".pack", sidecarSuffix}
 
 func (r *repository) deletePackKeys(ctx context.Context, name string) error {
 	for _, suffix := range packKeySuffixes {
@@ -454,60 +376,6 @@ func (r *repository) sweep(ctx context.Context, state *repoState, listing *objec
 	return committed, nil
 }
 
-// buildPackTolerantly encodes the pack; if an object vanished between listing
-// and read (only possible when another replica already packed it), it drops the
-// object and retries. Retrying beats probing every object up front, which would
-// cost the per-object round trip compaction exists to remove.
-func (r *repository) buildPackTolerantly(hashes []plumbing.Hash) (*builtPack, map[plumbing.Hash]bool, error) {
-	built, err := r.buildPack(hashes)
-	if err == nil {
-		return built, hashSet(hashes), nil
-	}
-	if !errors.Is(err, plumbing.ErrObjectNotFound) {
-		return nil, nil, err
-	}
-
-	survivors := make([]plumbing.Hash, 0, len(hashes))
-	for _, hash := range hashes {
-		switch probeErr := r.HasEncodedObject(hash); {
-		case probeErr == nil:
-			survivors = append(survivors, hash)
-		case !errors.Is(probeErr, plumbing.ErrObjectNotFound):
-			// Not knowing whether an object survives is not the same as its
-			// being gone, and must not drop it from the pack.
-			return nil, nil, probeErr
-		}
-	}
-	if len(survivors) == 0 {
-		return nil, nil, err
-	}
-	built, err = r.buildPack(survivors)
-	if err != nil {
-		return nil, nil, err
-	}
-	return built, hashSet(survivors), nil
-}
-
-func hashSet(hashes []plumbing.Hash) map[plumbing.Hash]bool {
-	set := make(map[plumbing.Hash]bool, len(hashes))
-	for _, hash := range hashes {
-		set[hash] = true
-	}
-	return set
-}
-
-// retainPacked narrows the loose keys due for deletion to those that made it
-// into the published pack.
-func retainPacked(objects []looseObject, packed map[plumbing.Hash]bool) []looseObject {
-	kept := objects[:0]
-	for _, object := range objects {
-		if packed[object.hash] {
-			kept = append(kept, object)
-		}
-	}
-	return kept
-}
-
 // livePack is a reader-visible pack no merge has yet rewritten. A superseded
 // pack is not one: its objects already live in the pack that replaced it, and
 // counting it toward the merge threshold, or merging it again, would rewrite the
@@ -590,12 +458,15 @@ type builtPack struct {
 	packSize   int64
 	objects    int
 	// parsed is the index as the parse of the staged bytes produced it, and
-	// index the same encoded for upload. The publisher keeps the first so that it
-	// never reads back the second.
-	parsed     *idxfile.MemoryIndex
-	index      []byte
-	filter     []byte
-	filterBits int
+	// sidecar the index and the filter encoded for upload (sidecar.go), the index
+	// indexBytes long and the filter filterBytes. The publisher keeps parsed and
+	// filter so that it never reads back what it uploads.
+	parsed      *idxfile.MemoryIndex
+	filter      *binaryFuseFilter
+	sidecar     []byte
+	indexBytes  int64
+	filterBytes int64
+	filterBits  int
 }
 
 // openRoot scopes access to the pack's staging directory.
@@ -716,12 +587,15 @@ func (b *builtPack) describe(staged *os.File, layout packLayout, bases storer.En
 		return err
 	}
 
+	filterBytes := filter.encode()
 	b.name = "pack-" + checksum.String()
 	b.packSize = size
 	b.objects = len(keys)
 	b.parsed = index
-	b.index = encoded.Bytes()
-	b.filter = filter.encode()
+	b.filter = filter
+	b.sidecar = encodeSidecar(encoded.Bytes(), filterBytes, checksum)
+	b.indexBytes = int64(encoded.Len())
+	b.filterBytes = int64(len(filterBytes))
 	b.filterBits = filter.bits()
 	return nil
 }
@@ -748,46 +622,41 @@ type uploadedPack struct {
 // entry is the pack as a manifest records it.
 func (u *uploadedPack) entry(source string) manifestPack {
 	return manifestPack{
-		Name:        u.stored.name,
-		Bytes:       u.stored.pack.size,
-		IndexBytes:  u.stored.index.size,
-		FilterBytes: u.stored.filterExtents.size,
-		Objects:     u.stored.objects,
-		Source:      source,
+		Name:         u.stored.name,
+		Bytes:        u.stored.pack.size,
+		SidecarBytes: u.stored.sidecar.size,
+		IndexBytes:   u.stored.indexBytes,
+		FilterBytes:  u.stored.filterBytes,
+		Objects:      u.stored.objects,
+		Source:       source,
 	}
 }
 
-// uploadPack puts a pack's index, filter and bytes in the store, and returns the
-// pack as a state will hold it once a manifest names it, with its index and
-// filter already in hand. The three go in any order and make nothing visible:
-// the commit that follows does that. The local cache is seeded from the staged
-// bytes, so that neither this handle nor the next one on this replica downloads
-// what has just been uploaded.
+// uploadPack puts a pack and its sidecar in the store, and returns the pack as a
+// state will hold it once a manifest names it, with its index and filter already
+// in hand. The two go in either order and make nothing visible: the commit that
+// follows does that. The local cache is seeded from the staged bytes, so that
+// neither this handle nor the next one on this replica downloads what has just
+// been uploaded.
 func (r *repository) uploadPack(ctx context.Context, built *builtPack) (*uploadedPack, error) {
-	filter, err := decodeBinaryFuseFilter(built.filter)
-	if err != nil {
-		return nil, fmt.Errorf("filter of %s: %w", built.name, err)
-	}
-	filterExtents := r.manifests.extents(built.name+".bfilter", int64(len(built.filter)))
 	stored := &storedPack{
-		name:          built.name,
-		objects:       built.objects,
-		pack:          r.manifests.extents(built.name+".pack", built.packSize),
-		index:         r.manifests.extents(built.name+".idx", int64(len(built.index))),
-		filtered:      true,
-		filterExtents: filterExtents,
+		name:        built.name,
+		objects:     built.objects,
+		pack:        r.manifests.extents(built.name+".pack", built.packSize),
+		sidecar:     r.manifests.extents(built.name+sidecarSuffix, int64(len(built.sidecar))),
+		indexBytes:  built.indexBytes,
+		filterBytes: built.filterBytes,
 	}
 	stored.parsed.Store(built.parsed)
-	stored.filter.Store(filter)
+	stored.filter.Store(built.filter)
 
-	// The three uploads wait on nothing of one another's — it is the commit that
-	// follows that makes them a pack — so they go together, and a push pays the
-	// latency of the longest and not of their sum. The pack is one request when
+	// The two uploads wait on nothing of each other's — it is the commit that
+	// follows that makes them a pack — so they go together, and a write pays the
+	// latency of the longer and not of their sum. The pack is one request when
 	// it is small, else in parts, so that a pack of gigabytes is never held in
 	// memory.
 	var uploads errgroup.Group
-	uploads.Go(func() error { return r.putObject(ctx, stored.index.key, built.index) })
-	uploads.Go(func() error { return r.putObject(ctx, filterExtents.key, built.filter) })
+	uploads.Go(func() error { return r.putObject(ctx, stored.sidecar.key, built.sidecar) })
 	uploads.Go(func() error {
 		staged, err := built.open()
 		if err != nil {
@@ -802,8 +671,7 @@ func (r *repository) uploadPack(ctx context.Context, built *builtPack) (*uploade
 	}
 
 	r.seedPackCache(stored.pack, built)
-	r.seedCache(stored.index, built.index)
-	r.seedCache(filterExtents, built.filter)
+	r.seedCache(stored.sidecar, built.sidecar)
 	r.manifests.offer(stored)
 	return &uploadedPack{stored: stored}, nil
 }
@@ -835,8 +703,8 @@ func (r *repository) seedPackCache(extents packExtents, built *builtPack) {
 	}
 }
 
-// seedCache does for a published pack's index and filter what seedPackCache does
-// for the pack.
+// seedCache does for a published pack's sidecar what seedPackCache does for the
+// pack.
 func (r *repository) seedCache(extents packExtents, body []byte) {
 	cache := r.shared.packCache()
 	chunkSize := r.shared.opts.ChunkBytes
@@ -845,16 +713,4 @@ func (r *repository) seedCache(extents packExtents, body []byte) {
 		// A copy, for the reason seedPackCache gives: an admitted chunk is shared.
 		cache.store(r.shared.bucket.Name(), extents.key, chunkSize, chunk, bytes.Clone(body[start:end]))
 	}
-}
-
-// deleteLooseObjects removes the keys that went into the published pack.
-func (r *repository) deleteLooseObjects(ctx context.Context, objects []looseObject) error {
-	keys := make([]string, 0, len(objects))
-	for _, object := range objects {
-		keys = append(keys, object.key)
-	}
-	if err := r.shared.deleteMany(ctx, keys); err != nil {
-		return fmt.Errorf("delete %d packed loose objects: %w", len(keys), err)
-	}
-	return nil
 }

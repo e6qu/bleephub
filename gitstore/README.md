@@ -11,17 +11,18 @@ process, one repository and a local disk, and not safe for concurrent reads of a
 handle nobody has read yet. This one is a server's.
 
 A repository is `<prefix>/<owner>/<repo>/`: ordinary, self-contained git packs
-with git's own indexes (`objects/pack/pack-<sha>.{pack,idx}`) and a membership
-filter beside each (`.bfilter`); loose objects as git writes them
-(`objects/xx/…`); and one small JSON object, **`manifest`**, that is the
-repository's only commit point. The manifest names the live packs (with their
+(`objects/pack/pack-<sha>.pack`), each beside one **sidecar**
+(`pack-<sha>.sidecar`) holding git's own index for it, its membership filter
+and a self-describing footer; and one small JSON object, **`manifest`**, that is
+the repository's only commit point. Every object is in a pack: nothing is
+written loose. The manifest names the live packs (with their
 sizes and object counts), the packs a compaction retired and when, and every
 reference — as a pointer to an immutable snapshot object
 (`objects/refs/<sequence>-<nonce>`) plus the changes since it, folded into a new
 snapshot past 512 changes, so the manifest stays small however many references
 there are. A change to a repository is visible when, and only when, a
 conditional write of the manifest succeeds. References are not objects of their
-own, nothing is discovered by listing but the loose objects, and nothing is
+own, nothing a reader needs is discovered by listing, and nothing is
 arbitrated by a lock. [`docs/git-storage.md`](../docs/git-storage.md) has the
 format and the argument.
 
@@ -30,15 +31,15 @@ format and the argument.
 | **One commit point, by compare-and-swap** | A change is a function from a manifest to a manifest that may refuse. It is applied to the manifest held and written with `IfVersion` (`IfAbsent` for the first); on 412 the manifest is re-read, the change re-applied, and the write retried with jittered backoff, sixteen times at most. The 412 is the verification: nothing is read before a write. Goroutines and replicas are arbitrated alike, by the store and nothing else. |
 | **Group commit** | One object takes about one conditional overwrite a second on Google Cloud Storage, so commits to one repository that arrive while a swap is in flight share the next one. Each is validated on its own: one caller's refusal fails only that caller. No goroutine is started; the caller that finds no swap in flight leads. |
 | **A push is one transaction** | `PushTransactor.BeginPush` returns a view that also reads the pushed pack — uploaded, but named by no manifest — so a server can decide a push with its commits to hand; `Commit` then adds the pack and applies the reference updates, each against its expected old value, in one swap. A pushed pack is never visible unless its reference updates were accepted, an `atomic` push is atomic, and a refused push leaves only an upload to be swept. `PackfileWriter`, `SetReference` and `CheckAndSetReference` still work one call at a time, each its own swap. |
-| **Shared handles, no locks** | One handle per repository serves every request for the life of the process. What it knows of the repository — the manifest, the live packs, the loose tier — it holds as immutable values swapped whole, so a reader takes a pointer and there is nothing half-built for two readers to race on. go-git's packfile decoder, which cannot be shared, is made afresh for each call over a pack index that is parsed once and only read after. |
+| **Everything written is a pack** | An object written through `SetEncodedObject` is pending: readable through the handle at once, and packed with the next reference commit of the repository — in the same swap — or on `FlushObjects`, which an application calls before it names an object no reference points at, or once 8 MiB is pending. A write of one blob is two uploads and a swap; no replica ever lists to find it. |
+| **Shared handles, no locks** | One handle per repository serves every request for the life of the process. What it knows of the repository — the manifest, the live packs — it holds as immutable values swapped whole, so a reader takes a pointer and there is nothing half-built for two readers to race on. go-git's packfile decoder, which cannot be shared, is made afresh for each call over a pack index that is parsed once and only read after. |
 | **Revalidation** | A manifest held answers reads of references for `IndexFreshness`; past that it is revalidated with a conditional read (`Bucket.GetIfChanged`), one small request usually answered "not modified". A cold advertisement of any number of references is two requests: the manifest and its snapshot. |
-| **Refresh on a miss** | An object that is found is returned whatever the age of what found it. One that is not is believed absent only of a manifest and a loose listing inside `IndexFreshness`; otherwise they are fetched again first, because another replica may have pushed the pack that holds it. A pack the manifest names that is gone (404) — retired and deleted elsewhere — reads the manifest again and retries once. A repository whose objects are all packed is never listed on the read path. |
-| **Pack ingest** | A pushed packfile is stored as a pack — three uploads and a commit, however many objects — instead of being exploded into one key per object. Packs are indexed as git's `index-pack` indexes them, the first pass while the push arrives; thin packs from stock git clients are completed as `--fix-thin` completes them, the bases they left out appended and the pushed bytes kept, so the bucket only ever holds ordinary, self-contained git packs. Nothing is listed, and nothing just uploaded is read back. |
+| **Refresh on a miss** | An object that is found is returned whatever the age of what found it. One that is not is believed absent only of a manifest inside `IndexFreshness`; otherwise the manifest is revalidated first, because another replica may have pushed the pack that holds it. A pack the manifest names that is gone (404) — retired and deleted elsewhere — reads the manifest again and retries once. Nothing is listed on the read path. |
+| **Pack ingest** | A pushed packfile is stored as a pack — two uploads (pack and sidecar) and a commit, however many objects — instead of being exploded into one key per object. Packs are indexed as git's `index-pack` indexes them, the first pass while the push arrives; thin packs from stock git clients are completed as `--fix-thin` completes them, the bases they left out appended and the pushed bytes kept, so the bucket only ever holds ordinary, self-contained git packs. Nothing is listed, and nothing just uploaded is read back. |
 | **Ranged pack reads** | A pack is read through HTTP range requests, so resolving one object pulls a bounded extent, not a gigabyte pack. Concurrent fetches of one extent are one request. |
 | **Pack cache** | Packs are content-addressed and immutable, so fetched extents are cached on local disk and in memory with no invalidation protocol. |
-| **Membership index** | "Does the repository have this?" — which a fetch negotiation mostly asks about objects it does not — is answered from each pack's binary-fuse filter and a cuckoo filter per loose directory, without reading a pack index or asking the store. Answers are negative-only: a "maybe" always goes on to the exact lookup. A pack's index is read when a read first needs it. |
-| **Compaction, retirement, sweep** | Loose objects are rolled into packs and small packs are merged geometrically (as `git repack --geometric` does), committed by one swap that adds the new pack and retires the merged ones; loose keys are deleted only after it. Two compactions racing need no lock: the loser's change refuses and it deletes what it uploaded. A retired pack is deleted an hour after its retirement. Uploads and reference snapshots no manifest names are swept once they have lain there as long — packs by way of the retired list, because a pack's name is its content's digest and may be uploaded again. Nothing a manifest names is ever deleted. |
-| **One request per object written** | An object written through the API is one PUT: no probe, no temporary key, no copy. |
+| **Membership index** | "Does the repository have this?" — which a fetch negotiation mostly asks about objects it does not — is answered from each pack's binary-fuse filter, without reading a pack index or asking the store. Answers are negative-only: a "maybe" always goes on to the exact lookup. A pack's index is read when a read first needs it. |
+| **Compaction, retirement, sweep** | Small packs are merged geometrically (as `git repack --geometric` does), committed by one swap that adds the new pack and retires the merged ones. Two compactions racing need no lock: the loser's change refuses and it deletes what it uploaded. A retired pack is deleted an hour after its retirement. Uploads and reference snapshots no manifest names are swept once they have lain there as long — packs by way of the retired list, because a pack's name is its content's digest and may be uploaded again. Nothing a manifest names is ever deleted. |
 | **Outage behaviour** | Every store call runs under a timeout derived from the server's context and a circuit breaker whose open state is a transient error, never "not found", so an outage cannot be mistaken for a deleted ref. |
 
 The object store is reached only through [`objstore.Bucket`](objstore/objstore.go):
@@ -163,8 +164,8 @@ The library never reads the process environment. Everything is an
 | `ChunkBytes` | 4 MiB | Extent size of ranged pack reads. |
 | `CacheDir`, `CacheBytes` | under `os.TempDir`, 8 GiB | On-disk pack cache and compaction staging. |
 | `MemoryCacheBytes` | 256 MiB | In-memory tier of the pack cache. Negative disables it. |
-| `IndexFreshness` | 250ms | How far a read may lag another replica's write: how long the manifest held may answer reads of references, and how long it and a listing of the loose objects may answer "absent", before the store is asked again. Negative revalidates on every read of a reference and every miss. A write never relies on it. |
-| `CompactionTrigger` | 4096 | Loose writes to one repository that request a compaction. A push requests one sooner: when it leaves more than 8 live packs, or lands behind 64 or more loose writes. Negative never requests one. |
+| `IndexFreshness` | 250ms | How far a read may lag another replica's write: how long the manifest held may answer reads of references, and "absent" for an object, before the store is asked again. Negative revalidates on every read of a reference and every miss. A write never relies on it. |
+| `CompactAfterPacks` | 8 | Live packs above which a push, a flush or a reference commit carrying written objects requests a compaction. Negative never requests one. What a compaction merges is decided by the packs' sizes alone. |
 | `MultipartBytes` | 64 MiB | Pack size above which a pack is published by multipart upload, and the size of its parts (`OpenS3`; a bucket handed to `Open` brings its own, and `Options.UploadPieceBytes` tells whoever builds one this value with its default applied). |
 | `BreakerThreshold`, `BreakerCooldown` | 5, 5s | Circuit breaker. A negative threshold disables it. |
 
@@ -173,9 +174,9 @@ value means off, so that a zero `Options{}` is always safe.
 
 ### Hooks an application installs
 
-- `SetCompactionRequestHandler` — called when a repository's loose tier crosses
-  `CompactionTrigger`. The library owns no goroutines; the application decides
-  when and where `CompactRepository` runs.
+- `SetCompactionRequestHandler` — called when a write leaves a repository more
+  than `CompactAfterPacks` live packs. The library owns no goroutines; the
+  application decides when and where `CompactRepository` runs.
 - `(*Store).SetBaseContext` — a server-lifetime context, so in-flight store
   calls are cancelled on shutdown.
 
