@@ -478,7 +478,7 @@ func serveGitUploadPack(ctx context.Context, stor storer.Storer, in *bufio.Reade
 		return result, ctxErr
 	}
 	request.haves = negotiation.haves
-	return result, sendGitPackfile(stor, out, request, boundary, request.sideband)
+	return result, sendGitPackfile(ctx, stor, out, request, boundary, request.sideband)
 }
 
 // checkGitUploadPackCapabilities refuses a request asking for an unadvertised
@@ -764,15 +764,15 @@ func (b *gitBandWriter) finish() error {
 }
 
 // sendGitPackfile enumerates the objects the answer owes and writes them.
-func sendGitPackfile(stor storer.Storer, out io.Writer, request *gitUploadRequest, boundary *gitFetchBoundary, mode gitSidebandMode) error {
-	return sendGitPlannedPackfile(stor, out, request, boundary, nil, mode)
+func sendGitPackfile(ctx context.Context, stor storer.Storer, out io.Writer, request *gitUploadRequest, boundary *gitFetchBoundary, mode gitSidebandMode) error {
+	return sendGitPlannedPackfile(ctx, stor, out, request, boundary, nil, mode)
 }
 
 // sendGitPlannedPackfile writes the packfile, taking a pre-enumerated plan or
 // nil. A v2 reply offering packfile URIs must know the plan first (that section
 // precedes the pack and derives from it), so it passes the plan in; every other
 // reply passes nil and the walk happens here, reported on the progress band.
-func sendGitPlannedPackfile(stor storer.Storer, out io.Writer, request *gitUploadRequest, boundary *gitFetchBoundary, plan *gitPackPlan, mode gitSidebandMode) error {
+func sendGitPlannedPackfile(ctx context.Context, stor storer.Storer, out io.Writer, request *gitUploadRequest, boundary *gitFetchBoundary, plan *gitPackPlan, mode gitSidebandMode) error {
 	band := newGitBandWriter(out, mode, !request.noProgress)
 	if plan == nil {
 		counted := 0
@@ -790,7 +790,7 @@ func sendGitPlannedPackfile(stor storer.Storer, out io.Writer, request *gitUploa
 	}
 	band.progressf("Enumerating objects: %d, done.\n", len(plan.objects))
 	band.progressf("Counting objects: 100%% (%d/%d), done.\n", len(plan.objects), len(plan.objects))
-	if err := writeGitPackfile(band, stor, plan, request.thinPack); err != nil {
+	if err := writeGitPackfile(ctx, band, stor, plan, request.thinPack); err != nil {
 		return band.fatal(err)
 	}
 	band.progressf("Total %d\n", len(plan.objects))

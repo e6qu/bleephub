@@ -24,12 +24,12 @@ import (
 // parallel because the storage backend is chosen from the process environment.
 func newS3GitServerForTest(t *testing.T) *isolatedServer {
 	t.Helper()
-	fs := newS3FSForTest(t)
+	objects := newGitObjectStoreForTest(t)
 	t.Setenv("BLEEPHUB_GIT_DIR", "")
 	t.Setenv("BLEEPHUB_S3_ENDPOINT", s3ServerEndpoint)
-	t.Setenv("BLEEPHUB_S3_BUCKET", fs.Bucket())
+	t.Setenv("BLEEPHUB_S3_BUCKET", objects.Bucket().Name())
 	t.Setenv("BLEEPHUB_S3_PREFIX", "git")
-	resetS3FSCacheForTest(t)
+	resetGitObjectStoreForTest(t)
 	return newIsolatedServer(t)
 }
 

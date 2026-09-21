@@ -579,7 +579,7 @@ func TestGitDeleteCleanup(t *testing.T) {
 }
 
 func TestDeleteRepoReportsS3GitCleanupFailure(t *testing.T) {
-	resetS3FSCacheForTest(t)
+	resetGitObjectStoreForTest(t)
 	t.Setenv("BLEEPHUB_GIT_DIR", "")
 	t.Setenv("BLEEPHUB_S3_BUCKET", "")
 
@@ -591,7 +591,7 @@ func TestDeleteRepoReportsS3GitCleanupFailure(t *testing.T) {
 		t.Fatal("expected repo to be created before S3 git storage is enabled")
 	}
 
-	resetS3FSCacheForTest(t)
+	resetGitObjectStoreForTest(t)
 	t.Setenv("BLEEPHUB_S3_BUCKET", "bucket")
 	t.Setenv("BLEEPHUB_S3_ENDPOINT", "http://127.0.0.1:1")
 

@@ -2,11 +2,13 @@ package gitstore
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"io"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -15,7 +17,7 @@ import (
 
 const testRepo = "octocat/monorepo"
 
-func testPackedStorage(t *testing.T, fake *fakeS3) *atomicRefStorer {
+func testPackedStorage(t *testing.T, fake *fakeS3) *repository {
 	t.Helper()
 	stor, err := packedStorage(fake, testRepo)
 	if err != nil {
@@ -25,7 +27,7 @@ func testPackedStorage(t *testing.T, fake *fakeS3) *atomicRefStorer {
 }
 
 // readObjects reads every hash back through the storer and returns the bytes.
-func readObjects(t *testing.T, stor *atomicRefStorer, hashes []plumbing.Hash) map[plumbing.Hash]string {
+func readObjects(t *testing.T, stor *repository, hashes []plumbing.Hash) map[plumbing.Hash]string {
 	t.Helper()
 	out := make(map[plumbing.Hash]string, len(hashes))
 	for _, hash := range hashes {
@@ -245,7 +247,7 @@ func looseKeyOf(hash plumbing.Hash) string {
 	return "prefix/" + testRepo + "/objects/" + text[:2] + "/" + text[2:]
 }
 
-func writeBlob(t *testing.T, stor *atomicRefStorer, body string) plumbing.Hash {
+func writeBlob(t *testing.T, stor *repository, body string) plumbing.Hash {
 	t.Helper()
 	obj := stor.NewEncodedObject()
 	obj.SetType(plumbing.BlobObject)
@@ -539,17 +541,36 @@ func TestConcurrentReadsWritesAndCompactionAreRaceFree(t *testing.T) {
 	}
 }
 
+// smallestPartBytes is the smallest part an S3 upload may be made of, and so the
+// lowest the threshold for uploading in parts can be set.
+const smallestPartBytes = 5 << 20
+
+// writeIncompressibleBlob writes a blob that zlib cannot shrink, so that the
+// pack holding it is at least as large. The bytes are a hash chain: fixed from
+// run to run, and with no structure to compress.
+func writeIncompressibleBlob(t *testing.T, stor *repository, size int) plumbing.Hash {
+	t.Helper()
+	body := make([]byte, 0, size+sha256.Size)
+	link := sha256.Sum256([]byte("incompressible"))
+	for len(body) < size {
+		body = append(body, link[:]...)
+		link = sha256.Sum256(link[:])
+	}
+	return writeBlob(t, stor, string(body[:size]))
+}
+
 // TestLargePacksAreUploadedInParts covers a monorepo's pack: too large for one
 // request, it appears only on multipart-upload completion, so this path must
 // publish atomically too.
 func TestLargePacksAreUploadedInParts(t *testing.T) {
 	fake := newFakeS3(t)
 	fake.opts.CompactionTrigger = -1
-	// Any pack these tests produce is far above one kilobyte, so this forces
-	// every publication through the multipart path.
-	fake.opts.MultipartBytes = 1024
+	// The threshold is as low as the protocol allows, and one blob larger than
+	// it takes the pack over.
+	fake.opts.MultipartBytes = smallestPartBytes
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 300)
+	hashes = append(hashes, writeIncompressibleBlob(t, stor, smallestPartBytes+1<<20))
 	want := readObjects(t, stor, hashes)
 
 	before := fake.Snapshot()
@@ -570,6 +591,9 @@ func TestLargePacksAreUploadedInParts(t *testing.T) {
 	if int64(len(body)) != result.PackBytes {
 		t.Fatalf("the assembled pack is %d bytes, want %d", len(body), result.PackBytes)
 	}
+	if result.PackBytes <= smallestPartBytes {
+		t.Fatalf("premise: the pack is %d bytes, not large enough to need parts", result.PackBytes)
+	}
 
 	fresh := testPackedStorage(t, fake)
 	got := readObjects(t, fresh, hashes)
@@ -586,19 +610,17 @@ func TestLargePacksAreUploadedInParts(t *testing.T) {
 func TestAnInterruptedMultipartUploadPublishesNothing(t *testing.T) {
 	fake := newFakeS3(t)
 	fake.opts.CompactionTrigger = -1
-	fake.opts.MultipartBytes = 1024
+	fake.opts.MultipartBytes = smallestPartBytes
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 300)
+	hashes = append(hashes, writeIncompressibleBlob(t, stor, smallestPartBytes+1<<20))
 
 	// Failing a part upload leaves the multipart upload incomplete, which is
 	// the same state a crashed replica leaves behind.
-	failed := false
+	// The parts go up side by side, so more than one may be asking at once.
+	var failed atomic.Bool
 	fake.SetFailOn(func(method, key string) bool {
-		if method == "PUT" && strings.HasSuffix(key, ".pack") && !failed {
-			failed = true
-			return true
-		}
-		return false
+		return method == "PUT" && strings.HasSuffix(key, ".pack") && failed.CompareAndSwap(false, true)
 	})
 	_, err := CompactRepository(context.Background(), stor)
 	fake.SetFailOn(nil)

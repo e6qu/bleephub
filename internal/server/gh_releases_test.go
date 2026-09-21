@@ -402,10 +402,9 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 }
 
 func TestReleases_AssetBytesUseObjectStore(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
 	s.store.Releases.ByteStore = s.store.ObjectByteStore
 	s.registerGHReleasesRoutes()
 
@@ -436,7 +435,7 @@ func TestReleases_AssetBytesUseObjectStore(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &asset)
 	assetID := int(asset["id"].(float64))
 
-	got := readS3TestFile(t, objectFS, store.ReleaseAssetDataKey(assetID))
+	got := readStoredObjectForTest(t, storedObjects, store.ReleaseAssetDataKey(assetID))
 	if string(got) != "release object bytes" {
 		t.Fatalf("release asset object bytes = %q", string(got))
 	}

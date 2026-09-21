@@ -13,9 +13,8 @@ import (
 // touches a prefix whose live-set it can't enumerate (logs), and never sweeps an
 // object younger than the grace period.
 func TestObjectReaperReclaimsOrphansSafely(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
-	byteStore := &store.S3ActionsByteStore{Fs: objectFS}
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
+	byteStore := &store.S3ActionsByteStore{Objects: storedObjects}
 	s := newTestServer()
 	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", byteStore))
 	s.store.ObjectByteStore = byteStore

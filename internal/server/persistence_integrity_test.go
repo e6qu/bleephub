@@ -1,9 +1,7 @@
 package bleephub
 
 import (
-	"context"
 	"database/sql"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,172 +10,58 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/gitstore"
-	"github.com/e6qu/bleephub/internal/gitbackend"
+	"github.com/e6qu/bleephub/gitstore/objstore"
+	"github.com/e6qu/bleephub/gitstore/s3fake"
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
-// newStagingFSForTest builds an object filesystem whose endpoint refuses
-// connections. Every assertion here is about the write-staging map and the
-// lock, both of which are resolved before any request leaves the process, so a
-// test that reaches the network has already failed its own premise.
-func newStagingFSForTest(t *testing.T) *gitstore.S3FS {
+// newFakeObjectStoreForTest returns a git object store on an in-process object
+// store, for assertions that need the engine and not a particular server.
+func newFakeObjectStoreForTest(t *testing.T) *gitstore.Store {
 	t.Helper()
-	fs, err := gitbackend.NewS3FS(context.Background(), "http://127.0.0.1:1", "bleephub-test", "git")
-	if err != nil {
-		t.Fatalf("build object filesystem: %v", err)
-	}
-	return fs
+	fake := s3fake.New()
+	t.Cleanup(fake.Close)
+	bucket := objstore.NewS3WithClient(fake.Client().Client, "bleephub-test", 0)
+	return gitstore.Open(bucket, "git", gitstore.Options{CacheDir: t.TempDir()})
 }
 
-// TestChrootStagedBytesAreNotSharedAcrossRepositories pins the tenancy
-// boundary: two repositories chrooted from the same object filesystem stage
-// writes under identical relative names, and neither may observe the other's
-// bytes.
-func TestChrootStagedBytesAreNotSharedAcrossRepositories(t *testing.T) {
-	fs := newStagingFSForTest(t)
-	repoA, err := fs.Chroot("owner/repo-a")
+// TestRepositoriesOfOneStoreDoNotShareReferences pins the tenancy boundary: two
+// repositories opened from the same object store write a reference of the same
+// name, and neither may observe the other's.
+func TestRepositoriesOfOneStoreDoNotShareReferences(t *testing.T) {
+	objects := newFakeObjectStoreForTest(t)
+	repoA, err := objects.Repository("owner/repo-a")
 	if err != nil {
-		t.Fatalf("chroot repo-a: %v", err)
+		t.Fatalf("open repo-a: %v", err)
 	}
-	repoB, err := fs.Chroot("owner/repo-b")
+	repoB, err := objects.Repository("owner/repo-b")
 	if err != nil {
-		t.Fatalf("chroot repo-b: %v", err)
+		t.Fatalf("open repo-b: %v", err)
+	}
+	name := plumbing.ReferenceName("refs/heads/main")
+	hashA := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	hashB := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	if err := repoA.SetReference(plumbing.NewHashReference(name, hashA)); err != nil {
+		t.Fatalf("set reference in repo-a: %v", err)
+	}
+	if err := repoB.SetReference(plumbing.NewHashReference(name, hashB)); err != nil {
+		t.Fatalf("set reference in repo-b: %v", err)
 	}
 
-	fileA, err := repoA.Create("packed-refs")
+	gotA, err := repoA.Reference(name)
 	if err != nil {
-		t.Fatalf("create in repo-a: %v", err)
+		t.Fatalf("read reference of repo-a: %v", err)
 	}
-	if _, err := fileA.Write([]byte("repository A refs")); err != nil {
-		t.Fatalf("write repo-a: %v", err)
-	}
-	fileB, err := repoB.Create("packed-refs")
+	gotB, err := repoB.Reference(name)
 	if err != nil {
-		t.Fatalf("create in repo-b: %v", err)
+		t.Fatalf("read reference of repo-b: %v", err)
 	}
-	if _, err := fileB.Write([]byte("repository B refs")); err != nil {
-		t.Fatalf("write repo-b: %v", err)
+	if gotA.Hash() != hashA {
+		t.Errorf("repo-a reads %s, want its own %s", gotA.Hash(), hashA)
 	}
-
-	openedA, err := repoA.Open("packed-refs")
-	if err != nil {
-		t.Fatalf("open staged repo-a object: %v", err)
-	}
-	gotA, err := io.ReadAll(openedA)
-	if err != nil {
-		t.Fatalf("read staged repo-a object: %v", err)
-	}
-	openedB, err := repoB.Open("packed-refs")
-	if err != nil {
-		t.Fatalf("open staged repo-b object: %v", err)
-	}
-	gotB, err := io.ReadAll(openedB)
-	if err != nil {
-		t.Fatalf("read staged repo-b object: %v", err)
-	}
-
-	if string(gotA) != "repository A refs" {
-		t.Errorf("repo-a read %q, want its own staged bytes", gotA)
-	}
-	if string(gotB) != "repository B refs" {
-		t.Errorf("repo-b read %q, want its own staged bytes", gotB)
-	}
-}
-
-func TestStagedS3FileAppearsInStatAndReadDir(t *testing.T) {
-	fs := newStagingFSForTest(t)
-	file, err := fs.Create("owner/repo/objects/pack/live.pack")
-	if err != nil {
-		t.Fatalf("create staged file: %v", err)
-	}
-	if _, err := file.Write([]byte("unflushed bytes")); err != nil {
-		t.Fatalf("write staged file: %v", err)
-	}
-
-	info, err := fs.Stat("owner/repo/objects/pack/live.pack")
-	if err != nil {
-		t.Fatalf("stat staged file: %v", err)
-	}
-	if info.Size() != int64(len("unflushed bytes")) {
-		t.Fatalf("staged size = %d, want %d", info.Size(), len("unflushed bytes"))
-	}
-
-}
-
-// TestObjectFileLockExcludesConcurrentWriters pins that the lock go-git takes
-// for ref compare-and-set actually excludes a second writer of the same key.
-func TestObjectFileLockExcludesConcurrentWriters(t *testing.T) {
-	fs := newStagingFSForTest(t)
-	first, err := fs.Create("refs/heads/main")
-	if err != nil {
-		t.Fatalf("create first handle: %v", err)
-	}
-	second, err := fs.Create("refs/heads/main")
-	if err != nil {
-		t.Fatalf("create second handle: %v", err)
-	}
-
-	if err := first.Lock(); err != nil {
-		t.Fatalf("lock first handle: %v", err)
-	}
-
-	acquired := make(chan error, 1)
-	go func() { acquired <- second.Lock() }()
-
-	select {
-	case err := <-acquired:
-		t.Fatalf("second writer acquired a held lock (err=%v)", err)
-	case <-time.After(150 * time.Millisecond):
-	}
-
-	if err := first.Unlock(); err != nil {
-		t.Fatalf("unlock first handle: %v", err)
-	}
-	select {
-	case err := <-acquired:
-		if err != nil {
-			t.Fatalf("second writer could not take the released lock: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("second writer never took the released lock")
-	}
-	if err := second.Unlock(); err != nil {
-		t.Fatalf("unlock second handle: %v", err)
-	}
-}
-
-// TestObjectFileLockIsReleasedByClose pins the ordering go-git depends on: it
-// locks, writes, and lets the deferred Close release the lock.
-func TestObjectFileLockIsReleasedByClose(t *testing.T) {
-	fs := newStagingFSForTest(t)
-	first, err := fs.Create("refs/heads/release")
-	if err != nil {
-		t.Fatalf("create handle: %v", err)
-	}
-	if err := first.Lock(); err != nil {
-		t.Fatalf("lock: %v", err)
-	}
-	// Close flushes, which fails against the unreachable endpoint; the lock
-	// must be released regardless or the key is stranded forever.
-	_ = first.Close()
-
-	second, err := fs.Create("refs/heads/release")
-	if err != nil {
-		t.Fatalf("create second handle: %v", err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- second.Lock() }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("lock after close: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Close did not release the lock")
-	}
-	if err := second.Unlock(); err != nil {
-		t.Fatalf("unlock: %v", err)
+	if gotB.Hash() != hashB {
+		t.Errorf("repo-b reads %s, want its own %s", gotB.Hash(), hashB)
 	}
 }
 

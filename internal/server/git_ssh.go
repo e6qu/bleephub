@@ -241,7 +241,6 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	}
 	stor := target.stor
 	if service == "git-upload-pack" {
-		stor = gitStorerWithPackReuse(ctx, target.storageName, stor)
 		if protocolV2 {
 			// The channel stays open, so the v2 loop serves commands until the
 			// client stops — one connection carries both ls-refs and the fetch.

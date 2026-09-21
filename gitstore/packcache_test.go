@@ -161,29 +161,65 @@ func TestPackCacheDiscardsUnfinishedWrites(t *testing.T) {
 	}
 }
 
-// TestOnlyContentAddressedKeysAreCached pins the property that makes the cache
-// safe with no invalidation at all: a mutable key — a ref, the config — must
-// never be read through the cached ranged path.
-func TestOnlyContentAddressedKeysAreCached(t *testing.T) {
-	pack := "objects/pack/pack-0123456789abcdef0123456789abcdef01234567"
-	for _, name := range []string{pack + ".pack", pack + ".idx", pack + ".bfilter"} {
-		if !isImmutablePackKey(name) {
-			t.Fatalf("%q was not recognised as content addressed", name)
+// cachedFiles counts the extents in a pack cache directory.
+func cachedFiles(t *testing.T, dir string) int {
+	t.Helper()
+	files := 0
+	if err := filepath.WalkDir(dir, func(_ string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			files++
 		}
+		return err
+	}); err != nil {
+		t.Fatalf("walk the cache: %v", err)
 	}
-	for _, name := range []string{
-		"config",
-		"HEAD",
-		"packed-refs",
-		"refs/heads/main",
-		"objects/ab/0123456789abcdef0123456789abcdef012345",
-		"objects/pack/tmp_pack_123",
-		pack + ".superseded",
-		"objects/info/packs",
-	} {
-		if isImmutablePackKey(name) {
-			t.Fatalf("%q was treated as content addressed and would be cached without invalidation", name)
-		}
+	return files
+}
+
+// TestOnlyContentAddressedKeysAreCached pins the property that makes the cache
+// safe with no invalidation at all: a mutable key — a reference, the config — or
+// a loose object must never be read through the cached ranged path. Only a
+// pack, its index and its filter are, because only their names are the hash of
+// what they hold.
+func TestOnlyContentAddressedKeysAreCached(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.opts.CompactionTrigger = -1
+	stor := testPackedStorage(t, fake)
+	hashes := seedObjects(t, stor, 80)
+	if err := Init(stor); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	reader := testPackedStorage(t, fake)
+	before := fake.Snapshot()
+	if _, err := reader.Reference("refs/heads/main"); err != nil {
+		t.Fatalf("reference: %v", err)
+	}
+	if _, err := reader.Config(); err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	readObjects(t, reader, hashes)
+	spent := fake.Snapshot().Sub(before)
+	if spent.Get < int64(len(hashes)) {
+		t.Fatalf("premise: the loose objects were not read from the store: %s", spent)
+	}
+	if spent.GetRanged != 0 || cachedFiles(t, fake.opts.CacheDir) != 0 {
+		t.Fatalf("mutable keys were read through the pack cache: %s, %d cached files", spent, cachedFiles(t, fake.opts.CacheDir))
+	}
+
+	if _, err := CompactRepository(context.Background(), stor); err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	clearPackCache(t, fake.opts.CacheDir)
+	packed := testPackedStorage(t, fake)
+	if err := packed.HasEncodedObject(absentHash(1)); err == nil {
+		t.Fatal("an absent object was reported present")
+	}
+	readObjects(t, packed, hashes)
+	// The filter the probe read, and the index and the pack the reads did: one
+	// extent each at this size.
+	if got := cachedFiles(t, fake.opts.CacheDir); got != 3 {
+		t.Fatalf("probing and reading a packed repository cached %d extents, want the pack, its index and its filter", got)
 	}
 }
 
@@ -216,8 +252,8 @@ func TestWritesRequestCompactionWhenTheLooseTierFills(t *testing.T) {
 		t.Fatal("writing past the compaction trigger never requested a compaction")
 	}
 	for _, name := range requested {
-		if name != stor.repo {
-			t.Fatalf("compaction requested for %q, want %q", name, stor.repo)
+		if name != stor.name {
+			t.Fatalf("compaction requested for %q, want %q", name, stor.name)
 		}
 	}
 	// Run the handler inline and assert the pack; inline also avoids racing a

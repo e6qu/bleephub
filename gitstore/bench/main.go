@@ -64,7 +64,7 @@ func parseFlags() (config, error) {
 	flag.IntVar(&cfg.spec.FileLines, "file-lines", 0, "scale of each file, in function definitions (default 80); raise it for packs that span read extents or need multipart upload")
 	flag.Uint64Var(&cfg.spec.Seed, "seed", 1, "workload seed")
 	flag.Int64Var(&gitstoreTuning.ChunkBytes, "gitstore-chunk-bytes", 0, "gitstore driver: pack read extent size (default 4 MiB)")
-	flag.Int64Var(&gitstoreTuning.MultipartBytes, "gitstore-multipart-bytes", 0, "gitstore driver: pack size above which compaction uploads in parts (default 64 MiB)")
+	flag.Int64Var(&gitstoreTuning.MultipartBytes, "gitstore-multipart-bytes", 0, "gitstore driver: pack size above which a pack is uploaded in parts, and the size of the parts (default 64 MiB, at least 5 MiB)")
 	flag.Int64Var(&gitstoreTuning.MemoryCacheBytes, "gitstore-memory-cache-bytes", 0, "gitstore driver: in-memory pack cache budget (default 256 MiB; negative disables)")
 	flag.DurationVar(&cfg.latency, "latency", 0, "delay injected into every object-store request, standing in for a remote region (try 5ms)")
 	flag.IntVar(&cfg.runs, "runs", 3, "times to run each driver; the table reports medians")
@@ -89,7 +89,7 @@ func parseFlags() (config, error) {
 			fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
 		}
 		fmt.Fprintf(flag.CommandLine.Output(), "\nscenarios, in execution order:\n")
-		for _, name := range scenarioOrder {
+		for _, name := range everyScenario() {
 			fmt.Fprintf(flag.CommandLine.Output(), "  %-22s %s\n", name, scenarioNotes[name])
 		}
 		fmt.Fprintf(flag.CommandLine.Output(), "\nflags:\n")
@@ -123,13 +123,13 @@ func parseFlags() (config, error) {
 		}
 	}
 	cfg.scenarios = map[string]bool{}
-	for _, name := range scenarioOrder {
+	for _, name := range everyScenario() {
 		cfg.scenarios[name] = scenarios == "all"
 	}
 	if scenarios != "all" {
 		for _, name := range strings.Split(scenarios, ",") {
 			if _, known := cfg.scenarios[name]; !known {
-				return cfg, fmt.Errorf("unknown scenario %q (have %v)", name, scenarioOrder)
+				return cfg, fmt.Errorf("unknown scenario %q (have %v)", name, everyScenario())
 			}
 			cfg.scenarios[name] = true
 		}

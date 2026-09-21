@@ -505,7 +505,7 @@ func serveGitFetchV2(ctx context.Context, stor storer.Storer, session gitV2Sessi
 	case offer != nil:
 		return result, sendGitOffloadedPackfile(stor, out, request, offer, gitSideband64k)
 	}
-	return result, sendGitPlannedPackfile(stor, out, request, boundary, plan, gitSideband64k)
+	return result, sendGitPlannedPackfile(ctx, stor, out, request, boundary, plan, gitSideband64k)
 }
 
 // applyGitFetchV2Argument records one fetch-command argument. The v2-only

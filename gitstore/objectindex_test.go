@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,7 +74,7 @@ func TestMembershipIndexAnswersAbsenceWithoutARoundTrip(t *testing.T) {
 //
 // Both membership structures are driven into the state where they answer
 // "present" to every possible key: the pack filters are dropped, which is how a
-// pack whose filter cannot be read is recorded, and the loose filters are set
+// pack with no filter beside it is recorded, and the loose filters are set
 // saturated, which is what happens when a directory outgrows the table it was
 // built for. Every read must then return exactly what it returned before. A
 // filter is allowed to be useless; it is not allowed to be wrong, and the only
@@ -82,6 +82,11 @@ func TestMembershipIndexAnswersAbsenceWithoutARoundTrip(t *testing.T) {
 // impossible.
 func TestSaturatedFilterCannotHideAnObject(t *testing.T) {
 	fake := newFakeS3(t)
+	// A listing would quietly repair the saturation part way through the reads
+	// that follow; with the bound this wide, and a clock that does not move,
+	// none is taken.
+	fake.opts.IndexFreshness = time.Hour
+	fake.clock = newTestClock()
 	stor := testPackedStorage(t, fake)
 	hashes := seedObjects(t, stor, 200)
 	if _, err := CompactRepository(context.Background(), stor); err != nil {
@@ -99,34 +104,32 @@ func TestSaturatedFilterCannotHideAnObject(t *testing.T) {
 	want := readObjects(t, baseline, hashes)
 
 	saturated := testPackedStorage(t, fake)
-	// Populate the index, then saturate everything it holds.
+	// Take the snapshot, then publish one in which every filter is saturated.
 	if err := saturated.HasEncodedObject(absentHash(1)); err == nil {
 		t.Fatal("an object that was never written was reported present")
 	}
-	index := saturated.fs.repoIndexFor()
-	index.mu.Lock()
-	if len(index.packs) == 0 {
-		index.mu.Unlock()
-		t.Fatal("the test did not reach the state it is about: no pack filter was loaded")
+	taken := saturated.tiers.current.Load()
+	if len(taken.packs) == 0 {
+		t.Fatal("the test did not reach the state it is about: the snapshot holds no pack")
 	}
-	for name := range index.packs {
-		index.packs[name] = nil
+	useless := &tierSnapshot{at: taken.at}
+	for _, pack := range taken.packs {
+		if pack.filter.Load() == nil {
+			t.Fatal("the test did not reach the state it is about: the probe did not read the pack's filter")
+		}
+		useless.packs = append(useless.packs, &storedPack{name: pack.name, pack: pack.pack, index: pack.index})
 	}
-	for _, snapshot := range index.fanouts {
-		snapshot.filter.saturated = true
+	for fanout := range useless.loose {
+		useless.loose[fanout] = &cuckooFilter{saturated: true}
 	}
-	// The freshness window must not quietly repair the saturation part way
-	// through the reads that follow: the snapshots were all taken a moment ago
-	// by the probe above, so widening the window keeps them fresh throughout.
-	index.freshness = time.Hour
-	index.mu.Unlock()
+	saturated.tiers.current.Store(useless)
 
 	// A filter that matches everything must not change a single answer.
 	for _, key := range absentOIDs(64) {
 		var hash plumbing.Hash
 		copy(hash[:], key[:20])
-		if !index.maybePresent(saturated.fs, oidKeyFrom(hash[:])) {
-			t.Fatal("a saturated index gave a negative answer")
+		if !useless.looseMayHold(hash) {
+			t.Fatal("a saturated loose filter gave a negative answer")
 		}
 	}
 	got := readObjects(t, saturated, hashes)
@@ -151,30 +154,42 @@ func TestSaturatedFilterCannotHideAnObject(t *testing.T) {
 // negative answer is drawn from has aged past the freshness window.
 func TestNegativeAnswersAreRefreshedFromTheObjectStore(t *testing.T) {
 	fake := newFakeS3(t)
-	fake.opts.IndexFreshness = time.Millisecond
+	fake.opts.IndexFreshness = time.Minute
+	fake.clock = newTestClock()
 
 	writer := testPackedStorage(t, fake)
 	reader := testPackedStorage(t, fake)
 	seedObjects(t, writer, 100)
 
 	hash := writeBlob(t, writer, "written by another replica")
-	// The reader's index has never been built, so the first answer is taken
-	// from a listing it makes itself.
+	// The reader has no snapshot yet, so the first answer is taken from a
+	// listing it makes itself.
 	if err := reader.HasEncodedObject(hash); err != nil {
 		t.Fatalf("an object present in the object store was reported absent: %v", err)
 	}
 
 	later := writeBlob(t, writer, "written after the reader took its snapshot")
-	visible := false
-	for range 2000 {
-		if reader.HasEncodedObject(later) == nil {
-			visible = true
-			break
+	pushed := smallPush(t, writer, "pushed after the reader took its snapshot")
+	// Inside the bound the snapshot answers by itself: that is the bound's
+	// meaning, and what keeps a negotiation from listing for every question.
+	before := fake.Snapshot()
+	for _, absent := range []plumbing.Hash{later, pushed} {
+		if err := reader.HasEncodedObject(absent); !errors.Is(err, plumbing.ErrObjectNotFound) {
+			t.Fatalf("premise: inside the bound the reader answered %v for an object it has not listed", err)
 		}
-		time.Sleep(time.Millisecond)
 	}
-	if !visible {
-		t.Fatal("an object written by another replica never became visible")
+	if spent := fake.Snapshot().Sub(before); spent.Total() != 0 {
+		t.Fatalf("a negative answer inside the bound cost %s", spent)
+	}
+
+	fake.clock.Advance(2 * time.Minute)
+	for _, present := range []plumbing.Hash{later, pushed} {
+		if err := reader.HasEncodedObject(present); err != nil {
+			t.Fatalf("an object written by another replica never became visible: %v", err)
+		}
+	}
+	if got := readObjects(t, reader, []plumbing.Hash{pushed})[pushed]; !strings.HasPrefix(got, "pushed after") {
+		t.Fatalf("the pack another replica pushed read back %q", got)
 	}
 }
 
@@ -216,31 +231,6 @@ func TestLooseObjectIndexTracksThisProcessesOwnWrites(t *testing.T) {
 	}
 }
 
-// TestLooseObjectPathRecognisesOnlyObjectPaths keeps the fast path off
-// everything that is not a loose object: a ref, the config, the pack directory.
-// Answering "absent" for one of those from a membership filter would be a
-// category error.
-func TestLooseObjectPathRecognisesOnlyObjectPaths(t *testing.T) {
-	valid := "objects/ab/c0ffee0123456789abcdef0123456789abcdef"
-	if _, _, ok := looseObjectPath(valid); !ok {
-		t.Fatalf("%q was not recognised as a loose object path", valid)
-	}
-	for _, name := range []string{
-		"config",
-		"HEAD",
-		"refs/heads/main",
-		"objects/pack/pack-0123456789abcdef0123456789abcdef01234567.pack",
-		"objects/info/packs",
-		"objects/ab",
-		"objects/ab/not-hexadecimal-at-all-not-hexadecimal",
-		"objects/abc/0123456789abcdef0123456789abcdef012345",
-	} {
-		if _, _, ok := looseObjectPath(name); ok {
-			t.Fatalf("%q was treated as a loose object path", name)
-		}
-	}
-}
-
 // TestMembershipStructureSizePerMillionObjects records the resident cost of the
 // filters, which is the budget that decides how many repositories a replica can
 // keep answers for.
@@ -279,45 +269,97 @@ func TestMembershipStructureSizePerMillionObjects(t *testing.T) {
 	}
 }
 
-// TestAStatOfALooseObjectUsesWhatTheIndexAlreadyKnows pins the saving on the
-// write path: git stats an object's final path before writing it, and when a
-// fresh snapshot already proves it absent that needs no request. With nothing
-// fresh to hand, the Stat asks the store rather than list a directory for it.
-func TestAStatOfALooseObjectUsesWhatTheIndexAlreadyKnows(t *testing.T) {
+// TestWritingALooseObjectIsOnePut pins what an object written through the API
+// costs. git probes for the object, writes it under a temporary name and renames
+// it: against a bucket a HEAD, a PUT, a COPY and a DELETE. The key is the hash
+// of the bytes and a PUT is atomic, so it is one PUT, and the object is
+// readable through the writing handle at once without the store being asked.
+func TestWritingALooseObjectIsOnePut(t *testing.T) {
 	fake := newFakeS3(t)
 	fake.opts.IndexFreshness = time.Hour
 	stor := testPackedStorage(t, fake)
-	present := writeBlob(t, stor, "already here")
-	presentPath := "objects/" + present.String()[:2] + "/" + present.String()[2:]
-	absent := absentHash(11)
-	absentPath := "objects/" + absent.String()[:2] + "/" + absent.String()[2:]
-
-	cold, err := fake.fs("bucket", "prefix").Chroot(testRepo)
-	if err != nil {
-		t.Fatalf("chroot: %v", err)
+	writeBlob(t, stor, "the write that takes the handle's first snapshot")
+	if err := stor.HasEncodedObject(absentHash(11)); err == nil {
+		t.Fatal("an absent object was reported present")
 	}
+
 	before := fake.Snapshot()
-	if _, err := cold.Stat(absentPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("stat of an absent object: %v", err)
+	hash := writeBlob(t, stor, "the write that is measured")
+	spent := fake.Snapshot().Sub(before)
+	if spent.Put != 1 || spent.Total() != 1 {
+		t.Fatalf("writing one object cost %s, want exactly one PUT", spent)
 	}
-	if spent := fake.Snapshot().Sub(before); spent.Head != 1 || spent.List != 0 {
-		t.Fatalf("with no snapshot to hand a Stat should ask the store once and list nothing: %s", spent)
+	if keys := fake.KeysWithPrefix("prefix/" + testRepo + "/objects/"); len(keys) != 2 {
+		t.Fatalf("two writes left %v, want the two objects under their final names and nothing else", keys)
+	}
+	if _, ok := fake.Get(looseKeyOf(hash)); !ok {
+		t.Fatal("the object is not under the key git would look for it at")
 	}
 
-	// A probe brings the snapshots in; after it the same Stat is free, and an
-	// object that is there is still found.
-	if err := stor.HasEncodedObject(absent); err == nil {
-		t.Fatal("absent object reported present")
-	}
-	warm := stor.fs
+	// Writing what is already there stores the same bytes under the same key.
 	before = fake.Snapshot()
-	if _, err := warm.Stat(absentPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("stat of an absent object: %v", err)
+	if again := writeBlob(t, stor, "the write that is measured"); again != hash {
+		t.Fatalf("the same content hashed to %s and then %s", hash, again)
 	}
-	if spent := fake.Snapshot().Sub(before); spent.Total() != 0 {
-		t.Fatalf("a Stat the index could answer cost requests: %s", spent)
+	if spent := fake.Snapshot().Sub(before); spent.Put != 1 || spent.Total() != 1 {
+		t.Fatalf("rewriting an object cost %s, want one PUT and no probe", spent)
 	}
-	if _, err := warm.Stat(presentPath); err != nil {
-		t.Fatalf("an object that is present was reported absent: %v", err)
+}
+
+// TestTheZeroHashIsAnsweredWithoutARequest pins the one question whose answer
+// needs no store: no object hashes to zero, and go-git asks after it.
+func TestTheZeroHashIsAnsweredWithoutARequest(t *testing.T) {
+	fake := newFakeS3(t)
+	stor := testPackedStorage(t, fake)
+	if err := stor.HasEncodedObject(plumbing.ZeroHash); !errors.Is(err, plumbing.ErrObjectNotFound) {
+		t.Fatalf("the zero hash: %v", err)
+	}
+	if _, err := stor.EncodedObject(plumbing.AnyObject, plumbing.ZeroHash); !errors.Is(err, plumbing.ErrObjectNotFound) {
+		t.Fatalf("the zero hash: %v", err)
+	}
+	if spent := fake.Snapshot(); spent.Total() != 0 {
+		t.Fatalf("asking after the zero hash cost %s", spent)
+	}
+}
+
+// TestAFilterFalsePositiveIsStillNotFound pins the far side of the filter
+// invariant. A filter's "maybe" sends the caller to the store, and when the
+// store says no the answer must be the plain "not found" every caller of go-git
+// compares against — not some other error, which a fetch would report as a
+// failure, and not after listing the repository over and over. The object asked
+// after shares its loose filter's every input with one that exists, so the
+// filter is certain to say "maybe".
+func TestAFilterFalsePositiveIsStillNotFound(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.opts.IndexFreshness = time.Hour
+	fake.clock = newTestClock()
+	stor := testPackedStorage(t, fake)
+	present := writeBlob(t, stor, "the object the impostor is mistaken for")
+	impostor := present
+	impostor[len(impostor)-1] ^= 0xff
+	if snapshot := stor.tiers.current.Load(); snapshot == nil || !snapshot.looseMayHold(impostor) {
+		// The handle takes its first snapshot on its first read.
+		if err := stor.HasEncodedObject(present); err != nil {
+			t.Fatalf("premise: %v", err)
+		}
+	}
+	if !stor.tiers.current.Load().looseMayHold(impostor) {
+		t.Fatal("premise: the loose filter rules the impostor out, so no false positive is exercised")
+	}
+
+	before := fake.Snapshot()
+	if err := stor.HasEncodedObject(impostor); !errors.Is(err, plumbing.ErrObjectNotFound) {
+		t.Fatalf("a probe the filter could not rule out: %v, want ErrObjectNotFound", err)
+	}
+	if _, err := stor.EncodedObject(plumbing.AnyObject, impostor); !errors.Is(err, plumbing.ErrObjectNotFound) {
+		t.Fatalf("a read the filter could not rule out: %v, want ErrObjectNotFound", err)
+	}
+	if _, err := stor.EncodedObjectSize(impostor); !errors.Is(err, plumbing.ErrObjectNotFound) {
+		t.Fatalf("a size the filter could not rule out: %v, want ErrObjectNotFound", err)
+	}
+	// Each question asks the store about the key twice — once on the snapshot's
+	// word, once on a new listing's — and lists once.
+	if spent := fake.Snapshot().Sub(before); spent.List != 3 || spent.Total() != 9 {
+		t.Fatalf("three false positives cost %s, want a listing and two lookups each", spent)
 	}
 }

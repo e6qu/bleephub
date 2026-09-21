@@ -421,26 +421,25 @@ func TestLogfilesUpload_AppendsBlocks(t *testing.T) {
 }
 
 func TestLogfilesUpload_WritesObjectStore(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
 	uploadLogBlock(t, s, planID, logID, []byte("object-backed log\n"))
 
-	got := readS3TestFile(t, objectFS, fmt.Sprintf("actions/logs/%d/data", logID))
+	got := readStoredObjectForTest(t, storedObjects, fmt.Sprintf("actions/logs/%d/data", logID))
 	if string(got) != "object-backed log\n" {
 		t.Fatalf("s3 log data = %q", string(got))
 	}
 }
 
 func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
-	newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, "missing-bucket", "objects")
+	newGitObjectStoreForTest(t)
+	storedObjects := deriveObjectStoreForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
@@ -467,10 +466,9 @@ func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
 }
 
 func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
 	_, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
@@ -495,9 +493,8 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 }
 
 func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
-	byteStore := &store.S3ActionsByteStore{Fs: objectFS}
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
+	byteStore := &store.S3ActionsByteStore{Objects: storedObjects}
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
 
@@ -546,11 +543,11 @@ func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 }
 
 func TestRunLogsDelete_ObjectStoreFailurePreservesState(t *testing.T) {
-	newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, "missing-bucket", "objects")
+	newGitObjectStoreForTest(t)
+	storedObjects := deriveObjectStoreForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
 	s.registerGHActionsPermissionsRoutes()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
 	wf, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 

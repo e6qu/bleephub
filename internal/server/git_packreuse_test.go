@@ -17,7 +17,6 @@ import (
 	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/gitbackend"
 	"github.com/e6qu/bleephub/internal/store"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -97,6 +96,10 @@ func storedPackNames(t *testing.T, repoDir string) []string {
 	return names
 }
 
+// gitStorerWithoutStoredPacks hides a storer's stored packs, leaving what the
+// memory backend offers: objects and references, and so the encoder path.
+type gitStorerWithoutStoredPacks struct{ storer.Storer }
+
 func fullClonePack(t *testing.T, stor storer.Storer, branch string) []byte {
 	t.Helper()
 	ref, err := stor.Reference(plumbing.NewBranchReferenceName(branch))
@@ -109,7 +112,7 @@ func fullClonePack(t *testing.T, stor storer.Storer, branch string) []byte {
 		t.Fatalf("build the fetch boundary: %v", err)
 	}
 	var pack bytes.Buffer
-	if err := sendGitPackfile(stor, &pack, request, boundary, gitSidebandNone); err != nil {
+	if err := sendGitPackfile(context.Background(), stor, &pack, request, boundary, gitSidebandNone); err != nil {
 		t.Fatalf("send the packfile: %v", err)
 	}
 	return pack.Bytes()
@@ -131,7 +134,7 @@ func TestFullCloneOfAPackedRepositoryCopiesTheStoredPack(t *testing.T) {
 	}
 	entries := storedPack[gitPackHeaderSize : len(storedPack)-gitPackTrailerSize]
 
-	served := fullClonePack(t, gitStorerWithPackReuse(context.Background(), "admin/packed-reuse", stor), "main")
+	served := fullClonePack(t, stor, "main")
 	if !bytes.Contains(served, entries) {
 		t.Fatal("the served pack does not contain the stored pack's entries: the fetch re-encoded them")
 	}
@@ -140,8 +143,8 @@ func TestFullCloneOfAPackedRepositoryCopiesTheStoredPack(t *testing.T) {
 		t.Fatalf("the served pack is %d bytes, want %d — it carries objects the stored pack already held", got, want)
 	}
 
-	// Without the pack directory attached the same request falls through to the encoder, the path every non-reusable request takes.
-	encoded := fullClonePack(t, stor, "main")
+	// A storer that offers no stored packs sends the same request to the encoder, the path every non-reusable request takes.
+	encoded := fullClonePack(t, gitStorerWithoutStoredPacks{stor}, "main")
 	if bytes.Equal(encoded, served) {
 		t.Fatal("the encoder produced the reused pack byte for byte, so this test cannot tell the two paths apart")
 	}
@@ -152,7 +155,7 @@ func TestReusedPackIsAValidPackfile(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", t.TempDir())
 	srv := newIsolatedServer(t)
 	stor, _ := seedPackedGitRepo(t, srv, "packed-valid")
-	served := fullClonePack(t, gitStorerWithPackReuse(context.Background(), "admin/packed-valid", stor), "main")
+	served := fullClonePack(t, stor, "main")
 
 	git := requireGitCLI(t)
 	target := t.TempDir()
@@ -435,7 +438,7 @@ func BenchmarkFullCloneOfAPackedRepository(b *testing.B) {
 		before := processCPUNanoseconds(b)
 		for i := 0; i < b.N; i++ {
 			var pack countingWriter
-			if err := sendGitPackfile(from, &pack, request, boundary, gitSidebandNone); err != nil {
+			if err := sendGitPackfile(context.Background(), from, &pack, request, boundary, gitSidebandNone); err != nil {
 				b.Fatal(err)
 			}
 			served, objects = pack.bytes, pack.objects()
@@ -447,10 +450,10 @@ func BenchmarkFullCloneOfAPackedRepository(b *testing.B) {
 		b.ReportMetric(float64(spent)/float64(b.N), "cpu-ns/op")
 	}
 	b.Run("reused", func(b *testing.B) {
-		clone(b, gitStorerWithPackReuse(context.Background(), "bench/packs", stor))
+		clone(b, stor)
 	})
 	b.Run("encoded", func(b *testing.B) {
-		clone(b, stor)
+		clone(b, gitStorerWithoutStoredPacks{stor})
 	})
 }
 
@@ -515,7 +518,7 @@ func TestReuseConcatenatesSeveralStoredPacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen git storage: %v", err)
 	}
-	served := fullClonePack(t, gitStorerWithPackReuse(context.Background(), "admin/"+name, reopened), "main")
+	served := fullClonePack(t, reopened, "main")
 
 	stored := 0
 	for _, packName := range names {
@@ -543,26 +546,32 @@ func TestReuseConcatenatesSeveralStoredPacks(t *testing.T) {
 	git.run(target, "--git-dir", target, "fsck", "--no-progress", "--strict")
 }
 
-// TestPackIndexCountMatchesTheDecodedIndex: the cheap fanout count gates the expensive decode, so it must equal what the decode produces.
-func TestPackIndexCountMatchesTheDecodedIndex(t *testing.T) {
+// TestStoredPackCountMatchesItsIndex: the count a stored pack reports gates the expensive building of its object set, so it must equal the size of that set.
+func TestStoredPackCountMatchesItsIndex(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", t.TempDir())
 	srv := newIsolatedServer(t)
-	_, repoDir := seedPackedGitRepo(t, srv, "packed-count")
-	fs := osfs.New(repoDir)
-	for _, name := range storedPackNames(t, repoDir) {
-		count, err := gitPackIndexCount(fs, name)
+	stor, _ := seedPackedGitRepo(t, srv, "packed-count")
+	source, stored := stor.(gitstore.PackSource)
+	if !stored {
+		t.Fatalf("the directory backend's storer %T offers no stored packs", stor)
+	}
+	packs, err := source.StoredPacks(context.Background())
+	if err != nil {
+		t.Fatalf("list the stored packs: %v", err)
+	}
+	if len(packs) == 0 {
+		t.Fatal("the fixture has no stored pack")
+	}
+	for _, pack := range packs {
+		objects, err := gitPackIndexObjects(context.Background(), source, pack.Name)
 		if err != nil {
-			t.Fatalf("read the fanout of %s: %v", name, err)
+			t.Fatalf("read the index of %s: %v", pack.Name, err)
 		}
-		objects, err := gitPackIndexObjects(fs, name)
-		if err != nil {
-			t.Fatalf("decode %s: %v", name, err)
+		if pack.Objects != len(objects) {
+			t.Fatalf("%s: the listing says %d objects, the index lists %d", pack.Name, pack.Objects, len(objects))
 		}
-		if count != len(objects) {
-			t.Fatalf("%s: the fanout says %d objects, the index lists %d", name, count, len(objects))
-		}
-		if count == 0 {
-			t.Fatalf("%s holds no objects", name)
+		if pack.Objects == 0 {
+			t.Fatalf("%s holds no objects", pack.Name)
 		}
 	}
 }

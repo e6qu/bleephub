@@ -92,10 +92,9 @@ func TestContainerRegistryPublishCreatesPackageVersion(t *testing.T) {
 }
 
 func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
 	admin := s.store.UsersByLogin["admin"]
 	pkg, _ := s.store.CreatePackage("User", admin.Login, "container", "object-package", "public")
 	version, err := s.store.CreatePackageVersion("User", admin.Login, "container", pkg.Name, "1.0.0", "", nil, []store.PackageFileInput{{
@@ -110,7 +109,7 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 	if len(files) != 1 {
 		t.Fatalf("package files len = %d, want 1", len(files))
 	}
-	got := readS3TestFile(t, objectFS, store.PackageFileDataKey(files[0].ID))
+	got := readStoredObjectForTest(t, storedObjects, store.PackageFileDataKey(files[0].ID))
 	if string(got) != "package object bytes" {
 		t.Fatalf("package object bytes = %q", string(got))
 	}
@@ -138,7 +137,7 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 	if err := s.writeRegistryBlobStream(digest, bytes.NewReader(raw), int64(len(raw)), sum[:]); err != nil {
 		t.Fatalf("write registry blob: %v", err)
 	}
-	registryGot := readS3TestFile(t, objectFS, store.PackageRegistryBlobDataKey(digest))
+	registryGot := readStoredObjectForTest(t, storedObjects, store.PackageRegistryBlobDataKey(digest))
 	if string(registryGot) != "registry object bytes" {
 		t.Fatalf("registry object bytes = %q", string(registryGot))
 	}
@@ -152,10 +151,9 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 }
 
 func TestDeleteRepoPurgesRepositoryPackageObjectBytes(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Objects: storedObjects}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "repo-package-objects", "", false)
 	pkg, _ := s.store.CreatePackage("Repository", repo.FullName, "container", "image", "private")
@@ -171,7 +169,7 @@ func TestDeleteRepoPurgesRepositoryPackageObjectBytes(t *testing.T) {
 	if len(files) != 1 {
 		t.Fatalf("package files len = %d, want 1", len(files))
 	}
-	if got := string(readS3TestFile(t, objectFS, files[0].StoragePath)); got != "repo package bytes" {
+	if got := string(readStoredObjectForTest(t, storedObjects, files[0].StoragePath)); got != "repo package bytes" {
 		t.Fatalf("package object bytes = %q", got)
 	}
 
@@ -185,9 +183,7 @@ func TestDeleteRepoPurgesRepositoryPackageObjectBytes(t *testing.T) {
 	if s.store.GetPackage(repo.FullName, "container", "image") != nil {
 		t.Fatal("repository-owned package metadata survived repository deletion")
 	}
-	f, err := objectFS.Open(files[0].StoragePath)
-	if err == nil {
-		_ = f.Close()
+	if storedObjectExistsForTest(t, storedObjects, files[0].StoragePath) {
 		t.Fatalf("repository package object %s survived repository deletion", files[0].StoragePath)
 	}
 }

@@ -183,10 +183,9 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 }
 
 func TestArtifactUploadWritesObjectStore(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
 	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", bytes.NewBufferString(`{"name":"object-artifact","version":4,"workflow_run_backend_id":"run-1"}`))
@@ -217,7 +216,7 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 		t.Fatalf("finalize status = %d, body=%s", fw.Code, fw.Body.String())
 	}
 
-	got := readS3TestFile(t, objectFS, "actions/artifacts/1/data")
+	got := readStoredObjectForTest(t, storedObjects, "actions/artifacts/1/data")
 	if string(got) != body {
 		t.Fatalf("s3 artifact data = %q", string(got))
 	}
@@ -228,10 +227,9 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 // object store and are NOT pinned in RAM, and the download streams them back
 // from the store.
 func TestArtifactFinalizeClearsMemoryAndStreamsDownload(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
 	s := newTestServer()
-	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects}))
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 	const payload = "object-backed artifact payload"
 
@@ -377,16 +375,15 @@ func TestGetSignedArtifactURLScopesByWorkflowRunBackendID(t *testing.T) {
 }
 
 func TestCacheUploadWritesObjectStore(t *testing.T) {
-	fs := newS3FSForTest(t)
-	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
-	st := store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS})
+	storedObjects := newGitObjectStoreForTest(t).Sub("objects")
+	st := store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Objects: storedObjects})
 	entry := &store.CacheEntry{ID: 7, Repo: "octo/repo", Key: "linux-go", Version: "v1"}
 	entry.Data = []byte("cache archive bytes")
 
 	if err := st.WriteCacheDataAt(entry, entry.Data, 0); err != nil {
 		t.Fatalf("writeCacheDataAt: %v", err)
 	}
-	got := readS3TestFile(t, objectFS, "actions/caches/7/data")
+	got := readStoredObjectForTest(t, storedObjects, "actions/caches/7/data")
 	if string(got) != "cache archive bytes" {
 		t.Fatalf("s3 cache data = %q", string(got))
 	}

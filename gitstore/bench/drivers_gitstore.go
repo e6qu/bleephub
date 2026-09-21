@@ -21,30 +21,30 @@ var gitstoreTuning gitstore.Options
 
 // gitstoreDriver is the library under test, configured as bleephub runs it.
 type gitstoreDriver struct {
-	env Env
-	fs  *gitstore.S3FS
+	env   Env
+	store *gitstore.Store
 }
 
 func (d *gitstoreDriver) Name() string { return "gitstore" }
 func (d *gitstoreDriver) Describe() string {
-	return "dotgit layout in the bucket; ranged pack reads, local pack cache, membership index, compaction"
+	return "git's layout in the bucket, read by a native storer; ranged pack reads, local pack cache, membership index, compaction"
 }
 
 func (d *gitstoreDriver) Setup(ctx context.Context, env Env) error {
 	d.env = env
-	fs, err := d.newFS(ctx)
-	d.fs = fs
+	store, err := d.newStore(ctx)
+	d.store = store
 	return err
 }
 
-// newFS builds a filesystem with a pack cache of its own, which is what a
-// replica that has never served a repository has.
-func (d *gitstoreDriver) newFS(ctx context.Context) (*gitstore.S3FS, error) {
+// newStore opens a store with a pack cache of its own and nothing remembered,
+// which is what a replica that has never served a repository has.
+func (d *gitstoreDriver) newStore(ctx context.Context) (*gitstore.Store, error) {
 	cacheDir, err := d.env.tempDir("gitstore-cache-*")
 	if err != nil {
 		return nil, err
 	}
-	return gitstore.NewS3FS(ctx, d.env.Endpoint, d.env.Bucket, d.env.Prefix+"/gitstore", gitstore.Options{
+	return gitstore.OpenS3(ctx, d.env.Endpoint, d.env.Bucket, d.env.Prefix+"/gitstore", gitstore.Options{
 		Region:      d.env.Region,
 		Credentials: credentials.NewStaticV4(d.env.AccessKey, d.env.SecretKey, ""),
 		CacheDir:    cacheDir,
@@ -59,13 +59,13 @@ func (d *gitstoreDriver) newFS(ctx context.Context) (*gitstore.S3FS, error) {
 
 func (d *gitstoreDriver) Open(ctx context.Context, repo string, cold bool) (storer.Storer, error) {
 	if cold {
-		fs, err := d.newFS(ctx)
+		store, err := d.newStore(ctx)
 		if err != nil {
 			return nil, err
 		}
-		d.fs = fs
+		d.store = store
 	}
-	stor, err := gitstore.OpenObjectStore(d.fs, repo)
+	stor, err := d.store.Repository(repo)
 	if err != nil {
 		return nil, err
 	}

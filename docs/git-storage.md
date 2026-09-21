@@ -26,94 +26,86 @@ interface (`internal/gitbackend`, `OpenOrInitGitStorage`):
 
 | Backend | When | Built from |
 |---|---|---|
-| In-memory | default (no config) | `gitstore.OpenMemory` — `memory.NewStorage()` |
-| Local filesystem | `BLEEPHUB_GIT_DIR` set | `gitstore.OpenDir` — `osfs` over `<dir>/<owner>/<repo>` |
-| Object store (S3) | `BLEEPHUB_S3_BUCKET` set | `gitstore.OpenObjectStore` — the `S3FS` filesystem (below) |
+| In-memory | default (no config) | `gitstore.OpenMemory` — go-git's `memory.NewStorage()` |
+| Local filesystem | `BLEEPHUB_GIT_DIR` set | `gitstore.OpenDir` — go-git's filesystem storage over `<dir>/<owner>/<repo>` |
+| Object store | `BLEEPHUB_S3_BUCKET` set | `gitstore.Store.Repository` — the storage engine (below) |
 
-The filesystem and object-store backends share the *same* go-git code:
-`filesystem.NewStorage(fs, cache)` turns any **filesystem** into a git store,
-reading and writing git's ordinary on-disk layout (`objects/`, `refs/`,
-`packed-refs`, pack files) as files. The only thing that changes between "local
-disk" and "S3" is which filesystem it is handed.
+The first two are go-git's own storage behind a wrapper (`atomicRefStorer`) that
+makes one handle safe to share between requests and makes a reference update a
+compare-and-swap. The third is not go-git's storage at all.
 
-## The filesystem abstraction
+## The storage engine
 
-That filesystem is [go-billy](https://github.com/go-git/go-billy), go-git's
-filesystem-interface library. `billy.Filesystem` is a small abstraction — open,
-read, write, stat, rename, list — that stands in for `os`. go-git's filesystem
-storage is written entirely against `billy.Filesystem`, so it runs unmodified on
-anything that implements it:
+go-git's filesystem storage is a client's: written for one process, one
+repository and a local disk. Bleephub used to run it over a bucket by handing it
+a filesystem whose files were objects, and everything that made that fast was a
+way of guessing, from the file calls go-git happened to make, what it was about
+to ask for. The engine that replaced it implements `storage.Storer` directly
+against the object store (`gitstore/repository.go`). What lands in the bucket is
+still git's ordinary layout — `objects/`, `refs/`, `HEAD`, pack files, one
+object-store object per git file — so a bucket can be read with `git` itself,
+but nothing in between pretends to be a disk.
+[`docs/git_storage_research.md`](git_storage_research.md) records what was
+measured, what other systems do, and why this is the design that was chosen.
 
-- **Local disk** uses billy's `osfs`, a thin pass-through to the real filesystem.
-- **Object storage** uses bleephub's own `S3FS` (`gitstore/s3fs.go`), a
-  `billy.Filesystem` whose files are objects in an S3-compatible bucket. Because
-  `S3FS` satisfies the same interface, go-git writes git's on-disk layout into
-  the bucket exactly as it would to a disk — one object per git file, keyed by
-  its path — and no git code above it changes.
-
-Any S3-compatible store works (AWS S3, MinIO, and others); the client is the
-vendor-neutral [minio-go](https://github.com/minio/minio-go) S3 client, so there
-is no cloud-specific SDK in the tree.
-
-## Making git-over-S3 fast
-
-A naive "each git file is an S3 object" filesystem would be correct but slow —
-git reads packs at random offsets and probes for thousands of loose objects. The
-`S3FS` layer adds what disk gets for free:
-
-- **Range reads** (`s3rangefile.go`) — pack files are read with HTTP range
-  requests, so resolving one object pulls a bounded window instead of the whole
-  (potentially gigabyte) pack. Concurrent fetches of one extent are coalesced,
-  so a replica that starts cold under load downloads each extent once rather
-  than once per clone.
-- **Single-request reference reads** (`s3fs.go`) — git stats a reference file
-  before opening it, which against a bucket is a HEAD and then a GET for every
-  branch resolution, and a server resolves a branch many times in one push. The
-  stat performs the GET and hands the bytes to the open that follows, and within
-  the freshness bound (`Options.IndexFreshness`, the bound the membership index
-  already works to) a reference that has been read — or has just been written
-  through this filesystem — answers again without a request. A read made in
-  order to write never takes any of this and any local write discards it, so the
-  reference compare-and-set always compares against the store. With the bound
-  set to nothing only the stat-to-open handoff remains, and it expires within
-  100 ms.
-- **One listing per advertisement** (`refstree.go`) — every fetch and push opens
-  by listing the repository's references, which go-git does as it would on a
-  disk: a directory of `refs/` at a time, then a file at a time — a LIST per
-  directory and a GET per branch and tag, again for the next client. One
-  recursive listing of `refs/` names them all and carries each one's ETag;
-  reference bytes are kept beside the ETag they were read or written under, so a
-  listing that shows the same ETag is the store's own word that they have not
-  changed. An advertisement is one LIST plus a GET for each reference that has
-  moved since this replica last read it, and those GETs run together rather
-  than one after another. The listing is the revalidation — nothing is served
-  that the plain walk would have found different — and it is reused only within
-  the freshness bound and never past a local write under `refs/`.
-- **Single-request object writes** (`s3fs.go`) — git writes an object to a
-  temporary name and renames it into place, which on a disk makes it appear
-  atomically. A PUT already is atomic, so the temporary name never reaches the
-  bucket: the bytes wait in the staging area and are uploaded once, to the final
-  key. The alternative is a PUT, a COPY and a DELETE for every object written.
-- **Pack cache** (`packcache.go`) — pack files are content-addressed and
-  immutable, so their fetched extents are cached locally and reused; the chunk
-  size is folded into each cache key so a reconfigured replica never confuses
-  extents.
-- **Object index** (`objectindex.go`) — the "is this object loose?" probes a
-  clone makes are batched into a few bucket listings, relying on S3's
-  strongly-consistent list-after-write; a process trusts its own writes
-  immediately.
+- **Immutable snapshots, swapped whole** (`objectindex.go`, `refs.go`) — there is
+  one handle per repository for the life of the process (`Store.Repository`
+  memoises it), shared by every request. What it knows of the repository — the
+  live packs, the loose tier, the references — it holds as immutable snapshots.
+  A reader takes a pointer and is done; a writer builds the next snapshot and
+  swaps it in. There is nothing half-built for two readers to race on, and so no
+  lock on the read path at all.
+- **Per-call decoders over shared indexes** (`repository.go`, `packreader.go`) —
+  go-git's packfile decoder is not safe to share, so one is made for each call
+  that reads a pack. What the calls share is everything expensive: a pack index
+  parsed once and only read after, and the extent cache underneath.
+- **A shared extent cache** (`packcache.go`, `packreader.go`) — a pack is read
+  with HTTP range requests in fixed extents, so resolving one object pulls a
+  bounded window rather than a gigabyte pack. A pack's key is the hash of its
+  contents, so a fetched extent can never be stale: extents are cached in memory
+  and on local disk with no invalidation, survive a restart, and the extent size
+  is folded into the cache key so a reconfigured replica never confuses them.
+  Concurrent fetches of one extent are one request, so a replica that starts
+  cold under load downloads each extent once rather than once per clone.
+- **Refresh on a miss** (`objectindex.go`) — a snapshot comes from one recursive
+  listing of `objects/`. "Does the repository have this?" — which a fetch
+  negotiation mostly asks about objects it does not — is answered from a
+  membership filter per pack and per loose directory, without reading an index
+  or asking the store; the filters are negative-only, so a "maybe" always goes on
+  to the exact lookup. An object missing from a snapshot older than
+  `Options.IndexFreshness` is looked for again after a fresh listing before it is
+  reported missing, because another replica may have published the pack that
+  holds it. Evidence that a snapshot is out of date — it named a loose object
+  since packed, or a pack since retired — lists again at once, whatever its age.
+- **Streamed large objects** (`streamedobject.go`) — an object above 8 MiB that
+  a pack stores whole is handed out as a stream inflated from the pack as it is
+  read, not as bytes in memory: a server reads on behalf of anyone who asks, and
+  an object returned in memory costs its size in heap for every reader at once.
+  (A large object stored as a delta is still rebuilt in memory, as in every git
+  implementation: applying a delta needs its base to hand.)
+- **Reference reads** (`refs.go`) — resolving a reference is one GET, and within
+  the freshness bound a reference already read — or just written through this
+  handle — answers again without a request, so the dozen resolutions a server
+  makes in one push are one read. Listing them, which opens every fetch and
+  push, is one recursive LIST of `refs/` that carries each reference's version
+  token: what was read is kept beside the version it was read at, so a listing
+  that shows the same version is the store's own word that the reference has not
+  moved. An advertisement is one LIST plus a GET for each reference that has
+  moved since this replica last read it, and those GETs run together. A read
+  made in order to compare never relies on any of this.
+- **One request per object written** (`repository.go`) — git writes an object to
+  a temporary name and renames it into place, which on a disk makes it appear
+  atomically. A PUT already is atomic, and the key is the hash of the bytes, so
+  an object written through the API is one PUT: no probe, no temporary key, no
+  copy.
 - **Pack ingest** (`ingest.go`) — a push arrives as a packfile and is published
   as one: index, membership filter, then the pack, three writes however many
-  objects it carries. Parsing it into loose objects instead costs several
-  requests *per object*. A stock git client sends incremental pushes as *thin*
+  objects it carries. A stock git client sends incremental pushes as *thin*
   packs, whose deltas lean on objects the server already has; those cannot be
   stored as they stand, so they are completed — resolved against the repository
   and re-encoded self-contained — before they are published. What lands in the
-  bucket is always an ordinary git pack. Adopting it costs
-  one listing of the pack directory: the membership index is told of the new
-  pack and its filter rather than dropped and rebuilt, and the pack cache is
-  seeded with the pack and its index so the replica does not download what it
-  has just uploaded.
+  bucket is always an ordinary git pack. The pushing handle adds the pack to the
+  snapshot it holds: nothing is listed, and nothing just uploaded is read back.
 - **Compaction** (`compact.go`) — loose objects (the REST git-database endpoints
   and web edits still write objects one at a time) are rolled into pack files,
   and the small packs pushes leave are merged, the same housekeeping `git gc`
@@ -122,28 +114,72 @@ git reads packs at random offsets and probes for thousands of loose objects. The
   run of small pushes never causes the repository's large packs to be rewritten,
   and the pack count stays logarithmic in the repository's size. A merged-away
   pack is kept for an hour for requests that were already reading it, but is
-  hidden from every new reader, which would otherwise load an index and a
-  filter for a pack that holds nothing its replacement does not.
-  The storage layer asks for a compaction when a write leaves the repository
-  due one — more than eight live packs, by the pack directory as last listed so
-  that a restart does not reset the count; a push landing behind a loose tier
-  worth packing; or the loose-write trigger — and the server runs it in the
-  background. A compaction opens with a listing of the whole object tree, so
-  running one after every push, as the server did while pushes still landed as
-  loose objects, was a request per push spent finding nothing to do.
-- **Presigned reads** (`presign.go`) — a caller already entitled to a repo's
-  bytes can be handed a short-lived presigned URL that fetches one object
-  directly from the bucket, without bleephub proxying the bytes or lending its
-  credentials.
+  hidden from every new reader. The engine asks for a compaction when a write
+  leaves the repository due one — more than eight live packs, a push landing
+  behind a loose tier worth packing, or the loose-write trigger — and the server
+  runs it in the background; the library owns no goroutines.
+
+### What the server asks of a repository beside `Storer`
+
+A repository handle says what else it can do through two interfaces, and the
+server asks with a plain type assertion on the storer it already holds:
+
+- **`gitstore.PackSource`** (`packsource.go`) — the stored packs, their parsed
+  indexes and their bytes. A clone of a packed repository is answered by copying
+  the stored packs' entry regions onto the wire rather than encoding the same
+  objects again (`internal/server/git_packreuse.go`). The object-store engine
+  answers from the snapshot and the indexes it already holds, so choosing the
+  packs lists and reads nothing a previous request has not paid for, and the
+  bytes come through the extent cache. `OpenDir` is a `PackSource` too, over the
+  pack directory on disk. Memory-backed storage has no packs and is not one; its
+  fetches take the encoder path.
+- **`gitstore.Addressable`** (`presign.go`) — presigned URLs for stored packs and
+  for auxiliary objects kept beside the git data, which is how packfile-uris and
+  bundle-uri hand a client an address to fetch from the bucket directly, without
+  bleephub proxying the bytes or lending its credentials. Only the object store
+  has such addresses, so only there are the two features advertised.
+
+## The object store interface
+
+The engine reaches the bucket only through `objstore.Bucket`
+(`gitstore/objstore`): the operations S3, Google Cloud Storage, Azure Blob
+Storage and the S3-compatible stores all offer *with the same meaning* — atomic
+PUT, read-after-write, list-after-write, ranged reads, conditional writes,
+server-side copy, presigned GET — and nothing else. The S3 wire protocol is not
+that common interface: Google Cloud Storage's S3-compatible endpoint answers a
+conditional PUT with 200 and overwrites, and Azure has no S3 endpoint at all.
+Each store gets a driver that speaks its native API; the S3 driver is built on
+the vendor-neutral [minio-go](https://github.com/minio/minio-go) client and
+serves AWS S3, MinIO, R2, SeaweedFS, Ceph and the like. Every driver implements
+every operation with its whole meaning: there is no capability to ask about and
+no lesser behaviour to settle for.
+
+Which is why bleephub **probes the store at startup and refuses to start on one
+that fails**. `objstore.Conform` writes one key under `<prefix>/.conformance/`,
+proves against the live bucket that a create-if-absent of an existing object is
+refused, that a replace-if-unchanged against a stale version is refused, that
+neither refused write changed anything, that a ranged read, a listing after a
+write, a presigned URL and a delete behave, and removes the key.
+`gitbackend.GetStore` runs it when the process-wide store is first opened, and
+`Server.ListenAndServe` returns its error. A store that accepts the requests and
+does not honour them would otherwise run for weeks, until two replicas were each
+told they had moved a branch; there is nothing to fall back to, so the answer to
+a failed probe is not to serve. The service byte store
+(`BLEEPHUB_OBJECT_S3_BUCKET`) is held to the same probe.
 
 ## Concurrency
 
-References are the one part that needs coordination: two pushes must not both
-advance a branch from the same tip. Every `Storer` is wrapped
-(`atomicRefStorer`, `WrapAtomicRefStorage`) to make reference updates a
+Reads need no coordination on the object store: they are pointer loads of
+immutable snapshots. On the directory and memory backends, where the storage
+underneath is go-git's own maps, `atomicRefStorer` keeps readers and writers
+apart with a read-write lock.
+
+References are the one part that needs arbitration: two pushes must not both
+advance a branch from the same tip. On every backend a reference update is a
 compare-and-swap — a reference moves only if it still holds the value the writer
-observed — so concurrent pushes and the merge queue's ref writes stay safe on all
-three backends.
+observed — made under that reference's lock, and on the object store the
+comparison always reads the store, never anything remembered. So concurrent
+pushes and the merge queue's ref writes stay safe on all three backends.
 
 ## Consistency, durability, and resilience
 
@@ -158,7 +194,12 @@ databases) in the object store. The two are reconciled by a strict ordering:
   do hit a missing object surface an explicit error, not a silent success, and a
   stored SHA-256 is verified on read — buffered reads reject a mismatch, and
   streamed reads recompute the digest and fail the final read rather than serving
-  corruption silently.
+  corruption silently. The digest is kept beside the object, as object metadata,
+  under a name every store keeps as written (`objstore.Metadata`): a stored
+  object is exactly its content, so it can be handed to a client by URL; and the
+  store's own version token is not a content hash that can be trusted. An object
+  with no digest beside it is not one the byte store wrote, and reading it is an
+  error. The startup probe proves the store keeps metadata, as it proves the rest.
 - **The durability barrier gates metadata, not bytes.** Group commit's HTTP
   durability barrier withholds a mutating response until the metadata is fsynced;
   byte-transfer routes are exempt (they carry their own protocol). Because bytes
@@ -187,17 +228,19 @@ already serializes shared state:
   table) in addition to the process-local lock, so two replicas cannot both
   advance a branch from the same tip. A replica that dies holding a lock frees it
   when the TTL expires.
-- **Membership freshness** — the loose-object index answers "absent" only from a
-  snapshot no older than `BLEEPHUB_GITSTORE_INDEX_FRESHNESS` (the library's
-  `Options.IndexFreshness`), relying on S3's
-  strongly-consistent list-after-write; against a weakly-consistent S3-compatible
-  store, that window is the staleness bound.
+- **Snapshot freshness** — a repository's snapshot answers "absent" only while it
+  is no older than `BLEEPHUB_GITSTORE_INDEX_FRESHNESS` (the library's
+  `Options.IndexFreshness`); past that a miss lists again before it is believed,
+  which is how one replica comes to see the pack another has just published. It
+  relies on the store's list-after-write consistency, which the startup probe
+  checks.
 - **Compaction is single-writer per repo** — it runs under a durable
   `git-compact:` lock and publishes the `.pack` last (its commit point), deleting
   loose objects only after the pack that holds them is visible, so a concurrent
   reader on another replica never sees an object in neither tier.
-- **Outage resilience** — S3 calls derive their timeout from the server-lifetime
-  context (cancelled on shutdown) and pass through a circuit breaker: after a run
+- **Outage resilience** — every object-store call goes through one chokepoint
+  (`storeShared.call`): it derives its timeout from the server-lifetime context
+  (cancelled on shutdown) and passes through a circuit breaker: after a run
   of hard failures the breaker fast-fails for a short cooldown so a dead store
   returns in microseconds rather than every goroutine blocking the full timeout
   while holding a repo lock. The breaker's open error is transient, never

@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"compress/zlib"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -966,17 +968,17 @@ const gitPackVersion = 2
 // encoder when the client asked for a thin pack and holds delta bases, else
 // reused stored packfiles when they cover the plan (see git_packreuse.go), else
 // go-git's encoder.
-func writeGitPackfile(band *gitBandWriter, stor storer.EncodedObjectStorer, plan *gitPackPlan, thin bool) error {
+func writeGitPackfile(ctx context.Context, band *gitBandWriter, stor storer.EncodedObjectStorer, plan *gitPackPlan, thin bool) error {
 	if thin && len(plan.clientAt) > 0 {
 		return writeGitThinPack(band, stor, plan)
 	}
-	if packDir := gitPackDirOf(stor); packDir != nil && len(plan.objects) > 0 {
-		reusable, err := gitReusablePacks(packDir, plan)
+	if source, stored := stor.(gitstore.PackSource); stored && len(plan.objects) > 0 {
+		reusable, err := gitReusablePacks(ctx, source, plan)
 		if err != nil {
 			return err
 		}
 		if len(reusable) > 0 {
-			return writeGitReusedPackfile(band, stor, packDir, reusable, plan)
+			return writeGitReusedPackfile(ctx, band, stor, source, reusable, plan)
 		}
 	}
 	encoder := packfile.NewEncoder(band.pack(), stor, false)

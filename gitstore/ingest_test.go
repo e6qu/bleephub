@@ -459,13 +459,14 @@ func countCompactionRequests(t *testing.T) func() int {
 	}
 }
 
-// TestAPushCostsItsUploadsAndOneListing pins what a push to a warm replica
-// spends on the object store: the pack, its index and its filter, and the one
-// listing of the pack directory go-git takes to adopt it. It used to spend a
-// listing of the loose tier and a second of the pack directory rebuilding a
+// TestAPushToAWarmReplicaCostsItsUploadsAndNothingElse pins what a push spends
+// on the object store: the pack, its index and its filter. The handle owns the
+// set of live packs, so the pushed pack joins the snapshot it already holds. It
+// used to spend a listing of the pack directory to adopt the pack, before that
+// a listing of the loose tier and a second of the pack directory rebuilding a
 // membership index it had thrown away, and a read of the index it had just
 // uploaded — and the object pushed must still be readable without any of them.
-func TestAPushCostsItsUploadsAndOneListing(t *testing.T) {
+func TestAPushToAWarmReplicaCostsItsUploadsAndNothingElse(t *testing.T) {
 	fake := newFakeS3(t)
 	stor := testPackedStorage(t, fake)
 	smallPush(t, stor, "the push that warms the replica")
@@ -473,8 +474,8 @@ func TestAPushCostsItsUploadsAndOneListing(t *testing.T) {
 	before := fake.Snapshot()
 	hash := smallPush(t, stor, "the push that is measured")
 	spent := fake.Snapshot().Sub(before)
-	if spent.Put != 3 || spent.List != 1 || spent.Total() != 4 {
-		t.Fatalf("a push spent %s, want 3 writes and 1 listing", spent)
+	if spent.Put != 3 || spent.Total() != 3 {
+		t.Fatalf("a push spent %s, want 3 writes and nothing else", spent)
 	}
 
 	before = fake.Snapshot()

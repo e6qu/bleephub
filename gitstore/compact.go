@@ -3,58 +3,60 @@ package gitstore
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	minio "github.com/minio/minio-go/v7"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/idxfile"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	gitStorage "github.com/go-git/go-git/v5/storage"
+
+	"github.com/e6qu/bleephub/gitstore/objstore"
 )
 
 // Compaction turns the loose tier into the pack tier.
 //
-// ORDERING / CRASH SAFETY. A pack is invisible until its .pack key exists
-// (go-git lists objects/pack/ for *.pack), and S3 PutObject / multipart
-// completion publishes an object all-or-nothing. So .pack is written last:
+// ORDERING / CRASH SAFETY. A pack is invisible to a reader until its .pack key
+// exists beside its .idx, and a PUT or a multipart completion publishes an
+// object all-or-nothing. So .pack is written last:
 //
 //	1. build the pack and its index on local disk
 //	2. upload pack-<sha>.idx
 //	3. upload pack-<sha>.bfilter
 //	4. upload pack-<sha>.pack        <- the commit point
-//	5. make the new pack visible to this process (Reindex, index invalidate)
+//	5. publish a snapshot that holds the new pack, and no longer the loose
+//	   objects it packed
 //	6. delete the loose keys that step 1 actually packed
 //
-// Crash before step 4: loose objects stay authoritative; the orphan .idx/.bfilter
-// name a pack nothing lists and the next compaction sweeps them. Crash between 4
-// and 6: pack and some loose objects both exist; go-git reads either and the
-// next compaction removes the duplicates. No object is ever in neither place,
-// because a loose delete strictly follows publication of the pack holding it.
+// Crash before step 4: loose objects stay authoritative; the orphan .idx and
+// .bfilter name a pack no reader adopts. Crash between 4 and 6: pack and some
+// loose objects both exist; a reader takes the packed copy and the next
+// compaction removes the duplicates. No object is ever in neither place, because
+// a loose delete strictly follows publication of the pack holding it.
 //
 // CONCURRENCY. Step 6 deletes only the keys this compaction listed and packed,
-// so a push after the listing survives as loose. Two replicas may list the same
-// keys; each writes a content-named pack (no collision) and deletes only what it
-// packed, so every deleted key is in some published pack. If one replica reads a
-// loose object the other already deleted mid-build, the read fails not-exist and
-// buildPackTolerantly drops it and rebuilds — safe because the only way that key
-// is gone is that the other replica already packed it. The durable lock avoids
-// the duplicated work but correctness does not depend on it (its lease can
-// expire under a long compaction). Against a concurrent read on this replica,
-// step 5 precedes step 6 under the storage lock, so a reader finds the object
-// loose before the swap and packed after.
+// so an object written after the listing survives as loose. Two replicas may
+// list the same keys; each writes a content-named pack (no collision) and
+// deletes only what it packed, so every deleted key is in some published pack.
+// If one replica reads a loose object the other already deleted mid-build, the
+// read finds nothing and buildPackTolerantly drops it and rebuilds — safe
+// because the only way that key is gone is that the other replica already
+// packed it. The durable lock avoids the duplicated work but correctness does
+// not depend on it (its lease can expire under a long compaction). Against a
+// concurrent read on this replica, step 5 precedes step 6, and a reader looks in
+// the packs before the loose tier, so it finds the object loose before the swap
+// and packed after. A reader on another replica that still lists the object as
+// loose finds the key gone, takes that as proof its snapshot is out of date,
+// lists again, and finds the pack.
 
 const (
 	// compactionMinLooseObjects is the loose count below which packing isn't worth its round trips.
@@ -82,7 +84,6 @@ const (
 	// parts. Configurable because non-Amazon endpoints cap the single-request
 	// upload well below Amazon's 5 GiB.
 	defaultMultipartThreshold = 64 << 20
-	multipartPartSize         = 32 << 20
 )
 
 // CompactionResult reports what one compaction did.
@@ -123,19 +124,16 @@ func CompactRepository(ctx context.Context, stor gitStorage.Storer) (CompactionR
 // packing.
 const defaultCompactionTrigger = 4096
 
-// noteObjectWritten counts a loose write and starts a compaction once enough
+// noteObjectWritten counts a loose write and asks for a compaction once enough
 // accumulate. Only one compaction per repository runs at a time in this process;
 // one already running absorbs concurrent writes, since it deletes only the keys
 // it listed.
-func (s *atomicRefStorer) noteObjectWritten() {
-	if s.fs == nil {
+func (r *repository) noteObjectWritten() {
+	trigger := r.shared.opts.CompactionTrigger
+	if trigger <= 0 || r.looseWrites.Add(1) < trigger {
 		return
 	}
-	trigger := s.fs.options().CompactionTrigger
-	if trigger <= 0 || s.looseWrites.Add(1) < trigger {
-		return
-	}
-	s.requestCompaction()
+	r.requestCompaction()
 }
 
 // notePackWritten decides, as a push lands, whether the repository is due a
@@ -144,26 +142,24 @@ func (s *atomicRefStorer) noteObjectWritten() {
 // a request per push; what it would find is already known here.
 //
 // Two things make one due. Packs: a run of small pushes leaves a pack each, and
-// every packed lookup loads every pack's index. The count is the pack directory
-// as last listed, not a tally of this process's pushes, so packs an earlier
-// process left are counted after a restart. And loose objects: the API's
-// object writes land loose, below the write trigger for a long time, and a push
-// is the natural moment to fold in a tier worth packing.
-func (s *atomicRefStorer) notePackWritten() {
-	if s.fs.options().CompactionTrigger <= 0 {
+// every lookup asks every pack. The count is the snapshot's — the repository's
+// live packs, not a tally of this process's pushes — so packs an earlier process
+// left are counted after a restart. And loose objects: the API's object writes
+// land loose, below the write trigger for a long time, and a push is the natural
+// moment to fold in a tier worth packing.
+func (r *repository) notePackWritten(livePacks int) {
+	if r.shared.opts.CompactionTrigger <= 0 {
 		return
 	}
-	packs := max(s.packWrites.Add(1), s.fs.repoIndexFor().livePackCount())
-	if packs <= compactionMergeThreshold && s.looseWrites.Load() < compactionMinLooseObjects {
+	if livePacks <= compactionMergeThreshold && r.looseWrites.Load() < compactionMinLooseObjects {
 		return
 	}
-	s.requestCompaction()
+	r.requestCompaction()
 }
 
-func (s *atomicRefStorer) requestCompaction() {
-	s.looseWrites.Store(0)
-	s.packWrites.Store(0)
-	RequestCompaction(s.repo, s)
+func (r *repository) requestCompaction() {
+	r.looseWrites.Store(0)
+	RequestCompaction(r.name, r)
 }
 
 // RequestCompaction asks the installed handler to compact a repository, and
@@ -205,64 +201,61 @@ func compactionRequestHook() func(repo string, stor gitStorage.Storer) {
 
 // Compact runs one compaction of this repository. See the ordering and
 // concurrency argument at the top of this file.
-func (s *atomicRefStorer) Compact(ctx context.Context) (CompactionResult, error) {
-	if s.fs == nil {
-		return CompactionResult{}, nil
-	}
-	digest := sha256.Sum256([]byte(s.repo + "\x00compaction"))
-	name := "git-compact:" + hex.EncodeToString(digest[:])
-
+func (r *repository) Compact(ctx context.Context) (CompactionResult, error) {
 	var result CompactionResult
-	err := s.withLockName(name, func() error {
+	err := withLockName(lockNameFor("git-compact", r.name, "compaction"), func() error {
 		var err error
-		result, err = s.compactLocked(ctx)
+		result, err = r.compactLocked(ctx)
 		return err
 	})
 	return result, err
 }
 
-func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, error) {
+func (r *repository) compactLocked(ctx context.Context) (CompactionResult, error) {
 	var result CompactionResult
 
 	// One listing of objects/ answers everything a compaction asks before it
 	// decides: what is loose, which superseded packs have aged out, and which
-	// packs are live. A compaction runs after every push and usually finds
-	// nothing to do, so each further listing was a request per push spent
-	// learning what the first had already said.
-	loose, entries, err := s.listObjectTiers(ctx)
+	// packs are live. It is the same listing a reader's snapshot comes from, and
+	// leaves one behind. A compaction usually finds nothing to do, so each
+	// further request here would be spent learning what the first had said.
+	listed, err := r.tiers.refresh()
 	if err != nil {
 		return result, err
 	}
-	retired, err := s.retireSupersededPacks(ctx, entries)
+	retired, err := r.retireSupersededPacks(ctx, listed.listing)
 	if err != nil {
 		return result, err
 	}
 	result.RetiredPacks = retired
 
-	live := s.livePacks(entries)
+	live := make([]livePack, 0, len(listed.snapshot.packs))
+	for _, pack := range listed.snapshot.packs {
+		live = append(live, livePack{name: pack.name, size: pack.pack.size})
+	}
 	var existing []string
 	if len(live) > compactionMergeThreshold {
 		existing = packsToMerge(live)
 	}
 	merge := len(existing) > 0
 
+	loose := listed.listing.loose
 	if len(loose) < compactionMinLooseObjects && !merge {
 		return result, nil
 	}
 
-	candidates := append([]looseObject(nil), loose...)
 	var mergedHashes []plumbing.Hash
 	if merge {
-		mergedHashes, err = s.hashesInPacks(existing)
+		mergedHashes, err = hashesInPacks(listed.snapshot, existing)
 		if err != nil {
 			return result, err
 		}
 	}
 
-	hashes := make([]plumbing.Hash, 0, len(candidates)+len(mergedHashes))
-	seen := make(map[plumbing.Hash]bool, len(candidates)+len(mergedHashes))
-	packedLoose := make([]looseObject, 0, len(candidates))
-	for _, obj := range candidates {
+	hashes := make([]plumbing.Hash, 0, len(loose)+len(mergedHashes))
+	seen := make(map[plumbing.Hash]bool, len(loose)+len(mergedHashes))
+	packedLoose := make([]looseObject, 0, len(loose))
+	for _, obj := range loose {
 		if seen[obj.hash] {
 			continue
 		}
@@ -282,7 +275,7 @@ func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, 
 		return result, nil
 	}
 
-	built, survivors, err := s.buildPackTolerantly(hashes)
+	built, survivors, err := r.buildPackTolerantly(hashes)
 	if err != nil {
 		return result, err
 	}
@@ -290,24 +283,34 @@ func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, 
 	packedLoose = retainPacked(packedLoose, survivors)
 	result.Packed = len(packedLoose)
 
-	if err := s.publishPack(ctx, built); err != nil {
+	published, err := r.publishPack(ctx, built)
+	if err != nil {
 		return result, err
 	}
 	result.PackName = built.name
 	result.PackBytes = built.packSize
 	result.FilterBytes = built.filterBits / 8
 
-	// Make the pack visible before deleting any loose key (step 5 before 6), so a
-	// concurrent reader never looks only where the object no longer is.
-	s.adoptPack(nil)
+	// Make the pack visible, and stop listing as loose what it packed, before
+	// deleting any loose key (step 5 before 6): a reader never looks only where
+	// the object no longer is. The snapshot forgets the keys while every listing
+	// there has been still shows them, which is what makes forgetting them sound.
+	r.tiers.apply(tierChange{pack: published})
+	packedHashes := make([]plumbing.Hash, 0, len(packedLoose))
+	for _, object := range packedLoose {
+		packedHashes = append(packedHashes, object.hash)
+	}
+	r.tiers.retire(nil, packedHashes)
 
-	if err := s.deleteLooseObjects(ctx, packedLoose); err != nil {
+	if err := r.deleteLooseObjects(ctx, packedLoose); err != nil {
 		return result, err
 	}
 	if merge {
-		if err := s.markSuperseded(ctx, existing, built.name); err != nil {
+		superseded := slices.DeleteFunc(existing, func(name string) bool { return name == built.name })
+		if err := r.markSuperseded(ctx, superseded, built.name); err != nil {
 			return result, err
 		}
+		r.tiers.retire(superseded, nil)
 	}
 	return result, nil
 }
@@ -316,25 +319,30 @@ func (s *atomicRefStorer) compactLocked(ctx context.Context) (CompactionResult, 
 // and read (only possible when another replica already packed it), it drops the
 // object and retries. Retrying beats probing every object up front, which would
 // cost the per-object round trip compaction exists to remove.
-func (s *atomicRefStorer) buildPackTolerantly(hashes []plumbing.Hash) (*builtPack, map[plumbing.Hash]bool, error) {
-	built, err := s.buildPack(hashes)
+func (r *repository) buildPackTolerantly(hashes []plumbing.Hash) (*builtPack, map[plumbing.Hash]bool, error) {
+	built, err := r.buildPack(hashes)
 	if err == nil {
 		return built, hashSet(hashes), nil
 	}
-	if !errors.Is(err, plumbing.ErrObjectNotFound) && !errors.Is(err, os.ErrNotExist) {
+	if !errors.Is(err, plumbing.ErrObjectNotFound) {
 		return nil, nil, err
 	}
 
 	survivors := make([]plumbing.Hash, 0, len(hashes))
 	for _, hash := range hashes {
-		if s.HasEncodedObject(hash) == nil {
+		switch probeErr := r.HasEncodedObject(hash); {
+		case probeErr == nil:
 			survivors = append(survivors, hash)
+		case !errors.Is(probeErr, plumbing.ErrObjectNotFound):
+			// Not knowing whether an object survives is not the same as its
+			// being gone, and must not drop it from the pack.
+			return nil, nil, probeErr
 		}
 	}
 	if len(survivors) == 0 {
 		return nil, nil, err
 	}
-	built, err = s.buildPack(survivors)
+	built, err = r.buildPack(survivors)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -361,70 +369,13 @@ func retainPacked(objects []looseObject, packed map[plumbing.Hash]bool) []looseO
 	return kept
 }
 
-// looseObject pairs a loose object's hash with the key holding it.
-type looseObject struct {
-	hash plumbing.Hash
-	key  string
-}
-
-// listObjectTiers walks objects/ once and sorts what it finds into the two
-// tiers: the loose objects, and the entries of the pack directory.
-func (s *atomicRefStorer) listObjectTiers(ctx context.Context) ([]looseObject, map[string]packDirectoryEntry, error) {
-	prefix := s.fs.key("objects") + "/"
-	packPrefix := prefix + "pack/"
-
-	var objects []looseObject
-	packs := map[string]packDirectoryEntry{}
-	for entry := range s.fs.client.Client.ListObjects(ctx, s.fs.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
-		if entry.Err != nil {
-			return nil, nil, fmt.Errorf("list objects of %s: %w", s.repo, entry.Err)
-		}
-		key := entry.Key
-		if strings.HasPrefix(key, packPrefix) {
-			packs[key] = packDirectoryEntry{modified: entry.LastModified, size: entry.Size}
-			continue
-		}
-		rest := strings.TrimPrefix(key, prefix)
-		fanout, base, found := strings.Cut(rest, "/")
-		if !found || len(fanout) != 2 || strings.Contains(base, "/") {
-			continue
-		}
-		hash := plumbing.NewHash(fanout + base)
-		if hash.IsZero() {
-			continue
-		}
-		objects = append(objects, looseObject{hash: hash, key: key})
-	}
-	return objects, packs, nil
-}
-
-// livePack is a reader-visible pack no merge has yet rewritten.
+// livePack is a reader-visible pack no merge has yet rewritten. A superseded
+// pack is not one: its objects already live in the pack that replaced it, and
+// counting it toward the merge threshold, or merging it again, would rewrite the
+// same objects on every compaction until its retention window closed.
 type livePack struct {
 	name string
 	size int64
-}
-
-// livePacks names every pack whose .pack key exists and that carries no
-// supersession marker. A superseded pack stays readable for its retention
-// window, but its objects already live in the pack that replaced it: counting
-// it toward the merge threshold, or merging it again, would rewrite the same
-// objects on every compaction until the window closed.
-func (s *atomicRefStorer) livePacks(entries map[string]packDirectoryEntry) []livePack {
-	prefix := s.fs.key(path.Join("objects", "pack")) + "/"
-	var packs []livePack
-	for key, entry := range entries {
-		base := path.Base(key)
-		if !strings.HasPrefix(base, "pack-") || !strings.HasSuffix(base, ".pack") {
-			continue
-		}
-		name := strings.TrimSuffix(base, ".pack")
-		if _, superseded := entries[prefix+name+".superseded"]; superseded {
-			continue
-		}
-		packs = append(packs, livePack{name: name, size: entry.size})
-	}
-	sort.Slice(packs, func(i, j int) bool { return packs[i].name < packs[j].name })
-	return packs
 }
 
 // packsToMerge picks the packs a merge rewrites: the smallest ones, up to the
@@ -461,23 +412,18 @@ func packsToMerge(packs []livePack) []string {
 	return names
 }
 
-type packDirectoryEntry struct {
-	modified time.Time
-	size     int64
-}
-
-// hashesInPacks reads the object ids from the existing packs' indexes, the set
-// a merging compaction rewrites.
-func (s *atomicRefStorer) hashesInPacks(packs []string) ([]plumbing.Hash, error) {
+// hashesInPacks reads the object ids from the named packs' indexes, the set a
+// merging compaction rewrites.
+func hashesInPacks(snapshot *tierSnapshot, packs []string) ([]plumbing.Hash, error) {
 	var hashes []plumbing.Hash
-	for _, pack := range packs {
-		index, err := s.readPackIndex(pack)
+	for _, name := range packs {
+		index, err := snapshot.pack(name).loadIndex()
 		if err != nil {
 			return nil, err
 		}
 		iter, err := index.EntriesByOffset()
 		if err != nil {
-			return nil, fmt.Errorf("read index of %s: %w", pack, err)
+			return nil, fmt.Errorf("read index of %s: %w", name, err)
 		}
 		for {
 			entry, err := iter.Next()
@@ -485,25 +431,12 @@ func (s *atomicRefStorer) hashesInPacks(packs []string) ([]plumbing.Hash, error)
 				if errors.Is(err, io.EOF) {
 					break
 				}
-				return nil, fmt.Errorf("read index of %s: %w", pack, err)
+				return nil, fmt.Errorf("read index of %s: %w", name, err)
 			}
 			hashes = append(hashes, entry.Hash)
 		}
 	}
 	return hashes, nil
-}
-
-func (s *atomicRefStorer) readPackIndex(pack string) (*idxfile.MemoryIndex, error) {
-	file, err := s.fs.Open(path.Join("objects", "pack", pack+".idx"))
-	if err != nil {
-		return nil, fmt.Errorf("open index of %s: %w", pack, err)
-	}
-	defer func() { _ = file.Close() }()
-	index := idxfile.NewMemoryIndex()
-	if err := idxfile.NewDecoder(file).Decode(index); err != nil {
-		return nil, fmt.Errorf("decode index of %s: %w", pack, err)
-	}
-	return index, nil
 }
 
 // builtPack is a finished pack on local disk, waiting to be published.
@@ -517,6 +450,10 @@ type builtPack struct {
 	packFile   string
 	packSize   int64
 	objects    int
+	// parsed is the index as the parse of the staged bytes produced it, and
+	// index the same encoded for upload. The publisher keeps the first so that it
+	// never reads back the second.
+	parsed     *idxfile.MemoryIndex
 	index      []byte
 	filter     []byte
 	filterBits int
@@ -558,21 +495,21 @@ func (b *builtPack) cleanup() {
 // index and membership filter from the bytes it wrote. It stages locally rather
 // than streaming because the pack's name is the hash of its contents, unknown
 // until the last byte.
-func (s *atomicRefStorer) buildPack(hashes []plumbing.Hash) (*builtPack, error) {
-	return s.buildPackFrom(s, hashes)
+func (r *repository) buildPack(hashes []plumbing.Hash) (*builtPack, error) {
+	return r.buildPackFrom(r, hashes)
 }
 
 // buildPackFrom is buildPack reading the objects from source, which lets a
 // pack be built from objects that are not in the repository yet.
-func (s *atomicRefStorer) buildPackFrom(source storer.EncodedObjectStorer, hashes []plumbing.Hash) (*builtPack, error) {
-	temp, built, err := s.stagePack("compact-*.pack")
+func (r *repository) buildPackFrom(source storer.EncodedObjectStorer, hashes []plumbing.Hash) (*builtPack, error) {
+	temp, built, err := r.stagePack("compact-*.pack")
 	if err != nil {
 		return nil, err
 	}
 	if _, err := packfile.NewEncoder(temp, source, false).Encode(hashes, compactionPackWindow); err != nil {
 		_ = temp.Close()
 		built.cleanup()
-		return nil, fmt.Errorf("encode pack for %s: %w", s.repo, err)
+		return nil, fmt.Errorf("encode pack for %s: %w", r.name, err)
 	}
 	if err := built.describe(temp); err != nil {
 		_ = temp.Close()
@@ -587,8 +524,8 @@ func (s *atomicRefStorer) buildPackFrom(source storer.EncodedObjectStorer, hashe
 }
 
 // stagePack creates the local file a pack is assembled in.
-func (s *atomicRefStorer) stagePack(pattern string) (*os.File, *builtPack, error) {
-	dir, err := s.compactionScratchDir()
+func (r *repository) stagePack(pattern string) (*os.File, *builtPack, error) {
+	dir, err := r.compactionScratchDir()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -654,6 +591,7 @@ func (b *builtPack) describe(staged *os.File) error {
 	b.name = "pack-" + checksum.String()
 	b.packSize = size
 	b.objects = len(keys)
+	b.parsed = index
 	b.index = encoded.Bytes()
 	b.filter = filter.encode()
 	b.filterBits = filter.bits()
@@ -662,215 +600,122 @@ func (b *builtPack) describe(staged *os.File) error {
 
 // compactionScratchDir stages a pack while it is built. It shares the pack
 // cache's directory: both hold pack bytes against the same local disk budget.
-func (s *atomicRefStorer) compactionScratchDir() (string, error) {
-	dir := filepath.Join(s.fs.options().CacheDir, "staging")
+func (r *repository) compactionScratchDir() (string, error) {
+	dir := filepath.Join(r.shared.opts.CacheDir, "staging")
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", fmt.Errorf("compaction staging directory: %w", err)
 	}
 	return dir, nil
 }
 
-// publishPack uploads the index, the filter, and finally the pack. See the
-// crash-safety argument at the top of this file.
-func (s *atomicRefStorer) publishPack(ctx context.Context, built *builtPack) error {
-	base := path.Join("objects", "pack", built.name)
-	if err := s.putObject(ctx, base+".idx", built.index); err != nil {
-		return err
-	}
-	if err := s.putObject(ctx, base+".bfilter", built.filter); err != nil {
-		return err
-	}
-	if err := s.uploadPackFile(ctx, base+".pack", built); err != nil {
-		return err
-	}
-	// Seed the disk cache from the staged file so this replica does not download
-	// back the pack it just uploaded.
-	s.seedPackCache(base+".pack", built)
-	s.seedIndexCache(base+".idx", built.index)
-	s.fs.rememberObjectSize(s.fs.key(base+".pack"), built.packSize)
-	return nil
-}
+// packPublishTimeout bounds the upload of one pack. It is generous: a ceiling on
+// a wedged upload, not a pace.
+const packPublishTimeout = 30 * time.Minute
 
-func (s *atomicRefStorer) putObject(ctx context.Context, name string, body []byte) error {
-	key := s.fs.key(name)
-	_, err := s.fs.client.Client.PutObject(ctx, s.fs.bucket, key, bytes.NewReader(body), int64(len(body)), minio.PutObjectOptions{})
+// publishPack uploads the index, the filter, and finally the pack — see the
+// crash-safety argument at the top of this file — and returns the pack as a
+// snapshot holds it, with its index and filter already in hand. The local cache
+// is seeded from the staged bytes, so that neither this handle nor the next one
+// on this replica downloads what has just been uploaded.
+func (r *repository) publishPack(ctx context.Context, built *builtPack) (*storedPack, error) {
+	filter, err := decodeBinaryFuseFilter(built.filter)
 	if err != nil {
-		return fmt.Errorf("s3 put %s: %w", key, err)
+		return nil, fmt.Errorf("filter of %s: %w", built.name, err)
 	}
-	return nil
-}
+	filterExtents := r.tiers.extents(built.name+".bfilter", int64(len(built.filter)))
+	published := &storedPack{
+		name:          built.name,
+		pack:          r.tiers.extents(built.name+".pack", built.packSize),
+		index:         r.tiers.extents(built.name+".idx", int64(len(built.index))),
+		filtered:      true,
+		filterExtents: filterExtents,
+	}
+	published.parsed.Store(built.parsed)
+	published.filter.Store(filter)
 
-// uploadPackFile publishes the packfile: one request when small, else a
-// multipart upload so a multi-gigabyte pack need not be held in memory. Both
-// are atomic — the object appears only once the (completion) request succeeds.
-func (s *atomicRefStorer) uploadPackFile(ctx context.Context, name string, built *builtPack) error {
-	key := s.fs.key(name)
-	size := built.packSize
-	file, err := built.open()
+	if err := r.putObject(ctx, published.index.key, built.index); err != nil {
+		return nil, err
+	}
+	if err := r.putObject(ctx, filterExtents.key, built.filter); err != nil {
+		return nil, err
+	}
+	// One request when the pack is small, else in parts, so that a pack of
+	// gigabytes is never held in memory. Both are atomic: the object appears
+	// only once the request, or the completion of the parts, succeeds.
+	staged, err := built.open()
 	if err != nil {
-		return fmt.Errorf("open staged pack: %w", err)
+		return nil, fmt.Errorf("open staged pack: %w", err)
 	}
-	defer func() { _ = file.Close() }()
-
-	if size <= s.fs.options().MultipartBytes {
-		if _, err := s.fs.client.Client.PutObject(ctx, s.fs.bucket, key, file, size, minio.PutObjectOptions{}); err != nil {
-			return fmt.Errorf("s3 put %s: %w", key, err)
-		}
-		return nil
-	}
-
-	uploadID, err := s.fs.client.NewMultipartUpload(ctx, s.fs.bucket, key, minio.PutObjectOptions{})
+	_, err = r.shared.put(ctx, packPublishTimeout, published.pack.key, staged, built.packSize, objstore.Always)
+	_ = staged.Close()
 	if err != nil {
-		return fmt.Errorf("s3 multipart create %s: %w", key, err)
+		return nil, err
 	}
 
-	var parts []minio.CompletePart
-	buffer := make([]byte, min(int64(multipartPartSize), max(size/2+1, 1)))
-	for number := 1; ; number++ {
-		read, err := io.ReadFull(file, buffer)
-		if read == 0 {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				break
-			}
-			if err != nil {
-				s.abortMultipart(ctx, key, uploadID)
-				return fmt.Errorf("read staged pack: %w", err)
-			}
-			break
-		}
-		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-			s.abortMultipart(ctx, key, uploadID)
-			return fmt.Errorf("read staged pack: %w", err)
-		}
-		uploaded, uploadErr := s.fs.client.PutObjectPart(ctx, s.fs.bucket, key, uploadID, number, bytes.NewReader(buffer[:read]), int64(read), minio.PutObjectPartOptions{})
-		if uploadErr != nil {
-			s.abortMultipart(ctx, key, uploadID)
-			return fmt.Errorf("s3 upload part %d of %s: %w", number, key, uploadErr)
-		}
-		parts = append(parts, minio.CompletePart{ETag: uploaded.ETag, PartNumber: number})
-		if read < len(buffer) {
-			break
-		}
-	}
-
-	if _, err := s.fs.client.CompleteMultipartUpload(ctx, s.fs.bucket, key, uploadID, parts, minio.PutObjectOptions{}); err != nil {
-		s.abortMultipart(ctx, key, uploadID)
-		return fmt.Errorf("s3 multipart complete %s: %w", key, err)
-	}
-	return nil
+	r.seedPackCache(published.pack, built)
+	r.seedCache(published.index, built.index)
+	r.seedCache(filterExtents, built.filter)
+	return published, nil
 }
 
-func (s *atomicRefStorer) abortMultipart(ctx context.Context, key, uploadID string) {
-	_ = s.fs.client.AbortMultipartUpload(ctx, s.fs.bucket, key, uploadID)
+func (r *repository) putObject(ctx context.Context, key string, body []byte) error {
+	_, err := r.shared.put(ctx, storeWriteTimeout, key, bytes.NewReader(body), int64(len(body)), objstore.Always)
+	return err
 }
 
-func (s *atomicRefStorer) seedPackCache(name string, built *builtPack) {
-	cache := s.fs.packCache()
-	if cache == nil {
-		return
-	}
-	size := built.packSize
+func (r *repository) seedPackCache(extents packExtents, built *builtPack) {
 	file, err := built.open()
 	if err != nil {
 		return
 	}
 	defer func() { _ = file.Close() }()
-	key := s.fs.key(name)
-	chunkSize := s.fs.shared().chunkSize
-	cache.storeSize(s.fs.bucket, key, chunkSize, size)
+	cache := r.shared.packCache()
+	chunkSize := r.shared.opts.ChunkBytes
 	for chunk := int64(0); ; chunk++ {
 		// Each chunk needs its own buffer: an admitted chunk is shared with later
 		// readers, so reusing the buffer would rewrite bytes they are reading.
-		buffer := make([]byte, chunkSize)
+		buffer := make([]byte, min(chunkSize, max(extents.size-chunk*chunkSize, 0)))
 		read, err := io.ReadFull(file, buffer)
 		if read > 0 {
-			cache.store(s.fs.bucket, key, chunkSize, chunk, buffer[:read])
+			cache.store(r.shared.bucket.Name(), extents.key, chunkSize, chunk, buffer[:read])
 		}
-		if err != nil || read < len(buffer) {
+		if err != nil || read == 0 {
 			return
 		}
 	}
 }
 
-// seedIndexCache does for a published pack's index what seedPackCache does for
-// the pack: the storer reads the index back as soon as it adopts the pack, and
-// those are bytes this replica has just uploaded.
-func (s *atomicRefStorer) seedIndexCache(name string, index []byte) {
-	cache := s.fs.packCache()
-	if cache == nil {
-		return
-	}
-	key := s.fs.key(name)
-	chunkSize := s.fs.shared().chunkSize
-	cache.storeSize(s.fs.bucket, key, chunkSize, int64(len(index)))
-	for chunk, start := int64(0), int64(0); start < int64(len(index)); chunk, start = chunk+1, start+chunkSize {
-		end := min(start+chunkSize, int64(len(index)))
+// seedCache does for a published pack's index and filter what seedPackCache does
+// for the pack.
+func (r *repository) seedCache(extents packExtents, body []byte) {
+	cache := r.shared.packCache()
+	chunkSize := r.shared.opts.ChunkBytes
+	for chunk, start := int64(0), int64(0); start < int64(len(body)); chunk, start = chunk+1, start+chunkSize {
+		end := min(start+chunkSize, int64(len(body)))
 		// A copy, for the reason seedPackCache gives: an admitted chunk is shared.
-		cache.store(s.fs.bucket, key, chunkSize, chunk, bytes.Clone(index[start:end]))
+		cache.store(r.shared.bucket.Name(), extents.key, chunkSize, chunk, bytes.Clone(body[start:end]))
 	}
-	s.fs.rememberObjectSize(key, int64(len(index)))
 }
 
-// adoptPack makes a just-published pack visible to the storer and brings the
-// membership index up to date with it. A pushed pack only adds, so the index is
-// told of it (added is that pack). A compaction also removes — loose objects,
-// superseded packs — so it passes nil and the snapshots are dropped.
-func (s *atomicRefStorer) adoptPack(added *builtPack) {
-	index := s.fs.repoIndexFor()
-	var filter *binaryFuseFilter
-	if added != nil {
-		// An unreadable filter leaves the pack recorded as one that rules
-		// nothing out, which is what a reader finding it that way would record.
-		filter, _ = decodeBinaryFuseFilter(added.filter)
-		index.notePackPublished(added.name, filter)
-	} else {
-		// Dropped before the rebuild below, not after: a listing the rebuild
-		// takes now, with the new pack already published, is one the next
-		// reader can use.
-		index.invalidate()
-	}
-	s.mu.Lock()
-	if reindexer, ok := s.storer.(interface{ Reindex() }); ok {
-		reindexer.Reindex()
-		// Reindex only clears go-git's lazy pack index; requireIndex rebuilds it
-		// on the next read, mutating the shared index/pack list. Read methods run
-		// under RLock, so leaving the rebuild to them lets concurrent readers race
-		// and observe a partial pack set — a spurious ErrObjectNotFound for an
-		// object the new pack holds. Force the rebuild here under the exclusive
-		// lock; the probe only drives requireIndex through go-git's public surface,
-		// its result is irrelevant.
-		_ = s.storer.HasEncodedObject(plumbing.ZeroHash)
-	}
-	s.mu.Unlock()
-}
-
-// deleteLooseObjects removes the keys that went into the published pack, a
-// thousand at a time.
-func (s *atomicRefStorer) deleteLooseObjects(ctx context.Context, objects []looseObject) error {
+// deleteLooseObjects removes the keys that went into the published pack.
+func (r *repository) deleteLooseObjects(ctx context.Context, objects []looseObject) error {
 	keys := make([]string, 0, len(objects))
 	for _, object := range objects {
 		keys = append(keys, object.key)
 	}
-	if err := s.fs.deleteObjectKeys(ctx, keys); err != nil {
+	if err := r.shared.deleteMany(ctx, keys); err != nil {
 		return fmt.Errorf("delete %d packed loose objects: %w", len(keys), err)
-	}
-	for _, object := range objects {
-		s.fs.noteLooseRemoved(strings.TrimPrefix(object.key, s.fs.prefix+"/"))
 	}
 	return nil
 }
 
-// markSuperseded records that a pack was rewritten into a newer one. It writes
+// markSuperseded records that packs were rewritten into a newer one. It writes
 // a marker rather than deleting, since a request begun before the merge may
 // still read the old pack; retireSupersededPacks removes the bytes once the
 // marker ages.
-func (s *atomicRefStorer) markSuperseded(ctx context.Context, packs []string, replacement string) error {
+func (r *repository) markSuperseded(ctx context.Context, packs []string, replacement string) error {
 	for _, pack := range packs {
-		if pack == replacement {
-			continue
-		}
-		name := path.Join("objects", "pack", pack+".superseded")
-		if err := s.putObject(ctx, name, []byte(replacement)); err != nil {
+		if err := r.putObject(ctx, r.tiers.extents(pack+".superseded", 0).key, []byte(replacement)); err != nil {
 			return err
 		}
 	}
@@ -878,13 +723,12 @@ func (s *atomicRefStorer) markSuperseded(ctx context.Context, packs []string, re
 }
 
 // retireSupersededPacks removes packs whose supersession marker is older than
-// the retention window, aging against the object store's LastModified rather
-// than this replica's clock.
-func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context, entries map[string]packDirectoryEntry) ([]string, error) {
-	prefix := s.fs.key(path.Join("objects", "pack")) + "/"
-
+// the retention window, aging against the object store's modification times
+// rather than this replica's clock. No snapshot changes for it: a superseded
+// pack was never in one taken since its marker was written.
+func (r *repository) retireSupersededPacks(ctx context.Context, listing *tierListing) ([]string, error) {
 	var newest time.Time
-	for _, entry := range entries {
+	for _, entry := range listing.packDirectory {
 		if entry.modified.After(newest) {
 			newest = entry.modified
 		}
@@ -892,9 +736,8 @@ func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context, entries map
 
 	var retired []string
 	var doomed []string
-	for key, entry := range entries {
-		base := path.Base(key)
-		pack, ok := strings.CutSuffix(base, ".superseded")
+	for name, entry := range listing.packDirectory {
+		pack, ok := strings.CutSuffix(name, ".superseded")
 		if !ok {
 			continue
 		}
@@ -902,8 +745,8 @@ func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context, entries map
 			continue
 		}
 		for _, extension := range []string{".pack", ".idx", ".bfilter", ".superseded"} {
-			if _, present := entries[prefix+pack+extension]; present {
-				doomed = append(doomed, prefix+pack+extension)
+			if _, present := listing.packDirectory[pack+extension]; present {
+				doomed = append(doomed, r.tiers.extents(pack+extension, 0).key)
 			}
 		}
 		retired = append(retired, pack)
@@ -912,16 +755,14 @@ func (s *atomicRefStorer) retireSupersededPacks(ctx context.Context, entries map
 		return nil, nil
 	}
 	// Delete the .pack key first: once gone, no reader looks for the index or filter.
-	sort.Slice(doomed, func(i, j int) bool {
+	sort.SliceStable(doomed, func(i, j int) bool {
 		return strings.HasSuffix(doomed[i], ".pack") && !strings.HasSuffix(doomed[j], ".pack")
 	})
 	for _, key := range doomed {
-		if err := s.fs.client.Client.RemoveObject(ctx, s.fs.bucket, key, minio.RemoveObjectOptions{}); err != nil {
+		if err := r.shared.deleteObject(ctx, key); err != nil {
 			return retired, fmt.Errorf("retire %s: %w", key, err)
 		}
-		s.fs.forgetObjectSize(key)
 	}
-	s.adoptPack(nil)
 	sort.Strings(retired)
 	return retired, nil
 }

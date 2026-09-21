@@ -60,18 +60,6 @@ func TestVerifyingReadCloserRejectsCorruptedStream(t *testing.T) {
 	}
 }
 
-func TestVerifyingReadCloserSkipsLegacyObjects(t *testing.T) {
-	data := []byte("legacy object with no stored checksum")
-	v := &verifyingReadCloser{rc: io.NopCloser(strings.NewReader(string(data))), hasher: sha256.New(), expected: nil, key: "k"}
-	got, err := drain(t, v)
-	if err != nil {
-		t.Fatalf("legacy object errored: %v", err)
-	}
-	if string(got) != string(data) {
-		t.Fatalf("legacy bytes = %q, want %q", got, data)
-	}
-}
-
 // The terminating error must be a normal error value (not io.EOF) so callers
 // ranging on io.EOF see a failure.
 func TestVerifyingReadCloserErrorIsNotEOF(t *testing.T) {

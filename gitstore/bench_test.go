@@ -7,48 +7,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-billy/v5/helper/polyfill"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
-	gitFilesystem "github.com/go-git/go-git/v5/storage/filesystem"
 )
 
 // gitPackWindow mirrors the delta window internal/server's upload-pack uses, so
 // a benchmark here encodes exactly the work a clone does.
 const gitPackWindow = 10
 
-// looseStorage is the storage shape bleephub had before this package grew a
-// pack tier: go-git's dotgit layout directly over S3, where every git object is
-// one S3 object. It is retained as the benchmark baseline, so the numbers in
-// the report are produced by running both shapes in the same process against
-// the same fake rather than by comparing against a remembered figure.
-func looseStorage(fake *fakeS3, repo string) (gitStorage.Storer, error) {
-	chrooted, err := fake.fs("bucket", "prefix").Chroot(repo)
+// packedStorage opens the repository as a replica that has never seen it would:
+// a store of its own, so nothing is remembered from the handle that wrote it.
+// It is exactly what Store.Repository produces for an object-store repository.
+func packedStorage(fake *fakeS3, repo string) (*repository, error) {
+	stor, err := fake.store("prefix").Repository(repo)
 	if err != nil {
 		return nil, err
 	}
-	return WrapAtomicRefStorage(repo, gitFilesystem.NewStorage(polyfill.New(chrooted), cache.NewObjectLRUDefault())), nil
-}
-
-// packedStorage is the storage shape this package now builds: the same dotgit
-// layout over the same object store, with the pack tier, the ranged read path
-// and the membership index wired in — that is, exactly what newGitStorage
-// produces for an S3-backed repository.
-func packedStorage(fake *fakeS3, repo string) (*atomicRefStorer, error) {
-	chrooted, err := fake.fs("bucket", "prefix").Chroot(repo)
-	if err != nil {
-		return nil, err
-	}
-	s3Chroot, ok := chrooted.(*S3FS)
+	handle, ok := stor.(*repository)
 	if !ok {
-		return nil, fmt.Errorf("unexpected chroot type %T", chrooted)
+		return nil, fmt.Errorf("unexpected storer type %T", stor)
 	}
-	storage := gitFilesystem.NewStorage(polyfill.New(chrooted), cache.NewObjectLRUDefault())
-	return wrapObjectStoreStorage(repo, storage, s3Chroot), nil
+	return handle, nil
 }
 
 // seedObjects writes n blobs plus the tree and commit that reference them,
