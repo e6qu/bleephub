@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -92,13 +93,19 @@ func TestRepoListSurfacesIsTemplate(t *testing.T) {
 	resp := ghPatch(t, "/api/v3/repos/admin/"+name, defaultToken, map[string]interface{}{"is_template": true})
 	requireStatus(t, resp, 200)
 
-	resp = ghGet(t, "/api/v3/user/repos?per_page=100", defaultToken)
-	repos := decodeJSONArray(t, resp)
+	// Every page: the suite's shared server gives admin more than a page of
+	// repositories, and where this one falls depends on what ran before it.
 	var found map[string]interface{}
-	for _, r := range repos {
-		if r["full_name"] == "admin/"+name {
-			found = r
+	for page := 1; found == nil; page++ {
+		repos := decodeJSONArray(t, ghGet(t, fmt.Sprintf("/api/v3/user/repos?per_page=100&page=%d", page), defaultToken))
+		if len(repos) == 0 {
 			break
+		}
+		for _, r := range repos {
+			if r["full_name"] == "admin/"+name {
+				found = r
+				break
+			}
 		}
 	}
 	if found == nil {
