@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -195,6 +196,7 @@ func generateFromTemplateStorage(src, dst gitStorage.Storer, defaultBranch strin
 		}
 	}
 
+	refs := make([]*plumbing.Reference, 0, len(branches))
 	for name, commitHash := range branches {
 		commit, err := object.GetCommit(src, commitHash)
 		if err != nil {
@@ -210,9 +212,11 @@ func generateFromTemplateStorage(src, dst gitStorage.Storer, defaultBranch strin
 		if err != nil {
 			return err
 		}
-		if err := dst.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName(name), newHash)); err != nil {
-			return err
-		}
+		refs = append(refs, plumbing.NewHashReference(plumbing.NewBranchReferenceName(name), newHash))
+	}
+	// Every branch in one write, which also carries the objects copied above.
+	if err := gitstore.SetReferences(dst, refs); err != nil {
+		return err
 	}
 
 	headBranch := defaultBranch
