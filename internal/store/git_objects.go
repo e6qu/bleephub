@@ -204,48 +204,69 @@ func ReadGitBlob(stor gitStorage.Storer, hash plumbing.Hash) ([]byte, error) {
 // CommitTouchesPath reports whether a commit changed the file or directory at
 // requested against its first parent (or, for a root commit, contains it).
 func CommitTouchesPath(commit *object.Commit, requested string) (bool, error) {
-	matches := func(candidate string) bool {
-		return candidate == requested || strings.HasPrefix(candidate, requested+"/")
+	// What sits at the path in the commit and in its first parent: a changed
+	// file has another blob or mode there, and a changed directory another tree,
+	// so comparing the two entries answers without diffing the rest of the tree
+	// — only the trees along the path are read.
+	at := func(c *object.Commit) (*object.TreeEntry, error) {
+		tree, err := c.Tree()
+		if err != nil {
+			return nil, err
+		}
+		return treeEntryAt(tree, requested)
 	}
-	tree, err := commit.Tree()
+	current, err := at(commit)
 	if err != nil {
 		return false, err
 	}
 	if commit.NumParents() == 0 {
-		found := false
-		walker := object.NewTreeWalker(tree, true, nil)
-		defer walker.Close()
-		for {
-			name, _, err := walker.Next()
-			if errors.Is(err, io.EOF) {
-				return found, nil
-			}
-			if err != nil {
-				return false, err
-			}
-			if matches(name) {
-				found = true
-			}
-		}
+		return current != nil, nil
 	}
 	parent, err := commit.Parent(0)
 	if err != nil {
 		return false, err
 	}
-	parentTree, err := parent.Tree()
+	previous, err := at(parent)
 	if err != nil {
 		return false, err
 	}
-	changes, err := object.DiffTree(parentTree, tree)
-	if err != nil {
-		return false, err
+	switch {
+	case current == nil || previous == nil:
+		return current != previous, nil
+	default:
+		return current.Hash != previous.Hash || current.Mode != previous.Mode, nil
 	}
-	for _, change := range changes {
-		if matches(change.From.Name) || matches(change.To.Name) {
-			return true, nil
+}
+
+// treeEntryAt returns the entry at a slash-separated path under tree, or nil
+// when there is none — including when a component on the way is a file, which
+// go-git's FindEntry would try to read as a tree.
+func treeEntryAt(tree *object.Tree, path string) (*object.TreeEntry, error) {
+	parts := strings.Split(path, "/")
+	for depth, part := range parts {
+		var found *object.TreeEntry
+		for i := range tree.Entries {
+			if tree.Entries[i].Name == part {
+				found = &tree.Entries[i]
+				break
+			}
 		}
+		if found == nil {
+			return nil, nil
+		}
+		if depth == len(parts)-1 {
+			return found, nil
+		}
+		if found.Mode != filemode.Dir {
+			return nil, nil
+		}
+		next, err := tree.Tree(part)
+		if err != nil {
+			return nil, err
+		}
+		tree = next
 	}
-	return false, nil
+	return nil, nil
 }
 
 // GitCommitDiffStats returns the additions, deletions and changed-file count a
