@@ -350,6 +350,11 @@ no object **404 Not Found**, and a concurrent conflict 409
 ([conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html));
 MinIO answers 412 for both. The S3 driver takes all three as a condition not met.
 
+No caller of a listing depends on its order, and the driver contract promises
+none: Amazon's own directory buckets do not list in lexicographic order
+([ListObjectsV2](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html)),
+though its general purpose buckets do.
+
 Single-node servers run against `objstoretest.Run` (the startup probe and every
 case of the driver suite) on 2026-09-22:
 
@@ -358,7 +363,7 @@ case of the driver suite) on 2026-09-22:
 | Versity GW v1.8.0 (POSIX backend) | yes | yes | stateless gateway over a directory; answers the absent-key `If-Match` 404, as Amazon does |
 | pgsty/minio `RELEASE.2026-09-16T00-00-00Z` (binary `silo`) | yes | yes | community fork of MinIO, maintained |
 | RustFS 1.0.0 | yes | yes | about ten times slower than the others on the suite's copy and listing cases |
-| SeaweedFS 4.47 (`weed mini`) | yes | **no** | lists in its filer's directory order, not byte order: `refs/…` before `refs-not-a-directory` |
+| SeaweedFS 4.47 (`weed mini`) | yes | yes | lists in its filer's directory order, not byte order (`refs/…` before `refs-not-a-directory`), which the suite does not require |
 
 **Entity tags.** "Same tag, same content" holds for a small single-part object
 on every store listed — so revalidating a small object by its tag is sound — but

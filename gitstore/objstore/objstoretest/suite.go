@@ -35,7 +35,7 @@ func Run(t *testing.T, open func(t *testing.T) objstore.Bucket) {
 		"AConditionalReadMovesNoBodyUntilTheObjectDoes": conditionalRead,
 		"MetadataTravelsWithAnObject":                   metadataTravels,
 		"AbsenceIsNotFoundAndARangeCarriesTheWholeSize": readsAndRanges,
-		"ListingsAreWholeOrderedAndFoldedByDirectory":   listings,
+		"ListingsAreWholeAndFoldedByDirectory":          listings,
 		"CopyAndDeletesDoWhatTheySay":                   copyAndDelete,
 		"AStreamOfUnknownSizeLandsWholeOrNotAtAll":      streamedUpload,
 		"ASignedURLReadsTheObjectWithoutCredentials":    signedURL,
@@ -82,6 +82,8 @@ func read(t *testing.T, bucket objstore.Bucket, key string) (string, objstore.In
 	return string(content), info
 }
 
+// keysUnder lists prefix and returns its keys sorted: a listing comes in no
+// particular order, but names each object once.
 func keysUnder(t *testing.T, bucket objstore.Bucket, prefix string) []string {
 	t.Helper()
 	var keys []string
@@ -90,6 +92,12 @@ func keysUnder(t *testing.T, bucket objstore.Bucket, prefix string) []string {
 		return nil
 	}); err != nil {
 		t.Fatalf("list %s: %v", prefix, err)
+	}
+	sort.Strings(keys)
+	for i := 1; i < len(keys); i++ {
+		if keys[i] == keys[i-1] {
+			t.Errorf("a listing of %s named %s twice", prefix, keys[i])
+		}
 	}
 	return keys
 }
@@ -305,7 +313,7 @@ func listings(t *testing.T, bucket objstore.Bucket, prefix string) {
 		got = append(got, strings.TrimPrefix(key, prefix))
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Errorf("recursive listing = %v, want %v in byte order", got, want)
+		t.Errorf("recursive listing = %v, want %v", got, want)
 	}
 
 	var directory []string
@@ -322,6 +330,7 @@ func listings(t *testing.T, bucket objstore.Bucket, prefix string) {
 	}); err != nil {
 		t.Fatalf("directory listing: %v", err)
 	}
+	sort.Strings(directory)
 	if got := strings.Join(directory, ", "); got != "HEAD, refs-not-a-directory, refs/ (prefix)" {
 		t.Errorf("directory listing = %s", got)
 	}
@@ -341,8 +350,8 @@ func listings(t *testing.T, bucket objstore.Bucket, prefix string) {
 			t.Fatalf("put %s: %v", key, err)
 		}
 	}
-	if listed := keysUnder(t, bucket, prefix+"many/"); len(listed) != many || !sort.StringsAreSorted(listed) {
-		t.Errorf("a listing of %d keys returned %d, sorted %v", many, len(listed), sort.StringsAreSorted(listed))
+	if listed := keysUnder(t, bucket, prefix+"many/"); len(listed) != many {
+		t.Errorf("a listing of %d keys returned %d", many, len(listed))
 	}
 }
 

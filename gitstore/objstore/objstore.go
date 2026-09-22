@@ -13,8 +13,8 @@
 // all), a read after a write sees it, a listing after a write includes it, and a
 // conditional write holds. What may not: that a version token is a hash of the
 // content, that a multipart upload can be completed conditionally, that a DELETE
-// or a COPY can be conditional, or that a listing is ordered beyond byte order of
-// the keys.
+// or a COPY can be conditional, or that a listing comes in any particular order
+// (Amazon's directory buckets and SeaweedFS's filer list in their own).
 //
 // Every driver implements every operation with its whole meaning. There is no
 // capability to ask about and no lesser behaviour to settle for: a store that
@@ -157,11 +157,12 @@ type Bucket interface {
 	Delete(ctx context.Context, key string) error
 	// DeleteMany removes every key given, in as few requests as the store allows.
 	DeleteMany(ctx context.Context, keys []string) error
-	// List calls visit for every object under prefix, in byte order of the keys.
+	// List calls visit once for every object under prefix, in no particular
+	// order.
 	List(ctx context.Context, prefix string, visit func(Entry) error) error
 	// ListDirectory calls visit for what is immediately under prefix: objects
 	// whose key has no "/" after it, and one common prefix for each run of keys
-	// that do.
+	// that do, in no particular order.
 	ListDirectory(ctx context.Context, prefix string, visit func(Entry) error) error
 	// Copy copies an object within the bucket without moving its bytes through
 	// the caller.
