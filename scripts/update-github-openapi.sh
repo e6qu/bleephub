@@ -12,8 +12,8 @@ set -euo pipefail
 # github/rest-api-description commit that the vendored copy comes from,
 # and the SHA-256 of descriptions/api.github.com/api.github.com.json at
 # that commit.
-PIN_COMMIT="338cb199baa4f326790b0b1c246d8d4f481a82a0"
-PIN_SHA256="4fbdc7d0102276803a07f9880d14ed543ba1afc10a4c9fd7bd3782408d9abaf7"
+PIN_COMMIT="642960c36df7752f0b1aa307a4bdb99d12dd7ff5"
+PIN_SHA256="ab1d3dfd4d8aadb082b94dd808a651b36a530e9afb4f9d30b7006e372475b395"
 
 usage() {
   cat >&2 <<'USAGE'
@@ -69,8 +69,8 @@ URL="https://raw.githubusercontent.com/github/rest-api-description/$PIN_COMMIT/$
 # gh_api_definition_test.go can check a citation instead of trusting a comment.
 # Each is pinned by SHA-256 at PIN_COMMIT.
 EXTRA_DESCRIPTIONS=(
-  "ghec:26ac7197bee0cb4a805c00fe1d51aaedfb26f6dfed74bf57af5e7f9aa52d17fd"
-  "ghes-3.21:f25ca73f07612b1037df5aef18da8ec8bd8496d29a1095ef904712069ded976b"
+  "ghec:306fbaa057de753beadeb48ae7c4ce149544288cabfbf5eb2ed6aaa68279cb28"
+  "ghes-3.21:ca68de6be4100cbfe170893f9f00e8a46b2c7f88c3d0c750308f8516b073f596"
   "ghes-3.13:c7a706c67b51c7317bd02b17d83972cdfb269cfde6257cc09062d9c38a950bf8"
   "ghes-3.7:15db3fa0759b86138c21a21dafe4f796bf07665c13eca455e5a7b574fe6eb8a0"
   "ghes-2.22:629f829cc1bbcba9785b2bcca4d0cec9119c963a20690fa550513cf209f777e6"

@@ -6244,6 +6244,8 @@ export interface paths {
          *     >    This operation supports both server-to-server and user-to-server access.
          *     Unauthorized users will not see the existence of this endpoint.
          *
+         *     OAuth app tokens and personal access tokens (classic) need the `write:org` scope to use this endpoint.
+         *
          *     **Example request body:**
          *     ```json
          *     {
@@ -6272,6 +6274,8 @@ export interface paths {
          *     Unauthorized users will not see the existence of this endpoint.
          *
          *     This operation supports both server-to-server and user-to-server access.
+         *
+         *     OAuth app tokens and personal access tokens (classic) need the `write:org` scope to use this endpoint.
          */
         put: operations["dependabot/set-repository-access-default-level"];
         post?: never;
