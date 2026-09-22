@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -239,6 +241,78 @@ func TestARepositoryIsCopiedRenamedAndDeletedWhole(t *testing.T) {
 		if store.DeleteRepository(unsafe) == nil || store.CopyRepository(unsafe, "octocat/x") == nil || store.CopyRepository("octocat/renamed", unsafe) == nil {
 			t.Fatalf("a lifecycle operation accepted the unsafe name %q", unsafe)
 		}
+	}
+}
+
+// TestCopyingARepositoryCopiesItsObjectsAtOnce pins that a rename's copies are
+// in flight together rather than one after another: each is a round trip, and
+// a repository of many packs made a rename wait out every one of them in turn.
+// The hook holds the first copies until enough of them have arrived, so a
+// serial copy fails here however fast the store answers.
+func TestCopyingARepositoryCopiesItsObjectsAtOnce(t *testing.T) {
+	fake := newFakeS3(t)
+	fake.opts.CompactAfterPacks = -1
+	store := fake.store("prefix")
+	handle, err := store.Repository("octocat/source")
+	if err != nil {
+		t.Fatalf("repository: %v", err)
+	}
+	source := handle.(*repository)
+	for pack := range 8 {
+		flushedBlobs(t, source, fmt.Sprintf("pack %d", pack), 2)
+	}
+
+	// A request is held inside the hook until enough others are held with it,
+	// so what the hook counts is copies in flight at one moment, not copies
+	// made. Only the first few are ever held, so a serial copy fails within a
+	// few of the timeouts below rather than waiting one out per object.
+	const together = 4
+	var mu sync.Mutex
+	holding, holds := 0, 0
+	reached := make(chan struct{})
+	var once sync.Once
+	fake.SetOnRequest(func(_, key string) {
+		if !strings.Contains(key, "octocat/destination/") {
+			return
+		}
+		mu.Lock()
+		hold := holds < together
+		if hold {
+			holds++
+			holding++
+			if holding >= together {
+				once.Do(func() { close(reached) })
+			}
+		}
+		mu.Unlock()
+		if !hold {
+			return
+		}
+		select {
+		case <-reached:
+		case <-time.After(2 * time.Second):
+		}
+		mu.Lock()
+		holding--
+		mu.Unlock()
+	})
+	t.Cleanup(func() { fake.SetOnRequest(nil) })
+
+	if err := store.CopyRepository("octocat/source", "octocat/destination"); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	select {
+	case <-reached:
+	default:
+		t.Fatalf("no %d of the copies were ever in flight together", together)
+	}
+
+	replica, err := fake.store("prefix").Repository("octocat/destination")
+	if err != nil {
+		t.Fatalf("destination: %v", err)
+	}
+	if _, err := replica.Reference(plumbing.HEAD); err != nil && !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		t.Fatalf("the copy is not a repository: %v", err)
 	}
 }
 
