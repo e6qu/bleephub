@@ -124,6 +124,13 @@ func TestConditionalWritesHoldTheirPreconditions(t *testing.T) {
 	if _, err := put("manifest v3", swap); minio.ToErrorResponse(err).StatusCode != 412 {
 		t.Fatalf("swapping against a stale tag: %v, want 412", err)
 	}
+	// Amazon answers a swap of a key that holds no object 404, not 412.
+	if _, err := client.Client.PutObject(ctx, "bucket", "never-written", bytes.NewReader([]byte("v1")), 2, swap); minio.ToErrorResponse(err).StatusCode != 404 {
+		t.Fatalf("swapping a key that holds no object: %v, want 404", err)
+	}
+	if _, ok := server.Get("never-written"); ok {
+		t.Fatal("a refused swap created the object")
+	}
 
 	// A client that sends the tag without its quotes means the same tag.
 	current, err := client.Client.StatObject(ctx, "bucket", "lock", minio.StatObjectOptions{})

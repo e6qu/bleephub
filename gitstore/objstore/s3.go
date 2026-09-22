@@ -166,7 +166,14 @@ func (b *s3Bucket) Put(ctx context.Context, key string, body io.Reader, size int
 	}
 	uploaded, err := b.client.PutObject(ctx, b.bucket, key, body, size, opts)
 	if err != nil {
-		return "", b.translate("put", key, err)
+		err = b.translate("put", key, err)
+		// Amazon answers an If-Match on a key that holds no object 404, where
+		// MinIO answers 412 (S3 User Guide, "Conditional write behavior"). The
+		// version the write was conditioned on is not the object's either way.
+		if condition.Version() != "" && errors.Is(err, ErrNotFound) {
+			return "", fmt.Errorf("s3 put %s: %w", key, ErrConditionNotMet)
+		}
+		return "", err
 	}
 	return versionOf(uploaded.ETag), nil
 }

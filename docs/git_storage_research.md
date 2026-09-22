@@ -345,6 +345,21 @@ Alibaba OSS answers a conditional PUT with 501
 community edition went into maintenance mode in 2025-12 and its repository was
 archived on 2026-04-25: a frozen target, still useful to test against.
 
+A failed `If-Match` is not always 412: Amazon answers one on a key that holds
+no object **404 Not Found**, and a concurrent conflict 409
+([conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html));
+MinIO answers 412 for both. The S3 driver takes all three as a condition not met.
+
+Single-node servers run against `objstoretest.Run` (the startup probe and every
+case of the driver suite) on 2026-09-22:
+
+| Server | Conditional PUT | Whole suite | Notes |
+|---|---|---|---|
+| Versity GW v1.8.0 (POSIX backend) | yes | yes | stateless gateway over a directory; answers the absent-key `If-Match` 404, as Amazon does |
+| pgsty/minio `RELEASE.2026-09-16T00-00-00Z` (binary `silo`) | yes | yes | community fork of MinIO, maintained |
+| RustFS 1.0.0 | yes | yes | about ten times slower than the others on the suite's copy and listing cases |
+| SeaweedFS 4.47 (`weed mini`) | yes | **no** | lists in its filer's directory order, not byte order: `refs/…` before `refs-not-a-directory` |
+
 **Entity tags.** "Same tag, same content" holds for a small single-part object
 on every store listed — so revalidating a small object by its tag is sound — but
 the tag must be treated as an opaque version token, never as a hash: on

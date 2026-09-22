@@ -145,8 +145,9 @@ nothing is arbitrated by a lock.
   function from a manifest to a manifest that may refuse (a reference is not at
   the value the caller expected → `storage.ErrReferenceHasChanged`; a pack to
   retire is not live). Committing applies it to the manifest held and writes the
-  result with `objstore.IfVersion` (`IfAbsent` for a repository's first). On 412
-  the manifest is read again, the mutation re-applied, and the write retried,
+  result with `objstore.IfVersion` (`IfAbsent` for a repository's first). On a
+  condition not met (412; or 404, which is what Amazon answers an `If-Match` on
+  a key holding no object, where MinIO answers 412) the manifest is read again, the mutation re-applied, and the write retried,
   with a jittered backoff, sixteen times at most. The 412 is the verification:
   nothing is read before a write. A refusal is believed only of a manifest the
   store has vouched for since the commit began.

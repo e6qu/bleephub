@@ -288,23 +288,30 @@ func etagOf(data []byte) string {
 	return `"` + hex.EncodeToString(sum[:16]) + `"`
 }
 
-// preconditionFails applies If-None-Match and If-Match to a write. Conditional
-// writes are how designs with no lock service take a lock or swap a manifest,
-// so a fake that ignored them would let every contender win. Must be called
-// with f.mu held.
-func (f *Server) preconditionFails(r *http.Request, key string) bool {
+// preconditionFailure applies If-None-Match and If-Match to a write, and
+// returns the status S3 answers a failed one with, or zero. Conditional writes
+// are how designs with no lock service take a lock or swap a manifest, so a
+// fake that ignored them would let every contender win. The answers are the
+// ones Amazon documents (S3 User Guide, "Conditional write behavior"): 412 for
+// a condition that does not hold, but 404 for an If-Match on a key that holds
+// no object — which MinIO answers 412, so a client must take either for a
+// condition not met. Must be called with f.mu held.
+func (f *Server) preconditionFailure(r *http.Request, key string) int {
 	existing, exists := f.objects[key]
 	if match := r.Header.Get("If-None-Match"); match != "" {
 		if exists && (match == "*" || sameETag(match, etagOf(existing))) {
-			return true
+			return http.StatusPreconditionFailed
 		}
 	}
 	if match := r.Header.Get("If-Match"); match != "" {
-		if !exists || (match != "*" && !sameETag(match, etagOf(existing))) {
-			return true
+		if !exists {
+			return http.StatusNotFound
+		}
+		if match != "*" && !sameETag(match, etagOf(existing)) {
+			return http.StatusPreconditionFailed
 		}
 	}
-	return false
+	return 0
 }
 
 // sameETag compares entity tags as S3 does: with or without their quotes.
@@ -591,7 +598,12 @@ func (f *Server) servePut(w http.ResponseWriter, r *http.Request, key string) {
 	f.mu.Lock()
 	f.counts.Put++
 	f.counts.BytesUp += int64(len(body))
-	if f.preconditionFails(r, key) {
+	switch f.preconditionFailure(r, key) {
+	case http.StatusNotFound:
+		f.mu.Unlock()
+		writeS3Error(w, http.StatusNotFound, "NoSuchKey", "The specified key does not exist.")
+		return
+	case http.StatusPreconditionFailed:
 		f.mu.Unlock()
 		writeS3Error(w, http.StatusPreconditionFailed, "PreconditionFailed", "At least one of the pre-conditions you specified did not hold")
 		return
