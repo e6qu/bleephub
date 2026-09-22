@@ -8,6 +8,7 @@ import (
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
@@ -109,8 +110,9 @@ func (s *Server) handleGenerateRepoFromTemplate(w http.ResponseWriter, r *http.R
 	writeJSONCreated(w, jsonStringField(repoJSON, "url"), repoJSON)
 }
 
-// generateFromTemplateStorage copies the template's tree and blob objects into
-// dst and roots one fresh initial commit per selected branch, authored by sig.
+// generateFromTemplateStorage copies the trees and blobs of the template's
+// selected branch tips into dst and roots one fresh initial commit per selected
+// branch, authored by sig.
 // The template's commit history is not carried over; HEAD ends on defaultBranch.
 func generateFromTemplateStorage(src, dst gitStorage.Storer, defaultBranch string, includeAllBranches bool, sig *object.Signature) error {
 	if src == nil {
@@ -142,19 +144,54 @@ func generateFromTemplateStorage(src, dst gitStorage.Storer, defaultBranch strin
 		return nil
 	}
 
-	// Copy tree + blob objects (commits are minted fresh below), re-encoding
-	// through dst because a storer only accepts its own object implementation.
-	for _, t := range []plumbing.ObjectType{plumbing.TreeObject, plumbing.BlobObject} {
-		iter, err := src.IterEncodedObjects(t)
+	// Copy the trees and blobs of the selected branches' tips — only those:
+	// the template's history is not carried over, so neither is any file it
+	// once held and no longer does — re-encoding through dst because a storer
+	// only accepts its own object implementation. Commits are minted fresh
+	// below.
+	copied := map[plumbing.Hash]bool{}
+	var copyTree func(tree plumbing.Hash) error
+	copyTree = func(tree plumbing.Hash) error {
+		if copied[tree] {
+			return nil
+		}
+		copied[tree] = true
+		read, err := object.GetTree(src, tree)
 		if err != nil {
 			return err
 		}
-		copyErr := iter.ForEach(func(obj plumbing.EncodedObject) error {
-			return copyEncodedObject(dst, obj)
-		})
-		iter.Close()
-		if copyErr != nil {
-			return copyErr
+		for _, entry := range read.Entries {
+			switch {
+			case entry.Mode == filemode.Dir:
+				if err := copyTree(entry.Hash); err != nil {
+					return err
+				}
+			case entry.Mode == filemode.Submodule, copied[entry.Hash]:
+				// A submodule names a commit of another repository.
+			default:
+				copied[entry.Hash] = true
+				blob, err := src.EncodedObject(plumbing.BlobObject, entry.Hash)
+				if err != nil {
+					return err
+				}
+				if err := copyEncodedObject(dst, blob); err != nil {
+					return err
+				}
+			}
+		}
+		encoded, err := src.EncodedObject(plumbing.TreeObject, tree)
+		if err != nil {
+			return err
+		}
+		return copyEncodedObject(dst, encoded)
+	}
+	for _, commitHash := range branches {
+		commit, err := object.GetCommit(src, commitHash)
+		if err != nil {
+			return err
+		}
+		if err := copyTree(commit.TreeHash); err != nil {
+			return err
 		}
 	}
 

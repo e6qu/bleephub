@@ -21340,7 +21340,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "POST",
         "path": "/api/v3/repos/{template_owner}/{template_repo}/generate",
         "source": "internal/server/gh_repos_generate.go"
