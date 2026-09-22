@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
@@ -461,7 +460,7 @@ func weekStart(t time.Time) time.Time {
 // counted once is remembered, and a request costs only the commits no request
 // before it has counted.
 func commitLineStats(c *object.Commit) (int, int) {
-	if counted, ok := commitLineCounts.get(c.Hash); ok {
+	if counted, ok := commitLineCounts.Get(c.Hash); ok {
 		return counted[0], counted[1]
 	}
 	stats, err := c.Stats()
@@ -473,51 +472,13 @@ func commitLineStats(c *object.Commit) (int, int) {
 		adds += fs.Addition
 		dels += fs.Deletion
 	}
-	commitLineCounts.put(c.Hash, [2]int{adds, dels})
+	commitLineCounts.Put(c.Hash, [3]int{adds, dels, 0})
 	return adds, dels
 }
 
 // commitLineCounts remembers the line counts of the most recently counted
 // commits, about eighty bytes each.
-var commitLineCounts = newCommitCountMemo(1 << 16)
-
-// commitCountMemo is a fixed number of per-commit counts. When it is full the
-// oldest is forgotten: what it holds never goes stale, so which is forgotten
-// decides only what a later request counts again.
-type commitCountMemo struct {
-	mu     sync.Mutex
-	counts map[plumbing.Hash][2]int
-	// order holds the commits in the order they were remembered, as a ring;
-	// next is where the next one goes, which once the ring is full is where the
-	// oldest is.
-	order []plumbing.Hash
-	next  int
-}
-
-func newCommitCountMemo(capacity int) *commitCountMemo {
-	return &commitCountMemo{counts: make(map[plumbing.Hash][2]int, capacity), order: make([]plumbing.Hash, capacity)}
-}
-
-func (m *commitCountMemo) get(commit plumbing.Hash) ([2]int, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	counted, ok := m.counts[commit]
-	return counted, ok
-}
-
-func (m *commitCountMemo) put(commit plumbing.Hash, counted [2]int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, ok := m.counts[commit]; ok {
-		return
-	}
-	if len(m.counts) == len(m.order) {
-		delete(m.counts, m.order[m.next])
-	}
-	m.order[m.next] = commit
-	m.next = (m.next + 1) % len(m.order)
-	m.counts[commit] = counted
-}
+var commitLineCounts = store.NewCommitCountMemo(1 << 16)
 
 func (s *Server) handleStatsContributors(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)

@@ -181,7 +181,7 @@ func TestCommitLineCountsAreRememberedAndStayRight(t *testing.T) {
 				t.Errorf("pass %d: %q counted +%d -%d, want +%d -%d", pass, strings.TrimSpace(c.Message), adds, dels, wantAdds, wantDels)
 			}
 		}
-		if _, remembered := commitLineCounts.get(c.Hash); !remembered {
+		if _, remembered := commitLineCounts.Get(c.Hash); !remembered {
 			t.Errorf("%q was counted and not remembered", strings.TrimSpace(c.Message))
 		}
 		return nil
@@ -189,17 +189,17 @@ func TestCommitLineCountsAreRememberedAndStayRight(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	memo := newCommitCountMemo(2)
+	memo := store.NewCommitCountMemo(2)
 	a, b, c := plumbing.NewHash("aa"), plumbing.NewHash("bb"), plumbing.NewHash("cc")
-	memo.put(a, [2]int{1, 1})
-	memo.put(b, [2]int{2, 2})
-	memo.put(a, [2]int{9, 9})
-	memo.put(c, [2]int{3, 3})
-	if _, held := memo.get(a); held {
+	memo.Put(a, [3]int{1, 1, 1})
+	memo.Put(b, [3]int{2, 2, 2})
+	memo.Put(a, [3]int{9, 9, 9})
+	memo.Put(c, [3]int{3, 3, 3})
+	if _, held := memo.Get(a); held {
 		t.Error("a full memo kept its oldest commit")
 	}
-	for commit, want := range map[plumbing.Hash][2]int{b: {2, 2}, c: {3, 3}} {
-		if got, held := memo.get(commit); !held || got != want {
+	for commit, want := range map[plumbing.Hash][3]int{b: {2, 2, 2}, c: {3, 3, 3}} {
+		if got, held := memo.Get(commit); !held || got != want {
 			t.Errorf("the memo holds %v (%v) for %s, want %v", got, held, commit, want)
 		}
 	}

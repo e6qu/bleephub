@@ -15,15 +15,11 @@ import (
 
 	"github.com/e6qu/bleephub/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/memfs"
-	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	gitStorage "github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 // repoSignature returns the default author/committer signature for
@@ -50,49 +46,6 @@ func (s *Server) syncRepoHeadToDefaultBranch(owner, name string) {
 	}
 }
 
-// worktreeHeadStorer keeps go-git's worktree machinery out of the repository's
-// real HEAD. Worktree.Checkout detaches HEAD to a hash reference, which on a
-// bare server repo would drop the symref=HEAD:… clone advertisement and leave
-// clients guessing the checkout branch. The commit helpers set branch refs
-// themselves, so HEAD bookkeeping is scratch state: hold it in memory and pass
-// every other reference through to real storage.
-type worktreeHeadStorer struct {
-	gitStorage.Storer
-	head *plumbing.Reference
-}
-
-func newWorktreeHeadStorer(stor gitStorage.Storer) *worktreeHeadStorer {
-	return &worktreeHeadStorer{
-		Storer: stor,
-		// git.Open rejects a storer with no HEAD; the first Checkout replaces
-		// this placeholder.
-		head: plumbing.NewHashReference(plumbing.HEAD, plumbing.ZeroHash),
-	}
-}
-
-func (s *worktreeHeadStorer) Reference(name plumbing.ReferenceName) (*plumbing.Reference, error) {
-	if name == plumbing.HEAD {
-		return s.head, nil
-	}
-	return s.Storer.Reference(name)
-}
-
-func (s *worktreeHeadStorer) SetReference(ref *plumbing.Reference) error {
-	if ref.Name() == plumbing.HEAD {
-		s.head = ref
-		return nil
-	}
-	return s.Storer.SetReference(ref)
-}
-
-func (s *worktreeHeadStorer) CheckAndSetReference(next, old *plumbing.Reference) error {
-	if next.Name() == plumbing.HEAD {
-		s.head = next
-		return nil
-	}
-	return s.Storer.CheckAndSetReference(next, old)
-}
-
 // initEmptyRepoWithFiles is the API-facing first-commit operation. It rejects
 // initialization once any branch exists, including when a concurrent request
 // won the race on a different branch.
@@ -101,39 +54,13 @@ func initEmptyRepoWithFiles(stor gitStorage.Storer, branch, message string, file
 }
 
 func commitRootBranchWithFiles(stor gitStorage.Storer, branch, message string, files map[string]string, sig *object.Signature, requireEmpty bool, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
-	fs := memfs.New()
-	// Build the unborn-branch commit in an isolated storer: Worktree.Commit
-	// advances refs/heads/master as a side effect, which would expose a
-	// provisional ref before the atomic initialization boundary and let
-	// concurrent first-commit requests overwrite each other.
-	source := memory.NewStorage()
-	repo, err := git.Init(source, fs)
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("git init: %w", err)
+	additions := make(map[string][]byte, len(files))
+	for path, body := range files {
+		additions[path] = []byte(body)
 	}
-	wt, err := repo.Worktree()
+	commitHash, err := commitTreeEdits(stor, plumbing.ZeroHash, additions, nil, message, sig)
 	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("worktree: %w", err)
-	}
-	if err := writeFilesToWorktree(fs, wt, files); err != nil {
 		return plumbing.ZeroHash, err
-	}
-	commitHash, err := wt.Commit(message, &git.CommitOptions{Author: sig, Committer: sig})
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("commit: %w", err)
-	}
-	for _, objectType := range []plumbing.ObjectType{plumbing.BlobObject, plumbing.TreeObject, plumbing.CommitObject} {
-		objects, err := source.IterEncodedObjects(objectType)
-		if err != nil {
-			return plumbing.ZeroHash, fmt.Errorf("iterate initial %s objects: %w", objectType, err)
-		}
-		copyErr := objects.ForEach(func(encoded plumbing.EncodedObject) error {
-			return copyEncodedObject(stor, encoded)
-		})
-		objects.Close()
-		if copyErr != nil {
-			return plumbing.ZeroHash, fmt.Errorf("store initial %s objects: %w", objectType, copyErr)
-		}
 	}
 	branchRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(branch), commitHash)
 	if guard != nil {
@@ -158,137 +85,13 @@ func createFileCommitExpected(stor gitStorage.Storer, branch, path, content, mes
 }
 
 func createFileCommitExpectedGuarded(stor gitStorage.Storer, branch, path, content, message string, sig *object.Signature, expectedParent plumbing.Hash, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
-	fs := memfs.New()
-	repo, err := git.Open(newWorktreeHeadStorer(stor), fs)
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("git open: %w", err)
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("worktree: %w", err)
-	}
-
-	branchRef := plumbing.NewBranchReferenceName(branch)
-	ref, err := repo.Storer.Reference(branchRef)
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("resolve branch %s: %w", branch, err)
-	}
-	parentHash := ref.Hash()
-	if !expectedParent.IsZero() && parentHash != expectedParent {
-		return plumbing.ZeroHash, gitStorage.ErrReferenceHasChanged
-	}
-
-	if err := wt.Checkout(&git.CheckoutOptions{Hash: parentHash, Force: true}); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("checkout: %w", err)
-	}
-
-	if err := writeFileToWorktree(fs, wt, path, content); err != nil {
-		return plumbing.ZeroHash, err
-	}
-
-	commitHash, err := wt.Commit(message, &git.CommitOptions{
-		Author:    sig,
-		Committer: sig,
-		Parents:   []plumbing.Hash{parentHash},
-	})
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("commit: %w", err)
-	}
-	if guard != nil {
-		if err := guard(commitHash); err != nil {
-			return plumbing.ZeroHash, err
-		}
-	}
-	if err := repo.Storer.CheckAndSetReference(plumbing.NewHashReference(branchRef, commitHash), ref); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("set ref: %w", err)
-	}
-	return commitHash, nil
+	return commitBranchEdits(stor, branch, map[string][]byte{path: []byte(content)}, nil, message, sig, expectedParent, guard)
 }
 
 // deleteFileCommit removes a single file on the branch and returns the new
 // commit hash, erroring if the file does not exist.
 func deleteFileCommit(stor gitStorage.Storer, branch, path, message string, sig *object.Signature, expectedParent plumbing.Hash, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
-	fs := memfs.New()
-	repo, err := git.Open(newWorktreeHeadStorer(stor), fs)
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("git open: %w", err)
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("worktree: %w", err)
-	}
-
-	branchRef := plumbing.NewBranchReferenceName(branch)
-	ref, err := repo.Storer.Reference(branchRef)
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("resolve branch %s: %w", branch, err)
-	}
-	parentHash := ref.Hash()
-	if !expectedParent.IsZero() && parentHash != expectedParent {
-		return plumbing.ZeroHash, gitStorage.ErrReferenceHasChanged
-	}
-
-	if err := wt.Checkout(&git.CheckoutOptions{Hash: parentHash, Force: true}); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("checkout: %w", err)
-	}
-
-	if _, err := fs.Stat(path); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("path does not exist: %s", path)
-	}
-
-	if _, err := wt.Remove(path); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("git remove %s: %w", path, err)
-	}
-
-	commitHash, err := wt.Commit(message, &git.CommitOptions{
-		Author:    sig,
-		Committer: sig,
-		Parents:   []plumbing.Hash{parentHash},
-	})
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("commit: %w", err)
-	}
-	if guard != nil {
-		if err := guard(commitHash); err != nil {
-			return plumbing.ZeroHash, err
-		}
-	}
-	if err := repo.Storer.CheckAndSetReference(plumbing.NewHashReference(branchRef, commitHash), ref); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("set ref: %w", err)
-	}
-	return commitHash, nil
-}
-
-func writeFilesToWorktree(fs billy.Filesystem, wt *git.Worktree, files map[string]string) error {
-	for path, body := range files {
-		if err := writeFileToWorktree(fs, wt, path, body); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func writeFileToWorktree(fs billy.Filesystem, wt *git.Worktree, path, body string) error {
-	if idx := strings.LastIndex(path, "/"); idx >= 0 {
-		if err := fs.MkdirAll(path[:idx], 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", path[:idx], err)
-		}
-	}
-	f, err := fs.Create(path)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", path, err)
-	}
-	if _, err := f.Write([]byte(body)); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", path, err)
-	}
-	if _, err := wt.Add(path); err != nil {
-		return fmt.Errorf("git add %s: %w", path, err)
-	}
-	return nil
+	return commitBranchEdits(stor, branch, nil, []string{path}, message, sig, expectedParent, guard)
 }
 
 // initRepoFiles writes the initial README/.gitignore/LICENSE commit for a
