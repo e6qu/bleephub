@@ -12,6 +12,7 @@ import (
 	"time"
 
 	gitStorage "github.com/go-git/go-git/v5/storage"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/e6qu/bleephub/gitstore/objstore"
@@ -209,10 +210,17 @@ func (s *Store) CopyRepository(oldFull, newFull string) error {
 	}); err != nil {
 		return err
 	}
+	// Server-side copies, as many at once as a fork's are: a repository of many
+	// packs is a round trip each, and a rename waited out every one of them.
+	var copies errgroup.Group
+	copies.SetLimit(copyPackParallelism)
 	for _, key := range keys {
-		if err := s.shared.copyObject(ctx, key, newPrefix+strings.TrimPrefix(key, oldPrefix)); err != nil {
-			return err
-		}
+		copies.Go(func() error {
+			return s.shared.copyObject(ctx, key, newPrefix+strings.TrimPrefix(key, oldPrefix))
+		})
+	}
+	if err := copies.Wait(); err != nil {
+		return err
 	}
 	if _, err := s.shared.put(ctx, storeWriteTimeout, newPrefix+manifestName, bytes.NewReader(held), int64(len(held)), objstore.Always); err != nil {
 		return err
