@@ -2,6 +2,7 @@ package gitstore
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -101,5 +102,39 @@ func TestCopyingObjectsBetweenMemoryRepositoriesCopiesEachObject(t *testing.T) {
 		if err := destination.HasEncodedObject(hash); err != nil {
 			t.Fatalf("%s was not copied: %v", hash, err)
 		}
+	}
+}
+
+// TestSettingManyReferencesIsOneWrite pins what a fork of a repository of many
+// references costs: the references set together, in one swap of the manifest
+// (and the snapshot a change list that long is folded into), where one at a
+// time they were a conditional write each.
+func TestSettingManyReferencesIsOneWrite(t *testing.T) {
+	fake := newFakeS3(t)
+	stor := testPackedStorage(t, fake)
+	if err := stor.create(); err != nil {
+		t.Fatal(err)
+	}
+	target := plumbing.NewHash("1111111111111111111111111111111111111111")
+	refs := make([]*plumbing.Reference, 0, 1000)
+	for i := range 1000 {
+		refs = append(refs, plumbing.NewHashReference(plumbing.NewTagReferenceName(fmt.Sprintf("v%d", i)), target))
+	}
+	before := fake.Snapshot()
+	if err := SetReferences(stor, refs); err != nil {
+		t.Fatal(err)
+	}
+	if spent := fake.Snapshot().Sub(before); spent.Put != 2 {
+		t.Fatalf("setting 1,000 references cost %s, want the manifest and its snapshot", spent)
+	}
+	replica := testPackedStorage(t, fake)
+	for _, ref := range refs {
+		got, err := replica.Reference(ref.Name())
+		if err != nil || got.Hash() != target {
+			t.Fatalf("%s reads as %v (%v) on another replica", ref.Name(), got, err)
+		}
+	}
+	if err := SetReferences(memory.NewStorage(), refs); err == nil {
+		t.Fatal("go-git's own storage was asked to set references together")
 	}
 }

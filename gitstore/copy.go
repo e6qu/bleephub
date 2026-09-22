@@ -143,3 +143,53 @@ func (s *atomicRefStorer) CopyObjectsFrom(src gitStorage.Storer) error {
 	}
 	return nil
 }
+
+// ReferenceSetter is git storage that can set many references at once. Every
+// backend of this package is one.
+type ReferenceSetter interface {
+	SetReferences(refs []*plumbing.Reference) error
+}
+
+var (
+	_ ReferenceSetter = (*repository)(nil)
+	_ ReferenceSetter = (*atomicRefStorer)(nil)
+)
+
+// SetReferences sets every reference of refs, whatever each held before. In an
+// object store it is one swap of the manifest however many there are — a fork
+// of a repository of a thousand tags is one write, not a thousand. It refuses
+// storage that is not this package's.
+func SetReferences(stor gitStorage.Storer, refs []*plumbing.Reference) error {
+	setter, ok := stor.(ReferenceSetter)
+	if !ok {
+		return fmt.Errorf("gitstore: a %T cannot set references together", stor)
+	}
+	return setter.SetReferences(refs)
+}
+
+// SetReferences sets refs in one commit.
+func (r *repository) SetReferences(refs []*plumbing.Reference) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	_, err := r.commit(func(d *draft) error {
+		for _, ref := range refs {
+			if err := d.set(ref); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return err
+}
+
+// SetReferences sets refs one by one: go-git's storage has no commit point to
+// put them behind.
+func (s *atomicRefStorer) SetReferences(refs []*plumbing.Reference) error {
+	for _, ref := range refs {
+		if err := s.SetReference(ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
