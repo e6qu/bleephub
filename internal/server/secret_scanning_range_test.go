@@ -97,7 +97,7 @@ func TestAnUpdateReadsOnlyTheFilesItChanges(t *testing.T) {
 		t.Fatalf("change one file: %v", err)
 	}
 
-	repo := &store.Repo{FullName: "admin/scanned"}
+	repo := &store.Repo{FullName: "admin/scanned", SecretScanningEnabled: true}
 	counting := &blobCountingStorer{Storer: stor}
 	if err := s.scanRefForSecretScanning(repo, counting, "refs/heads/main", plumbing.ZeroHash, first, "http://bleephub.invalid"); err != nil {
 		t.Fatalf("scan a new branch: %v", err)

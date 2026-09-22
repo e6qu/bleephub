@@ -38,6 +38,9 @@ type secretScanningContentMatch struct {
 }
 
 func (s *Server) scanCommitForSecretScanning(repo *store.Repo, stor storer.Storer, commitHash plumbing.Hash, baseURL string) error {
+	if !secretScanningEnabled(repo) {
+		return nil
+	}
 	commit, err := object.GetCommit(stor, commitHash)
 	if err != nil {
 		return fmt.Errorf("load secret scanning commit %s: %w", commitHash, err)
@@ -380,4 +383,15 @@ func secretScanningOffsetPosition(body string, offset int) (line, column int) {
 		lastLineStart += next + 1
 	}
 	return line, offset - lastLineStart
+}
+
+// secretScanningEnabled reports whether a repository's content is scanned for
+// secrets: its security_and_analysis.secret_scanning setting. GitHub scans a
+// public repository automatically, and a private one once Secret Protection is
+// enabled for it, and "a repository administrator can choose to disable secret
+// scanning for a repository at any time" (docs: About secret scanning; Enabling
+// secret scanning for your repository). New repositories start with it on when
+// public and off when private (store.CreateRepo); the setting decides from then.
+func secretScanningEnabled(repo *store.Repo) bool {
+	return repo != nil && repo.SecretScanningEnabled
 }

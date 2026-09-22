@@ -65,6 +65,7 @@ func TestSecretScanningDetectsGeneratedFineGrainedPersonalAccessToken(t *testing
 	s := newIsolatedServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "ss-fine-grained-pat", "", true)
+	s.enableSecretScanning(t, repo.FullName)
 	token, err := s.store.CreateUserFineGrainedPAT(admin.ID, store.CreatePersonalAccessTokenWebRequest{
 		Name: "secret scanning live token", ResourceOwner: admin.Login, RepositorySelection: "none",
 	})
@@ -100,6 +101,23 @@ func (s *isolatedServer) createSecretScanningOrgRepoViaPublicAPI(t *testing.T, o
 		t.Fatalf("create org repo: %d body=%s", resp.StatusCode, b)
 	}
 	resp.Body.Close()
+	// A private repository is scanned only once its admin enables it, as
+	// GitHub scans one only with Secret Protection.
+	s.enableSecretScanning(t, org+"/"+repo)
+}
+
+// enableSecretScanning turns on a repository's security_and_analysis
+// secret_scanning setting through the public API.
+func (s *isolatedServer) enableSecretScanning(t *testing.T, fullName string) {
+	t.Helper()
+	resp := s.patch(t, "/api/v3/repos/"+fullName, defaultToken, map[string]any{
+		"security_and_analysis": map[string]any{"secret_scanning": map[string]any{"status": "enabled"}},
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("enable secret scanning on %s: %d body=%s", fullName, resp.StatusCode, b)
+	}
 }
 
 func (s *isolatedServer) enableSecretScanningPushProtectionPattern(t *testing.T, org, patternID string) {
@@ -1018,5 +1036,94 @@ func TestSecretScanning_ScanHistory(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown repo scan history: %d, want 404", resp.StatusCode)
+	}
+}
+
+// TestSecretScanningFollowsTheRepositorySetting pins when content is scanned:
+// as GitHub scans it, a new public repository with secret scanning on and a
+// new private one with it off, and from then on as the repository's
+// security_and_analysis setting says — "a repository administrator can choose
+// to disable secret scanning for a repository at any time".
+func TestSecretScanningFollowsTheRepositorySetting(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	public := s.store.CreateRepo(admin, "ss-setting-public", "", false)
+	private := s.store.CreateRepo(admin, "ss-setting-private", "", true)
+	for repo, want := range map[*store.Repo]string{public: "enabled", private: "disabled"} {
+		if got := saStatus(t, decodeJSON(t, s.get(t, "/api/v3/repos/"+repo.FullName, defaultToken)), "secret_scanning"); got != want {
+			t.Fatalf("a new %s repository reports secret_scanning %q, want %q", repo.Visibility, got, want)
+		}
+	}
+
+	// Each commit carries a secret of a type the repository has not seen, so
+	// that an alert it raises is a new one and not the same secret found again.
+	commit := func(repo *store.Repo, path, secretType string) {
+		t.Helper()
+		resp := s.put(t, "/api/v3/repos/"+repo.FullName+"/contents/"+path, defaultToken, map[string]any{
+			"message": "commit " + path,
+			"content": base64.StdEncoding.EncodeToString([]byte("token=" + secretScanningSeedValue(secretType) + "\n")),
+		})
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("commit %s to %s: %d %s", path, repo.FullName, resp.StatusCode, b)
+		}
+	}
+	alerts := func(repo *store.Repo) int {
+		t.Helper()
+		return len(s.store.ListSecretScanningAlerts(repo.FullName, "", "", "", "", ""))
+	}
+
+	commit(private, "unscanned.txt", "aws_access_key_id")
+	if n := alerts(private); n != 0 {
+		t.Fatalf("a private repository without secret scanning raised %d alerts", n)
+	}
+	commit(public, "scanned.txt", "google_api_key")
+	if n := alerts(public); n == 0 {
+		t.Fatal("premise: a public repository raised no alert for a committed secret")
+	}
+
+	resp := s.patch(t, "/api/v3/repos/"+public.FullName, defaultToken, map[string]any{
+		"security_and_analysis": map[string]any{"secret_scanning": map[string]any{"status": "disabled"}},
+	})
+	resp.Body.Close()
+	before := alerts(public)
+	commit(public, "after-disabling.txt", "github_personal_access_token")
+	if n := alerts(public); n != before {
+		t.Fatalf("with secret scanning disabled, a commit raised %d new alerts", n-before)
+	}
+
+	// A branch moved through the git database API is scanned by the reference
+	// update, not by the commit: that path is gated too.
+	repoPath := "/api/v3/repos/" + public.FullName
+	blob := decodeJSON(t, s.post(t, repoPath+"/git/blobs", defaultToken, map[string]any{
+		"content": "token=" + secretScanningSeedValue("aws_access_key_id") + "\n",
+	}))
+	head := decodeJSON(t, s.get(t, repoPath+"/git/ref/heads/main", defaultToken))
+	headSHA := head["object"].(map[string]any)["sha"].(string)
+	headCommit := decodeJSON(t, s.get(t, repoPath+"/git/commits/"+headSHA, defaultToken))
+	tree := decodeJSON(t, s.post(t, repoPath+"/git/trees", defaultToken, map[string]any{
+		"base_tree": headCommit["tree"].(map[string]any)["sha"],
+		"tree":      []map[string]any{{"path": "via-refs.txt", "mode": "100644", "type": "blob", "sha": blob["sha"]}},
+	}))
+	next := decodeJSON(t, s.post(t, repoPath+"/git/commits", defaultToken, map[string]any{
+		"message": "moved by the refs API", "tree": tree["sha"], "parents": []string{headSHA},
+	}))
+	resp = s.patch(t, repoPath+"/git/refs/heads/main", defaultToken, map[string]any{"sha": next["sha"]})
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("move main: %d %s", resp.StatusCode, b)
+	}
+	resp.Body.Close()
+	if n := alerts(public); n != before {
+		t.Fatalf("with secret scanning disabled, a reference update raised %d new alerts", n-before)
+	}
+
+	s.enableSecretScanning(t, private.FullName)
+	commit(private, "after-enabling.txt", "slack_incoming_webhook_url")
+	if n := alerts(private); n == 0 {
+		t.Fatal("with secret scanning enabled, a committed secret raised no alert")
 	}
 }
