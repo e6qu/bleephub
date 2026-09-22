@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -272,7 +273,26 @@ func treeEntryAt(tree *object.Tree, path string) (*object.TreeEntry, error) {
 // GitCommitDiffStats returns the additions, deletions and changed-file count a
 // commit introduced against its first parent. A root commit is measured against
 // the empty tree, matching `git show --stat`.
+//
+// The counts are a function of the commit's id alone, so they are counted once
+// and remembered (commitDiffCounts): a history page asks for them of every
+// commit it lists, and for each field separately.
 func GitCommitDiffStats(commit *object.Commit) (additions, deletions, changedFiles int, err error) {
+	if counted, ok := commitDiffCounts.Get(commit.Hash); ok {
+		return counted[0], counted[1], counted[2], nil
+	}
+	additions, deletions, changedFiles, err = countCommitDiff(commit)
+	if err == nil {
+		commitDiffCounts.Put(commit.Hash, [3]int{additions, deletions, changedFiles})
+	}
+	return additions, deletions, changedFiles, err
+}
+
+// commitDiffCounts remembers GitCommitDiffStats of the most recently counted
+// commits.
+var commitDiffCounts = NewCommitCountMemo(1 << 16)
+
+func countCommitDiff(commit *object.Commit) (additions, deletions, changedFiles int, err error) {
 	tree, err := commit.Tree()
 	if err != nil {
 		return 0, 0, 0, err
@@ -786,4 +806,45 @@ func ListGitReferences(stor gitStorage.Storer, prefix string) ([]*plumbing.Refer
 	}
 	sort.Slice(refs, func(a, b int) bool { return refs[a].Name().String() < refs[b].Name().String() })
 	return refs, nil
+}
+
+// CommitCountMemo is a fixed number of counts kept per commit. When it is full
+// the oldest is forgotten: counts of a commit are a function of its id and never
+// go stale, so which is forgotten decides only what is counted again.
+type CommitCountMemo struct {
+	mu     sync.Mutex
+	counts map[plumbing.Hash][3]int
+	// order holds the commits in the order they were remembered, as a ring;
+	// next is where the next one goes, which once the ring is full is where the
+	// oldest is.
+	order []plumbing.Hash
+	next  int
+}
+
+// NewCommitCountMemo makes a memo of capacity commits.
+func NewCommitCountMemo(capacity int) *CommitCountMemo {
+	return &CommitCountMemo{counts: make(map[plumbing.Hash][3]int, capacity), order: make([]plumbing.Hash, capacity)}
+}
+
+// Get returns what is remembered of commit.
+func (m *CommitCountMemo) Get(commit plumbing.Hash) ([3]int, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	counted, ok := m.counts[commit]
+	return counted, ok
+}
+
+// Put remembers counts of commit, forgetting the oldest commit when full.
+func (m *CommitCountMemo) Put(commit plumbing.Hash, counted [3]int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.counts[commit]; ok {
+		return
+	}
+	if len(m.counts) == len(m.order) {
+		delete(m.counts, m.order[m.next])
+	}
+	m.order[m.next] = commit
+	m.next = (m.next + 1) % len(m.order)
+	m.counts[commit] = counted
 }

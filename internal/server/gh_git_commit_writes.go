@@ -13,8 +13,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-git/go-billy/v5/memfs"
-	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -27,52 +25,7 @@ import (
 // saw; a branch that moved since is refused rather than overwritten.
 func multiFileCommit(stor gitStorage.Storer, branch string, additions map[string][]byte, deletions []string,
 	message string, sig *object.Signature, expectedParent plumbing.Hash) (plumbing.Hash, error) {
-	fs := memfs.New()
-	repo, err := git.Open(newWorktreeHeadStorer(stor), fs)
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("git open: %w", err)
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("worktree: %w", err)
-	}
-	branchRef := plumbing.NewBranchReferenceName(branch)
-	ref, err := repo.Storer.Reference(branchRef)
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("resolve branch %s: %w", branch, err)
-	}
-	parentHash := ref.Hash()
-	if !expectedParent.IsZero() && parentHash != expectedParent {
-		return plumbing.ZeroHash, gitStorage.ErrReferenceHasChanged
-	}
-	if err := wt.Checkout(&git.CheckoutOptions{Hash: parentHash, Force: true}); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("checkout: %w", err)
-	}
-	for path, body := range additions {
-		if err := writeFileToWorktree(fs, wt, path, string(body)); err != nil {
-			return plumbing.ZeroHash, err
-		}
-	}
-	for _, path := range deletions {
-		if _, err := fs.Stat(path); err != nil {
-			return plumbing.ZeroHash, fmt.Errorf("path does not exist: %s", path)
-		}
-		if _, err := wt.Remove(path); err != nil {
-			return plumbing.ZeroHash, fmt.Errorf("git remove %s: %w", path, err)
-		}
-	}
-	commitHash, err := wt.Commit(message, &git.CommitOptions{
-		Author:    sig,
-		Committer: sig,
-		Parents:   []plumbing.Hash{parentHash},
-	})
-	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("commit: %w", err)
-	}
-	if err := repo.Storer.CheckAndSetReference(plumbing.NewHashReference(branchRef, commitHash), ref); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("set ref: %w", err)
-	}
-	return commitHash, nil
+	return commitBranchEdits(stor, branch, additions, deletions, message, sig, expectedParent, nil)
 }
 
 // createCommitOnBranch runs the branch-protection refusal, the commit, the

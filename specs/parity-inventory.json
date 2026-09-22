@@ -14158,7 +14158,7 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 378,
+        "line": 181,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
         "source": "internal/server/gh_repos_git.go"
@@ -17980,13 +17980,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 367,
+        "line": 170,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/blobs/{sha}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 371,
+        "line": 174,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/commits/{sha}",
         "source": "internal/server/gh_repos_git.go"
@@ -18004,19 +18004,19 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 375,
+        "line": 178,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 373,
+        "line": 176,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/tags/{sha}",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 369,
+        "line": 172,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/git/trees/{sha...}",
         "source": "internal/server/gh_repos_git.go"
@@ -19852,7 +19852,7 @@
         "source": "internal/server/variables.go"
       },
       {
-        "line": 377,
+        "line": 180,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
         "source": "internal/server/gh_repos_git.go"
@@ -21016,31 +21016,31 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 368,
+        "line": 171,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/blobs",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 372,
+        "line": 175,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/commits",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 376,
+        "line": 179,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/refs",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 374,
+        "line": 177,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/tags",
         "source": "internal/server/gh_repos_git.go"
       },
       {
-        "line": 370,
+        "line": 173,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/git/trees",
         "source": "internal/server/gh_repos_git.go"

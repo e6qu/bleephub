@@ -18,6 +18,11 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 			"createFileCommitExpectedGuarded",
 			"deleteFileCommit",
 		},
+		// The API's commits edit trees directly and move their branch in one
+		// place; the single-file helpers delegate to it.
+		"git_tree_edit.go": {
+			"commitBranchEdits",
+		},
 		// The three reference writes were factored out of their REST handlers
 		// so the GraphQL ref mutations perform the same act; the
 		// compare-and-set guarantee travelled with them.
@@ -32,7 +37,9 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 		},
 	}
 	casDelegates := map[string]string{
-		"createFileCommitExpected": "createFileCommitExpectedGuarded",
+		"createFileCommitExpected":        "createFileCommitExpectedGuarded",
+		"createFileCommitExpectedGuarded": "commitBranchEdits",
+		"deleteFileCommit":                "commitBranchEdits",
 	}
 	for name, functions := range files {
 		parsed, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.SkipObjectResolution)
