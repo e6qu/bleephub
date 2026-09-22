@@ -22534,7 +22534,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "4939f186ab675d3626a8b3b7092c5544524c52695cd13aca87dfbb806b96765d"
+    "vendored_openapi_sha256": "53dc016834fe638c0bde81c2da64a888c5b36d34af19585bb7ddec50c6d7437a"
   },
   "schema_version": 1,
   "sources": {
