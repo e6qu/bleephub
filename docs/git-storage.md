@@ -237,10 +237,15 @@ nothing is arbitrated by a lock.
   more than `Options.CompactAfterPacks` (eight) live packs, and the server runs
   it in the background; the library owns no goroutines. The listing a compaction
   opens with is the only one the engine takes, and only for the sweep.
-- **Copy, rename, delete** (`store.go`) — a fork or rename reads the manifest
-  first, copies every other key, and writes the manifest last, so the copy names
-  only what the listing showed and becomes a repository in one step. A delete
-  removes the manifest first.
+- **Copy, rename, delete** (`store.go`, `copy.go`) — a rename reads the
+  manifest first, copies every other key, and writes the manifest last, so the
+  copy names only what the listing showed and becomes a repository in one step.
+  Taking in another repository's objects — a fork, a pull request from a fork
+  merged into its parent, a branch updated from its parent —
+  (`gitstore.CopyObjects`) copies the source's packs and sidecars server-side
+  under the destination's prefix and names them in one swap of its manifest:
+  nothing is decoded or uploaded, and a pack the destination holds is not copied
+  again. A delete removes the manifest first.
 
 ### What the server asks of a repository beside `Storer`
 

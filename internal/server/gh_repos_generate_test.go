@@ -1,8 +1,12 @@
 package bleephub
 
 import (
+	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 func TestGenerateRepositoryFromTemplate(t *testing.T) {
@@ -140,4 +144,49 @@ func TestGenerateRepositoryFromTemplate_OrgOwner(t *testing.T) {
 		"name":  template + "-nope",
 	})
 	requireStatus(t, resp, 403)
+}
+
+// TestAGeneratedRepositoryHoldsOnlyWhatTheTemplateTipsHold pins what
+// generation copies. The template's history is not carried over, so neither
+// may a file it held once and no longer does: upload-pack serves any object a
+// repository holds to whoever names its id, so a copied object of the
+// template's past would be readable through every repository generated from
+// it.
+func TestAGeneratedRepositoryHoldsOnlyWhatTheTemplateTipsHold(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	template := s.createRepoWriteRepo(t, true)
+	stor := s.store.GetGitStorage("admin", template)
+	sig := repoSignature("admin", "admin@bleephub.invalid")
+	past := "a secret the template once held\n"
+	if _, err := createFileCommit(stor, "main", "secret.txt", past, "add", sig); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteFileCommit(stor, "main", "secret.txt", "remove", sig, plumbing.ZeroHash, nil); err != nil {
+		t.Fatal(err)
+	}
+	pastBlob := plumbing.ComputeHash(plumbing.BlobObject, []byte(past))
+	if err := stor.HasEncodedObject(pastBlob); err != nil {
+		t.Fatalf("premise: the template does not hold its past file: %v", err)
+	}
+
+	requireStatus(t, s.patch(t, "/api/v3/repos/admin/"+template, defaultToken, map[string]interface{}{"is_template": true}), 200)
+	generated := template + "-tips"
+	decodeJSONWithStatus(t, s.post(t, "/api/v3/repos/admin/"+template+"/generate", defaultToken, map[string]interface{}{"name": generated}), 201)
+
+	generatedStor := s.store.GetGitStorage("admin", generated)
+	if err := generatedStor.HasEncodedObject(pastBlob); !errors.Is(err, plumbing.ErrObjectNotFound) {
+		t.Fatalf("the generated repository holds a file of the template's past (%v)", err)
+	}
+	head, err := generatedStor.Reference(plumbing.NewBranchReferenceName("main"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := object.GetCommit(generatedStor, head.Hash())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := commit.File("README.md"); err != nil {
+		t.Fatalf("the generated repository lacks the template's README: %v", err)
+	}
 }
