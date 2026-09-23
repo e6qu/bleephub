@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.72.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.99.0
-	github.com/aws/aws-sdk-go-v2/service/lambda v1.108.0
+	github.com/aws/aws-sdk-go-v2/service/lambda v1.109.0
 	github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.0
 )
