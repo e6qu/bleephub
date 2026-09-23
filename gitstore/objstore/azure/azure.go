@@ -547,7 +547,7 @@ func deref[T any](pointer *T) T {
 // that is a misconfiguration to surface, not an object to report absent.
 func translate(operation, key string, err error) error {
 	switch {
-	case bloberror.HasCode(err, bloberror.BlobNotFound):
+	case bloberror.HasCode(err, bloberror.BlobNotFound), copySourceMissing(err):
 		return fmt.Errorf("azure %s %s: %w", operation, key, objstore.ErrNotFound)
 	// A create-if-absent of a blob that exists is refused 409, not 412.
 	case bloberror.HasCode(err, bloberror.ConditionNotMet, bloberror.BlobAlreadyExists):
@@ -556,4 +556,17 @@ func translate(operation, key string, err error) error {
 		return fmt.Errorf("azure %s %s: %w", operation, key, objstore.ErrRangeNotSatisfiable)
 	}
 	return fmt.Errorf("azure %s %s: %w", operation, key, err)
+}
+
+// copySourceMissing reports a copy refused because its source is not there. The
+// service does not answer that with BlobNotFound but with CannotVerifyCopySource,
+// the code of every failure to read a copy's source, and says which failure it
+// was only in headers: the source's own status and error code.
+// https://learn.microsoft.com/en-us/rest/api/storageservices/status-and-error-codes2#copy-api-error-response
+func copySourceMissing(err error) bool {
+	var refused *azcore.ResponseError
+	if !errors.As(err, &refused) || refused.ErrorCode != string(bloberror.CannotVerifyCopySource) || refused.RawResponse == nil {
+		return false
+	}
+	return refused.RawResponse.Header.Get("x-ms-copy-source-error-code") == string(bloberror.BlobNotFound)
 }
