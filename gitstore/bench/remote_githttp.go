@@ -15,6 +15,9 @@ import (
 	"time"
 )
 
+// backendTimeout bounds one git-http-backend run.
+const backendTimeout = 10 * time.Minute
+
 func init() {
 	registerRemoteDriver("git-http-backend", func() RemoteDriver { return &gitHTTPBackend{} })
 }
@@ -137,9 +140,15 @@ func (d *gitHTTPBackend) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The child's deadline is the harness's own, not the request's: gosec reads
+	// anything of the request reaching the call as command injection (G702),
+	// and a scenario that is being measured should not be cut short by a client
+	// that hung up either.
+	ctx, cancel := context.WithTimeout(context.Background(), backendTimeout)
+	defer cancel()
 	// #nosec G204 -- git is a fixed executable found on PATH, given no argument
 	// from the request.
-	cmd := exec.CommandContext(r.Context(), gitBinary(), "http-backend")
+	cmd := exec.CommandContext(ctx, gitBinary(), "http-backend")
 	cmd.Dir = d.root
 	cmd.Env = []string{
 		"GIT_PROJECT_ROOT=" + d.root,
