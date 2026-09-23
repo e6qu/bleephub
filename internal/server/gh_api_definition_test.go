@@ -183,6 +183,26 @@ func loadOfficialRouteIndex(t *testing.T) map[string]map[string]bool {
 // checked, not trusted: TestRouteAllowlistCitationsHold fails if the named
 // description does not carry the route.
 var describedOutsideDotcom = map[string]string{
+	// Enterprise teams: withdrawn from the dotcom description in
+	// 02e8fa61 and still documented for Enterprise Cloud.
+	"DELETE /enterprises/{}/teams/{}":                                                  "ghec",
+	"DELETE /enterprises/{}/teams/{}/memberships/{}":                                   "ghec",
+	"DELETE /enterprises/{}/teams/{}/organizations/{}":                                 "ghec",
+	"GET /enterprises/{}/members/{}/teams":                                             "ghec",
+	"GET /enterprises/{}/teams":                                                        "ghec",
+	"GET /enterprises/{}/teams/{}":                                                     "ghec",
+	"GET /enterprises/{}/teams/{}/memberships":                                         "ghec",
+	"GET /enterprises/{}/teams/{}/memberships/{}":                                      "ghec",
+	"GET /enterprises/{}/teams/{}/organizations":                                       "ghec",
+	"GET /enterprises/{}/teams/{}/organizations/{}":                                    "ghec",
+	"PATCH /enterprises/{}/teams/{}":                                                   "ghec",
+	"POST /enterprises/{}/teams":                                                       "ghec",
+	"POST /enterprises/{}/teams/{}/memberships/add":                                    "ghec",
+	"POST /enterprises/{}/teams/{}/memberships/remove":                                 "ghec",
+	"POST /enterprises/{}/teams/{}/organizations/add":                                  "ghec",
+	"POST /enterprises/{}/teams/{}/organizations/remove":                               "ghec",
+	"PUT /enterprises/{}/teams/{}/memberships/{}":                                      "ghec",
+	"PUT /enterprises/{}/teams/{}/organizations/{}":                                    "ghec",
 	"DELETE /admin/hooks/{}":                                                           "ghes-3.21",
 	"DELETE /admin/keys/{}":                                                            "ghes-3.21",
 	"DELETE /admin/tokens/{}":                                                          "ghes-3.21",

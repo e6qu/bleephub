@@ -976,7 +976,7 @@ func TestViolationAllowlistInvariants(t *testing.T) {
 	// 2022-11-28 API version, whose official description still documents their
 	// 200, and Classroom is bleephub's one sanctioned divergence — these are
 	// VERIFIED upstream-deprecation citations, not accumulating emitter bugs.
-	const maxAllowlistEntries = 17
+	const maxAllowlistEntries = 15
 
 	data, err := os.ReadFile(allowlistFile)
 	if err != nil {

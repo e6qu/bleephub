@@ -16,6 +16,27 @@ go run . -h                                    # drivers, scenarios, flags
 From the repository root: `make bench-gitstore` and `make bench-gitstore-git`,
 with flags in `BENCH_FLAGS`.
 
+## Two comparisons
+
+The harness answers two separate questions, and a run should ask one of them.
+
+- **Which object store to run bleephub on.** `bleephub` against each store, one
+  invocation per endpoint, everything else fixed. Request counts are identical
+  between stores — the design is the same — so what differs is the time a store
+  takes to answer, and `-latency` is what makes a design difference visible at
+  all.
+- **How bleephub compares with other single-binary git servers.** Run
+  `bleephub` on the fastest store measured above — bleephub keeps repositories
+  in an object store, and it should be compared as it is deployed — against
+  `gitea`, `forgejo`, `git-http-backend` and `git-local`, which keep theirs on
+  a local filesystem. `bleephub-dir` belongs in this table only as a diagnostic
+  of bleephub's own directory backend, not as its entry. Each of them is driven by `-remote`
+  (below) with no code, and `git-local` is the ceiling under all of them.
+
+Mixing the two in one table invites the wrong reading: a filesystem server
+beating `bleephub` on an object store is a statement about disks and networks,
+not about either server.
+
 ## Two levels
 
 Implementations of git on object storage come in two shapes, and no one runner
@@ -88,7 +109,9 @@ helpers are other people's programs.
 
 | Driver | What it is | Status |
 |---|---|---|
-| `bleephub` | This repository's server on `gitstore`, over smart HTTP. Built from the checkout, or `-bleephub-bin`. | Runs in CI. |
+| `bleephub` | This repository's server on `gitstore`, repositories in the object store, over smart HTTP. Built from the checkout, or `-bleephub-bin`. | Runs in CI. |
+| `bleephub-dir` | The same server with its repositories in a local directory (`BLEEPHUB_GIT_DIR`) — the row to put beside a filesystem git server. Its byte store is still the run's object store, because a persistent bleephub refuses to start without object-backed storage for artifacts, logs, release assets, packages and LFS; no git scenario writes any of those, so what it costs is the startup probe in `replica-start` and nothing per operation. | Runs in CI. |
+| `git-http-backend` | Git's own smart-HTTP server: the `git-http-backend` CGI git ships, over a bare repository on local disk, with no forge, database or hooks on top. The protocol's own price, against which a forge's overhead is read. | Runs in CI. |
 | `git-local` | Stock git, bare repository on local disk, reached by a `file://` URL. The ceiling. (By path, `git clone` hardlinks the repository's files instead of transferring a pack; an earlier version of the harness did that, and its clones looked five times faster than any transfer.) | Runs in CI. |
 | `walgit` | [tobi/walgit](https://github.com/tobi/walgit) (Rust), a smart-HTTP server: packs plus a write-ahead log whose manifest it swaps by conditional write, repositories materialized to a local cache. The nearest design to `gitstore`. Needs git ≥ 2.46 and a store with conditional writes (the fake has them). `cargo build --release`, then `-walgit-bin` or `walgit` on `PATH`; the harness writes its configuration and restarts it with an empty cache for the cold scenarios. | Verified against this harness, commit `80e9a20`. |
 | `git-remote-s3` | [awslabs/git-remote-s3](https://github.com/awslabs/git-remote-s3) (Python): one full bundle per ref per push, so a push costs the repository, not the change. `pip install git-remote-s3`. | Verified against this harness, v0.4.2. |
@@ -99,6 +122,13 @@ Any other remote is driven without code:
 ```sh
 go run . -level git -git-drivers bleephub -remote 'mine=https://git.internal/{repo}.git'
 ```
+
+`{repo}` expands to a name that already carries an owner segment
+(`bench/repo-0`), so a forge whose URLs are `/<owner>/<repo>.git` takes
+`-remote 'gitea=http://user:password@127.0.0.1:3100/{repo}.git'`, and needs
+whatever setting creates a repository on first push (Gitea and Forgejo:
+`ENABLE_PUSH_CREATE_USER`; Gogs: `ENABLE_PUSH_CREATE_USER` under
+`[repository]`).
 
 `-remote name=url-template` takes the placeholders `{endpoint}` (the metered
 endpoint), `{host}`, `{bucket}`, `{prefix}`, `{region}` and `{repo}`, and gives

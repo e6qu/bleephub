@@ -18,7 +18,84 @@ import (
 )
 
 func init() {
-	registerRemoteDriver("bleephub", func() RemoteDriver { return &bleephubRemote{} })
+	registerRemoteDriver("bleephub", func() RemoteDriver { return &bleephubRemote{storage: objectStoreRepositories{}} })
+	registerRemoteDriver("bleephub-dir", func() RemoteDriver { return &bleephubRemote{storage: directoryRepositories{}} })
+}
+
+// bleephubStorage is where a bleephub server under measurement keeps its
+// repositories. The two are not degrees of one setting: a deployment holds its
+// repositories in an object store or in a directory, and says which.
+type bleephubStorage interface {
+	// name is the driver's name, and describe what the table's row means.
+	name() string
+	describe() string
+	// settings are the server's storage settings, given the run's scratch
+	// directories. Only the chosen one's settings may be set.
+	settings(d *bleephubRemote, cacheDir, repositoryDir string) []string
+}
+
+// objectStoreRepositories is gitstore as bleephub is deployed: repositories in
+// the object store behind the harness's meter.
+type objectStoreRepositories struct{}
+
+func (objectStoreRepositories) name() string { return "bleephub" }
+func (objectStoreRepositories) describe() string {
+	return "the bleephub server on gitstore, over smart HTTP: pushes land as packs, ranged reads, pack cache, compaction"
+}
+
+func (objectStoreRepositories) settings(d *bleephubRemote, cacheDir, _ string) []string {
+	// A deployment has one endpoint per driver, which serves the git store and
+	// the byte store (artifacts, logs, packages) alike, so the byte store is
+	// behind the meter too. What it adds to a git benchmark is the conformance
+	// probe it runs when the server starts — the same dozen or so requests the
+	// git store's probe makes — and nothing per git operation: no scenario here
+	// uploads an artifact, a log or a package.
+	return []string{
+		"BLEEPHUB_OBJECT_STORE=s3",
+		"BLEEPHUB_S3_ENDPOINT=" + d.env.Endpoint,
+		"BLEEPHUB_S3_REGION=" + d.env.Region,
+		"BLEEPHUB_GIT_BUCKET=" + d.env.Bucket,
+		"BLEEPHUB_GIT_PREFIX=" + d.env.Prefix + "/bleephub",
+		"BLEEPHUB_OBJECT_BUCKET=" + d.env.Bucket,
+		"BLEEPHUB_OBJECT_PREFIX=" + d.env.Prefix + "/bleephub-objects",
+		"BLEEPHUB_GITSTORE_CACHE_DIR=" + cacheDir,
+		"AWS_ACCESS_KEY_ID=" + d.env.AccessKey,
+		"AWS_SECRET_ACCESS_KEY=" + d.env.SecretKey,
+		"AWS_EC2_METADATA_DISABLED=true",
+	}
+}
+
+// directoryRepositories is the same server with its repositories in a local
+// directory, which is what the single-binary git servers this harness is
+// pointed at all do — so it is the row to compare with those, rather than with
+// the object stores.
+//
+// Its byte store is still the run's object store. That is not a compromise in
+// the measurement: a persistent bleephub refuses to start without object-backed
+// byte storage, because artifacts, logs, release assets, packages and LFS
+// objects live there, and no git scenario here writes any of them. What the
+// object store costs this driver is the conformance probe at startup, which is
+// in replica-start and in no other row; every git operation it is measured on
+// reaches the directory alone.
+type directoryRepositories struct{}
+
+func (directoryRepositories) name() string { return "bleephub-dir" }
+func (directoryRepositories) describe() string {
+	return "the bleephub server with its repositories in a local directory, over smart HTTP: the row to compare with a filesystem git server"
+}
+
+func (directoryRepositories) settings(d *bleephubRemote, _, repositoryDir string) []string {
+	return []string{
+		"BLEEPHUB_GIT_DIR=" + repositoryDir,
+		"BLEEPHUB_OBJECT_STORE=s3",
+		"BLEEPHUB_S3_ENDPOINT=" + d.env.Endpoint,
+		"BLEEPHUB_S3_REGION=" + d.env.Region,
+		"BLEEPHUB_OBJECT_BUCKET=" + d.env.Bucket,
+		"BLEEPHUB_OBJECT_PREFIX=" + d.env.Prefix + "/bleephub-dir-objects",
+		"AWS_ACCESS_KEY_ID=" + d.env.AccessKey,
+		"AWS_SECRET_ACCESS_KEY=" + d.env.SecretKey,
+		"AWS_EC2_METADATA_DISABLED=true",
+	}
 }
 
 // bleephubBinary is the server to run. Empty builds it from this checkout.
@@ -29,22 +106,22 @@ var bleephubBinary string
 // binary rather than linking the library in measures what a user of the server
 // gets, and keeps the server's dependency tree out of this module.
 type bleephubRemote struct {
-	env     Env
-	binary  string
-	dataDir string
-	token   string
-	key     string
-	port    int
-	cmd     *exec.Cmd
-	exited  chan error
-	output  bytes.Buffer
-	created map[string]bool
+	storage       bleephubStorage
+	env           Env
+	binary        string
+	dataDir       string
+	repositoryDir string
+	token         string
+	key           string
+	port          int
+	cmd           *exec.Cmd
+	exited        chan error
+	output        bytes.Buffer
+	created       map[string]bool
 }
 
-func (d *bleephubRemote) Name() string { return "bleephub" }
-func (d *bleephubRemote) Describe() string {
-	return "the bleephub server on gitstore, over smart HTTP: pushes land as packs, ranged reads, pack cache, compaction"
-}
+func (d *bleephubRemote) Name() string     { return d.storage.name() }
+func (d *bleephubRemote) Describe() string { return d.storage.describe() }
 
 func (d *bleephubRemote) Available() error {
 	if bleephubBinary != "" {
@@ -109,6 +186,13 @@ func (d *bleephubRemote) start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// The repository directory outlives a restart, as the object store does: a
+	// cold scenario is a replica with an empty cache, not an empty server.
+	if d.repositoryDir == "" {
+		if d.repositoryDir, err = d.env.tempDir("bleephub-repositories-*"); err != nil {
+			return err
+		}
+	}
 
 	// #nosec G204 -- the binary is the server this harness built, or the one the
 	// operator named with -bleephub-bin.
@@ -121,23 +205,12 @@ func (d *bleephubRemote) start(ctx context.Context) error {
 	// probe it runs when the server starts — the same dozen or so requests the
 	// git store's probe makes — and nothing per git operation: no scenario here
 	// uploads an artifact, a log or a package.
-	d.cmd.Env = append(os.Environ(),
+	d.cmd.Env = append(append(os.Environ(),
 		"BLEEPHUB_ADMIN_TOKEN="+d.token,
 		"BLEEPHUB_PERSIST=true",
 		"BLEEPHUB_DATA_DIR="+d.dataDir,
 		"BLEEPHUB_PERSISTENCE_ENCRYPTION_KEY="+d.key,
-		"BLEEPHUB_OBJECT_STORE=s3",
-		"BLEEPHUB_S3_ENDPOINT="+d.env.Endpoint,
-		"BLEEPHUB_S3_REGION="+d.env.Region,
-		"BLEEPHUB_GIT_BUCKET="+d.env.Bucket,
-		"BLEEPHUB_GIT_PREFIX="+d.env.Prefix+"/bleephub",
-		"BLEEPHUB_OBJECT_BUCKET="+d.env.Bucket,
-		"BLEEPHUB_OBJECT_PREFIX="+d.env.Prefix+"/bleephub-objects",
-		"BLEEPHUB_GITSTORE_CACHE_DIR="+cacheDir,
-		"AWS_ACCESS_KEY_ID="+d.env.AccessKey,
-		"AWS_SECRET_ACCESS_KEY="+d.env.SecretKey,
-		"AWS_EC2_METADATA_DISABLED=true",
-	)
+	), d.storage.settings(d, cacheDir, d.repositoryDir)...)
 	if err := d.cmd.Start(); err != nil {
 		return err
 	}

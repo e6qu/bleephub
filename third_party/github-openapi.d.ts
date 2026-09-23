@@ -1419,259 +1419,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/enterprises/{enterprise}/members/{username}/teams": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List enterprise teams for a user
-         * @description Lists all enterprise teams that a user is a member of. This endpoint is available only for
-         *     enterprises using the new enterprise teams experience.
-         *
-         *     The authenticated user must be an enterprise owner or have the `enterprise_teams:read` permission.
-         */
-        get: operations["enterprise-team-memberships/list-teams-for-user"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List enterprise teams
-         * @description List all teams in the enterprise for the authenticated user
-         */
-        get: operations["enterprise-teams/list"];
-        put?: never;
-        /**
-         * Create an enterprise team
-         * @description To create an enterprise team, the authenticated user must be an owner of the enterprise.
-         */
-        post: operations["enterprise-teams/create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams/{enterprise-team}/memberships": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List members in an enterprise team
-         * @description Lists all team members in an enterprise team.
-         */
-        get: operations["enterprise-team-memberships/list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams/{enterprise-team}/memberships/add": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Bulk add team members
-         * @description Add multiple team members to an enterprise team.
-         */
-        post: operations["enterprise-team-memberships/bulk-add"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams/{enterprise-team}/memberships/remove": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Bulk remove team members
-         * @description Remove multiple team members from an enterprise team.
-         */
-        post: operations["enterprise-team-memberships/bulk-remove"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams/{enterprise-team}/memberships/{username}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get enterprise team membership
-         * @description Returns whether the user is a member of the enterprise team.
-         */
-        get: operations["enterprise-team-memberships/get"];
-        /**
-         * Add team member
-         * @description Add a team member to an enterprise team.
-         */
-        put: operations["enterprise-team-memberships/add"];
-        post?: never;
-        /**
-         * Remove team membership
-         * @description Remove membership of a specific user from a particular team in an enterprise.
-         */
-        delete: operations["enterprise-team-memberships/remove"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams/{enterprise-team}/organizations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get organization assignments
-         * @description Get all organizations assigned to an enterprise team
-         */
-        get: operations["enterprise-team-organizations/get-assignments"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams/{enterprise-team}/organizations/add": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Add organization assignments
-         * @description Assign an enterprise team to multiple organizations.
-         */
-        post: operations["enterprise-team-organizations/bulk-add"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams/{enterprise-team}/organizations/remove": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Remove organization assignments
-         * @description Unassign an enterprise team from multiple organizations.
-         */
-        post: operations["enterprise-team-organizations/bulk-remove"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams/{enterprise-team}/organizations/{org}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get organization assignment
-         * @description Check if an enterprise team is assigned to an organization
-         */
-        get: operations["enterprise-team-organizations/get-assignment"];
-        /**
-         * Add an organization assignment
-         * @description Assign an enterprise team to an organization.
-         */
-        put: operations["enterprise-team-organizations/add"];
-        post?: never;
-        /**
-         * Delete an organization assignment
-         * @description Unassign an enterprise team from an organization.
-         */
-        delete: operations["enterprise-team-organizations/delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/enterprises/{enterprise}/teams/{team_slug}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get an enterprise team
-         * @description Gets a team using the team's slug. To create the slug, GitHub replaces special characters in the name string, changes all words to lowercase, and replaces spaces with a `-` separator and adds the "ent:" prefix. For example, "My TEam Näme" would become `ent:my-team-name`.
-         */
-        get: operations["enterprise-teams/get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete an enterprise team
-         * @description To delete an enterprise team, the authenticated user must be an enterprise owner.
-         *
-         *     If you are an enterprise owner, deleting an enterprise team will delete all of its IdP mappings as well.
-         */
-        delete: operations["enterprise-teams/delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update an enterprise team
-         * @description To edit a team, the authenticated user must be an enterprise owner.
-         */
-        patch: operations["enterprise-teams/update"];
-        trace?: never;
-    };
     "/events": {
         parameters: {
             query?: never;
@@ -25133,136 +24880,6 @@ export interface components {
             accessible_repositories?: components["schemas"]["nullable-simple-repository"][];
         };
         /**
-         * Enterprise Team
-         * @description Group of enterprise owners and/or members
-         */
-        "enterprise-team": {
-            /** Format: int64 */
-            id: number;
-            name: string;
-            description?: string;
-            slug: string;
-            /** Format: uri */
-            url: string;
-            /**
-             * @description Retired: this field will not be returned with GHEC enterprise teams.
-             * @example disabled | all
-             */
-            sync_to_organizations?: string;
-            /** @example disabled | selected | all */
-            organization_selection_type?: string;
-            /** @example 62ab9291-fae2-468e-974b-7e45096d5021 */
-            group_id: string | null;
-            /**
-             * @description Retired: this field will not be returned with GHEC enterprise teams.
-             * @example Justice League
-             */
-            group_name?: string | null;
-            /**
-             * Format: uri
-             * @example https://github.com/enterprises/dc/teams/justice-league
-             */
-            html_url: string;
-            members_url: string;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at: string;
-            /**
-             * @description Whether team members will receive notifications when the team is mentioned.
-             * @example notifications_enabled
-             * @enum {string}
-             */
-            notification_setting?: "notifications_enabled" | "notifications_disabled";
-        };
-        /**
-         * Organization Simple
-         * @description A GitHub organization.
-         */
-        "organization-simple": {
-            /** @example github */
-            login: string;
-            /** @example 1 */
-            id: number;
-            /** @example MDEyOk9yZ2FuaXphdGlvbjE= */
-            node_id: string;
-            /**
-             * Format: uri
-             * @example https://api.github.com/orgs/github
-             */
-            url: string;
-            /**
-             * Format: uri
-             * @example https://api.github.com/orgs/github/repos
-             */
-            repos_url: string;
-            /**
-             * Format: uri
-             * @example https://api.github.com/orgs/github/events
-             */
-            events_url: string;
-            /** @example https://api.github.com/orgs/github/hooks */
-            hooks_url: string;
-            /** @example https://api.github.com/orgs/github/issues */
-            issues_url: string;
-            /** @example https://api.github.com/orgs/github/members{/member} */
-            members_url: string;
-            /** @example https://api.github.com/orgs/github/public_members{/member} */
-            public_members_url: string;
-            /** @example https://github.com/images/error/octocat_happy.gif */
-            avatar_url: string;
-            /** @example A great organization */
-            description: string | null;
-        };
-        /**
-         * Enterprise Team
-         * @description Group of enterprise owners and/or members
-         */
-        "enterprise-team-with-member-count": {
-            /** Format: int64 */
-            id: number;
-            name: string;
-            description?: string;
-            slug: string;
-            /** Format: uri */
-            url: string;
-            /**
-             * @description Retired: this field will not be returned with GHEC enterprise teams.
-             * @example disabled
-             */
-            sync_to_organizations?: string;
-            /** @example selected */
-            organization_selection_type?: string;
-            /** @example 62ab9291-fae2-468e-974b-7e45096d5021 */
-            group_id: string | null;
-            /**
-             * @description Retired: this field will not be returned with GHEC enterprise teams.
-             * @example Justice League
-             */
-            group_name?: string | null;
-            /**
-             * Format: uri
-             * @example https://github.com/enterprises/dc/teams/justice-league
-             */
-            html_url: string;
-            members_url: string;
-            /**
-             * @description The number of members in the enterprise team.
-             * @example 3
-             */
-            members_count: number;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at: string;
-            /**
-             * @description Whether team members will receive notifications when the team is mentioned.
-             * @example notifications_enabled
-             * @enum {string}
-             */
-            notification_setting?: "notifications_enabled" | "notifications_disabled";
-        };
-        /**
          * Actor
          * @description Actor
          */
@@ -27130,6 +26747,45 @@ export interface components {
              * @example https://api.github.com/repos/1
              */
             repository_url?: string;
+        };
+        /**
+         * Organization Simple
+         * @description A GitHub organization.
+         */
+        "organization-simple": {
+            /** @example github */
+            login: string;
+            /** @example 1 */
+            id: number;
+            /** @example MDEyOk9yZ2FuaXphdGlvbjE= */
+            node_id: string;
+            /**
+             * Format: uri
+             * @example https://api.github.com/orgs/github
+             */
+            url: string;
+            /**
+             * Format: uri
+             * @example https://api.github.com/orgs/github/repos
+             */
+            repos_url: string;
+            /**
+             * Format: uri
+             * @example https://api.github.com/orgs/github/events
+             */
+            events_url: string;
+            /** @example https://api.github.com/orgs/github/hooks */
+            hooks_url: string;
+            /** @example https://api.github.com/orgs/github/issues */
+            issues_url: string;
+            /** @example https://api.github.com/orgs/github/members{/member} */
+            members_url: string;
+            /** @example https://api.github.com/orgs/github/public_members{/member} */
+            public_members_url: string;
+            /** @example https://github.com/images/error/octocat_happy.gif */
+            avatar_url: string;
+            /** @example A great organization */
+            description: string | null;
         };
         /**
          * Actions cache retention limit for an organization
@@ -29571,6 +29227,49 @@ export interface components {
             /** @example A great organization */
             description: string | null;
         } | null;
+        /**
+         * Enterprise Team
+         * @description Group of enterprise owners and/or members
+         */
+        "enterprise-team": {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            description?: string;
+            slug: string;
+            /** Format: uri */
+            url: string;
+            /**
+             * @description Retired: this field will not be returned with GHEC enterprise teams.
+             * @example disabled | all
+             */
+            sync_to_organizations?: string;
+            /** @example disabled | selected | all */
+            organization_selection_type?: string;
+            /** @example 62ab9291-fae2-468e-974b-7e45096d5021 */
+            group_id: string | null;
+            /**
+             * @description Retired: this field will not be returned with GHEC enterprise teams.
+             * @example Justice League
+             */
+            group_name?: string | null;
+            /**
+             * Format: uri
+             * @example https://github.com/enterprises/dc/teams/justice-league
+             */
+            html_url: string;
+            members_url: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /**
+             * @description Whether team members will receive notifications when the team is mentioned.
+             * @example notifications_enabled
+             * @enum {string}
+             */
+            notification_setting?: "notifications_enabled" | "notifications_disabled";
+        };
         /**
          * Copilot Business Seat Detail
          * @description Information about a Copilot Business seat assignment for a user, team, or organization.
@@ -99234,14 +98933,6 @@ export interface components {
          *     `epss_percentage` sorts alerts by the Exploit Prediction Scoring System (EPSS) percentage.
          */
         "dependabot-alert-sort": "created" | "updated" | "epss_percentage";
-        /** @description The handle for the GitHub user account. */
-        username: string;
-        /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-        "enterprise-team": string;
-        /** @description The organization name. The name is not case sensitive. */
-        org: string;
-        /** @description The slug of the team name. */
-        "team-slug": string;
         /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
         "public-events-per-page": number;
         /** @description The unique identifier of the gist. */
@@ -99270,6 +98961,8 @@ export interface components {
         "thread-id": number;
         /** @description An organization ID. Only return organizations with an ID greater than this ID. */
         "since-org": number;
+        /** @description The organization name. The name is not case sensitive. */
+        org: string;
         /** @description If specified, only return results for a single year. The value of `year` is an integer with four digits representing a year. For example, `2025`. Default value is the current year. */
         "billing-usage-report-year": number;
         /** @description If specified, only return results for a single month. The value of `month` is an integer between `1` and `12`. Default value is the current month. If no year is specified the default `year` is used. */
@@ -99314,6 +99007,8 @@ export interface components {
         "variable-name": string;
         /** @description The SHA256 digest of the artifact, in the form `sha256:HEX_DIGEST`. */
         "subject-digest": string;
+        /** @description The handle for the GitHub user account. */
+        username: string;
         /** @description The name of a code scanning tool. Only results by this tool will be listed. You can specify the tool by using either `tool_name` or `tool_guid`, but not both. */
         "tool-name": components["schemas"]["code-scanning-analysis-tool-name"];
         /** @description The GUID of a code scanning tool. Only results by this tool will be listed. Note that some code scanning tools may not include a GUID in their analysis data. You can specify the tool by using either `tool_guid` or `tool_name`, but not both. */
@@ -99373,6 +99068,8 @@ export interface components {
         "migration-id": number;
         /** @description repo_name parameter */
         "repo-name": string;
+        /** @description The slug of the team name. */
+        "team-slug": string;
         /** @description The unique identifier of the role. */
         "role-id": number;
         /**
@@ -103204,598 +102901,6 @@ export interface operations {
             404: components["responses"]["not_found"];
         };
     };
-    "enterprise-team-memberships/list-teams-for-user": {
-        parameters: {
-            query?: {
-                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                per_page?: components["parameters"]["per-page"];
-                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                page?: components["parameters"]["page"];
-            };
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The handle for the GitHub user account. */
-                username: components["parameters"]["username"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    Link: components["headers"]["link"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["enterprise-team"][];
-                };
-            };
-            401: components["responses"]["requires_authentication"];
-            403: components["responses"]["forbidden"];
-            404: components["responses"]["not_found"];
-        };
-    };
-    "enterprise-teams/list": {
-        parameters: {
-            query?: {
-                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                per_page?: components["parameters"]["per-page"];
-                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                page?: components["parameters"]["page"];
-            };
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    Link: components["headers"]["link"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["enterprise-team"][];
-                };
-            };
-            403: components["responses"]["forbidden"];
-        };
-    };
-    "enterprise-teams/create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description The name of the team. */
-                    name: string;
-                    /** @description A description of the team. */
-                    description?: string | null;
-                    /**
-                     * @description Retired: this field is no longer supported.
-                     *     Whether the enterprise team should be reflected in each organization.
-                     *     This value cannot be set.
-                     * @default disabled
-                     * @enum {string}
-                     */
-                    sync_to_organizations?: "all" | "disabled";
-                    /**
-                     * @description Specifies which organizations in the enterprise should have access to this team. Can be one of `disabled`, `selected`, or `all`.
-                     *     `disabled`: The team is not assigned to any organizations. This is the default when you create a new team.
-                     *     `selected`: The team is assigned to specific organizations. You can then use the [add organization assignments API](https://docs.github.com/rest/enterprise-teams/enterprise-team-organizations#add-organization-assignments) endpoint.
-                     *     `all`: The team is assigned to all current and future organizations in the enterprise.
-                     * @default disabled
-                     * @enum {string}
-                     */
-                    organization_selection_type?: "disabled" | "selected" | "all";
-                    /** @description The ID of the IdP group to assign team membership with. You can get this value from the [REST API endpoints for SCIM](https://docs.github.com/rest/scim#list-provisioned-scim-groups-for-an-enterprise). */
-                    group_id?: string | null;
-                    /**
-                     * @description The notification setting the team is set to. The options are:
-                     *
-                     *     * `notifications_enabled` - team members receive notifications when the team is @mentioned.
-                     *     * `notifications_disabled` - no one receives notifications.
-                     *
-                     *     Default: `notifications_enabled`
-                     * @enum {string}
-                     */
-                    notification_setting?: "notifications_enabled" | "notifications_disabled";
-                };
-            };
-        };
-        responses: {
-            /** @description Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["enterprise-team"];
-                };
-            };
-        };
-    };
-    "enterprise-team-memberships/list": {
-        parameters: {
-            query?: {
-                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                per_page?: components["parameters"]["per-page"];
-                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                page?: components["parameters"]["page"];
-            };
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    Link: components["headers"]["link"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["simple-user"][];
-                };
-            };
-        };
-    };
-    "enterprise-team-memberships/bulk-add": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description The GitHub user handles to add to the team. */
-                    usernames: string[];
-                };
-            };
-        };
-        responses: {
-            /** @description Successfully added team members. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["simple-user"][];
-                };
-            };
-        };
-    };
-    "enterprise-team-memberships/bulk-remove": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description The GitHub user handles to be removed from the team. */
-                    usernames: string[];
-                };
-            };
-        };
-        responses: {
-            /** @description Successfully removed team members. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["simple-user"][];
-                };
-            };
-        };
-    };
-    "enterprise-team-memberships/get": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-                /** @description The handle for the GitHub user account. */
-                username: components["parameters"]["username"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description User is a member of the enterprise team. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["simple-user"];
-                };
-            };
-        };
-    };
-    "enterprise-team-memberships/add": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-                /** @description The handle for the GitHub user account. */
-                username: components["parameters"]["username"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successfully added team member */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["simple-user"];
-                };
-            };
-        };
-    };
-    "enterprise-team-memberships/remove": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-                /** @description The handle for the GitHub user account. */
-                username: components["parameters"]["username"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            403: components["responses"]["forbidden"];
-        };
-    };
-    "enterprise-team-organizations/get-assignments": {
-        parameters: {
-            query?: {
-                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                per_page?: components["parameters"]["per-page"];
-                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                page?: components["parameters"]["page"];
-            };
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description An array of organizations the team is assigned to */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["organization-simple"][];
-                };
-            };
-        };
-    };
-    "enterprise-team-organizations/bulk-add": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Organization slug to assign the team to. */
-                    organization_slugs: string[];
-                };
-            };
-        };
-        responses: {
-            /** @description Successfully assigned the enterprise team to organizations. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["organization-simple"][];
-                };
-            };
-        };
-    };
-    "enterprise-team-organizations/bulk-remove": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Organization slug to unassign the team from. */
-                    organization_slugs: string[];
-                };
-            };
-        };
-        responses: {
-            /** @description Successfully unassigned the enterprise team from organizations. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    "enterprise-team-organizations/get-assignment": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-                /** @description The organization name. The name is not case sensitive. */
-                org: components["parameters"]["org"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The team is assigned to the organization */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["organization-simple"];
-                };
-            };
-            /** @description The team is not assigned to the organization */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    "enterprise-team-organizations/add": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-                /** @description The organization name. The name is not case sensitive. */
-                org: components["parameters"]["org"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successfully assigned the enterprise team to the organization. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["organization-simple"];
-                };
-            };
-        };
-    };
-    "enterprise-team-organizations/delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug version of the enterprise team name. You can also substitute this value with the enterprise team id. */
-                "enterprise-team": components["parameters"]["enterprise-team"];
-                /** @description The organization name. The name is not case sensitive. */
-                org: components["parameters"]["org"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successfully unassigned the enterprise team from the organization. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    "enterprise-teams/get": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug of the team name. */
-                team_slug: components["parameters"]["team-slug"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    Link: components["headers"]["link"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["enterprise-team-with-member-count"];
-                };
-            };
-            403: components["responses"]["forbidden"];
-        };
-    };
-    "enterprise-teams/delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug of the team name. */
-                team_slug: components["parameters"]["team-slug"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            403: components["responses"]["forbidden"];
-        };
-    };
-    "enterprise-teams/update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The slug version of the enterprise name. */
-                enterprise: components["parameters"]["enterprise"];
-                /** @description The slug of the team name. */
-                team_slug: components["parameters"]["team-slug"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description A new name for the team. */
-                    name?: string | null;
-                    /** @description A new description for the team. */
-                    description?: string | null;
-                    /**
-                     * @description Retired: this field is no longer supported.
-                     *     Whether the enterprise team should be reflected in each organization.
-                     *     This value cannot be changed.
-                     * @default disabled
-                     * @enum {string}
-                     */
-                    sync_to_organizations?: "all" | "disabled";
-                    /**
-                     * @description Specifies which organizations in the enterprise should have access to this team. Can be one of `disabled`, `selected`, or `all`.
-                     *     `disabled`: The team is not assigned to any organizations. This is the default when you create a new team.
-                     *     `selected`: The team is assigned to specific organizations. You can then use the [add organization assignments API](https://docs.github.com/rest/enterprise-teams/enterprise-team-organizations#add-organization-assignments).
-                     *     `all`: The team is assigned to all current and future organizations in the enterprise.
-                     * @default disabled
-                     * @enum {string}
-                     */
-                    organization_selection_type?: "disabled" | "selected" | "all";
-                    /** @description The ID of the IdP group to assign team membership with. The new IdP group will replace the existing one, or replace existing direct members if the team isn't currently linked to an IdP group. */
-                    group_id?: string | null;
-                    /**
-                     * @description The notification setting the team is set to. The options are:
-                     *
-                     *     * `notifications_enabled` - team members receive notifications when the team is @mentioned.
-                     *     * `notifications_disabled` - no one receives notifications.
-                     * @enum {string}
-                     */
-                    notification_setting?: "notifications_enabled" | "notifications_disabled";
-                };
-            };
-        };
-        responses: {
-            /** @description Response */
-            200: {
-                headers: {
-                    Link: components["headers"]["link"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["enterprise-team"];
-                };
-            };
-            403: components["responses"]["forbidden"];
-        };
-    };
     "activity/list-public-events": {
         parameters: {
             query?: {
@@ -105602,34 +104707,10 @@ export interface operations {
                         alert_recipients?: string[];
                     };
                     /**
-                     * @description The scope of the budget for this organization.
-                     *
-                     *     - `organization`: Apply the budget to the organization.
-                     *     - `repository`: Apply the budget to a specific repository in the organization.
-                     *     - `multi_user_customer`: Apply a universal budget to all users in the organization.
-                     *     - `user`: Apply the budget to a single user in the organization.
-                     * @enum {string}
-                     */
-                    budget_scope?: "enterprise" | "organization" | "repository" | "cost_center" | "multi_user_customer" | "user";
-                    /** @description The name of the entity to apply the budget to */
-                    budget_entity_name?: string;
-                    /**
-                     * @description The type of pricing model used by the budget. Determines how `budget_product_sku` is interpreted.
-                     *
-                     *     - `BundlePricing`: Covers all AI credit SKUs. Set `budget_product_sku` to `ai_credits`.
-                     *     - `ProductPricing`: Covers all SKUs that belong to a product. Set `budget_product_sku` to a product such as `actions` or `packages`.
-                     *     - `SkuPricing`: Covers a single, specific SKU. Set `budget_product_sku` to a SKU such as `actions_linux`.
-                     */
-                    budget_type?: "BundlePricing" | "ProductPricing" | "SkuPricing";
-                    /** @description A single product or SKU that will be covered in the budget */
-                    budget_product_sku?: string;
-                    /** @description The username of the user for `user` scope budgets. */
-                    user?: string;
-                    /**
                      * @description The date the budget will expire in `YYYY-MM-DD` format. Only dates in the future are accepted.
                      *     If not set, the budget will not expire. Setting to `null` or `0` will remove the expiration date from a budget if set.
                      *
-                     *     Only supported for budgets with `budget_scope` of `user`
+                     *     Only supported for existing user-scoped budgets.
                      */
                     expires_at?: (string | null) | 0;
                 };
