@@ -95,18 +95,23 @@ func (d *gitHTTPBackend) serve(w http.ResponseWriter, r *http.Request) {
 	// from the request.
 	cmd := exec.CommandContext(r.Context(), gitBinary(), "http-backend")
 	cmd.Dir = d.root
+	// gosec reads the request's strings reaching the child's environment as a
+	// command injection (G702). They are environment, not arguments, and the
+	// two that come from the request are held to what a git URL may contain,
+	// so neither can carry a separator, a newline or a shell character.
+	path, query := cgiSafe(r.URL.Path), cgiSafe(r.URL.RawQuery)
 	cmd.Env = []string{
 		"GIT_PROJECT_ROOT=" + d.root,
 		"GIT_HTTP_EXPORT_ALL=1",
 		"REMOTE_USER=bench",
 		"REQUEST_METHOD=" + r.Method,
-		"PATH_INFO=" + r.URL.Path,
-		"QUERY_STRING=" + r.URL.RawQuery,
-		"CONTENT_TYPE=" + r.Header.Get("Content-Type"),
-		"CONTENT_LENGTH=" + r.Header.Get("Content-Length"),
-		"HTTP_CONTENT_ENCODING=" + r.Header.Get("Content-Encoding"),
-		"GIT_PROTOCOL=" + r.Header.Get("Git-Protocol"),
-		"SERVER_PROTOCOL=" + r.Proto,
+		"PATH_INFO=" + path,
+		"QUERY_STRING=" + query,
+		"CONTENT_TYPE=" + cgiSafe(r.Header.Get("Content-Type")),
+		"CONTENT_LENGTH=" + cgiSafe(r.Header.Get("Content-Length")),
+		"HTTP_CONTENT_ENCODING=" + cgiSafe(r.Header.Get("Content-Encoding")),
+		"GIT_PROTOCOL=" + cgiSafe(r.Header.Get("Git-Protocol")),
+		"SERVER_PROTOCOL=" + cgiSafe(r.Proto),
 		"GATEWAY_INTERFACE=CGI/1.1",
 	}
 	cmd.Stdin = r.Body
@@ -162,4 +167,20 @@ func gitBinary() string {
 		return "git"
 	}
 	return path
+}
+
+// cgiSafe keeps what a CGI variable may carry: a git client's paths, queries
+// and header values are letters, digits and a handful of punctuation, and
+// anything else is dropped rather than passed to the child.
+func cgiSafe(value string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			return r
+		case strings.ContainsRune("/_-.=&?+:,* ", r):
+			return r
+		default:
+			return -1
+		}
+	}, value)
 }
