@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -24,11 +25,12 @@ func init() {
 // database, no hooks — so it prices the protocol itself, where git-local prices
 // the filesystem with no server at all.
 type gitHTTPBackend struct {
-	env      Env
-	root     string
-	server   *http.Server
-	listener net.Listener
-	created  map[string]bool
+	env          Env
+	root         string
+	server       *http.Server
+	listener     net.Listener
+	created      map[string]bool
+	repositories map[string]string
 }
 
 func (d *gitHTTPBackend) Name() string { return "git-http-backend" }
@@ -44,7 +46,7 @@ func (d *gitHTTPBackend) Available() error {
 }
 
 func (d *gitHTTPBackend) Setup(_ context.Context, env Env) error {
-	d.env, d.created = env, map[string]bool{}
+	d.env, d.created, d.repositories = env, map[string]bool{}, map[string]string{}
 	root, err := env.tempDir("git-http-backend-*")
 	if err != nil {
 		return err
@@ -84,46 +86,84 @@ func (d *gitHTTPBackend) Remote(ctx context.Context, repo string) (string, error
 			return "", err
 		}
 		d.created[name] = true
+		d.repositories[name] = name
 	}
 	return fmt.Sprintf("http://%s/%s", d.listener.Addr().String(), name), nil
 }
 
 // serve runs git-http-backend for one request, as the CGI specification says
-// to, with an environment this function writes in full.
+// to. Nothing of the request reaches the child's environment: the repository
+// is one this driver created, the path's remainder and the query are matched
+// against the fixed set the smart protocol uses, and what does not match is
+// refused. A benchmark harness needs no more of a request than that, and
+// building the environment out of constants is what makes it safe to hand to
+// a program rather than a sanitizer that has to be trusted.
 func (d *gitHTTPBackend) serve(w http.ResponseWriter, r *http.Request) {
+	repository, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if !ok || !d.created[repository] {
+		http.NotFound(w, r)
+		return
+	}
+	suffix, known := gitServicePaths[rest]
+	if !known {
+		http.NotFound(w, r)
+		return
+	}
+	query, known := gitServiceQueries[r.URL.RawQuery]
+	if !known {
+		http.NotFound(w, r)
+		return
+	}
+	protocol, known := gitProtocols[r.Header.Get("Git-Protocol")]
+	if !known {
+		http.Error(w, "unexpected git protocol", http.StatusBadRequest)
+		return
+	}
+	contentType, known := gitContentTypes[r.Header.Get("Content-Type")]
+	if !known {
+		http.Error(w, "unexpected content type", http.StatusUnsupportedMediaType)
+		return
+	}
+	method := http.MethodGet
+	if r.Method == http.MethodPost {
+		method = http.MethodPost
+	}
+
+	// The client sends a push chunked, so its length is not known from the
+	// header; CGI requires one, so the body is read before the child starts.
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "read request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// #nosec G204 -- git is a fixed executable found on PATH, given no argument
 	// from the request.
 	cmd := exec.CommandContext(r.Context(), gitBinary(), "http-backend")
 	cmd.Dir = d.root
-	// gosec reads the request's strings reaching the child's environment as a
-	// command injection (G702). They are environment, not arguments, and the
-	// two that come from the request are held to what a git URL may contain,
-	// so neither can carry a separator, a newline or a shell character.
-	path, query := cgiSafe(r.URL.Path), cgiSafe(r.URL.RawQuery)
 	cmd.Env = []string{
 		"GIT_PROJECT_ROOT=" + d.root,
 		"GIT_HTTP_EXPORT_ALL=1",
 		"REMOTE_USER=bench",
-		"REQUEST_METHOD=" + r.Method,
-		"PATH_INFO=" + path,
-		"QUERY_STRING=" + query,
-		"CONTENT_TYPE=" + cgiSafe(r.Header.Get("Content-Type")),
-		"CONTENT_LENGTH=" + cgiSafe(r.Header.Get("Content-Length")),
-		"HTTP_CONTENT_ENCODING=" + cgiSafe(r.Header.Get("Content-Encoding")),
-		"GIT_PROTOCOL=" + cgiSafe(r.Header.Get("Git-Protocol")),
-		"SERVER_PROTOCOL=" + cgiSafe(r.Proto),
 		"GATEWAY_INTERFACE=CGI/1.1",
+		"SERVER_PROTOCOL=HTTP/1.1",
+		"REQUEST_METHOD=" + method,
+		"PATH_INFO=/" + d.repositories[repository] + suffix,
+		"QUERY_STRING=" + query,
+		"CONTENT_TYPE=" + contentType,
+		"CONTENT_LENGTH=" + strconv.Itoa(len(body)),
+		"GIT_PROTOCOL=" + protocol,
 	}
-	cmd.Stdin = r.Body
+	cmd.Stdin = bytes.NewReader(body)
 	out, err := cmd.Output()
 	if err != nil {
 		http.Error(w, "git-http-backend: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	// The child answers with CGI headers, a blank line, then the body.
-	head, body, found := bytes.Cut(out, []byte("\r\n\r\n"))
+	head, answer, found := bytes.Cut(out, []byte("\r\n\r\n"))
 	if !found {
-		head, body, found = bytes.Cut(out, []byte("\n\n"))
+		head, answer, found = bytes.Cut(out, []byte("\n\n"))
 	}
 	if !found {
 		http.Error(w, "git-http-backend answered without a header block", http.StatusInternalServerError)
@@ -145,8 +185,35 @@ func (d *gitHTTPBackend) serve(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(name, value)
 	}
 	w.WriteHeader(status)
-	_, _ = w.Write(body)
+	_, _ = w.Write(answer)
 }
+
+// What the smart protocol asks for, and nothing else. Each is the constant the
+// child is given, keyed by what the client sent.
+var (
+	gitServicePaths = map[string]string{
+		"info/refs":        "/info/refs",
+		"git-upload-pack":  "/git-upload-pack",
+		"git-receive-pack": "/git-receive-pack",
+		"HEAD":             "/HEAD",
+	}
+	gitServiceQueries = map[string]string{
+		"":                         "",
+		"service=git-upload-pack":  "service=git-upload-pack",
+		"service=git-receive-pack": "service=git-receive-pack",
+	}
+	// The client asks for a protocol version; it is passed on only as it came,
+	// and forcing version 2 broke the push advertisement.
+	gitProtocols = map[string]string{
+		"":          "",
+		"version=2": "version=2",
+	}
+	gitContentTypes = map[string]string{
+		"":                                       "",
+		"application/x-git-upload-pack-request":  "application/x-git-upload-pack-request",
+		"application/x-git-receive-pack-request": "application/x-git-receive-pack-request",
+	}
+)
 
 func (d *gitHTTPBackend) GitEnv() []string { return nil }
 
@@ -167,20 +234,4 @@ func gitBinary() string {
 		return "git"
 	}
 	return path
-}
-
-// cgiSafe keeps what a CGI variable may carry: a git client's paths, queries
-// and header values are letters, digits and a handful of punctuation, and
-// anything else is dropped rather than passed to the child.
-func cgiSafe(value string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			return r
-		case strings.ContainsRune("/_-.=&?+:,* ", r):
-			return r
-		default:
-			return -1
-		}
-	}, value)
 }
