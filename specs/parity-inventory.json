@@ -12669,7 +12669,6 @@
           "missing_operations": [
             "DELETE /enterprises/{}/actions/policies/{}",
             "DELETE /enterprises/{}/credential-authorizations",
-            "DELETE /repos/{}/{}/issues/{}/relates_to/{}",
             "GET /enterprises/{}/actions/policies",
             "GET /enterprises/{}/actions/policies/{}",
             "GET /enterprises/{}/actions/runners/deprecations/{}",
@@ -12683,10 +12682,9 @@
             "POST /orgs/{}/credential-authorizations/revoke-credential-type",
             "POST /orgs/{}/credential-authorizations/{}/revoke",
             "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type",
-            "POST /repos/{}/{}/issues/{}/relates_to",
             "PUT /enterprises/{}/actions/policies/{}"
           ],
-          "represented_operations": 1482
+          "represented_operations": 1484
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -14127,6 +14125,12 @@
         "line": 50,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{number}/labels",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
+        "line": 70,
+        "method": "DELETE",
+        "path": "/api/v3/repos/{owner}/{repo}/issues/{number}/relates_to/{issue_id}",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
@@ -21034,6 +21038,12 @@
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{number}/reactions",
         "source": "internal/server/gh_reactions.go"
+      },
+      {
+        "line": 69,
+        "method": "POST",
+        "path": "/api/v3/repos/{owner}/{repo}/issues/{number}/relates_to",
+        "source": "internal/server/gh_labels_rest.go"
       },
       {
         "line": 65,
