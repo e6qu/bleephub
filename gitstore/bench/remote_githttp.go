@@ -36,7 +36,8 @@ type gitHTTPBackend struct {
 	repositories map[string]string
 }
 
-func (d *gitHTTPBackend) Name() string { return "git-http-backend" }
+func (d *gitHTTPBackend) Name() string     { return "git-http-backend" }
+func (d *gitHTTPBackend) Stores() []string { return nil }
 func (d *gitHTTPBackend) Describe() string {
 	return "git's own smart-HTTP server (git-http-backend over a bare repository): the protocol with no forge on top"
 }

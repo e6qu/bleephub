@@ -23,6 +23,9 @@ type RemoteDriver interface {
 	Name() string
 	// Describe says, in a line, how the driver keeps git data.
 	Describe() string
+	// Stores lists the kinds of object store the driver can keep its data in,
+	// or nil if it keeps none in one.
+	Stores() []string
 	// Available reports why the driver cannot run here, or nil. A missing
 	// helper binary is a reason to skip the driver, not to fail the run.
 	Available() error
@@ -68,6 +71,7 @@ func init() {
 	registerRemoteDriver("git-remote-s3", func() RemoteDriver {
 		return &helperRemote{
 			name:     "git-remote-s3",
+			stores:   []string{storeS3},
 			describe: "awslabs/git-remote-s3 helper: one full bundle per ref per push",
 			binary:   "git-remote-s3",
 			template: "s3://{bucket}/{prefix}/git-remote-s3/{repo}",
@@ -77,6 +81,7 @@ func init() {
 	registerRemoteDriver("git-remote-object-store", func() RemoteDriver {
 		return &helperRemote{
 			name:     "git-remote-object-store",
+			stores:   []string{storeS3},
 			describe: "dekobon/git-remote-object-store helper (packchain engine): a manifest of packs",
 			binary:   "git-remote-s3+http",
 			template: "s3+http://{host}/{bucket}/{prefix}/git-remote-object-store/{repo}?addressing=path&region={region}&engine=packchain",
@@ -98,6 +103,7 @@ func (d *localRemote) Name() string { return "git-local" }
 func (d *localRemote) Describe() string {
 	return "stock git, bare repository on local disk: the ceiling"
 }
+func (d *localRemote) Stores() []string { return nil }
 func (d *localRemote) Available() error { return nil }
 
 func (d *localRemote) Setup(_ context.Context, env Env) error {
@@ -141,6 +147,9 @@ type helperRemote struct {
 	// helpers built on an AWS SDK that would otherwise put the bucket in the
 	// host name, which no local endpoint answers to.
 	pathConf bool
+	// stores is where the helper keeps its data: S3, for a helper the standard
+	// AWS environment configures; nothing, for a server that keeps its own.
+	stores []string
 
 	env     Env
 	confDir string
@@ -148,6 +157,7 @@ type helperRemote struct {
 
 func (d *helperRemote) Name() string     { return d.name }
 func (d *helperRemote) Describe() string { return d.describe }
+func (d *helperRemote) Stores() []string { return d.stores }
 
 func (d *helperRemote) Available() error {
 	if d.binary == "" {

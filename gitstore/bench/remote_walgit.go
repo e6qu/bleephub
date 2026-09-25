@@ -38,7 +38,8 @@ type walgitRemote struct {
 	output bytes.Buffer
 }
 
-func (d *walgitRemote) Name() string { return "walgit" }
+func (d *walgitRemote) Name() string     { return "walgit" }
+func (d *walgitRemote) Stores() []string { return []string{storeS3} }
 func (d *walgitRemote) Describe() string {
 	return "tobi/walgit server over smart HTTP: packs plus a write-ahead log, manifest swapped by conditional write, repositories materialized to a local cache"
 }

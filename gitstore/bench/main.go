@@ -16,9 +16,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/e6qu/bleephub/gitstore/s3fake"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	"github.com/e6qu/bleephub/gcsclient/gcsfake"
+	"github.com/e6qu/bleephub/gitstore/azfake"
+	"github.com/e6qu/bleephub/gitstore/objstore"
+	"github.com/e6qu/bleephub/gitstore/s3fake"
 )
 
 // remoteSpecs collects repeated -remote flags.
@@ -39,6 +45,7 @@ type config struct {
 	parallel   int
 	probes     int
 	refs       int
+	store      string
 	endpoint   string
 	bucket     string
 	region     string
@@ -71,28 +78,29 @@ func parseFlags() (config, error) {
 	flag.IntVar(&cfg.parallel, "parallel", 8, "concurrent clones in the clone-parallel scenario")
 	flag.IntVar(&cfg.refs, "refs", 200, "extra branches and tags in the refs-create and refs-advertise scenarios; 0 skips them")
 	flag.IntVar(&cfg.probes, "probes", 1000, "absent objects asked about in the probe-absent scenario")
-	flag.StringVar(&cfg.endpoint, "endpoint", "", "S3-compatible endpoint URL, credentials from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY; empty runs an in-process fake")
-	flag.StringVar(&cfg.bucket, "bucket", "gitstore-bench", "bucket to use; created if missing")
+	flag.StringVar(&cfg.store, "store", storeS3, "kind of object store: s3 (credentials from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY), azure (AZURE_STORAGE_ACCOUNT/AZURE_STORAGE_KEY) or gcs (a service-account key file named by GOOGLE_APPLICATION_CREDENTIALS)")
+	flag.StringVar(&cfg.endpoint, "endpoint", "", "the store's endpoint URL — on Azure the blob service URL, account included; empty runs an in-process fake of the store")
+	flag.StringVar(&cfg.bucket, "bucket", "gitstore-bench", "bucket, or Azure container, to use; created if missing on S3 and Azure, and required to exist on Cloud Storage")
 	flag.StringVar(&cfg.region, "region", "us-east-1", "region to sign for")
 	flag.StringVar(&cfg.jsonPath, "json", "", "write the full report as JSON to this file")
 	flag.StringVar(&cfg.benchPath, "benchfmt", "", "write Go benchmark lines to this file, for benchstat")
 	flag.BoolVar(&cfg.keep, "keep", false, "leave this run's objects in the bucket")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: bench [flags]\n\n-level storer drivers (-drivers):\n")
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: bench [flags]\n\n-level storer drivers (-drivers):\n")
 		for _, name := range storerDriverNames() {
 			driver, _ := newStorerDriver(name)
-			fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
+			_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
 		}
-		fmt.Fprintf(flag.CommandLine.Output(), "\n-level git drivers (-git-drivers):\n")
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "\n-level git drivers (-git-drivers):\n")
 		for _, name := range remoteDriverNames() {
 			driver, _ := newRemoteDriver(name)
-			fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
+			_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
 		}
-		fmt.Fprintf(flag.CommandLine.Output(), "\nscenarios, in execution order:\n")
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "\nscenarios, in execution order:\n")
 		for _, name := range everyScenario() {
-			fmt.Fprintf(flag.CommandLine.Output(), "  %-22s %s\n", name, scenarioNotes[name])
+			_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %-22s %s\n", name, scenarioNotes[name])
 		}
-		fmt.Fprintf(flag.CommandLine.Output(), "\nflags:\n")
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "\nflags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -134,6 +142,26 @@ func parseFlags() (config, error) {
 			cfg.scenarios[name] = true
 		}
 	}
+	if !reaches(everyStore, cfg.store) {
+		return cfg, fmt.Errorf("-store must be one of %v, got %q", everyStore, cfg.store)
+	}
+	// A driver is measured against the store the run is made against or not at
+	// all: one that keeps its data in another kind of store would be measured
+	// against something else, and reported beside the rest as if it were not.
+	for _, name := range cfg.drivers {
+		driver, _ := newStorerDriver(name)
+		if !reaches(driver.Stores(), cfg.store) {
+			return cfg, fmt.Errorf("storer driver %s keeps its data in %v, not %s: leave it out of -drivers", name, driver.Stores(), cfg.store)
+		}
+	}
+	if cfg.level != levelStorer {
+		for _, name := range cfg.gitDrivers {
+			driver, _ := newRemoteDriver(name)
+			if !reaches(driver.Stores(), cfg.store) {
+				return cfg, fmt.Errorf("git-level driver %s keeps its data in %v, not %s: leave it out of -git-drivers", name, driver.Stores(), cfg.store)
+			}
+		}
+	}
 	if cfg.runs <= 0 || cfg.parallel <= 0 || cfg.probes <= 0 {
 		return cfg, fmt.Errorf("runs, parallel and probes must be positive")
 	}
@@ -160,22 +188,6 @@ func run() error {
 		return err
 	}
 
-	accessKey, secretKey := os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY")
-	endpointLabel := cfg.endpoint
-	target := cfg.endpoint
-	if target == "" {
-		fake := s3fake.New()
-		defer fake.Close()
-		target, endpointLabel = fake.URL(), "in-process s3fake"
-		accessKey, secretKey = "fake", "fake"
-	}
-	targetURL, err := url.Parse(target)
-	if err != nil {
-		return fmt.Errorf("endpoint %q: %w", target, err)
-	}
-	meter := NewMeter(targetURL)
-	defer meter.Close()
-
 	tempDir, err := os.MkdirTemp("", "gitstore-bench-*")
 	if err != nil {
 		return err
@@ -183,18 +195,38 @@ func run() error {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	env := Env{
-		Endpoint: meter.URL(), Bucket: cfg.bucket, Region: cfg.region,
-		AccessKey: accessKey, SecretKey: secretKey,
-		Prefix:  fmt.Sprintf("bench-%d", time.Now().UnixNano()),
-		TempDir: tempDir,
+		Store: cfg.store, Bucket: cfg.bucket, Region: cfg.region,
+		AccessKey: os.Getenv("AWS_ACCESS_KEY_ID"), SecretKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AzureAccount: os.Getenv("AZURE_STORAGE_ACCOUNT"), AzureKey: os.Getenv("AZURE_STORAGE_KEY"),
+		GCSCredentialsFile: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+		Prefix:             fmt.Sprintf("bench-%d", time.Now().UnixNano()),
+		TempDir:            tempDir,
 	}
-	if cfg.endpoint != "" {
-		cleanup, err := prepareBucket(ctx, targetURL, env, cfg.keep)
+	endpointLabel := cfg.endpoint
+	target := cfg.endpoint
+	if target == "" {
+		fake, err := startFake(&env)
 		if err != nil {
 			return err
 		}
-		defer cleanup()
+		defer fake.close()
+		target, endpointLabel = fake.url, "in-process fake of "+cfg.store
 	}
+	targetURL, err := url.Parse(target)
+	if err != nil {
+		return fmt.Errorf("endpoint %q: %w", target, err)
+	}
+	// The meter proxies to the store's host, and drivers address it with the
+	// endpoint's own path — an Azure account's, say — after the meter's host.
+	meter := NewMeter(&url.URL{Scheme: targetURL.Scheme, Host: targetURL.Host}, cfg.store)
+	defer meter.Close()
+	env.Endpoint = meter.URL() + strings.TrimSuffix(targetURL.Path, "/")
+
+	cleanup, err := prepareBucket(ctx, strings.TrimSuffix(target, "/"), env, cfg.endpoint == "", cfg.keep)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
 	report := &Report{
 		Workload: cfg.spec, Objects: workload.Objects, Latency: cfg.latency,
@@ -216,10 +248,14 @@ func run() error {
 	}
 
 	if cfg.level != levelGit {
-		report.writeTable(os.Stdout, levelStorer, cfg.drivers, scenarioOrder)
+		if err := report.writeTable(os.Stdout, levelStorer, cfg.drivers, scenarioOrder); err != nil {
+			return err
+		}
 	}
 	if cfg.level != levelStorer {
-		report.writeTable(os.Stdout, levelGit, gitDrivers, gitScenarioOrder)
+		if err := report.writeTable(os.Stdout, levelGit, gitDrivers, gitScenarioOrder); err != nil {
+			return err
+		}
 	}
 	if cfg.jsonPath != "" {
 		if err := writeFile(cfg.jsonPath, report.writeJSON); err != nil {
@@ -259,37 +295,116 @@ func writeFile(path string, write func(w io.Writer) error) error {
 	return file.Close()
 }
 
-// prepareBucket makes sure the bucket exists on a real endpoint, talking to it
-// directly so the setup is not billed to any driver, and returns the function
-// that removes this run's objects.
-func prepareBucket(ctx context.Context, target *url.URL, env Env, keep bool) (func(), error) {
-	client, err := minio.New(target.Host, &minio.Options{
-		Creds:        credentials.NewStaticV4(env.AccessKey, env.SecretKey, ""),
-		Secure:       target.Scheme == "https",
-		Region:       env.Region,
-		BucketLookup: minio.BucketLookupPath,
-	})
+// fake is an in-process store a run without an endpoint is made against.
+type fake struct {
+	url   string
+	close func()
+}
+
+// startFake starts an in-process fake of env's store and fills in the
+// credentials that reach it.
+func startFake(env *Env) (fake, error) {
+	switch env.Store {
+	case storeS3:
+		server := s3fake.New()
+		env.AccessKey, env.SecretKey = "fake", "fake"
+		return fake{url: server.URL(), close: server.Close}, nil
+	case storeAzure:
+		server := azfake.New()
+		server.CreateContainer(env.Bucket)
+		env.AzureAccount, env.AzureKey = server.AccountName(), server.AccountKey()
+		return fake{url: server.URL(), close: server.Close}, nil
+	case storeGCS:
+		server := gcsfake.New()
+		server.CreateBucket(env.Bucket)
+		env.GCSCredentialsFile = filepath.Join(env.TempDir, "gcsfake-key.json")
+		if err := os.WriteFile(env.GCSCredentialsFile, server.CredentialsJSON(), 0o600); err != nil {
+			server.Close()
+			return fake{}, err
+		}
+		return fake{url: server.URL(), close: server.Close}, nil
+	}
+	return fake{}, fmt.Errorf("no object store %q", env.Store)
+}
+
+// prepareBucket makes sure the bucket exists, talking to the store directly so
+// the setup is billed to no driver, and returns the function that removes this
+// run's objects. A fake's bucket was made with it.
+func prepareBucket(ctx context.Context, endpoint string, env Env, isFake, keep bool) (func(), error) {
+	if !isFake {
+		if err := createBucket(ctx, endpoint, env); err != nil {
+			return nil, err
+		}
+	}
+	bucket, err := env.openBucket(endpoint, 0)
 	if err != nil {
 		return nil, err
 	}
-	exists, err := client.BucketExists(ctx, env.Bucket)
-	if err != nil {
-		return nil, fmt.Errorf("check bucket %s: %w", env.Bucket, err)
-	}
-	if !exists {
-		if err := client.MakeBucket(ctx, env.Bucket, minio.MakeBucketOptions{Region: env.Region}); err != nil {
-			return nil, fmt.Errorf("make bucket %s: %w", env.Bucket, err)
-		}
+	// Listing the run's prefix is the check that the bucket is there and the
+	// credentials reach it, before any driver is timed against it.
+	if err := bucket.List(ctx, env.Prefix+"/", func(objstore.Entry) error { return nil }); err != nil {
+		return nil, fmt.Errorf("bucket %s: %w", env.Bucket, err)
 	}
 	return func() {
 		if keep {
 			return
 		}
-		objects := client.ListObjects(ctx, env.Bucket, minio.ListObjectsOptions{Prefix: env.Prefix + "/", Recursive: true})
-		for failure := range client.RemoveObjects(ctx, env.Bucket, objects, minio.RemoveObjectsOptions{}) {
-			fmt.Fprintf(os.Stderr, "bench: cleanup %s: %v\n", failure.ObjectName, failure.Err)
+		var keys []string
+		if err := bucket.List(ctx, env.Prefix+"/", func(entry objstore.Entry) error {
+			keys = append(keys, entry.Key)
+			return nil
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "bench: cleanup: list %s: %v\n", env.Prefix, err)
+			return
+		}
+		if err := bucket.DeleteMany(ctx, keys); err != nil {
+			fmt.Fprintf(os.Stderr, "bench: cleanup: %v\n", err)
 		}
 	}, nil
+}
+
+// createBucket makes the bucket on S3 and the container on Azure if missing.
+// On Cloud Storage a bucket belongs to a project the harness is not told of,
+// so there it must exist already.
+func createBucket(ctx context.Context, endpoint string, env Env) error {
+	switch env.Store {
+	case storeS3:
+		target, err := url.Parse(endpoint)
+		if err != nil {
+			return err
+		}
+		client, err := minio.New(target.Host, &minio.Options{
+			Creds:        credentials.NewStaticV4(env.AccessKey, env.SecretKey, ""),
+			Secure:       target.Scheme == "https",
+			Region:       env.Region,
+			BucketLookup: minio.BucketLookupPath,
+		})
+		if err != nil {
+			return err
+		}
+		exists, err := client.BucketExists(ctx, env.Bucket)
+		if err != nil {
+			return fmt.Errorf("check bucket %s: %w", env.Bucket, err)
+		}
+		if !exists {
+			if err := client.MakeBucket(ctx, env.Bucket, minio.MakeBucketOptions{Region: env.Region}); err != nil {
+				return fmt.Errorf("make bucket %s: %w", env.Bucket, err)
+			}
+		}
+	case storeAzure:
+		credential, err := container.NewSharedKeyCredential(env.AzureAccount, env.AzureKey)
+		if err != nil {
+			return fmt.Errorf("azure account key: %w", err)
+		}
+		client, err := container.NewClientWithSharedKeyCredential(endpoint+"/"+env.Bucket, credential, nil)
+		if err != nil {
+			return err
+		}
+		if _, err := client.Create(ctx, nil); err != nil && !bloberror.HasCode(err, bloberror.ContainerAlreadyExists) {
+			return fmt.Errorf("create container %s: %w", env.Bucket, err)
+		}
+	}
+	return nil
 }
 
 func runStorerLevel(ctx context.Context, cfg config, env Env, meter *Meter, workload *Workload, report *Report) error {

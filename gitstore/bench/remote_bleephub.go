@@ -50,19 +50,13 @@ func (objectStoreRepositories) settings(d *bleephubRemote, cacheDir, _ string) [
 	// probe it runs when the server starts — the same dozen or so requests the
 	// git store's probe makes — and nothing per git operation: no scenario here
 	// uploads an artifact, a log or a package.
-	return []string{
-		"BLEEPHUB_OBJECT_STORE=s3",
-		"BLEEPHUB_S3_ENDPOINT=" + d.env.Endpoint,
-		"BLEEPHUB_S3_REGION=" + d.env.Region,
-		"BLEEPHUB_GIT_BUCKET=" + d.env.Bucket,
-		"BLEEPHUB_GIT_PREFIX=" + d.env.Prefix + "/bleephub",
-		"BLEEPHUB_OBJECT_BUCKET=" + d.env.Bucket,
-		"BLEEPHUB_OBJECT_PREFIX=" + d.env.Prefix + "/bleephub-objects",
-		"BLEEPHUB_GITSTORE_CACHE_DIR=" + cacheDir,
-		"AWS_ACCESS_KEY_ID=" + d.env.AccessKey,
-		"AWS_SECRET_ACCESS_KEY=" + d.env.SecretKey,
-		"AWS_EC2_METADATA_DISABLED=true",
-	}
+	return append(d.env.bleephubStoreSettings(),
+		"BLEEPHUB_GIT_BUCKET="+d.env.Bucket,
+		"BLEEPHUB_GIT_PREFIX="+d.env.Prefix+"/bleephub",
+		"BLEEPHUB_OBJECT_BUCKET="+d.env.Bucket,
+		"BLEEPHUB_OBJECT_PREFIX="+d.env.Prefix+"/bleephub-objects",
+		"BLEEPHUB_GITSTORE_CACHE_DIR="+cacheDir,
+	)
 }
 
 // directoryRepositories is the same server with its repositories in a local
@@ -85,17 +79,11 @@ func (directoryRepositories) describe() string {
 }
 
 func (directoryRepositories) settings(d *bleephubRemote, _, repositoryDir string) []string {
-	return []string{
-		"BLEEPHUB_GIT_DIR=" + repositoryDir,
-		"BLEEPHUB_OBJECT_STORE=s3",
-		"BLEEPHUB_S3_ENDPOINT=" + d.env.Endpoint,
-		"BLEEPHUB_S3_REGION=" + d.env.Region,
-		"BLEEPHUB_OBJECT_BUCKET=" + d.env.Bucket,
-		"BLEEPHUB_OBJECT_PREFIX=" + d.env.Prefix + "/bleephub-dir-objects",
-		"AWS_ACCESS_KEY_ID=" + d.env.AccessKey,
-		"AWS_SECRET_ACCESS_KEY=" + d.env.SecretKey,
-		"AWS_EC2_METADATA_DISABLED=true",
-	}
+	return append(d.env.bleephubStoreSettings(),
+		"BLEEPHUB_GIT_DIR="+repositoryDir,
+		"BLEEPHUB_OBJECT_BUCKET="+d.env.Bucket,
+		"BLEEPHUB_OBJECT_PREFIX="+d.env.Prefix+"/bleephub-dir-objects",
+	)
 }
 
 // bleephubBinary is the server to run. Empty builds it from this checkout.
@@ -122,6 +110,10 @@ type bleephubRemote struct {
 
 func (d *bleephubRemote) Name() string     { return d.storage.name() }
 func (d *bleephubRemote) Describe() string { return d.storage.describe() }
+
+// Stores is every kind: the server reaches each through its own driver, and
+// even with its repositories in a directory its byte store is an object store.
+func (d *bleephubRemote) Stores() []string { return everyStore }
 
 func (d *bleephubRemote) Available() error {
 	if bleephubBinary != "" {

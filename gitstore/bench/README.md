@@ -10,6 +10,7 @@ go run . -latency 5ms                          # Storer level, in-process fake S
 go run . -drivers gitstore,ogit -files 5000    # choose drivers and size
 go run . -level git -latency 5ms               # stock git against the real server and remote helpers
 go run . -level both -endpoint http://127.0.0.1:9000   # a real S3-compatible store (MinIO, …)
+go run . -level git -git-drivers bleephub -store azure -endpoint http://127.0.0.1:10000/devstoreaccount1   # Azure Blob Storage
 go run . -h                                    # drivers, scenarios, flags
 ```
 
@@ -171,6 +172,23 @@ docker run -d -p 127.0.0.1:19000:9000 -e MINIO_ROOT_USER=benchadmin -e MINIO_ROO
 AWS_ACCESS_KEY_ID=benchadmin AWS_SECRET_ACCESS_KEY=benchsecret123 \
     go run . -endpoint http://127.0.0.1:19000 -latency 5ms -files 4000 -file-lines 400 -commits 60 -pushes 20 -changes 25
 ```
+
+### Azure Blob Storage and Cloud Storage
+
+`-store azure` and `-store gcs` run against the other two kinds of store
+bleephub has a driver for, and each without `-endpoint` against its in-process
+fake. Azure's credentials are `AZURE_STORAGE_ACCOUNT` and `AZURE_STORAGE_KEY`,
+and `-endpoint` is the blob service URL with the account in it where the
+service is addressed path-style; Cloud Storage's are the service-account key
+file `GOOGLE_APPLICATION_CREDENTIALS` names, and its bucket must exist, because
+a bucket belongs to a project the harness is not told of. Only the drivers
+that can keep their data in the chosen store run: `gitstore` and the two
+bleephub servers can keep theirs in any; the S3 remote helpers, `walgit` and
+`ogit` only in S3, and naming one with another store is refused rather than
+skipped. The meter files each store's requests under the S3 operation they do
+the work of — a block or a resumable chunk under the upload's parts, a batch
+of deletes under the bulk delete — so the columns mean the same for every
+store.
 
 `-file-lines` scales each file, which is how a workload gets packs that span
 several read extents (4 MiB by default; `-gitstore-chunk-bytes`) or cross the

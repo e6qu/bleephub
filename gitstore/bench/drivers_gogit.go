@@ -24,7 +24,8 @@ type memoryDriver struct {
 	repos map[string]*memory.Storage
 }
 
-func (d *memoryDriver) Name() string { return "gogit-memory" }
+func (d *memoryDriver) Name() string     { return "gogit-memory" }
+func (d *memoryDriver) Stores() []string { return nil }
 func (d *memoryDriver) Describe() string {
 	return "go-git in-memory storage: no persistence, the ceiling"
 }
@@ -55,6 +56,7 @@ type diskDriver struct {
 }
 
 func (d *diskDriver) Name() string     { return "gogit-disk" }
+func (d *diskDriver) Stores() []string { return nil }
 func (d *diskDriver) Describe() string { return "go-git dotgit layout on local disk" }
 
 func (d *diskDriver) Setup(_ context.Context, env Env) error {

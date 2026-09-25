@@ -287,5 +287,14 @@ func customRemote(spec string) (*helperRemote, error) {
 	if !ok || name == "" || !strings.Contains(template, "{repo}") {
 		return nil, fmt.Errorf("-remote wants name=url-template containing {repo}, got %q", spec)
 	}
-	return &helperRemote{name: name, describe: "custom remote " + strconv.Quote(template), template: template}, nil
+	remote := &helperRemote{name: name, describe: "custom remote " + strconv.Quote(template), template: template}
+	// A template naming the run's endpoint or bucket is a helper that keeps its
+	// data there, configured as the S3 helpers are; any other is a server that
+	// keeps its own.
+	for _, placeholder := range []string{"{endpoint}", "{host}", "{bucket}", "{prefix}"} {
+		if strings.Contains(template, placeholder) {
+			remote.stores = []string{storeS3}
+		}
+	}
+	return remote, nil
 }

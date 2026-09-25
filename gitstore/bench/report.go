@@ -64,14 +64,15 @@ func median(values []float64) float64 {
 	return (values[n/2-1] + values[n/2]) / 2
 }
 
-func (r *Report) writeTable(w io.Writer, level string, driverOrder, scenarios []string) {
-	fmt.Fprintf(w, "\n=== level: %s ===\n", level)
-	fmt.Fprintf(w, "workload: %d files, %d commits then %d pushes, %d files changed per commit → %d objects (initial push: %d objects, %s pack)\n",
+func (r *Report) writeTable(destination io.Writer, level string, driverOrder, scenarios []string) error {
+	w := &stickyWriter{w: destination}
+	_, _ = fmt.Fprintf(w, "\n=== level: %s ===\n", level)
+	_, _ = fmt.Fprintf(w, "workload: %d files, %d commits then %d pushes, %d files changed per commit → %d objects (initial push: %d objects, %s pack)\n",
 		r.Workload.Files, r.Workload.Commits, r.Workload.Pushes, r.Workload.Changes, r.Objects,
 		r.InitialObjects, humanBytes(float64(r.InitialPackBytes)))
-	fmt.Fprintf(w, "endpoint: %s, injected latency %s per request, median of %d run(s)\n\n", r.Endpoint, r.Latency, r.Runs)
+	_, _ = fmt.Fprintf(w, "endpoint: %s, injected latency %s per request, median of %d run(s)\n\n", r.Endpoint, r.Latency, r.Runs)
 	for _, name := range driverOrder {
-		fmt.Fprintf(w, "  %-24s %s\n", name, r.Drivers[name])
+		_, _ = fmt.Fprintf(w, "  %-24s %s\n", name, r.Drivers[name])
 	}
 
 	byKey := map[string][]Result{}
@@ -120,14 +121,31 @@ func (r *Report) writeTable(w io.Writer, level string, driverOrder, scenarios []
 		if len(rows) == 0 {
 			continue
 		}
-		fmt.Fprintf(w, "\n%s — %s\n", scenario, scenarioNotes[scenario])
+		_, _ = fmt.Fprintf(w, "\n%s — %s\n", scenario, scenarioNotes[scenario])
 		table := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
-		fmt.Fprintln(table, "driver\ttime\tvs first\tS3 reqs\tGET\tranged\tHEAD\twrite\tLIST\tDELETE\tdown\tup\t")
+		_, _ = fmt.Fprintln(table, "driver\ttime\tvs first\trequests\tGET\tranged\tHEAD\twrite\tLIST\tDELETE\tdown\tup\t")
 		for _, row := range rows {
-			fmt.Fprintln(table, row+"\t")
+			_, _ = fmt.Fprintln(table, row+"\t")
 		}
 		_ = table.Flush()
 	}
+	return w.err
+}
+
+// stickyWriter keeps the first error its writer returns and writes nothing
+// after it, so a table is written line by line and its failure checked once.
+type stickyWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (s *stickyWriter) Write(p []byte) (int, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	n, err := s.w.Write(p)
+	s.err = err
+	return n, err
 }
 
 func firstFailure(results []Result) string {
