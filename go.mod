@@ -3,7 +3,7 @@ module github.com/e6qu/bleephub
 go 1.26.6
 
 require (
-	github.com/beevik/etree v1.8.0
+	github.com/beevik/etree v1.8.1
 	github.com/canonical/go-dqlite/v3 v3.0.4
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/e6qu/bleephub/gcsclient v0.0.0
