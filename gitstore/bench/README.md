@@ -168,7 +168,7 @@ on.
 
 ```sh
 docker run -d -p 127.0.0.1:19000:9000 -e MINIO_ROOT_USER=benchadmin -e MINIO_ROOT_PASSWORD=benchsecret123 \
-    quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+    docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
 AWS_ACCESS_KEY_ID=benchadmin AWS_SECRET_ACCESS_KEY=benchsecret123 \
     go run . -endpoint http://127.0.0.1:19000 -latency 5ms -files 4000 -file-lines 400 -commits 60 -pushes 20 -changes 25
 ```
