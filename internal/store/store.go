@@ -818,6 +818,7 @@ type Store struct {
 	SubIssueLists            map[int][]int                 // parent issue ID → ordered sub-issue IDs
 	SubIssueParent           map[int]int                   // sub-issue ID → parent issue ID
 	IssueBlockedBy           map[int][]int                 // issue ID → IDs of the issues blocking it
+	IssueRelatesTo           map[int][]int                 // issue ID → IDs of the issues related to it; kept on both sides
 	RepoImports              map[int]*RepoImport           // repoID → source import
 	DependencySnapshots      map[int][]*DependencySnapshot // repoID → submitted snapshots (oldest first)
 	NextDependencySnapshotID int
@@ -1311,6 +1312,7 @@ func NewStore() *Store {
 		SubIssueLists:            map[int][]int{},
 		SubIssueParent:           map[int]int{},
 		IssueBlockedBy:           map[int][]int{},
+		IssueRelatesTo:           map[int][]int{},
 		RepoImports:              map[int]*RepoImport{},
 		DependencySnapshots:      map[int][]*DependencySnapshot{},
 		NextDependencySnapshotID: 1,
@@ -4008,6 +4010,18 @@ func (st *Store) loadFromPersistence() error {
 			for _, childID := range children {
 				st.SubIssueParent[childID] = parentID
 			}
+			return nil
+		}},
+		{"issue_relates_to", func(key string, raw []byte) error {
+			issueID, err := strconv.Atoi(key)
+			if err != nil {
+				return fmt.Errorf("issue_relates_to key %q: %w", key, err)
+			}
+			var related []int
+			if err := LoadJSON(raw, &related); err != nil {
+				return err
+			}
+			st.IssueRelatesTo[issueID] = related
 			return nil
 		}},
 		{"issue_blocked_by", func(key string, raw []byte) error {

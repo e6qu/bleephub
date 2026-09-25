@@ -66,6 +66,8 @@ func (s *Server) registerGHIssueRoutes() {
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/{number}/sub_issues/priority", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleReprioritizeSubIssue))
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleAddIssueDependencyBlockedBy))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by/{issue_id}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleRemoveIssueDependencyBlockedBy))
+	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/relates_to", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleAddIssueRelatesTo))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/relates_to/{issue_id}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleRemoveIssueRelatesTo))
 
 	// Three-segment issue DELETEs dispatch from one handler; the direct
 	// labels/sub-issues routes above are more specific and take precedence.
@@ -687,6 +689,9 @@ func (s *Server) handleIssuesTwoSegGetDispatch(w http.ResponseWriter, r *http.Re
 	case p2 == "sub_issues" || p2 == "sub_issue":
 		r.SetPathValue("number", p1)
 		s.handleListSubIssues(w, r)
+	case p2 == "relates_to":
+		r.SetPathValue("number", p1)
+		s.handleListIssueRelatesTo(w, r)
 	case p2 == "issue-field-values":
 		r.SetPathValue("number", p1)
 		s.handleListIssueFieldValues(w, r)

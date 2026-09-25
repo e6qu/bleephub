@@ -183,6 +183,7 @@ DELETE /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reac
 DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/assignees
 DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by/{issue_id}
 DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/labels
+DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/relates_to/{issue_id}
 DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}
 DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}/{p3}
 DELETE /api/v3/repos/{owner}/{repo}/keys/{key_id}
@@ -1334,6 +1335,7 @@ POST /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by
 POST /api/v3/repos/{owner}/{repo}/issues/{number}/issue-field-values
 POST /api/v3/repos/{owner}/{repo}/issues/{number}/labels
 POST /api/v3/repos/{owner}/{repo}/issues/{number}/reactions
+POST /api/v3/repos/{owner}/{repo}/issues/{number}/relates_to
 POST /api/v3/repos/{owner}/{repo}/issues/{number}/sub_issues
 POST /api/v3/repos/{owner}/{repo}/keys
 POST /api/v3/repos/{owner}/{repo}/labels

@@ -391,7 +391,7 @@ func TestPersistenceReload_GistsCommentsStarsAndForks(t *testing.T) {
 }
 
 func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
-	var oldRepoID, oldIssueID, oldPRID, projectID int
+	var oldRepoID, oldIssueID, oldPRID, projectID, survivorIssueID int
 	const orgLogin = "delete-cascade-org"
 
 	st2 := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
@@ -428,6 +428,13 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		}
 		if !st.AddIssueBlockedBy(parent.ID, blocker.ID) {
 			t.Fatal("AddIssueBlockedBy returned false")
+		}
+		// A relationship reaches into a repository that survives the delete.
+		survivor := st.CreateOrgRepo(org, admin, "surviving-related", "", false)
+		survivorIssue := st.CreateIssue(survivor.ID, admin.ID, "survivor", "", nil, nil, 0)
+		survivorIssueID = survivorIssue.ID
+		if !st.AddIssueRelatesTo(parent.ID, survivorIssue.ID) {
+			t.Fatal("AddIssueRelatesTo returned false")
 		}
 		project := st.ProjectsV2.CreateProject(org.ID, "Organization", "Repository cleanup", admin.ID)
 		projectID = project.ID
@@ -582,6 +589,12 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 	}
 	if got := st2.ListIssueBlockedBy(oldIssueID); len(got) != 0 {
 		t.Fatalf("issue dependencies survived deleted repo reload: %v", got)
+	}
+	if got := st2.ListIssueRelatesTo(oldIssueID); len(got) != 0 {
+		t.Fatalf("related issues survived deleted repo reload: %v", got)
+	}
+	if got := st2.ListIssueRelatesTo(survivorIssueID); len(got) != 0 {
+		t.Fatalf("the surviving issue still relates to a deleted one after reload: %v", got)
 	}
 	if values := st2.IssueFieldValues[oldIssueID]; len(values) != 0 {
 		t.Fatalf("issue field values survived deleted repo reload: %#v", values)
@@ -2386,5 +2399,35 @@ func TestPersistenceReload_OpensEveryRepoGitStorage(t *testing.T) {
 		if st.GitStorages[full] == nil {
 			t.Errorf("git storage for %s was not reopened after reload", full)
 		}
+	}
+}
+
+// TestPersistenceReload_IssueRelatesTo pins that a relationship between issues
+// is stored on both sides and comes back from a restart on both, and that one
+// removed before the restart stays removed.
+func TestPersistenceReload_IssueRelatesTo(t *testing.T) {
+	var first, second, third int
+	st2 := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
+		st.SeedDefaultUser()
+		admin := st.UsersByLogin["admin"]
+		repo := st.CreateRepo(admin, "relates-reload", "", false)
+		first = st.CreateIssue(repo.ID, admin.ID, "first", "", nil, nil, 0).ID
+		second = st.CreateIssue(repo.ID, admin.ID, "second", "", nil, nil, 0).ID
+		third = st.CreateIssue(repo.ID, admin.ID, "third", "", nil, nil, 0).ID
+		if !st.AddIssueRelatesTo(first, second) || !st.AddIssueRelatesTo(first, third) {
+			t.Fatal("AddIssueRelatesTo returned false")
+		}
+		if !st.RemoveIssueRelatesTo(third, first) {
+			t.Fatal("RemoveIssueRelatesTo returned false")
+		}
+	})
+	if got := st2.ListIssueRelatesTo(first); len(got) != 1 || got[0] != second {
+		t.Fatalf("issue %d relates to %v after reload, want [%d]", first, got, second)
+	}
+	if got := st2.ListIssueRelatesTo(second); len(got) != 1 || got[0] != first {
+		t.Fatalf("issue %d relates to %v after reload, want [%d]", second, got, first)
+	}
+	if got := st2.ListIssueRelatesTo(third); len(got) != 0 {
+		t.Fatalf("issue %d relates to %v after reload, want nothing", third, got)
 	}
 }
