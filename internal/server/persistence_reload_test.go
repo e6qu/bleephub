@@ -581,8 +581,19 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 	if len(st2.Comments) != 0 {
 		t.Fatalf("comments survived deleted repo reload: %#v", st2.Comments)
 	}
-	if len(st2.IssueEvents) != 0 {
-		t.Fatalf("issue events survived deleted repo reload: %#v", st2.IssueEvents)
+	// The surviving repository's issue keeps its own events; only the
+	// deleted repository's are purged.
+	survivorEvents := 0
+	for _, event := range st2.IssueEvents {
+		switch {
+		case event.RepoID == oldRepoID:
+			t.Fatalf("issue event of the deleted repo survived reload: %#v", event)
+		case event.IssueID == survivorIssueID && event.ParentType == "issue":
+			survivorEvents++
+		}
+	}
+	if survivorEvents == 0 {
+		t.Fatal("the surviving repository's issue lost its events")
 	}
 	if got := st2.ListSubIssues(oldIssueID); len(got) != 0 {
 		t.Fatalf("sub-issues survived deleted repo reload: %v", got)
