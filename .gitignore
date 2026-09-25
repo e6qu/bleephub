@@ -2,6 +2,7 @@
 .local/
 .terraform/
 bleephub-server
+/bleephub
 bleephub-dqlite-node
 web/node_modules/
 web/core/node_modules/
