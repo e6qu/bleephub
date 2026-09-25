@@ -51,6 +51,12 @@ const (
 	dockerRemoveTimeout = 30 * time.Second
 )
 
+// s3TestServerImage is the S3 server the tests run against: MinIO as the
+// pgsty fork publishes it, since MinIO's own images on quay.io and Docker Hub
+// are no longer served to anonymous pulls. Pinned by digest, so a moved tag
+// cannot change what the tests run against.
+const s3TestServerImage = "docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372"
+
 // s3ServerRunArgs is the docker argument vector that starts the shared MinIO
 // server, split out so the reaper's owner label can be asserted without a
 // running container.
@@ -61,7 +67,7 @@ func s3ServerRunArgs(addr string) []string {
 		"--publish", addr + ":9000",
 		"--env", "MINIO_ROOT_USER=bleephub-test",
 		"--env", "MINIO_ROOT_PASSWORD=bleephub-test-secret",
-		"quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z", "server", "/data",
+		s3TestServerImage, "server", "/data",
 	}
 }
 

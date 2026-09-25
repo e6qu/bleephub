@@ -16137,6 +16137,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{repo}/issues/{issue_number}/relates_to": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List issues related to an issue
+         * @description You can use the REST API to list the issues that are related to an issue.
+         *
+         *     This endpoint supports the following custom media types. For more information, see [Media types](https://docs.github.com/rest/using-the-rest-api/getting-started-with-the-rest-api#media-types).
+         *
+         *     - **`application/vnd.github.raw+json`**: Returns the raw Markdown body. Response will include `body`. This is the default if you do not pass any specific media type.
+         *     - **`application/vnd.github.text+json`**: Returns a text only representation of the Markdown body. Response will include `body_text`.
+         *     - **`application/vnd.github.html+json`**: Returns HTML rendered from the body's Markdown. Response will include `body_html`.
+         *     - **`application/vnd.github.full+json`**: Returns raw, text, and HTML representations. Response will include `body`, `body_text`, and `body_html`.
+         */
+        get: operations["issues/list-relates-to"];
+        put?: never;
+        /**
+         * Add a related issue
+         * @description You can use the REST API to mark an issue as related to another issue.
+         *
+         *     Creating content too quickly using this endpoint may result in secondary rate limiting.
+         *     For more information, see [Rate limits for the API](https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits)
+         *     and [Best practices for using the REST API](https://docs.github.com/rest/guides/best-practices-for-using-the-rest-api).
+         *
+         *     This endpoint supports the following custom media types. For more information, see [Media types](https://docs.github.com/rest/using-the-rest-api/getting-started-with-the-rest-api#media-types).
+         *
+         *     - **`application/vnd.github.raw+json`**: Returns the raw Markdown body. Response will include `body`. This is the default if you do not pass any specific media type.
+         *     - **`application/vnd.github.text+json`**: Returns a text only representation of the Markdown body. Response will include `body_text`.
+         *     - **`application/vnd.github.html+json`**: Returns HTML rendered from the body's Markdown. Response will include `body_html`.
+         *     - **`application/vnd.github.full+json`**: Returns raw, text, and HTML representations. Response will include `body`, `body_text`, and `body_html`.
+         */
+        post: operations["issues/add-relates-to"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repos/{owner}/{repo}/issues/{issue_number}/relates_to/{issue_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a related issue
+         * @description You can use the REST API to remove a 'relates to' relationship between two issues.
+         *
+         *     Removing content too quickly using this endpoint may result in secondary rate limiting.
+         *     For more information, see [Rate limits for the API](https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits)
+         *     and [Best practices for using the REST API](https://docs.github.com/rest/guides/best-practices-for-using-the-rest-api).
+         *
+         *     This endpoint supports the following custom media types. For more information, see [Media types](https://docs.github.com/rest/using-the-rest-api/getting-started-with-the-rest-api#media-types).
+         *
+         *     - **`application/vnd.github.raw+json`**: Returns the raw Markdown body. Response will include `body`. This is the default if you do not pass any specific media type.
+         *     - **`application/vnd.github.text+json`**: Returns a text only representation of the Markdown body. Response will include `body_text`.
+         *     - **`application/vnd.github.html+json`**: Returns HTML rendered from the body's Markdown. Response will include `body_html`.
+         *     - **`application/vnd.github.full+json`**: Returns raw, text, and HTML representations. Response will include `body`, `body_text`, and `body_html`.
+         */
+        delete: operations["issues/remove-relates-to"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{repo}/issues/{issue_number}/sub_issue": {
         parameters: {
             query?: never;
@@ -17243,8 +17316,14 @@ export interface paths {
         get: operations["pulls/check-if-merged"];
         /**
          * Merge a pull request
-         * @description Merges a pull request into the base branch.
-         *     This endpoint triggers [notifications](https://docs.github.com/github/managing-subscriptions-and-notifications-on-github/about-notifications). Creating content too quickly using this endpoint may result in secondary rate limiting. For more information, see "[Rate limits for the API](https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits)" and "[Best practices for using the REST API](https://docs.github.com/rest/guides/best-practices-for-using-the-rest-api)."
+         * @description > [!NOTE]
+         *     > We recommend using the [asynchronous merge API](https://docs.github.com/rest/pulls/pulls#merge-a-pull-request-asynchronously) instead. This endpoint does not support stacked pull requests or merging with a merge queue.
+         *
+         *     Merges a pull request into the base branch.
+         *
+         *     This endpoint triggers [notifications](https://docs.github.com/github/managing-subscriptions-and-notifications-on-github/about-notifications).
+         *     Creating content too quickly using this endpoint may result in secondary rate limiting.
+         *     For more information, see "[Rate limits for the API](https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits)" and "[Best practices for using the REST API](https://docs.github.com/rest/guides/best-practices-for-using-the-rest-api)."
          */
         put: operations["pulls/merge"];
         post?: never;
@@ -17264,15 +17343,15 @@ export interface paths {
         get?: never;
         /**
          * Merge a pull request asynchronously
-         * @description Merges a pull request into the base branch in the background. Merging in this way allows certain types of errors to be retried, and avoids the risk of timeouts for particularly complex merges.
+         * @description Merges a pull request into the base branch in the background or adds it to a merge queue. Background processing allows certain types of errors to be retried and reduces the risk of timeouts for complex merges.
          *
-         *     This is the required method for merging stacked PRs, but also supports unstacked PRs. When using this endpoint to merge a stacked pull request, all pull requests in the stack up to and including the requested PR will be merged into the base branch.
+         *     This is the required API for merging stacked pull requests. For a stacked pull request, the operation includes all open downstack pull requests.
          *
-         *     The response includes a UUID that can be used to fetch the result of the merge. If another asynchronous merge request has already been made for this pull request, the UUID of that request will be returned instead with a 409 response status to indicate that the merge options may be different from those that were requested. If there isn't an existing asynchronous merge request, a 202 response status is used.
+         *     A new asynchronous merge request returns a `202` response with a UUID that can be used to [fetch the result of the merge](https://docs.github.com/rest/pulls/pulls#get-the-result-of-an-asynchronous-merge). If another asynchronous merge request is already pending for this pull request, a `409` response returns that request's UUID and merge options instead.
          *
-         *     If the pull request is already merged, the merge commit OID will be returned immediately with a 200 status.
+         *     If the pull request is already merged or already in a merge queue, a `200` response is returned immediately. A `merged` result includes the merge commit OID. An `enqueued` result means the pull request was added to the merge queue, not that it has merged.
          *
-         *     If the pull request cannot be merged (e.g. because it is closed, or still a draft) this result will be returned immediately with a 400 response status. Branch protection rules and repository rules are not run at this stage, only basic pull request state checks are performed.
+         *     If the pull request cannot be merged (e.g. because it is closed, or still a draft) this result will be returned immediately with a `400` response status. Branch protection rules and repository rules are not run at this stage, only basic pull request state checks are performed.
          */
         put: operations["pulls/merge-async"];
         post?: never;
@@ -17293,7 +17372,13 @@ export interface paths {
          * Get the result of an asynchronous merge
          * @description Fetches the current result of an asynchronous merge request, identified by the UUID that was returned when the merge was requested.
          *
-         *     While the merge is still queued, the response includes the UUID, merge method, and expected head SHA of the request. Once the merge has completed, the response reports whether it was merged, including the merge commit OID on success or a message describing why it could not be merged on failure.
+         *     While the request's status is `pending`, the response includes the UUID, merge method, merge action, and expected head SHA of the request. Once the asynchronous request completes, its status is one of:
+         *
+         *     - `merged`: The pull request was merged into the base branch. The response includes the merge commit OID.
+         *     - `enqueued`: The pull request was added to a merge queue.
+         *     - `failed`: The request failed. The response includes a message describing the failure.
+         *
+         *     An `enqueued` result is final for the merge queue requests and does not mean the pull request has merged. This result does not change when the merge queue later merges the pull request. To get the eventual merge status, [check if a pull request has been merged](https://docs.github.com/rest/pulls/pulls#check-if-a-pull-request-has-been-merged).
          *
          *     The result of an asynchronous merge request is retained for 24 hours after its most recent update. After this window the request expires and this endpoint returns a `404` response for its UUID.
          */
@@ -26928,7 +27013,7 @@ export interface components {
                 /** @description The consumed amount for the specified user within the effective budget. */
                 consumed_amount: number;
             };
-            /** @description Indicates if there are more pages of results available (maps to hasNextPage from billing platform) */
+            /** @description Indicates if there are more pages of results available */
             has_next_page?: boolean;
             /** @description Total number of budgets matching the query */
             total_count?: number;
@@ -27047,6 +27132,11 @@ export interface components {
                  */
                 alert_recipients?: string[];
             };
+            /**
+             * @description The current usage amount counted toward the budget. How usage is calculated may vary by budget type.
+             * @example 12.5
+             */
+            consumed_amount?: number;
         };
         "update-budget": {
             /** @description A message indicating the result of the update operation */
@@ -40193,6 +40283,8 @@ export interface components {
                 merge_action: "default" | "merge_queue" | "direct_merge";
                 /** @description SHA that the pull request head must match for the enqueued merge to proceed. */
                 expected_head_sha: string;
+            } | {
+                message: string;
             } | {
                 message: string;
             } | {
@@ -55692,6 +55784,36 @@ export interface components {
             /** @description The ID of the blocking issue. */
             blocking_issue_id?: number;
             blocking_issue?: components["schemas"]["issue"];
+            installation?: components["schemas"]["simple-installation"];
+            organization: components["schemas"]["organization-simple-webhooks"];
+            repository: components["schemas"]["repository-webhooks"];
+            sender: components["schemas"]["simple-user"];
+        };
+        /** relates to issue added event */
+        "webhook-issue-relates-to-added": {
+            /** @enum {string} */
+            action: "relates_to_added";
+            /** @description The ID of the issue the relationship was added to. */
+            issue_id?: number;
+            issue?: components["schemas"]["issue"];
+            /** @description The ID of the related issue. Only present when both issues belong to the same repository. */
+            related_issue_id?: number;
+            related_issue?: components["schemas"]["issue"];
+            installation?: components["schemas"]["simple-installation"];
+            organization: components["schemas"]["organization-simple-webhooks"];
+            repository: components["schemas"]["repository-webhooks"];
+            sender: components["schemas"]["simple-user"];
+        };
+        /** relates to issue removed event */
+        "webhook-issue-relates-to-removed": {
+            /** @enum {string} */
+            action: "relates_to_removed";
+            /** @description The ID of the issue the relationship was removed from. */
+            issue_id?: number;
+            issue?: components["schemas"]["issue"];
+            /** @description The ID of the related issue. Only present when both issues belong to the same repository. */
+            related_issue_id?: number;
+            related_issue?: components["schemas"]["issue"];
             installation?: components["schemas"]["simple-installation"];
             organization: components["schemas"]["organization-simple-webhooks"];
             repository: components["schemas"]["repository-webhooks"];
@@ -132104,6 +132226,117 @@ export interface operations {
             };
         };
     };
+    "issues/list-relates-to": {
+        parameters: {
+            query?: {
+                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                per_page?: components["parameters"]["per-page"];
+                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                page?: components["parameters"]["page"];
+            };
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+                /** @description The number that identifies the issue. */
+                issue_number: components["parameters"]["issue-number"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    Link: components["headers"]["link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["issue"][];
+                };
+            };
+            301: components["responses"]["moved_permanently"];
+            404: components["responses"]["not_found"];
+            410: components["responses"]["gone"];
+        };
+    };
+    "issues/add-relates-to": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+                /** @description The number that identifies the issue. */
+                issue_number: components["parameters"]["issue-number"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The id of the issue to mark as related to the current issue */
+                    issue_id: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Response */
+            201: {
+                headers: {
+                    /** @example https://api.github.com/repos/octocat/Hello-World/issues/1/relates_to */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["issue"];
+                };
+            };
+            301: components["responses"]["moved_permanently"];
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+            410: components["responses"]["gone"];
+            422: components["responses"]["validation_failed"];
+        };
+    };
+    "issues/remove-relates-to": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+                /** @description The number that identifies the issue. */
+                issue_number: components["parameters"]["issue-number"];
+                /** @description The id of the related issue to remove */
+                issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["issue"];
+                };
+            };
+            301: components["responses"]["moved_permanently"];
+            400: components["responses"]["bad_request"];
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+            410: components["responses"]["gone"];
+        };
+    };
     "issues/remove-sub-issue": {
         parameters: {
             query?: never;
@@ -134503,19 +134736,19 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
-                    /** @description Title for the automatic commit message. */
+                    /** @description Title for the automatic commit message. Only supported for direct merges. */
                     commit_title?: string;
-                    /** @description Extra detail to append to automatic commit message. */
+                    /** @description Extra detail to append to automatic commit message. Only supported for direct merges. */
                     commit_message?: string;
                     /** @description SHA that pull request head must match to allow merge. If not provided, the current head of the PR at the time of the request will be used; if the PR is pushed in between the merge being requested and being executed, the merge will be cancelled. */
                     sha?: string;
                     /**
-                     * @description The merge method to use.
+                     * @description The merge method to use for a direct merge. Only supported for direct merges.
                      * @enum {string}
                      */
                     merge_method?: "merge" | "squash" | "rebase";
                     /**
-                     * @description The action that will be taken to merge the pull request. `direct_merge` merges the pull request directly without using a merge queue; `merge_queue` adds the pull request to a merge queue; `default` selects the most appropriate option.
+                     * @description The action that will be taken to merge the pull request. `direct_merge` merges the pull request directly without using a merge queue; `merge_queue` adds the pull request to a merge queue; `default` uses a merge queue if one is configured for the target branch, or merges directly otherwise. If omitted, defaults to `default`.
                      * @enum {string}
                      */
                     merge_action?: "default" | "direct_merge" | "merge_queue";
@@ -134665,6 +134898,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            503: components["responses"]["service_unavailable"];
         };
     };
     "pulls/remove-requested-reviewers": {

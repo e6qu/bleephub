@@ -116,6 +116,24 @@
         "source": "internal/server/gh_issues_rest.go"
       },
       {
+        "event": "issue_relates_to",
+        "line": 121,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_issue_relates_to.go"
+      },
+      {
+        "event": "issue_relates_to",
+        "line": 124,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_issue_relates_to.go"
+      },
+      {
+        "event": "issue_relates_to",
+        "line": 125,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_issue_relates_to.go"
+      },
+      {
         "event": "issues",
         "line": 130,
         "producer": "emitWebhookEvent",
@@ -129,19 +147,19 @@
       },
       {
         "event": "label",
-        "line": 137,
+        "line": 139,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 239,
+        "line": 241,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "label",
-        "line": 269,
+        "line": 271,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -159,19 +177,19 @@
       },
       {
         "event": "milestone",
-        "line": 321,
+        "line": 323,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 453,
+        "line": 455,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
         "event": "milestone",
-        "line": 490,
+        "line": 492,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_labels_rest.go"
       },
@@ -9102,6 +9120,43 @@
         ]
       },
       {
+        "method": "GET",
+        "operation_id": "issues/list-relates-to",
+        "path": "/repos/{owner}/{repo}/issues/{issue_number}/relates_to",
+        "statuses": [
+          "200",
+          "301",
+          "404",
+          "410"
+        ]
+      },
+      {
+        "method": "POST",
+        "operation_id": "issues/add-relates-to",
+        "path": "/repos/{owner}/{repo}/issues/{issue_number}/relates_to",
+        "statuses": [
+          "201",
+          "301",
+          "403",
+          "404",
+          "410",
+          "422"
+        ]
+      },
+      {
+        "method": "DELETE",
+        "operation_id": "issues/remove-relates-to",
+        "path": "/repos/{owner}/{repo}/issues/{issue_number}/relates_to/{issue_id}",
+        "statuses": [
+          "200",
+          "301",
+          "400",
+          "403",
+          "404",
+          "410"
+        ]
+      },
+      {
         "method": "DELETE",
         "operation_id": "issues/remove-sub-issue",
         "path": "/repos/{owner}/{repo}/issues/{issue_number}/sub_issue",
@@ -9773,7 +9828,8 @@
         "statuses": [
           "201",
           "403",
-          "422"
+          "422",
+          "503"
         ]
       },
       {
@@ -12609,7 +12665,7 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1497,
+          "documented_operations": 1500,
           "missing_operations": [
             "DELETE /enterprises/{}/actions/policies/{}",
             "DELETE /enterprises/{}/credential-authorizations",
@@ -12628,7 +12684,7 @@
             "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type",
             "PUT /enterprises/{}/actions/policies/{}"
           ],
-          "represented_operations": 1481
+          "represented_operations": 1484
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -12920,6 +12976,7 @@
         "GET /repos/{}/{}/issues/{}/labels",
         "GET /repos/{}/{}/issues/{}/parent",
         "GET /repos/{}/{}/issues/{}/reactions",
+        "GET /repos/{}/{}/issues/{}/relates_to",
         "GET /repos/{}/{}/issues/{}/sub_issues",
         "GET /repos/{}/{}/issues/{}/timeline",
         "GET /repos/{}/{}/pulls/comments/{}",
@@ -14071,13 +14128,19 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
+        "line": 70,
+        "method": "DELETE",
+        "path": "/api/v3/repos/{owner}/{repo}/issues/{number}/relates_to/{issue_id}",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
         "line": 44,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}",
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 72,
+        "line": 74,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}/{p3}",
         "source": "internal/server/gh_labels_rest.go"
@@ -18001,7 +18064,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 75,
+        "line": 77,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}/{p3}",
         "source": "internal/server/gh_labels_rest.go"
@@ -20977,6 +21040,12 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
+        "line": 69,
+        "method": "POST",
+        "path": "/api/v3/repos/{owner}/{repo}/issues/{number}/relates_to",
+        "source": "internal/server/gh_labels_rest.go"
+      },
+      {
         "line": 65,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{number}/sub_issues",
@@ -22381,7 +22450,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "149883e3bec2875d880ea67f0e85c39026c291d375b101e5a4b6faba951d0c6f"
+    "vendored_openapi_sha256": "4aeb1b8cc3a8c80ccae2d3b927bae8cb7a35ea73187c833ff72b4d67d450c994"
   },
   "schema_version": 1,
   "sources": {

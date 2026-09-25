@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,15 +26,17 @@ import (
 // request as signed.
 type Meter struct {
 	server  *httptest.Server
+	store   string
 	latency atomic.Int64
 
 	mu     sync.Mutex
 	counts s3fake.Counts
 }
 
-// NewMeter fronts the object store at target.
-func NewMeter(target *url.URL) *Meter {
-	meter := &Meter{}
+// NewMeter fronts the object store at target, a store of the kind given, whose
+// requests it classifies by that store's API.
+func NewMeter(target *url.URL, store string) *Meter {
+	meter := &Meter{store: store}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.SetURL(target)
@@ -90,37 +93,109 @@ func (m *Meter) addUp(n int) {
 	m.mu.Unlock()
 }
 
-// classify files one request under the operation it bills as. The rules mirror
-// s3fake's, so a count means the same thing whichever instrument produced it.
+// classify files one request under the operation it bills as. The S3 rules
+// mirror s3fake's, so a count means the same thing whichever instrument
+// produced it, and the other stores' rules file each of their requests under
+// the S3 operation it does the work of: a block or a resumable chunk is a part
+// of an upload, a batch of deletes is a bulk delete.
 func (m *Meter) classify(request *http.Request, status int) {
-	query := request.URL.Query()
-	_, key := splitBucketKey(request.URL.Path)
-
+	var operation *int64
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	switch m.store {
+	case storeAzure:
+		operation = m.classifyAzure(request)
+	case storeGCS:
+		operation = m.classifyGCS(request)
+	default:
+		operation = m.classifyS3(request)
+	}
+	if operation == nil {
+		return
+	}
+	*operation++
+	if operation == &m.counts.Get && status == http.StatusNotFound {
+		m.counts.NotFoundGet++
+	}
+}
+
+func (m *Meter) classifyS3(request *http.Request) *int64 {
+	query := request.URL.Query()
+	_, key := splitBucketKey(request.URL.Path)
 	switch {
 	case query.Has("uploads"), query.Has("uploadId"):
-		m.counts.Multipart++
+		return &m.counts.Multipart
 	case request.Method == http.MethodPost && query.Has("delete"):
-		m.counts.Delete++
+		return &m.counts.Delete
 	case request.Method == http.MethodGet && key == "":
-		m.counts.List++
+		return &m.counts.List
 	case request.Method == http.MethodGet && request.Header.Get("Range") != "":
-		m.counts.GetRanged++
+		return &m.counts.GetRanged
 	case request.Method == http.MethodGet:
-		m.counts.Get++
-		if status == http.StatusNotFound {
-			m.counts.NotFoundGet++
-		}
+		return &m.counts.Get
 	case request.Method == http.MethodHead:
-		m.counts.Head++
+		return &m.counts.Head
 	case request.Method == http.MethodPut && request.Header.Get("X-Amz-Copy-Source") != "":
-		m.counts.Copy++
+		return &m.counts.Copy
 	case request.Method == http.MethodPut:
-		m.counts.Put++
+		return &m.counts.Put
 	case request.Method == http.MethodDelete:
-		m.counts.Delete++
+		return &m.counts.Delete
 	}
+	return nil
+}
+
+// classifyAzure reads a Blob service request by its method and comp.
+// https://learn.microsoft.com/en-us/rest/api/storageservices/blob-service-rest-api
+func (m *Meter) classifyAzure(request *http.Request) *int64 {
+	comp := request.URL.Query().Get("comp")
+	switch {
+	case request.Method == http.MethodPut && (comp == "block" || comp == "blocklist"):
+		return &m.counts.Multipart
+	case request.Method == http.MethodPost && comp == "batch", request.Method == http.MethodDelete:
+		return &m.counts.Delete
+	case request.Method == http.MethodGet && comp == "list":
+		return &m.counts.List
+	case request.Method == http.MethodGet && (request.Header.Get("x-ms-range") != "" || request.Header.Get("Range") != ""):
+		return &m.counts.GetRanged
+	case request.Method == http.MethodGet:
+		return &m.counts.Get
+	case request.Method == http.MethodHead:
+		return &m.counts.Head
+	case request.Method == http.MethodPut && request.Header.Get("x-ms-copy-source") != "":
+		return &m.counts.Copy
+	case request.Method == http.MethodPut:
+		return &m.counts.Put
+	}
+	return nil
+}
+
+// classifyGCS reads a Cloud Storage request by its path: the JSON API under
+// /storage/v1, /upload/storage/v1 and /batch/storage/v1, and the XML API's
+// /bucket/object download.
+// https://docs.cloud.google.com/storage/docs/json_api
+func (m *Meter) classifyGCS(request *http.Request) *int64 {
+	path, query := request.URL.Path, request.URL.Query()
+	switch {
+	case query.Get("uploadType") == "resumable", query.Has("upload_id"):
+		return &m.counts.Multipart
+	case strings.HasPrefix(path, "/upload/"):
+		return &m.counts.Put
+	case strings.HasPrefix(path, "/batch/"), request.Method == http.MethodDelete:
+		return &m.counts.Delete
+	case request.Method == http.MethodPost && (strings.Contains(path, "/rewriteTo/") || strings.Contains(path, "/copyTo/")):
+		return &m.counts.Copy
+	case request.Method == http.MethodGet && strings.HasPrefix(path, "/storage/v1/b/") && strings.HasSuffix(path, "/o"):
+		return &m.counts.List
+	case request.Method == http.MethodGet && strings.HasPrefix(path, "/storage/v1/") && query.Get("alt") != "media":
+		// An object's description, which is what a HEAD asks S3 for.
+		return &m.counts.Head
+	case request.Method == http.MethodGet && request.Header.Get("Range") != "":
+		return &m.counts.GetRanged
+	case request.Method == http.MethodGet:
+		return &m.counts.Get
+	}
+	return nil
 }
 
 // splitBucketKey splits a path-style request path into bucket and key.

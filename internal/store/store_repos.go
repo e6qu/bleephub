@@ -1963,6 +1963,28 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *PersistBatch, repoI
 			delete(st.SubIssueParent, childID)
 		}
 	}
+	for issueID, related := range st.IssueRelatesTo {
+		if issueIDs[issueID] {
+			delete(st.IssueRelatesTo, issueID)
+			batch.Delete("issue_relates_to", strconv.Itoa(issueID))
+			continue
+		}
+		kept := related[:0]
+		for _, relatedID := range related {
+			if !issueIDs[relatedID] {
+				kept = append(kept, relatedID)
+			}
+		}
+		switch {
+		case len(kept) == len(related):
+		case len(kept) == 0:
+			delete(st.IssueRelatesTo, issueID)
+			batch.Delete("issue_relates_to", strconv.Itoa(issueID))
+		default:
+			st.IssueRelatesTo[issueID] = kept
+			batch.Put("issue_relates_to", strconv.Itoa(issueID), kept)
+		}
+	}
 	for issueID, blockers := range st.IssueBlockedBy {
 		if issueIDs[issueID] {
 			delete(st.IssueBlockedBy, issueID)

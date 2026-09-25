@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -461,8 +462,15 @@ func TestACopyCarriesBytesAndMetadataAndReportsItsProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := client.NewBlobClient("source").URL()
-	if _, err := client.NewBlobClient("nowhere").StartCopyFromURL(ctx, client.NewBlobClient("absent").URL(), nil); !bloberror.HasCode(err, bloberror.BlobNotFound) {
-		t.Fatalf("copying what is not there answered %v, want BlobNotFound", err)
+	// The service refuses a copy of what is not there as unable to verify its
+	// source, and names the source's own refusal in headers.
+	_, err := client.NewBlobClient("nowhere").StartCopyFromURL(ctx, client.NewBlobClient("absent").URL(), nil)
+	var refused *azcore.ResponseError
+	if !errors.As(err, &refused) || refused.ErrorCode != string(bloberror.CannotVerifyCopySource) {
+		t.Fatalf("copying what is not there answered %v, want CannotVerifyCopySource", err)
+	}
+	if status, code := refused.RawResponse.Header.Get("x-ms-copy-source-status-code"), refused.RawResponse.Header.Get("x-ms-copy-source-error-code"); status != "404" || code != string(bloberror.BlobNotFound) {
+		t.Errorf("the source's refusal was named %q %q, want 404 BlobNotFound", status, code)
 	}
 
 	server.SetPendingCopyPolls(2)

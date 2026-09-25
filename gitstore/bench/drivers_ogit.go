@@ -26,7 +26,8 @@ type ogitDriver struct {
 	client *awss3.Client
 }
 
-func (d *ogitDriver) Name() string { return "ogit" }
+func (d *ogitDriver) Name() string     { return "ogit" }
+func (d *ogitDriver) Stores() []string { return []string{storeS3} }
 func (d *ogitDriver) Describe() string {
 	return "Labbs/ogit S3 Storer: one S3 object per git object and ref, no packs, no cache"
 }

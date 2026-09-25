@@ -3,11 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"net/url"
 	"os/exec"
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/gitstore/objstore"
 	"github.com/e6qu/bleephub/gitstore/s3fake"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -61,7 +64,7 @@ func TestMeterCountsWhatTheStoreCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	meter := NewMeter(target)
+	meter := NewMeter(target, storeS3)
 	t.Cleanup(meter.Close)
 
 	endpoint, err := url.Parse(meter.URL())
@@ -83,7 +86,7 @@ func TestMeterCountsWhatTheStoreCounts(t *testing.T) {
 	if _, err := client.Client.PutObject(ctx, "bucket", "dir/a", bytes.NewReader(body), int64(len(body)), minio.PutObjectOptions{}); err != nil {
 		t.Fatalf("put: %v", err)
 	}
-	if _, err := client.Client.StatObject(ctx, "bucket", "dir/a", minio.StatObjectOptions{}); err != nil {
+	if _, err := client.StatObject(ctx, "bucket", "dir/a", minio.StatObjectOptions{}); err != nil {
 		t.Fatalf("head: %v", err)
 	}
 	ranged := minio.GetObjectOptions{}
@@ -109,7 +112,7 @@ func TestMeterCountsWhatTheStoreCounts(t *testing.T) {
 	if _, err := client.ListObjectsV2("bucket", "dir/", "", "", "", 1000); err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if err := client.Client.RemoveObject(ctx, "bucket", "dir/b", minio.RemoveObjectOptions{}); err != nil {
+	if err := client.RemoveObject(ctx, "bucket", "dir/b", minio.RemoveObjectOptions{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -140,51 +143,56 @@ func TestEveryDriverCompletesEveryScenario(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	fake := s3fake.New()
-	t.Cleanup(fake.Close)
-	target, err := url.Parse(fake.URL())
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	meter := NewMeter(target)
-	t.Cleanup(meter.Close)
-
 	selected := map[string]bool{}
 	for _, name := range scenarioOrder {
 		selected[name] = true
 	}
-	for _, name := range storerDriverNames() {
-		t.Run(name, func(t *testing.T) {
+	for _, store := range everyStore {
+		for _, name := range storerDriverNames() {
 			driver, err := newStorerDriver(name)
 			if err != nil {
 				t.Fatalf("driver: %v", err)
 			}
-			env := Env{
-				Endpoint: meter.URL(), Bucket: "bucket", Region: "us-east-1",
-				AccessKey: "fake", SecretKey: "fake", Prefix: "test-" + name, TempDir: t.TempDir(),
+			if !reaches(driver.Stores(), store) {
+				continue
 			}
-			if err := driver.Setup(context.Background(), env); err != nil {
-				t.Fatalf("setup: %v", err)
-			}
-			t.Cleanup(func() { _ = driver.Close() })
+			t.Run(store+"/"+name, func(t *testing.T) {
+				env := Env{Store: store, Bucket: "bucket", Region: "us-east-1", Prefix: "test-" + name, TempDir: t.TempDir()}
+				server, err := startFake(&env)
+				if err != nil {
+					t.Fatalf("fake: %v", err)
+				}
+				t.Cleanup(server.close)
+				target, err := url.Parse(server.url)
+				if err != nil {
+					t.Fatalf("parse: %v", err)
+				}
+				meter := NewMeter(&url.URL{Scheme: target.Scheme, Host: target.Host}, store)
+				t.Cleanup(meter.Close)
+				env.Endpoint = meter.URL() + target.Path
+				if err := driver.Setup(context.Background(), env); err != nil {
+					t.Fatalf("setup: %v", err)
+				}
+				t.Cleanup(func() { _ = driver.Close() })
 
-			r := &runner{
-				driver: driver, meter: meter, workload: workload, repo: "bench/repo",
-				parallel: 2, probes: 16, selected: selected,
-			}
-			ran := map[string]bool{}
-			for _, result := range r.execute(context.Background()) {
-				if result.Error != "" {
-					t.Errorf("%s: %s", result.Scenario, result.Error)
+				r := &runner{
+					driver: driver, meter: meter, workload: workload, repo: "bench/repo",
+					parallel: 2, probes: 16, selected: selected,
 				}
-				ran[result.Scenario] = true
-			}
-			for _, scenario := range []string{scenarioPushInitial, scenarioCloneCold, scenarioPushIncremental, scenarioFetch, scenarioCloneParallel} {
-				if !ran[scenario] {
-					t.Errorf("scenario %s did not run", scenario)
+				ran := map[string]bool{}
+				for _, result := range r.execute(context.Background()) {
+					if result.Error != "" {
+						t.Errorf("%s: %s", result.Scenario, result.Error)
+					}
+					ran[result.Scenario] = true
 				}
-			}
-		})
+				for _, scenario := range []string{scenarioPushInitial, scenarioCloneCold, scenarioPushIncremental, scenarioFetch, scenarioCloneParallel} {
+					if !ran[scenario] {
+						t.Errorf("scenario %s did not run", scenario)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -203,7 +211,7 @@ func TestTheGitLevelDrivesStockGitAndVerifiesWhatComesBack(t *testing.T) {
 	fake := s3fake.New()
 	t.Cleanup(fake.Close)
 	target, _ := url.Parse(fake.URL())
-	meter := NewMeter(target)
+	meter := NewMeter(target, storeS3)
 	t.Cleanup(meter.Close)
 	env := Env{Endpoint: meter.URL(), Bucket: "bucket", Region: "us-east-1",
 		AccessKey: "fake", SecretKey: "fake", Prefix: "git-level", TempDir: t.TempDir()}
@@ -284,5 +292,93 @@ func TestACustomRemoteNeedsARepositoryPlaceholder(t *testing.T) {
 	got, err := remote.Remote(context.Background(), "o/r")
 	if err != nil || got != "s3+http://127.0.0.1:9000/b/p/o/r?region=eu-west-1" {
 		t.Errorf("expanded template = %q, %v", got, err)
+	}
+}
+
+// TestTheMeterClassifiesEveryStoresRequests drives one of each operation
+// through the objstore driver of each store and checks the meter billed each
+// to the S3 operation it does the work of.
+func TestTheMeterClassifiesEveryStoresRequests(t *testing.T) {
+	for _, store := range []string{storeAzure, storeGCS} {
+		t.Run(store, func(t *testing.T) {
+			env := Env{Store: store, Bucket: "bucket", TempDir: t.TempDir()}
+			server, err := startFake(&env)
+			if err != nil {
+				t.Fatalf("fake: %v", err)
+			}
+			t.Cleanup(server.close)
+			target, err := url.Parse(server.url)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			meter := NewMeter(&url.URL{Scheme: target.Scheme, Host: target.Host}, store)
+			t.Cleanup(meter.Close)
+			// The smallest piece every store allows, so the large object below goes
+			// in pieces.
+			const piece = 256 << 10
+			bucket, err := env.openBucket(meter.URL()+target.Path, piece)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			ctx := context.Background()
+			put := func(key string, size int) {
+				t.Helper()
+				if _, err := bucket.Put(ctx, key, bytes.NewReader(bytes.Repeat([]byte("x"), size)), int64(size), objstore.Always, nil); err != nil {
+					t.Fatalf("put %s: %v", key, err)
+				}
+			}
+			read := func(body io.ReadCloser, _ objstore.Info, err error) {
+				t.Helper()
+				if err != nil {
+					t.Fatalf("read: %v", err)
+				}
+				_, _ = io.Copy(io.Discard, body)
+				_ = body.Close()
+			}
+
+			put("dir/a", 4096)
+			put("dir/large", 2*piece+1)
+			before := meter.Snapshot()
+			if _, err := bucket.Head(ctx, "dir/a"); err != nil {
+				t.Fatalf("head: %v", err)
+			}
+			read(bucket.Get(ctx, "dir/a"))
+			read(bucket.GetRange(ctx, "dir/a", 0, 100))
+			if _, _, err := bucket.Get(ctx, "dir/missing"); !errors.Is(err, objstore.ErrNotFound) {
+				t.Fatalf("get of a missing key: %v", err)
+			}
+			if err := bucket.Copy(ctx, "dir/a", "dir/b"); err != nil {
+				t.Fatalf("copy: %v", err)
+			}
+			if err := bucket.List(ctx, "dir/", func(objstore.Entry) error { return nil }); err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			if err := bucket.Delete(ctx, "dir/b"); err != nil {
+				t.Fatalf("delete: %v", err)
+			}
+			if err := bucket.DeleteMany(ctx, []string{"dir/a", "dir/large"}); err != nil {
+				t.Fatalf("bulk delete: %v", err)
+			}
+			after := meter.Snapshot()
+
+			if before.Multipart == 0 || before.Put != 1 {
+				t.Errorf("uploads: %d whole and %d pieces, want 1 whole and the large object in pieces", before.Put, before.Multipart)
+			}
+			got := s3fake.Counts{
+				Get: after.Get - before.Get, GetRanged: after.GetRanged - before.GetRanged, Head: after.Head - before.Head,
+				Put: after.Put - before.Put, List: after.List - before.List, Delete: after.Delete - before.Delete,
+				Copy: after.Copy - before.Copy, Multipart: after.Multipart - before.Multipart,
+				NotFoundGet: after.NotFoundGet - before.NotFoundGet,
+			}
+			want := s3fake.Counts{Get: 2, GetRanged: 1, Head: 1, Copy: 1, List: 1, Delete: 2, NotFoundGet: 1}
+			if store == storeGCS {
+				// The first read that finds nothing asks, once, whether the bucket
+				// exists, which Cloud Storage answers with a listing.
+				want.List++
+			}
+			if got != want {
+				t.Fatalf("operations = %s, want %s", got, want)
+			}
+		})
 	}
 }

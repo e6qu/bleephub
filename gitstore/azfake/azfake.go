@@ -191,9 +191,13 @@ var (
 	// https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations
 	errNotModified       = &storageError{http.StatusNotModified, "ConditionNotMet", "The condition specified using HTTP conditional header(s) is not met."}
 	errBlobAlreadyExists = &storageError{http.StatusConflict, "BlobAlreadyExists", "The specified blob already exists."}
-	errAuthentication    = &storageError{http.StatusForbidden, "AuthenticationFailed", "Server failed to authenticate the request. Make sure the value of Authorization header is formed correctly including the signature."}
-	errPermission        = &storageError{http.StatusForbidden, "AuthorizationPermissionMismatch", "This request is not authorized to perform this operation using this permission."}
-	errUnsupported       = &storageError{http.StatusBadRequest, "UnsupportedOperation", "azfake does not implement this operation."}
+	// errCannotVerifyCopySource is a copy whose source is not there. The service
+	// names the source's own failure only in headers, which copyBlob sets.
+	// https://learn.microsoft.com/en-us/rest/api/storageservices/status-and-error-codes2#copy-api-error-response
+	errCannotVerifyCopySource = &storageError{http.StatusNotFound, "CannotVerifyCopySource", "The specified blob does not exist."}
+	errAuthentication         = &storageError{http.StatusForbidden, "AuthenticationFailed", "Server failed to authenticate the request. Make sure the value of Authorization header is formed correctly including the signature."}
+	errPermission             = &storageError{http.StatusForbidden, "AuthorizationPermissionMismatch", "This request is not authorized to perform this operation using this permission."}
+	errUnsupported            = &storageError{http.StatusBadRequest, "UnsupportedOperation", "azfake does not implement this operation."}
 )
 
 type errorBody struct {
@@ -600,7 +604,9 @@ func (f *Server) copyBlob(w http.ResponseWriter, r *http.Request, held *containe
 	}
 	from, ok := held.blobs[sourceName]
 	if !ok {
-		return errBlobNotFound
+		w.Header().Set("x-ms-copy-source-status-code", strconv.Itoa(http.StatusNotFound))
+		w.Header().Set("x-ms-copy-source-error-code", errBlobNotFound.code)
+		return errCannotVerifyCopySource
 	}
 	metadata := map[string]string{}
 	for name, value := range from.metadata {

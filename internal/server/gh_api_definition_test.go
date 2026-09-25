@@ -795,6 +795,7 @@ var dispatchCoveredOperations = map[string]bool{
 	"GET /repos/{}/{}/issues/{}/comments":                 true,
 	"GET /repos/{}/{}/issues/{}/dependencies/blocked_by":  true,
 	"GET /repos/{}/{}/issues/{}/dependencies/blocking":    true,
+	"GET /repos/{}/{}/issues/{}/relates_to":               true,
 	"GET /repos/{}/{}/issues/{}/events":                   true,
 	"GET /repos/{}/{}/issues/{}/issue-field-values":       true,
 	"GET /repos/{}/{}/issues/{}/labels":                   true,

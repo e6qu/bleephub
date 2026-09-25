@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/e6qu/bleephub/gitstore"
 )
@@ -25,7 +24,8 @@ type gitstoreDriver struct {
 	store *gitstore.Store
 }
 
-func (d *gitstoreDriver) Name() string { return "gitstore" }
+func (d *gitstoreDriver) Name() string     { return "gitstore" }
+func (d *gitstoreDriver) Stores() []string { return everyStore }
 func (d *gitstoreDriver) Describe() string {
 	return "git's layout in the bucket, read by a native storer; ranged pack reads, local pack cache, membership index, compaction"
 }
@@ -44,17 +44,20 @@ func (d *gitstoreDriver) newStore(ctx context.Context) (*gitstore.Store, error) 
 	if err != nil {
 		return nil, err
 	}
-	return gitstore.OpenS3(ctx, d.env.Endpoint, d.env.Bucket, d.env.Prefix+"/gitstore", gitstore.Options{
-		Region:      d.env.Region,
-		Credentials: credentials.NewStaticV4(d.env.AccessKey, d.env.SecretKey, ""),
-		CacheDir:    cacheDir,
+	opts := gitstore.Options{
+		CacheDir: cacheDir,
 		// The harness decides when maintenance runs, so that its cost lands in
 		// the maintenance phase and not in whichever push crossed the trigger.
 		CompactAfterPacks: -1,
 		ChunkBytes:        gitstoreTuning.ChunkBytes,
 		MultipartBytes:    gitstoreTuning.MultipartBytes,
 		MemoryCacheBytes:  gitstoreTuning.MemoryCacheBytes,
-	})
+	}
+	bucket, err := d.env.openBucket(d.env.Endpoint, opts.UploadPieceBytes())
+	if err != nil {
+		return nil, err
+	}
+	return gitstore.Open(bucket, d.env.Prefix+"/gitstore", opts), nil
 }
 
 func (d *gitstoreDriver) Open(ctx context.Context, repo string, cold bool) (storer.Storer, error) {
