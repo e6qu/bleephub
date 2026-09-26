@@ -53,7 +53,11 @@ func NewMeter(target *url.URL, store string) *Meter {
 		FlushInterval: -1,
 		// A request that fails here is never counted, so say which one it was.
 		ErrorHandler: func(w http.ResponseWriter, request *http.Request, err error) {
-			log.Printf("meter: %s %s: %v", request.Method, request.URL.Path, err)
+			// Escape the line breaks a path can carry (as %0A), so one request
+			// cannot forge a second log line.
+			method := strings.ReplaceAll(strings.ReplaceAll(request.Method, "\n", `\n`), "\r", `\r`)
+			path := strings.ReplaceAll(strings.ReplaceAll(request.URL.Path, "\n", `\n`), "\r", `\r`)
+			log.Printf("meter: %s %s: %v", method, path, err)
 			w.WriteHeader(http.StatusBadGateway)
 		},
 	}
