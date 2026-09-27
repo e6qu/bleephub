@@ -326,6 +326,58 @@ What it says:
   replica that has served the repository revalidates the manifest with a
   conditional read and is answered "unchanged".
 
+### Which object store
+
+bleephub on each store it can run on, with everything else fixed: four S3
+servers, each in its own Firecracker microVM on one Scaleway host, and the
+three sockerless-cloud simulators, one for each kind of store bleephub has a
+driver for. The benchmark ran on the same host. Each row is the median of three
+runs, with 5 ms injected into every request; each cell is the time and the
+number of object-store requests. 3,000 files, 50 commits then 15 single-commit
+pushes, 6,624 objects, a 6.1 MiB initial pack:
+`go run . -level git -git-drivers bleephub -endpoint <store> -latency 5ms -files 3000 -file-lines 200 -commits 50 -pushes 15 -changes 25 -runs 3 -parallel 8`
+(with `-store azure` or `-store gcs` for those two simulators).
+
+The stores: [versitygw](https://github.com/versity/versitygw) v1.8.0, silo (pgsty's MinIO build, `RELEASE.2026-09-16T00-00-00Z`),
+[RustFS](https://github.com/rustfs/rustfs) 1.0.0,
+[SeaweedFS](https://github.com/seaweedfs/seaweedfs) 4.47, and
+[sockerless-cloud](https://github.com/e6qu/sockerless-cloud) 0.33.0's Amazon
+S3, Azure Blob Storage and Cloud Storage simulators. Every one of them passes
+the objstore conformance suite (`objstore.Conform` and `objstoretest.Run`)
+before it is measured.
+
+| Scenario | versitygw | silo | RustFS | SeaweedFS | AWS sim (S3) | Azure sim (Blob) | GCP sim (GCS) |
+|---|---|---|---|---|---|---|---|
+| `push-initial` | 1.92 s, 5 | 1.95 s, 5 | 2.08 s, 5 | 1.93 s, 5 | 2.48 s, 5 | 2.53 s, 5 | 2.04 s, 5 |
+| `replica-start` | 0.52 s, 27 | 0.52 s, 27 | 0.53 s, 27 | 0.52 s, 27 | 0.53 s, 27 | 0.43 s, 27 | 0.52 s, 31 |
+| `clone-cold` | 0.60 s, 4 | 0.63 s, 4 | 0.63 s, 4 | 0.63 s, 4 | 1.15 s, 5 | 1.08 s, 5 | 0.56 s, 4 |
+| `clone-warm` | 0.45 s, 1 | 0.46 s, 1 | 0.48 s, 1 | 0.51 s, 1 | 0.46 s, 1 | 0.46 s, 1 | 0.45 s, 1 |
+| `push-incremental` (15 pushes) | 1.59 s, 53 | 1.53 s, 53 | 1.61 s, 53 | 1.58 s, 53 | 1.69 s, 48 | 1.52 s, 48 | 1.78 s, 53 |
+| `fetch-incremental` | 0.38 s, 1 | 0.37 s, 1 | 0.36 s, 1 | 0.40 s, 1 | 0.36 s, 6 | 0.38 s, 6 | 0.41 s, 1 |
+| `clone-parallel` (8 clones) | 2.22 s, 20 | 2.11 s, 20 | 2.24 s, 20 | 2.10 s, 20 | 2.57 s, 16 | 2.54 s, 16 | 2.07 s, 20 |
+
+What it says:
+
+- **The four S3 servers are interchangeable here.** Their rows agree to within
+  the run-to-run noise, request for request, so the choice between them is
+  about operating them, not about bleephub's speed. The same run without the
+  injected latency tells the same story.
+- **The Cloud Storage simulator behaves like the S3 servers.** Its
+  `replica-start` makes 31 requests, not 27: its driver's startup makes four
+  more metadata reads and two more listings, and two fewer reads of a body.
+- **The AWS and Azure simulators are still slower where a body is read or
+  written.** A cold clone takes about 1.1 s on them, against 0.6 s elsewhere,
+  with the same requests and the same 6.3 MiB. A push's compaction does not
+  finish inside `push-incremental` on them, so its writes land in
+  `fetch-incremental` (6 requests instead of 1), and the eight parallel clones
+  then read fewer, larger packs. Both simulators keep each object's body inside
+  its database row, which the Cloud Storage simulator does not.
+- **Listing was the first bottleneck.** Before sockerless-cloud 0.33.0, a
+  listing on the AWS simulator read every object of every bucket: its
+  `replica-start` took 4.0 s, and on Azure 1.3 s. The same measurement found
+  it, and 0.33.0 lists by key range; both now start in the same time as the
+  S3 servers.
+
 ### A larger repository
 
 The tables above are small enough that the object store dominates. At 20,000
