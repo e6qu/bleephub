@@ -54,56 +54,59 @@ type config struct {
 	keep       bool
 }
 
-func parseFlags() (config, error) {
+func parseFlags(args []string) (config, error) {
+	flags := flag.NewFlagSet("bench", flag.ExitOnError)
 	var cfg config
 	var drivers, gitDrivers, scenarios string
-	flag.StringVar(&cfg.level, "level", levelStorer, "what to measure: storer (in-process go-git Storers), git (the stock git client against remotes), or both")
-	flag.StringVar(&gitDrivers, "git-drivers", "bleephub,walgit,git-remote-s3,git-remote-object-store,git-local", "comma-separated git-level drivers; one whose helper is not installed is skipped")
-	flag.Var(&cfg.remotes, "remote", "add a git-level driver as name=url-template; placeholders {endpoint} {host} {bucket} {prefix} {region} {repo}; repeatable")
-	flag.StringVar(&bleephubBinary, "bleephub-bin", "", "bleephub server binary for the bleephub driver; empty builds it from this checkout")
-	flag.StringVar(&walgitBinary, "walgit-bin", "", "walgit server binary for the walgit driver; empty looks it up on PATH")
-	flag.StringVar(&drivers, "drivers", "gitstore,ogit,gogit-disk,gogit-memory", "comma-separated drivers; the first is the baseline of the \"vs first\" column")
-	flag.StringVar(&scenarios, "scenarios", "all", "comma-separated scenarios to report, or all")
-	flag.IntVar(&cfg.spec.Files, "files", 1000, "files in the generated tree")
-	flag.IntVar(&cfg.spec.Commits, "commits", 30, "commits in the initial push")
-	flag.IntVar(&cfg.spec.Pushes, "pushes", 10, "single-commit pushes after it")
-	flag.IntVar(&cfg.spec.Changes, "changes", 8, "files each commit rewrites")
-	flag.IntVar(&cfg.spec.FileLines, "file-lines", 0, "scale of each file, in function definitions (default 80); raise it for packs that span read extents or need multipart upload")
-	flag.Uint64Var(&cfg.spec.Seed, "seed", 1, "workload seed")
-	flag.Int64Var(&gitstoreTuning.ChunkBytes, "gitstore-chunk-bytes", 0, "gitstore driver: pack read extent size (default 4 MiB)")
-	flag.Int64Var(&gitstoreTuning.MultipartBytes, "gitstore-multipart-bytes", 0, "gitstore driver: pack size above which a pack is uploaded in parts, and the size of the parts (default 64 MiB, at least 5 MiB)")
-	flag.Int64Var(&gitstoreTuning.MemoryCacheBytes, "gitstore-memory-cache-bytes", 0, "gitstore driver: in-memory pack cache budget (default 256 MiB; negative disables)")
-	flag.DurationVar(&cfg.latency, "latency", 0, "delay injected into every object-store request, standing in for a remote region (try 5ms)")
-	flag.IntVar(&cfg.runs, "runs", 3, "times to run each driver; the table reports medians")
-	flag.IntVar(&cfg.parallel, "parallel", 8, "concurrent clones in the clone-parallel scenario")
-	flag.IntVar(&cfg.refs, "refs", 200, "extra branches and tags in the refs-create and refs-advertise scenarios; 0 skips them")
-	flag.IntVar(&cfg.probes, "probes", 1000, "absent objects asked about in the probe-absent scenario")
-	flag.StringVar(&cfg.store, "store", storeS3, "kind of object store: s3 (credentials from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY), azure (AZURE_STORAGE_ACCOUNT/AZURE_STORAGE_KEY) or gcs (a service-account key file named by GOOGLE_APPLICATION_CREDENTIALS)")
-	flag.StringVar(&cfg.endpoint, "endpoint", "", "the store's endpoint URL — on Azure the blob service URL, account included; empty runs an in-process fake of the store")
-	flag.StringVar(&cfg.bucket, "bucket", "gitstore-bench", "bucket, or Azure container, to use; created if missing on S3 and Azure, and required to exist on Cloud Storage")
-	flag.StringVar(&cfg.region, "region", "us-east-1", "region to sign for")
-	flag.StringVar(&cfg.jsonPath, "json", "", "write the full report as JSON to this file")
-	flag.StringVar(&cfg.benchPath, "benchfmt", "", "write Go benchmark lines to this file, for benchstat")
-	flag.BoolVar(&cfg.keep, "keep", false, "leave this run's objects in the bucket")
-	flag.Usage = func() {
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "usage: bench [flags]\n\n-level storer drivers (-drivers):\n")
+	flags.StringVar(&cfg.level, "level", levelStorer, "what to measure: storer (in-process go-git Storers), git (the stock git client against remotes), or both")
+	flags.StringVar(&gitDrivers, "git-drivers", "bleephub,walgit,git-remote-s3,git-remote-object-store,git-local", "comma-separated git-level drivers; one whose helper is not installed is skipped")
+	flags.Var(&cfg.remotes, "remote", "add a git-level driver as name=url-template; placeholders {endpoint} {host} {bucket} {prefix} {region} {repo}; repeatable")
+	flags.StringVar(&bleephubBinary, "bleephub-bin", "", "bleephub server binary for the bleephub driver; empty builds it from this checkout")
+	flags.StringVar(&walgitBinary, "walgit-bin", "", "walgit server binary for the walgit driver; empty looks it up on PATH")
+	flags.StringVar(&drivers, "drivers", "gitstore,ogit,gogit-disk,gogit-memory", "comma-separated drivers; the first is the baseline of the \"vs first\" column")
+	flags.StringVar(&scenarios, "scenarios", "all", "comma-separated scenarios to report, or all")
+	flags.IntVar(&cfg.spec.Files, "files", 1000, "files in the generated tree")
+	flags.IntVar(&cfg.spec.Commits, "commits", 30, "commits in the initial push")
+	flags.IntVar(&cfg.spec.Pushes, "pushes", 10, "single-commit pushes after it")
+	flags.IntVar(&cfg.spec.Changes, "changes", 8, "files each commit rewrites")
+	flags.IntVar(&cfg.spec.FileLines, "file-lines", 0, "scale of each file, in function definitions (default 80); raise it for packs that span read extents or need multipart upload")
+	flags.Uint64Var(&cfg.spec.Seed, "seed", 1, "workload seed")
+	flags.Int64Var(&gitstoreTuning.ChunkBytes, "gitstore-chunk-bytes", 0, "gitstore driver: pack read extent size (default 4 MiB)")
+	flags.Int64Var(&gitstoreTuning.MultipartBytes, "gitstore-multipart-bytes", 0, "gitstore driver: pack size above which a pack is uploaded in parts, and the size of the parts (default 64 MiB, at least 5 MiB)")
+	flags.Int64Var(&gitstoreTuning.MemoryCacheBytes, "gitstore-memory-cache-bytes", 0, "gitstore driver: in-memory pack cache budget (default 256 MiB; negative disables)")
+	flags.DurationVar(&cfg.latency, "latency", 0, "delay injected into every object-store request, standing in for a remote region (try 5ms)")
+	flags.IntVar(&cfg.runs, "runs", 3, "times to run each driver; the table reports medians")
+	flags.IntVar(&cfg.parallel, "parallel", 8, "concurrent clones in the clone-parallel scenario")
+	flags.IntVar(&cfg.refs, "refs", 200, "extra branches and tags in the refs-create and refs-advertise scenarios; 0 skips them")
+	flags.IntVar(&cfg.probes, "probes", 1000, "absent objects asked about in the probe-absent scenario")
+	flags.StringVar(&cfg.store, "store", storeS3, "kind of object store: s3 (credentials from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY), azure (AZURE_STORAGE_ACCOUNT/AZURE_STORAGE_KEY) or gcs (a service-account key file named by GOOGLE_APPLICATION_CREDENTIALS)")
+	flags.StringVar(&cfg.endpoint, "endpoint", "", "the store's endpoint URL — on Azure the blob service URL, account included; empty runs an in-process fake of the store")
+	flags.StringVar(&cfg.bucket, "bucket", "gitstore-bench", "bucket, or Azure container, to use; created if missing on S3 and Azure, and required to exist on Cloud Storage")
+	flags.StringVar(&cfg.region, "region", "us-east-1", "region to sign for")
+	flags.StringVar(&cfg.jsonPath, "json", "", "write the full report as JSON to this file")
+	flags.StringVar(&cfg.benchPath, "benchfmt", "", "write Go benchmark lines to this file, for benchstat")
+	flags.BoolVar(&cfg.keep, "keep", false, "leave this run's objects in the bucket")
+	flags.Usage = func() {
+		_, _ = fmt.Fprintf(flags.Output(), "usage: bench [flags]\n\n-level storer drivers (-drivers):\n")
 		for _, name := range storerDriverNames() {
 			driver, _ := newStorerDriver(name)
-			_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
+			_, _ = fmt.Fprintf(flags.Output(), "  %-24s %s\n", name, driver.Describe())
 		}
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "\n-level git drivers (-git-drivers):\n")
+		_, _ = fmt.Fprintf(flags.Output(), "\n-level git drivers (-git-drivers):\n")
 		for _, name := range remoteDriverNames() {
 			driver, _ := newRemoteDriver(name)
-			_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %-24s %s\n", name, driver.Describe())
+			_, _ = fmt.Fprintf(flags.Output(), "  %-24s %s\n", name, driver.Describe())
 		}
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "\nscenarios, in execution order:\n")
+		_, _ = fmt.Fprintf(flags.Output(), "\nscenarios, in execution order:\n")
 		for _, name := range everyScenario() {
-			_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  %-22s %s\n", name, scenarioNotes[name])
+			_, _ = fmt.Fprintf(flags.Output(), "  %-22s %s\n", name, scenarioNotes[name])
 		}
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "\nflags:\n")
-		flag.PrintDefaults()
+		_, _ = fmt.Fprintf(flags.Output(), "\nflags:\n")
+		flags.PrintDefaults()
 	}
-	flag.Parse()
+	if err := flags.Parse(args); err != nil {
+		return cfg, err
+	}
 
 	switch cfg.level {
 	case levelStorer, levelGit, "both":
@@ -148,10 +151,13 @@ func parseFlags() (config, error) {
 	// A driver is measured against the store the run is made against or not at
 	// all: one that keeps its data in another kind of store would be measured
 	// against something else, and reported beside the rest as if it were not.
-	for _, name := range cfg.drivers {
-		driver, _ := newStorerDriver(name)
-		if !reaches(driver.Stores(), cfg.store) {
-			return cfg, fmt.Errorf("storer driver %s keeps its data in %v, not %s: leave it out of -drivers", name, driver.Stores(), cfg.store)
+	// Each list is held to the store only at the level that runs it.
+	if cfg.level != levelGit {
+		for _, name := range cfg.drivers {
+			driver, _ := newStorerDriver(name)
+			if !reaches(driver.Stores(), cfg.store) {
+				return cfg, fmt.Errorf("storer driver %s keeps its data in %v, not %s: leave it out of -drivers", name, driver.Stores(), cfg.store)
+			}
 		}
 	}
 	if cfg.level != levelStorer {
@@ -176,7 +182,7 @@ func main() {
 }
 
 func run() error {
-	cfg, err := parseFlags()
+	cfg, err := parseFlags(os.Args[1:])
 	if err != nil {
 		return err
 	}

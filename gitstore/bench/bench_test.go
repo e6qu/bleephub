@@ -295,6 +295,24 @@ func TestACustomRemoteNeedsARepositoryPlaceholder(t *testing.T) {
 	}
 }
 
+// TestADriverListIsHeldToTheStoreOnlyWhereItRuns pins that a run at one level
+// is not refused over the other level's list: the default -drivers name ogit,
+// which keeps its data only in S3, and a git-level run on Azure or Cloud
+// Storage never runs it.
+func TestADriverListIsHeldToTheStoreOnlyWhereItRuns(t *testing.T) {
+	for _, store := range []string{storeAzure, storeGCS} {
+		if _, err := parseFlags([]string{"-level", levelGit, "-git-drivers", "bleephub", "-store", store}); err != nil {
+			t.Errorf("git-level run on %s was refused over the storer drivers: %v", store, err)
+		}
+		if _, err := parseFlags([]string{"-level", levelStorer, "-store", store}); err == nil {
+			t.Errorf("storer-level run on %s accepted ogit, which keeps its data only in S3", store)
+		}
+		if _, err := parseFlags([]string{"-level", levelGit, "-git-drivers", "walgit", "-store", store}); err == nil {
+			t.Errorf("git-level run on %s accepted walgit, which keeps its data only in S3", store)
+		}
+	}
+}
+
 // TestTheMeterClassifiesEveryStoresRequests drives one of each operation
 // through the objstore driver of each store and checks the meter billed each
 // to the S3 operation it does the work of.

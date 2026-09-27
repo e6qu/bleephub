@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -50,6 +51,15 @@ func NewMeter(target *url.URL, store string) *Meter {
 		// Buffering a response before relaying it would bill a streamed ranged
 		// read as one slow request and hide its time-to-first-byte.
 		FlushInterval: -1,
+		// A request that fails here is never counted, so say which one it was.
+		ErrorHandler: func(w http.ResponseWriter, request *http.Request, err error) {
+			// Escape the line breaks a path can carry (as %0A), so one request
+			// cannot forge a second log line.
+			method := strings.ReplaceAll(strings.ReplaceAll(request.Method, "\n", `\n`), "\r", `\r`)
+			path := strings.ReplaceAll(strings.ReplaceAll(request.URL.Path, "\n", `\n`), "\r", `\r`)
+			log.Printf("meter: %s %s: %v", method, path, err)
+			w.WriteHeader(http.StatusBadGateway)
+		},
 	}
 	meter.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if latency := time.Duration(meter.latency.Load()); latency > 0 {
