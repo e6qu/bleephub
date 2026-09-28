@@ -18,6 +18,7 @@ import {
   ghFetch,
   ghSend,
   authHeaders,
+  apiFetch,
 } from "../api.js";
 import { RelativeTime } from "../components/RelativeTime.js";
 import type { BleephubRepo, GithubMigration, GithubMigrationState } from "../types.js";
@@ -807,11 +808,11 @@ function GeiMigrationDetailDialog({
   migration: GeiRepositoryMigration;
   onClose: () => void;
 }) {
-  // Log is plain text, so read with fetch + authHeaders() rather than ghFetch.
+  // Log is plain text, so read with apiFetch + authHeaders() rather than ghFetch.
   const logQ = useQuery({
     queryKey: ["gei", "log", migration.id],
     queryFn: async () => {
-      const res = await fetch(migration.log_url ?? "", { headers: authHeaders() });
+      const res = await apiFetch(migration.log_url ?? "", { headers: authHeaders() });
       if (!res.ok) {
         throw new Error(`migration log ${res.status}`);
       }

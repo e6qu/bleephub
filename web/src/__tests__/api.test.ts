@@ -79,7 +79,6 @@ import {
   fetchDiscussionCategories,
   fetchCurrentUser,
   fetchRepoDetail,
-  abortPendingRequests,
   isNotFound,
   isForbidden,
   isRateLimited,
@@ -1022,8 +1021,7 @@ describe("per-request cancellation", () => {
 
   it("forwards a real AbortSignal to fetch even without a caller signal", async () => {
     rejectOnAbort();
-    // Swallow the eventual rejection: a later test's sign-out aborts the shared
-    // controller behind this still-in-flight request.
+    // The request never settles; nothing waits on it.
     fetchCurrentUser().catch(() => {});
     const [, init] = mockFetch.mock.calls[0] as [unknown, RequestInit];
     expect(init.signal).toBeInstanceOf(AbortSignal);
@@ -1040,28 +1038,12 @@ describe("per-request cancellation", () => {
     await expect(pending).rejects.toThrow(/aborted/);
   });
 
-  it("still cancels every in-flight request on global sign-out", async () => {
+  it("cancels on the per-request signal alone", async () => {
     rejectOnAbort();
-    const pending = fetchCurrentUser();
-    abortPendingRequests();
-    await expect(pending).rejects.toThrow(/aborted/);
-  });
-
-  it("composes both: either the per-request cancel or sign-out aborts the fetch", async () => {
-    rejectOnAbort();
-
-    // A per-request cancel fires even while sign-out stays quiet.
     const perRequest = new AbortController();
-    const p1 = fetchRepoDetail("admin", "repo", perRequest.signal);
+    const pending = fetchRepoDetail("admin", "repo", perRequest.signal);
     perRequest.abort();
-    await expect(p1).rejects.toThrow(/aborted/);
-
-    // Sign-out fires even while the per-request signal is still live.
-    const live = new AbortController();
-    const p2 = fetchRepoDetail("admin", "repo", live.signal);
-    abortPendingRequests();
-    await expect(p2).rejects.toThrow(/aborted/);
-    expect(live.signal.aborted).toBe(false);
+    await expect(pending).rejects.toThrow(/aborted/);
   });
 });
 

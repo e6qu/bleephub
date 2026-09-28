@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ApiError, createTokenBrowserSession } from "../api.js";
+import { ApiError, apiFetch, createTokenBrowserSession } from "../api.js";
 import { Mark } from "../components/octicons.js";
 import { Button, ErrorBanner } from "../components/ui.js";
 import { BleephubBuildFooter } from "../components/Shell.js";
@@ -36,7 +36,7 @@ export function LoginPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch("/auth/providers");
+        const response = await apiFetch("/auth/providers");
         if (!response.ok) {
           throw new Error(`${response.status} ${response.statusText}`);
         }
@@ -74,7 +74,7 @@ export function LoginPage() {
     setError("");
     setLocalSigningIn(true);
     try {
-      const response = await fetch("/auth/local", {
+      const response = await apiFetch("/auth/local", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ login, password }),
