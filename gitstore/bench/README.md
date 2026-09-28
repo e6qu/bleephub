@@ -341,42 +341,38 @@ pushes, 6,624 objects, a 6.1 MiB initial pack:
 The stores: [versitygw](https://github.com/versity/versitygw) v1.8.0, silo (pgsty's MinIO build, `RELEASE.2026-09-16T00-00-00Z`),
 [RustFS](https://github.com/rustfs/rustfs) 1.0.0,
 [SeaweedFS](https://github.com/seaweedfs/seaweedfs) 4.47, and
-[sockerless-cloud](https://github.com/e6qu/sockerless-cloud) 0.33.0's Amazon
+[sockerless-cloud](https://github.com/e6qu/sockerless-cloud) 0.33.1's Amazon
 S3, Azure Blob Storage and Cloud Storage simulators. Every one of them passes
 the objstore conformance suite (`objstore.Conform` and `objstoretest.Run`)
 before it is measured.
 
 | Scenario | versitygw | silo | RustFS | SeaweedFS | AWS sim (S3) | Azure sim (Blob) | GCP sim (GCS) |
 |---|---|---|---|---|---|---|---|
-| `push-initial` | 1.92 s, 5 | 1.95 s, 5 | 2.08 s, 5 | 1.93 s, 5 | 2.48 s, 5 | 2.53 s, 5 | 2.04 s, 5 |
-| `replica-start` | 0.52 s, 27 | 0.52 s, 27 | 0.53 s, 27 | 0.52 s, 27 | 0.53 s, 27 | 0.43 s, 27 | 0.52 s, 31 |
-| `clone-cold` | 0.60 s, 4 | 0.63 s, 4 | 0.63 s, 4 | 0.63 s, 4 | 1.15 s, 5 | 1.08 s, 5 | 0.56 s, 4 |
-| `clone-warm` | 0.45 s, 1 | 0.46 s, 1 | 0.48 s, 1 | 0.51 s, 1 | 0.46 s, 1 | 0.46 s, 1 | 0.45 s, 1 |
-| `push-incremental` (15 pushes) | 1.59 s, 53 | 1.53 s, 53 | 1.61 s, 53 | 1.58 s, 53 | 1.69 s, 48 | 1.52 s, 48 | 1.78 s, 53 |
-| `fetch-incremental` | 0.38 s, 1 | 0.37 s, 1 | 0.36 s, 1 | 0.40 s, 1 | 0.36 s, 6 | 0.38 s, 6 | 0.41 s, 1 |
-| `clone-parallel` (8 clones) | 2.22 s, 20 | 2.11 s, 20 | 2.24 s, 20 | 2.10 s, 20 | 2.57 s, 16 | 2.54 s, 16 | 2.07 s, 20 |
+| `push-initial` | 2.06 s, 5 | 2.04 s, 5 | 2.20 s, 5 | 2.10 s, 5 | 2.14 s, 5 | 2.20 s, 5 | 2.12 s, 5 |
+| `replica-start` | 0.62 s, 27 | 0.52 s, 27 | 0.52 s, 27 | 0.52 s, 27 | 0.52 s, 27 | 0.42 s, 27 | 0.53 s, 31 |
+| `clone-cold` | 0.61 s, 4 | 0.60 s, 4 | 0.58 s, 4 | 0.59 s, 4 | 0.62 s, 4 | 0.71 s, 4 | 0.61 s, 4 |
+| `clone-warm` | 0.45 s, 1 | 0.45 s, 1 | 0.46 s, 1 | 0.64 s, 1 | 0.48 s, 1 | 0.45 s, 1 | 0.46 s, 1 |
+| `push-incremental` (15 pushes) | 1.60 s, 53 | 1.60 s, 53 | 1.65 s, 53 | 1.60 s, 53 | 1.60 s, 53 | 1.42 s, 53 | 1.65 s, 53 |
+| `fetch-incremental` | 0.37 s, 1 | 0.39 s, 1 | 0.36 s, 1 | 0.40 s, 1 | 0.37 s, 1 | 0.39 s, 1 | 0.40 s, 1 |
+| `clone-parallel` (8 clones) | 2.33 s, 20 | 2.29 s, 20 | 2.15 s, 20 | 2.13 s, 20 | 2.17 s, 20 | 2.15 s, 20 | 2.10 s, 20 |
 
 What it says:
 
-- **The four S3 servers are interchangeable here.** Their rows agree to within
-  the run-to-run noise, request for request, so the choice between them is
-  about operating them, not about bleephub's speed. The same run without the
-  injected latency tells the same story.
-- **The Cloud Storage simulator behaves like the S3 servers.** Its
-  `replica-start` makes 31 requests, not 27: its driver's startup makes four
-  more metadata reads and two more listings, and two fewer reads of a body.
-- **The AWS and Azure simulators are still slower where a body is read or
-  written.** A cold clone takes about 1.1 s on them, against 0.6 s elsewhere,
-  with the same requests and the same 6.3 MiB. A push's compaction does not
-  finish inside `push-incremental` on them, so its writes land in
-  `fetch-incremental` (6 requests instead of 1), and the eight parallel clones
-  then read fewer, larger packs. Both simulators keep each object's body inside
-  its database row, which the Cloud Storage simulator does not.
-- **Listing was the first bottleneck.** Before sockerless-cloud 0.33.0, a
-  listing on the AWS simulator read every object of every bucket: its
-  `replica-start` took 4.0 s, and on Azure 1.3 s. The same measurement found
-  it, and 0.33.0 lists by key range; both now start in the same time as the
-  S3 servers.
+- **All seven are interchangeable here.** Their rows agree to within the
+  run-to-run noise, request for request, so the choice between the S3 servers
+  is about operating them, not about bleephub's speed, and the simulators are
+  a faithful stand-in for them. The same run without the injected latency
+  tells the same story.
+- **The Cloud Storage simulator's `replica-start` makes 31 requests, not 27:**
+  its driver's startup makes four more metadata reads and two more listings,
+  and two fewer reads of a body.
+- **Measuring this is what made the simulators match.** Before
+  sockerless-cloud 0.33.0 a listing on the AWS simulator read every object of
+  every bucket, and its `replica-start` took 4.0 s; before 0.33.1 the AWS and
+  Azure simulators kept each object's bytes inside its database row, so a
+  1 KiB read of a pack cost the whole pack, a cold clone took 1.1 s, and a
+  push's compaction finished a scenario late. Both are fixed, and the rows
+  above are the fixed simulators.
 
 ### A larger repository
 
