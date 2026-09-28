@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -543,8 +544,8 @@ func (s *Server) writeRegistryBlobStream(digest string, r io.Reader, size int64,
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
-	// #nosec G304 -- registryBlobPath accepts only a decoded SHA-256 digest and
-	// joins it beneath the configured package root.
+	// #nosec G304 -- registryBlobPath accepts only a well-formed SHA-256 digest
+	// and joins it beneath the configured package root.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
@@ -564,8 +565,8 @@ func (s *Server) readRegistryBlob(digest string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// #nosec G304 -- registryBlobPath accepts only a decoded SHA-256 digest and
-	// joins it beneath the configured package root.
+	// #nosec G304 -- registryBlobPath accepts only a well-formed SHA-256 digest
+	// and joins it beneath the configured package root.
 	return os.ReadFile(path)
 }
 
@@ -580,11 +581,15 @@ func (s *Server) registryBlobPath(digest string) (string, error) {
 	if algo != "sha256" {
 		return "", fmt.Errorf("unsupported digest algorithm %q", algo)
 	}
-	if _, err := hex.DecodeString(value); err != nil {
+	if !sha256EncodedDigest.MatchString(value) {
 		return "", fmt.Errorf("invalid digest")
 	}
 	return filepath.Join(s.store.PackageDataDir, "registry-blobs", algo, value), nil
 }
+
+// The OCI image specification's descriptor.md: "When the algorithm identifier
+// is sha256, the encoded portion MUST match /[a-f0-9]{64}/."
+var sha256EncodedDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func (s *Server) packageVersionFileData(versionID int, name string) ([]byte, string, bool) {
 	for _, file := range s.store.ListPackageFiles(versionID) {
