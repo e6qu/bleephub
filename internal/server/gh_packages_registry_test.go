@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -289,4 +290,31 @@ func mustRegistryJSON(v interface{}) []byte {
 		panic(err)
 	}
 	return b
+}
+
+// A blob's path is built from its digest, so only the digest shape the OCI
+// image specification allows reaches the filesystem.
+func TestRegistryBlobPathAcceptsOnlyAWellFormedSHA256Digest(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	valid := strings.Repeat("0123456789abcdef", 4)
+	path, err := s.registryBlobPath("sha256:" + valid)
+	if err != nil {
+		t.Fatalf("well-formed digest refused: %v", err)
+	}
+	if want := filepath.Join(s.store.PackageDataDir, "registry-blobs", "sha256", valid); path != want {
+		t.Fatalf("path = %q, want %q", path, want)
+	}
+	for _, digest := range []string{
+		"sha256:" + strings.ToUpper(valid),
+		"sha256:" + valid[:62],
+		"sha256:" + valid + "0",
+		"sha256:../" + valid[3:],
+		"sha512:" + valid + valid,
+		valid,
+	} {
+		if _, err := s.registryBlobPath(digest); err == nil {
+			t.Errorf("registryBlobPath(%q) was accepted", digest)
+		}
+	}
 }
