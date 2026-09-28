@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
-import { ghFetch, ghPostJSON, ghSend } from "../api.js";
+import { beginSignOut, ghFetch, ghPostJSON, ghSend } from "../api.js";
 import { sealSecret } from "../utils/sealedBox.js";
 import {
   addUserEmails,
@@ -2310,6 +2310,7 @@ function DeleteAccountDialog({ login, onClose }: { login: string; onClose: () =>
     mutationFn: () => ghSend("DELETE", `/api/v3/admin/users/${enc(login)}`),
     onSuccess: () => {
       // Account and session are gone: leave via sign-out so cookies/state clear.
+      beginSignOut();
       const form = document.createElement("form");
       form.method = "post";
       form.action = "/auth/logout";

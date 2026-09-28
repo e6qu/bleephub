@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { fetchApps, fetchOAuthApps } from "../api.js";
+import { apiFetch, fetchApps, fetchOAuthApps } from "../api.js";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { PageTitle, Button, Box, CodeBlock, ErrorBanner } from "../components/ui.js";
 import { AuthorizedApplications } from "../components/AuthorizedApplications.js";
@@ -95,7 +95,7 @@ function FlowSimulator() {
       const body = new URLSearchParams();
       body.set("client_id", clientID);
       body.set("scope", scope);
-      const res = await fetch("/login/device/code", {
+      const res = await apiFetch("/login/device/code", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
@@ -120,7 +120,7 @@ function FlowSimulator() {
       body.set("client_id", clientID);
       body.set("grant_type", "urn:ietf:params:oauth:grant-type:device_code");
       body.set("device_code", deviceCode);
-      const res = await fetch("/login/oauth/access_token", {
+      const res = await apiFetch("/login/oauth/access_token", {
         method: "POST",
         headers: {
           Accept: "application/json",

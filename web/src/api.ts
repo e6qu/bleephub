@@ -170,26 +170,30 @@ import type {
 } from "./types.js";
 import { encodeContentsBase64 } from "./utils/contents.js";
 
-// Module-wide AbortController so sign-out (queryClient.cancelQueries) aborts
-// in-flight polls; else they land after the token clears, 401, and log a console
-// error the e2e suite treats as failure. Coarse by design — one per module.
+// Module-wide AbortController that sign-out aborts and never replaces, so every
+// request in flight and every later one fails before it reaches the network.
 let pendingRequests = new AbortController();
 
-/** Aborts every request this module currently has in flight. */
-export function abortPendingRequests(): void {
+/** Ends this page's traffic for the rest of its life. Sign-out continues as a
+ * document navigation through Shauth; a poll or refetch that ran meanwhile would
+ * 401, send the router to the sign-in page, and its redirect would replace that
+ * navigation, leaving the visitor at a fresh sign-in instead of signed out. */
+export function beginSignOut(): void {
   pendingRequests.abort();
-  pendingRequests = new AbortController();
+  clearToken();
 }
 
-/** The single network exit point. A caller signal is combined with the module-wide
- * abort signal, never replacing it, so a per-request deadline never costs the
- * request its sign-out cancellation. */
+/** The single network exit point; `fetch` appears nowhere else in the app. A
+ * caller signal is combined with the module-wide abort signal, never replacing
+ * it, so a per-request deadline never costs the request its sign-out
+ * cancellation. */
 type ApiFetchInit = Omit<RequestInit, "signal" | "body"> & {
   signal?: AbortSignal | null | undefined;
   body?: BodyInit | null | undefined;
 };
 
-function apiFetch(input: RequestInfo | URL, init?: ApiFetchInit): Promise<Response> {
+export function apiFetch(input: RequestInfo | URL, init?: ApiFetchInit): Promise<Response> {
+  if (pendingRequests.signal.aborted) return Promise.reject(pendingRequests.signal.reason);
   const signal = init?.signal
     ? AbortSignal.any([pendingRequests.signal, init.signal])
     : pendingRequests.signal;

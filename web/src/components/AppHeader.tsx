@@ -51,7 +51,7 @@ import {
   ProjectIcon,
   StarIcon,
 } from "./octicons.js";
-import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications, isRateLimited } from "../api.js";
+import { beginSignOut, fetchCurrentUser, fetchNotifications, isRateLimited } from "../api.js";
 import { accountRoute, matchRepoPath, repoRoute } from "../routes.js";
 import { loginPath, useSignedIn } from "../session.js";
 
@@ -358,17 +358,16 @@ export function AppHeader() {
   const submitLogout = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
-    // cancelQueries doesn't abort in-flight polls; abort them for real so they
-    // don't land after the token is gone and 401.
+    // Stop the traffic first: cancelQueries only stops the cache waiting on
+    // requests, and a refetch it provokes must not reach the network.
+    beginSignOut();
     try {
       await queryClient.cancelQueries();
     } catch (err) {
       reportError(err, "Sign-out could not cancel in-flight requests");
     }
-    abortPendingRequests();
-    // Don't clear the cache while mounted — observers resubscribe and race the
-    // token removal with 401s; the form navigation unloads it moments later.
-    clearToken();
+    // Don't clear the cache while mounted — observers resubscribe; the form
+    // navigation unloads it moments later.
     form.submit();
   };
 

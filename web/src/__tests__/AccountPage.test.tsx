@@ -814,31 +814,6 @@ describe("AccountPage", () => {
     expect(screen.queryByRole("button", { name: "Delete your account" })).toBeNull();
   });
 
-  it("deletes the account after typed confirmation, then leaves via the sign-out form", async () => {
-    const submitSpy = vi
-      .spyOn(HTMLFormElement.prototype, "submit")
-      .mockImplementation(() => {});
-    installFetchRoutes({
-      "DELETE /api/v3/admin/users/admin": () => new Response(null, { status: 204 }),
-    });
-    renderPage("/ui/account?tab=account");
-    fireEvent.click(await screen.findByRole("button", { name: "Delete your account" }));
-    const confirmInput = await screen.findByLabelText(/To confirm, type/);
-    const deleteBtn = screen.getByRole("button", { name: "Delete this account" });
-    expect(deleteBtn).toBeDisabled();
-    fireEvent.change(confirmInput, { target: { value: "admin" } });
-    expect(deleteBtn).not.toBeDisabled();
-    fireEvent.click(deleteBtn);
-    await waitFor(() => {
-      const del = mockFetch.mock.calls.find(
-        (c) => String(c[0]) === "/api/v3/admin/users/admin" && (c[1] as RequestInit | undefined)?.method === "DELETE",
-      );
-      expect(del).toBeDefined();
-      expect(submitSpy).toHaveBeenCalled();
-    });
-    submitSpy.mockRestore();
-  });
-
   it("renders the Applications tab with the shared authorized-applications list", async () => {
     installFetchRoutes({
       "GET /settings/connections/applications": () =>

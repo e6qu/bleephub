@@ -17,6 +17,7 @@ import {
   searchUsers,
   SEARCH_PER_PAGE,
   type SearchResultPage,
+  apiFetch,
 } from "../api.js";
 import type {
   BleephubRepo,
@@ -95,7 +96,7 @@ export type CodeSearchItem = GithubSearchCodeItem & {
 // which the api.ts wrappers can't; mirrors their rate-limit ApiError contract.
 async function searchCodeWithMatches(q: string, page: number): Promise<SearchResultPage<CodeSearchItem>> {
   const params = new URLSearchParams({ q, page: String(page), per_page: String(SEARCH_PER_PAGE) });
-  const res = await fetch(`/api/v3/search/code?${params}`, {
+  const res = await apiFetch(`/api/v3/search/code?${params}`, {
     headers: { ...authHeaders(), Accept: "application/vnd.github.text-match+json" },
   });
   if (!res.ok) {
