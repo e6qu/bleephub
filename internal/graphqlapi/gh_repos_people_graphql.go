@@ -24,7 +24,7 @@ type repoCollaborator struct {
 func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 	repoType := types.repository
 	dateTime := s.graphQLStringScalar("DateTime")
-	repositoryPermission := s.sharedEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE")
+	repositoryPermission := s.gqlRepositoryPermission()
 
 	// collaborators
 	collaboratorConnection := s.accountConnectionType(types, "RepositoryCollaborator", types.user, true, graphql.Fields{
@@ -383,6 +383,13 @@ func (s *Resolver) repositoryCollaborators(repo *store.Repo, args map[string]int
 	return out
 }
 
+// gqlRepositoryPermission is GitHub's RepositoryPermission enum. Every field and
+// input naming it uses this one constructor, so no site can declare a value
+// list of its own.
+func (s *Resolver) gqlRepositoryPermission() *graphql.Enum {
+	return s.sharedEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "TRIAGE_PLUS", "WRITE")
+}
+
 // repositoryPermissionEnum maps a stored repository permission onto GitHub's RepositoryPermission enum.
 func repositoryPermissionEnum(permission string) string {
 	switch strings.ToLower(permission) {
@@ -392,6 +399,8 @@ func repositoryPermissionEnum(permission string) string {
 		return "MAINTAIN"
 	case "push", "write":
 		return "WRITE"
+	case "triage_plus":
+		return "TRIAGE_PLUS"
 	case "triage":
 		return "TRIAGE"
 	default:
@@ -403,10 +412,12 @@ func repositoryPermissionEnum(permission string) string {
 func repositoryPermissionRank(permission string) int {
 	switch permission {
 	case "ADMIN":
-		return 5
+		return 6
 	case "MAINTAIN":
-		return 4
+		return 5
 	case "WRITE":
+		return 4
+	case "TRIAGE_PLUS":
 		return 3
 	case "TRIAGE":
 		return 2

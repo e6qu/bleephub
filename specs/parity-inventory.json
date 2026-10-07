@@ -63,7 +63,7 @@
       },
       {
         "event": "deployment",
-        "line": 159,
+        "line": 163,
         "producer": "emitWebhookEvent",
         "source": "internal/server/graphql_seams.go"
       },
@@ -81,7 +81,7 @@
       },
       {
         "event": "deployment_status",
-        "line": 164,
+        "line": 168,
         "producer": "emitWebhookEvent",
         "source": "internal/server/graphql_seams.go"
       },
@@ -117,19 +117,19 @@
       },
       {
         "event": "issue_relates_to",
-        "line": 121,
+        "line": 119,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_relates_to.go"
       },
       {
         "event": "issue_relates_to",
-        "line": 124,
+        "line": 122,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_relates_to.go"
       },
       {
         "event": "issue_relates_to",
-        "line": 125,
+        "line": 123,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_relates_to.go"
       },
@@ -231,7 +231,7 @@
       },
       {
         "event": "public",
-        "line": 970,
+        "line": 1003,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -243,19 +243,19 @@
       },
       {
         "event": "pull_request",
-        "line": 174,
+        "line": 197,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pull_merge_async.go"
       },
       {
         "event": "pull_request",
-        "line": 130,
+        "line": 131,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 650,
+        "line": 651,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -273,25 +273,25 @@
       },
       {
         "event": "pull_request_review",
-        "line": 841,
+        "line": 842,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1020,
+        "line": 1021,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1121,
+        "line": 1122,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1198,
+        "line": 1199,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -381,7 +381,7 @@
       },
       {
         "event": "watch",
-        "line": 1382,
+        "line": 1415,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -406,17 +406,17 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 1813,
+      "bleephub_types": 1822,
       "compatibility_gap_count": 9,
-      "implemented_fields": 8360,
-      "official_fields": 8374,
-      "official_types": 1811,
-      "shared_types": 1806,
-      "signature_exact_fields": 8359
+      "implemented_fields": 8378,
+      "official_fields": 8392,
+      "official_types": 1820,
+      "shared_types": 1815,
+      "signature_exact_fields": 8377
     },
-    "introspection_snapshot_sha256": "0802ccfc051fd2d3e654b1bbc67cb6224d5f928f1c72d3d18782085224fe44b6",
+    "introspection_snapshot_sha256": "d64744b991a9cedb0b90ba877ef0f010d32c091df5e3499eff38014df0dc4ecb",
     "official_schema": {
-      "content_sha256": "8ecdb21a5c3affdeaa0e55bd9174536aa6c69cbb61f20ec796085aa1509c95df",
+      "content_sha256": "2e1ddaaa59fcc4f427cfc63b8add318b5268e386b80984eb9fe939204857bc1a",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
     },
     "resolver_files": [
@@ -444,8 +444,9 @@
       "internal/graphqlapi/gh_gists_graphql.go",
       "internal/graphqlapi/gh_git_objects_graphql.go",
       "internal/graphqlapi/gh_git_writes_graphql.go",
+      "internal/graphqlapi/gh_issue_agent_events_graphql.go",
       "internal/graphqlapi/gh_issue_fields_graphql.go",
-      "internal/graphqlapi/gh_issue_rationale_events_graphql.go",
+      "internal/graphqlapi/gh_issue_links_graphql.go",
       "internal/graphqlapi/gh_issues_graphql.go",
       "internal/graphqlapi/gh_labels_graphql.go",
       "internal/graphqlapi/gh_linked_branches_graphql.go",
@@ -531,6 +532,7 @@
       "internal/server/gh_governance_mutations_graphql_test.go",
       "internal/server/gh_graphql_connection_pagination_test.go",
       "internal/server/gh_graphql_node_test.go",
+      "internal/server/gh_issue_links_graphql_test.go",
       "internal/server/gh_issue_pin_transfer_upvote_graphql_test.go",
       "internal/server/gh_issues_graphql_test.go",
       "internal/server/gh_mutations_accounts_graphql_test.go",
@@ -539,6 +541,7 @@
       "internal/server/gh_mutations_pulls_graphql_test.go",
       "internal/server/gh_mutations_surface_graphql_test.go",
       "internal/server/gh_projects_v2_graphql_test.go",
+      "internal/server/gh_repository_permission_graphql_test.go",
       "internal/server/gh_search_repositories_graphql_test.go",
       "internal/server/gh_sweep_graphql_test.go",
       "internal/server/graphql_authz_test.go",
@@ -5015,6 +5018,72 @@
       },
       {
         "method": "GET",
+        "operation_id": "orgs/external-properties-for-repos-get-organization-app-installations",
+        "path": "/orgs/{org}/properties/installations",
+        "statuses": [
+          "200",
+          "403",
+          "404",
+          "422"
+        ]
+      },
+      {
+        "method": "POST",
+        "operation_id": "orgs/external-properties-for-repos-register-organization-app-installation",
+        "path": "/orgs/{org}/properties/installations",
+        "statuses": [
+          "201",
+          "403",
+          "404",
+          "422"
+        ]
+      },
+      {
+        "method": "GET",
+        "operation_id": "orgs/external-properties-for-repos-get-organization-definitions",
+        "path": "/orgs/{org}/properties/installations/schema",
+        "statuses": [
+          "200",
+          "403",
+          "404",
+          "422"
+        ]
+      },
+      {
+        "method": "PATCH",
+        "operation_id": "orgs/external-properties-for-repos-create-or-update-organization-values",
+        "path": "/orgs/{org}/properties/installations/values",
+        "statuses": [
+          "204",
+          "403",
+          "404",
+          "422"
+        ]
+      },
+      {
+        "method": "DELETE",
+        "operation_id": "orgs/external-properties-for-repos-delete-organization-values",
+        "path": "/orgs/{org}/properties/installations/values/{property_name}",
+        "statuses": [
+          "204",
+          "403",
+          "404",
+          "422"
+        ]
+      },
+      {
+        "method": "PATCH",
+        "operation_id": "orgs/external-properties-for-repos-create-or-update-values-for-organization-property",
+        "path": "/orgs/{org}/properties/installations/values/{property_name}",
+        "statuses": [
+          "204",
+          "403",
+          "404",
+          "422"
+        ]
+      },
+      {
+        "method": "GET",
         "operation_id": "orgs/custom-properties-for-repos-get-organization-definitions",
         "path": "/orgs/{org}/properties/schema",
         "statuses": [
@@ -5777,6 +5846,14 @@
         "statuses": [
           "201",
           "403"
+        ]
+      },
+      {
+        "method": "GET",
+        "operation_id": "actions/download-step-logs-for-workflow-run-job",
+        "path": "/repos/{owner}/{repo}/actions/jobs/{job_id}/steps/{step_number}/logs",
+        "statuses": [
+          "302"
         ]
       },
       {
@@ -9637,6 +9714,7 @@
         "path": "/repos/{owner}/{repo}/pulls/comments/{comment_id}",
         "statuses": [
           "200",
+          "304",
           "404"
         ]
       },
@@ -9830,6 +9908,16 @@
           "403",
           "422",
           "503"
+        ]
+      },
+      {
+        "method": "POST",
+        "operation_id": "pulls/rerequest-reviewers",
+        "path": "/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers/rerequest",
+        "statuses": [
+          "201",
+          "403",
+          "422"
         ]
       },
       {
@@ -12665,7 +12753,7 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1500,
+          "documented_operations": 1508,
           "missing_operations": [
             "DELETE /enterprises/{}/actions/policies/{}",
             "DELETE /enterprises/{}/credential-authorizations",
@@ -12684,7 +12772,7 @@
             "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type",
             "PUT /enterprises/{}/actions/policies/{}"
           ],
-          "represented_operations": 1484
+          "represented_operations": 1492
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -13408,7 +13496,7 @@
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 54,
+        "line": 56,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}",
         "source": "internal/server/gh_actions_rest.go"
@@ -13726,6 +13814,12 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
+        "line": 27,
+        "method": "DELETE",
+        "path": "/api/v3/orgs/{org}/properties/installations/values/{property_name}",
+        "source": "internal/server/gh_external_properties.go"
+      },
+      {
         "line": 38,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/properties/schema/{custom_property_name}",
@@ -13840,7 +13934,7 @@
         "source": "internal/server/gh_actions_policies.go"
       },
       {
-        "line": 43,
+        "line": 45,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}",
         "source": "internal/server/gh_actions_rest.go"
@@ -14194,7 +14288,7 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 41,
+        "line": 42,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers",
         "source": "internal/server/gh_pulls_rest.go"
@@ -15850,7 +15944,7 @@
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 48,
+        "line": 50,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runners",
         "source": "internal/server/gh_actions_rest.go"
@@ -15862,13 +15956,13 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 50,
+        "line": 52,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runners/downloads",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 52,
+        "line": 54,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}",
         "source": "internal/server/gh_actions_rest.go"
@@ -16672,6 +16766,18 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
+        "line": 22,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/properties/installations",
+        "source": "internal/server/gh_external_properties.go"
+      },
+      {
+        "line": 24,
+        "method": "GET",
+        "path": "/api/v3/orgs/{org}/properties/installations/schema",
+        "source": "internal/server/gh_external_properties.go"
+      },
+      {
         "line": 30,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/properties/schema",
@@ -16984,6 +17090,12 @@
         "source": "internal/server/gh_actions_rest.go"
       },
       {
+        "line": 35,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}/steps/{step_number}/logs",
+        "source": "internal/server/gh_actions_rest.go"
+      },
+      {
         "line": 84,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub",
@@ -17056,7 +17168,7 @@
         "source": "internal/server/gh_actions_policies.go"
       },
       {
-        "line": 37,
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners",
         "source": "internal/server/gh_actions_rest.go"
@@ -17068,13 +17180,13 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/downloads",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 41,
+        "line": 43,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}",
         "source": "internal/server/gh_actions_rest.go"
@@ -18220,7 +18332,7 @@
         "source": "internal/server/gh_pr_comments.go"
       },
       {
-        "line": 43,
+        "line": 44,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/commits",
         "source": "internal/server/gh_pulls_rest.go"
@@ -19582,6 +19694,18 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
+        "line": 25,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/properties/installations/values",
+        "source": "internal/server/gh_external_properties.go"
+      },
+      {
+        "line": 26,
+        "method": "PATCH",
+        "path": "/api/v3/orgs/{org}/properties/installations/values/{property_name}",
+        "source": "internal/server/gh_external_properties.go"
+      },
+      {
         "line": 32,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/properties/schema",
@@ -20338,19 +20462,19 @@
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 60,
+        "line": 62,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runners/generate-jitconfig",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 56,
+        "line": 58,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runners/registration-token",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 58,
+        "line": 60,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runners/remove-token",
         "source": "internal/server/gh_actions_rest.go"
@@ -20594,6 +20718,12 @@
         "method": "POST",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/views",
         "source": "internal/server/gh_projects_v2_rest.go"
+      },
+      {
+        "line": 23,
+        "method": "POST",
+        "path": "/api/v3/orgs/{org}/properties/installations",
+        "source": "internal/server/gh_external_properties.go"
       },
       {
         "line": 23,
@@ -21133,6 +21263,12 @@
         "line": 40,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "line": 41,
+        "method": "POST",
+        "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers/rerequest",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
@@ -22294,7 +22430,7 @@
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
-        "line": 44,
+        "line": 45,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/pulls/{number}/update-branch",
         "source": "internal/server/gh_pulls_rest.go"
@@ -22450,7 +22586,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "4aeb1b8cc3a8c80ccae2d3b927bae8cb7a35ea73187c833ff72b4d67d450c994"
+    "vendored_openapi_sha256": "012256bd4f5934265c5795187f096596eccd8237363aa82e5aae0d53c791300e"
   },
   "schema_version": 1,
   "sources": {

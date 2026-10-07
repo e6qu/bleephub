@@ -38,6 +38,7 @@ func (s *Server) registerGHPullRoutes() {
 
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers", s.requirePerm(store.ScopePullRequests, store.PermRead, s.handleListRequestedReviewers))
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleRequestReviewers))
+	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers/rerequest", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleRerequestReviewers))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/pulls/{number}/requested_reviewers", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleRemoveRequestedReviewers))
 
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/commits", s.handleListPullRequestCommits)
@@ -1204,6 +1205,17 @@ func (s *Server) handleDismissPRReview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRequestReviewers(w http.ResponseWriter, r *http.Request) {
+	s.requestReviewers(w, r, false)
+}
+
+// handleRerequestReviewers asks reviewers again, typically after they have
+// reviewed: each named reviewer is requested and notified, already requested
+// or not.
+func (s *Server) handleRerequestReviewers(w http.ResponseWriter, r *http.Request) {
+	s.requestReviewers(w, r, true)
+}
+
+func (s *Server) requestReviewers(w http.ResponseWriter, r *http.Request, rerequest bool) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -1259,9 +1271,14 @@ func (s *Server) handleRequestReviewers(w http.ResponseWriter, r *http.Request) 
 	}
 
 	updated := s.store.GetPullRequestByNumber(repo.ID, num)
-	s.pullRequestEmitter(repo, updated, user).emitReviewRequestDelta(
-		pr.RequestedReviewerIDs, updated.RequestedReviewerIDs,
-		pr.RequestedTeamIDs, updated.RequestedTeamIDs)
+	emitter := s.pullRequestEmitter(repo, updated, user)
+	if rerequest {
+		emitter.emitReviewerActions("review_requested", reviewerIDs, teamIDs)
+	} else {
+		emitter.emitReviewRequestDelta(
+			pr.RequestedReviewerIDs, updated.RequestedReviewerIDs,
+			pr.RequestedTeamIDs, updated.RequestedTeamIDs)
+	}
 	updatedJSON := pullRequestSimpleJSON(updated, s.store, s.baseURL(r), repo.FullName)
 	writeJSONCreated(w, jsonStringField(updatedJSON, "url"), updatedJSON)
 }

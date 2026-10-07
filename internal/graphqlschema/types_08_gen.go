@@ -5,6 +5,189 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineProjectV2IssueFieldValues() {
+	r.union("ProjectV2IssueFieldValues", "Possible issue field values for a Project item.", []string{"IssueFieldDateValue", "IssueFieldMultiSelectValue", "IssueFieldNumberValue", "IssueFieldSingleSelectValue", "IssueFieldTextValue"})
+}
+
+func (r *Registry) defineProjectV2Item() {
+	r.object("ProjectV2Item", "An item within a Project.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"content": {
+				Type:        r.t("ProjectV2ItemContent"),
+				Description: "The content of the referenced draft issue, issue, pull request",
+			},
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"creator": {
+				Type:        r.t("Actor"),
+				Description: "The actor who created the item.",
+			},
+			"databaseId": {
+				Type:              r.t("Int"),
+				Description:       "Identifies the primary key from the database.",
+				DeprecationReason: "`databaseId` will be removed because it does not support 64-bit signed integer identifiers. Use `fullDatabaseId` instead. Removal on 2025-04-01 UTC.",
+			},
+			"fieldValueByName": {
+				Type:        r.t("ProjectV2ItemFieldValue"),
+				Description: "The field value of the first project field which matches the 'name' argument that is set on the item.",
+				Args: graphql.FieldConfigArgument{
+					"name": {
+						Type:        graphql.NewNonNull(r.t("String")),
+						Description: "The name of the field to return the field value of",
+					},
+				},
+			},
+			"fieldValues": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2ItemFieldValueConnection")),
+				Description: "The field values that are set on the item.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:         r.t("ProjectV2ItemFieldValueOrder"),
+						DefaultValue: map[string]interface{}{"direction": "ASC", "field": "POSITION"},
+						Description:  "Ordering options for project v2 item field values returned from the connection",
+					},
+				},
+			},
+			"fullDatabaseId": {
+				Type:        r.t("BigInt"),
+				Description: "Identifies the primary key from the database as a BigInt.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the ProjectV2Item object",
+			},
+			"isArchived": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether the item is archived.",
+			},
+			"project": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2")),
+				Description: "The project that contains this item.",
+			},
+			"type": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2ItemType")),
+				Description: "The type of the item.",
+			},
+			"updatedAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was last updated.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineProjectV2ItemArchivedState() {
+	r.enum("ProjectV2ItemArchivedState", "The possible archived states of a `ProjectV2Item`.", graphql.EnumValueConfigMap{
+		"ARCHIVED": {
+			Value:       "ARCHIVED",
+			Description: "A project item that is archived",
+		},
+		"NOT_ARCHIVED": {
+			Value:       "NOT_ARCHIVED",
+			Description: "A project item that is not archived",
+		},
+	})
+}
+
+func (r *Registry) defineProjectV2ItemConnection() {
+	r.object("ProjectV2ItemConnection", "The connection type for ProjectV2Item.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("ProjectV2ItemEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("ProjectV2Item")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineProjectV2ItemContent() {
+	r.union("ProjectV2ItemContent", "Types that can be inside Project Items.", []string{"DraftIssue", "Issue", "PullRequest"})
+}
+
+func (r *Registry) defineProjectV2ItemEdge() {
+	r.object("ProjectV2ItemEdge", "An edge in a connection.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type:        r.t("ProjectV2Item"),
+				Description: "The item at the end of the edge.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineProjectV2ItemFieldDateValue() {
+	r.object("ProjectV2ItemFieldDateValue", "The value of a date field in a Project item.", []string{"Node", "ProjectV2ItemFieldValueCommon"}, func() graphql.Fields {
+		return graphql.Fields{
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"creator": {
+				Type:        r.t("Actor"),
+				Description: "The actor who created the item.",
+			},
+			"databaseId": {
+				Type:        r.t("Int"),
+				Description: "Identifies the primary key from the database.",
+			},
+			"date": {
+				Type:        r.t("Date"),
+				Description: "Date value for the field",
+			},
+			"field": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
+				Description: "The project field that contains this value.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the ProjectV2ItemFieldDateValue object",
+			},
+			"item": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2Item")),
+				Description: "The project item that contains this value.",
+			},
+			"updatedAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was last updated.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineProjectV2ItemFieldIterationValue() {
 	r.object("ProjectV2ItemFieldIterationValue", "The value of an iteration field in a Project item.", []string{"Node", "ProjectV2ItemFieldValueCommon"}, func() graphql.Fields {
 		return graphql.Fields{
@@ -609,6 +792,10 @@ func (r *Registry) defineProjectV2Iteration() {
 			"duration": {
 				Type:        graphql.NewNonNull(r.t("Int")),
 				Description: "The duration of the iteration, in days.",
+			},
+			"id": {
+				Type:        r.t("String"),
+				Description: "The ID of an existing iteration. Include this to preserve the iteration's identity during replacement updates.",
 			},
 			"startDate": {
 				Type:        graphql.NewNonNull(r.t("Date")),
@@ -4638,450 +4825,4 @@ func (r *Registry) definePullRequestTimelineConnection() {
 
 func (r *Registry) definePullRequestTimelineItem() {
 	r.union("PullRequestTimelineItem", "An item in a pull request timeline", []string{"AssignedEvent", "BaseRefDeletedEvent", "BaseRefForcePushedEvent", "ClosedEvent", "Commit", "CommitCommentThread", "CrossReferencedEvent", "DemilestonedEvent", "DeployedEvent", "DeploymentEnvironmentChangedEvent", "HeadRefDeletedEvent", "HeadRefForcePushedEvent", "HeadRefRestoredEvent", "IssueComment", "LabeledEvent", "LockedEvent", "MergedEvent", "MilestonedEvent", "PullRequestReview", "PullRequestReviewComment", "PullRequestReviewThread", "ReferencedEvent", "RenamedTitleEvent", "ReopenedEvent", "ReviewDismissedEvent", "ReviewRequestRemovedEvent", "ReviewRequestedEvent", "SubscribedEvent", "UnassignedEvent", "UnlabeledEvent", "UnlockedEvent", "UnsubscribedEvent", "UserBlockedEvent"})
-}
-
-func (r *Registry) definePullRequestTimelineItemEdge() {
-	r.object("PullRequestTimelineItemEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("PullRequestTimelineItem"),
-				Description: "The item at the end of the edge.",
-			},
-		}
-	})
-}
-
-func (r *Registry) definePullRequestTimelineItems() {
-	r.union("PullRequestTimelineItems", "An item in a pull request timeline", []string{"AddedToMergeQueueEvent", "AddedToProjectEvent", "AddedToProjectV2Event", "AssignedEvent", "AutoMergeDisabledEvent", "AutoMergeEnabledEvent", "AutoRebaseEnabledEvent", "AutoSquashEnabledEvent", "AutomaticBaseChangeFailedEvent", "AutomaticBaseChangeSucceededEvent", "BaseRefChangedEvent", "BaseRefDeletedEvent", "BaseRefForcePushedEvent", "BlockedByAddedEvent", "BlockedByRemovedEvent", "BlockingAddedEvent", "BlockingRemovedEvent", "ClosedEvent", "CommentDeletedEvent", "ConnectedEvent", "ConvertToDraftEvent", "ConvertedFromDraftEvent", "ConvertedNoteToIssueEvent", "ConvertedToDiscussionEvent", "CrossReferencedEvent", "DemilestonedEvent", "DeployedEvent", "DeploymentEnvironmentChangedEvent", "DisconnectedEvent", "HeadRefDeletedEvent", "HeadRefForcePushedEvent", "HeadRefRestoredEvent", "IssueComment", "IssueCommentPinnedEvent", "IssueCommentUnpinnedEvent", "IssueFieldAddedEvent", "IssueFieldChangedEvent", "IssueFieldRemovedEvent", "IssueTypeAddedEvent", "IssueTypeChangedEvent", "IssueTypeRemovedEvent", "LabeledEvent", "LockedEvent", "MarkedAsDuplicateEvent", "MentionedEvent", "MergedEvent", "MilestonedEvent", "MovedColumnsInProjectEvent", "ParentIssueAddedEvent", "ParentIssueRemovedEvent", "PinnedEvent", "ProjectV2ItemStatusChangedEvent", "PullRequestCommit", "PullRequestCommitCommentThread", "PullRequestReview", "PullRequestReviewThread", "PullRequestRevisionMarker", "ReadyForReviewEvent", "ReferencedEvent", "RemovedFromMergeQueueEvent", "RemovedFromProjectEvent", "RemovedFromProjectV2Event", "RenamedTitleEvent", "ReopenedEvent", "ReviewDismissedEvent", "ReviewRequestRemovedEvent", "ReviewRequestedEvent", "SubIssueAddedEvent", "SubIssueRemovedEvent", "SubscribedEvent", "TransferredEvent", "UnassignedEvent", "UnlabeledEvent", "UnlockedEvent", "UnmarkedAsDuplicateEvent", "UnpinnedEvent", "UnsubscribedEvent", "UserBlockedEvent"})
-}
-
-func (r *Registry) definePullRequestTimelineItemsConnection() {
-	r.object("PullRequestTimelineItemsConnection", "The connection type for PullRequestTimelineItems.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"edges": {
-				Type:        graphql.NewList(r.t("PullRequestTimelineItemsEdge")),
-				Description: "A list of edges.",
-			},
-			"filteredCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the count of items after applying `before` and `after` filters.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("PullRequestTimelineItems")),
-				Description: "A list of nodes.",
-			},
-			"pageCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the count of items after applying `before`/`after` filters and `first`/`last`/`skip` slicing.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"totalCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the total count of items in the connection.",
-			},
-			"updatedAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the timeline was last updated.",
-			},
-		}
-	})
-}
-
-func (r *Registry) definePullRequestTimelineItemsEdge() {
-	r.object("PullRequestTimelineItemsEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("PullRequestTimelineItems"),
-				Description: "The item at the end of the edge.",
-			},
-		}
-	})
-}
-
-func (r *Registry) definePullRequestTimelineItemsItemType() {
-	r.enum("PullRequestTimelineItemsItemType", "The possible item types found in a timeline.", graphql.EnumValueConfigMap{
-		"ADDED_TO_MERGE_QUEUE_EVENT": {
-			Value:       "ADDED_TO_MERGE_QUEUE_EVENT",
-			Description: "Represents an 'added_to_merge_queue' event on a given pull request.",
-		},
-		"ADDED_TO_PROJECT_EVENT": {
-			Value:       "ADDED_TO_PROJECT_EVENT",
-			Description: "Represents a 'added_to_project' event on a given issue or pull request.",
-		},
-		"ADDED_TO_PROJECT_V2_EVENT": {
-			Value:       "ADDED_TO_PROJECT_V2_EVENT",
-			Description: "Represents a 'added_to_project_v2' event on a given issue or pull request.",
-		},
-		"ADDED_TO_STACK_EVENT": {
-			Value:       "ADDED_TO_STACK_EVENT",
-			Description: "Represents an 'added_to_stack' event on a given pull request.",
-		},
-		"ARCHIVED_EVENT": {
-			Value:       "ARCHIVED_EVENT",
-			Description: "Represents an 'archived' event on a given pull request.",
-		},
-		"ASSIGNED_EVENT": {
-			Value:       "ASSIGNED_EVENT",
-			Description: "Represents an 'assigned' event on any assignable object.",
-		},
-		"AUTOMATIC_BASE_CHANGE_FAILED_EVENT": {
-			Value:       "AUTOMATIC_BASE_CHANGE_FAILED_EVENT",
-			Description: "Represents a 'automatic_base_change_failed' event on a given pull request.",
-		},
-		"AUTOMATIC_BASE_CHANGE_SUCCEEDED_EVENT": {
-			Value:       "AUTOMATIC_BASE_CHANGE_SUCCEEDED_EVENT",
-			Description: "Represents a 'automatic_base_change_succeeded' event on a given pull request.",
-		},
-		"AUTO_MERGE_DISABLED_EVENT": {
-			Value:       "AUTO_MERGE_DISABLED_EVENT",
-			Description: "Represents a 'auto_merge_disabled' event on a given pull request.",
-		},
-		"AUTO_MERGE_ENABLED_EVENT": {
-			Value:       "AUTO_MERGE_ENABLED_EVENT",
-			Description: "Represents a 'auto_merge_enabled' event on a given pull request.",
-		},
-		"AUTO_REBASE_ENABLED_EVENT": {
-			Value:       "AUTO_REBASE_ENABLED_EVENT",
-			Description: "Represents a 'auto_rebase_enabled' event on a given pull request.",
-		},
-		"AUTO_SQUASH_ENABLED_EVENT": {
-			Value:       "AUTO_SQUASH_ENABLED_EVENT",
-			Description: "Represents a 'auto_squash_enabled' event on a given pull request.",
-		},
-		"BASE_REF_CHANGED_EVENT": {
-			Value:       "BASE_REF_CHANGED_EVENT",
-			Description: "Represents a 'base_ref_changed' event on a given issue or pull request.",
-		},
-		"BASE_REF_DELETED_EVENT": {
-			Value:       "BASE_REF_DELETED_EVENT",
-			Description: "Represents a 'base_ref_deleted' event on a given pull request.",
-		},
-		"BASE_REF_FORCE_PUSHED_EVENT": {
-			Value:       "BASE_REF_FORCE_PUSHED_EVENT",
-			Description: "Represents a 'base_ref_force_pushed' event on a given pull request.",
-		},
-		"BLOCKED_BY_ADDED_EVENT": {
-			Value:       "BLOCKED_BY_ADDED_EVENT",
-			Description: "Represents a 'blocked_by_added' event on a given issue.",
-		},
-		"BLOCKED_BY_REMOVED_EVENT": {
-			Value:       "BLOCKED_BY_REMOVED_EVENT",
-			Description: "Represents a 'blocked_by_removed' event on a given issue.",
-		},
-		"BLOCKING_ADDED_EVENT": {
-			Value:       "BLOCKING_ADDED_EVENT",
-			Description: "Represents a 'blocking_added' event on a given issue.",
-		},
-		"BLOCKING_REMOVED_EVENT": {
-			Value:       "BLOCKING_REMOVED_EVENT",
-			Description: "Represents a 'blocking_removed' event on a given issue.",
-		},
-		"CLOSED_EVENT": {
-			Value:       "CLOSED_EVENT",
-			Description: "Represents a 'closed' event on any `Closable`.",
-		},
-		"COMMENT_DELETED_EVENT": {
-			Value:       "COMMENT_DELETED_EVENT",
-			Description: "Represents a 'comment_deleted' event on a given issue or pull request.",
-		},
-		"CONNECTED_EVENT": {
-			Value:       "CONNECTED_EVENT",
-			Description: "Represents a 'connected' event on a given issue or pull request.",
-		},
-		"CONVERTED_FROM_DRAFT_EVENT": {
-			Value:       "CONVERTED_FROM_DRAFT_EVENT",
-			Description: "Represents a 'converted_from_draft' event on a given issue or pull request.",
-		},
-		"CONVERTED_NOTE_TO_ISSUE_EVENT": {
-			Value:       "CONVERTED_NOTE_TO_ISSUE_EVENT",
-			Description: "Represents a 'converted_note_to_issue' event on a given issue or pull request.",
-		},
-		"CONVERTED_TO_DISCUSSION_EVENT": {
-			Value:       "CONVERTED_TO_DISCUSSION_EVENT",
-			Description: "Represents a 'converted_to_discussion' event on a given issue.",
-		},
-		"CONVERT_TO_DRAFT_EVENT": {
-			Value:       "CONVERT_TO_DRAFT_EVENT",
-			Description: "Represents a 'convert_to_draft' event on a given pull request.",
-		},
-		"CROSS_REFERENCED_EVENT": {
-			Value:       "CROSS_REFERENCED_EVENT",
-			Description: "Represents a mention made by one issue or pull request to another.",
-		},
-		"DEMILESTONED_EVENT": {
-			Value:       "DEMILESTONED_EVENT",
-			Description: "Represents a 'demilestoned' event on a given issue or pull request.",
-		},
-		"DEPLOYED_EVENT": {
-			Value:       "DEPLOYED_EVENT",
-			Description: "Represents a 'deployed' event on a given pull request.",
-		},
-		"DEPLOYMENT_ENVIRONMENT_CHANGED_EVENT": {
-			Value:       "DEPLOYMENT_ENVIRONMENT_CHANGED_EVENT",
-			Description: "Represents a 'deployment_environment_changed' event on a given pull request.",
-		},
-		"DISCONNECTED_EVENT": {
-			Value:       "DISCONNECTED_EVENT",
-			Description: "Represents a 'disconnected' event on a given issue or pull request.",
-		},
-		"HEAD_REF_DELETED_EVENT": {
-			Value:       "HEAD_REF_DELETED_EVENT",
-			Description: "Represents a 'head_ref_deleted' event on a given pull request.",
-		},
-		"HEAD_REF_FORCE_PUSHED_EVENT": {
-			Value:       "HEAD_REF_FORCE_PUSHED_EVENT",
-			Description: "Represents a 'head_ref_force_pushed' event on a given pull request.",
-		},
-		"HEAD_REF_RESTORED_EVENT": {
-			Value:       "HEAD_REF_RESTORED_EVENT",
-			Description: "Represents a 'head_ref_restored' event on a given pull request.",
-		},
-		"ISSUE_COMMENT": {
-			Value:       "ISSUE_COMMENT",
-			Description: "Represents a comment on an Issue.",
-		},
-		"ISSUE_COMMENT_PINNED_EVENT": {
-			Value:       "ISSUE_COMMENT_PINNED_EVENT",
-			Description: "Represents a 'issue_comment_pinned' event on a given issue.",
-		},
-		"ISSUE_COMMENT_UNPINNED_EVENT": {
-			Value:       "ISSUE_COMMENT_UNPINNED_EVENT",
-			Description: "Represents a 'issue_comment_unpinned' event on a given issue.",
-		},
-		"ISSUE_FIELD_ADDED_EVENT": {
-			Value:       "ISSUE_FIELD_ADDED_EVENT",
-			Description: "Represents a 'issue_field_added' event on a given issue.",
-		},
-		"ISSUE_FIELD_CHANGED_EVENT": {
-			Value:       "ISSUE_FIELD_CHANGED_EVENT",
-			Description: "Represents a 'issue_field_changed' event on a given issue.",
-		},
-		"ISSUE_FIELD_REMOVED_EVENT": {
-			Value:       "ISSUE_FIELD_REMOVED_EVENT",
-			Description: "Represents a 'issue_field_removed' event on a given issue.",
-		},
-		"ISSUE_TYPE_ADDED_EVENT": {
-			Value:       "ISSUE_TYPE_ADDED_EVENT",
-			Description: "Represents a 'issue_type_added' event on a given issue.",
-		},
-		"ISSUE_TYPE_CHANGED_EVENT": {
-			Value:       "ISSUE_TYPE_CHANGED_EVENT",
-			Description: "Represents a 'issue_type_changed' event on a given issue.",
-		},
-		"ISSUE_TYPE_REMOVED_EVENT": {
-			Value:       "ISSUE_TYPE_REMOVED_EVENT",
-			Description: "Represents a 'issue_type_removed' event on a given issue.",
-		},
-		"LABELED_EVENT": {
-			Value:       "LABELED_EVENT",
-			Description: "Represents a 'labeled' event on a given issue or pull request.",
-		},
-		"LOCKED_EVENT": {
-			Value:       "LOCKED_EVENT",
-			Description: "Represents a 'locked' event on a given issue or pull request.",
-		},
-		"MARKED_AS_DUPLICATE_EVENT": {
-			Value:       "MARKED_AS_DUPLICATE_EVENT",
-			Description: "Represents a 'marked_as_duplicate' event on a given issue or pull request.",
-		},
-		"MENTIONED_EVENT": {
-			Value:       "MENTIONED_EVENT",
-			Description: "Represents a 'mentioned' event on a given issue or pull request.",
-		},
-		"MERGED_EVENT": {
-			Value:       "MERGED_EVENT",
-			Description: "Represents a 'merged' event on a given pull request.",
-		},
-		"MILESTONED_EVENT": {
-			Value:       "MILESTONED_EVENT",
-			Description: "Represents a 'milestoned' event on a given issue or pull request.",
-		},
-		"MOVED_COLUMNS_IN_PROJECT_EVENT": {
-			Value:       "MOVED_COLUMNS_IN_PROJECT_EVENT",
-			Description: "Represents a 'moved_columns_in_project' event on a given issue or pull request.",
-		},
-		"PARENT_ISSUE_ADDED_EVENT": {
-			Value:       "PARENT_ISSUE_ADDED_EVENT",
-			Description: "Represents a 'parent_issue_added' event on a given issue.",
-		},
-		"PARENT_ISSUE_REMOVED_EVENT": {
-			Value:       "PARENT_ISSUE_REMOVED_EVENT",
-			Description: "Represents a 'parent_issue_removed' event on a given issue.",
-		},
-		"PINNED_EVENT": {
-			Value:       "PINNED_EVENT",
-			Description: "Represents a 'pinned' event on a given issue or pull request.",
-		},
-		"PROJECT_V2_ITEM_STATUS_CHANGED_EVENT": {
-			Value:       "PROJECT_V2_ITEM_STATUS_CHANGED_EVENT",
-			Description: "Represents a 'project_v2_item_status_changed' event on a given issue or pull request.",
-		},
-		"PULL_REQUEST_COMMIT": {
-			Value:       "PULL_REQUEST_COMMIT",
-			Description: "Represents a Git commit part of a pull request.",
-		},
-		"PULL_REQUEST_COMMIT_COMMENT_THREAD": {
-			Value:       "PULL_REQUEST_COMMIT_COMMENT_THREAD",
-			Description: "Represents a commit comment thread part of a pull request.",
-		},
-		"PULL_REQUEST_REVIEW": {
-			Value:       "PULL_REQUEST_REVIEW",
-			Description: "A review object for a given pull request.",
-		},
-		"PULL_REQUEST_REVIEW_THREAD": {
-			Value:       "PULL_REQUEST_REVIEW_THREAD",
-			Description: "A threaded list of comments for a given pull request.",
-		},
-		"PULL_REQUEST_REVISION_MARKER": {
-			Value:       "PULL_REQUEST_REVISION_MARKER",
-			Description: "Represents the latest point in the pull request timeline for which the viewer has seen the pull request's commits.",
-		},
-		"READY_FOR_REVIEW_EVENT": {
-			Value:       "READY_FOR_REVIEW_EVENT",
-			Description: "Represents a 'ready_for_review' event on a given pull request.",
-		},
-		"REFERENCED_EVENT": {
-			Value:       "REFERENCED_EVENT",
-			Description: "Represents a 'referenced' event on a given `ReferencedSubject`.",
-		},
-		"REMOVED_FROM_MERGE_QUEUE_EVENT": {
-			Value:       "REMOVED_FROM_MERGE_QUEUE_EVENT",
-			Description: "Represents a 'removed_from_merge_queue' event on a given pull request.",
-		},
-		"REMOVED_FROM_PROJECT_EVENT": {
-			Value:       "REMOVED_FROM_PROJECT_EVENT",
-			Description: "Represents a 'removed_from_project' event on a given issue or pull request.",
-		},
-		"REMOVED_FROM_PROJECT_V2_EVENT": {
-			Value:       "REMOVED_FROM_PROJECT_V2_EVENT",
-			Description: "Represents a 'removed_from_project_v2' event on a given issue or pull request.",
-		},
-		"REMOVED_FROM_STACK_EVENT": {
-			Value:       "REMOVED_FROM_STACK_EVENT",
-			Description: "Represents a 'removed_from_stack' event on a given pull request.",
-		},
-		"RENAMED_TITLE_EVENT": {
-			Value:       "RENAMED_TITLE_EVENT",
-			Description: "Represents a 'renamed' event on a given issue or pull request",
-		},
-		"REOPENED_EVENT": {
-			Value:       "REOPENED_EVENT",
-			Description: "Represents a 'reopened' event on any `Closable`.",
-		},
-		"REVIEW_DISMISSED_EVENT": {
-			Value:       "REVIEW_DISMISSED_EVENT",
-			Description: "Represents a 'review_dismissed' event on a given issue or pull request.",
-		},
-		"REVIEW_REQUESTED_EVENT": {
-			Value:       "REVIEW_REQUESTED_EVENT",
-			Description: "Represents an 'review_requested' event on a given pull request.",
-		},
-		"REVIEW_REQUEST_REMOVED_EVENT": {
-			Value:       "REVIEW_REQUEST_REMOVED_EVENT",
-			Description: "Represents an 'review_request_removed' event on a given pull request.",
-		},
-		"SUBSCRIBED_EVENT": {
-			Value:       "SUBSCRIBED_EVENT",
-			Description: "Represents a 'subscribed' event on a given `Subscribable`.",
-		},
-		"SUB_ISSUE_ADDED_EVENT": {
-			Value:       "SUB_ISSUE_ADDED_EVENT",
-			Description: "Represents a 'sub_issue_added' event on a given issue.",
-		},
-		"SUB_ISSUE_REMOVED_EVENT": {
-			Value:       "SUB_ISSUE_REMOVED_EVENT",
-			Description: "Represents a 'sub_issue_removed' event on a given issue.",
-		},
-		"TRANSFERRED_EVENT": {
-			Value:       "TRANSFERRED_EVENT",
-			Description: "Represents a 'transferred' event on a given issue or pull request.",
-		},
-		"UNARCHIVED_EVENT": {
-			Value:       "UNARCHIVED_EVENT",
-			Description: "Represents an 'unarchived' event on a given pull request.",
-		},
-		"UNASSIGNED_EVENT": {
-			Value:       "UNASSIGNED_EVENT",
-			Description: "Represents an 'unassigned' event on any assignable object.",
-		},
-		"UNLABELED_EVENT": {
-			Value:       "UNLABELED_EVENT",
-			Description: "Represents an 'unlabeled' event on a given issue or pull request.",
-		},
-		"UNLOCKED_EVENT": {
-			Value:       "UNLOCKED_EVENT",
-			Description: "Represents an 'unlocked' event on a given issue or pull request.",
-		},
-		"UNMARKED_AS_DUPLICATE_EVENT": {
-			Value:       "UNMARKED_AS_DUPLICATE_EVENT",
-			Description: "Represents an 'unmarked_as_duplicate' event on a given issue or pull request.",
-		},
-		"UNPINNED_EVENT": {
-			Value:       "UNPINNED_EVENT",
-			Description: "Represents an 'unpinned' event on a given issue or pull request.",
-		},
-		"UNSUBSCRIBED_EVENT": {
-			Value:       "UNSUBSCRIBED_EVENT",
-			Description: "Represents an 'unsubscribed' event on a given `Subscribable`.",
-		},
-		"USER_BLOCKED_EVENT": {
-			Value:       "USER_BLOCKED_EVENT",
-			Description: "Represents a 'user_blocked' event on a given user.",
-		},
-	})
-}
-
-func (r *Registry) definePullRequestUpdateState() {
-	r.enum("PullRequestUpdateState", "The possible target states when updating a pull request.", graphql.EnumValueConfigMap{
-		"CLOSED": {
-			Value:       "CLOSED",
-			Description: "A pull request that has been closed without being merged.",
-		},
-		"OPEN": {
-			Value:       "OPEN",
-			Description: "A pull request that is still open.",
-		},
-	})
-}
-
-func (r *Registry) definePush() {
-	r.object("Push", "A Git push.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the Push object",
-			},
-			"nextSha": {
-				Type:        r.t("GitObjectID"),
-				Description: "The SHA after the push",
-			},
-			"permalink": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The permalink for this push.",
-			},
-			"previousSha": {
-				Type:        r.t("GitObjectID"),
-				Description: "The SHA before the push",
-			},
-			"pusher": {
-				Type:        graphql.NewNonNull(r.t("Actor")),
-				Description: "The actor who pushed",
-			},
-			"repository": {
-				Type:        graphql.NewNonNull(r.t("Repository")),
-				Description: "The repository that was pushed to",
-			},
-		}
-	})
 }

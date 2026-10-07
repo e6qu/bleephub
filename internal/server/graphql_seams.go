@@ -136,6 +136,10 @@ func (a graphqlSeams) SenderPayload(user *store.User) map[string]interface{} {
 	return senderPayload(user, a.s.publicOrigin())
 }
 
+func (a graphqlSeams) EmitIssueRelatesTo(sender *store.User, action string, repo *store.Repo, issue *store.Issue, relatedRepo *store.Repo, related *store.Issue) {
+	a.s.emitIssueRelatesTo(sender, a.s.publicOrigin(), action, repo, issue, relatedRepo, related)
+}
+
 func (a graphqlSeams) EmitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange) {
 	a.s.issueEmitter(repo, issue, sender).emitChanges(change)
 }

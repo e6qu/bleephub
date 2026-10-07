@@ -156,7 +156,7 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 	assigneeConn := s.sharedAssigneeConnectionType(userType)
 	hovercardType := s.sharedHovercardType()
 
-	// IssueDependenciesSummary — zero: bleephub does not model issue dependencies.
+	// IssueDependenciesSummary counts the blocked-by records Issue.blockedBy and Issue.blocking list.
 	depsSummary := graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueDependenciesSummary",
 		Fields: graphql.Fields{
@@ -183,15 +183,12 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 
 	// PendingIssueSuggestion union + one member. Resolves null (no pending
 	// suggestions), but the union must still be a valid type.
-	pendingLabelSuggestion := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PendingLabelSuggestion",
-		Fields: graphql.Fields{
-			"actor":     &graphql.Field{Type: actor},
-			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"label":     &graphql.Field{Type: s.graphqlTypes.labelType},
-			"rationale": &graphql.Field{Type: graphql.String},
-			"updatedAt": &graphql.Field{Type: dateTime},
-		},
+	pendingLabelSuggestion := s.pendingSuggestionObject("PendingLabelSuggestion", graphql.Fields{
+		"actor":     &graphql.Field{Type: actor},
+		"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+		"label":     &graphql.Field{Type: s.graphqlTypes.labelType},
+		"rationale": &graphql.Field{Type: graphql.String},
+		"updatedAt": &graphql.Field{Type: dateTime},
 	})
 	pendingSuggestionUnion := graphql.NewUnion(graphql.UnionConfig{
 		Name:  "PendingIssueSuggestion",
@@ -367,16 +364,8 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 		},
 		"issueDependenciesSummary": &graphql.Field{
 			Type: graphql.NewNonNull(depsSummary),
-			Resolve: func(graphql.ResolveParams) (interface{}, error) {
-				return map[string]interface{}{
-					"blockedBy": 0, "blocking": 0, "totalBlockedBy": 0, "totalBlocking": 0,
-				}, nil
-			},
-		},
-		"eventRationales": &graphql.Field{
-			Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(s.graphqlTypes.issueEventRationale))),
-			Resolve: func(graphql.ResolveParams) (interface{}, error) {
-				return []interface{}{}, nil
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				return s.issueDependenciesSummary(p), nil
 			},
 		},
 		"pendingSuggestions": &graphql.Field{
@@ -420,8 +409,9 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 				return emptyGQLConnection(), nil
 			},
 		},
-		"blockedBy":       emptyIssueConnField(issueConn),
-		"blocking":        emptyIssueConnField(issueConn),
+		"blockedBy":       s.issueLinksField(issueConn, s.issueDependencyOrderInput(), "DEPENDENCY_ADDED_AT", s.blockedByLinks),
+		"blocking":        s.issueLinksField(issueConn, s.issueDependencyOrderInput(), "DEPENDENCY_ADDED_AT", s.blockingLinks),
+		"relatesTo":       s.issueLinksField(issueConn, s.issueRelatesToOrderInput(), "RELATES_TO_ADDED_AT", s.relatesToLinks),
 		"trackedIssues":   emptyIssueConnField(issueConn),
 		"trackedInIssues": emptyIssueConnField(issueConn),
 		"trackedIssuesCount": &graphql.Field{

@@ -291,8 +291,12 @@ func TestOrgPRCreationCapAndMergeAsyncREST(t *testing.T) {
 	resp = s.put(t, asyncBase, defaultToken, map[string]interface{}{"merge_method": "squash"})
 	requireHTTPStatus(t, resp, http.StatusAccepted)
 	enq := decodeJSON(t, resp)
-	if enq["status"] != "enqueued" {
+	// A direct merge acknowledges "pending"; "enqueued" means a merge queue.
+	if enq["status"] != "pending" {
 		t.Fatalf("merge-async enqueue = %#v", enq)
+	}
+	if bypass, ok := enq["details"].(map[string]interface{})["bypass_rules"].(bool); !ok || bypass {
+		t.Fatalf("merge-async pending details must echo bypass_rules=false: %#v", enq)
 	}
 	mergeUUID, _ := enq["details"].(map[string]interface{})["uuid"].(string)
 	if mergeUUID == "" {

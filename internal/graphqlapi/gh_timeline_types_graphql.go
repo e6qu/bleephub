@@ -32,7 +32,6 @@ type timelineTypeRegistry struct {
 	issueItemType   *graphql.Enum
 	pullItemType    *graphql.Enum
 	updateIntent    *graphql.Object
-	eventRationale  *graphql.Object
 	byName          map[string]*graphql.Object
 	issueMemberSet  map[string]bool
 	pullMemberSet   map[string]bool
@@ -149,17 +148,6 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 			"rationale":  &graphql.Field{Type: graphql.String},
 		},
 	})
-	reg.eventRationale = graphql.NewObject(graphql.ObjectConfig{
-		Name: "IssueEventRationale",
-		Fields: graphql.Fields{
-			"actor":     &graphql.Field{Type: s.graphqlTypes.actor},
-			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"rationale": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
-	// Issue.eventRationales names this same object; memoize it so both reference
-	// one instance rather than minting a duplicate type name.
-	s.graphqlTypes.issueEventRationale = reg.eventRationale
 
 	// Issue and PullRequest claim the Assignable/Closable interfaces at
 	// construction (graphql-go memoizes an object's interface list), so they are
@@ -183,12 +171,11 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 	// the event object types
 	//
 	// declare() adds id/createdAt/actor, registers the type for union and Node
-	// dispatch, and returns it. `intent`/`rationale` describe a Copilot-suggested
-	// update bleephub never records, so they resolve to null.
+	// dispatch, and returns it. `intent` describes a Copilot-suggested update
+	// bleephub never records, so it resolves to null.
 	node := []*graphql.Interface{nodeInterface}
 	nodeAndURL := []*graphql.Interface{nodeInterface, urlLocatable}
 	intent := &graphql.Field{Type: reg.updateIntent}
-	rationale := &graphql.Field{Type: reg.eventRationale}
 	declare := func(name string, interfaces []*graphql.Interface, fields graphql.Fields) *graphql.Object {
 		object := s.timelineEventObject(name, interfaces, fields)
 		reg.byName[name] = object
@@ -263,7 +250,6 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 			"intent":    intent,
 			"label":     &graphql.Field{Type: graphql.NewNonNull(s.gqlLabelType())},
 			"labelable": labelable,
-			"rationale": rationale,
 		}
 	}
 	declare("LabeledEvent", node, labelFields())
@@ -406,10 +392,7 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 	for _, name := range pullRequestTimelineMemberNames {
 		pullMembers = append(pullMembers, reg.byName[name])
 	}
-	// IssueEventRationale.issueEvent's union names ClosedEvent/LabeledEvent/
-	// UnlabeledEvent, now present in reg.byName, plus the six agent-triage
-	// events minted alongside it.
-	s.addIssueEventWithRationaleUnion(reg, dateTime)
+	s.addIssueAgentEvents(reg, dateTime)
 	for _, member := range issueMembers {
 		reg.issueMemberSet[member.Name()] = true
 	}

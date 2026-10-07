@@ -2908,14 +2908,18 @@ export interface paths {
         };
         /**
          * Get artifact and log retention settings for an organization
-         * @description Gets artifact and log retention settings for an organization.
+         * @description Gets retention settings for checks, workflow runs, commit statuses, artifacts, and logs for an organization.
+         *
+         *     Checks include check suites, check runs, and check annotations. These settings also apply to checks and commit statuses created by third-party integrations, and are not limited to data created by GitHub Actions.
          *
          *     OAuth app tokens and personal access tokens (classic) need the `admin:org` scope or the "Actions policies" fine-grained permission to use this endpoint.
          */
         get: operations["actions/get-artifact-and-log-retention-settings-organization"];
         /**
          * Set artifact and log retention settings for an organization
-         * @description Sets artifact and log retention settings for an organization.
+         * @description Sets retention settings for checks, workflow runs, commit statuses, artifacts, and logs for an organization.
+         *
+         *     Checks include check suites, check runs, and check annotations. These settings also apply to checks and commit statuses created by third-party integrations, and are not limited to data created by GitHub Actions.
          *
          *     OAuth app tokens and personal access tokens (classic) need the `admin:org` scope or the "Actions policies" fine-grained permission to use this endpoint.
          */
@@ -4733,10 +4737,7 @@ export interface paths {
         };
         /**
          * Get the AI Scan setting for an organization
-         * @description > [!NOTE]
-         *     > This endpoint is in public preview and is subject to change.
-         *
-         *     Gets the AI Scan setting stored on an organization.
+         * @description Gets the AI Scan setting stored on an organization.
          *
          *     The response reports the value stored on the organization. Organization respects enterprise policy.
          *
@@ -4752,10 +4753,7 @@ export interface paths {
         head?: never;
         /**
          * Update the AI Scan setting for an organization
-         * @description > [!NOTE]
-         *     > This endpoint is in public preview and is subject to change.
-         *
-         *     Updates the AI Scan setting stored on an organization.
+         * @description Updates the AI Scan setting stored on an organization.
          *
          *     The organization respects the enterprise policy, so enabling is rejected when the enterprise disallows AI Scan.
          *
@@ -8135,6 +8133,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orgs/{org}/properties/installations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get registered app installations for external custom properties
+         * @description Gets the registered GitHub App installations used to read and write external custom properties for an organization.
+         *
+         *     A GitHub App installation token will only be able to see its own registration info, whereas an authenticated user will be able to see all registrations for the organization.
+         *
+         *     To use this endpoint, the authenticated caller must have the `organization_external_properties_for_repos:admin` permission.
+         */
+        get: operations["orgs/external-properties-for-repos-get-organization-app-installations"];
+        put?: never;
+        /**
+         * Register an app installation for external custom properties
+         * @description Registers a GitHub App installation so it can read and write external custom properties for an organization, and assigns it a display name.
+         *
+         *     The display name must be 1 to 15 characters and contain only letters and numbers. Capitalization is preserved as entered.
+         *
+         *     An app installation can only be registered once, and its display name can't be changed afterward. Calling with an app installation that has already been registered returns a `422` response with an `already_exists` error code for `installation_id`. If the display name is already in use by another app installation in the organization, the response is `422` with an `already_exists` error code for `display_name`. An invalid display name also returns `422`.
+         *
+         *     The app installation being registered must have write or admin permission for organization external custom properties for repositories. If it doesn't, the response is `422`. This is the permission of the installation being registered, which isn't necessarily the caller.
+         *
+         *     Uninstalling the GitHub App unregisters it, and removes the external custom properties it created.
+         *
+         *     To use this endpoint, the authenticated caller must have the `organization_external_properties_for_repos:admin` permission.
+         */
+        post: operations["orgs/external-properties-for-repos-register-organization-app-installation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{org}/properties/installations/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get all external custom properties for a GitHub App installation in an organization
+         * @description Gets all external custom properties defined for the authenticated GitHub App installation on an organization.
+         *
+         *     To use this endpoint, the authenticated GitHub App must have the `organization_external_properties_for_repos:read` permission.
+         */
+        get: operations["orgs/external-properties-for-repos-get-organization-definitions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{org}/properties/installations/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Create or update external custom property values for organization repositories
+         * @description Create new or update existing external custom property values for repositories in a batch that belong to an organization.
+         *     Each target repository will have its external custom property values updated to match the values provided in the request.
+         *
+         *     A maximum of 30 repositories can be updated in a single request.
+         *
+         *     Using a value of `null` for an external custom property will remove or 'unset' the property value from the repository.
+         *
+         *     To use this endpoint, the authenticated GitHub App must have the `organization_external_properties_for_repos:write` permission.
+         */
+        patch: operations["orgs/external-properties-for-repos-create-or-update-organization-values"];
+        trace?: never;
+    };
+    "/orgs/{org}/properties/installations/values/{property_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove all external custom property values for a property across all organization repositories
+         * @description Removes all external custom property values for a specified property name across all repositories that belong to an organization.
+         *
+         *     To use this endpoint, the authenticated GitHub App must have the `organization_external_properties_for_repos:write` permission.
+         */
+        delete: operations["orgs/external-properties-for-repos-delete-organization-values"];
+        options?: never;
+        head?: never;
+        /**
+         * Create or update external custom property values for a property across organization repositories
+         * @description Create new or update existing external custom property values for a single named property across repositories that belong to an organization.
+         *
+         *     Up to 100 repository values can be updated in a single request. Repositories not included in the request are left unchanged.
+         *
+         *     Using a value of `null` for a repository will remove or 'unset' the property value for that repository. A request that only contains `null` values for a property that does not yet exist is a no-op.
+         *
+         *     To use this endpoint, the authenticated GitHub App must have the `organization_external_properties_for_repos:write` permission.
+         */
+        patch: operations["orgs/external-properties-for-repos-create-or-update-values-for-organization-property"];
+        trace?: never;
+    };
     "/orgs/{org}/properties/schema": {
         parameters: {
             query?: never;
@@ -9508,6 +9625,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{repo}/actions/jobs/{job_id}/steps/{step_number}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download step logs for a workflow run job
+         * @description Gets a redirect URL to download a plain text file of logs for a specific step of a workflow job. This link expires after
+         *     1 minute. Look for `Location:` in the response header to find the URL for the download.
+         *
+         *     This endpoint is intended for selective retrieval of one step. To download complete job logs, use the
+         *     [job logs endpoint](https://docs.github.com/rest/actions/workflow-jobs#download-job-logs-for-a-workflow-run).
+         *
+         *     Anyone with read access to the repository can use this endpoint.
+         *
+         *     If the repository is private, OAuth tokens and personal access tokens (classic) need the `repo` scope to use this endpoint.
+         */
+        get: operations["actions/download-step-logs-for-workflow-run-job"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{repo}/actions/oidc/customization/sub": {
         parameters: {
             query?: never;
@@ -9654,14 +9799,18 @@ export interface paths {
         };
         /**
          * Get artifact and log retention settings for a repository
-         * @description Gets artifact and log retention settings for a repository.
+         * @description Gets retention settings for checks, workflow runs, commit statuses, artifacts, and logs for a repository.
+         *
+         *     Checks include check suites, check runs, and check annotations. These settings also apply to checks and commit statuses created by third-party integrations, and are not limited to data created by GitHub Actions.
          *
          *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint.
          */
         get: operations["actions/get-artifact-and-log-retention-settings-repository"];
         /**
          * Set artifact and log retention settings for a repository
-         * @description Sets artifact and log retention settings for a repository.
+         * @description Sets retention settings for checks, workflow runs, commit statuses, artifacts, and logs for a repository.
+         *
+         *     Checks include check suites, check runs, and check annotations. These settings also apply to checks and commit statuses created by third-party integrations, and are not limited to data created by GitHub Actions.
          *
          *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint.
          */
@@ -12047,10 +12196,7 @@ export interface paths {
         };
         /**
          * Get AI Scan enablement for a repository
-         * @description > [!NOTE]
-         *     > This endpoint is in public preview and is subject to change.
-         *
-         *     Gets whether AI Scan is enabled for a repository.
+         * @description Gets whether AI Scan is enabled for a repository.
          *
          *     OAuth app tokens and personal access tokens (classic) need the `security_events` scope to use this endpoint with private or public repositories, or the `public_repo` scope to use this endpoint with only public repositories.
          */
@@ -12062,10 +12208,7 @@ export interface paths {
         head?: never;
         /**
          * Update AI Scan enablement for a repository
-         * @description > [!NOTE]
-         *     > This endpoint is in public preview and is subject to change.
-         *
-         *     Updates whether AI Scan is enabled for a repository.
+         * @description Updates whether AI Scan is enabled for a repository.
          *
          *     OAuth app tokens and personal access tokens (classic) need the `repo` scope to use this endpoint with private or public repositories, or the `public_repo` scope to use this endpoint with only public repositories.
          */
@@ -17420,6 +17563,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers/rerequest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rerequest reviewers for a pull request
+         * @description Rerequests reviews for a pull request from a given set of users and/or teams.
+         *     This endpoint triggers [notifications](https://docs.github.com/github/managing-subscriptions-and-notifications-on-github/about-notifications). Creating content too quickly using this endpoint may result in secondary rate limiting. For more information, see "[Rate limits for the API](https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits)" and "[Best practices for using the REST API](https://docs.github.com/rest/guides/best-practices-for-using-the-rest-api)."
+         */
+        post: operations["pulls/rerequest-reviewers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{repo}/pulls/{pull_number}/reviews": {
         parameters: {
             query?: never;
@@ -20241,8 +20405,6 @@ export interface paths {
         /**
          * Add a repository to an app installation
          * @description Add a single repository to an installation. The authenticated user must have admin access to the repository.
-         *
-         *     This endpoint only works for PATs (classic) with the `repo` scope.
          */
         put: operations["apps/add-repo-to-installation-for-authenticated-user"];
         post?: never;
@@ -20250,7 +20412,7 @@ export interface paths {
          * Remove a repository from an app installation
          * @description Remove a single repository from an installation. The authenticated user must have admin access to the repository. The installation must have the `repository_selection` of `selected`.
          *
-         *     This endpoint only works for PATs (classic) with the `repo` scope.
+         *     To use a PAT (classic) with this endpoint, the `repo` scope is required
          */
         delete: operations["apps/remove-repo-from-installation-for-authenticated-user"];
         options?: never;
@@ -23213,6 +23375,11 @@ export interface components {
              * @enum {string}
              */
             organization_copilot_agent_settings?: "read" | "write";
+            /**
+             * @description The level of permission to grant the access token for managing external custom properties for repositories in an organization.
+             * @enum {string}
+             */
+            organization_external_properties_for_repos?: "read" | "write" | "admin";
             /**
              * @description The level of permission to grant the access token to view and manage announcement banners for an organization.
              * @enum {string}
@@ -27882,13 +28049,13 @@ export interface components {
             sha_pinning_required?: components["schemas"]["sha-pinning-required"];
         };
         "actions-artifact-and-log-retention-response": {
-            /** @description The number of days artifacts and logs are retained */
+            /** @description The number of days checks, workflow runs, commit statuses, artifacts, and logs are retained */
             days: number;
             /** @description The maximum number of days that can be configured */
             maximum_allowed_days: number;
         };
         "actions-artifact-and-log-retention": {
-            /** @description The number of days to retain artifacts and logs */
+            /** @description The number of days to retain checks, workflow runs, commit statuses, artifacts, and logs */
             days: number;
         };
         "actions-fork-pr-contributor-approval": {
@@ -31272,6 +31439,47 @@ export interface components {
             vertical_group_by: number[];
         };
         /**
+         * Organization External Custom Property Installation
+         * @description A GitHub App installation that has been registered to read and write an organization's external custom properties, together with the display name assigned to it.
+         */
+        "organization-external-property-installation": {
+            /** @description The display name assigned to the app installation's external custom properties in the organization. */
+            display_name: string;
+            /** @description The GitHub App installation that was registered. */
+            installation: {
+                /** @description The unique identifier of the GitHub App installation. */
+                id: number;
+            };
+        };
+        /**
+         * External Property
+         * @description External custom property defined for a GitHub App installation
+         */
+        "external-property": {
+            /** @description The name of the external property */
+            property_name: string;
+        };
+        /**
+         * Custom Property Value
+         * @description Custom property name and associated value
+         */
+        "custom-property-value": {
+            /** @description The name of the property */
+            property_name: string;
+            /** @description The value assigned to the property */
+            value: ((string | null) | string[]) | null;
+        };
+        /**
+         * Repository External Custom Property Value Payload
+         * @description Repository name and associated external custom property value
+         */
+        "repository-external-property-payload": {
+            /** @description The name of the repository */
+            repository_name: string;
+            /** @description The value assigned to the repository. Set to `null` to unset the value for this repository. */
+            value: string | null;
+        };
+        /**
          * Organization Custom Property
          * @description Custom property defined on an organization
          */
@@ -31345,16 +31553,6 @@ export interface components {
             values_editable_by?: "org_actors" | "org_and_repo_actors" | null;
             /** @description Whether setting properties values is mandatory */
             require_explicit_values?: boolean;
-        };
-        /**
-         * Custom Property Value
-         * @description Custom property name and associated value
-         */
-        "custom-property-value": {
-            /** @description The name of the property */
-            property_name: string;
-            /** @description The value assigned to the property */
-            value: ((string | null) | string[]) | null;
         };
         /**
          * Organization Repository Custom Property Values
@@ -32522,7 +32720,7 @@ export interface components {
         };
         /**
          * code_coverage
-         * @description Enforce minimum line coverage thresholds on pull requests. When configured, uploaded coverage data must meet the specified criteria before changes can be merged.
+         * @description Enforce minimum line coverage thresholds on pull requests. This rule evaluates uploaded coverage data but does not wait for coverage uploads. To ensure coverage is evaluated before merging, make each status check associated with a coverage upload a required status check.
          */
         "repository-rule-code-coverage": {
             /** @enum {string} */
@@ -40283,6 +40481,11 @@ export interface components {
                 merge_action: "default" | "merge_queue" | "direct_merge";
                 /** @description SHA that the pull request head must match for the enqueued merge to proceed. */
                 expected_head_sha: string;
+                /**
+                 * @description Whether the asynchronous merge request will attempt to bypass repository rules that the authenticated actor is permitted to bypass.
+                 * @default false
+                 */
+                bypass_rules: boolean;
             } | {
                 message: string;
             } | {
@@ -40488,7 +40691,7 @@ export interface components {
          * Repository Rule
          * @description A repository rule with ruleset details.
          */
-        "repository-rule-detailed": (components["schemas"]["repository-rule-creation"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-update"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-deletion"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-required-linear-history"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-merge-queue"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-required-deployments"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-required-signatures"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-pull-request"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-required-status-checks"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-non-fast-forward"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-commit-message-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-commit-author-email-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-committer-email-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-branch-name-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-tag-name-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-workflows"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-code-scanning"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-copilot-code-review"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-license-compliance-scanning"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-file-path-restriction"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-max-file-path-length"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-file-extension-restriction"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-max-file-size"] & components["schemas"]["repository-rule-ruleset-info"]);
+        "repository-rule-detailed": (components["schemas"]["repository-rule-creation"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-update"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-deletion"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-required-linear-history"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-merge-queue"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-required-deployments"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-required-signatures"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-pull-request"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-required-status-checks"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-non-fast-forward"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-commit-message-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-commit-author-email-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-committer-email-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-branch-name-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-tag-name-pattern"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-workflows"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-code-scanning"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-code-quality"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-code-coverage"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-copilot-code-review"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-license-compliance-scanning"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-file-path-restriction"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-max-file-path-length"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-file-extension-restriction"] & components["schemas"]["repository-rule-ruleset-info"]) | (components["schemas"]["repository-rule-max-file-size"] & components["schemas"]["repository-rule-ruleset-info"]);
         "secret-scanning-alert": {
             number?: components["schemas"]["alert-number"];
             created_at?: components["schemas"]["alert-created-at"];
@@ -99231,6 +99434,8 @@ export interface components {
         "item-id": number;
         /** @description The number that identifies the project view. */
         "view-number": number;
+        /** @description The name of the external custom property */
+        "external-property-name": string;
         /** @description The custom property name */
         "custom-property-name": string;
         /**
@@ -99361,6 +99566,8 @@ export interface components {
         "concurrency-group-name": string;
         /** @description The unique identifier of the job. */
         "job-id": number;
+        /** @description The zero-based position number of the step in the job. */
+        "step-number": number;
         /** @description Returns someone's workflow runs. Use the login for the user who created the `push` associated with the check suite or workflow run. */
         actor: string;
         /** @description Returns workflow runs associated with a branch. Use the name of the branch of the `push`. */
@@ -116462,6 +116669,173 @@ export interface operations {
             404: components["responses"]["not_found"];
         };
     };
+    "orgs/external-properties-for-repos-get-organization-app-installations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["organization-external-property-installation"][];
+                };
+            };
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+        };
+    };
+    "orgs/external-properties-for-repos-register-organization-app-installation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The unique identifier of the GitHub App installation to register for managing external custom properties. When authenticating as a GitHub App installation, this defaults to the authenticated installation and can be omitted. It is required for all other callers (users and fine-grained personal access tokens). */
+                    installation_id?: number;
+                    /** @description The display name for this app installation's external custom properties in the organization. Must be 1 to 15 characters and contain only letters and numbers. Capitalization is preserved as entered. This can't be changed after the app installation is registered. */
+                    display_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["organization-external-property-installation"];
+                };
+            };
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+        };
+    };
+    "orgs/external-properties-for-repos-get-organization-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["external-property"][];
+                };
+            };
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+        };
+    };
+    "orgs/external-properties-for-repos-create-or-update-organization-values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The names of repositories that the external custom property values will be applied to. */
+                    repository_names: string[];
+                    /** @description List of external custom property names and associated values to apply to the repositories. */
+                    properties: components["schemas"]["custom-property-value"][];
+                };
+            };
+        };
+        responses: {
+            /** @description No Content when external custom property values are successfully created or updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+        };
+    };
+    "orgs/external-properties-for-repos-delete-organization-values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+                /** @description The name of the external custom property */
+                property_name: components["parameters"]["external-property-name"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: components["responses"]["no_content"];
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+        };
+    };
+    "orgs/external-properties-for-repos-create-or-update-values-for-organization-property": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization name. The name is not case sensitive. */
+                org: components["parameters"]["org"];
+                /** @description The name of the external custom property */
+                property_name: components["parameters"]["external-property-name"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The names of repositories and the values that the named external custom property will be set to. */
+                    repository_values: components["schemas"]["repository-external-property-payload"][];
+                };
+            };
+        };
+        responses: {
+            204: components["responses"]["no_content"];
+            403: components["responses"]["forbidden"];
+            404: components["responses"]["not_found"];
+            422: components["responses"]["validation_failed"];
+        };
+    };
     "orgs/custom-properties-for-repos-get-organization-definitions": {
         parameters: {
             query?: never;
@@ -119571,6 +119945,35 @@ export interface operations {
                 };
             };
             403: components["responses"]["forbidden"];
+        };
+    };
+    "actions/download-step-logs-for-workflow-run-job": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+                /** @description The unique identifier of the job. */
+                job_id: components["parameters"]["job-id"];
+                /** @description The zero-based position number of the step in the job. */
+                step_number: components["parameters"]["step-number"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            302: {
+                headers: {
+                    /** @example https://pipelines.actions.githubusercontent.com/ab1f3cCFPB34Nd6imvFxpGZH5hNlDp2wijMwl2gDoO0bcrrlJj/_apis/pipelines/1/jobs/19/steps/1/signedlogcontent?urlExpires=2020-01-22T22%3A44%3A54.1389777Z&urlSigningMethod=HMACV1&urlSignature=2TUDfIg4fm36OJmfPy6km5QD5DLCOkBVzvhWZM8B%2BUY%3D */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     "actions/get-custom-oidc-sub-claim-for-repo": {
@@ -134078,6 +134481,7 @@ export interface operations {
                     "application/json": components["schemas"]["pull-request-review-comment"];
                 };
             };
+            304: components["responses"]["not_modified"];
             404: components["responses"]["not_found"];
         };
     };
@@ -134752,6 +135156,11 @@ export interface operations {
                      * @enum {string}
                      */
                     merge_action?: "default" | "direct_merge" | "merge_queue";
+                    /**
+                     * @description Whether to bypass repository rules that the authenticated actor is permitted to bypass.
+                     * @default false
+                     */
+                    bypass_rules?: boolean;
                 } | null;
             };
         };
@@ -134936,6 +135345,50 @@ export interface operations {
                 };
             };
             422: components["responses"]["validation_failed"];
+        };
+    };
+    "pulls/rerequest-reviewers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+                /** @description The number that identifies the pull request. */
+                pull_number: components["parameters"]["pull-number"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description An array of user `login`s whose reviews will be rerequested. */
+                    reviewers?: string[];
+                    /** @description An array of team `slug`s whose reviews will be rerequested. */
+                    team_reviewers?: string[];
+                } | unknown | unknown;
+            };
+        };
+        responses: {
+            /** @description Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["pull-request-simple"];
+                };
+            };
+            403: components["responses"]["forbidden"];
+            /** @description Unprocessable Entity if user is not a collaborator */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     "pulls/list-reviews": {

@@ -186,8 +186,7 @@ func (s *Resolver) addTeamFields(types *accountSurfaceTypes) {
 	// repositories
 	teamRepositoryConnection := s.accountConnectionType(types, "TeamRepository", types.repository, true, graphql.Fields{
 		"permission": &graphql.Field{
-			Type: graphql.NewNonNull(s.sharedEnum("RepositoryPermission",
-				"ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE")),
+			Type: graphql.NewNonNull(s.gqlRepositoryPermission()),
 		},
 	})
 	teamType.AddFieldConfig("repositories", &graphql.Field{

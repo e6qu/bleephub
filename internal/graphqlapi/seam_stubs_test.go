@@ -60,6 +60,8 @@ func (stubEvents) BuildPullRequestPayload(*store.Repo, *store.PullRequest, *stor
 func (stubEvents) RepoPayload(*store.Repo) map[string]interface{}                               { return nil }
 func (stubEvents) SenderPayload(*store.User) map[string]interface{}                             { return nil }
 func (stubEvents) EmitIssueChanges(*store.Repo, *store.Issue, *store.User, store.SubjectChange) {}
+func (stubEvents) EmitIssueRelatesTo(*store.User, string, *store.Repo, *store.Issue, *store.Repo, *store.Issue) {
+}
 func (stubEvents) EmitPullRequestChanges(*store.Repo, *store.PullRequest, *store.User, store.SubjectChange) {
 }
 func (stubEvents) EmitProjectV2Event(store.ProjectV2Event)                                 {}

@@ -1153,11 +1153,13 @@ deploy_job_id=$(api_get "/api/v3/repos/admin/test/actions/runs/$LAST_WORKFLOW_RU
     | jq -r '[.jobs[] | select(.name == "deploy")][0].id // empty')
 [ -n "$deploy_job_id" ] || fail "output propagation run did not expose the deploy job"
 deploy_log_file=$(mktemp)
-deploy_log_status=$(curl -sS -o "$deploy_log_file" -w '%{http_code}' \
+# GitHub answers a log download with a 302 to a short-lived link; follow it,
+# and require exactly that one redirect.
+deploy_log_status=$(curl -sS -L -o "$deploy_log_file" -w '%{http_code} %{num_redirects}' \
     -H "Authorization: token $BLEEPHUB_ADMIN_TOKEN" \
     "http://$BLEEPHUB_ADDR/api/v3/repos/admin/test/actions/jobs/$deploy_job_id/logs") \
     || fail "output propagation deploy log request failed"
-if [ "$deploy_log_status" != "200" ]; then
+if [ "$deploy_log_status" != "200 1" ]; then
     echo "deploy log HTTP $deploy_log_status: $(cat "$deploy_log_file")" >&2
     rm -f "$deploy_log_file"
     fail "output propagation deploy log was unavailable"

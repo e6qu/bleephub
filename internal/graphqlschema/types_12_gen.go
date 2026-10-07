@@ -5,6 +5,183 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineSubmoduleConnection() {
+	r.object("SubmoduleConnection", "The connection type for Submodule.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("SubmoduleEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("Submodule")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSubmoduleEdge() {
+	r.object("SubmoduleEdge", "An edge in a connection.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type:        r.t("Submodule"),
+				Description: "The item at the end of the edge.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSubscribable() {
+	r.interfaceType("Subscribable", "Entities that can be subscribed to for web and email notifications.", func() graphql.Fields {
+		return graphql.Fields{
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the Subscribable object",
+			},
+			"viewerCanSubscribe": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Check if the viewer is able to change their subscription status for the repository.",
+			},
+			"viewerSubscription": {
+				Type:        r.t("SubscriptionState"),
+				Description: "Identifies if the viewer is watching, not watching, or ignoring the subscribable entity.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSubscribableThread() {
+	r.interfaceType("SubscribableThread", "Entities that can be subscribed to for web and email notifications.", func() graphql.Fields {
+		return graphql.Fields{
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the SubscribableThread object",
+			},
+			"viewerThreadSubscriptionFormAction": {
+				Type:        r.t("ThreadSubscriptionFormAction"),
+				Description: "Identifies the viewer's thread subscription form action.",
+			},
+			"viewerThreadSubscriptionStatus": {
+				Type:        r.t("ThreadSubscriptionState"),
+				Description: "Identifies the viewer's thread subscription status.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSubscribedEvent() {
+	r.object("SubscribedEvent", "Represents a 'subscribed' event on a given `Subscribable`.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"actor": {
+				Type:        r.t("Actor"),
+				Description: "Identifies the actor who performed the event.",
+			},
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the SubscribedEvent object",
+			},
+			"subscribable": {
+				Type:        graphql.NewNonNull(r.t("Subscribable")),
+				Description: "Object referenced by event.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSubscriptionState() {
+	r.enum("SubscriptionState", "The possible states of a subscription.", graphql.EnumValueConfigMap{
+		"IGNORED": {
+			Value:       "IGNORED",
+			Description: "The User is never notified.",
+		},
+		"SUBSCRIBED": {
+			Value:       "SUBSCRIBED",
+			Description: "The User is notified of all conversations.",
+		},
+		"UNSUBSCRIBED": {
+			Value:       "UNSUBSCRIBED",
+			Description: "The User is only notified when participating or @mentioned.",
+		},
+	})
+}
+
+func (r *Registry) defineSuggestedReviewer() {
+	r.object("SuggestedReviewer", "A suggestion to review a pull request based on a user's commit history and review comments.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"isAuthor": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Is this suggestion based on past commits?",
+			},
+			"isCommenter": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Is this suggestion based on past review comments?",
+			},
+			"reviewer": {
+				Type:        graphql.NewNonNull(r.t("User")),
+				Description: "Identifies the user suggested to review the pull request.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSuggestedReviewerActor() {
+	r.object("SuggestedReviewerActor", "A suggestion to review a pull request based on an actor's commit history, review comments, and integrations.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"isAuthor": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Is this suggestion based on past commits?",
+			},
+			"isCommenter": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Is this suggestion based on past review comments?",
+			},
+			"reviewer": {
+				Type:        graphql.NewNonNull(r.t("Actor")),
+				Description: "Identifies the actor suggested to review the pull request.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSuggestedReviewerActorConnection() {
+	r.object("SuggestedReviewerActorConnection", "A suggestion to review a pull request based on an actor's commit history, review comments, and integrations.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("SuggestedReviewerActorEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("SuggestedReviewerActor")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineSuggestedReviewerActorEdge() {
 	r.object("SuggestedReviewerActorEdge", "An edge in a connection.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -2244,11 +2421,6 @@ func (r *Registry) defineUnlabeledEvent() {
 				Type:        graphql.NewNonNull(r.t("Labelable")),
 				Description: "Identifies the `Labelable` associated with the event.",
 			},
-			"rationale": {
-				Type:              r.t("IssueEventRationale"),
-				Description:       "The rationale associated with this event. Always returns null; use `intent` instead.",
-				DeprecationReason: "Use `intent` instead. This field is being removed and now always returns null.",
-			},
 		}
 	})
 }
@@ -3442,181 +3614,6 @@ func (r *Registry) defineUpdateEnterpriseMembersCanInviteCollaboratorsSettingPay
 			"message": {
 				Type:        r.t("String"),
 				Description: "A message confirming the result of updating the members can invite collaborators setting.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineUpdateEnterpriseMembersCanMakePurchasesSettingInput() {
-	r.input("UpdateEnterpriseMembersCanMakePurchasesSettingInput", "Autogenerated input type of UpdateEnterpriseMembersCanMakePurchasesSetting", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"enterpriseId": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The ID of the enterprise on which to set the members can make purchases setting.",
-			},
-			"settingValue": {
-				Type:        graphql.NewNonNull(r.t("EnterpriseMembersCanMakePurchasesSettingValue")),
-				Description: "The value for the members can make purchases setting on the enterprise.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineUpdateEnterpriseMembersCanMakePurchasesSettingPayload() {
-	r.object("UpdateEnterpriseMembersCanMakePurchasesSettingPayload", "Autogenerated return type of UpdateEnterpriseMembersCanMakePurchasesSetting.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"enterprise": {
-				Type:        r.t("Enterprise"),
-				Description: "The enterprise with the updated members can make purchases setting.",
-			},
-			"message": {
-				Type:        r.t("String"),
-				Description: "A message confirming the result of updating the members can make purchases setting.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineUpdateEnterpriseMembersCanUpdateProtectedBranchesSettingInput() {
-	r.input("UpdateEnterpriseMembersCanUpdateProtectedBranchesSettingInput", "Autogenerated input type of UpdateEnterpriseMembersCanUpdateProtectedBranchesSetting", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"enterpriseId": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The ID of the enterprise on which to set the members can update protected branches setting.",
-			},
-			"settingValue": {
-				Type:        graphql.NewNonNull(r.t("EnterpriseEnabledDisabledSettingValue")),
-				Description: "The value for the members can update protected branches setting on the enterprise.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineUpdateEnterpriseMembersCanUpdateProtectedBranchesSettingPayload() {
-	r.object("UpdateEnterpriseMembersCanUpdateProtectedBranchesSettingPayload", "Autogenerated return type of UpdateEnterpriseMembersCanUpdateProtectedBranchesSetting.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"enterprise": {
-				Type:        r.t("Enterprise"),
-				Description: "The enterprise with the updated members can update protected branches setting.",
-			},
-			"message": {
-				Type:        r.t("String"),
-				Description: "A message confirming the result of updating the members can update protected branches setting.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineUpdateEnterpriseMembersCanViewDependencyInsightsSettingInput() {
-	r.input("UpdateEnterpriseMembersCanViewDependencyInsightsSettingInput", "Autogenerated input type of UpdateEnterpriseMembersCanViewDependencyInsightsSetting", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"enterpriseId": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The ID of the enterprise on which to set the members can view dependency insights setting.",
-			},
-			"settingValue": {
-				Type:        graphql.NewNonNull(r.t("EnterpriseEnabledDisabledSettingValue")),
-				Description: "The value for the members can view dependency insights setting on the enterprise.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineUpdateEnterpriseMembersCanViewDependencyInsightsSettingPayload() {
-	r.object("UpdateEnterpriseMembersCanViewDependencyInsightsSettingPayload", "Autogenerated return type of UpdateEnterpriseMembersCanViewDependencyInsightsSetting.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"enterprise": {
-				Type:        r.t("Enterprise"),
-				Description: "The enterprise with the updated members can view dependency insights setting.",
-			},
-			"message": {
-				Type:        r.t("String"),
-				Description: "A message confirming the result of updating the members can view dependency insights setting.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineUpdateEnterpriseOrganizationProjectsSettingInput() {
-	r.input("UpdateEnterpriseOrganizationProjectsSettingInput", "Autogenerated input type of UpdateEnterpriseOrganizationProjectsSetting", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"enterpriseId": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The ID of the enterprise on which to set the organization projects setting.",
-			},
-			"settingValue": {
-				Type:        graphql.NewNonNull(r.t("EnterpriseEnabledDisabledSettingValue")),
-				Description: "The value for the organization projects setting on the enterprise.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineUpdateEnterpriseOrganizationProjectsSettingPayload() {
-	r.object("UpdateEnterpriseOrganizationProjectsSettingPayload", "Autogenerated return type of UpdateEnterpriseOrganizationProjectsSetting.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"enterprise": {
-				Type:        r.t("Enterprise"),
-				Description: "The enterprise with the updated organization projects setting.",
-			},
-			"message": {
-				Type:        r.t("String"),
-				Description: "A message confirming the result of updating the organization projects setting.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineUpdateEnterpriseOwnerOrganizationRoleInput() {
-	r.input("UpdateEnterpriseOwnerOrganizationRoleInput", "Autogenerated input type of UpdateEnterpriseOwnerOrganizationRole", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"enterpriseId": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The ID of the Enterprise which the owner belongs to.",
-			},
-			"organizationId": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The ID of the organization for membership change.",
-			},
-			"organizationRole": {
-				Type:        graphql.NewNonNull(r.t("RoleInOrganization")),
-				Description: "The role to assume in the organization.",
 			},
 		}
 	})

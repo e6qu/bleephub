@@ -594,6 +594,28 @@
         }
       }
     },
+    "AddRelatesToInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "issueId": "ID!",
+        "relatedIssueId": "ID!"
+      }
+    },
+    "AddRelatesToPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "issue": {
+          "type": "Issue"
+        },
+        "relatedIssue": {
+          "type": "Issue"
+        }
+      }
+    },
     "AddStarInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -2761,6 +2783,24 @@
         "PullRequest"
       ]
     },
+    "CodeCoverageParameters": {
+      "kind": "OBJECT",
+      "fields": {
+        "maxCoverageDrop": {
+          "type": "Float"
+        },
+        "minimumCoverage": {
+          "type": "Float"
+        }
+      }
+    },
+    "CodeCoverageParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "maxCoverageDrop": "Float",
+        "minimumCoverage": "Float"
+      }
+    },
     "CodeOfConduct": {
       "kind": "OBJECT",
       "fields": {
@@ -2783,6 +2823,29 @@
           "type": "URI"
         }
       }
+    },
+    "CodeQualityParameters": {
+      "kind": "OBJECT",
+      "fields": {
+        "severity": {
+          "type": "CodeQualitySeverity!"
+        }
+      }
+    },
+    "CodeQualityParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "severity": "CodeQualitySeverity!"
+      }
+    },
+    "CodeQualitySeverity": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ALL",
+        "ERRORS",
+        "NOTES",
+        "WARNINGS"
+      ]
     },
     "CodeScanningParameters": {
       "kind": "OBJECT",
@@ -10436,7 +10499,8 @@
             "after": "String",
             "before": "String",
             "first": "Int",
-            "last": "Int"
+            "last": "Int",
+            "orderBy": "IssueDependencyOrder"
           }
         },
         "blocking": {
@@ -10445,7 +10509,8 @@
             "after": "String",
             "before": "String",
             "first": "Int",
-            "last": "Int"
+            "last": "Int",
+            "orderBy": "IssueDependencyOrder"
           }
         },
         "body": {
@@ -10500,9 +10565,6 @@
         },
         "editor": {
           "type": "Actor"
-        },
-        "eventRationales": {
-          "type": "[IssueEventRationale!]!"
         },
         "fullDatabaseId": {
           "type": "BigInt"
@@ -10635,6 +10697,16 @@
             "before": "String",
             "first": "Int",
             "last": "Int"
+          }
+        },
+        "relatesTo": {
+          "type": "IssueConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "IssueRelatesToOrder"
           }
         },
         "repository": {
@@ -11106,37 +11178,6 @@
         "MEDIUM"
       ]
     },
-    "IssueEventRationale": {
-      "kind": "OBJECT",
-      "fields": {
-        "actor": {
-          "type": "Actor"
-        },
-        "createdAt": {
-          "type": "DateTime!"
-        },
-        "issueEvent": {
-          "type": "IssueEventWithRationale"
-        },
-        "rationale": {
-          "type": "String!"
-        }
-      }
-    },
-    "IssueEventWithRationale": {
-      "kind": "UNION",
-      "possible_types": [
-        "ClosedEvent",
-        "IssueFieldAddedEvent",
-        "IssueFieldChangedEvent",
-        "IssueFieldRemovedEvent",
-        "IssueTypeAddedEvent",
-        "IssueTypeChangedEvent",
-        "IssueTypeRemovedEvent",
-        "LabeledEvent",
-        "UnlabeledEvent"
-      ]
-    },
     "IssueFieldAddedEvent": {
       "kind": "OBJECT",
       "fields": {
@@ -11160,9 +11201,6 @@
         },
         "options": {
           "type": "[IssueFieldTimelineOption!]"
-        },
-        "rationale": {
-          "type": "IssueEventRationale"
         },
         "value": {
           "type": "String"
@@ -11204,9 +11242,6 @@
         },
         "previousValue": {
           "type": "String"
-        },
-        "rationale": {
-          "type": "IssueEventRationale"
         }
       }
     },
@@ -11417,9 +11452,6 @@
         },
         "options": {
           "type": "[IssueFieldTimelineOption!]"
-        },
-        "rationale": {
-          "type": "IssueEventRationale"
         }
       }
     },
@@ -11737,6 +11769,20 @@
         "UPDATED_AT"
       ]
     },
+    "IssueRelatesToOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "IssueRelatesToOrderField!"
+      }
+    },
+    "IssueRelatesToOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "RELATES_TO_ADDED_AT"
+      ]
+    },
     "IssueSearchType": {
       "kind": "ENUM",
       "enum_values": [
@@ -11990,9 +12036,6 @@
         },
         "issueType": {
           "type": "IssueType"
-        },
-        "rationale": {
-          "type": "IssueEventRationale"
         }
       }
     },
@@ -12016,9 +12059,6 @@
         },
         "prevIssueType": {
           "type": "IssueType"
-        },
-        "rationale": {
-          "type": "IssueEventRationale"
         }
       }
     },
@@ -12093,9 +12133,6 @@
         },
         "issueType": {
           "type": "IssueType"
-        },
-        "rationale": {
-          "type": "IssueEventRationale"
         }
       }
     },
@@ -12291,9 +12328,6 @@
         },
         "labelable": {
           "type": "Labelable!"
-        },
-        "rationale": {
-          "type": "IssueEventRationale"
         }
       },
       "interfaces": [
@@ -14132,6 +14166,12 @@
             "input": "AddReactionInput!"
           }
         },
+        "addRelatesTo": {
+          "type": "AddRelatesToPayload",
+          "args": {
+            "input": "AddRelatesToInput!"
+          }
+        },
         "addStar": {
           "type": "AddStarPayload",
           "args": {
@@ -14954,6 +14994,12 @@
             "input": "RemoveReactionInput!"
           }
         },
+        "removeRelatesTo": {
+          "type": "RemoveRelatesToPayload",
+          "args": {
+            "input": "RemoveRelatesToInput!"
+          }
+        },
         "removeStar": {
           "type": "RemoveStarPayload",
           "args": {
@@ -15696,6 +15742,11 @@
         "Organization",
         "OrganizationInvitation",
         "OrganizationMigration",
+        "PendingAssigneeSuggestion",
+        "PendingCloseSuggestion",
+        "PendingFieldSuggestion",
+        "PendingLabelSuggestion",
+        "PendingTypeSuggestion",
         "PinnedEvent",
         "Project",
         "ProjectCard",
@@ -19322,13 +19373,19 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "id": {
+          "type": "ID!"
+        },
         "rationale": {
           "type": "String"
         },
         "updatedAt": {
           "type": "DateTime"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "PendingCloseSuggestion": {
       "kind": "OBJECT",
@@ -19342,6 +19399,9 @@
         "duplicateOf": {
           "type": "IssueOrPullRequest"
         },
+        "id": {
+          "type": "ID!"
+        },
         "rationale": {
           "type": "String"
         },
@@ -19351,7 +19411,10 @@
         "updatedAt": {
           "type": "DateTime"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "PendingFieldSuggestion": {
       "kind": "OBJECT",
@@ -19361,6 +19424,9 @@
         },
         "createdAt": {
           "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
         },
         "issueField": {
           "type": "IssueFields"
@@ -19374,7 +19440,10 @@
         "updatedAt": {
           "type": "DateTime"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "PendingIssueSuggestion": {
       "kind": "UNION",
@@ -19411,6 +19480,9 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "id": {
+          "type": "ID!"
+        },
         "label": {
           "type": "Label"
         },
@@ -19420,7 +19492,10 @@
         "updatedAt": {
           "type": "DateTime"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "PendingTypeSuggestion": {
       "kind": "OBJECT",
@@ -19431,6 +19506,9 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "id": {
+          "type": "ID!"
+        },
         "issueType": {
           "type": "IssueType"
         },
@@ -19440,7 +19518,10 @@
         "updatedAt": {
           "type": "DateTime"
         }
-      }
+      },
+      "interfaces": [
+        "Node"
+      ]
     },
     "PermissionGranter": {
       "kind": "UNION",
@@ -21496,6 +21577,7 @@
       "kind": "INPUT_OBJECT",
       "input_fields": {
         "duration": "Int!",
+        "id": "String",
         "startDate": "Date!",
         "title": "String!"
       }
@@ -25283,6 +25365,28 @@
         }
       }
     },
+    "RemoveRelatesToInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "issueId": "ID!",
+        "relatedIssueId": "ID!"
+      }
+    },
+    "RemoveRelatesToPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "issue": {
+          "type": "Issue"
+        },
+        "relatedIssue": {
+          "type": "Issue"
+        }
+      }
+    },
     "RemoveStarInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -28540,6 +28644,7 @@
         "MAINTAIN",
         "READ",
         "TRIAGE",
+        "TRIAGE_PLUS",
         "WRITE"
       ]
     },
@@ -28689,26 +28794,40 @@
     "RepositoryRuleType": {
       "kind": "ENUM",
       "enum_values": [
+        "AUTHORIZATION",
         "BRANCH_NAME_PATTERN",
+        "CODE_COVERAGE",
+        "CODE_QUALITY",
+        "CODE_SCANNING",
         "COMMITTER_EMAIL_PATTERN",
         "COMMIT_AUTHOR_EMAIL_PATTERN",
         "COMMIT_MESSAGE_PATTERN",
+        "COPILOT_CODE_REVIEW",
         "CREATION",
         "DELETION",
         "FILE_EXTENSION_RESTRICTION",
         "FILE_PATH_RESTRICTION",
+        "LICENSE_COMPLIANCE_SCANNING",
         "LOCK_BRANCH",
         "MAX_FILE_PATH_LENGTH",
         "MAX_FILE_SIZE",
+        "MAX_REF_UPDATES",
+        "MERGE_QUEUE",
+        "MERGE_QUEUE_LOCKED_REF",
         "NON_FAST_FORWARD",
         "PULL_REQUEST",
         "REQUIRED_DEPLOYMENTS",
         "REQUIRED_LINEAR_HISTORY",
+        "REQUIRED_REVIEW_THREAD_RESOLUTION",
         "REQUIRED_SIGNATURES",
         "REQUIRED_STATUS_CHECKS",
+        "REQUIRED_WORKFLOW_STATUS_CHECKS",
+        "SECRET_SCANNING",
+        "TAG",
         "TAG_NAME_PATTERN",
         "UPDATE",
-        "WORKFLOWS"
+        "WORKFLOWS",
+        "WORKFLOW_UPDATES"
       ]
     },
     "RepositoryRuleset": {
@@ -29788,6 +29907,8 @@
       "kind": "UNION",
       "possible_types": [
         "BranchNamePatternParameters",
+        "CodeCoverageParameters",
+        "CodeQualityParameters",
         "CodeScanningParameters",
         "CommitAuthorEmailPatternParameters",
         "CommitMessagePatternParameters",
@@ -29810,6 +29931,8 @@
       "kind": "INPUT_OBJECT",
       "input_fields": {
         "branchNamePattern": "BranchNamePatternParametersInput",
+        "codeCoverage": "CodeCoverageParametersInput",
+        "codeQuality": "CodeQualityParametersInput",
         "codeScanning": "CodeScanningParametersInput",
         "commitAuthorEmailPattern": "CommitAuthorEmailPatternParametersInput",
         "commitMessagePattern": "CommitMessagePatternParametersInput",
@@ -33580,9 +33703,6 @@
         },
         "labelable": {
           "type": "Labelable!"
-        },
-        "rationale": {
-          "type": "IssueEventRationale"
         }
       },
       "interfaces": [

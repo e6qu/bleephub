@@ -2,7 +2,9 @@ package store
 
 import (
 	"errors"
+	"slices"
 	"strconv"
+	"time"
 )
 
 // AddSubIssue links child under parent. replaceParent detaches the child
@@ -150,6 +152,10 @@ func (st *Store) AddIssueBlockedBy(issueID, blockerID int) bool {
 		}
 	}
 	st.IssueBlockedBy[issueID] = append(st.IssueBlockedBy[issueID], blockerID)
+	if st.IssueBlockedByAddedAt[issueID] == nil {
+		st.IssueBlockedByAddedAt[issueID] = map[int]time.Time{}
+	}
+	st.IssueBlockedByAddedAt[issueID][blockerID] = st.CurrentTime()
 	st.persistBlockedByLocked(issueID)
 	return true
 }
@@ -171,6 +177,14 @@ func (st *Store) RemoveIssueBlockedBy(issueID, blockerID int) bool {
 		}
 	}
 	return false
+}
+
+// BlockedByAddedAt reports when issueID became blocked by blockerID; zero
+// for a link recorded before the time was kept.
+func (st *Store) BlockedByAddedAt(issueID, blockerID int) time.Time {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	return st.IssueBlockedByAddedAt[issueID][blockerID]
 }
 
 // ListIssueBlockedBy returns the IDs of the issues blocking issueID.
@@ -205,7 +219,10 @@ func (st *Store) GetSubIssueParent(issueID int) int {
 	return st.SubIssueParent[issueID]
 }
 
+// persistBlockedByLocked writes the issue's blockers and, pruned to them, the
+// times they were added.
 func (st *Store) persistBlockedByLocked(issueID int) {
+	st.pruneBlockedByAddedAtLocked(nil, issueID)
 	if st.Persist == nil {
 		return
 	}
@@ -223,3 +240,36 @@ var (
 	errSubIssueDuplicate = errors.New("the issue is already a sub-issue of this issue")
 	errSubIssueNotLinked = errors.New("the issue is not a sub-issue of this issue")
 )
+
+const issueBlockedByAddedAtBucket = "issue_blocked_by_added_at"
+
+// pruneBlockedByAddedAtLocked keeps an issue's link times to the blockers it
+// still has, writing through batch when one is given.
+func (st *Store) pruneBlockedByAddedAtLocked(batch *PersistBatch, issueID int) {
+	added := st.IssueBlockedByAddedAt[issueID]
+	if added == nil {
+		return
+	}
+	for blockerID := range added {
+		if !slices.Contains(st.IssueBlockedBy[issueID], blockerID) {
+			delete(added, blockerID)
+		}
+	}
+	key := strconv.Itoa(issueID)
+	if len(added) == 0 {
+		delete(st.IssueBlockedByAddedAt, issueID)
+		switch {
+		case batch != nil:
+			batch.Delete(issueBlockedByAddedAtBucket, key)
+		case st.Persist != nil:
+			st.Persist.MustDelete(issueBlockedByAddedAtBucket, key)
+		}
+		return
+	}
+	switch {
+	case batch != nil:
+		batch.Put(issueBlockedByAddedAtBucket, key, added)
+	case st.Persist != nil:
+		st.Persist.MustPut(issueBlockedByAddedAtBucket, key, added)
+	}
+}

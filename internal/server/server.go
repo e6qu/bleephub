@@ -75,6 +75,7 @@ type Server struct {
 	pagesJekyllExecutable string
 	identity              identityConfig
 	identityStateKey      []byte // random per-process HMAC key for OAuth state cookies
+	logDownloadKey        []byte // random per-process HMAC key for one-minute log download links
 	build                 BuildInfo
 	// monitoringTokenDigest authenticates the deployment-only observation
 	// endpoint. Only the SHA-256 digest survives startup configuration parsing.
@@ -155,6 +156,10 @@ type serverConstruction struct {
 }
 
 func newServerState(addr string, logger zerolog.Logger, construction serverConstruction) *Server {
+	logDownloadKey := make([]byte, 32)
+	if _, err := rand.Read(logDownloadKey); err != nil {
+		panic(fmt.Sprintf("generate log download HMAC key: %v", err))
+	}
 	identityStateKey := make([]byte, 32)
 	if _, err := rand.Read(identityStateKey); err != nil {
 		panic(fmt.Sprintf("generate identity state HMAC key: %v", err))
@@ -180,6 +185,7 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 		pagesJekyllExecutable:  construction.pagesJekyllExecutable,
 		identity:               construction.identity,
 		identityStateKey:       identityStateKey,
+		logDownloadKey:         logDownloadKey,
 		build:                  construction.build,
 	}
 	s.store.ActionsArtifacts = s.artifactStore
@@ -577,6 +583,7 @@ func (s *Server) registerRoutes() {
 	s.registerGHIssueTypeRoutes()
 	s.registerGHIssueFieldRoutes()
 	s.registerGHCustomPropertyRoutes()
+	s.registerGHExternalPropertyRoutes()
 	s.registerGHCodeSecurityConfigurationRoutes()
 	s.registerGHCampaignRoutes()
 	s.registerGHPrivateRegistryRoutes()

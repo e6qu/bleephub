@@ -729,10 +729,11 @@ type Store struct {
 	CodeSecurityConfigs         map[string]map[int]*CodeSecurityConfiguration // org login → id → configuration
 	CodeSecurityRepoAttachments map[string]map[int]int                        // org login → repo ID → configuration ID
 	NextCodeSecurityConfigID    int
-	OrgCustomProperties         map[string]map[string]*CustomProperty // org login → property name → definition
-	RepoCustomPropertyValues    map[string]map[string]interface{}     // "owner/repo" → property name → value
-	OrgIssueTypes               map[string]map[int]*IssueType         // org login → id → issue type
-	IssueTypesByID              map[int]*IssueType                    // id → issue type (GQL-024 O(1) node-ID lookup; ids are globally unique)
+	OrgCustomProperties         map[string]map[string]*CustomProperty            // org login → property name → definition
+	RepoCustomPropertyValues    map[string]map[string]interface{}                // "owner/repo" → property name → value
+	OrgExternalProperties       map[string]map[int]*ExternalPropertyInstallation // org login → installation id → registration
+	OrgIssueTypes               map[string]map[int]*IssueType                    // org login → id → issue type
+	IssueTypesByID              map[int]*IssueType                               // id → issue type (GQL-024 O(1) node-ID lookup; ids are globally unique)
 	NextIssueTypeID             int
 	OrgIssueFields              map[string]map[int]*IssueField // org login → id → issue field
 	NextIssueFieldID            int
@@ -818,6 +819,7 @@ type Store struct {
 	SubIssueLists            map[int][]int                 // parent issue ID → ordered sub-issue IDs
 	SubIssueParent           map[int]int                   // sub-issue ID → parent issue ID
 	IssueBlockedBy           map[int][]int                 // issue ID → IDs of the issues blocking it
+	IssueBlockedByAddedAt    map[int]map[int]time.Time     // issue ID → blocking issue ID → when the link was made
 	IssueRelatesTo           map[int][]int                 // issue ID → IDs of the issues related to it; kept on both sides
 	RepoImports              map[int]*RepoImport           // repoID → source import
 	DependencySnapshots      map[int][]*DependencySnapshot // repoID → submitted snapshots (oldest first)
@@ -1231,6 +1233,7 @@ func NewStore() *Store {
 		NextCodeSecurityConfigID:    1,
 		OrgCustomProperties:         map[string]map[string]*CustomProperty{},
 		RepoCustomPropertyValues:    map[string]map[string]interface{}{},
+		OrgExternalProperties:       map[string]map[int]*ExternalPropertyInstallation{},
 		OrgIssueTypes:               map[string]map[int]*IssueType{},
 		IssueTypesByID:              map[int]*IssueType{},
 		NextIssueTypeID:             1,
@@ -1312,6 +1315,7 @@ func NewStore() *Store {
 		SubIssueLists:            map[int][]int{},
 		SubIssueParent:           map[int]int{},
 		IssueBlockedBy:           map[int][]int{},
+		IssueBlockedByAddedAt:    map[int]map[int]time.Time{},
 		IssueRelatesTo:           map[int][]int{},
 		RepoImports:              map[int]*RepoImport{},
 		DependencySnapshots:      map[int][]*DependencySnapshot{},
@@ -3365,6 +3369,7 @@ func (st *Store) loadFromPersistence() error {
 			st.OrgCustomProperties[key] = m
 			return nil
 		}},
+		{externalPropertiesBucket, loadExternalProperties(st)},
 		{"repo_custom_property_values", func(key string, raw []byte) error {
 			var m map[string]interface{}
 			if err := LoadJSON(raw, &m); err != nil {
@@ -4034,6 +4039,18 @@ func (st *Store) loadFromPersistence() error {
 				return err
 			}
 			st.IssueBlockedBy[issueID] = blockers
+			return nil
+		}},
+		{issueBlockedByAddedAtBucket, func(key string, raw []byte) error {
+			issueID, err := strconv.Atoi(key)
+			if err != nil {
+				return fmt.Errorf("%s key %q: %w", issueBlockedByAddedAtBucket, key, err)
+			}
+			var added map[int]time.Time
+			if err := LoadJSON(raw, &added); err != nil {
+				return err
+			}
+			st.IssueBlockedByAddedAt[issueID] = added
 			return nil
 		}},
 		{"repo_imports", func(key string, raw []byte) error {

@@ -59,6 +59,9 @@ type Events interface {
 	// per-change actions (edited, labeled, assigned, milestoned, …), behind the
 	// seam so REST and GraphQL cannot drift on the derivation.
 	EmitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange)
+	// EmitIssueRelatesTo delivers issue_relates_to as the REST relates_to
+	// endpoints do: one delivery within a repository, one per repository across two.
+	EmitIssueRelatesTo(sender *store.User, action string, repo *store.Repo, issue *store.Issue, relatedRepo *store.Repo, related *store.Issue)
 	EmitPullRequestChanges(repo *store.Repo, pr *store.PullRequest, sender *store.User, change store.SubjectChange)
 	// EmitProjectV2Event / EmitSponsorshipEvent deliver families whose subject
 	// belongs to an account, not a repository, so they cannot go through

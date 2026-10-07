@@ -173,7 +173,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 			"inviter":   &graphql.Field{Type: graphql.NewNonNull(userType)},
 			"permalink": &graphql.Field{Type: graphql.NewNonNull(uri)},
 			"permission": &graphql.Field{Type: graphql.NewNonNull(
-				s.sharedEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE"))},
+				s.gqlRepositoryPermission())},
 			"repository": &graphql.Field{
 				Type: s.repositoryInfoInterface(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {

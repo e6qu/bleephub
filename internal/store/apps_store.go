@@ -535,6 +535,9 @@ func (st *Store) DeleteInstallation(id int) bool {
 	if st.Persist != nil {
 		st.Persist.MustDelete("installations", strconv.Itoa(id))
 	}
+	// Uninstalling the app unregisters it for external custom properties and
+	// removes the properties it created.
+	st.dropExternalPropertyInstallationLocked(id)
 	// Uninstalling immediately invalidates the installation's access tokens
 	// (GitHub parity); otherwise a ghs_ token authenticates until its 1h expiry.
 	for token, installationToken := range st.InstallationTokens {

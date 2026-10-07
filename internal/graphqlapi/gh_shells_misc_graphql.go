@@ -155,7 +155,7 @@ func (s *Resolver) addMiscShells() {
 	})
 
 	// pending-suggestion objects
-	pendingAssigneeSuggestion := s.mutationObject("PendingAssigneeSuggestion", graphql.Fields{
+	pendingAssigneeSuggestion := s.pendingSuggestionObject("PendingAssigneeSuggestion", graphql.Fields{
 		"actor":     gqlField(actor),
 		"assignee":  gqlField(assignee),
 		"createdAt": gqlNonNull(dateTime),
@@ -163,7 +163,7 @@ func (s *Resolver) addMiscShells() {
 		"updatedAt": gqlField(dateTime),
 	})
 
-	pendingCloseSuggestion := s.mutationObject("PendingCloseSuggestion", graphql.Fields{
+	pendingCloseSuggestion := s.pendingSuggestionObject("PendingCloseSuggestion", graphql.Fields{
 		"actor":       gqlField(actor),
 		"createdAt":   gqlNonNull(dateTime),
 		"duplicateOf": gqlField(issueOrPullRequest),
@@ -172,7 +172,7 @@ func (s *Resolver) addMiscShells() {
 		"updatedAt":   gqlField(dateTime),
 	})
 
-	pendingFieldSuggestion := s.mutationObject("PendingFieldSuggestion", graphql.Fields{
+	pendingFieldSuggestion := s.pendingSuggestionObject("PendingFieldSuggestion", graphql.Fields{
 		"actor":          gqlField(actor),
 		"createdAt":      gqlNonNull(dateTime),
 		"issueField":     gqlField(issueFields),
@@ -181,7 +181,7 @@ func (s *Resolver) addMiscShells() {
 		"updatedAt":      gqlField(dateTime),
 	})
 
-	pendingTypeSuggestion := s.mutationObject("PendingTypeSuggestion", graphql.Fields{
+	pendingTypeSuggestion := s.pendingSuggestionObject("PendingTypeSuggestion", graphql.Fields{
 		"actor":     gqlField(actor),
 		"createdAt": gqlNonNull(dateTime),
 		"issueType": gqlField(issueType),

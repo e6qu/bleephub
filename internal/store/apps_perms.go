@@ -28,6 +28,9 @@ const (
 	ScopePATRequests       PermScope = "organization_personal_access_token_requests"
 	ScopePATs              PermScope = "organization_personal_access_tokens"
 	ScopeCopilotSpaces     PermScope = "copilot_spaces"
+	// ScopeOrgExternalProperties governs the external custom properties a
+	// registered app installation keeps for an organization's repositories.
+	ScopeOrgExternalProperties PermScope = "organization_external_properties_for_repos"
 )
 
 // PermLevel is the entitlement level a credential holds for a PermScope.

@@ -36,6 +36,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_
 FROM golang:1.27.1-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS go-toolchain
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb AS dqlite-builder
+# The Ubuntu archive state (scripts/ubuntu-archive-state.sh): a new value
+# rebuilds the apt-get upgrade layers below instead of reusing a cached one.
+ARG UBUNTU_ARCHIVE_STATE=unset
 COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH
 ARG BLEEPHUB_VERSION=development
@@ -62,6 +65,9 @@ RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w -X
         scripts/write-build-info.sh /bleephub-dqlite-node /build-info/bleephub-dqlite-node.build-info.txt
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+# The Ubuntu archive state (scripts/ubuntu-archive-state.sh): a new value
+# rebuilds the apt-get upgrade layers below instead of reusing a cached one.
+ARG UBUNTU_ARCHIVE_STATE=unset
 # Jekyll and Sass read source files as the process's default external encoding;
 # without a UTF-8 locale Ruby defaults to US-ASCII and any UTF-8 byte in a theme
 # or a site's content (e.g. jekyll-theme-primer's SCSS) aborts the build.

@@ -1,5 +1,5 @@
-github.com/aws/aws-lambda-go v1.55.0 h1:D+AUkk49hTldMnv+Ydt+/jdWVXWPsp8hlwY6Enob2FM=
-github.com/aws/aws-lambda-go v1.55.0/go.mod h1:V+NzkHNR6vBC8C1PDloqSLE+7jYWFiPvJJFiCiTm8nE=
+github.com/aws/aws-lambda-go v1.55.1 h1:We2cCp4BwqqH/JW+bEEo1FhgG71rslvjfi4y7KmlrR0=
+github.com/aws/aws-lambda-go v1.55.1/go.mod h1:V+NzkHNR6vBC8C1PDloqSLE+7jYWFiPvJJFiCiTm8nE=
 github.com/aws/aws-sdk-go-v2 v1.47.0 h1:0jsHallhJCeaU0Ko48c/3FK1ctOQ7NpzggxriJOQ8MQ=
 github.com/aws/aws-sdk-go-v2 v1.47.0/go.mod h1:bttEH6JqnUL8LepvDVfdrds/fZ5bCIxzpe3abyUrhDU=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 h1:GPRlPwz40I2B2VrBEASOA3Bi77NyeqejNLkifosX0rs=
@@ -16,8 +16,8 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.3 h1:MUaM4f+kj1ZIBPZfUS8
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.3/go.mod h1:6YmVmEVRI5ZZzRjCSsb9SryKH0hAlMRdgA7kG9aDvBU=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.3 h1:fuSCw4Z2qfRCztMPO3GXJNSiEp6Wee+WOLwrHHUMy9c=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.3/go.mod h1:6SxcHheD1pPR5+kWm1wGvjlL/YqUsh267sAfEmN4K7A=
-github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.42.0 h1:nEXWFo6Dn3Ul0mS2uA6rlBmM0yz2bhqD9CCgiUKvENQ=
-github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.42.0/go.mod h1:225ayquQQEfDBpkWbIYpN/JMBAA/pG5vyECRkrilvbI=
+github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.43.0 h1:CafsMuvoOR8TLy83azbaO1DXXiTQfL48PXwf/CBuU3s=
+github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.43.0/go.mod h1:225ayquQQEfDBpkWbIYpN/JMBAA/pG5vyECRkrilvbI=
 github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.72.0 h1:BAVXU2PW/FQZUWdTZ9VQZPpbCF711hEQ0l6bW8FKl1I=
 github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.72.0/go.mod h1:4ZX78yzuIXJ78KT4eiKxQ7bUUm/Oe5xWvKzWFoL6x+g=
 github.com/aws/aws-sdk-go-v2/service/ecs v1.99.0 h1:cPs0zxkcuEpcT2jIFclGr6VWc5ofICYXXW/6UMAhjMY=
@@ -26,8 +26,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 h1:bAdDl/
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19/go.mod h1:KaUzbLxv4CeSxh6ZCl9B4m7CuFenS8kUEaDs+f/DQr4=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.3 h1:bON1rJf67TSTDCKg816AAIE4xSTtoo9tl0XRkO72R+I=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.3/go.mod h1:c5BBpjJcQXpfeq9iASyVKA3T6vX6B6LEXY4mL/gklDY=
-github.com/aws/aws-sdk-go-v2/service/lambda v1.108.0 h1:iIjgs1MWp6quM8QyDUorxEjIZEpXV4UgqEp6wbFAz5U=
-github.com/aws/aws-sdk-go-v2/service/lambda v1.108.0/go.mod h1:KYgalOoMYV+Dm9vz0ydRM+SQ3RtFcqGHR/rl36YD6oY=
+github.com/aws/aws-sdk-go-v2/service/lambda v1.109.0 h1:r/JmqiXqHhZ2CpifXgDm83XuVslpE4e72fh3s1jqJMI=
+github.com/aws/aws-sdk-go-v2/service/lambda v1.109.0/go.mod h1:KYgalOoMYV+Dm9vz0ydRM+SQ3RtFcqGHR/rl36YD6oY=
 github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.0 h1:nh3cKZXkjO2KJdzY2ZbkRXaR8BjLHo+t14wFFumhtYw=
 github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.0/go.mod h1:3qyGHkZGVDDKAtbHZkjg2/8QejooBfRn9V2nnjjEggo=
 github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.0 h1:xpgbxBPYQeVHrJni4vd3wq69elhr8cqrVSwd8dgPkaQ=

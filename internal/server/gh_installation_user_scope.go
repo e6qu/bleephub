@@ -34,6 +34,9 @@ var installationReachableUserRoutes = map[string]bool{
 	"DELETE /api/v3/user/social_accounts":                            true,
 	"POST /api/v3/user/codespaces/{codespace_name}/publish":          true,
 	"POST /api/v3/user/{user_id}/projectsV2/{project_number}/drafts": true,
+	"POST /api/v3/user/repos":                                        true,
+	"PUT /api/v3/user/installations/{id}/repositories/{repo_id}":     true,
+	"DELETE /api/v3/user/installations/{id}/repositories/{repo_id}":  true,
 }
 
 // routeIsUserAccountScoped reports whether a pattern addresses the authenticated

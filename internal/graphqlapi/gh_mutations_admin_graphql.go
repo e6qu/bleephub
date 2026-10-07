@@ -58,7 +58,7 @@ func (r packageOwnerRule) authorize(s *Resolver, p graphql.ResolveParams, input 
 }
 
 func (s *Resolver) addAdminMutationsToSchema(mutationType *graphql.Object) {
-	repositoryPermission := s.sharedEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE")
+	repositoryPermission := s.gqlRepositoryPermission()
 
 	updateTeamsInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "UpdateTeamsRepositoryInput",
@@ -88,8 +88,8 @@ func (s *Resolver) addAdminMutationsToSchema(mutationType *graphql.Object) {
 			if repo == nil {
 				return nil, gqlMissingNode("Repository", str(input["repositoryId"]))
 			}
-			// MAINTAIN and TRIAGE fold to their nearest grant, as the REST
-			// team-repository permission parameter does.
+			// MAINTAIN, TRIAGE and TRIAGE_PLUS fold to their nearest grant, as
+			// the REST team-repository permission parameter does.
 			var perm store.TeamPermission
 			switch str(input["permission"]) {
 			case "ADMIN":

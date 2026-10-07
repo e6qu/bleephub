@@ -579,7 +579,7 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 				}
 			}
 			if rawIteration, ok := input["iterationConfiguration"].(map[string]interface{}); ok {
-				iteration, err := projectV2IterationFromInput(rawIteration)
+				iteration, err := projectV2IterationFromInput(rawIteration, field.Iteration)
 				if err != nil {
 					return nil, err
 				}
@@ -761,6 +761,7 @@ func projectV2OptionsFromInput(raw []interface{}) []*store.ProjectV2SingleSelect
 func (s *Resolver) projectV2IterationConfigurationInput() *graphql.InputObject {
 	dateScalar := s.graphQLStringScalar("Date")
 	iterationInput := s.mutationInput("ProjectV2Iteration", graphql.InputObjectConfigFieldMap{
+		"id":        &graphql.InputObjectFieldConfig{Type: graphql.String},
 		"title":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
 		"startDate": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(dateScalar)},
 		"duration":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.Int)},
@@ -773,8 +774,11 @@ func (s *Resolver) projectV2IterationConfigurationInput() *graphql.InputObject {
 }
 
 // projectV2IterationFromInput reads an iterationConfiguration input into a store
-// schedule. IDs are minted by the store; existing ones survive by title match.
-func projectV2IterationFromInput(rawIteration map[string]interface{}) (*store.ProjectV2IterationConfiguration, error) {
+// schedule. An iteration naming the `id` of one of the field's existing
+// iterations keeps that identity; one without an `id` keeps the ID of the
+// existing iteration with its title, or the store mints one. existing is nil
+// for a new field, which has no iterations an `id` could name.
+func projectV2IterationFromInput(rawIteration map[string]interface{}, existing *store.ProjectV2IterationConfiguration) (*store.ProjectV2IterationConfiguration, error) {
 	if rawIteration == nil {
 		return nil, nil
 	}
@@ -789,17 +793,34 @@ func projectV2IterationFromInput(rawIteration map[string]interface{}) (*store.Pr
 		}
 		title, _ := m["title"].(string)
 		start, _ := m["startDate"].(string)
+		id, _ := m["id"].(string)
+		if id != "" && !projectV2IterationExists(existing, id) {
+			return nil, fmt.Errorf("iterationConfiguration.iterations names iteration %q, which is not one of the field's iterations", id)
+		}
 		iterDuration := duration
 		if d, ok := m["duration"].(int); ok && d > 0 {
 			iterDuration = d
 		}
 		iteration.Iterations = append(iteration.Iterations, &store.ProjectV2Iteration{
+			ID:        id,
 			Title:     title,
 			StartDate: start,
 			Duration:  iterDuration,
 		})
 	}
 	return iteration, nil
+}
+
+func projectV2IterationExists(cfg *store.ProjectV2IterationConfiguration, id string) bool {
+	if cfg == nil {
+		return false
+	}
+	for _, it := range cfg.Iterations {
+		if it.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // projectV2DataTypeForIssueField maps an org issue field's type onto the project

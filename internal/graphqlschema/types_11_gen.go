@@ -5,6 +5,228 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineRuleParametersInput() {
+	r.input("RuleParametersInput", "Specifies the parameters for a `RepositoryRule` object. Only one of the fields should be specified.", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"branchNamePattern": {
+				Type:        r.t("BranchNamePatternParametersInput"),
+				Description: "Parameters used for the `branch_name_pattern` rule type",
+			},
+			"codeCoverage": {
+				Type:        r.t("CodeCoverageParametersInput"),
+				Description: "Parameters used for the `code_coverage` rule type",
+			},
+			"codeQuality": {
+				Type:        r.t("CodeQualityParametersInput"),
+				Description: "Parameters used for the `code_quality` rule type",
+			},
+			"codeScanning": {
+				Type:        r.t("CodeScanningParametersInput"),
+				Description: "Parameters used for the `code_scanning` rule type",
+			},
+			"commitAuthorEmailPattern": {
+				Type:        r.t("CommitAuthorEmailPatternParametersInput"),
+				Description: "Parameters used for the `commit_author_email_pattern` rule type",
+			},
+			"commitMessagePattern": {
+				Type:        r.t("CommitMessagePatternParametersInput"),
+				Description: "Parameters used for the `commit_message_pattern` rule type",
+			},
+			"committerEmailPattern": {
+				Type:        r.t("CommitterEmailPatternParametersInput"),
+				Description: "Parameters used for the `committer_email_pattern` rule type",
+			},
+			"copilotCodeReview": {
+				Type:        r.t("CopilotCodeReviewParametersInput"),
+				Description: "Parameters used for the `copilot_code_review` rule type",
+			},
+			"fileExtensionRestriction": {
+				Type:        r.t("FileExtensionRestrictionParametersInput"),
+				Description: "Parameters used for the `file_extension_restriction` rule type",
+			},
+			"filePathRestriction": {
+				Type:        r.t("FilePathRestrictionParametersInput"),
+				Description: "Parameters used for the `file_path_restriction` rule type",
+			},
+			"maxFilePathLength": {
+				Type:        r.t("MaxFilePathLengthParametersInput"),
+				Description: "Parameters used for the `max_file_path_length` rule type",
+			},
+			"maxFileSize": {
+				Type:        r.t("MaxFileSizeParametersInput"),
+				Description: "Parameters used for the `max_file_size` rule type",
+			},
+			"mergeQueue": {
+				Type:        r.t("MergeQueueParametersInput"),
+				Description: "Parameters used for the `merge_queue` rule type",
+			},
+			"pullRequest": {
+				Type:        r.t("PullRequestParametersInput"),
+				Description: "Parameters used for the `pull_request` rule type",
+			},
+			"requiredDeployments": {
+				Type:        r.t("RequiredDeploymentsParametersInput"),
+				Description: "Parameters used for the `required_deployments` rule type",
+			},
+			"requiredStatusChecks": {
+				Type:        r.t("RequiredStatusChecksParametersInput"),
+				Description: "Parameters used for the `required_status_checks` rule type",
+			},
+			"tagNamePattern": {
+				Type:        r.t("TagNamePatternParametersInput"),
+				Description: "Parameters used for the `tag_name_pattern` rule type",
+			},
+			"update": {
+				Type:        r.t("UpdateParametersInput"),
+				Description: "Parameters used for the `update` rule type",
+			},
+			"workflows": {
+				Type:        r.t("WorkflowsParametersInput"),
+				Description: "Parameters used for the `workflows` rule type",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRuleSource() {
+	r.union("RuleSource", "Types which can have `RepositoryRule` objects.", []string{"Enterprise", "Organization", "Repository"})
+}
+
+func (r *Registry) defineSamlDigestAlgorithm() {
+	r.enum("SamlDigestAlgorithm", "The possible digest algorithms used to sign SAML requests for an identity provider.", graphql.EnumValueConfigMap{
+		"SHA1": {
+			Value:       "SHA1",
+			Description: "SHA1",
+		},
+		"SHA256": {
+			Value:       "SHA256",
+			Description: "SHA256",
+		},
+		"SHA384": {
+			Value:       "SHA384",
+			Description: "SHA384",
+		},
+		"SHA512": {
+			Value:       "SHA512",
+			Description: "SHA512",
+		},
+	})
+}
+
+func (r *Registry) defineSamlSignatureAlgorithm() {
+	r.enum("SamlSignatureAlgorithm", "The possible signature algorithms used to sign SAML requests for a Identity Provider.", graphql.EnumValueConfigMap{
+		"RSA_SHA1": {
+			Value:       "RSA_SHA1",
+			Description: "RSA-SHA1",
+		},
+		"RSA_SHA256": {
+			Value:       "RSA_SHA256",
+			Description: "RSA-SHA256",
+		},
+		"RSA_SHA384": {
+			Value:       "RSA_SHA384",
+			Description: "RSA-SHA384",
+		},
+		"RSA_SHA512": {
+			Value:       "RSA_SHA512",
+			Description: "RSA-SHA512",
+		},
+	})
+}
+
+func (r *Registry) defineSavedReply() {
+	r.object("SavedReply", "A Saved Reply is text a user can use to reply quickly.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"body": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The body of the saved reply.",
+			},
+			"bodyHTML": {
+				Type:        graphql.NewNonNull(r.t("HTML")),
+				Description: "The saved reply body rendered to HTML.",
+			},
+			"databaseId": {
+				Type:        r.t("Int"),
+				Description: "Identifies the primary key from the database.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the SavedReply object",
+			},
+			"title": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The title of the saved reply.",
+			},
+			"user": {
+				Type:        r.t("Actor"),
+				Description: "The user that saved this reply.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSavedReplyConnection() {
+	r.object("SavedReplyConnection", "The connection type for SavedReply.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("SavedReplyEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("SavedReply")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSavedReplyEdge() {
+	r.object("SavedReplyEdge", "An edge in a connection.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type:        r.t("SavedReply"),
+				Description: "The item at the end of the edge.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSavedReplyOrder() {
+	r.input("SavedReplyOrder", "Ordering options for saved reply connections.", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"direction": {
+				Type:        graphql.NewNonNull(r.t("OrderDirection")),
+				Description: "The ordering direction.",
+			},
+			"field": {
+				Type:        graphql.NewNonNull(r.t("SavedReplyOrderField")),
+				Description: "The field to order saved replies by.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSavedReplyOrderField() {
+	r.enum("SavedReplyOrderField", "Properties by which saved reply connections can be ordered.", graphql.EnumValueConfigMap{
+		"UPDATED_AT": {
+			Value:       "UPDATED_AT",
+			Description: "Order saved reply by when they were updated.",
+		},
+	})
+}
+
 func (r *Registry) defineSearchResultItem() {
 	r.union("SearchResultItem", "The results of a search.", []string{"App", "Discussion", "Issue", "MarketplaceListing", "Organization", "PullRequest", "Repository", "User"})
 }
@@ -188,7 +410,7 @@ func (r *Registry) defineSecurityAdvisory() {
 			},
 			"publishedAt": {
 				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "When the advisory was published",
+				Description: "When GitHub published this advisory",
 			},
 			"references": {
 				Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisoryReference")))),
@@ -4148,183 +4370,6 @@ func (r *Registry) defineSubmodule() {
 			"subprojectCommitOid": {
 				Type:        r.t("GitObjectID"),
 				Description: "The commit revision of the subproject repository being tracked by the submodule",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSubmoduleConnection() {
-	r.object("SubmoduleConnection", "The connection type for Submodule.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"edges": {
-				Type:        graphql.NewList(r.t("SubmoduleEdge")),
-				Description: "A list of edges.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("Submodule")),
-				Description: "A list of nodes.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"totalCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the total count of items in the connection.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSubmoduleEdge() {
-	r.object("SubmoduleEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("Submodule"),
-				Description: "The item at the end of the edge.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSubscribable() {
-	r.interfaceType("Subscribable", "Entities that can be subscribed to for web and email notifications.", func() graphql.Fields {
-		return graphql.Fields{
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the Subscribable object",
-			},
-			"viewerCanSubscribe": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "Check if the viewer is able to change their subscription status for the repository.",
-			},
-			"viewerSubscription": {
-				Type:        r.t("SubscriptionState"),
-				Description: "Identifies if the viewer is watching, not watching, or ignoring the subscribable entity.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSubscribableThread() {
-	r.interfaceType("SubscribableThread", "Entities that can be subscribed to for web and email notifications.", func() graphql.Fields {
-		return graphql.Fields{
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the SubscribableThread object",
-			},
-			"viewerThreadSubscriptionFormAction": {
-				Type:        r.t("ThreadSubscriptionFormAction"),
-				Description: "Identifies the viewer's thread subscription form action.",
-			},
-			"viewerThreadSubscriptionStatus": {
-				Type:        r.t("ThreadSubscriptionState"),
-				Description: "Identifies the viewer's thread subscription status.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSubscribedEvent() {
-	r.object("SubscribedEvent", "Represents a 'subscribed' event on a given `Subscribable`.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"actor": {
-				Type:        r.t("Actor"),
-				Description: "Identifies the actor who performed the event.",
-			},
-			"createdAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was created.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the SubscribedEvent object",
-			},
-			"subscribable": {
-				Type:        graphql.NewNonNull(r.t("Subscribable")),
-				Description: "Object referenced by event.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSubscriptionState() {
-	r.enum("SubscriptionState", "The possible states of a subscription.", graphql.EnumValueConfigMap{
-		"IGNORED": {
-			Value:       "IGNORED",
-			Description: "The User is never notified.",
-		},
-		"SUBSCRIBED": {
-			Value:       "SUBSCRIBED",
-			Description: "The User is notified of all conversations.",
-		},
-		"UNSUBSCRIBED": {
-			Value:       "UNSUBSCRIBED",
-			Description: "The User is only notified when participating or @mentioned.",
-		},
-	})
-}
-
-func (r *Registry) defineSuggestedReviewer() {
-	r.object("SuggestedReviewer", "A suggestion to review a pull request based on a user's commit history and review comments.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"isAuthor": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "Is this suggestion based on past commits?",
-			},
-			"isCommenter": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "Is this suggestion based on past review comments?",
-			},
-			"reviewer": {
-				Type:        graphql.NewNonNull(r.t("User")),
-				Description: "Identifies the user suggested to review the pull request.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSuggestedReviewerActor() {
-	r.object("SuggestedReviewerActor", "A suggestion to review a pull request based on an actor's commit history, review comments, and integrations.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"isAuthor": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "Is this suggestion based on past commits?",
-			},
-			"isCommenter": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "Is this suggestion based on past review comments?",
-			},
-			"reviewer": {
-				Type:        graphql.NewNonNull(r.t("Actor")),
-				Description: "Identifies the actor suggested to review the pull request.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSuggestedReviewerActorConnection() {
-	r.object("SuggestedReviewerActorConnection", "A suggestion to review a pull request based on an actor's commit history, review comments, and integrations.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"edges": {
-				Type:        graphql.NewList(r.t("SuggestedReviewerActorEdge")),
-				Description: "A list of edges.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("SuggestedReviewerActor")),
-				Description: "A list of nodes.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"totalCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the total count of items in the connection.",
 			},
 		}
 	})

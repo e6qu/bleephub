@@ -3,13 +3,13 @@ module github.com/e6qu/bleephub-ecs-wake
 go 1.26.6
 
 require (
-	github.com/aws/aws-lambda-go v1.55.0
+	github.com/aws/aws-lambda-go v1.55.1
 	github.com/aws/aws-sdk-go-v2 v1.47.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.5
-	github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.42.0
+	github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.43.0
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.72.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.99.0
-	github.com/aws/aws-sdk-go-v2/service/lambda v1.108.0
+	github.com/aws/aws-sdk-go-v2/service/lambda v1.109.0
 	github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.0
 )
