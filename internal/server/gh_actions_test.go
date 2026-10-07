@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -92,6 +93,24 @@ func runRequest(s *Server, method, path string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	return w
+}
+
+// followLogDownload requires the 302 GitHub answers a log download with and
+// fetches the Location it names, without the caller's credential.
+func followLogDownload(t *testing.T, s *Server, w *httptest.ResponseRecorder) *httptest.ResponseRecorder {
+	t.Helper()
+	if w.Code != http.StatusFound {
+		t.Fatalf("log download status = %d, want 302; body = %s", w.Code, w.Body.String())
+	}
+	location, err := url.Parse(w.Header().Get("Location"))
+	if err != nil || !strings.HasPrefix(location.Path, "/_logs/") {
+		t.Fatalf("log download Location = %q", w.Header().Get("Location"))
+	}
+	req := httptest.NewRequest(http.MethodGet, location.Path, nil)
+	req.SetPathValue("ticket", strings.TrimPrefix(location.Path, "/_logs/"))
+	got := httptest.NewRecorder()
+	s.handleLogDownload(got, req)
+	return got
 }
 
 func runAuthedRequest(s *Server, method, path string) *httptest.ResponseRecorder {
@@ -265,6 +284,7 @@ func TestActionsJobs_Logs(t *testing.T) {
 	id := stableJobID(wfJob.JobID)
 
 	w := runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/jobs/%d/logs", id))
+	w = followLogDownload(t, s, w)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
 	}

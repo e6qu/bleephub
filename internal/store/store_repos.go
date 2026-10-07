@@ -1030,6 +1030,9 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 	delete(st.CodeScanningDefaultSetups, fullName)
 	delete(st.CodeQualitySetups, fullName)
 	delete(st.RepoCustomPropertyValues, fullName)
+	if ownerLogin, _, ok := strings.Cut(fullName, "/"); ok {
+		st.dropRepoExternalPropertyValuesLocked(batch, ownerLogin, repo.ID)
+	}
 	delete(st.RepoImmutableReleases, fullName)
 	delete(st.AgentsRepoSecrets, fullName)
 	delete(st.AgentsRepoVariables, fullName)
@@ -1989,6 +1992,7 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *PersistBatch, repoI
 		if issueIDs[issueID] {
 			delete(st.IssueBlockedBy, issueID)
 			batch.Delete("issue_blocked_by", strconv.Itoa(issueID))
+			st.pruneBlockedByAddedAtLocked(batch, issueID)
 			continue
 		}
 		kept := blockers[:0]
@@ -2010,6 +2014,7 @@ func (st *Store) deleteRepoIssueAndPullChildrenLocked(batch *PersistBatch, repoI
 			st.IssueBlockedBy[issueID] = kept
 			batch.Put("issue_blocked_by", strconv.Itoa(issueID), kept)
 		}
+		st.pruneBlockedByAddedAtLocked(batch, issueID)
 	}
 	for id, r := range st.PRReviews {
 		if prIDs[r.PRID] {
@@ -2949,6 +2954,19 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 // commits in one transaction. Caller holds st.Mu.
 func (st *Store) moveRepoKeyLocked(batch *PersistBatch, oldFull, newFull string) {
 	st.moveNotificationRepoKeyBatchLocked(batch, oldFull, newFull)
+	// External property values are keyed by repository ID and survive a
+	// rename; a transfer leaves the organization whose installations wrote them.
+	oldOwner, _, _ := strings.Cut(oldFull, "/")
+	newOwner, _, _ := strings.Cut(newFull, "/")
+	if !strings.EqualFold(oldOwner, newOwner) {
+		repo := st.RepoByNameLocked(newFull)
+		if repo == nil {
+			repo = st.RepoByNameLocked(oldFull)
+		}
+		if repo != nil {
+			st.dropRepoExternalPropertyValuesLocked(batch, oldOwner, repo.ID)
+		}
+	}
 	if v := st.RepoSecrets[oldFull]; v != nil {
 		st.RepoSecrets[newFull] = v
 		delete(st.RepoSecrets, oldFull)

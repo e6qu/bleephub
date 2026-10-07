@@ -15,6 +15,22 @@ import (
 // eager, not a thunk: AddFieldConfig silently declines to touch a thunked
 // object, and registerMutation adds clientMutationId to every payload that way.
 // Genuinely cyclic types use mutationObjectLazy instead.
+// pendingSuggestionObject declares one of GitHub's Pending*Suggestion objects:
+// a Node, so each carries its `id`.
+func (s *Resolver) pendingSuggestionObject(name string, fields graphql.Fields) *graphql.Object {
+	if existing := s.memoizedMutationObject(name); existing != nil {
+		return existing
+	}
+	fields["id"] = &graphql.Field{Type: graphql.NewNonNull(graphql.ID)}
+	object := graphql.NewObject(graphql.ObjectConfig{
+		Name:       name,
+		Interfaces: []*graphql.Interface{s.graphqlTypes.node},
+		Fields:     fields,
+	})
+	s.mutationObjects[name] = object
+	return object
+}
+
 func (s *Resolver) mutationObject(name string, fields graphql.Fields) *graphql.Object {
 	if existing := s.memoizedMutationObject(name); existing != nil {
 		return existing

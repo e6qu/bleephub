@@ -57,7 +57,7 @@ func (s *Server) handleAddIssueRelatesTo(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusUnprocessableEntity, "The issues are already related")
 		return
 	}
-	s.emitIssueRelatesTo(r, "relates_to_added", repo, issue, relatedRepo, related)
+	s.emitIssueRelatesTo(ghUserFromContext(r.Context()), s.baseURL(r), "relates_to_added", repo, issue, relatedRepo, related)
 	relatedJSON := issueToJSON(related, s.store, s.baseURL(r), relatedRepo.FullName)
 	writeJSONCreated(w, jsonStringField(relatedJSON, "url"), relatedJSON)
 }
@@ -77,7 +77,7 @@ func (s *Server) handleRemoveIssueRelatesTo(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.emitIssueRelatesTo(r, "relates_to_removed", repo, issue, relatedRepo, related)
+	s.emitIssueRelatesTo(ghUserFromContext(r.Context()), s.baseURL(r), "relates_to_removed", repo, issue, relatedRepo, related)
 	writeJSON(w, http.StatusOK, issueToJSON(related, s.store, s.baseURL(r), relatedRepo.FullName))
 }
 
@@ -102,9 +102,7 @@ func (s *Server) readableRelatedIssue(r *http.Request, issueID int) (*store.Issu
 // sends one to each, naming only that repository's issue, so that neither
 // repository learns the other's details.
 // https://docs.github.com/webhooks/webhook-events-and-payloads#issue-relates-to
-func (s *Server) emitIssueRelatesTo(r *http.Request, action string, repo *store.Repo, issue *store.Issue, relatedRepo *store.Repo, related *store.Issue) {
-	sender := ghUserFromContext(r.Context())
-	base := s.baseURL(r)
+func (s *Server) emitIssueRelatesTo(sender *store.User, base, action string, repo *store.Repo, issue *store.Issue, relatedRepo *store.Repo, related *store.Issue) {
 	payload := func(onRepo *store.Repo, own *store.Issue) map[string]interface{} {
 		return map[string]interface{}{
 			"action":     action,

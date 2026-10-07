@@ -484,6 +484,7 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 	s.store.Mu.Unlock()
 
 	w := runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/jobs/%d/logs", stableJobID(wfJob.JobID)))
+	w = followLogDownload(t, s, w)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
@@ -534,6 +535,7 @@ func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 	s2.setArtifactStore(store.NewArtifactStoreWithByteStore("", byteStore))
 
 	w := runRequest(s2, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/jobs/%d/logs", stableJobID(wfJob.JobID)))
+	w = followLogDownload(t, s2, w)
 	if w.Code != http.StatusOK {
 		t.Fatalf("reloaded job log status = %d, body = %s", w.Code, w.Body.String())
 	}
@@ -709,6 +711,7 @@ func TestJobLogs_PrefersUploadedLogFiles(t *testing.T) {
 	})
 
 	w := runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/jobs/%d/logs", stableJobID(wfJob.JobID)))
+	w = followLogDownload(t, s, w)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
 	}
@@ -760,7 +763,7 @@ func TestRunLogsZip_GitHubArchiveLayout(t *testing.T) {
 			"state": "inProgress"},
 	})
 
-	w := runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/runs/%d/logs", wf.RunID))
+	w := followLogDownload(t, s, runRequest(s, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/runs/%d/logs", wf.RunID)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}

@@ -1,10 +1,10 @@
 {
-  "official_types": 1811,
-  "bleephub_types": 1813,
-  "shared_types": 1806,
-  "official_fields": 8374,
-  "implemented_fields": 8360,
-  "signature_exact_fields": 8359,
+  "official_types": 1820,
+  "bleephub_types": 1822,
+  "shared_types": 1815,
+  "official_fields": 8392,
+  "implemented_fields": 8378,
+  "signature_exact_fields": 8377,
   "compatibility_gap_count": 9,
   "missing_types": [
     "AddCloseIssueReferencesInput",

@@ -66,6 +66,8 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		"reprioritizeSubIssue":   repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 		"addBlockedBy":           repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 		"removeBlockedBy":        repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
+		"addRelatesTo":           repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
+		"removeRelatesTo":        repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
 		"unmarkIssueAsDuplicate": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("duplicateId")},
 
 		// An issue's type is repository triage; the type definitions belong to

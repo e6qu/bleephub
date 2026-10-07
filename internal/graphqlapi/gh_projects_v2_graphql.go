@@ -404,7 +404,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			rawIteration, _ := input["iterationConfiguration"].(map[string]interface{})
 			// The option input carries colour and description too; reading only the name discarded both.
 			options := projectV2OptionsFromInput(rawOptions)
-			iteration, err := projectV2IterationFromInput(rawIteration)
+			iteration, err := projectV2IterationFromInput(rawIteration, nil)
 			if err != nil {
 				return nil, err
 			}

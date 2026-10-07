@@ -403,7 +403,7 @@ func (s *Resolver) initGraphQLSchema() {
 		s.namedObject("SshSignature"),
 		s.namedObject("SmimeSignature"),
 		s.namedObject("UnknownSignature"),
-		// The six agent-triage events are reachable only via the IssueEventWithRationale union; register them so their fragments validate.
+		// The six agent-triage events are declared but recorded nowhere; register them so their fragments validate.
 		s.namedObject("IssueFieldAddedEvent"),
 		s.namedObject("IssueFieldChangedEvent"),
 		s.namedObject("IssueFieldRemovedEvent"),

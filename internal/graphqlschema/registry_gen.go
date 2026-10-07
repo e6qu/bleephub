@@ -6,14 +6,14 @@ package graphqlschema
 // Counts of the generated type universe, used to presize the registry's
 // maps and asserted by the completeness ratchet.
 const (
-	generatedTypeCount      = 1811
-	generatedObjectCount    = 1026
+	generatedTypeCount      = 1820
+	generatedObjectCount    = 1029
 	generatedInterfaceCount = 50
-	generatedUnionCount     = 49
-	generatedEnumCount      = 255
-	generatedInputCount     = 418
+	generatedUnionCount     = 48
+	generatedEnumCount      = 257
+	generatedInputCount     = 423
 	generatedScalarCount    = 13
-	generatedAbstractCount  = 99
+	generatedAbstractCount  = 98
 )
 
 // defineAllTypes registers every named type's shell. Fields, interface
@@ -75,6 +75,8 @@ func (r *Registry) defineAllTypes() {
 	r.defineAddPullRequestReviewThreadReplyPayload()
 	r.defineAddReactionInput()
 	r.defineAddReactionPayload()
+	r.defineAddRelatesToInput()
+	r.defineAddRelatesToPayload()
 	r.defineAddStarInput()
 	r.defineAddStarPayload()
 	r.defineAddSubIssueInput()
@@ -207,7 +209,12 @@ func (r *Registry) defineAllTypes() {
 	r.defineClosePullRequestPayload()
 	r.defineClosedEvent()
 	r.defineCloser()
+	r.defineCodeCoverageParameters()
+	r.defineCodeCoverageParametersInput()
 	r.defineCodeOfConduct()
+	r.defineCodeQualityParameters()
+	r.defineCodeQualityParametersInput()
+	r.defineCodeQualitySeverity()
 	r.defineCodeScanningParameters()
 	r.defineCodeScanningParametersInput()
 	r.defineCodeScanningTool()
@@ -684,8 +691,6 @@ func (r *Registry) defineAllTypes() {
 	r.defineIssueDependencyOrderField()
 	r.defineIssueEdge()
 	r.defineIssueEventConfidenceLevel()
-	r.defineIssueEventRationale()
-	r.defineIssueEventWithRationale()
 	r.defineIssueFieldAddedEvent()
 	r.defineIssueFieldChangedEvent()
 	r.defineIssueFieldCommon()
@@ -723,6 +728,8 @@ func (r *Registry) defineAllTypes() {
 	r.defineIssueOrPullRequest()
 	r.defineIssueOrder()
 	r.defineIssueOrderField()
+	r.defineIssueRelatesToOrder()
+	r.defineIssueRelatesToOrderField()
 	r.defineIssueSearchType()
 	r.defineIssueState()
 	r.defineIssueStateReason()
@@ -1243,6 +1250,8 @@ func (r *Registry) defineAllTypes() {
 	r.defineRemovePullRequestCreationCapBypassUsersPayload()
 	r.defineRemoveReactionInput()
 	r.defineRemoveReactionPayload()
+	r.defineRemoveRelatesToInput()
+	r.defineRemoveRelatesToPayload()
 	r.defineRemoveStarInput()
 	r.defineRemoveStarPayload()
 	r.defineRemoveSubIssueInput()

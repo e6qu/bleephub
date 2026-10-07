@@ -584,7 +584,7 @@ func (s *Server) viewerIsOrgMember(ctx context.Context, orgLogin string) bool {
 func scopeAdministersResource(scope store.PermScope) bool {
 	switch scope {
 	case store.ScopeAdministration, store.ScopeOrgAdministration, store.ScopeOrganizationHooks, store.ScopeSecrets,
-		store.ScopeDependabotSecrets, store.ScopePATs, store.ScopePATRequests:
+		store.ScopeDependabotSecrets, store.ScopePATs, store.ScopePATRequests, store.ScopeOrgExternalProperties:
 		return true
 	}
 	return false
@@ -869,6 +869,9 @@ func fineGrainedPATPermissionForPattern(pattern, method string) (store.PermScope
 	if strings.Contains(lower, "/copilot-spaces") {
 		return store.ScopeCopilotSpaces, level
 	}
+	if strings.Contains(lower, "/orgs/{org}/properties/installations") {
+		return store.ScopeOrgExternalProperties, level
+	}
 	if strings.Contains(lower, "/orgs/{org}/hooks") {
 		return store.ScopeOrganizationHooks, level
 	}
@@ -1065,6 +1068,7 @@ var classicScopeGrants = map[store.PermScope][]classicScopeGrant{
 		{"admin:org", store.PermWrite}, {"write:org", store.PermWrite}, {"read:org", store.PermRead},
 		{"user", store.PermWrite}, {"read:user", store.PermRead}, {"repo", store.PermWrite},
 	},
+	store.ScopeOrgExternalProperties: {{"admin:org", store.PermAdmin}},
 }
 
 // allPermScopes enumerates every permission constant.
@@ -1075,6 +1079,7 @@ var allPermScopes = []store.PermScope{
 	store.ScopeChecks, store.ScopeSecrets, store.ScopeDeployments, store.ScopeAdministration, store.ScopeMembers,
 	store.ScopeOrgAdministration, store.ScopeOrganizationHooks, store.ScopeSecurityEvents, store.ScopeDependabotSecrets, store.ScopeCodespaces,
 	store.ScopeReactions, store.ScopeProjects, store.ScopePages, store.ScopePATRequests, store.ScopePATs, store.ScopeCopilotSpaces,
+	store.ScopeOrgExternalProperties,
 }
 
 func init() {

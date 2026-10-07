@@ -346,7 +346,11 @@ func (s *Server) handleRunAttemptLogs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.writeRunLogsZip(r.Context(), w, wf, runID)
+	if !s.runHasLogs(wf) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.redirectToLogDownload(w, r, logDownload{Kind: "attempt", Repo: repoFullName(r), RunID: runID, Attempt: attempt})
 }
 
 // handleWorkflowFileTiming sums the billable job durations of every run

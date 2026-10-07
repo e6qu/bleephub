@@ -1,7 +1,7 @@
 terraform {
   # CI provisions exactly this Terraform minor. A wider constraint would admit
   # releases nothing in this repository ever runs.
-  required_version = "~> 1.15.8"
+  required_version = "~> 1.16.0"
 
   required_providers {
     aws = {

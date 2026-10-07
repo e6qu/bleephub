@@ -17,7 +17,7 @@ import (
 )
 
 func (s *Server) registerGHRepoRoutes() {
-	s.route("POST /api/v3/user/repos", s.requirePerm(store.ScopeContents, store.PermWrite, s.handleCreateRepo))
+	s.route("POST /api/v3/user/repos", s.requireRepoCreationPerm(s.handleCreateRepo))
 	s.route("GET /api/v3/user/repos", s.handleListAuthUserRepos)
 	s.route("GET /api/v3/repos/{owner}/{repo}", s.handleGetRepo)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdateRepo))
@@ -624,11 +624,44 @@ func isValidNewRepoName(name string) bool {
 	return name == strings.TrimSpace(name)
 }
 
+// requireRepoCreationPerm gates POST /user/repos as GitHub documents it: a
+// classic token or a browser session needs the repo or public_repo scope (the
+// Contents mapping), while fine-grained tokens, GitHub App user tokens and
+// installation tokens need Administration write. Mapping classic tokens through
+// Administration would let admin:repo_hook create repositories.
+func (s *Server) requireRepoCreationPerm(next http.HandlerFunc) http.HandlerFunc {
+	byContents := s.requirePerm(store.ScopeContents, store.PermWrite, next)
+	byAdministration := s.requirePerm(store.ScopeAdministration, store.PermWrite, next)
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		pat := ghPersonalAccessTokenFromContext(ctx)
+		if ghInstallationTokenFromContext(ctx) != nil || ghUserToServerTokenFromContext(ctx) != nil || (pat != nil && pat.FineGrained) {
+			byAdministration(w, r)
+			return
+		}
+		byContents(w, r)
+	}
+}
+
 func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
+	}
+	// An installation's authenticated user is the account it is installed on;
+	// an organization installation has none, and creates through /orgs/{org}/repos.
+	if ghInstallationTokenFromContext(r.Context()) != nil {
+		inst := ghInstallationFromContext(r.Context())
+		if inst == nil || inst.TargetType != "User" {
+			writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
+			return
+		}
+		user = s.store.GetUserByID(inst.TargetID)
+		if user == nil {
+			writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
+			return
+		}
 	}
 
 	var req struct {

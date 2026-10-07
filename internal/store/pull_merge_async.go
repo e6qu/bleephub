@@ -15,6 +15,7 @@ type PullRequestMergeAsync struct {
 	Message         string           `json:"message"`
 	SHA             string           `json:"sha"`
 	ExpectedHeadSHA string           `json:"expected_head_sha"`
+	BypassRules     bool             `json:"bypass_rules"`
 	CreatedAt       time.Time        `json:"created_at"`
 }
 

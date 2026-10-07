@@ -26,17 +26,18 @@ func renderMergeAsyncResult(rec *store.PullRequestMergeAsync) map[string]interfa
 			"message": rec.Message,
 			"sha":     rec.SHA,
 		}
-	case MergeAsyncFailed:
+	case MergeAsyncFailed, MergeAsyncEnqueued:
 		details = map[string]interface{}{
 			"message": rec.Message,
 		}
-	default: // pending, enqueued
+	default: // pending
 		details = map[string]interface{}{
 			"message":           rec.Message,
 			"uuid":              rec.UUID,
 			"merge_method":      rec.MergeMethod,
 			"merge_action":      rec.MergeAction,
 			"expected_head_sha": rec.ExpectedHeadSHA,
+			"bypass_rules":      rec.BypassRules,
 		}
 	}
 	return map[string]interface{}{
@@ -80,8 +81,25 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 		CommitMessage string `json:"commit_message"`
 		SHA           string `json:"sha"`
 		MergeMethod   string `json:"merge_method"`
+		MergeAction   string `json:"merge_action"`
+		BypassRules   bool   `json:"bypass_rules"`
 	}
 	if !decodeJSONBodyOptional(w, r, &req) {
+		return
+	}
+	// No branch configures a merge queue here, so `default` merges directly;
+	// `merge_queue` adds the pull request to its base branch's queue.
+	mergeAction := req.MergeAction
+	switch mergeAction {
+	case "", "default", "direct_merge":
+		mergeAction = "direct_merge"
+	case "merge_queue":
+		if req.MergeMethod != "" || req.CommitTitle != "" || req.CommitMessage != "" {
+			store.WriteGHValidationError(w, "PullRequest", "merge_action", "invalid")
+			return
+		}
+	default:
+		store.WriteGHValidationError(w, "PullRequest", "merge_action", "invalid")
 		return
 	}
 	switch req.MergeMethod {
@@ -136,6 +154,11 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	if mergeAction == "merge_queue" {
+		s.enqueuePullRequestAsync(w, r, repo, pr, req.BypassRules)
+		return
+	}
+
 	// Branch protection: required status checks must be green on the head commit.
 	if headSha := s.prHeadSha(repo, pr); headSha != "" {
 		if st := s.evaluateChecksForMerge(repo, pr.BaseRefName, headSha); len(st.MissingRequired) > 0 {
@@ -183,19 +206,72 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 		Message:         "Pull Request successfully merged",
 		SHA:             mergeSha,
 		ExpectedHeadSHA: expectedHead,
+		BypassRules:     req.BypassRules,
 		CreatedAt:       s.currentTime(),
 	}
 	s.store.RecordPullRequestMergeAsync(rec)
 
-	// Acknowledge 202 "enqueued" with the poll UUID; the merge is already
+	// Acknowledge 202 "pending" with the poll UUID; the merge is already
 	// durable, so a poll reports "merged".
 	writeJSON(w, http.StatusAccepted, renderMergeAsyncResult(&store.PullRequestMergeAsync{
 		UUID:            rec.UUID,
-		Status:          MergeAsyncEnqueued,
+		Status:          MergeAsyncPending,
 		MergeMethod:     mergeMethod,
 		MergeAction:     "direct_merge",
-		Message:         "Merge enqueued",
+		Message:         "Merge request accepted",
 		ExpectedHeadSHA: expectedHead,
+		BypassRules:     req.BypassRules,
+	}))
+}
+
+// enqueuePullRequestAsync adds the pull request to its base branch's merge
+// queue. One already queued answers 200 "enqueued" at once; a new entry answers
+// 202 "pending" with the UUID whose result reports "enqueued".
+func (s *Server) enqueuePullRequestAsync(w http.ResponseWriter, r *http.Request, repo *store.Repo, pr *store.PullRequest, bypassRules bool) {
+	if pr.MergeQueuePosition > 0 {
+		writeJSON(w, http.StatusOK, renderMergeAsyncResult(&store.PullRequestMergeAsync{
+			Status:  MergeAsyncEnqueued,
+			Message: "Pull Request is already in the merge queue",
+		}))
+		return
+	}
+	// The queue resolves being up to date and re-runs checks; the review
+	// requirements must already hold, as for the GraphQL enqueuePullRequest.
+	if ok, msg := s.mergeQueueEligible(r.Context(), repo, pr); !ok {
+		writeJSON(w, http.StatusConflict, renderMergeAsyncResult(&store.PullRequestMergeAsync{
+			Status:  MergeAsyncFailed,
+			Message: msg,
+		}))
+		return
+	}
+	queued := s.store.EnqueuePullRequest(pr.ID, false)
+	if queued == nil {
+		writeGHError(w, http.StatusUnprocessableEntity, "Pull Request is not mergeable")
+		return
+	}
+	expectedHead := s.prHeadSha(repo, pr)
+	rec := &store.PullRequestMergeAsync{
+		UUID:            uuid.New().String(),
+		RepoID:          repo.ID,
+		PRNumber:        pr.Number,
+		Status:          MergeAsyncEnqueued,
+		MergeMethod:     "default",
+		MergeAction:     "merge_queue",
+		Message:         "Pull Request added to the merge queue",
+		ExpectedHeadSHA: expectedHead,
+		BypassRules:     bypassRules,
+		CreatedAt:       s.currentTime(),
+	}
+	s.store.RecordPullRequestMergeAsync(rec)
+	s.advanceMergeQueue(repo, queued.BaseRefName)
+	writeJSON(w, http.StatusAccepted, renderMergeAsyncResult(&store.PullRequestMergeAsync{
+		UUID:            rec.UUID,
+		Status:          MergeAsyncPending,
+		MergeMethod:     "default",
+		MergeAction:     "merge_queue",
+		Message:         "Merge request accepted",
+		ExpectedHeadSHA: expectedHead,
+		BypassRules:     bypassRules,
 	}))
 }
 
@@ -225,5 +301,21 @@ func (s *Server) handleGetMergePullRequestAsyncResult(w http.ResponseWriter, r *
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, renderMergeAsyncResult(rec))
+	writeJSON(w, http.StatusOK, renderMergeAsyncResult(mergeQueueOutcome(rec, pr)))
+}
+
+// mergeQueueOutcome reports a queued request as the queue has since decided:
+// merged once the queue merged the pull request, failed once it left the queue
+// unmerged, and enqueued while it waits.
+func mergeQueueOutcome(rec *store.PullRequestMergeAsync, pr *store.PullRequest) *store.PullRequestMergeAsync {
+	if rec.MergeAction != "merge_queue" || rec.Status != MergeAsyncEnqueued {
+		return rec
+	}
+	switch {
+	case pr.State == "MERGED":
+		return &store.PullRequestMergeAsync{Status: MergeAsyncMerged, Message: "Pull Request successfully merged", SHA: pr.MergeCommitSHA}
+	case pr.MergeQueuePosition == 0:
+		return &store.PullRequestMergeAsync{Status: MergeAsyncFailed, Message: "Pull Request was removed from the merge queue"}
+	}
+	return rec
 }

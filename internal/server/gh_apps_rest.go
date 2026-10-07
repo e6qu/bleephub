@@ -621,6 +621,7 @@ var appPermissionScopesWithAdminLevel = map[string]bool{
 	"organization_projects":                          true,
 	"organization_custom_properties":                 true,
 	"enterprise_custom_properties_for_organizations": true,
+	"organization_external_properties_for_repos":     true,
 }
 
 // appPermissionsJSON renders a stored permission map on the wire. bleephub's

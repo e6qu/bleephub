@@ -412,7 +412,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	})
 
 	repoType.AddFieldConfig("viewerPermission", &graphql.Field{
-		Type: s.graphQLEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE"),
+		Type: s.gqlRepositoryPermission(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			// bleephub models pull/push/admin only, never MAINTAIN/TRIAGE; null for no access.
 			src, _ := p.Source.(map[string]interface{})
@@ -2867,7 +2867,6 @@ type graphQLTypeRegistry struct {
 	reactable                        *graphql.Interface
 	userContentEdit                  *graphql.Object
 	userContentEditConnection        *graphql.Object
-	issueEventRationale              *graphql.Object
 	repositoryTopicConnection        *graphql.Object
 	assigneeConnection               *graphql.Object
 	assignee                         *graphql.Union

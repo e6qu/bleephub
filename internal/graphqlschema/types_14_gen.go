@@ -5,6 +5,201 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineUserStatusConnection() {
+	r.object("UserStatusConnection", "The connection type for UserStatus.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("UserStatusEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("UserStatus")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineUserStatusEdge() {
+	r.object("UserStatusEdge", "An edge in a connection.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type:        r.t("UserStatus"),
+				Description: "The item at the end of the edge.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineUserStatusOrder() {
+	r.input("UserStatusOrder", "Ordering options for user status connections.", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"direction": {
+				Type:        graphql.NewNonNull(r.t("OrderDirection")),
+				Description: "The ordering direction.",
+			},
+			"field": {
+				Type:        graphql.NewNonNull(r.t("UserStatusOrderField")),
+				Description: "The field to order user statuses by.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineUserStatusOrderField() {
+	r.enum("UserStatusOrderField", "Properties by which user status connections can be ordered.", graphql.EnumValueConfigMap{
+		"UPDATED_AT": {
+			Value:       "UPDATED_AT",
+			Description: "Order user statuses by when they were updated.",
+		},
+	})
+}
+
+func (r *Registry) defineUserViewType() {
+	r.enum("UserViewType", "Whether a user being viewed contains public or private information.", graphql.EnumValueConfigMap{
+		"PRIVATE": {
+			Value:       "PRIVATE",
+			Description: "A user containing information only visible to the authenticated user.",
+		},
+		"PUBLIC": {
+			Value:       "PUBLIC",
+			Description: "A user that is publicly visible.",
+		},
+	})
+}
+
+func (r *Registry) defineVerifiableDomain() {
+	r.object("VerifiableDomain", "A domain that can be verified or approved for an organization or an enterprise.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"databaseId": {
+				Type:        r.t("Int"),
+				Description: "Identifies the primary key from the database.",
+			},
+			"dnsHostName": {
+				Type:        r.t("URI"),
+				Description: "The DNS host name that should be used for verification.",
+			},
+			"domain": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The unicode encoded domain.",
+			},
+			"hasFoundHostName": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether a TXT record for verification with the expected host name was found.",
+			},
+			"hasFoundVerificationToken": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether a TXT record for verification with the expected verification token was found.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the VerifiableDomain object",
+			},
+			"isApproved": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether or not the domain is approved.",
+			},
+			"isRequiredForPolicyEnforcement": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether this domain is required to exist for an organization or enterprise policy to be enforced.",
+			},
+			"isVerified": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether or not the domain is verified.",
+			},
+			"owner": {
+				Type:        graphql.NewNonNull(r.t("VerifiableDomainOwner")),
+				Description: "The owner of the domain.",
+			},
+			"punycodeEncodedDomain": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The punycode encoded domain.",
+			},
+			"tokenExpirationTime": {
+				Type:        r.t("DateTime"),
+				Description: "The time that the current verification token will expire.",
+			},
+			"updatedAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was last updated.",
+			},
+			"verificationToken": {
+				Type:        r.t("String"),
+				Description: "The current verification token for the domain.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineVerifiableDomainConnection() {
+	r.object("VerifiableDomainConnection", "The connection type for VerifiableDomain.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("VerifiableDomainEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("VerifiableDomain")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineVerifiableDomainEdge() {
+	r.object("VerifiableDomainEdge", "An edge in a connection.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type:        r.t("VerifiableDomain"),
+				Description: "The item at the end of the edge.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineVerifiableDomainOrder() {
+	r.input("VerifiableDomainOrder", "Ordering options for verifiable domain connections.", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"direction": {
+				Type:        graphql.NewNonNull(r.t("OrderDirection")),
+				Description: "The ordering direction.",
+			},
+			"field": {
+				Type:        graphql.NewNonNull(r.t("VerifiableDomainOrderField")),
+				Description: "The field to order verifiable domains by.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineVerifiableDomainOrderField() {
 	r.enum("VerifiableDomainOrderField", "Properties by which verifiable domain connections can be ordered.", graphql.EnumValueConfigMap{
 		"CREATED_AT": {

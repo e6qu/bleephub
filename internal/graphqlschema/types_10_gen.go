@@ -5,6 +5,1850 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineReportedContentClassifiers() {
+	r.enum("ReportedContentClassifiers", "The reasons a piece of content can be reported or minimized.", graphql.EnumValueConfigMap{
+		"ABUSE": {
+			Value:       "ABUSE",
+			Description: "An abusive or harassing piece of content",
+		},
+		"DUPLICATE": {
+			Value:       "DUPLICATE",
+			Description: "A duplicated piece of content",
+		},
+		"LOW_QUALITY": {
+			Value:       "LOW_QUALITY",
+			Description: "A low quality piece of content",
+		},
+		"OFF_TOPIC": {
+			Value:       "OFF_TOPIC",
+			Description: "An irrelevant piece of content",
+		},
+		"OUTDATED": {
+			Value:       "OUTDATED",
+			Description: "An outdated piece of content",
+		},
+		"RESOLVED": {
+			Value:       "RESOLVED",
+			Description: "The content has been resolved",
+		},
+		"SPAM": {
+			Value:       "SPAM",
+			Description: "A spammy piece of content",
+		},
+	})
+}
+
+func (r *Registry) defineRepository() {
+	r.object("Repository", "A repository contains the content for a project.", []string{"Node", "PackageOwner", "ProjectOwner", "ProjectV2Recent", "RepositoryInfo", "Starrable", "Subscribable", "UniformResourceLocatable"}, func() graphql.Fields {
+		return graphql.Fields{
+			"allowUpdateBranch": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether or not a pull request head branch that is behind its base branch can\nalways be updated even if it is not required to be up to date before merging.",
+			},
+			"archivedAt": {
+				Type:        r.t("DateTime"),
+				Description: "Identifies the date and time when the repository was archived.",
+			},
+			"assignableUsers": {
+				Type:        graphql.NewNonNull(r.t("UserConnection")),
+				Description: "A list of users that can be assigned to issues in this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"query": {
+						Type:        r.t("String"),
+						Description: "Filters users with query on user name and login.",
+					},
+				},
+			},
+			"autoMergeAllowed": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether or not Auto-merge can be enabled on pull requests in this repository.",
+			},
+			"branchProtectionRules": {
+				Type:        graphql.NewNonNull(r.t("BranchProtectionRuleConnection")),
+				Description: "A list of branch protection rules for this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"codeOfConduct": {
+				Type:        r.t("CodeOfConduct"),
+				Description: "Returns the code of conduct for this repository",
+			},
+			"codeowners": {
+				Type:        r.t("RepositoryCodeowners"),
+				Description: "Information extracted from the repository's `CODEOWNERS` file.",
+				Args: graphql.FieldConfigArgument{
+					"refName": {
+						Type:        r.t("String"),
+						Description: "The ref name used to return the associated `CODEOWNERS` file.",
+					},
+				},
+			},
+			"collaborators": {
+				Type:        r.t("RepositoryCollaboratorConnection"),
+				Description: "A list of collaborators associated with the repository.",
+				Args: graphql.FieldConfigArgument{
+					"affiliation": {
+						Type:        r.t("CollaboratorAffiliation"),
+						Description: "Collaborators affiliation level with a repository.",
+					},
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"login": {
+						Type:        r.t("String"),
+						Description: "The login of one specific collaborator.",
+					},
+					"query": {
+						Type:        r.t("String"),
+						Description: "Filters users with query on user name and login",
+					},
+				},
+			},
+			"commitComments": {
+				Type:        graphql.NewNonNull(r.t("CommitCommentConnection")),
+				Description: "A list of commit comments associated with the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"contactLinks": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("RepositoryContactLink"))),
+				Description: "Returns a list of contact links associated to the repository",
+			},
+			"contributingGuidelines": {
+				Type:        r.t("ContributingGuidelines"),
+				Description: "Returns the contributing guidelines for this repository.",
+			},
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"databaseId": {
+				Type:        r.t("Int"),
+				Description: "Identifies the primary key from the database.",
+			},
+			"defaultBranchRef": {
+				Type:        r.t("Ref"),
+				Description: "The Ref associated with the repository's default branch.",
+			},
+			"deleteBranchOnMerge": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether or not branches are automatically deleted when merged in this repository.",
+			},
+			"dependencyGraphManifests": {
+				Type:        r.t("DependencyGraphManifestConnection"),
+				Description: "A list of dependency manifests contained in the repository",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"dependenciesAfter": {
+						Type:        r.t("String"),
+						Description: "Cursor to paginate dependencies",
+					},
+					"dependenciesFirst": {
+						Type:        r.t("Int"),
+						Description: "Number of dependencies to fetch",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"withDependencies": {
+						Type:        r.t("Boolean"),
+						Description: "Flag to scope to only manifests with dependencies",
+					},
+				},
+			},
+			"deployKeys": {
+				Type:        graphql.NewNonNull(r.t("DeployKeyConnection")),
+				Description: "A list of deploy keys that are on this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"deployments": {
+				Type:        graphql.NewNonNull(r.t("DeploymentConnection")),
+				Description: "Deployments associated with the repository",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"environments": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("String"))),
+						Description: "Environments to list deployments for",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:         r.t("DeploymentOrder"),
+						DefaultValue: map[string]interface{}{"direction": "ASC", "field": "CREATED_AT"},
+						Description:  "Ordering options for deployments returned from the connection.",
+					},
+				},
+			},
+			"description": {
+				Type:        r.t("String"),
+				Description: "The description of the repository.",
+			},
+			"descriptionHTML": {
+				Type:        graphql.NewNonNull(r.t("HTML")),
+				Description: "The description of the repository rendered to HTML.",
+			},
+			"discussion": {
+				Type:        r.t("Discussion"),
+				Description: "Returns a single discussion from the current repository by number.",
+				Args: graphql.FieldConfigArgument{
+					"number": {
+						Type:        graphql.NewNonNull(r.t("Int")),
+						Description: "The number for the discussion to be returned.",
+					},
+				},
+			},
+			"discussionCategories": {
+				Type:        graphql.NewNonNull(r.t("DiscussionCategoryConnection")),
+				Description: "A list of discussion categories that are available in the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"filterByAssignable": {
+						Type:         r.t("Boolean"),
+						DefaultValue: false,
+						Description:  "Filter by categories that are assignable by the viewer.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"discussionCategory": {
+				Type:        r.t("DiscussionCategory"),
+				Description: "A discussion category by slug.",
+				Args: graphql.FieldConfigArgument{
+					"slug": {
+						Type:        graphql.NewNonNull(r.t("String")),
+						Description: "The slug of the discussion category to be returned.",
+					},
+				},
+			},
+			"discussions": {
+				Type:        graphql.NewNonNull(r.t("DiscussionConnection")),
+				Description: "A list of discussions that have been opened in the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"answered": {
+						Type:        r.t("Boolean"),
+						Description: "Only show answered or unanswered discussions",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"categoryId": {
+						Type:        r.t("ID"),
+						Description: "Only include discussions that belong to the category with this ID.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:         r.t("DiscussionOrder"),
+						DefaultValue: map[string]interface{}{"direction": "DESC", "field": "UPDATED_AT"},
+						Description:  "Ordering options for discussions returned from the connection.",
+					},
+					"states": {
+						Type:         graphql.NewList(graphql.NewNonNull(r.t("DiscussionState"))),
+						DefaultValue: []interface{}{},
+						Description:  "A list of states to filter the discussions by.",
+					},
+				},
+			},
+			"diskUsage": {
+				Type:        r.t("Int"),
+				Description: "The number of kilobytes this repository occupies on disk.",
+			},
+			"environment": {
+				Type:        r.t("Environment"),
+				Description: "Returns a single active environment from the current repository by name.",
+				Args: graphql.FieldConfigArgument{
+					"name": {
+						Type:        graphql.NewNonNull(r.t("String")),
+						Description: "The name of the environment to be returned.",
+					},
+				},
+			},
+			"environments": {
+				Type:        graphql.NewNonNull(r.t("EnvironmentConnection")),
+				Description: "A list of environments that are in this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"names": {
+						Type:         graphql.NewList(graphql.NewNonNull(r.t("String"))),
+						DefaultValue: []interface{}{},
+						Description:  "The names of the environments to be returned.",
+					},
+					"orderBy": {
+						Type:         r.t("Environments"),
+						DefaultValue: map[string]interface{}{"direction": "ASC", "field": "NAME"},
+						Description:  "Ordering options for the environments",
+					},
+					"pinnedEnvironmentFilter": {
+						Type:         r.t("EnvironmentPinnedFilterField"),
+						DefaultValue: "ALL",
+						Description:  "Filter to control pinned environments return",
+					},
+				},
+			},
+			"forkCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Returns how many forks there are of this repository in the whole network.",
+			},
+			"forkingAllowed": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether this repository allows forks.",
+			},
+			"forks": {
+				Type:        graphql.NewNonNull(r.t("RepositoryConnection")),
+				Description: "A list of direct forked repositories.",
+				Args: graphql.FieldConfigArgument{
+					"affiliations": {
+						Type:        graphql.NewList(r.t("RepositoryAffiliation")),
+						Description: "Array of viewer's affiliation options for repositories returned from the\nconnection. For example, OWNER will include only repositories that the\ncurrent viewer owns.",
+					},
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"hasIssuesEnabled": {
+						Type:        r.t("Boolean"),
+						Description: "If non-null, filters repositories according to whether they have issues enabled",
+					},
+					"isLocked": {
+						Type:        r.t("Boolean"),
+						Description: "If non-null, filters repositories according to whether they have been locked",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:        r.t("RepositoryOrder"),
+						Description: "Ordering options for repositories returned from the connection",
+					},
+					"ownerAffiliations": {
+						Type:         graphql.NewList(r.t("RepositoryAffiliation")),
+						DefaultValue: []interface{}{"OWNER", "COLLABORATOR"},
+						Description:  "Array of owner's affiliation options for repositories returned from the\nconnection. For example, OWNER will include only repositories that the\norganization or user being viewed owns.",
+					},
+					"privacy": {
+						Type:        r.t("RepositoryPrivacy"),
+						Description: "If non-null, filters repositories according to privacy. Internal\nrepositories are considered private; consider using the visibility argument\nif only internal repositories are needed. Cannot be combined with the\nvisibility argument.",
+					},
+					"visibility": {
+						Type:        r.t("RepositoryVisibility"),
+						Description: "If non-null, filters repositories according to visibility. Cannot be combined with the privacy argument.",
+					},
+				},
+			},
+			"fundingLinks": {
+				Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("FundingLink")))),
+				Description: "The funding links for this repository",
+			},
+			"hasDiscussionsEnabled": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates if the repository has the Discussions feature enabled.",
+			},
+			"hasIssuesEnabled": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates if the repository has issues feature enabled.",
+			},
+			"hasProjectsEnabled": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates if the repository has the Projects feature enabled.",
+			},
+			"hasPullRequestsEnabled": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates if the repository has the pull requests feature enabled.",
+			},
+			"hasSponsorshipsEnabled": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates if the repository displays a Sponsor button for financial contributions.",
+			},
+			"hasVulnerabilityAlertsEnabled": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether vulnerability alerts are enabled for the repository.",
+			},
+			"hasWikiEnabled": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates if the repository has wiki feature enabled.",
+			},
+			"homepageUrl": {
+				Type:        r.t("URI"),
+				Description: "The repository's URL.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the Repository object",
+			},
+			"interactionAbility": {
+				Type:        r.t("RepositoryInteractionAbility"),
+				Description: "The interaction ability settings for this repository.",
+			},
+			"isArchived": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates if the repository is unmaintained.",
+			},
+			"isBlankIssuesEnabled": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Returns true if the viewer can create a blank issue in this repository",
+			},
+			"isDisabled": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Returns whether or not this repository disabled.",
+			},
+			"isEmpty": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Returns whether or not this repository is empty.",
+			},
+			"isFork": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Identifies if the repository is a fork.",
+			},
+			"isInOrganization": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates if a repository is either owned by an organization, or is a private fork of an organization repository.",
+			},
+			"isLocked": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates if the repository has been locked or not.",
+			},
+			"isMirror": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Identifies if the repository is a mirror.",
+			},
+			"isPrivate": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Identifies if the repository is private or internal.",
+			},
+			"isSecurityPolicyEnabled": {
+				Type:        r.t("Boolean"),
+				Description: "Returns true if this repository has a security policy",
+			},
+			"isTemplate": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Identifies if the repository is a template that can be used to generate new repositories.",
+			},
+			"isUserConfigurationRepository": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Is this repository a user configuration repository?",
+			},
+			"issue": {
+				Type:        r.t("Issue"),
+				Description: "Returns a single issue from the current repository by number.",
+				Args: graphql.FieldConfigArgument{
+					"number": {
+						Type:        graphql.NewNonNull(r.t("Int")),
+						Description: "The number for the issue to be returned.",
+					},
+				},
+			},
+			"issueCreationPolicy": {
+				Type:        r.t("IssueCreationPolicy"),
+				Description: "The policy controlling who can create issues in this repository.",
+			},
+			"issueFields": {
+				Type:        r.t("IssueFieldsConnection"),
+				Description: "A list of the repository's issue fields, inherited from the organization",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:         r.t("IssueFieldOrder"),
+						DefaultValue: map[string]interface{}{"direction": "ASC", "field": "CREATED_AT"},
+						Description:  "Ordering options for issue fields returned from the connection.",
+					},
+				},
+			},
+			"issueOrPullRequest": {
+				Type:        r.t("IssueOrPullRequest"),
+				Description: "Returns a single issue-like object from the current repository by number.",
+				Args: graphql.FieldConfigArgument{
+					"number": {
+						Type:        graphql.NewNonNull(r.t("Int")),
+						Description: "The number for the issue to be returned.",
+					},
+				},
+			},
+			"issueTemplates": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("IssueTemplate"))),
+				Description: "Returns a list of issue templates associated to the repository",
+			},
+			"issueType": {
+				Type:        r.t("IssueType"),
+				Description: "Returns a single issue type by name",
+				Args: graphql.FieldConfigArgument{
+					"name": {
+						Type:        graphql.NewNonNull(r.t("String")),
+						Description: "Issue type name.",
+					},
+				},
+			},
+			"issueTypes": {
+				Type:        r.t("IssueTypeConnection"),
+				Description: "A list of the repository's issue types",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:         r.t("IssueTypeOrder"),
+						DefaultValue: map[string]interface{}{"direction": "ASC", "field": "CREATED_AT"},
+						Description:  "Ordering options for issue types returned from the connection.",
+					},
+				},
+			},
+			"issues": {
+				Type:        graphql.NewNonNull(r.t("IssueConnection")),
+				Description: "A list of issues that have been opened in the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"filterBy": {
+						Type:        r.t("IssueFilters"),
+						Description: "Filtering options for issues returned from the connection.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"labels": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("String"))),
+						Description: "A list of label names to filter the pull requests by.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:        r.t("IssueOrder"),
+						Description: "Ordering options for issues returned from the connection.",
+					},
+					"states": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("IssueState"))),
+						Description: "A list of states to filter the issues by.",
+					},
+				},
+			},
+			"label": {
+				Type:        r.t("Label"),
+				Description: "Returns a single label by name",
+				Args: graphql.FieldConfigArgument{
+					"name": {
+						Type:        graphql.NewNonNull(r.t("String")),
+						Description: "Label name",
+					},
+				},
+			},
+			"labels": {
+				Type:        r.t("LabelConnection"),
+				Description: "A list of labels associated with the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:         r.t("LabelOrder"),
+						DefaultValue: map[string]interface{}{"direction": "ASC", "field": "CREATED_AT"},
+						Description:  "Ordering options for labels returned from the connection.",
+					},
+					"query": {
+						Type:        r.t("String"),
+						Description: "If provided, searches labels by name and description.",
+					},
+				},
+			},
+			"languages": {
+				Type:        r.t("LanguageConnection"),
+				Description: "A list containing a breakdown of the language composition of the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:        r.t("LanguageOrder"),
+						Description: "Order for connection",
+					},
+				},
+			},
+			"latestRelease": {
+				Type:        r.t("Release"),
+				Description: "Get the latest release for the repository if one exists.",
+			},
+			"licenseInfo": {
+				Type:        r.t("License"),
+				Description: "The license associated with the repository",
+			},
+			"lockReason": {
+				Type:        r.t("RepositoryLockReason"),
+				Description: "The reason the repository has been locked.",
+			},
+			"mentionableUsers": {
+				Type:        graphql.NewNonNull(r.t("UserConnection")),
+				Description: "A list of Users that can be mentioned in the context of the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"query": {
+						Type:        r.t("String"),
+						Description: "Filters users with query on user name and login",
+					},
+				},
+			},
+			"mergeCommitAllowed": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether or not PRs are merged with a merge commit on this repository.",
+			},
+			"mergeCommitMessage": {
+				Type:        graphql.NewNonNull(r.t("MergeCommitMessage")),
+				Description: "How the default commit message will be generated when merging a pull request.",
+			},
+			"mergeCommitTitle": {
+				Type:        graphql.NewNonNull(r.t("MergeCommitTitle")),
+				Description: "How the default commit title will be generated when merging a pull request.",
+			},
+			"mergeQueue": {
+				Type:        r.t("MergeQueue"),
+				Description: "The merge queue for a specified branch, otherwise the default branch if not provided.",
+				Args: graphql.FieldConfigArgument{
+					"branch": {
+						Type:        r.t("String"),
+						Description: "The name of the branch to get the merge queue for. Case sensitive.",
+					},
+				},
+			},
+			"milestone": {
+				Type:        r.t("Milestone"),
+				Description: "Returns a single milestone from the current repository by number.",
+				Args: graphql.FieldConfigArgument{
+					"number": {
+						Type:        graphql.NewNonNull(r.t("Int")),
+						Description: "The number for the milestone to be returned.",
+					},
+				},
+			},
+			"milestones": {
+				Type:        r.t("MilestoneConnection"),
+				Description: "A list of milestones associated with the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:        r.t("MilestoneOrder"),
+						Description: "Ordering options for milestones.",
+					},
+					"query": {
+						Type:        r.t("String"),
+						Description: "Filters milestones with a query on the title",
+					},
+					"states": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("MilestoneState"))),
+						Description: "Filter by the state of the milestones.",
+					},
+				},
+			},
+			"mirrorUrl": {
+				Type:        r.t("URI"),
+				Description: "The repository's original mirror URL.",
+			},
+			"name": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The name of the repository.",
+			},
+			"nameWithOwner": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The repository's name with owner.",
+			},
+			"object": {
+				Type:        r.t("GitObject"),
+				Description: "A Git object in the repository",
+				Args: graphql.FieldConfigArgument{
+					"expression": {
+						Type:        r.t("String"),
+						Description: "A Git revision expression suitable for rev-parse",
+					},
+					"oid": {
+						Type:        r.t("GitObjectID"),
+						Description: "The Git object ID",
+					},
+				},
+			},
+			"openGraphImageUrl": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The image used to represent this repository in Open Graph data.",
+			},
+			"owner": {
+				Type:        graphql.NewNonNull(r.t("RepositoryOwner")),
+				Description: "The User owner of the repository.",
+			},
+			"packages": {
+				Type:        graphql.NewNonNull(r.t("PackageConnection")),
+				Description: "A list of packages under the owner.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"names": {
+						Type:        graphql.NewList(r.t("String")),
+						Description: "Find packages by their names.",
+					},
+					"orderBy": {
+						Type:         r.t("PackageOrder"),
+						DefaultValue: map[string]interface{}{"direction": "DESC", "field": "CREATED_AT"},
+						Description:  "Ordering of the returned packages.",
+					},
+					"packageType": {
+						Type:        r.t("PackageType"),
+						Description: "Filter registry package by type.",
+					},
+					"repositoryId": {
+						Type:        r.t("ID"),
+						Description: "Find packages in a repository by ID.",
+					},
+				},
+			},
+			"parent": {
+				Type:        r.t("Repository"),
+				Description: "The repository parent, if this is a fork.",
+			},
+			"pinnedDiscussions": {
+				Type:        graphql.NewNonNull(r.t("PinnedDiscussionConnection")),
+				Description: "A list of discussions that have been pinned in this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"pinnedEnvironments": {
+				Type:        r.t("PinnedEnvironmentConnection"),
+				Description: "A list of pinned environments for this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:         r.t("PinnedEnvironmentOrder"),
+						DefaultValue: map[string]interface{}{"direction": "ASC", "field": "POSITION"},
+						Description:  "Ordering options for the environments",
+					},
+				},
+			},
+			"pinnedIssues": {
+				Type:        r.t("PinnedIssueConnection"),
+				Description: "A list of pinned issues for this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"planFeatures": {
+				Type:        graphql.NewNonNull(r.t("RepositoryPlanFeatures")),
+				Description: "Returns information about the availability of certain features and limits based on the repository's billing plan.",
+			},
+			"primaryLanguage": {
+				Type:        r.t("Language"),
+				Description: "The primary language of the repository's code.",
+			},
+			"project": {
+				Type:              r.t("Project"),
+				Description:       "Find project by number.",
+				DeprecationReason: "Projects (classic) is being deprecated in favor of the new Projects experience, see: https://github.blog/changelog/2024-05-23-sunset-notice-projects-classic/. Removal on 2025-04-01 UTC.",
+				Args: graphql.FieldConfigArgument{
+					"number": {
+						Type:        graphql.NewNonNull(r.t("Int")),
+						Description: "The project number to find.",
+					},
+				},
+			},
+			"projectV2": {
+				Type:        r.t("ProjectV2"),
+				Description: "Finds and returns the Project according to the provided Project number.",
+				Args: graphql.FieldConfigArgument{
+					"number": {
+						Type:        graphql.NewNonNull(r.t("Int")),
+						Description: "The Project number.",
+					},
+				},
+			},
+			"projects": {
+				Type:              graphql.NewNonNull(r.t("ProjectConnection")),
+				Description:       "A list of projects under the owner.",
+				DeprecationReason: "Projects (classic) is being deprecated in favor of the new Projects experience, see: https://github.blog/changelog/2024-05-23-sunset-notice-projects-classic/. Removal on 2025-04-01 UTC.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:        r.t("ProjectOrder"),
+						Description: "Ordering options for projects returned from the connection",
+					},
+					"search": {
+						Type:        r.t("String"),
+						Description: "Query to search projects by, currently only searching by name.",
+					},
+					"states": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("ProjectState"))),
+						Description: "A list of states to filter the projects by.",
+					},
+				},
+			},
+			"projectsResourcePath": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The HTTP path listing the repository's projects",
+			},
+			"projectsUrl": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The HTTP URL listing the repository's projects",
+			},
+			"projectsV2": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2Connection")),
+				Description: "List of projects linked to this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"minPermissionLevel": {
+						Type:         r.t("ProjectV2PermissionLevel"),
+						DefaultValue: "READ",
+						Description:  "Filter projects based on user role.",
+					},
+					"orderBy": {
+						Type:         r.t("ProjectV2Order"),
+						DefaultValue: map[string]interface{}{"direction": "DESC", "field": "NUMBER"},
+						Description:  "How to order the returned projects.",
+					},
+					"query": {
+						Type:        r.t("String"),
+						Description: "A project to search for linked to the repo.",
+					},
+				},
+			},
+			"pullRequest": {
+				Type:        r.t("PullRequest"),
+				Description: "Returns a single pull request from the current repository by number.",
+				Args: graphql.FieldConfigArgument{
+					"number": {
+						Type:        graphql.NewNonNull(r.t("Int")),
+						Description: "The number for the pull request to be returned.",
+					},
+				},
+			},
+			"pullRequestCreationCapConfig": {
+				Type:        r.t("PullRequestCreationCapConfig"),
+				Description: "The pull request creation cap configuration for this repository. Only visible\nto repository maintainers and administrators.",
+			},
+			"pullRequestCreationPolicy": {
+				Type:        r.t("PullRequestCreationPolicy"),
+				Description: "The policy controlling who can create pull requests in this repository.",
+			},
+			"pullRequestTemplates": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("PullRequestTemplate"))),
+				Description: "Returns a list of pull request templates associated to the repository",
+			},
+			"pullRequests": {
+				Type:        graphql.NewNonNull(r.t("PullRequestConnection")),
+				Description: "A list of pull requests that have been opened in the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"baseRefName": {
+						Type:        r.t("String"),
+						Description: "The base ref name to filter the pull requests by.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"headRefName": {
+						Type:        r.t("String"),
+						Description: "The head ref name to filter the pull requests by.",
+					},
+					"labels": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("String"))),
+						Description: "A list of label names to filter the pull requests by.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:        r.t("IssueOrder"),
+						Description: "Ordering options for pull requests returned from the connection.",
+					},
+					"states": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("PullRequestState"))),
+						Description: "A list of states to filter the pull requests by.",
+					},
+				},
+			},
+			"pushedAt": {
+				Type:        r.t("DateTime"),
+				Description: "Identifies the date and time when the repository was last pushed to.",
+			},
+			"rebaseMergeAllowed": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether or not rebase-merging is enabled on this repository.",
+			},
+			"recentProjects": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2Connection")),
+				Description: "Recent projects that this user has modified in the context of the owner.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"ref": {
+				Type:        r.t("Ref"),
+				Description: "Fetch a given ref from the repository",
+				Args: graphql.FieldConfigArgument{
+					"qualifiedName": {
+						Type:        graphql.NewNonNull(r.t("String")),
+						Description: "The ref to retrieve. Fully qualified matches are checked in order\n(`refs/heads/master`) before falling back onto checks for short name matches (`master`).",
+					},
+				},
+			},
+			"refs": {
+				Type:        r.t("RefConnection"),
+				Description: "Fetch a list of refs from the repository",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"direction": {
+						Type:        r.t("OrderDirection"),
+						Description: "DEPRECATED: use orderBy. The ordering direction.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:        r.t("RefOrder"),
+						Description: "Ordering options for refs returned from the connection.",
+					},
+					"query": {
+						Type:        r.t("String"),
+						Description: "Filters refs with query on name",
+					},
+					"refPrefix": {
+						Type:        graphql.NewNonNull(r.t("String")),
+						Description: "A ref name prefix like `refs/heads/`, `refs/tags/`, etc.",
+					},
+				},
+			},
+			"release": {
+				Type:        r.t("Release"),
+				Description: "Lookup a single release given various criteria.",
+				Args: graphql.FieldConfigArgument{
+					"tagName": {
+						Type:        graphql.NewNonNull(r.t("String")),
+						Description: "The name of the Tag the Release was created from",
+					},
+				},
+			},
+			"releases": {
+				Type:        graphql.NewNonNull(r.t("ReleaseConnection")),
+				Description: "List of releases which are dependent on this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:        r.t("ReleaseOrder"),
+						Description: "Order for connection",
+					},
+				},
+			},
+			"repositoryCustomPropertyValue": {
+				Type:        r.t("RepositoryCustomPropertyValue"),
+				Description: "A custom property value for the repository.",
+				Args: graphql.FieldConfigArgument{
+					"propertyName": {
+						Type:        graphql.NewNonNull(r.t("String")),
+						Description: "The name of the custom property to retrieve the value for.",
+					},
+				},
+			},
+			"repositoryCustomPropertyValues": {
+				Type:        r.t("RepositoryCustomPropertyValueConnection"),
+				Description: "A list of custom properties and their associated values for a repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"repositoryTopics": {
+				Type:        graphql.NewNonNull(r.t("RepositoryTopicConnection")),
+				Description: "A list of applied repository-topic associations for this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"resourcePath": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The HTTP path for this repository",
+			},
+			"ruleset": {
+				Type:        r.t("RepositoryRuleset"),
+				Description: "Returns a single ruleset from the current repository by ID.",
+				Args: graphql.FieldConfigArgument{
+					"databaseId": {
+						Type:        graphql.NewNonNull(r.t("Int")),
+						Description: "The ID of the ruleset to be returned.",
+					},
+					"includeParents": {
+						Type:         r.t("Boolean"),
+						DefaultValue: true,
+						Description:  "Include rulesets configured at higher levels that apply to this repository",
+					},
+				},
+			},
+			"rulesets": {
+				Type:        r.t("RepositoryRulesetConnection"),
+				Description: "A list of rulesets for this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"includeParents": {
+						Type:         r.t("Boolean"),
+						DefaultValue: true,
+						Description:  "Return rulesets configured at higher levels that apply to this repository",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"targets": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("RepositoryRulesetTarget"))),
+						Description: "Return rulesets that apply to the specified target",
+					},
+				},
+			},
+			"securityPolicyUrl": {
+				Type:        r.t("URI"),
+				Description: "The security policy URL.",
+			},
+			"shortDescriptionHTML": {
+				Type:        graphql.NewNonNull(r.t("HTML")),
+				Description: "A description of the repository, rendered to HTML without any links in it.",
+				Args: graphql.FieldConfigArgument{
+					"limit": {
+						Type:         r.t("Int"),
+						DefaultValue: 200,
+						Description:  "How many characters to return.",
+					},
+				},
+			},
+			"squashMergeAllowed": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether or not squash-merging is enabled on this repository.",
+			},
+			"squashMergeCommitMessage": {
+				Type:        graphql.NewNonNull(r.t("SquashMergeCommitMessage")),
+				Description: "How the default commit message will be generated when squash merging a pull request.",
+			},
+			"squashMergeCommitTitle": {
+				Type:        graphql.NewNonNull(r.t("SquashMergeCommitTitle")),
+				Description: "How the default commit title will be generated when squash merging a pull request.",
+			},
+			"squashPrTitleUsedAsDefault": {
+				Type:              graphql.NewNonNull(r.t("Boolean")),
+				Description:       "Whether a squash merge commit can use the pull request title as default.",
+				DeprecationReason: "`squashPrTitleUsedAsDefault` will be removed. Use `Repository.squashMergeCommitTitle` instead. Removal on 2023-04-01 UTC.",
+			},
+			"sshUrl": {
+				Type:        graphql.NewNonNull(r.t("GitSSHRemote")),
+				Description: "The SSH URL to clone this repository",
+			},
+			"stargazerCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Returns a count of how many stargazers there are on this object",
+			},
+			"stargazers": {
+				Type:        graphql.NewNonNull(r.t("StargazerConnection")),
+				Description: "A list of users who have starred this starrable.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:        r.t("StarOrder"),
+						Description: "Order for connection",
+					},
+				},
+			},
+			"submodules": {
+				Type:        graphql.NewNonNull(r.t("SubmoduleConnection")),
+				Description: "Returns a list of all submodules in this repository parsed from the\n.gitmodules file as of the default branch's HEAD commit.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"suggestedActors": {
+				Type:        graphql.NewNonNull(r.t("ActorConnection")),
+				Description: "A list of suggested actors that can be attributed to content in this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"capabilities": {
+						Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("RepositorySuggestedActorFilter")))),
+						Description: "A list of capabilities to filter actors by.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"loginNames": {
+						Type:        r.t("String"),
+						Description: "A comma separated list of login names to filter actors by. Only the first 10 logins will be used.",
+					},
+					"query": {
+						Type:        r.t("String"),
+						Description: "Search actors with query on user name and login.",
+					},
+				},
+			},
+			"tempCloneToken": {
+				Type:        r.t("String"),
+				Description: "Temporary authentication token for cloning this repository.",
+			},
+			"templateRepository": {
+				Type:        r.t("Repository"),
+				Description: "The repository from which this repository was generated, if any.",
+			},
+			"updatedAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was last updated.",
+			},
+			"url": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The HTTP URL for this repository",
+			},
+			"usesCustomOpenGraphImage": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether this repository has a custom image to use with Open Graph as opposed to being represented by the owner's avatar.",
+			},
+			"viewerCanAdminister": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates whether the viewer has admin permissions on this repository.",
+			},
+			"viewerCanCreateIssues": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates whether the current user can create issues in this repository.",
+			},
+			"viewerCanCreateProjects": {
+				Type:              graphql.NewNonNull(r.t("Boolean")),
+				Description:       "Can the current viewer create new projects on this owner.",
+				DeprecationReason: "Projects (classic) is being deprecated in favor of the new Projects experience, see: https://github.blog/changelog/2024-05-23-sunset-notice-projects-classic/. Removal on 2025-04-01 UTC.",
+			},
+			"viewerCanSeeIssueFields": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates whether the current user can see issue fields in this repository",
+			},
+			"viewerCanSubscribe": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Check if the viewer is able to change their subscription status for the repository.",
+			},
+			"viewerCanUpdateTopics": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Indicates whether the viewer can update the topics of this repository.",
+			},
+			"viewerContentWarning": {
+				Type:        r.t("ContentWarning"),
+				Description: "The content warning for this repository for the viewer.",
+			},
+			"viewerDefaultCommitEmail": {
+				Type:        r.t("String"),
+				Description: "The last commit email for the viewer.",
+			},
+			"viewerDefaultMergeMethod": {
+				Type:        graphql.NewNonNull(r.t("PullRequestMergeMethod")),
+				Description: "The last used merge method by the viewer or the default for the repository.",
+			},
+			"viewerHasStarred": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Returns a boolean indicating whether the viewing user has starred this starrable.",
+			},
+			"viewerPermission": {
+				Type:        r.t("RepositoryPermission"),
+				Description: "The users permission level on the repository. Will return null if authenticated as an GitHub App.",
+			},
+			"viewerPossibleCommitEmails": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("String"))),
+				Description: "A list of emails this viewer can commit with.",
+			},
+			"viewerSubscription": {
+				Type:        r.t("SubscriptionState"),
+				Description: "Identifies if the viewer is watching, not watching, or ignoring the subscribable entity.",
+			},
+			"visibility": {
+				Type:        graphql.NewNonNull(r.t("RepositoryVisibility")),
+				Description: "Indicates the repository's visibility level.",
+			},
+			"vulnerabilityAlert": {
+				Type:        r.t("RepositoryVulnerabilityAlert"),
+				Description: "Returns a single vulnerability alert from the current repository by number.",
+				Args: graphql.FieldConfigArgument{
+					"number": {
+						Type:        graphql.NewNonNull(r.t("Int")),
+						Description: "The number for the vulnerability alert to be returned.",
+					},
+				},
+			},
+			"vulnerabilityAlerts": {
+				Type:        r.t("RepositoryVulnerabilityAlertConnection"),
+				Description: "A list of vulnerability alerts that are on this repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"classifications": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisoryClassification"))),
+						Description: "Filter by the classification of the alert's associated security advisory",
+					},
+					"dependencyScopes": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("RepositoryVulnerabilityAlertDependencyScope"))),
+						Description: "Filter by the scope of the alert's dependency",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"states": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("RepositoryVulnerabilityAlertState"))),
+						Description: "Filter by the state of the alert",
+					},
+				},
+			},
+			"watchers": {
+				Type:        graphql.NewNonNull(r.t("UserConnection")),
+				Description: "A list of users watching the repository.",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"webCommitSignoffRequired": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether contributors are required to sign off on web-based commits in this repository.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryAffiliation() {
+	r.enum("RepositoryAffiliation", "The affiliation of a user to a repository", graphql.EnumValueConfigMap{
+		"COLLABORATOR": {
+			Value:       "COLLABORATOR",
+			Description: "Repositories that the user has been added to as a collaborator.",
+		},
+		"ORGANIZATION_MEMBER": {
+			Value:       "ORGANIZATION_MEMBER",
+			Description: "Repositories that the user has access to through being a member of an\norganization. This includes every repository on every team that the user is on.",
+		},
+		"OWNER": {
+			Value:       "OWNER",
+			Description: "Repositories that are owned by the authenticated user.",
+		},
+	})
+}
+
+func (r *Registry) defineRepositoryAuditEntryData() {
+	r.interfaceType("RepositoryAuditEntryData", "Metadata for an audit entry with action repo.*", func() graphql.Fields {
+		return graphql.Fields{
+			"repository": {
+				Type:        r.t("Repository"),
+				Description: "The repository associated with the action",
+			},
+			"repositoryName": {
+				Type:        r.t("String"),
+				Description: "The name of the repository",
+			},
+			"repositoryResourcePath": {
+				Type:        r.t("URI"),
+				Description: "The HTTP path for the repository",
+			},
+			"repositoryUrl": {
+				Type:        r.t("URI"),
+				Description: "The HTTP URL for the repository",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryCodeowners() {
+	r.object("RepositoryCodeowners", "Information extracted from a repository's `CODEOWNERS` file.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"errors": {
+				Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("RepositoryCodeownersError")))),
+				Description: "Any problems that were encountered while parsing the `CODEOWNERS` file.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryCodeownersError() {
+	r.object("RepositoryCodeownersError", "An error in a `CODEOWNERS` file.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"column": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "The column number where the error occurs.",
+			},
+			"kind": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A short string describing the type of error.",
+			},
+			"line": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "The line number where the error occurs.",
+			},
+			"message": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A complete description of the error, combining information from other fields.",
+			},
+			"path": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The path to the file when the error occurs.",
+			},
+			"source": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The content of the line where the error occurs.",
+			},
+			"suggestion": {
+				Type:        r.t("String"),
+				Description: "A suggestion of how to fix the error.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryCollaboratorConnection() {
+	r.object("RepositoryCollaboratorConnection", "The connection type for User.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("RepositoryCollaboratorEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("User")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryCollaboratorEdge() {
+	r.object("RepositoryCollaboratorEdge", "Represents a user who is a collaborator of a repository.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type: graphql.NewNonNull(r.t("User")),
+			},
+			"permission": {
+				Type:        graphql.NewNonNull(r.t("RepositoryPermission")),
+				Description: "The permission the user has on the repository.",
+			},
+			"permissionSources": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("PermissionSource"))),
+				Description: "A list of sources for the user's access to the repository.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryConnection() {
+	r.object("RepositoryConnection", "A list of repositories owned by the subject.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("RepositoryEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("Repository")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+			"totalDiskUsage": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "The total size in kilobytes of all repositories in the connection. Value will\nnever be larger than max 32-bit signed integer.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineRepositoryContactLink() {
 	r.object("RepositoryContactLink", "A repository contact link.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -1028,6 +2872,10 @@ func (r *Registry) defineRepositoryPermission() {
 			Value:       "TRIAGE",
 			Description: "Can read and clone this repository. Can also manage issues and pull requests",
 		},
+		"TRIAGE_PLUS": {
+			Value:       "TRIAGE_PLUS",
+			Description: "Can read and clone this repository. Can also manage issues and pull requests, plus additional triage abilities",
+		},
 		"WRITE": {
 			Value:       "WRITE",
 			Description: "Can read, clone, and push to this repository. Can also manage issues and pull requests",
@@ -1280,6 +3128,14 @@ func (r *Registry) defineRepositoryRuleType() {
 		"BRANCH_NAME_PATTERN": {
 			Value:       "BRANCH_NAME_PATTERN",
 			Description: "Branch name pattern",
+		},
+		"CODE_COVERAGE": {
+			Value:       "CODE_COVERAGE",
+			Description: "Enforce minimum line coverage thresholds on pull requests. When configured,\nuploaded coverage data must meet the specified criteria before changes can be merged.",
+		},
+		"CODE_QUALITY": {
+			Value:       "CODE_QUALITY",
+			Description: "Choose which severity levels of code quality results should block pull request\nmerges. When configured, a code quality analysis must be done on the pull\nrequest before the changes can be merged.",
 		},
 		"CODE_SCANNING": {
 			Value:       "CODE_SCANNING",
@@ -3101,219 +4957,5 @@ func (r *Registry) defineRuleEnforcement() {
 }
 
 func (r *Registry) defineRuleParameters() {
-	r.union("RuleParameters", "Types which can be parameters for `RepositoryRule` objects.", []string{"BranchNamePatternParameters", "CodeScanningParameters", "CommitAuthorEmailPatternParameters", "CommitMessagePatternParameters", "CommitterEmailPatternParameters", "CopilotCodeReviewParameters", "FileExtensionRestrictionParameters", "FilePathRestrictionParameters", "MaxFilePathLengthParameters", "MaxFileSizeParameters", "MergeQueueParameters", "PullRequestParameters", "RequiredDeploymentsParameters", "RequiredStatusChecksParameters", "TagNamePatternParameters", "UpdateParameters", "WorkflowsParameters"})
-}
-
-func (r *Registry) defineRuleParametersInput() {
-	r.input("RuleParametersInput", "Specifies the parameters for a `RepositoryRule` object. Only one of the fields should be specified.", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"branchNamePattern": {
-				Type:        r.t("BranchNamePatternParametersInput"),
-				Description: "Parameters used for the `branch_name_pattern` rule type",
-			},
-			"codeScanning": {
-				Type:        r.t("CodeScanningParametersInput"),
-				Description: "Parameters used for the `code_scanning` rule type",
-			},
-			"commitAuthorEmailPattern": {
-				Type:        r.t("CommitAuthorEmailPatternParametersInput"),
-				Description: "Parameters used for the `commit_author_email_pattern` rule type",
-			},
-			"commitMessagePattern": {
-				Type:        r.t("CommitMessagePatternParametersInput"),
-				Description: "Parameters used for the `commit_message_pattern` rule type",
-			},
-			"committerEmailPattern": {
-				Type:        r.t("CommitterEmailPatternParametersInput"),
-				Description: "Parameters used for the `committer_email_pattern` rule type",
-			},
-			"copilotCodeReview": {
-				Type:        r.t("CopilotCodeReviewParametersInput"),
-				Description: "Parameters used for the `copilot_code_review` rule type",
-			},
-			"fileExtensionRestriction": {
-				Type:        r.t("FileExtensionRestrictionParametersInput"),
-				Description: "Parameters used for the `file_extension_restriction` rule type",
-			},
-			"filePathRestriction": {
-				Type:        r.t("FilePathRestrictionParametersInput"),
-				Description: "Parameters used for the `file_path_restriction` rule type",
-			},
-			"maxFilePathLength": {
-				Type:        r.t("MaxFilePathLengthParametersInput"),
-				Description: "Parameters used for the `max_file_path_length` rule type",
-			},
-			"maxFileSize": {
-				Type:        r.t("MaxFileSizeParametersInput"),
-				Description: "Parameters used for the `max_file_size` rule type",
-			},
-			"mergeQueue": {
-				Type:        r.t("MergeQueueParametersInput"),
-				Description: "Parameters used for the `merge_queue` rule type",
-			},
-			"pullRequest": {
-				Type:        r.t("PullRequestParametersInput"),
-				Description: "Parameters used for the `pull_request` rule type",
-			},
-			"requiredDeployments": {
-				Type:        r.t("RequiredDeploymentsParametersInput"),
-				Description: "Parameters used for the `required_deployments` rule type",
-			},
-			"requiredStatusChecks": {
-				Type:        r.t("RequiredStatusChecksParametersInput"),
-				Description: "Parameters used for the `required_status_checks` rule type",
-			},
-			"tagNamePattern": {
-				Type:        r.t("TagNamePatternParametersInput"),
-				Description: "Parameters used for the `tag_name_pattern` rule type",
-			},
-			"update": {
-				Type:        r.t("UpdateParametersInput"),
-				Description: "Parameters used for the `update` rule type",
-			},
-			"workflows": {
-				Type:        r.t("WorkflowsParametersInput"),
-				Description: "Parameters used for the `workflows` rule type",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineRuleSource() {
-	r.union("RuleSource", "Types which can have `RepositoryRule` objects.", []string{"Enterprise", "Organization", "Repository"})
-}
-
-func (r *Registry) defineSamlDigestAlgorithm() {
-	r.enum("SamlDigestAlgorithm", "The possible digest algorithms used to sign SAML requests for an identity provider.", graphql.EnumValueConfigMap{
-		"SHA1": {
-			Value:       "SHA1",
-			Description: "SHA1",
-		},
-		"SHA256": {
-			Value:       "SHA256",
-			Description: "SHA256",
-		},
-		"SHA384": {
-			Value:       "SHA384",
-			Description: "SHA384",
-		},
-		"SHA512": {
-			Value:       "SHA512",
-			Description: "SHA512",
-		},
-	})
-}
-
-func (r *Registry) defineSamlSignatureAlgorithm() {
-	r.enum("SamlSignatureAlgorithm", "The possible signature algorithms used to sign SAML requests for a Identity Provider.", graphql.EnumValueConfigMap{
-		"RSA_SHA1": {
-			Value:       "RSA_SHA1",
-			Description: "RSA-SHA1",
-		},
-		"RSA_SHA256": {
-			Value:       "RSA_SHA256",
-			Description: "RSA-SHA256",
-		},
-		"RSA_SHA384": {
-			Value:       "RSA_SHA384",
-			Description: "RSA-SHA384",
-		},
-		"RSA_SHA512": {
-			Value:       "RSA_SHA512",
-			Description: "RSA-SHA512",
-		},
-	})
-}
-
-func (r *Registry) defineSavedReply() {
-	r.object("SavedReply", "A Saved Reply is text a user can use to reply quickly.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"body": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The body of the saved reply.",
-			},
-			"bodyHTML": {
-				Type:        graphql.NewNonNull(r.t("HTML")),
-				Description: "The saved reply body rendered to HTML.",
-			},
-			"databaseId": {
-				Type:        r.t("Int"),
-				Description: "Identifies the primary key from the database.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the SavedReply object",
-			},
-			"title": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The title of the saved reply.",
-			},
-			"user": {
-				Type:        r.t("Actor"),
-				Description: "The user that saved this reply.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSavedReplyConnection() {
-	r.object("SavedReplyConnection", "The connection type for SavedReply.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"edges": {
-				Type:        graphql.NewList(r.t("SavedReplyEdge")),
-				Description: "A list of edges.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("SavedReply")),
-				Description: "A list of nodes.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"totalCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the total count of items in the connection.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSavedReplyEdge() {
-	r.object("SavedReplyEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("SavedReply"),
-				Description: "The item at the end of the edge.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSavedReplyOrder() {
-	r.input("SavedReplyOrder", "Ordering options for saved reply connections.", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"direction": {
-				Type:        graphql.NewNonNull(r.t("OrderDirection")),
-				Description: "The ordering direction.",
-			},
-			"field": {
-				Type:        graphql.NewNonNull(r.t("SavedReplyOrderField")),
-				Description: "The field to order saved replies by.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSavedReplyOrderField() {
-	r.enum("SavedReplyOrderField", "Properties by which saved reply connections can be ordered.", graphql.EnumValueConfigMap{
-		"UPDATED_AT": {
-			Value:       "UPDATED_AT",
-			Description: "Order saved reply by when they were updated.",
-		},
-	})
+	r.union("RuleParameters", "Types which can be parameters for `RepositoryRule` objects.", []string{"BranchNamePatternParameters", "CodeCoverageParameters", "CodeQualityParameters", "CodeScanningParameters", "CommitAuthorEmailPatternParameters", "CommitMessagePatternParameters", "CommitterEmailPatternParameters", "CopilotCodeReviewParameters", "FileExtensionRestrictionParameters", "FilePathRestrictionParameters", "MaxFilePathLengthParameters", "MaxFileSizeParameters", "MergeQueueParameters", "PullRequestParameters", "RequiredDeploymentsParameters", "RequiredStatusChecksParameters", "TagNamePatternParameters", "UpdateParameters", "WorkflowsParameters"})
 }

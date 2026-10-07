@@ -253,6 +253,17 @@ func (s *Resolver) ruleParametersUnion() *graphql.Union {
 			Name:   "CodeScanningParameters",
 			Fields: graphql.Fields{"codeScanningTools": gqlNonNullFieldListOf(codeScanningTool)},
 		}),
+		"CodeCoverageParameters": graphql.NewObject(graphql.ObjectConfig{
+			Name: "CodeCoverageParameters",
+			Fields: graphql.Fields{
+				"maxCoverageDrop": gqlField(graphql.Float),
+				"minimumCoverage": gqlField(graphql.Float),
+			},
+		}),
+		"CodeQualityParameters": graphql.NewObject(graphql.ObjectConfig{
+			Name:   "CodeQualityParameters",
+			Fields: graphql.Fields{"severity": gqlNonNull(s.codeQualitySeverityEnum())},
+		}),
 		"CopilotCodeReviewParameters": graphql.NewObject(graphql.ObjectConfig{
 			Name: "CopilotCodeReviewParameters",
 			Fields: graphql.Fields{
@@ -374,6 +385,17 @@ func ruleParametersSource(ruleType string, params map[string]interface{}) map[st
 			})
 		}
 		return map[string]interface{}{"__typename": "CodeScanningParameters", "codeScanningTools": tools}
+	case "code_quality":
+		return map[string]interface{}{
+			"__typename": "CodeQualityParameters",
+			"severity":   strings.ToUpper(rpString(params, "severity")),
+		}
+	case "code_coverage":
+		return map[string]interface{}{
+			"__typename":      "CodeCoverageParameters",
+			"maxCoverageDrop": rpFloat(params, "max_coverage_drop"),
+			"minimumCoverage": rpFloat(params, "minimum_coverage"),
+		}
 	case "copilot_code_review":
 		return map[string]interface{}{
 			"__typename":              "CopilotCodeReviewParameters",
@@ -531,6 +553,17 @@ func pullRequestParametersSource(params map[string]interface{}) map[string]inter
 func rpString(m map[string]interface{}, key string) string {
 	value, _ := m[key].(string)
 	return value
+}
+
+// rpFloat reads an optional number; an absent one is null, never zero.
+func rpFloat(m map[string]interface{}, key string) interface{} {
+	switch n := m[key].(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	}
+	return nil
 }
 
 func rpBool(m map[string]interface{}, key string) bool {

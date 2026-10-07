@@ -642,7 +642,7 @@ jobs:
       - *checkout
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          terraform_version: 1.15.8
+          terraform_version: 1.16.5
       - name: Check module-input parser compatibility
         run: |
           ./scripts/check-terraform-input-validations.py --self-test

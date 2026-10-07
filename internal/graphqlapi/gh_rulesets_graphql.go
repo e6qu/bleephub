@@ -192,16 +192,26 @@ func (s *Resolver) repoFromGraphQLSource(source interface{}) (*store.Repo, error
 	return s.store.GetRepo(owner, name), nil
 }
 
-// sharedRepositoryRuleTypeEnum is RepositoryRule.type, limited to the rule types
-// bleephub's ruleset store records (a subset of GitHub's values).
+// sharedRepositoryRuleTypeEnum is RepositoryRule.type with every value GitHub
+// defines: the ruleset store keeps any rule type the REST API accepts, so each
+// stored type must have a value to render as.
 func (s *Resolver) sharedRepositoryRuleTypeEnum() *graphql.Enum {
 	return s.sharedEnum("RepositoryRuleType",
-		"CREATION", "UPDATE", "DELETION", "REQUIRED_LINEAR_HISTORY", "REQUIRED_DEPLOYMENTS",
-		"REQUIRED_SIGNATURES", "PULL_REQUEST", "REQUIRED_STATUS_CHECKS", "NON_FAST_FORWARD",
-		"COMMIT_MESSAGE_PATTERN", "COMMIT_AUTHOR_EMAIL_PATTERN", "COMMITTER_EMAIL_PATTERN",
-		"BRANCH_NAME_PATTERN", "TAG_NAME_PATTERN", "LOCK_BRANCH",
-		"FILE_EXTENSION_RESTRICTION", "FILE_PATH_RESTRICTION",
-		"MAX_FILE_PATH_LENGTH", "MAX_FILE_SIZE", "WORKFLOWS")
+		"AUTHORIZATION", "BRANCH_NAME_PATTERN", "CODE_COVERAGE", "CODE_QUALITY", "CODE_SCANNING",
+		"COMMITTER_EMAIL_PATTERN", "COMMIT_AUTHOR_EMAIL_PATTERN", "COMMIT_MESSAGE_PATTERN",
+		"COPILOT_CODE_REVIEW", "CREATION", "DELETION", "FILE_EXTENSION_RESTRICTION",
+		"FILE_PATH_RESTRICTION", "LICENSE_COMPLIANCE_SCANNING", "LOCK_BRANCH", "MAX_FILE_PATH_LENGTH",
+		"MAX_FILE_SIZE", "MAX_REF_UPDATES", "MERGE_QUEUE", "MERGE_QUEUE_LOCKED_REF", "NON_FAST_FORWARD",
+		"PULL_REQUEST", "REQUIRED_DEPLOYMENTS", "REQUIRED_LINEAR_HISTORY",
+		"REQUIRED_REVIEW_THREAD_RESOLUTION", "REQUIRED_SIGNATURES", "REQUIRED_STATUS_CHECKS",
+		"REQUIRED_WORKFLOW_STATUS_CHECKS", "SECRET_SCANNING", "TAG", "TAG_NAME_PATTERN", "UPDATE",
+		"WORKFLOWS", "WORKFLOW_UPDATES")
+}
+
+// codeQualitySeverityEnum is CodeQualitySeverity; the REST rule stores the same
+// values in lower case.
+func (s *Resolver) codeQualitySeverityEnum() *graphql.Enum {
+	return s.sharedEnum("CodeQualitySeverity", "ALL", "ERRORS", "NOTES", "WARNINGS")
 }
 
 // rulesetToGraphQL renders one stored ruleset as its GraphQL source map. The

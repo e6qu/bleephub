@@ -5,6 +5,48 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineBypassPullRequestAllowance() {
+	r.object("BypassPullRequestAllowance", "A user, team, or app who has the ability to bypass a pull request requirement on a protected branch.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"actor": {
+				Type:        r.t("BranchActorAllowanceActor"),
+				Description: "The actor that can bypass.",
+			},
+			"branchProtectionRule": {
+				Type:        r.t("BranchProtectionRule"),
+				Description: "Identifies the branch protection rule associated with the allowed user, team, or app.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the BypassPullRequestAllowance object",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineBypassPullRequestAllowanceConnection() {
+	r.object("BypassPullRequestAllowanceConnection", "The connection type for BypassPullRequestAllowance.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("BypassPullRequestAllowanceEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("BypassPullRequestAllowance")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineBypassPullRequestAllowanceEdge() {
 	r.object("BypassPullRequestAllowanceEdge", "An edge in a connection.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -1520,6 +1562,36 @@ func (r *Registry) defineCloser() {
 	r.union("Closer", "The object which triggered a `ClosedEvent`.", []string{"Commit", "ProjectV2", "PullRequest"})
 }
 
+func (r *Registry) defineCodeCoverageParameters() {
+	r.object("CodeCoverageParameters", "Enforce minimum line coverage thresholds on pull requests. When configured,\nuploaded coverage data must meet the specified criteria before changes can be merged.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"maxCoverageDrop": {
+				Type:        r.t("Float"),
+				Description: "The maximum percentage points that line coverage may drop relative to the\ndefault branch. Pull requests that reduce line coverage by more than this\namount will be blocked.",
+			},
+			"minimumCoverage": {
+				Type:        r.t("Float"),
+				Description: "The absolute minimum line coverage percentage required. Pull requests with\nline coverage below this threshold will be blocked.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineCodeCoverageParametersInput() {
+	r.input("CodeCoverageParametersInput", "Enforce minimum line coverage thresholds on pull requests. When configured,\nuploaded coverage data must meet the specified criteria before changes can be merged.", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"maxCoverageDrop": {
+				Type:        r.t("Float"),
+				Description: "The maximum percentage points that line coverage may drop relative to the\ndefault branch. Pull requests that reduce line coverage by more than this\namount will be blocked.",
+			},
+			"minimumCoverage": {
+				Type:        r.t("Float"),
+				Description: "The absolute minimum line coverage percentage required. Pull requests with\nline coverage below this threshold will be blocked.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineCodeOfConduct() {
 	r.object("CodeOfConduct", "The Code of Conduct for a repository", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
@@ -1548,6 +1620,49 @@ func (r *Registry) defineCodeOfConduct() {
 				Description: "The HTTP URL for this Code of Conduct",
 			},
 		}
+	})
+}
+
+func (r *Registry) defineCodeQualityParameters() {
+	r.object("CodeQualityParameters", "Choose which severity levels of code quality results should block pull request\nmerges. When configured, a code quality analysis must be done on the pull\nrequest before the changes can be merged.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"severity": {
+				Type:        graphql.NewNonNull(r.t("CodeQualitySeverity")),
+				Description: "The lowest severity level at which code quality reviews need to be resolved before commits can be merged.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineCodeQualityParametersInput() {
+	r.input("CodeQualityParametersInput", "Choose which severity levels of code quality results should block pull request\nmerges. When configured, a code quality analysis must be done on the pull\nrequest before the changes can be merged.", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"severity": {
+				Type:        graphql.NewNonNull(r.t("CodeQualitySeverity")),
+				Description: "The lowest severity level at which code quality reviews need to be resolved before commits can be merged.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineCodeQualitySeverity() {
+	r.enum("CodeQualitySeverity", "The lowest severity level at which code quality reviews need to be resolved before commits can be merged.", graphql.EnumValueConfigMap{
+		"ALL": {
+			Value:       "ALL",
+			Description: "All",
+		},
+		"ERRORS": {
+			Value:       "ERRORS",
+			Description: "Errors",
+		},
+		"NOTES": {
+			Value:       "NOTES",
+			Description: "Notes and higher",
+		},
+		"WARNINGS": {
+			Value:       "WARNINGS",
+			Description: "Warnings and higher",
+		},
 	})
 }
 
@@ -3981,171 +4096,6 @@ func (r *Registry) defineCreateBranchProtectionRuleInput() {
 			"reviewDismissalActorIds": {
 				Type:        graphql.NewList(graphql.NewNonNull(r.t("ID"))),
 				Description: "A list of User, Team, or App IDs allowed to dismiss reviews on pull requests targeting matching branches.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineCreateBranchProtectionRulePayload() {
-	r.object("CreateBranchProtectionRulePayload", "Autogenerated return type of CreateBranchProtectionRule.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"branchProtectionRule": {
-				Type:        r.t("BranchProtectionRule"),
-				Description: "The newly created BranchProtectionRule.",
-			},
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineCreateCheckRunInput() {
-	r.input("CreateCheckRunInput", "Autogenerated input type of CreateCheckRun", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"actions": {
-				Type:        graphql.NewList(graphql.NewNonNull(r.t("CheckRunAction"))),
-				Description: "Possible further actions the integrator can perform, which a user may trigger.",
-			},
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"completedAt": {
-				Type:        r.t("DateTime"),
-				Description: "The time that the check run finished.",
-			},
-			"conclusion": {
-				Type:        r.t("CheckConclusionState"),
-				Description: "The final conclusion of the check.",
-			},
-			"detailsUrl": {
-				Type:        r.t("URI"),
-				Description: "The URL of the integrator's site that has the full details of the check.",
-			},
-			"externalId": {
-				Type:        r.t("String"),
-				Description: "A reference for the run on the integrator's system.",
-			},
-			"headSha": {
-				Type:        graphql.NewNonNull(r.t("GitObjectID")),
-				Description: "The SHA of the head commit.",
-			},
-			"name": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The name of the check.",
-			},
-			"output": {
-				Type:        r.t("CheckRunOutput"),
-				Description: "Descriptive details about the run.",
-			},
-			"repositoryId": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The node ID of the repository.",
-			},
-			"startedAt": {
-				Type:        r.t("DateTime"),
-				Description: "The time that the check run began.",
-			},
-			"status": {
-				Type:        r.t("RequestableCheckStatusState"),
-				Description: "The current status.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineCreateCheckRunPayload() {
-	r.object("CreateCheckRunPayload", "Autogenerated return type of CreateCheckRun.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"checkRun": {
-				Type:        r.t("CheckRun"),
-				Description: "The newly created check run.",
-			},
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineCreateCheckSuiteInput() {
-	r.input("CreateCheckSuiteInput", "Autogenerated input type of CreateCheckSuite", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"headSha": {
-				Type:        graphql.NewNonNull(r.t("GitObjectID")),
-				Description: "The SHA of the head commit.",
-			},
-			"repositoryId": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the repository.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineCreateCheckSuitePayload() {
-	r.object("CreateCheckSuitePayload", "Autogenerated return type of CreateCheckSuite.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"checkSuite": {
-				Type:        r.t("CheckSuite"),
-				Description: "The newly created check suite.",
-			},
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineCreateCommitOnBranchInput() {
-	r.input("CreateCommitOnBranchInput", "Autogenerated input type of CreateCommitOnBranch", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"branch": {
-				Type:        graphql.NewNonNull(r.t("CommittableBranch")),
-				Description: "The Ref to be updated.  Must be a branch.",
-			},
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"expectedHeadOid": {
-				Type:        graphql.NewNonNull(r.t("GitObjectID")),
-				Description: "The git commit oid expected at the head of the branch prior to the commit",
-			},
-			"fileChanges": {
-				Type:        r.t("FileChanges"),
-				Description: "A description of changes to files in this commit.",
-			},
-			"message": {
-				Type:        graphql.NewNonNull(r.t("CommitMessage")),
-				Description: "The commit message the be included with the commit.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineCreateCommitOnBranchPayload() {
-	r.object("CreateCommitOnBranchPayload", "Autogenerated return type of CreateCommitOnBranch.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"commit": {
-				Type:        r.t("Commit"),
-				Description: "The new commit.",
-			},
-			"ref": {
-				Type:        r.t("Ref"),
-				Description: "The ref which has been updated to point to the new commit.",
 			},
 		}
 	})

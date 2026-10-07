@@ -244,6 +244,13 @@ func (s *Resolver) gqlRuleParametersInput() *graphql.InputObject {
 				"tool":                    gqlNonNullString(),
 			})),
 		})),
+		"codeCoverage": gqlInputOf(s.mutationInput("CodeCoverageParametersInput", graphql.InputObjectConfigFieldMap{
+			"maxCoverageDrop": gqlInputOf(graphql.Float),
+			"minimumCoverage": gqlInputOf(graphql.Float),
+		})),
+		"codeQuality": gqlInputOf(s.mutationInput("CodeQualityParametersInput", graphql.InputObjectConfigFieldMap{
+			"severity": gqlNonNullInputOf(s.codeQualitySeverityEnum()),
+		})),
 		"commitAuthorEmailPattern": gqlInputOf(pattern("CommitAuthorEmailPatternParametersInput")),
 		"commitMessagePattern":     gqlInputOf(pattern("CommitMessagePatternParametersInput")),
 		"committerEmailPattern":    gqlInputOf(pattern("CommitterEmailPatternParametersInput")),
@@ -346,6 +353,10 @@ func rulesetRulesFromInput(input map[string]interface{}) ([]store.Rule, bool) {
 					rule.Parameters = snakeCaseParameterMap(body)
 					break
 				}
+			}
+			// The REST rule spells the code quality severity in lower case.
+			if severity, ok := rule.Parameters["severity"].(string); ok && rule.Type == "code_quality" {
+				rule.Parameters["severity"] = strings.ToLower(severity)
 			}
 		}
 		rules = append(rules, rule)

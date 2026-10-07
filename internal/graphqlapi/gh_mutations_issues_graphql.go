@@ -200,6 +200,26 @@ func (s *Resolver) addIssueSurfaceMutations(mutationType *graphql.Object) {
 	blockedBy("addBlockedBy", "AddBlockedByPayload", "AddBlockedByInput", true)
 	blockedBy("removeBlockedBy", "RemoveBlockedByPayload", "RemoveBlockedByInput", false)
 
+	relatesTo := func(name, payloadName, inputName string, add bool) {
+		s.registerMutation(mutationType, name, &graphql.Field{
+			Type: s.mutationPayload(payloadName, graphql.Fields{
+				"issue":        gqlField(issueType),
+				"relatedIssue": gqlField(issueType),
+			}),
+			Args: graphql.FieldConfigArgument{"input": &graphql.ArgumentConfig{
+				Type: graphql.NewNonNull(s.mutationInput(inputName, graphql.InputObjectConfigFieldMap{
+					"issueId":        gqlNonNullID(),
+					"relatedIssueId": gqlNonNullID(),
+				})),
+			}},
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				return s.resolveRelatesTo(p, add)
+			},
+		})
+	}
+	relatesTo("addRelatesTo", "AddRelatesToPayload", "AddRelatesToInput", true)
+	relatesTo("removeRelatesTo", "RemoveRelatesToPayload", "RemoveRelatesToInput", false)
+
 	// the duplicate relation
 
 	s.registerMutation(mutationType, "unmarkIssueAsDuplicate", &graphql.Field{
@@ -800,6 +820,44 @@ func (s *Resolver) resolveBlockedBy(p graphql.ResolveParams, add bool) (interfac
 	return map[string]interface{}{
 		"issue":         optionalRenderedIssue(s.store.GetIssue(issue.ID), s.store),
 		"blockingIssue": optionalRenderedIssue(s.store.GetIssue(blocker.ID), s.store),
+	}, nil
+}
+
+// resolveRelatesTo adds or removes a "relates to" relationship, which may
+// cross repositories: the related issue must be one the viewer can read, and
+// either side failing to change is reported rather than ignored.
+func (s *Resolver) resolveRelatesTo(p graphql.ResolveParams, add bool) (interface{}, error) {
+	input, _ := p.Args["input"].(map[string]interface{})
+	issue, repo, err := s.issueAndRepoFromInput(input, "issueId")
+	if err != nil {
+		return nil, err
+	}
+	related, err := s.issueFromInput(input, "relatedIssueId")
+	if err != nil {
+		return nil, err
+	}
+	relatedRepo := s.store.GetRepoByID(related.RepoID)
+	if relatedRepo == nil || !s.authz.ViewerHasRepoPermission(p.Context, relatedRepo, store.ScopeIssues, store.PermRead) {
+		return nil, gqlMissingNodeType("Issue")
+	}
+	if related.ID == issue.ID {
+		return nil, fmt.Errorf("an issue may not be related to itself")
+	}
+	action := "relates_to_added"
+	if add {
+		if !s.store.AddIssueRelatesTo(issue.ID, related.ID) {
+			return nil, fmt.Errorf("the issues are already related")
+		}
+	} else {
+		if !s.store.RemoveIssueRelatesTo(issue.ID, related.ID) {
+			return nil, fmt.Errorf("the issues are not related")
+		}
+		action = "relates_to_removed"
+	}
+	s.events.EmitIssueRelatesTo(s.ghUserFromContext(p.Context), action, repo, issue, relatedRepo, related)
+	return map[string]interface{}{
+		"issue":        optionalRenderedIssue(s.store.GetIssue(issue.ID), s.store),
+		"relatedIssue": optionalRenderedIssue(s.store.GetIssue(related.ID), s.store),
 	}, nil
 }
 

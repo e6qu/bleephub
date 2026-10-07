@@ -32,6 +32,8 @@ func (s *Server) registerGHActionsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs", s.handleListRunAttemptJobs)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}", s.handleGetWorkflowJob)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}/logs", s.handleGetWorkflowJobLogs)
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}/steps/{step_number}/logs", s.handleGetWorkflowJobStepLogs)
+	s.route("GET /_logs/{ticket}", s.handleLogDownload)
 	s.route("GET /internal/repos/{owner}/{repo}/actions/jobs/{job_id}/summary", s.handleGetWorkflowJobSummary)
 	// List/get runners require administration:read on real GitHub.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runners",
@@ -722,8 +724,8 @@ func (s *Server) handleGetWorkflowJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.workflowJobJSON(wf, j, s.baseURL(r), repoFullName(r)))
 }
 
-// handleGetWorkflowJobLogs serves GET .../actions/jobs/{job_id}/logs as
-// text/plain assembled from the runner-uploaded log files.
+// handleGetWorkflowJobLogs answers GET .../actions/jobs/{job_id}/logs with the
+// 302 to a one-minute link serving the runner-uploaded log as text/plain.
 func (s *Server) handleGetWorkflowJobLogs(w http.ResponseWriter, r *http.Request) {
 	if !s.enforceRepoReadable(w, r) {
 		return
@@ -738,18 +740,46 @@ func (s *Server) handleGetWorkflowJobLogs(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	content, ok, readErr := s.jobLogContent(r.Context(), j.JobID)
-	if readErr != nil {
-		writeGHError(w, http.StatusInternalServerError, "log byte-store read: "+readErr.Error())
-		return
-	}
-	if !ok {
+	s.store.Mu.RLock()
+	hasLogs := len(s.jobLogRefsLocked(j.JobID)) > 0
+	s.store.Mu.RUnlock()
+	if !hasLogs {
 		writeGHError(w, http.StatusNotFound, "Logs not found")
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(content)
+	s.redirectToLogDownload(w, r, logDownload{Kind: "job", Repo: repoFullName(r), JobID: jobID})
+}
+
+// handleGetWorkflowJobStepLogs answers GET .../jobs/{job_id}/steps/{step_number}/logs
+// like the job's logs, for the one step at that zero-based position.
+func (s *Server) handleGetWorkflowJobStepLogs(w http.ResponseWriter, r *http.Request) {
+	if !s.enforceRepoReadable(w, r) {
+		return
+	}
+	jobID, err := strconv.ParseInt(r.PathValue("job_id"), 10, 64)
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	step, err := strconv.Atoi(r.PathValue("step_number"))
+	if err != nil || step < 0 {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	_, j := s.findJobByStableIDInRepo(jobID, repoFullName(r))
+	if j == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.store.Mu.RLock()
+	tasks := s.taskRecordsForJobLocked(j.JobID)
+	hasLog := step < len(tasks) && tasks[step].Log != nil
+	s.store.Mu.RUnlock()
+	if !hasLog {
+		writeGHError(w, http.StatusNotFound, "Logs not found")
+		return
+	}
+	s.redirectToLogDownload(w, r, logDownload{Kind: "step", Repo: repoFullName(r), JobID: jobID, Step: step})
 }
 
 func (s *Server) handleGetWorkflowJobSummary(w http.ResponseWriter, r *http.Request) {

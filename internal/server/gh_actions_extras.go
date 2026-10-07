@@ -93,7 +93,11 @@ func (s *Server) handleRunLogs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.writeRunLogsZip(r.Context(), w, wf, runID)
+	if !s.runHasLogs(wf) {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.redirectToLogDownload(w, r, logDownload{Kind: "run", Repo: repoFullName(r), RunID: runID})
 }
 
 // writeRunLogsZip writes the run's log archive in GitHub's layout: per job a top-level "0_<jobname>.txt" full log plus a

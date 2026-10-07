@@ -143,6 +143,33 @@ var gqlIssueMutationCases = []gqlMutationCase{
 		},
 	},
 	{
+		name: "addRelatesTo",
+		doc:  `mutation($input:AddRelatesToInput!){addRelatesTo(input:$input){issue{number} relatedIssue{number}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			f.subIssue = s.store.CreateIssue(f.repo.ID, f.owner.ID, "related issue", "", nil, nil, 0)
+			if f.subIssue == nil {
+				t.Fatalf("could not seed the related issue")
+			}
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"issueId": f.issue.NodeID, "relatedIssueId": f.subIssue.NodeID}
+		},
+	},
+	{
+		name: "removeRelatesTo",
+		doc:  `mutation($input:RemoveRelatesToInput!){removeRelatesTo(input:$input){issue{number}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			f.subIssue = s.store.CreateIssue(f.repo.ID, f.owner.ID, "related issue", "", nil, nil, 0)
+			if f.subIssue == nil {
+				t.Fatalf("could not seed the related issue")
+			}
+			s.store.AddIssueRelatesTo(f.issue.ID, f.subIssue.ID)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"issueId": f.issue.NodeID, "relatedIssueId": f.subIssue.NodeID}
+		},
+	},
+	{
 		name: "unmarkIssueAsDuplicate",
 		doc:  `mutation($input:UnmarkIssueAsDuplicateInput!){unmarkIssueAsDuplicate(input:$input){duplicate{__typename}}}`,
 		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {

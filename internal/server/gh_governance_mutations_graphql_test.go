@@ -494,3 +494,40 @@ func TestGraphQLRulesetBypassActorsCarryTheirRoleIDs(t *testing.T) {
 		t.Errorf("stored bypass actors = %+v, want EnterpriseRole 42", stored.BypassActors)
 	}
 }
+
+// The code_quality and code_coverage rules round-trip between GraphQL and the
+// REST ruleset store: the severity is stored in the REST spelling and read
+// back as the enum, and an unset coverage threshold reads back null.
+func TestGraphQLCodeQualityAndCoverageRules(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "ruleset-code-rules", true)
+
+	env := s.gqlAuthzPost(t, f.ownerToken,
+		`mutation($input:CreateRepositoryRulesetInput!){createRepositoryRuleset(input:$input){ruleset{databaseId rules(first:5){nodes{type parameters{__typename ... on CodeQualityParameters{severity} ... on CodeCoverageParameters{maxCoverageDrop minimumCoverage}}}}}}}`,
+		map[string]interface{}{"input": map[string]interface{}{
+			"sourceId": f.repo.NodeID, "name": "code-rules", "enforcement": "ACTIVE", "target": "BRANCH",
+			"conditions": map[string]interface{}{
+				"refName": map[string]interface{}{"include": []interface{}{"~DEFAULT_BRANCH"}, "exclude": []interface{}{}},
+			},
+			"rules": []interface{}{
+				map[string]interface{}{"type": "CODE_QUALITY", "parameters": map[string]interface{}{"codeQuality": map[string]interface{}{"severity": "WARNINGS"}}},
+				map[string]interface{}{"type": "CODE_COVERAGE", "parameters": map[string]interface{}{"codeCoverage": map[string]interface{}{"minimumCoverage": 80.5}}},
+			},
+		}},
+	)
+	ruleset := innerObject(t, gqlData(t, env), "createRepositoryRuleset", "ruleset")
+	stored := s.store.GetRuleset(int(ruleset["databaseId"].(float64)))
+	if stored == nil || len(stored.Rules) != 2 || stored.Rules[0].Type != "code_quality" || stored.Rules[0].Parameters["severity"] != "warnings" {
+		t.Fatalf("stored rules = %+v", stored)
+	}
+	nodes, _ := innerObject(t, ruleset, "rules")["nodes"].([]interface{})
+	quality := nodes[0].(map[string]interface{})["parameters"].(map[string]interface{})
+	coverage := nodes[1].(map[string]interface{})["parameters"].(map[string]interface{})
+	if quality["severity"] != "WARNINGS" {
+		t.Errorf("code_quality parameters = %v", quality)
+	}
+	if coverage["minimumCoverage"] != 80.5 || coverage["maxCoverageDrop"] != nil {
+		t.Errorf("code_coverage parameters = %v, want minimumCoverage 80.5 and a null maxCoverageDrop", coverage)
+	}
+}

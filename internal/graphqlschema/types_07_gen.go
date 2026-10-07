@@ -5,6 +5,170 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineOrganizationInvitation() {
+	r.object("OrganizationInvitation", "An Invitation for a user to an organization.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"email": {
+				Type:        r.t("String"),
+				Description: "The email address of the user invited to the organization.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the OrganizationInvitation object",
+			},
+			"invitationSource": {
+				Type:        graphql.NewNonNull(r.t("OrganizationInvitationSource")),
+				Description: "The source of the invitation.",
+			},
+			"invitationType": {
+				Type:        graphql.NewNonNull(r.t("OrganizationInvitationType")),
+				Description: "The type of invitation that was sent (e.g. email, user).",
+			},
+			"invitee": {
+				Type:        r.t("User"),
+				Description: "The user who was invited to the organization.",
+			},
+			"inviter": {
+				Type:              graphql.NewNonNull(r.t("User")),
+				Description:       "The user who created the invitation.",
+				DeprecationReason: "`inviter` will be removed. `inviter` will be replaced by `inviterActor`. Removal on 2024-07-01 UTC.",
+			},
+			"inviterActor": {
+				Type:        r.t("User"),
+				Description: "The user who created the invitation.",
+			},
+			"organization": {
+				Type:        graphql.NewNonNull(r.t("Organization")),
+				Description: "The organization the invite is for",
+			},
+			"role": {
+				Type:        graphql.NewNonNull(r.t("OrganizationInvitationRole")),
+				Description: "The user's pending role in the organization (e.g. member, owner).",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineOrganizationInvitationConnection() {
+	r.object("OrganizationInvitationConnection", "The connection type for OrganizationInvitation.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("OrganizationInvitationEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("OrganizationInvitation")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineOrganizationInvitationEdge() {
+	r.object("OrganizationInvitationEdge", "An edge in a connection.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type:        r.t("OrganizationInvitation"),
+				Description: "The item at the end of the edge.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineOrganizationInvitationRole() {
+	r.enum("OrganizationInvitationRole", "The possible organization invitation roles.", graphql.EnumValueConfigMap{
+		"ADMIN": {
+			Value:       "ADMIN",
+			Description: "The user is invited to be an admin of the organization.",
+		},
+		"BILLING_MANAGER": {
+			Value:       "BILLING_MANAGER",
+			Description: "The user is invited to be a billing manager of the organization.",
+		},
+		"DIRECT_MEMBER": {
+			Value:       "DIRECT_MEMBER",
+			Description: "The user is invited to be a direct member of the organization.",
+		},
+		"REINSTATE": {
+			Value:       "REINSTATE",
+			Description: "The user's previous role will be reinstated.",
+		},
+	})
+}
+
+func (r *Registry) defineOrganizationInvitationSource() {
+	r.enum("OrganizationInvitationSource", "The possible organization invitation sources.", graphql.EnumValueConfigMap{
+		"ENTERPRISE_ORGANIZATION_CREATION": {
+			Value:       "ENTERPRISE_ORGANIZATION_CREATION",
+			Description: "The invitation was created with an enterprise organization",
+		},
+		"MEMBER": {
+			Value:       "MEMBER",
+			Description: "The invitation was created from the web interface or from API",
+		},
+		"SCIM": {
+			Value:       "SCIM",
+			Description: "The invitation was created from SCIM",
+		},
+		"UNKNOWN": {
+			Value:       "UNKNOWN",
+			Description: "The invitation was sent before this feature was added",
+		},
+	})
+}
+
+func (r *Registry) defineOrganizationInvitationType() {
+	r.enum("OrganizationInvitationType", "The possible organization invitation types.", graphql.EnumValueConfigMap{
+		"EMAIL": {
+			Value:       "EMAIL",
+			Description: "The invitation was to an email address.",
+		},
+		"USER": {
+			Value:       "USER",
+			Description: "The invitation was to an existing user.",
+		},
+	})
+}
+
+func (r *Registry) defineOrganizationMemberConnection() {
+	r.object("OrganizationMemberConnection", "A list of users who belong to the organization.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("OrganizationMemberEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("User")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineOrganizationMemberEdge() {
 	r.object("OrganizationMemberEdge", "Represents a user within an organization.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -935,7 +1099,7 @@ func (r *Registry) definePatchStatus() {
 }
 
 func (r *Registry) definePendingAssigneeSuggestion() {
-	r.object("PendingAssigneeSuggestion", "A pending suggestion to assign a user to an issue.", nil, func() graphql.Fields {
+	r.object("PendingAssigneeSuggestion", "A pending suggestion to assign a user to an issue.", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
 			"actor": {
 				Type:        r.t("Actor"),
@@ -948,6 +1112,10 @@ func (r *Registry) definePendingAssigneeSuggestion() {
 			"createdAt": {
 				Type:        graphql.NewNonNull(r.t("DateTime")),
 				Description: "When the suggestion was created.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the PendingAssigneeSuggestion object",
 			},
 			"rationale": {
 				Type:        r.t("String"),
@@ -962,7 +1130,7 @@ func (r *Registry) definePendingAssigneeSuggestion() {
 }
 
 func (r *Registry) definePendingCloseSuggestion() {
-	r.object("PendingCloseSuggestion", "A pending suggestion to close an issue.", nil, func() graphql.Fields {
+	r.object("PendingCloseSuggestion", "A pending suggestion to close an issue.", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
 			"actor": {
 				Type:        r.t("Actor"),
@@ -975,6 +1143,10 @@ func (r *Registry) definePendingCloseSuggestion() {
 			"duplicateOf": {
 				Type:        r.t("IssueOrPullRequest"),
 				Description: "The issue or pull request the suggestion proposes marking this issue as a\nduplicate of. Only set when `stateReason` is `DUPLICATE`.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the PendingCloseSuggestion object",
 			},
 			"rationale": {
 				Type:        r.t("String"),
@@ -993,7 +1165,7 @@ func (r *Registry) definePendingCloseSuggestion() {
 }
 
 func (r *Registry) definePendingFieldSuggestion() {
-	r.object("PendingFieldSuggestion", "A pending suggestion to set an issue field's value.", nil, func() graphql.Fields {
+	r.object("PendingFieldSuggestion", "A pending suggestion to set an issue field's value.", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
 			"actor": {
 				Type:        r.t("Actor"),
@@ -1002,6 +1174,10 @@ func (r *Registry) definePendingFieldSuggestion() {
 			"createdAt": {
 				Type:        graphql.NewNonNull(r.t("DateTime")),
 				Description: "When the suggestion was created.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the PendingFieldSuggestion object",
 			},
 			"issueField": {
 				Type:        r.t("IssueFields"),
@@ -1080,7 +1256,7 @@ func (r *Registry) definePendingIssueSuggestionRef() {
 }
 
 func (r *Registry) definePendingLabelSuggestion() {
-	r.object("PendingLabelSuggestion", "A pending suggestion to add a label to an issue.", nil, func() graphql.Fields {
+	r.object("PendingLabelSuggestion", "A pending suggestion to add a label to an issue.", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
 			"actor": {
 				Type:        r.t("Actor"),
@@ -1089,6 +1265,10 @@ func (r *Registry) definePendingLabelSuggestion() {
 			"createdAt": {
 				Type:        graphql.NewNonNull(r.t("DateTime")),
 				Description: "When the suggestion was created.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the PendingLabelSuggestion object",
 			},
 			"label": {
 				Type:        r.t("Label"),
@@ -1107,7 +1287,7 @@ func (r *Registry) definePendingLabelSuggestion() {
 }
 
 func (r *Registry) definePendingTypeSuggestion() {
-	r.object("PendingTypeSuggestion", "A pending suggestion to change an issue's type.", nil, func() graphql.Fields {
+	r.object("PendingTypeSuggestion", "A pending suggestion to change an issue's type.", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
 			"actor": {
 				Type:        r.t("Actor"),
@@ -1116,6 +1296,10 @@ func (r *Registry) definePendingTypeSuggestion() {
 			"createdAt": {
 				Type:        graphql.NewNonNull(r.t("DateTime")),
 				Description: "When the suggestion was created.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the PendingTypeSuggestion object",
 			},
 			"issueType": {
 				Type:        r.t("IssueType"),
@@ -3575,189 +3759,6 @@ func (r *Registry) defineProjectV2Filters() {
 			"state": {
 				Type:        r.t("ProjectV2State"),
 				Description: "List project v2 filtered by the state given.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineProjectV2IssueFieldValues() {
-	r.union("ProjectV2IssueFieldValues", "Possible issue field values for a Project item.", []string{"IssueFieldDateValue", "IssueFieldMultiSelectValue", "IssueFieldNumberValue", "IssueFieldSingleSelectValue", "IssueFieldTextValue"})
-}
-
-func (r *Registry) defineProjectV2Item() {
-	r.object("ProjectV2Item", "An item within a Project.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"content": {
-				Type:        r.t("ProjectV2ItemContent"),
-				Description: "The content of the referenced draft issue, issue, pull request",
-			},
-			"createdAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was created.",
-			},
-			"creator": {
-				Type:        r.t("Actor"),
-				Description: "The actor who created the item.",
-			},
-			"databaseId": {
-				Type:              r.t("Int"),
-				Description:       "Identifies the primary key from the database.",
-				DeprecationReason: "`databaseId` will be removed because it does not support 64-bit signed integer identifiers. Use `fullDatabaseId` instead. Removal on 2025-04-01 UTC.",
-			},
-			"fieldValueByName": {
-				Type:        r.t("ProjectV2ItemFieldValue"),
-				Description: "The field value of the first project field which matches the 'name' argument that is set on the item.",
-				Args: graphql.FieldConfigArgument{
-					"name": {
-						Type:        graphql.NewNonNull(r.t("String")),
-						Description: "The name of the field to return the field value of",
-					},
-				},
-			},
-			"fieldValues": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2ItemFieldValueConnection")),
-				Description: "The field values that are set on the item.",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-					"orderBy": {
-						Type:         r.t("ProjectV2ItemFieldValueOrder"),
-						DefaultValue: map[string]interface{}{"direction": "ASC", "field": "POSITION"},
-						Description:  "Ordering options for project v2 item field values returned from the connection",
-					},
-				},
-			},
-			"fullDatabaseId": {
-				Type:        r.t("BigInt"),
-				Description: "Identifies the primary key from the database as a BigInt.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the ProjectV2Item object",
-			},
-			"isArchived": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "Whether the item is archived.",
-			},
-			"project": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2")),
-				Description: "The project that contains this item.",
-			},
-			"type": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2ItemType")),
-				Description: "The type of the item.",
-			},
-			"updatedAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was last updated.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineProjectV2ItemArchivedState() {
-	r.enum("ProjectV2ItemArchivedState", "The possible archived states of a `ProjectV2Item`.", graphql.EnumValueConfigMap{
-		"ARCHIVED": {
-			Value:       "ARCHIVED",
-			Description: "A project item that is archived",
-		},
-		"NOT_ARCHIVED": {
-			Value:       "NOT_ARCHIVED",
-			Description: "A project item that is not archived",
-		},
-	})
-}
-
-func (r *Registry) defineProjectV2ItemConnection() {
-	r.object("ProjectV2ItemConnection", "The connection type for ProjectV2Item.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"edges": {
-				Type:        graphql.NewList(r.t("ProjectV2ItemEdge")),
-				Description: "A list of edges.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("ProjectV2Item")),
-				Description: "A list of nodes.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"totalCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the total count of items in the connection.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineProjectV2ItemContent() {
-	r.union("ProjectV2ItemContent", "Types that can be inside Project Items.", []string{"DraftIssue", "Issue", "PullRequest"})
-}
-
-func (r *Registry) defineProjectV2ItemEdge() {
-	r.object("ProjectV2ItemEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("ProjectV2Item"),
-				Description: "The item at the end of the edge.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineProjectV2ItemFieldDateValue() {
-	r.object("ProjectV2ItemFieldDateValue", "The value of a date field in a Project item.", []string{"Node", "ProjectV2ItemFieldValueCommon"}, func() graphql.Fields {
-		return graphql.Fields{
-			"createdAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was created.",
-			},
-			"creator": {
-				Type:        r.t("Actor"),
-				Description: "The actor who created the item.",
-			},
-			"databaseId": {
-				Type:        r.t("Int"),
-				Description: "Identifies the primary key from the database.",
-			},
-			"date": {
-				Type:        r.t("Date"),
-				Description: "Date value for the field",
-			},
-			"field": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
-				Description: "The project field that contains this value.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the ProjectV2ItemFieldDateValue object",
-			},
-			"item": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2Item")),
-				Description: "The project item that contains this value.",
-			},
-			"updatedAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was last updated.",
 			},
 		}
 	})
