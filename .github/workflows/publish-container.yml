@@ -93,6 +93,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read the Ubuntu archive state
+        id: ubuntu
+        run: echo "state=$(./scripts/ubuntu-archive-state.sh)" >> "$GITHUB_OUTPUT"
       - name: Build and publish native architecture image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -119,6 +122,7 @@ jobs:
             org.opencontainers.image.version=${{ needs.metadata.outputs.version || needs.metadata.outputs.tag }}
             org.opencontainers.image.licenses=AGPL-3.0-or-later
           build-args: |
+            UBUNTU_ARCHIVE_STATE=${{ steps.ubuntu.outputs.state }}
             BLEEPHUB_VERSION=${{ needs.metadata.outputs.version || needs.metadata.outputs.tag }}
             BLEEPHUB_COMMIT=${{ github.sha }}
             BLEEPHUB_PUBLISHED_AT=${{ needs.metadata.outputs.published_at }}
@@ -139,6 +143,8 @@ jobs:
             org.opencontainers.image.created=${{ needs.metadata.outputs.published_at }}
             org.opencontainers.image.version=${{ needs.metadata.outputs.version || needs.metadata.outputs.tag }}
             org.opencontainers.image.licenses=AGPL-3.0-or-later
+          build-args: |
+            UBUNTU_ARCHIVE_STATE=${{ steps.ubuntu.outputs.state }}
           cache-from: type=gha,scope=bleephub-runner-${{ matrix.arch.suffix }}
           cache-to: type=gha,scope=bleephub-runner-${{ matrix.arch.suffix }},mode=max
 

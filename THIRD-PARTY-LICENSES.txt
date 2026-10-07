@@ -402,10 +402,10 @@ modernc.org/sqlite v1.59.0
 Part 2: the 85 packages bundled into the web UI
 ==============================================================================
 
-@tanstack/query-core 5.103.1 (MIT)
+@tanstack/query-core 5.103.2 (MIT)
     licence: text 77
 
-@tanstack/react-query 5.103.1 (MIT)
+@tanstack/react-query 5.103.2 (MIT)
     licence: text 77
 
 @tanstack/react-store 0.11.0 (MIT)

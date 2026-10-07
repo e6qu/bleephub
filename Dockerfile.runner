@@ -19,6 +19,9 @@ COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
 RUN bash /usr/local/bin/build-actions-runner
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+# The Ubuntu archive state (scripts/ubuntu-archive-state.sh): a new value
+# rebuilds the apt-get upgrade layers below instead of reusing a cached one.
+ARG UBUNTU_ARCHIVE_STATE=unset
 
 ARG TARGETARCH
 ARG RUNNER_VERSION
