@@ -39,7 +39,7 @@ github.com/apache/arrow-go/v18 v18.7.0
     LICENSE.txt: text 7
     NOTICE.txt: text 8
 
-github.com/aws/aws-lambda-go v1.55.0
+github.com/aws/aws-lambda-go v1.55.1
     LICENSE: text 9
     LICENSE-LAMBDACODE: text 10
     LICENSE-SUMMARY: text 11
@@ -69,7 +69,7 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.3
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.3
     LICENSE.txt: text 9
 
-github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.42.0
+github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.43.0
     LICENSE.txt: text 9
 
 github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.72.0
@@ -84,7 +84,7 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.3
     LICENSE.txt: text 9
 
-github.com/aws/aws-sdk-go-v2/service/lambda v1.108.0
+github.com/aws/aws-sdk-go-v2/service/lambda v1.109.0
     LICENSE.txt: text 9
 
 github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.0
@@ -112,7 +112,7 @@ github.com/aws/smithy-go v1.28.1
 github.com/aymerick/douceur v0.2.0
     LICENSE: text 15
 
-github.com/beevik/etree v1.8.0
+github.com/beevik/etree v1.8.1
     LICENSE: text 16
 
 github.com/canonical/go-dqlite/v3 v3.0.4

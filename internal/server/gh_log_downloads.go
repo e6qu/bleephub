@@ -37,7 +37,7 @@ func (s *Server) logDownloadMAC(payload string) []byte {
 
 // redirectToLogDownload answers the API request with the 302 GitHub sends.
 func (s *Server) redirectToLogDownload(w http.ResponseWriter, r *http.Request, d logDownload) {
-	d.Expires = time.Now().Add(logDownloadLifetime).Unix()
+	d.Expires = s.currentTime().Add(logDownloadLifetime).Unix()
 	ticket, err := s.signLogDownload(d)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "encode log download: "+err.Error())
@@ -68,7 +68,7 @@ func (s *Server) handleLogDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid log download link", http.StatusNotFound)
 		return
 	}
-	if time.Now().Unix() > d.Expires {
+	if s.currentTime().Unix() > d.Expires {
 		http.Error(w, "log download link expired", http.StatusGone)
 		return
 	}

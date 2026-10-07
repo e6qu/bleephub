@@ -28182,6 +28182,337 @@
         "state_changing": false,
         "webhook_actions_event_review": false
       },
+      "operation_id": "orgs/external-properties-for-repos-get-organization-app-installations",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/properties/installations",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "403",
+          "404",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "POST",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "orgs/external-properties-for-repos-register-organization-app-installation",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/properties/installations",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "display_name": {
+                  "type": "string"
+                },
+                "installation_id": {
+                  "type": "integer"
+                }
+              },
+              "required_fields": [
+                "display_name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "201",
+          "403",
+          "404",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
+      "operation_id": "orgs/external-properties-for-repos-get-organization-definitions",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/properties/installations/schema",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "200",
+          "403",
+          "404",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "PATCH",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "orgs/external-properties-for-repos-create-or-update-organization-values",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/properties/installations/values",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "properties": {
+                  "type": "array"
+                },
+                "repository_names": {
+                  "type": "array"
+                }
+              },
+              "required_fields": [
+                "properties",
+                "repository_names"
+              ],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "204",
+          "403",
+          "404",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "DELETE",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "orgs/external-properties-for-repos-delete-organization-values",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/properties/installations/values/{property_name}",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "property_name",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "204",
+          "403",
+          "404",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "PATCH",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "orgs/external-properties-for-repos-create-or-update-values-for-organization-property",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/orgs/{org}/properties/installations/values/{property_name}",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "repository_values": {
+                  "type": "array"
+                }
+              },
+              "required_fields": [
+                "repository_values"
+              ],
+              "type": "object"
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "property_name",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "204",
+          "403",
+          "404",
+          "422"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
       "operation_id": "orgs/custom-properties-for-repos-get-organization-definitions",
       "pagination": {
         "parameters": [],
@@ -33694,6 +34025,71 @@
           "403"
         ],
         "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "GET",
+      "mutation_obligations": {
+        "failure_atomicity_review": false,
+        "persistence_reload_review": false,
+        "state_changing": false,
+        "webhook_actions_event_review": false
+      },
+      "operation_id": "actions/download-step-logs-for-workflow-run-job",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/actions/jobs/{job_id}/steps/{step_number}/logs",
+      "request": {
+        "body": {
+          "media_types": {},
+          "required": false
+        },
+        "parameters": [
+          {
+            "format": "int64",
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "minimum": 0,
+            "name": "step_number",
+            "required": true,
+            "type": "integer"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "302"
+        ],
+        "redirect_statuses": [
+          "302"
+        ]
       }
     },
     {
@@ -60784,9 +61180,12 @@
       "responses": {
         "documented_statuses": [
           "200",
+          "304",
           "404"
         ],
-        "redirect_statuses": []
+        "redirect_statuses": [
+          "304"
+        ]
       }
     },
     {
@@ -61939,6 +62338,9 @@
           "media_types": {
             "application/json": {
               "properties": {
+                "bypass_rules": {
+                  "type": "boolean"
+                },
                 "commit_message": {
                   "type": "string"
                 },
@@ -62261,6 +62663,76 @@
           "403",
           "422",
           "503"
+        ],
+        "redirect_statuses": []
+      }
+    },
+    {
+      "authorization": {
+        "alternatives": [],
+        "public": true
+      },
+      "conditional_requests": {
+        "documented": false,
+        "headers": []
+      },
+      "method": "POST",
+      "mutation_obligations": {
+        "failure_atomicity_review": true,
+        "persistence_reload_review": true,
+        "state_changing": true,
+        "webhook_actions_event_review": true
+      },
+      "operation_id": "pulls/rerequest-reviewers",
+      "pagination": {
+        "parameters": [],
+        "required": false
+      },
+      "path": "/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers/rerequest",
+      "request": {
+        "body": {
+          "media_types": {
+            "application/json": {
+              "properties": {
+                "reviewers": {
+                  "type": "array"
+                },
+                "team_reviewers": {
+                  "type": "array"
+                }
+              },
+              "required_fields": [],
+              "type": "object"
+            }
+          },
+          "required": false
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "path",
+            "name": "pull_number",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      },
+      "responses": {
+        "documented_statuses": [
+          "201",
+          "403",
+          "422"
         ],
         "redirect_statuses": []
       }
@@ -79826,13 +80298,13 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "4aeb1b8cc3a8c80ccae2d3b927bae8cb7a35ea73187c833ff72b4d67d450c994",
+  "source_sha256": "012256bd4f5934265c5795187f096596eccd8237363aa82e5aae0d53c791300e",
   "summary": {
-    "operations": 1224,
-    "state_changing": 583,
+    "operations": 1232,
+    "state_changing": 588,
     "with_conditional_requests": 0,
     "with_pagination": 281,
-    "with_request_body": 345,
-    "with_required_body": 279
+    "with_request_body": 349,
+    "with_required_body": 282
   }
 }

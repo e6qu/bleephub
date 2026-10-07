@@ -80,7 +80,7 @@ func TestLogDownloadLinkCannotBeForgedOrReused(t *testing.T) {
 	if got := fetch(payload + "." + strings.Repeat("A", len(sig))); got.Code != http.StatusNotFound {
 		t.Errorf("a forged signature served status %d", got.Code)
 	}
-	expired := s.signLogDownloadForTest(t, logDownload{Kind: "job", Repo: "octo/repo", JobID: stableJobID(wfJob.JobID), Expires: time.Now().Add(-time.Minute).Unix()})
+	expired := s.signLogDownloadForTest(t, logDownload{Kind: "job", Repo: "octo/repo", JobID: stableJobID(wfJob.JobID), Expires: s.currentTime().Add(-time.Minute).Unix()})
 	if got := fetch(expired); got.Code != http.StatusGone {
 		t.Errorf("an expired link served status %d, want 410", got.Code)
 	}
