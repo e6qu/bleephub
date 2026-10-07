@@ -133,7 +133,21 @@ func apiRateWindowDuration(resource string) time.Duration {
 	}
 }
 
+// apiRateIdentity names the budget a request spends. Requests authenticated as
+// a user share that user's limit across every credential, as GitHub's
+// GET /rate_limit describes, so another token cannot buy a fresh budget; an
+// installation spends its own. Any other credential is keyed by itself, and an
+// anonymous request by its client address.
 func apiRateIdentity(r *http.Request) string {
+	if ghInstallationTokenFromContext(r.Context()) != nil {
+		if inst := ghInstallationFromContext(r.Context()); inst != nil {
+			return fmt.Sprintf("installation:%d", inst.ID)
+		}
+	} else if ghJobTokenFromContext(r.Context()) == nil && ghAppFromContext(r.Context()) == nil {
+		if user := ghUserFromContext(r.Context()); user != nil {
+			return fmt.Sprintf("user:%d", user.ID)
+		}
+	}
 	if authorization := r.Header.Get("Authorization"); authorization != "" {
 		scheme, credential := authScheme(authorization)
 		identity := strings.TrimSpace(authorization)
@@ -144,11 +158,6 @@ func apiRateIdentity(r *http.Request) string {
 		}
 		sum := sha256.Sum256([]byte(identity))
 		return fmt.Sprintf("auth:%x", sum)
-	}
-	// Key a browser session by the resolved principal, not the cookie, so extra
-	// sessions cannot multiply the authenticated budget.
-	if user := ghUserFromContext(r.Context()); user != nil {
-		return fmt.Sprintf("user:%d", user.ID)
 	}
 	host := r.RemoteAddr
 	if parsed, _, err := net.SplitHostPort(host); err == nil {

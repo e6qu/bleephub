@@ -3,6 +3,7 @@ package bleephub
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -147,7 +148,8 @@ func TestRateLimitMiddlewareReturnsGitHubShaped403(t *testing.T) {
 	server.rateLimits = map[string]*apiRateWindow{}
 	request := httptest.NewRequest("GET", "/api/v3/user", nil)
 	request.Header.Set("Authorization", "Bearer "+defaultToken)
-	key := apiRateIdentity(request) + "\x1fcore"
+	// The default token authenticates admin, whose budget it spends.
+	key := fmt.Sprintf("user:%d", server.store.UsersByLogin["admin"].ID) + "\x1fcore"
 	server.rateLimits[key] = &apiRateWindow{
 		Limit: 1,
 		Used:  1,
@@ -307,5 +309,45 @@ func TestRateLimitResponseContainsEveryDocumentedResource(t *testing.T) {
 	}
 	if bytes.Contains(recorder.Body.Bytes(), []byte(`"code_scanning_upload"`)) {
 		t.Error("rate-limit response exposed a resource absent from GitHub's response schema")
+	}
+}
+
+// Requests authenticated as a user share that user's limit across credentials
+// (GitHub's GET /rate_limit): spending with one token shows on another of the
+// same user, and not on a different user's.
+func TestPrimaryRateLimitIsSharedAcrossOneUsersCredentials(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	second := s.store.CreateToken(admin.ID, "repo")
+	s.post(t, "/internal/users", defaultToken, map[string]interface{}{
+		"login": "rate-other", "name": "Rate Other", "email": "rate-other@example.com",
+	}).Body.Close()
+	otherUser := s.store.LookupUserByLogin("rate-other")
+	if otherUser == nil {
+		t.Fatal("could not create the second user")
+	}
+	other := s.store.CreateToken(otherUser.ID, "repo")
+	if second == nil || other == nil {
+		t.Fatal("could not mint the tokens")
+	}
+	coreUsed := func(token string) float64 {
+		t.Helper()
+		resp := s.get(t, "/api/v3/rate_limit", token)
+		requireHTTPStatus(t, resp, http.StatusOK)
+		return decodeJSON(t, resp)["resources"].(map[string]interface{})["core"].(map[string]interface{})["used"].(float64)
+	}
+	before := coreUsed(second.Value)
+	otherBefore := coreUsed(other.Value)
+	for range 3 {
+		resp := s.get(t, "/api/v3/user", defaultToken)
+		requireHTTPStatus(t, resp, http.StatusOK)
+		resp.Body.Close()
+	}
+	if got := coreUsed(second.Value); got != before+3 {
+		t.Fatalf("the user's second token shows %v core requests used, want %v", got, before+3)
+	}
+	if got := coreUsed(other.Value); got != otherBefore {
+		t.Fatalf("another user's budget moved from %v to %v", otherBefore, got)
 	}
 }
