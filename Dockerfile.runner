@@ -19,10 +19,6 @@ COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
 RUN bash /usr/local/bin/build-actions-runner
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
-# The Ubuntu archive state (scripts/ubuntu-archive-state.sh): a new value
-# rebuilds the apt-get upgrade layers below instead of reusing a cached one.
-ARG UBUNTU_ARCHIVE_STATE=unset
-
 ARG TARGETARCH
 ARG RUNNER_VERSION
 # SHA-256 values published with the official release. The binary archive still
@@ -41,7 +37,6 @@ RUN case "$TARGETARCH" in \
         *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac && \
     apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl && \
     rm -rf /var/lib/apt/lists/* && \
     useradd --create-home --home-dir /opt/actions-runner --shell /bin/bash runner && \
@@ -81,6 +76,14 @@ RUN case "$TARGETARCH" in \
     /opt/actions-runner/bin/Runner.Listener --version | grep -Fx "$RUNNER_VERSION" && \
     rm -f /usr/bin/pebble && \
     chown -R runner:runner /opt/actions-runner
+
+# Security updates land in their own late layer, keyed on the Ubuntu archive
+# state (scripts/ubuntu-archive-state.sh): a new value reruns only this upgrade,
+# while the runner layers above stay cached.
+ARG UBUNTU_ARCHIVE_STATE=unset
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --chown=runner:runner docker/bleephub-runner-entrypoint.sh /usr/local/bin/bleephub-runner
 RUN chmod 0755 /usr/local/bin/bleephub-runner
