@@ -203,7 +203,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	anonymousRateRequest.RemoteAddr = "127.0.0.1:1"
-	for index, identity := range []string{apiRateIdentity(rateRequest), apiRateIdentity(anonymousRateRequest)} {
+	for index, identity := range []string{resolvedRateIdentity(srv, rateRequest), resolvedRateIdentity(srv, anonymousRateRequest)} {
 		for resource := range apiRateResourceLimits {
 			limit := apiRateResourceLimits[resource]
 			if index == 1 && resource == "core" {

@@ -351,3 +351,9 @@ func TestPrimaryRateLimitIsSharedAcrossOneUsersCredentials(t *testing.T) {
 		t.Fatalf("another user's budget moved from %v to %v", otherBefore, got)
 	}
 }
+
+// resolvedRateIdentity is the budget a request spends once the middleware has
+// resolved its credential, as rate limiting sees it.
+func resolvedRateIdentity(s *Server, r *http.Request) string {
+	return apiRateIdentity(r.WithContext(s.authenticateRequest(r)))
+}
