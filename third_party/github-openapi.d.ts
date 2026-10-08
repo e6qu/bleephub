@@ -32941,6 +32941,32 @@ export interface components {
                     /** @description The state of the review. */
                     state?: string;
                 }[];
+                /** @description The proof of presence evaluation for the pull request. Null if proof of presence was not evaluated. */
+                proof_of_presence?: {
+                    /** @description The state of the proof of presence evaluation. */
+                    state?: string;
+                    /** @description A code describing the reason for the proof of presence state. */
+                    code?: string;
+                    /** @description The base commit SHA the proof of presence evaluation applies to. Empty if unavailable. */
+                    base_sha?: string;
+                    /** @description The head commit SHA the proof of presence evaluation applies to. Empty if unavailable. */
+                    head_sha?: string;
+                    /** @description The authentication level required by the rule. Empty if unavailable. */
+                    required_level?: string;
+                    /** @description The authentication level that was verified. Empty if proof of presence has not been completed. */
+                    verified_level?: string;
+                    /** @description The time proof of presence was verified, in ISO 8601 format. Empty if proof of presence has not been completed. */
+                    verified_at?: string;
+                    /** @description The user who provided proof of presence. Null if no proof of presence was recorded. */
+                    verifier?: {
+                        /** @description The unique identifier of the user. */
+                        id?: number;
+                        /** @description The handle for the GitHub user account. */
+                        login?: string;
+                        /** @description The type of the user. */
+                        type?: string;
+                    } | null;
+                } | null;
             };
         };
         /**
