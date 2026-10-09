@@ -5,13 +5,3 @@
 # check-dependency-age.py honors an entry only while now < expires AND expires
 # is <= publish+24h, so a waiver can never outlast the window the quarantine
 # would clear on its own. Delete an entry once its version turns 24h old.
-#
-# Go 1.26.9 / 1.27.2 and golang.org/x/net v0.60.0 fix GO-2026-6617 (HTTP/2
-# server crash in net/http and x/net/http2), which govulncheck reports as
-# reachable; no older release fixes it. Each expires at exactly publish+24h.
-go:golang.org/x/net@v0.60.0	2026-10-09T17:22:58Z	GO-2026-6617 net/http HTTP/2 server crash fix; govulncheck-reachable; expiry = publish+24h
-docker:golang:1.26.9@sha256:f1f0bcc2c524a3ced375fcb4d1ecb7aa371aa7070e112599aaca45cc02d0101b	2026-10-09T18:05:47Z	GO-2026-6617 net/http HTTP/2 server crash fix; govulncheck-reachable; expiry = publish+24h
-docker:golang:1.26.9-alpine@sha256:cdfd4fe2da6b225d8b40c6b7a105736e548e83ff56d5d8f9394446eeb5eb84e0	2026-10-09T18:05:52Z	GO-2026-6617 net/http HTTP/2 server crash fix; govulncheck-reachable; expiry = publish+24h
-docker:golang:1.27.2@sha256:5bc7f572bbaa98885a3a1fd9c0aa76b59e3e14e8628bfc316bbfd0c701e4818c	2026-10-09T18:06:40Z	GO-2026-6617 net/http HTTP/2 server crash fix; govulncheck-reachable; expiry = publish+24h
-docker:golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673	2026-10-09T18:06:45Z	GO-2026-6617 net/http HTTP/2 server crash fix; govulncheck-reachable; expiry = publish+24h
-docker:golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61	2026-10-09T18:06:55Z	GO-2026-6617 net/http HTTP/2 server crash fix; govulncheck-reachable; expiry = publish+24h
