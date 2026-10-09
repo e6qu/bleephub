@@ -24,8 +24,11 @@ stderr_file="$(mktemp)"
 trap 'rm -f "$stderr_file"' EXIT
 for ((attempt = 1; ; attempt++)); do
 	status=0
-	"$govulncheck" "$@" 2> >(tee "$stderr_file" >&2) || status=$?
-	wait
+	# stderr goes to a file first and is replayed afterwards. Teeing it through
+	# a process substitution let the grep below run before tee had written the
+	# fetch error, so a retryable failure was sometimes treated as final.
+	"$govulncheck" "$@" 2>"$stderr_file" || status=$?
+	cat "$stderr_file" >&2
 	if ((status == 0)); then
 		exit 0
 	fi
