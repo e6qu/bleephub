@@ -2,14 +2,15 @@
 # Refresh GitHub's official public GraphQL schema behind an explicit digest pin.
 set -euo pipefail
 
-PIN_SHA256="2e1ddaaa59fcc4f427cfc63b8add318b5268e386b80984eb9fe939204857bc1a"
+PIN_SHA256="3ed095654b22b1a8e7a88af36af2b28cb6d9613da332e9c57303e30476958d42"
 # GitHub's docs endpoint can serve the previous schema from cached edges for a
 # while after a release, so the drift check also accepts the prior pin
-# (8ecdb21a). The current pin adds the relatesTo issue relationship
-# (Issue.relatesTo, addRelatesTo, removeRelatesTo), the code_quality and
-# code_coverage repository rules, and removes the deprecated issue event
-# rationales. Any other digest is blocking.
-ROLLOUT_SHA256="8ecdb21a5c3affdeaa0e55bd9174536aa6c69cbb61f20ec796085aa1509c95df"
+# (2e1ddaaa). The current pin adds pull request stacks (the AddedToStackEvent
+# and RemovedFromStackEvent timeline items), the rerequestReviews mutation,
+# the isWithdrawn and severities security advisory filters, and fields such as
+# SecurityAdvisory.cveId and githubReviewedAt; pull request archiving opens to
+# the triage role. Any other digest is blocking.
+ROLLOUT_SHA256="2e1ddaaa59fcc4f427cfc63b8add318b5268e386b80984eb9fe939204857bc1a"
 SOURCE_URL="https://docs.github.com/public/fpt/schema.docs.graphql"
 
 usage() {

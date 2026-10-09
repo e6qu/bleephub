@@ -5,6 +5,17 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineProjectV2Filters() {
+	r.input("ProjectV2Filters", "Ways in which to filter lists of projects.", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"state": {
+				Type:        r.t("ProjectV2State"),
+				Description: "List project v2 filtered by the state given.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineProjectV2IssueFieldValues() {
 	r.union("ProjectV2IssueFieldValues", "Possible issue field values for a Project item.", []string{"IssueFieldDateValue", "IssueFieldMultiSelectValue", "IssueFieldNumberValue", "IssueFieldSingleSelectValue", "IssueFieldTextValue"})
 }
@@ -4821,8 +4832,4 @@ func (r *Registry) definePullRequestTimelineConnection() {
 			},
 		}
 	})
-}
-
-func (r *Registry) definePullRequestTimelineItem() {
-	r.union("PullRequestTimelineItem", "An item in a pull request timeline", []string{"AssignedEvent", "BaseRefDeletedEvent", "BaseRefForcePushedEvent", "ClosedEvent", "Commit", "CommitCommentThread", "CrossReferencedEvent", "DemilestonedEvent", "DeployedEvent", "DeploymentEnvironmentChangedEvent", "HeadRefDeletedEvent", "HeadRefForcePushedEvent", "HeadRefRestoredEvent", "IssueComment", "LabeledEvent", "LockedEvent", "MergedEvent", "MilestonedEvent", "PullRequestReview", "PullRequestReviewComment", "PullRequestReviewThread", "ReferencedEvent", "RenamedTitleEvent", "ReopenedEvent", "ReviewDismissedEvent", "ReviewRequestRemovedEvent", "ReviewRequestedEvent", "SubscribedEvent", "UnassignedEvent", "UnlabeledEvent", "UnlockedEvent", "UnsubscribedEvent", "UserBlockedEvent"})
 }

@@ -9228,6 +9228,8 @@ export interface paths {
          * @description > [!NOTE]
          *     > Accessing this endpoint does not count against your REST API rate limit.
          *
+         *     Rate limit status reflects the applicable limits for the requester and resource category, not the hostname used for the request. Requests authenticated as a user share the user's rate limit across credentials. Requests without authentication use the requesting IP address. API requests routed through either an API hostname or a web hostname can count against the same applicable limit.
+         *
          *     Some categories of endpoints have custom rate limits that are separate from the rate limit governing the other REST API endpoints. For this reason, the API response categorizes your rate limit. Under `resources`, you'll see objects relating to different categories:
          *     * The `core` object provides your rate limit status for all non-search-related resources in the REST API.
          *     * The `search` object provides your rate limit status for the REST API for searching (excluding code searches). For more information, see "[Search](https://docs.github.com/rest/search/search)."
@@ -32939,6 +32941,32 @@ export interface components {
                     /** @description The state of the review. */
                     state?: string;
                 }[];
+                /** @description The proof of presence evaluation for the pull request. Null if proof of presence was not evaluated. */
+                proof_of_presence?: {
+                    /** @description The state of the proof of presence evaluation. */
+                    state?: string;
+                    /** @description A code describing the reason for the proof of presence state. */
+                    code?: string;
+                    /** @description The base commit SHA the proof of presence evaluation applies to. Empty if unavailable. */
+                    base_sha?: string;
+                    /** @description The head commit SHA the proof of presence evaluation applies to. Empty if unavailable. */
+                    head_sha?: string;
+                    /** @description The authentication level required by the rule. Empty if unavailable. */
+                    required_level?: string;
+                    /** @description The authentication level that was verified. Empty if proof of presence has not been completed. */
+                    verified_level?: string;
+                    /** @description The time proof of presence was verified, in ISO 8601 format. Empty if proof of presence has not been completed. */
+                    verified_at?: string;
+                    /** @description The user who provided proof of presence. Null if no proof of presence was recorded. */
+                    verifier?: {
+                        /** @description The unique identifier of the user. */
+                        id?: number;
+                        /** @description The handle for the GitHub user account. */
+                        login?: string;
+                        /** @description The type of the user. */
+                        type?: string;
+                    } | null;
+                } | null;
             };
         };
         /**
@@ -34369,7 +34397,10 @@ export interface components {
         };
         /**
          * Rate Limit Overview
-         * @description Rate Limit Overview
+         * @description Rate limit status for the applicable requester and resource category. Requests
+         *     authenticated as a user share the user's rate limit across credentials. Requests
+         *     without authentication use the requesting IP address. API requests routed through
+         *     either an API hostname or a web hostname can count against the same applicable limit.
          */
         "rate-limit-overview": {
             resources: {

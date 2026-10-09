@@ -49,7 +49,18 @@ func (s *Resolver) addRepoFieldsToSchema(
 					return r["nodeID"], nil
 				},
 			},
-			"databaseId":     &graphql.Field{Type: graphql.Int},
+			"databaseId": &graphql.Field{Type: graphql.Int},
+			// The same primary key as databaseId, as GitHub's BigInt scalar.
+			"fullDatabaseId": &graphql.Field{
+				Type: s.graphQLStringScalar("BigInt"),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					r, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return r["databaseId"], nil
+				},
+			},
 			"name":           &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"nameWithOwner":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"description":    &graphql.Field{Type: graphql.String},

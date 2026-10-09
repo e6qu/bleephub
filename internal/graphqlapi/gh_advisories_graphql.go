@@ -181,6 +181,11 @@ func (s *Resolver) buildAdvisoryObject(types *advisorySchema, dateTime *graphql.
 			"publishedAt":            &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"updatedAt":              &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"withdrawnAt":            &graphql.Field{Type: dateTime},
+			"cveId":                  &graphql.Field{Type: graphql.String},
+			"githubReviewedAt":       &graphql.Field{Type: dateTime},
+			"nvdPublishedAt":         &graphql.Field{Type: dateTime},
+			"repositoryAdvisoryUrl":  &graphql.Field{Type: uri},
+			"sourceCodeLocation":     &graphql.Field{Type: uri},
 			"permalink":              &graphql.Field{Type: uri},
 			"notificationsPermalink": &graphql.Field{Type: uri},
 			"cvss":                   &graphql.Field{Type: graphql.NewNonNull(types.cvss)},
@@ -397,6 +402,8 @@ func (s *Resolver) addAdvisoryRootFields(queryType *graphql.Object, types *advis
 		Args: relayArgs(graphql.FieldConfigArgument{
 			"identifier":      &graphql.ArgumentConfig{Type: identifierFilter},
 			"classifications": &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(types.classificationEnum))},
+			"severities":      &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(types.severityEnum))},
+			"isWithdrawn":     &graphql.ArgumentConfig{Type: graphql.Boolean},
 			"publishedSince":  &graphql.ArgumentConfig{Type: dateTime},
 			"updatedSince":    &graphql.ArgumentConfig{Type: dateTime},
 			"epssPercentage":  &graphql.ArgumentConfig{Type: graphql.Float},
@@ -678,18 +685,23 @@ func (s *Resolver) advisoryToGQL(advisory *store.SecurityAdvisory) map[string]in
 	rendered := map[string]interface{}{
 		// The Node interface dispatches on __typename; without it Query.node
 		// resolves to no concrete type and fails.
-		"__typename":             "SecurityAdvisory",
-		"id":                     advisory.NodeID,
-		"databaseId":             advisory.ID,
-		"ghsaId":                 advisory.GHSAID,
-		"summary":                advisory.Summary,
-		"description":            advisory.Description,
-		"severity":               advisorySeverityEnum(advisory.Severity),
-		"classification":         "GENERAL",
-		"origin":                 "UNSPECIFIED",
-		"publishedAt":            formatAdvisoryTime(advisory.PublishedAt),
-		"updatedAt":              advisory.UpdatedAt.UTC().Format(time.RFC3339),
-		"withdrawnAt":            formatAdvisoryTime(store.AdvisoryWithdrawnAt(advisory)),
+		"__typename":     "SecurityAdvisory",
+		"id":             advisory.NodeID,
+		"databaseId":     advisory.ID,
+		"ghsaId":         advisory.GHSAID,
+		"summary":        advisory.Summary,
+		"description":    advisory.Description,
+		"severity":       advisorySeverityEnum(advisory.Severity),
+		"classification": "GENERAL",
+		"origin":         "UNSPECIFIED",
+		"publishedAt":    formatAdvisoryTime(advisory.PublishedAt),
+		"updatedAt":      advisory.UpdatedAt.UTC().Format(time.RFC3339),
+		"withdrawnAt":    formatAdvisoryTime(store.AdvisoryWithdrawnAt(advisory)),
+		"cveId":          nullOrEmptyString(advisory.CVEID),
+		// GitHub's own review is the publication here: nothing reviews an
+		// advisory apart from publishing it, and no NVD record is imported.
+		"githubReviewedAt":       formatAdvisoryTime(advisory.PublishedAt),
+		"nvdPublishedAt":         nil,
 		"permalink":              permalink,
 		"notificationsPermalink": permalink + "/dependabot",
 		"cvss":                   cvss,
@@ -709,6 +721,13 @@ func (s *Resolver) advisoryToGQL(advisory *store.SecurityAdvisory) map[string]in
 		}
 	}
 	rendered["_vulnerabilities"] = vulnerabilities
+	// An advisory published from a repository advisory links back to it and
+	// to the repository's code; one created globally has neither.
+	rendered["repositoryAdvisoryUrl"], rendered["sourceCodeLocation"] = nil, nil
+	if repo := s.store.GetRepoByID(advisory.RepoID); repo != nil {
+		rendered["repositoryAdvisoryUrl"] = externalURL("/" + repo.FullName + "/security/advisories/" + advisory.GHSAID)
+		rendered["sourceCodeLocation"] = externalURL("/" + repo.FullName)
+	}
 	return rendered
 }
 
@@ -992,6 +1011,11 @@ func advisoryFilterFromArgs(args map[string]interface{}) store.GlobalAdvisoryFil
 	}
 	for severity := range enumArgSet(args, "severities") {
 		filter.Severities = append(filter.Severities, severity)
+	}
+	if withdrawn, ok := args["isWithdrawn"].(bool); ok {
+		// true lists only withdrawn advisories; false excludes them.
+		filter.IncludeWithdrawn = withdrawn
+		filter.OnlyWithdrawn = withdrawn
 	}
 	if since, ok := parseAdvisoryTimeArg(args, "publishedSince"); ok {
 		filter.PublishedSince = &since

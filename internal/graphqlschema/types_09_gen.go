@@ -5,6 +5,10 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) definePullRequestTimelineItem() {
+	r.union("PullRequestTimelineItem", "An item in a pull request timeline", []string{"AssignedEvent", "BaseRefDeletedEvent", "BaseRefForcePushedEvent", "ClosedEvent", "Commit", "CommitCommentThread", "CrossReferencedEvent", "DemilestonedEvent", "DeployedEvent", "DeploymentEnvironmentChangedEvent", "HeadRefDeletedEvent", "HeadRefForcePushedEvent", "HeadRefRestoredEvent", "IssueComment", "LabeledEvent", "LockedEvent", "MergedEvent", "MilestonedEvent", "PullRequestReview", "PullRequestReviewComment", "PullRequestReviewThread", "ReferencedEvent", "RenamedTitleEvent", "ReopenedEvent", "ReviewDismissedEvent", "ReviewRequestRemovedEvent", "ReviewRequestedEvent", "SubscribedEvent", "UnassignedEvent", "UnlabeledEvent", "UnlockedEvent", "UnsubscribedEvent", "UserBlockedEvent"})
+}
+
 func (r *Registry) definePullRequestTimelineItemEdge() {
 	r.object("PullRequestTimelineItemEdge", "An edge in a connection.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -21,7 +25,7 @@ func (r *Registry) definePullRequestTimelineItemEdge() {
 }
 
 func (r *Registry) definePullRequestTimelineItems() {
-	r.union("PullRequestTimelineItems", "An item in a pull request timeline", []string{"AddedToMergeQueueEvent", "AddedToProjectEvent", "AddedToProjectV2Event", "AssignedEvent", "AutoMergeDisabledEvent", "AutoMergeEnabledEvent", "AutoRebaseEnabledEvent", "AutoSquashEnabledEvent", "AutomaticBaseChangeFailedEvent", "AutomaticBaseChangeSucceededEvent", "BaseRefChangedEvent", "BaseRefDeletedEvent", "BaseRefForcePushedEvent", "BlockedByAddedEvent", "BlockedByRemovedEvent", "BlockingAddedEvent", "BlockingRemovedEvent", "ClosedEvent", "CommentDeletedEvent", "ConnectedEvent", "ConvertToDraftEvent", "ConvertedFromDraftEvent", "ConvertedNoteToIssueEvent", "ConvertedToDiscussionEvent", "CrossReferencedEvent", "DemilestonedEvent", "DeployedEvent", "DeploymentEnvironmentChangedEvent", "DisconnectedEvent", "HeadRefDeletedEvent", "HeadRefForcePushedEvent", "HeadRefRestoredEvent", "IssueComment", "IssueCommentPinnedEvent", "IssueCommentUnpinnedEvent", "IssueFieldAddedEvent", "IssueFieldChangedEvent", "IssueFieldRemovedEvent", "IssueTypeAddedEvent", "IssueTypeChangedEvent", "IssueTypeRemovedEvent", "LabeledEvent", "LockedEvent", "MarkedAsDuplicateEvent", "MentionedEvent", "MergedEvent", "MilestonedEvent", "MovedColumnsInProjectEvent", "ParentIssueAddedEvent", "ParentIssueRemovedEvent", "PinnedEvent", "ProjectV2ItemStatusChangedEvent", "PullRequestCommit", "PullRequestCommitCommentThread", "PullRequestReview", "PullRequestReviewThread", "PullRequestRevisionMarker", "ReadyForReviewEvent", "ReferencedEvent", "RemovedFromMergeQueueEvent", "RemovedFromProjectEvent", "RemovedFromProjectV2Event", "RenamedTitleEvent", "ReopenedEvent", "ReviewDismissedEvent", "ReviewRequestRemovedEvent", "ReviewRequestedEvent", "SubIssueAddedEvent", "SubIssueRemovedEvent", "SubscribedEvent", "TransferredEvent", "UnassignedEvent", "UnlabeledEvent", "UnlockedEvent", "UnmarkedAsDuplicateEvent", "UnpinnedEvent", "UnsubscribedEvent", "UserBlockedEvent"})
+	r.union("PullRequestTimelineItems", "An item in a pull request timeline", []string{"AddedToMergeQueueEvent", "AddedToProjectEvent", "AddedToProjectV2Event", "AddedToStackEvent", "AssignedEvent", "AutoMergeDisabledEvent", "AutoMergeEnabledEvent", "AutoRebaseEnabledEvent", "AutoSquashEnabledEvent", "AutomaticBaseChangeFailedEvent", "AutomaticBaseChangeSucceededEvent", "BaseRefChangedEvent", "BaseRefDeletedEvent", "BaseRefForcePushedEvent", "BlockedByAddedEvent", "BlockedByRemovedEvent", "BlockingAddedEvent", "BlockingRemovedEvent", "ClosedEvent", "CommentDeletedEvent", "ConnectedEvent", "ConvertToDraftEvent", "ConvertedFromDraftEvent", "ConvertedNoteToIssueEvent", "ConvertedToDiscussionEvent", "CrossReferencedEvent", "DemilestonedEvent", "DeployedEvent", "DeploymentEnvironmentChangedEvent", "DisconnectedEvent", "HeadRefDeletedEvent", "HeadRefForcePushedEvent", "HeadRefRestoredEvent", "IssueComment", "IssueCommentPinnedEvent", "IssueCommentUnpinnedEvent", "IssueFieldAddedEvent", "IssueFieldChangedEvent", "IssueFieldRemovedEvent", "IssueTypeAddedEvent", "IssueTypeChangedEvent", "IssueTypeRemovedEvent", "LabeledEvent", "LockedEvent", "MarkedAsDuplicateEvent", "MentionedEvent", "MergedEvent", "MilestonedEvent", "MovedColumnsInProjectEvent", "ParentIssueAddedEvent", "ParentIssueRemovedEvent", "PinnedEvent", "ProjectV2ItemStatusChangedEvent", "PullRequestCommit", "PullRequestCommitCommentThread", "PullRequestReview", "PullRequestReviewThread", "PullRequestRevisionMarker", "ReadyForReviewEvent", "ReferencedEvent", "RemovedFromMergeQueueEvent", "RemovedFromProjectEvent", "RemovedFromProjectV2Event", "RemovedFromStackEvent", "RenamedTitleEvent", "ReopenedEvent", "ReviewDismissedEvent", "ReviewRequestRemovedEvent", "ReviewRequestedEvent", "SubIssueAddedEvent", "SubIssueRemovedEvent", "SubscribedEvent", "TransferredEvent", "UnassignedEvent", "UnlabeledEvent", "UnlockedEvent", "UnmarkedAsDuplicateEvent", "UnpinnedEvent", "UnsubscribedEvent", "UserBlockedEvent"})
 }
 
 func (r *Registry) definePullRequestTimelineItemsConnection() {
@@ -865,6 +869,10 @@ func (r *Registry) defineQuery() {
 						Type:        r.t("SecurityAdvisoryIdentifierFilter"),
 						Description: "Filter advisories by identifier, e.g. GHSA or CVE.",
 					},
+					"isWithdrawn": {
+						Type:        r.t("Boolean"),
+						Description: "Filter advisories by withdrawn status. True returns only withdrawn advisories. False excludes withdrawn advisories.",
+					},
 					"last": {
 						Type:        r.t("Int"),
 						Description: "Returns the last _n_ elements from the list.",
@@ -877,6 +885,10 @@ func (r *Registry) defineQuery() {
 					"publishedSince": {
 						Type:        r.t("DateTime"),
 						Description: "Filter advisories to those published since a time in the past.",
+					},
+					"severities": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisorySeverity"))),
+						Description: "A list of advisory severities to filter advisories by.",
 					},
 					"updatedSince": {
 						Type:        r.t("DateTime"),
@@ -2896,6 +2908,37 @@ func (r *Registry) defineRemovedFromProjectV2Event() {
 			"wasAutomated": {
 				Type:        graphql.NewNonNull(r.t("Boolean")),
 				Description: "Did this event result from workflow automation?",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRemovedFromStackEvent() {
+	r.object("RemovedFromStackEvent", "Represents a 'removed_from_stack' event on a given pull request.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"actor": {
+				Type:        r.t("Actor"),
+				Description: "Identifies the actor who performed the event.",
+			},
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the RemovedFromStackEvent object",
+			},
+			"pullRequest": {
+				Type:        r.t("PullRequest"),
+				Description: "Pull request removed from the stack.",
+			},
+			"stackId": {
+				Type:        r.t("BigInt"),
+				Description: "Database ID of the stack.",
+			},
+			"stackNumber": {
+				Type:        r.t("Int"),
+				Description: "Number of the stack in its repository.",
 			},
 		}
 	})
@@ -5303,143 +5346,6 @@ func (r *Registry) defineRepoRemoveMemberAuditEntry() {
 			"visibility": {
 				Type:              r.t("RepoRemoveMemberAuditEntryVisibility"),
 				Description:       "The visibility of the repository",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineRepoRemoveMemberAuditEntryVisibility() {
-	r.enum("RepoRemoveMemberAuditEntryVisibility", "The privacy of a repository", graphql.EnumValueConfigMap{
-		"INTERNAL": {
-			Value:       "INTERNAL",
-			Description: "The repository is visible only to users in the same enterprise.",
-		},
-		"PRIVATE": {
-			Value:       "PRIVATE",
-			Description: "The repository is visible only to those with explicit access.",
-		},
-		"PUBLIC": {
-			Value:       "PUBLIC",
-			Description: "The repository is visible to everyone.",
-		},
-	})
-}
-
-func (r *Registry) defineRepoRemoveTopicAuditEntry() {
-	r.object("RepoRemoveTopicAuditEntry", "Audit log entry for a repo.remove_topic event.", []string{"AuditEntry", "Node", "OrganizationAuditEntryData", "RepositoryAuditEntryData", "TopicAuditEntryData"}, func() graphql.Fields {
-		return graphql.Fields{
-			"action": {
-				Type:              graphql.NewNonNull(r.t("String")),
-				Description:       "The action name",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actor": {
-				Type:              r.t("AuditEntryActor"),
-				Description:       "The user who initiated the action",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorIp": {
-				Type:              r.t("String"),
-				Description:       "The IP address of the actor",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorLocation": {
-				Type:              r.t("ActorLocation"),
-				Description:       "A readable representation of the actor's location",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorLogin": {
-				Type:              r.t("String"),
-				Description:       "The username of the user who initiated the action",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorResourcePath": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP path for the actor.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorUrl": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP URL for the actor.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"createdAt": {
-				Type:              graphql.NewNonNull(r.t("PreciseDateTime")),
-				Description:       "The time the action was initiated",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the RepoRemoveTopicAuditEntry object",
-			},
-			"operationType": {
-				Type:              r.t("OperationType"),
-				Description:       "The corresponding operation type for the action",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"organization": {
-				Type:              r.t("Organization"),
-				Description:       "The Organization associated with the Audit Entry.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"organizationName": {
-				Type:              r.t("String"),
-				Description:       "The name of the Organization.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"organizationResourcePath": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP path for the organization",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"organizationUrl": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP URL for the organization",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"repository": {
-				Type:        r.t("Repository"),
-				Description: "The repository associated with the action",
-			},
-			"repositoryName": {
-				Type:        r.t("String"),
-				Description: "The name of the repository",
-			},
-			"repositoryResourcePath": {
-				Type:        r.t("URI"),
-				Description: "The HTTP path for the repository",
-			},
-			"repositoryUrl": {
-				Type:        r.t("URI"),
-				Description: "The HTTP URL for the repository",
-			},
-			"topic": {
-				Type:        r.t("Topic"),
-				Description: "The name of the topic added to the repository",
-			},
-			"topicName": {
-				Type:        r.t("String"),
-				Description: "The name of the topic added to the repository",
-			},
-			"user": {
-				Type:              r.t("User"),
-				Description:       "The user affected by the action",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"userLogin": {
-				Type:              r.t("String"),
-				Description:       "For actions involving two users, the actor is the initiator and the user is the affected user.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"userResourcePath": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP path for the user.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"userUrl": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP URL for the user.",
 				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
 			},
 		}

@@ -80298,7 +80298,7 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "012256bd4f5934265c5795187f096596eccd8237363aa82e5aae0d53c791300e",
+  "source_sha256": "42e4a833ec78b5ce3260ec4cbb4c8d7af747c85618fab406620b085d8b049f64",
   "summary": {
     "operations": 1232,
     "state_changing": 588,

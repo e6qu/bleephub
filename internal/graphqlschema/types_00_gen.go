@@ -1373,6 +1373,37 @@ func (r *Registry) defineAddedToProjectV2Event() {
 	})
 }
 
+func (r *Registry) defineAddedToStackEvent() {
+	r.object("AddedToStackEvent", "Represents an 'added_to_stack' event on a given pull request.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"actor": {
+				Type:        r.t("Actor"),
+				Description: "Identifies the actor who performed the event.",
+			},
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the AddedToStackEvent object",
+			},
+			"pullRequest": {
+				Type:        r.t("PullRequest"),
+				Description: "Pull request added to the stack.",
+			},
+			"stackId": {
+				Type:        r.t("BigInt"),
+				Description: "Database ID of the stack.",
+			},
+			"stackNumber": {
+				Type:        r.t("Int"),
+				Description: "Number of the stack in its repository.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineAgentAssignmentInput() {
 	r.input("AgentAssignmentInput", "Represents configuration for assigning Copilot to an issue (public variant)", func() graphql.InputObjectConfigFieldMap {
 		return graphql.InputObjectConfigFieldMap{
@@ -3001,21 +3032,6 @@ func (r *Registry) defineBypassForcePushAllowanceConnection() {
 			"totalCount": {
 				Type:        graphql.NewNonNull(r.t("Int")),
 				Description: "Identifies the total count of items in the connection.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineBypassForcePushAllowanceEdge() {
-	r.object("BypassForcePushAllowanceEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("BypassForcePushAllowance"),
-				Description: "The item at the end of the edge.",
 			},
 		}
 	})

@@ -77,7 +77,7 @@ func seedUnboundedRateLimits(s *Server) {
 	authed.Header.Set("Authorization", "Bearer "+defaultToken)
 	anon := httptest.NewRequest(http.MethodGet, "/api/v3/user", nil)
 	anon.RemoteAddr = "127.0.0.1:1"
-	for _, identity := range []string{apiRateIdentity(authed), apiRateIdentity(anon)} {
+	for _, identity := range []string{resolvedRateIdentity(s, authed), resolvedRateIdentity(s, anon)} {
 		for resource := range apiRateResourceLimits {
 			s.rateLimits[identity+"\x1f"+resource] = &apiRateWindow{
 				Limit:     apiRateResourceLimits[resource],

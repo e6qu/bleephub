@@ -58,6 +58,17 @@ func (e subjectEmitter) emitChanges(change store.SubjectChange) {
 	if change.MilestoneTo != nil {
 		e.emitMilestoneChange(change.MilestoneFrom, *change.MilestoneTo)
 	}
+	if change.ReviewersTo != nil || change.ReviewTeamsTo != nil {
+		usersTo, teamsTo := change.ReviewersFrom, change.ReviewTeamsFrom
+		if change.ReviewersTo != nil {
+			usersTo = *change.ReviewersTo
+		}
+		if change.ReviewTeamsTo != nil {
+			teamsTo = *change.ReviewTeamsTo
+		}
+		e.emitReviewRequestDelta(change.ReviewersFrom, usersTo, change.ReviewTeamsFrom, teamsTo)
+	}
+	e.emitReviewerActions("review_requested", change.ReviewersRerequested, change.ReviewTeamsRerequested)
 	switch {
 	case change.StateFrom == "OPEN" && change.StateTo == "CLOSED":
 		e.emit("closed", nil)

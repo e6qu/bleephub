@@ -6,12 +6,12 @@ package graphqlschema
 // Counts of the generated type universe, used to presize the registry's
 // maps and asserted by the completeness ratchet.
 const (
-	generatedTypeCount      = 1820
-	generatedObjectCount    = 1029
+	generatedTypeCount      = 1824
+	generatedObjectCount    = 1032
 	generatedInterfaceCount = 50
 	generatedUnionCount     = 48
 	generatedEnumCount      = 257
-	generatedInputCount     = 423
+	generatedInputCount     = 424
 	generatedScalarCount    = 13
 	generatedAbstractCount  = 98
 )
@@ -88,6 +88,7 @@ func (r *Registry) defineAllTypes() {
 	r.defineAddedToMergeQueueEvent()
 	r.defineAddedToProjectEvent()
 	r.defineAddedToProjectV2Event()
+	r.defineAddedToStackEvent()
 	r.defineAgentAssignmentInput()
 	r.defineAgentic()
 	r.defineAnnouncementBanner()
@@ -1261,6 +1262,7 @@ func (r *Registry) defineAllTypes() {
 	r.defineRemovedFromMergeQueueEvent()
 	r.defineRemovedFromProjectEvent()
 	r.defineRemovedFromProjectV2Event()
+	r.defineRemovedFromStackEvent()
 	r.defineRenamedTitleEvent()
 	r.defineRenamedTitleSubject()
 	r.defineReopenDiscussionInput()
@@ -1403,6 +1405,8 @@ func (r *Registry) defineAllTypes() {
 	r.defineRequiredStatusChecksParametersInput()
 	r.defineRerequestCheckSuiteInput()
 	r.defineRerequestCheckSuitePayload()
+	r.defineRerequestReviewsInput()
+	r.defineRerequestReviewsPayload()
 	r.defineResolveReviewThreadInput()
 	r.defineResolveReviewThreadPayload()
 	r.defineRestrictedContribution()

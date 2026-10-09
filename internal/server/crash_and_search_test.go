@@ -373,7 +373,7 @@ func assertStablePagination(t *testing.T, s *Server, label, query string, wantTo
 	if s.rateLimits == nil {
 		s.rateLimits = map[string]*apiRateWindow{}
 	}
-	s.rateLimits[apiRateIdentity(rateRequest)+"\x1f"+resource] = &apiRateWindow{
+	s.rateLimits[resolvedRateIdentity(s, rateRequest)+"\x1f"+resource] = &apiRateWindow{
 		Limit:     apiRateResourceLimits[resource],
 		Reset:     testRateLimitReset,
 		unbounded: true,

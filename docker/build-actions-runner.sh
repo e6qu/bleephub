@@ -38,13 +38,27 @@ grep -q "\"version\": \"${DOTNET_SDK_VERSION}\"" \
 
 cp -a "$RUNNER_NUGET_LOCKS/." "$RUNNER_SOURCE_DIR/src/"
 
-dotnet msbuild \
+# api.nuget.org resets connections often enough to fail a build outright, and
+# NuGet's own retries span only a few seconds. A restore against the locked
+# graph is idempotent, so retry the whole step with a growing pause; a real
+# compile or lock-file error fails every attempt the same way and still stops
+# the build.
+attempt=1
+until dotnet msbuild \
     -t:layout \
     -p:PackageRuntime="$runner_runtime" \
     -p:BUILDCONFIG=Release \
     -p:RunnerVersion="$RUNNER_VERSION" \
     -p:RestoreLockedMode=true \
-    "$RUNNER_SOURCE_DIR/src/dir.proj"
+    "$RUNNER_SOURCE_DIR/src/dir.proj"; do
+    if [ "$attempt" -ge 4 ]; then
+        echo "runner build failed after $attempt attempts" >&2
+        exit 1
+    fi
+    echo "runner build attempt $attempt failed; retrying in $((attempt * 20))s" >&2
+    sleep $((attempt * 20))
+    attempt=$((attempt + 1))
+done
 
 while IFS= read -r lock; do
     relative="${lock#"$RUNNER_NUGET_LOCKS/"}"

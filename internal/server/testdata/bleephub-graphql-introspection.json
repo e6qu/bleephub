@@ -15072,6 +15072,12 @@
             "input": "RerequestCheckSuiteInput!"
           }
         },
+        "rerequestReviews": {
+          "type": "RerequestReviewsPayload",
+          "args": {
+            "input": "RerequestReviewsInput!"
+          }
+        },
         "resolveReviewThread": {
           "type": "ResolveReviewThreadPayload",
           "args": {
@@ -24301,9 +24307,11 @@
             "epssPercentile": "Float",
             "first": "Int",
             "identifier": "SecurityAdvisoryIdentifierFilter",
+            "isWithdrawn": "Boolean",
             "last": "Int",
             "orderBy": "SecurityAdvisoryOrder",
             "publishedSince": "DateTime",
+            "severities": "[SecurityAdvisorySeverity!]",
             "updatedSince": "DateTime"
           }
         },
@@ -27324,6 +27332,9 @@
             "visibility": "RepositoryVisibility"
           }
         },
+        "fullDatabaseId": {
+          "type": "BigInt"
+        },
         "fundingLinks": {
           "type": "[FundingLink!]!"
         },
@@ -29556,6 +29567,33 @@
         }
       }
     },
+    "RerequestReviewsInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "botIds": "[ID!]",
+        "clientMutationId": "String",
+        "pullRequestId": "ID!",
+        "teamIds": "[ID!]",
+        "userIds": "[ID!]"
+      }
+    },
+    "RerequestReviewsPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        },
+        "requestedReviewersEdge": {
+          "type": "UserEdge"
+        }
+      }
+    },
     "ResolveReviewThreadInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -30113,6 +30151,9 @@
         "classification": {
           "type": "SecurityAdvisoryClassification!"
         },
+        "cveId": {
+          "type": "String"
+        },
         "cvss": {
           "type": "CVSS!"
         },
@@ -30140,6 +30181,9 @@
         "ghsaId": {
           "type": "String!"
         },
+        "githubReviewedAt": {
+          "type": "DateTime"
+        },
         "id": {
           "type": "ID!"
         },
@@ -30148,6 +30192,9 @@
         },
         "notificationsPermalink": {
           "type": "URI"
+        },
+        "nvdPublishedAt": {
+          "type": "DateTime"
         },
         "origin": {
           "type": "String!"
@@ -30161,8 +30208,14 @@
         "references": {
           "type": "[SecurityAdvisoryReference!]!"
         },
+        "repositoryAdvisoryUrl": {
+          "type": "URI"
+        },
         "severity": {
           "type": "SecurityAdvisorySeverity!"
+        },
+        "sourceCodeLocation": {
+          "type": "URI"
         },
         "summary": {
           "type": "String!"

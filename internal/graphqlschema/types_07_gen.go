@@ -5,6 +5,75 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineOrganizationIdentityProvider() {
+	r.object("OrganizationIdentityProvider", "An Identity Provider configured to provision SAML and SCIM identities for\nOrganizations. Visible to (1) organization owners, (2) organization owners'\npersonal access tokens (classic) with read:org or admin:org scope, (3) GitHub\nApp with an installation token with read or write access to members.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"digestMethod": {
+				Type:        r.t("URI"),
+				Description: "The digest algorithm used to sign SAML requests for the Identity Provider.",
+			},
+			"externalIdentities": {
+				Type:        graphql.NewNonNull(r.t("ExternalIdentityConnection")),
+				Description: "External Identities provisioned by this Identity Provider",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"login": {
+						Type:        r.t("String"),
+						Description: "Filter to external identities with the users login",
+					},
+					"membersOnly": {
+						Type:        r.t("Boolean"),
+						Description: "Filter to external identities with valid org membership only",
+					},
+					"userName": {
+						Type:        r.t("String"),
+						Description: "Filter to external identities with the users userName/NameID attribute",
+					},
+				},
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the OrganizationIdentityProvider object",
+			},
+			"idpCertificate": {
+				Type:        r.t("X509Certificate"),
+				Description: "The x509 certificate used by the Identity Provider to sign assertions and responses.",
+			},
+			"issuer": {
+				Type:        r.t("String"),
+				Description: "The Issuer Entity ID for the SAML Identity Provider",
+			},
+			"organization": {
+				Type:        r.t("Organization"),
+				Description: "Organization this Identity Provider belongs to",
+			},
+			"signatureMethod": {
+				Type:        r.t("URI"),
+				Description: "The signature algorithm used to sign SAML requests for the Identity Provider.",
+			},
+			"ssoUrl": {
+				Type:        r.t("URI"),
+				Description: "The URL endpoint for the Identity Provider's SAML SSO.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineOrganizationInvitation() {
 	r.object("OrganizationInvitation", "An Invitation for a user to an organization.", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
@@ -3748,17 +3817,6 @@ func (r *Registry) defineProjectV2FieldValue() {
 			"text": {
 				Type:        r.t("String"),
 				Description: "The text to set on the field.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineProjectV2Filters() {
-	r.input("ProjectV2Filters", "Ways in which to filter lists of projects.", func() graphql.InputObjectConfigFieldMap {
-		return graphql.InputObjectConfigFieldMap{
-			"state": {
-				Type:        r.t("ProjectV2State"),
-				Description: "List project v2 filtered by the state given.",
 			},
 		}
 	})
