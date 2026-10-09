@@ -18,9 +18,9 @@ COPY docker/runner-nuget-locks/ /runner-nuget-locks/
 COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
 RUN bash /usr/local/bin/build-actions-runner
 
-FROM golang:1.26.5@sha256:2005724102f45917a63e9d092fc0e4ea56ea575048ce147caad5f5f61502c365 AS builder
+FROM golang:1.26.9@sha256:f1f0bcc2c524a3ced375fcb4d1ecb7aa371aa7070e112599aaca45cc02d0101b AS builder
 # Re-enable toolchain auto-download (the golang image pins GOTOOLCHAIN=local) so
-# this 1.26.5 image builds with the go1.26.6 toolchain go.mod requires.
+# the image builds with whatever toolchain go.mod requires.
 ENV GOTOOLCHAIN=auto
 
 WORKDIR /src

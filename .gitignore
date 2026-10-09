@@ -49,6 +49,8 @@ id_ed25519
 test/conformance/.work/
 test/conformance/.lock/
 test/conformance/report/
+# A driver built in place (`go build` in its own module) is a build artifact too.
+test/conformance/drivers/gogithub/bleephub-conformance-gogithub
 
 # Test and coverage output.
 coverage.out
