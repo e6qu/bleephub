@@ -81,6 +81,15 @@ var gqlPullMutationCases = []gqlMutationCase{
 		},
 	},
 	{
+		name: "rerequestReviews",
+		doc:  `mutation($input:RerequestReviewsInput!){rerequestReviews(input:$input){pullRequest{number}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"pullRequestId": f.pr.NodeID, "userIds": []interface{}{f.stranger.NodeID},
+			}
+		},
+	},
+	{
 		name: "requestReviewsByLogin",
 		doc:  `mutation($input:RequestReviewsByLoginInput!){requestReviewsByLogin(input:$input){pullRequest{number}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {

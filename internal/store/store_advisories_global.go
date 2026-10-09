@@ -25,6 +25,8 @@ type GlobalAdvisoryFilter struct {
 	// IncludeWithdrawn keeps withdrawn advisories in the browse listing. They
 	// stay addressable by GHSA ID regardless.
 	IncludeWithdrawn bool
+	// OnlyWithdrawn keeps withdrawn advisories alone (GraphQL isWithdrawn: true).
+	OnlyWithdrawn bool
 }
 
 // ListGlobalAdvisoriesFiltered returns the published advisories matching the
@@ -131,6 +133,9 @@ func advisoryIsGlobal(advisory *SecurityAdvisory) bool {
 
 func advisoryMatchesGlobalFilter(advisory *SecurityAdvisory, filter GlobalAdvisoryFilter) bool {
 	if !filter.IncludeWithdrawn && advisory.State == "withdrawn" {
+		return false
+	}
+	if filter.OnlyWithdrawn && advisory.State != "withdrawn" {
 		return false
 	}
 	if filter.GHSAID != "" && !strings.EqualFold(advisory.GHSAID, filter.GHSAID) {

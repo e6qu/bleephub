@@ -406,17 +406,17 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 1822,
+      "bleephub_types": 1824,
       "compatibility_gap_count": 9,
-      "implemented_fields": 8378,
-      "official_fields": 8392,
-      "official_types": 1820,
-      "shared_types": 1815,
-      "signature_exact_fields": 8377
+      "implemented_fields": 8394,
+      "official_fields": 8420,
+      "official_types": 1824,
+      "shared_types": 1817,
+      "signature_exact_fields": 8393
     },
-    "introspection_snapshot_sha256": "d64744b991a9cedb0b90ba877ef0f010d32c091df5e3499eff38014df0dc4ecb",
+    "introspection_snapshot_sha256": "5f73434807f1ccb347729e098d965eb30004a49f463d711c076ee4a9ef3d0583",
     "official_schema": {
-      "content_sha256": "2e1ddaaa59fcc4f427cfc63b8add318b5268e386b80984eb9fe939204857bc1a",
+      "content_sha256": "3ed095654b22b1a8e7a88af36af2b28cb6d9613da332e9c57303e30476958d42",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
     },
     "resolver_files": [
@@ -532,6 +532,7 @@
       "internal/server/gh_governance_mutations_graphql_test.go",
       "internal/server/gh_graphql_connection_pagination_test.go",
       "internal/server/gh_graphql_node_test.go",
+      "internal/server/gh_graphql_schema_refresh_test.go",
       "internal/server/gh_issue_links_graphql_test.go",
       "internal/server/gh_issue_pin_transfer_upvote_graphql_test.go",
       "internal/server/gh_issues_graphql_test.go",

@@ -5,6 +5,114 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineUserNamespaceRepository() {
+	r.object("UserNamespaceRepository", "A repository owned by an Enterprise Managed user.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the UserNamespaceRepository object",
+			},
+			"name": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The name of the repository.",
+			},
+			"nameWithOwner": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The repository's name with owner.",
+			},
+			"owner": {
+				Type:        graphql.NewNonNull(r.t("RepositoryOwner")),
+				Description: "The user owner of the repository.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineUserNamespaceRepositoryConnection() {
+	r.object("UserNamespaceRepositoryConnection", "A list of repositories owned by users in an enterprise with Enterprise Managed Users.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("UserNamespaceRepositoryEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("UserNamespaceRepository")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineUserNamespaceRepositoryEdge() {
+	r.object("UserNamespaceRepositoryEdge", "An edge in a connection.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type:        r.t("UserNamespaceRepository"),
+				Description: "The item at the end of the edge.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineUserStatus() {
+	r.object("UserStatus", "The user's description of what they're currently doing.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"emoji": {
+				Type:        r.t("String"),
+				Description: "An emoji summarizing the user's status.",
+			},
+			"emojiHTML": {
+				Type:        r.t("HTML"),
+				Description: "The status emoji as HTML.",
+			},
+			"expiresAt": {
+				Type:        r.t("DateTime"),
+				Description: "If set, the status will not be shown after this date.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the UserStatus object",
+			},
+			"indicatesLimitedAvailability": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Whether this status indicates the user is not fully available on GitHub.",
+			},
+			"message": {
+				Type:        r.t("String"),
+				Description: "A brief message describing what the user is doing.",
+			},
+			"organization": {
+				Type:        r.t("Organization"),
+				Description: "The organization whose members can see this status. If null, this status is publicly visible.",
+			},
+			"updatedAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was last updated.",
+			},
+			"user": {
+				Type:        graphql.NewNonNull(r.t("User")),
+				Description: "The user who has this status.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineUserStatusConnection() {
 	r.object("UserStatusConnection", "The connection type for UserStatus.", nil, func() graphql.Fields {
 		return graphql.Fields{

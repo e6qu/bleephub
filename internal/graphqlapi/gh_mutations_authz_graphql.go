@@ -104,6 +104,7 @@ func githubMutationAuthzRows() map[string]mutationRule {
 		// Requesting review, moving the head branch, archiving, queueing: all
 		// PR maintenance, push.
 		"requestReviews":          repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
+		"rerequestReviews":        repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
 		"requestReviewsByLogin":   repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
 		"updatePullRequestBranch": repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
 		"archivePullRequest":      repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},

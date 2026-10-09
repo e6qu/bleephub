@@ -170,6 +170,23 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 		},
 	})
 
+	s.registerMutation(mutationType, "rerequestReviews", &graphql.Field{
+		Type: s.mutationPayload("RerequestReviewsPayload", graphql.Fields{
+			"actor":                  gqlField(actorInterface),
+			"pullRequest":            gqlField(pullRequestType),
+			"requestedReviewersEdge": gqlField(userEdge),
+		}),
+		Args: graphql.FieldConfigArgument{"input": &graphql.ArgumentConfig{
+			Type: graphql.NewNonNull(s.mutationInput("RerequestReviewsInput", graphql.InputObjectConfigFieldMap{
+				"pullRequestId": gqlNonNullID(),
+				"userIds":       gqlListOf(graphql.ID),
+				"teamIds":       gqlListOf(graphql.ID),
+				"botIds":        gqlListOf(graphql.ID),
+			})),
+		}},
+		Resolve: s.resolveRerequestReviews,
+	})
+
 	s.registerMutation(mutationType, "requestReviewsByLogin", &graphql.Field{
 		Type: s.mutationPayload("RequestReviewsByLoginPayload", graphql.Fields{
 			"actor":                  gqlField(actorInterface),
@@ -755,7 +772,52 @@ func (s *Resolver) resolveRequestReviews(p graphql.ResolveParams, byLogin bool) 
 	if updated == nil {
 		return nil, gqlMissingNodeType("PullRequest")
 	}
-	s.emitPullRequestChanges(repo, updated, user, store.SubjectChange{})
+	s.emitPullRequestChanges(repo, updated, user, store.SubjectChange{
+		ReviewersFrom:   pr.RequestedReviewerIDs,
+		ReviewersTo:     &updated.RequestedReviewerIDs,
+		ReviewTeamsFrom: pr.RequestedTeamIDs,
+		ReviewTeamsTo:   &updated.RequestedTeamIDs,
+	})
+	return s.reviewRequestPayload(user, updated), nil
+}
+
+// resolveRerequestReviews asks the named reviewers again, as the REST
+// requested_reviewers/rerequest endpoint does: each is (re)added to the
+// requested reviewers and notified with review_requested, whether or not a
+// request was already open.
+func (s *Resolver) resolveRerequestReviews(p graphql.ResolveParams) (interface{}, error) {
+	input, _ := p.Args["input"].(map[string]interface{})
+	pr, repo, err := s.pullRequestAndRepoFromInput(input, "pullRequestId")
+	if err != nil {
+		return nil, err
+	}
+	user := s.ghUserFromContext(p.Context)
+	userIDs, teamIDs, err := s.reviewersFromInput(input, repo, false)
+	if err != nil {
+		return nil, err
+	}
+	if len(userIDs) == 0 && len(teamIDs) == 0 {
+		return nil, fmt.Errorf("at least one of userIds, teamIds or botIds must name a reviewer to rerequest")
+	}
+	if len(userIDs) > 0 && !s.store.RequestReviewers(repo.FullName, pr.Number, userIDs, user.ID) {
+		return nil, fmt.Errorf("unable to rerequest reviewers")
+	}
+	if len(teamIDs) > 0 && !s.store.RequestTeamReviewers(repo.FullName, pr.Number, teamIDs) {
+		return nil, fmt.Errorf("unable to rerequest team reviewers")
+	}
+	updated := s.store.GetPullRequest(pr.ID)
+	if updated == nil {
+		return nil, gqlMissingNodeType("PullRequest")
+	}
+	s.emitPullRequestChanges(repo, updated, user, store.SubjectChange{
+		ReviewersRerequested:   userIDs,
+		ReviewTeamsRerequested: teamIDs,
+	})
+	return s.reviewRequestPayload(user, updated), nil
+}
+
+// reviewRequestPayload renders the payload the review-request mutations share.
+func (s *Resolver) reviewRequestPayload(user *store.User, updated *store.PullRequest) map[string]interface{} {
 	payload := map[string]interface{}{
 		"actor":                  optionalRendered(user, userToGraphQL),
 		"pullRequest":            optionalObject(pullRequestToGQL(updated, s.store)),
@@ -770,7 +832,7 @@ func (s *Resolver) resolveRequestReviews(p graphql.ResolveParams, byLogin bool) 
 			}
 		}
 	}
-	return payload, nil
+	return payload
 }
 
 // reviewersFromInput resolves the accounts and teams a request names, by node

@@ -24,4 +24,15 @@ type SubjectChange struct {
 	// Store states ("OPEN", "CLOSED", "MERGED"); only a real transition acts.
 	StateFrom string
 	StateTo   string
+
+	// Requested reviewers and teams before and after (To nil when untouched),
+	// diffed into review_requested and review_request_removed.
+	ReviewersFrom   []int
+	ReviewersTo     *[]int
+	ReviewTeamsFrom []int
+	ReviewTeamsTo   *[]int
+	// Reviewers and teams asked again: one review_requested each, whether or
+	// not they were already requested.
+	ReviewersRerequested   []int
+	ReviewTeamsRerequested []int
 }

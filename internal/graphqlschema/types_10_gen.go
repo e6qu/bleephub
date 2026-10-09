@@ -5,6 +5,143 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineRepoRemoveMemberAuditEntryVisibility() {
+	r.enum("RepoRemoveMemberAuditEntryVisibility", "The privacy of a repository", graphql.EnumValueConfigMap{
+		"INTERNAL": {
+			Value:       "INTERNAL",
+			Description: "The repository is visible only to users in the same enterprise.",
+		},
+		"PRIVATE": {
+			Value:       "PRIVATE",
+			Description: "The repository is visible only to those with explicit access.",
+		},
+		"PUBLIC": {
+			Value:       "PUBLIC",
+			Description: "The repository is visible to everyone.",
+		},
+	})
+}
+
+func (r *Registry) defineRepoRemoveTopicAuditEntry() {
+	r.object("RepoRemoveTopicAuditEntry", "Audit log entry for a repo.remove_topic event.", []string{"AuditEntry", "Node", "OrganizationAuditEntryData", "RepositoryAuditEntryData", "TopicAuditEntryData"}, func() graphql.Fields {
+		return graphql.Fields{
+			"action": {
+				Type:              graphql.NewNonNull(r.t("String")),
+				Description:       "The action name",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"actor": {
+				Type:              r.t("AuditEntryActor"),
+				Description:       "The user who initiated the action",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"actorIp": {
+				Type:              r.t("String"),
+				Description:       "The IP address of the actor",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"actorLocation": {
+				Type:              r.t("ActorLocation"),
+				Description:       "A readable representation of the actor's location",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"actorLogin": {
+				Type:              r.t("String"),
+				Description:       "The username of the user who initiated the action",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"actorResourcePath": {
+				Type:              r.t("URI"),
+				Description:       "The HTTP path for the actor.",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"actorUrl": {
+				Type:              r.t("URI"),
+				Description:       "The HTTP URL for the actor.",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"createdAt": {
+				Type:              graphql.NewNonNull(r.t("PreciseDateTime")),
+				Description:       "The time the action was initiated",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the RepoRemoveTopicAuditEntry object",
+			},
+			"operationType": {
+				Type:              r.t("OperationType"),
+				Description:       "The corresponding operation type for the action",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"organization": {
+				Type:              r.t("Organization"),
+				Description:       "The Organization associated with the Audit Entry.",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"organizationName": {
+				Type:              r.t("String"),
+				Description:       "The name of the Organization.",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"organizationResourcePath": {
+				Type:              r.t("URI"),
+				Description:       "The HTTP path for the organization",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"organizationUrl": {
+				Type:              r.t("URI"),
+				Description:       "The HTTP URL for the organization",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"repository": {
+				Type:        r.t("Repository"),
+				Description: "The repository associated with the action",
+			},
+			"repositoryName": {
+				Type:        r.t("String"),
+				Description: "The name of the repository",
+			},
+			"repositoryResourcePath": {
+				Type:        r.t("URI"),
+				Description: "The HTTP path for the repository",
+			},
+			"repositoryUrl": {
+				Type:        r.t("URI"),
+				Description: "The HTTP URL for the repository",
+			},
+			"topic": {
+				Type:        r.t("Topic"),
+				Description: "The name of the topic added to the repository",
+			},
+			"topicName": {
+				Type:        r.t("String"),
+				Description: "The name of the topic added to the repository",
+			},
+			"user": {
+				Type:              r.t("User"),
+				Description:       "The user affected by the action",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"userLogin": {
+				Type:              r.t("String"),
+				Description:       "For actions involving two users, the actor is the initiator and the user is the affected user.",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"userResourcePath": {
+				Type:              r.t("URI"),
+				Description:       "The HTTP path for the user.",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+			"userUrl": {
+				Type:              r.t("URI"),
+				Description:       "The HTTP URL for the user.",
+				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineReportedContentClassifiers() {
 	r.enum("ReportedContentClassifiers", "The reasons a piece of content can be reported or minimized.", graphql.EnumValueConfigMap{
 		"ABUSE": {
@@ -486,6 +623,10 @@ func (r *Registry) defineRepository() {
 						Description: "If non-null, filters repositories according to visibility. Cannot be combined with the privacy argument.",
 					},
 				},
+			},
+			"fullDatabaseId": {
+				Type:        r.t("BigInt"),
+				Description: "Identifies the primary key from the database as a BigInt.",
 			},
 			"fundingLinks": {
 				Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("FundingLink")))),
@@ -3131,7 +3272,7 @@ func (r *Registry) defineRepositoryRuleType() {
 		},
 		"CODE_COVERAGE": {
 			Value:       "CODE_COVERAGE",
-			Description: "Enforce minimum line coverage thresholds on pull requests. When configured,\nuploaded coverage data must meet the specified criteria before changes can be merged.",
+			Description: "Enforce minimum line coverage thresholds on pull requests. This rule evaluates\nuploaded coverage data but does not wait for coverage uploads. To ensure\ncoverage is evaluated before merging, make each status check associated with a\ncoverage upload a required status check.",
 		},
 		"CODE_QUALITY": {
 			Value:       "CODE_QUALITY",
@@ -4440,6 +4581,56 @@ func (r *Registry) defineRerequestCheckSuitePayload() {
 	})
 }
 
+func (r *Registry) defineRerequestReviewsInput() {
+	r.input("RerequestReviewsInput", "Autogenerated input type of RerequestReviews", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"botIds": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("ID"))),
+				Description: "The Node IDs of the bots to rerequest.",
+			},
+			"clientMutationId": {
+				Type:        r.t("String"),
+				Description: "A unique identifier for the client performing the mutation.",
+			},
+			"pullRequestId": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the pull request to modify.",
+			},
+			"teamIds": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("ID"))),
+				Description: "The Node IDs of the teams to rerequest.",
+			},
+			"userIds": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("ID"))),
+				Description: "The Node IDs of the users to rerequest.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRerequestReviewsPayload() {
+	r.object("RerequestReviewsPayload", "Autogenerated return type of RerequestReviews.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"actor": {
+				Type:        r.t("Actor"),
+				Description: "Identifies the actor who performed the event.",
+			},
+			"clientMutationId": {
+				Type:        r.t("String"),
+				Description: "A unique identifier for the client performing the mutation.",
+			},
+			"pullRequest": {
+				Type:        r.t("PullRequest"),
+				Description: "The pull request that is getting requests.",
+			},
+			"requestedReviewersEdge": {
+				Type:        r.t("UserEdge"),
+				Description: "The edge from the pull request to the requested reviewers.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineResolveReviewThreadInput() {
 	r.input("ResolveReviewThreadInput", "Autogenerated input type of ResolveReviewThread", func() graphql.InputObjectConfigFieldMap {
 		return graphql.InputObjectConfigFieldMap{
@@ -4905,57 +5096,4 @@ func (r *Registry) defineRevokeMigratorRoleInput() {
 			},
 		}
 	})
-}
-
-func (r *Registry) defineRevokeMigratorRolePayload() {
-	r.object("RevokeMigratorRolePayload", "Autogenerated return type of RevokeMigratorRole.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"clientMutationId": {
-				Type:        r.t("String"),
-				Description: "A unique identifier for the client performing the mutation.",
-			},
-			"success": {
-				Type:        r.t("Boolean"),
-				Description: "Did the operation succeed?",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineRoleInOrganization() {
-	r.enum("RoleInOrganization", "Possible roles a user may have in relation to an organization.", graphql.EnumValueConfigMap{
-		"DIRECT_MEMBER": {
-			Value:       "DIRECT_MEMBER",
-			Description: "A user who is a direct member of the organization.",
-		},
-		"OWNER": {
-			Value:       "OWNER",
-			Description: "A user with full administrative access to the organization.",
-		},
-		"UNAFFILIATED": {
-			Value:       "UNAFFILIATED",
-			Description: "A user who is unaffiliated with the organization.",
-		},
-	})
-}
-
-func (r *Registry) defineRuleEnforcement() {
-	r.enum("RuleEnforcement", "The level of enforcement for a rule or ruleset.", graphql.EnumValueConfigMap{
-		"ACTIVE": {
-			Value:       "ACTIVE",
-			Description: "Rules will be enforced",
-		},
-		"DISABLED": {
-			Value:       "DISABLED",
-			Description: "Do not evaluate or enforce rules",
-		},
-		"EVALUATE": {
-			Value:       "EVALUATE",
-			Description: "Allow admins to test rules before enforcing them. Admins can view insights on\nthe Rule Insights page (`evaluate` is only available with GitHub Enterprise).",
-		},
-	})
-}
-
-func (r *Registry) defineRuleParameters() {
-	r.union("RuleParameters", "Types which can be parameters for `RepositoryRule` objects.", []string{"BranchNamePatternParameters", "CodeCoverageParameters", "CodeQualityParameters", "CodeScanningParameters", "CommitAuthorEmailPatternParameters", "CommitMessagePatternParameters", "CommitterEmailPatternParameters", "CopilotCodeReviewParameters", "FileExtensionRestrictionParameters", "FilePathRestrictionParameters", "MaxFilePathLengthParameters", "MaxFileSizeParameters", "MergeQueueParameters", "PullRequestParameters", "RequiredDeploymentsParameters", "RequiredStatusChecksParameters", "TagNamePatternParameters", "UpdateParameters", "WorkflowsParameters"})
 }
