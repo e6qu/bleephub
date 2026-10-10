@@ -17,8 +17,8 @@ require (
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/stretchr/testify v1.12.1
 	github.com/yuin/goldmark v1.8.6
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
-	go.opentelemetry.io/contrib/instrumentation/runtime v0.71.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
+	go.opentelemetry.io/contrib/instrumentation/runtime v0.72.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.23.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.47.0
@@ -39,9 +39,10 @@ require (
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.1 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.2 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/storage/internal v0.1.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/Rican7/retry v0.3.1 // indirect
@@ -93,7 +94,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
-	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/grpc v1.83.2 // indirect

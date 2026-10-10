@@ -3,18 +3,19 @@ module github.com/e6qu/bleephub/gitstore
 go 1.26.9
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.1
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.2
 	github.com/e6qu/bleephub/gcsclient v0.0.0
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/minio/minio-go/v7 v7.3.0
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 )
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/storage/internal v0.1.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/apache/arrow-go/v18 v18.7.0 // indirect
