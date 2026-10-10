@@ -1,6 +1,6 @@
 # Google's Docker Hub mirror, pinned to the digest Docker Hub serves: Docker
 # Hub limits anonymous pulls per address, and the shared CI runners exhaust it.
-FROM mirror.gcr.io/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS ui-builder
+FROM mirror.gcr.io/oven/bun:1.4.3-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373 AS ui-builder
 ARG BLEEPHUB_VERSION=development
 ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
 ENV VITE_BLEEPHUB_VERSION=$BLEEPHUB_VERSION \
