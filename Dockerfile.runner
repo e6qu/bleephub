@@ -21,7 +21,7 @@ RUN bash /usr/local/bin/build-actions-runner
 # Amazon ECR Public's copy of Docker's official image, pinned to the digest
 # Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
 # shared CI runners exhaust it.
-FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 ARG TARGETARCH
 ARG RUNNER_VERSION
 # SHA-256 values published with the official release. The binary archive still
