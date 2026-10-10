@@ -837,8 +837,19 @@ provision_gcf() {
     log "sockerless-backend-gcf ready (gcs-sync workspace + externals)"
 }
 
+# The container-mode tests' workload images. The ecs backend, the one CI runs,
+# pulls them through the host engine, so there they come from Amazon ECR
+# Public's copy of Docker's official images at the digest Docker Hub serves:
+# Docker Hub limits anonymous pulls, and the shared CI runners exhaust it. The
+# other backends build overlays that expect the Docker Hub names, and keep them.
+WORKLOAD_ALPINE="alpine:3.20"
+WORKLOAD_NGINX="nginx:alpine"
 case "${BLEEPHUB_BACKEND:-ecs}" in
-    ecs) provision_ecs ;;
+    ecs)
+        WORKLOAD_ALPINE="public.ecr.aws/docker/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
+        WORKLOAD_NGINX="public.ecr.aws/docker/library/nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2"
+        provision_ecs
+        ;;
     aca) provision_aca ;;
     azf) provision_azf ;;
     cloudrun) provision_cloudrun ;;
@@ -1369,7 +1380,7 @@ name: container-test
 jobs:
   ctr:
     runs-on: self-hosted
-    container: alpine:3.20
+    container: '"$WORKLOAD_ALPINE"'
     steps:
       - run: grep -qi alpine /etc/os-release
       - run: echo "container-proof-payload" > "$GITHUB_WORKSPACE/proof.txt"
@@ -1397,10 +1408,10 @@ name: services-test
 jobs:
   svc:
     runs-on: self-hosted
-    container: alpine:3.20
+    container: '"$WORKLOAD_ALPINE"'
     services:
       web:
-        image: nginx:alpine
+        image: '"$WORKLOAD_NGINX"'
     steps:
       - run: for i in $(seq 1 30); do wget -qO- http://web/ >/tmp/idx.html 2>/dev/null && break; sleep 1; done
       - run: grep -qi nginx /tmp/idx.html

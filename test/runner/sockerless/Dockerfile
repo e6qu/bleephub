@@ -18,7 +18,10 @@ COPY docker/runner-nuget-locks/ /runner-nuget-locks/
 COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
 RUN bash /usr/local/bin/build-actions-runner
 
-FROM golang:1.26.9@sha256:f1f0bcc2c524a3ced375fcb4d1ecb7aa371aa7070e112599aaca45cc02d0101b AS builder
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/golang:1.26.9@sha256:f1f0bcc2c524a3ced375fcb4d1ecb7aa371aa7070e112599aaca45cc02d0101b AS builder
 # Re-enable toolchain auto-download (the golang image pins GOTOOLCHAIN=local) so
 # the image builds with whatever toolchain go.mod requires.
 ENV GOTOOLCHAIN=auto
@@ -99,7 +102,10 @@ COPY . /bleephub/
 RUN cd /bleephub && GOWORK=off go build -tags noui -o /out/bleephub ./cmd/bleephub
 
 # --- Runtime stage ---
-FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 
 # python3-nacl: the harness seals secrets with the real libsodium
 # sealed-box contract before PUTting them.

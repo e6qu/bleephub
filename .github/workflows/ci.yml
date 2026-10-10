@@ -417,8 +417,10 @@ jobs:
       - name: Start the Google Cloud Storage emulator
         run: |
           set -euo pipefail
+          # Google's Docker Hub mirror at the digest Docker Hub serves: Docker Hub
+          # limits anonymous pulls, and the shared runners exhaust it.
           docker run --detach --name fake-gcs --publish 127.0.0.1:4443:4443 \
-            fsouza/fake-gcs-server:1.56.1@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef \
+            mirror.gcr.io/fsouza/fake-gcs-server:1.56.1@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef \
             -scheme http -port 4443 -backend memory -public-host 127.0.0.1:4443 -external-url http://127.0.0.1:4443
           for _ in $(seq 1 60); do
             if curl --silent --fail --output /dev/null "http://127.0.0.1:4443/storage/v1/b"; then exit 0; fi
@@ -489,7 +491,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - *checkout
+      # BuildKit comes from Google's Docker Hub mirror at the digest Docker Hub
+      # serves: Docker Hub limits anonymous pulls, and the shared runners
+      # exhaust it.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
       - name: Read the Ubuntu archive state
         id: ubuntu
         run: echo "state=$(./scripts/ubuntu-archive-state.sh)" >> "$GITHUB_OUTPUT"

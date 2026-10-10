@@ -1,4 +1,7 @@
-FROM golang:1.27.2@sha256:5bc7f572bbaa98885a3a1fd9c0aa76b59e3e14e8628bfc316bbfd0c701e4818c AS builder
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/golang:1.27.2@sha256:5bc7f572bbaa98885a3a1fd9c0aa76b59e3e14e8628bfc316bbfd0c701e4818c AS builder
 # Re-enable toolchain auto-download (the golang image pins GOTOOLCHAIN=local) so
 # the image builds with whatever toolchain go.mod requires.
 ENV GOTOOLCHAIN=auto
@@ -11,7 +14,10 @@ RUN CGO_ENABLED=0 go build -tags noui -o /out/bleephub ./cmd/bleephub
 # driver that consumes it.
 RUN CGO_ENABLED=0 go build -o /out/attestation-fixture ./test/conformance/attestation
 
-FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq git openssh-client openssl zip && rm -rf /var/lib/apt/lists/*
 # gh is pinned to the exact version the compatibility docs verify
 # (docs/BLEEPHUB_GH_CLI.md: "verified on 2.92.0"). The cli.github.com apt
