@@ -10,6 +10,9 @@ services:
       # Trust bleephub's self-signed TLS cert for server-side calls (e.g. the
       # back-channel logout POST to the relying party).
       SSL_CERT_FILE: /etc/bleephub/tls/cert.pem
+      # Shauth shares this network namespace, so its token hook answers on
+      # loopback rather than at the compose service name.
+      OAUTH2_TOKEN_HOOK_URL: http://localhost:8080/internal/hydra/token-hook
 
   shauth:
     network_mode: service:hydra

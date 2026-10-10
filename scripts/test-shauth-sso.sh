@@ -4,7 +4,7 @@ set -euo pipefail
 
 : "${SHAUTH_SOURCE_DIR:?SHAUTH_SOURCE_DIR must point to a Shauth checkout}"
 
-readonly expected_shauth_commit="08f5a78fb8b159fcbfe8317f24f430dbdfd3ed56"
+readonly expected_shauth_commit="226ffffb9a046378334098c9bf34cc31776c34d4"
 actual_shauth_commit="$(git -C "$SHAUTH_SOURCE_DIR" rev-parse HEAD)"
 if [[ "$actual_shauth_commit" != "$expected_shauth_commit" ]]; then
   echo "Shauth checkout is $actual_shauth_commit; expected $expected_shauth_commit" >&2
@@ -78,7 +78,8 @@ export POSTGRES_PASSWORD
 HYDRA_SYSTEM_SECRET="$(random_secret)"
 export HYDRA_SYSTEM_SECRET
 export HYDRA_DSN="postgres://shauth:${POSTGRES_PASSWORD}@postgres:5432/hydra?sslmode=disable"
-export HYDRA_PUBLIC_URL="http://localhost:8080"
+# Shauth serves Hydra's public endpoints on this origin, which its compose file
+# makes Hydra's issuer; the issuer must match discovery.
 export SHAUTH_PUBLIC_URL="http://localhost:8080"
 export SHAUTH_DATABASE_URL="postgres://shauth:${POSTGRES_PASSWORD}@postgres:5432/shauth?sslmode=disable"
 export GITHUB_CLIENT_ID="local-password-integration"
@@ -89,11 +90,15 @@ SHAUTH_VALIDATOR_USERNAME="admin"
 export SHAUTH_VALIDATOR_USERNAME
 SHAUTH_VALIDATOR_TOKEN="$(random_secret)"
 SHAUTH_VALIDATION_STATUS_TOKEN="$(random_secret)"
-if [[ "$SHAUTH_VALIDATOR_TOKEN" = "$SHAUTH_VALIDATION_STATUS_TOKEN" ]]; then
-  echo "Shauth validator and validation-status tokens must differ" >&2
+# Hydra presents this to Shauth's token hook before it issues any token.
+SHAUTH_TOKEN_HOOK_TOKEN="$(random_secret)"
+if [[ "$SHAUTH_VALIDATOR_TOKEN" = "$SHAUTH_VALIDATION_STATUS_TOKEN" ||
+  "$SHAUTH_TOKEN_HOOK_TOKEN" = "$SHAUTH_VALIDATOR_TOKEN" ||
+  "$SHAUTH_TOKEN_HOOK_TOKEN" = "$SHAUTH_VALIDATION_STATUS_TOKEN" ]]; then
+  echo "Shauth validator, validation-status and token-hook tokens must differ" >&2
   exit 1
 fi
-export SHAUTH_VALIDATOR_TOKEN SHAUTH_VALIDATION_STATUS_TOKEN
+export SHAUTH_VALIDATOR_TOKEN SHAUTH_VALIDATION_STATUS_TOKEN SHAUTH_TOKEN_HOOK_TOKEN
 BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL="$(random_secret)"
 if [[ "$BLEEPHUB_NON_AUTHENTIC_CREDENTIAL_SENTINEL" = "$SHAUTH_BOOTSTRAP_ADMIN_PASSWORD" ]]; then
   echo "Bleephub negative-probe sentinel must differ from the Shauth password" >&2
@@ -145,8 +150,9 @@ for service in bleephub-primary bleephub-secondary; do
     if [[ "$value" = "$SHAUTH_VALIDATOR_USERNAME" ||
       "$value" = "$SHAUTH_BOOTSTRAP_ADMIN_PASSWORD" ||
       "$value" = "$SHAUTH_VALIDATOR_TOKEN" ||
-      "$value" = "$SHAUTH_VALIDATION_STATUS_TOKEN" ]]; then
-      echo "Shauth validator credentials leaked into $service runtime" >&2
+      "$value" = "$SHAUTH_VALIDATION_STATUS_TOKEN" ||
+      "$value" = "$SHAUTH_TOKEN_HOOK_TOKEN" ]]; then
+      echo "Shauth credentials leaked into $service runtime" >&2
       exit 1
     fi
   done < <(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id")
