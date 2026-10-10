@@ -839,15 +839,17 @@ provision_gcf() {
 
 # The container-mode tests' workload images. The ecs backend, the one CI runs,
 # pulls them through the host engine, so there they come from Amazon ECR
-# Public's copy of Docker's official images at the digest Docker Hub serves:
-# Docker Hub limits anonymous pulls, and the shared CI runners exhaust it. The
-# other backends build overlays that expect the Docker Hub names, and keep them.
+# Public's copy of Docker's official images: Docker Hub limits anonymous pulls,
+# and the shared CI runners exhaust it. They are named by tag because the
+# pinned Sockerless joins a pulled digest to its repository with ":" and asks
+# the registry for a name that does not exist. The other backends build
+# overlays that expect the Docker Hub names, and keep them.
 WORKLOAD_ALPINE="alpine:3.20"
 WORKLOAD_NGINX="nginx:alpine"
 case "${BLEEPHUB_BACKEND:-ecs}" in
     ecs)
-        WORKLOAD_ALPINE="public.ecr.aws/docker/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
-        WORKLOAD_NGINX="public.ecr.aws/docker/library/nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2"
+        WORKLOAD_ALPINE="public.ecr.aws/docker/library/alpine:3.20"
+        WORKLOAD_NGINX="public.ecr.aws/docker/library/nginx:alpine"
         provision_ecs
         ;;
     aca) provision_aca ;;

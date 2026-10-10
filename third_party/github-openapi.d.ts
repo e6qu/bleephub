@@ -32742,7 +32742,7 @@ export interface components {
         };
         /**
          * copilot_code_review
-         * @description Request Copilot code review for new pull requests automatically if the author has access to Copilot code review and their premium requests quota has not reached the limit.
+         * @description Request Copilot code review for new pull requests automatically if the author has access to Copilot code review and AI credits.
          */
         "repository-rule-copilot-code-review": {
             /** @enum {string} */
