@@ -302,7 +302,51 @@ def terraform_dependencies() -> dict[str, dt.datetime]:
     return dependencies
 
 
+# Docker Hub limits anonymous pulls per address, and shared CI runners exhaust
+# it, so every Docker Hub image is pulled through one of these mirrors instead,
+# at the digest Docker Hub serves. Its age is still read from Docker Hub.
+OFFICIAL_IMAGE_MIRROR = "public.ecr.aws/docker/library"
+HUB_IMAGE_MIRROR = "mirror.gcr.io"
+BUILDKIT_IMAGE_PATTERN = re.compile(
+    r"^mirror\.gcr\.io/moby/buildkit:[^@\s]+@sha256:[0-9a-f]{64}$"
+)
+
+
+def docker_hub_repository(image: str) -> str | None:
+    """Return the Docker Hub repository a mirrored image copies, or None."""
+    if image.startswith(OFFICIAL_IMAGE_MIRROR + "/"):
+        name = image[len(OFFICIAL_IMAGE_MIRROR) + 1 :]
+        return None if "/" in name else f"library/{name}"
+    if image.startswith(HUB_IMAGE_MIRROR + "/"):
+        name = image[len(HUB_IMAGE_MIRROR) + 1 :]
+        return name if name.count("/") == 1 else None
+    return None
+
+
+def require_mirrored_buildkit() -> None:
+    """Every setup-buildx-action step must pull BuildKit from the mirror."""
+    step = re.compile(
+        r"^(?P<indent>\s*)- uses: docker/setup-buildx-action@[^\n]*\n"
+        r"(?P<body>(?:(?P=indent)  [^\n]*\n)*)",
+        re.MULTILINE,
+    )
+    option = re.compile(r"^\s*driver-opts:\s*image=(\S+)\s*$", re.MULTILINE)
+    found = False
+    for path in sorted((ROOT / ".github/workflows").glob("*.y*ml")):
+        for match in step.finditer(path.read_text(encoding="utf-8")):
+            found = True
+            image = option.search(match.group("body"))
+            if not image or not BUILDKIT_IMAGE_PATTERN.fullmatch(image.group(1)):
+                raise RuntimeError(
+                    f"{path.relative_to(ROOT)} sets up buildx without "
+                    f"driver-opts: image={HUB_IMAGE_MIRROR}/moby/buildkit:<tag>@sha256:<digest>"
+                )
+    if not found:
+        raise RuntimeError("workflows contain no setup-buildx-action step")
+
+
 def docker_dependencies() -> dict[str, dt.datetime]:
+    require_mirrored_buildkit()
     dependencies: dict[str, dt.datetime] = {}
     found_pin = False
     local_bases = {"bleephub-runner-sockerless:local"}
@@ -330,7 +374,18 @@ def docker_dependencies() -> dict[str, dt.datetime]:
                 )
             image = match.group("image")
             found_pin = True
-            if image == "golang" and not re.fullmatch(
+            repository = docker_hub_repository(image)
+            if repository is None:
+                if image == "mcr.microsoft.com/dotnet/sdk":
+                    # runner_dependencies validates this sole non-Docker-Hub
+                    # image against the immutable SDK/runtime release pins.
+                    continue
+                raise RuntimeError(
+                    f"{path.relative_to(ROOT)} uses an unsupported base image: "
+                    f"{reference}; a Docker Hub image must be pulled through "
+                    f"{OFFICIAL_IMAGE_MIRROR}/<name> or {HUB_IMAGE_MIRROR}/<namespace>/<name>"
+                )
+            if repository == "library/golang" and not re.fullmatch(
                 r"[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?",
                 match.group("tag"),
             ):
@@ -338,16 +393,6 @@ def docker_dependencies() -> dict[str, dt.datetime]:
                     f"{path.relative_to(ROOT)} does not pin a patched Go image tag: "
                     f"{reference}"
                 )
-            if "." in image.split("/", 1)[0] or ":" in image.split("/", 1)[0]:
-                if image == "mcr.microsoft.com/dotnet/sdk":
-                    # runner_dependencies validates this sole non-Docker-Hub
-                    # image against the immutable SDK/runtime release pins.
-                    continue
-                raise RuntimeError(
-                    f"{path.relative_to(ROOT)} uses an unsupported non-Docker-Hub "
-                    f"base image: {reference}"
-                )
-            repository = image if "/" in image else f"library/{image}"
             tag = urllib.parse.quote(match.group("tag"), safe="")
             metadata = request_json(
                 f"https://hub.docker.com/v2/repositories/{repository}/tags/{tag}"

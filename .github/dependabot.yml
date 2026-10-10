@@ -32,8 +32,12 @@ updates:
     cooldown:
       default-days: 1
 
+  # Base images are pinned by digest on the Docker Hub mirrors CI pulls from.
   - package-ecosystem: docker
-    directory: /
+    directories:
+      - /
+      - /test/runner/sockerless
+      - /test/shauth
     schedule:
       interval: daily
     cooldown:

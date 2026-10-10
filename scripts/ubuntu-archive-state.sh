@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="$(sed -n 's/^FROM ubuntu:\([0-9.]*\)@.*/\1/p' "$ROOT/Dockerfile.release" | sort -u)"
+version="$(sed -n 's/^FROM public\.ecr\.aws\/docker\/library\/ubuntu:\([0-9.]*\)@.*/\1/p' "$ROOT/Dockerfile.release" | sort -u)"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+$ ]]; then
   echo "error: Dockerfile.release names no single Ubuntu release (found '$version')" >&2
   exit 1

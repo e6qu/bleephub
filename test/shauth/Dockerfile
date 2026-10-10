@@ -1,4 +1,7 @@
-FROM golang:1.26.9-alpine@sha256:cdfd4fe2da6b225d8b40c6b7a105736e548e83ff56d5d8f9394446eeb5eb84e0 AS builder
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/golang:1.26.9-alpine@sha256:cdfd4fe2da6b225d8b40c6b7a105736e548e83ff56d5d8f9394446eeb5eb84e0 AS builder
 # Re-enable toolchain auto-download (the golang image pins GOTOOLCHAIN=local) so
 # the image builds with whatever toolchain go.mod requires.
 ENV GOTOOLCHAIN=auto
@@ -19,7 +22,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -ldflags="-X main.version=sso-contract -X main.commit=${BLEEPHUB_TEST_REVISION} -X main.publishedAt=2026-07-21T00:00:00Z" \
       -o /bleephub ./cmd/bleephub
 
-FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /bleephub /usr/local/bin/bleephub
 ENTRYPOINT ["bleephub"]

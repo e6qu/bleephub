@@ -1,4 +1,6 @@
-FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS ui-builder
+# Google's Docker Hub mirror, pinned to the digest Docker Hub serves: Docker
+# Hub limits anonymous pulls per address, and the shared CI runners exhaust it.
+FROM mirror.gcr.io/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS ui-builder
 ARG BLEEPHUB_VERSION=development
 ARG BLEEPHUB_PUBLISHED_AT=not-yet-published
 ENV VITE_BLEEPHUB_VERSION=$BLEEPHUB_VERSION \
@@ -12,7 +14,10 @@ COPY web/index.html web/knip.ts web/tsconfig.json web/vite.config.ts ./
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile && bun run build
 
-FROM golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 AS builder
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 AS builder
 # The official golang images pin GOTOOLCHAIN=local; re-enable auto so the
 # image builds with whatever toolchain go.mod requires.
 ENV GOTOOLCHAIN=auto
@@ -30,9 +35,15 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${BLEEPHUB_
     BLEEPHUB_VERSION="${BLEEPHUB_VERSION}" BLEEPHUB_COMMIT="${BLEEPHUB_COMMIT}" BLEEPHUB_PUBLISHED_AT="${BLEEPHUB_PUBLISHED_AT}" \
         scripts/write-build-info.sh /bleephub-ssh-gateway /build-info/bleephub-ssh-gateway.build-info.txt
 
-FROM golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61 AS go-toolchain
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61 AS go-toolchain
 
-FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb AS dqlite-builder
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb AS dqlite-builder
 COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH
 ARG BLEEPHUB_VERSION=development
@@ -60,7 +71,10 @@ RUN CGO_ENABLED=1 go build -trimpath -tags 'nosqlite3,dqlite' -ldflags="-s -w -X
     BLEEPHUB_VERSION="${BLEEPHUB_VERSION}" BLEEPHUB_COMMIT="${BLEEPHUB_COMMIT}" BLEEPHUB_PUBLISHED_AT="${BLEEPHUB_PUBLISHED_AT}" \
         scripts/write-build-info.sh /bleephub-dqlite-node /build-info/bleephub-dqlite-node.build-info.txt
 
-FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+# Amazon ECR Public's copy of Docker's official image, pinned to the digest
+# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
+# shared CI runners exhaust it.
+FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
 # Jekyll and Sass read source files as the process's default external encoding;
 # without a UTF-8 locale Ruby defaults to US-ASCII and any UTF-8 byte in a theme
 # or a site's content (e.g. jekyll-theme-primer's SCSS) aborts the build.
