@@ -169,7 +169,7 @@ module "bleephub" {
   availability_zones = ["eu-west-1a", "eu-west-1b"]
   hosted_zone_id = aws_route53_zone.bleephub.zone_id
   domain_name = "bleephub.example.test"
-  container_image = "public.ecr.aws/docker/library/alpine:3.20"
+  container_image = "public.ecr.aws/docker/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
   ssh_ingress_cidr_blocks = ["203.0.113.0/24"]
   admin_token = "test-administrator-token"
   idle_shutdown_enabled = false

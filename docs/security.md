@@ -107,7 +107,7 @@ paths. No `sh -c` or shell interpolation exists anywhere in non-test code.
 
 ## Static analysis and dependency scanning
 
-All of the following are required CI gates (`.github/workflows/ci.yml`,
+All of the following are required CI gates (`.github/workflows/ci.yml`, `.github/workflows/image-pins.yml`,
 `.github/workflows/codeql.yml`); `main` is kept green.
 
 | Tool | Scope | Notes |
@@ -120,6 +120,7 @@ All of the following are required CI gates (`.github/workflows/ci.yml`,
 | **Trivy** | fs (`misconfig,secret`) + images (`vuln`, OS packages) | Go vulns are gated by reachability-aware govulncheck and npm by `bun audit`, so Trivy skips the redundant module-graph `vuln` class on the filesystem; the misconfig scan targets the published `Dockerfile.release` and skips the disposable never-published CI test-harness Dockerfiles (documented in the workflow) |
 | **zizmor** | workflows | GitHub Actions supply-chain audit |
 | **dependency-age** | all ecosystems | 24-hour quarantine (`scripts/check-dependency-age.py`) blocks freshly-published (supply-chain-risky) versions |
+| **image-pins** | container images | `scripts/check-image-pins.py` compares every image pinned on `public.ecr.aws/docker/library` or `mirror.gcr.io` with Docker Hub, on pull requests, on main and daily: it fails when Docker Hub has served a newer digest for the tag, or a newer release on the same release line, for at least 24 hours, or when the mirror serves a different digest than the pin; anything younger is reported as held. It replaces Dependabot's `docker` updates, which fail with 429 on ECR Public's anonymous limit |
 
 Maintainers run **Snyk** (Open Source / dependency scanning) **locally** as an
 additional check — `snyk test --all-projects` should report no vulnerable paths.

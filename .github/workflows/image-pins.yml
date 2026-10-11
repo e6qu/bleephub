@@ -1,0 +1,30 @@
+name: Image pins
+
+# Every image bleephub pulls from Docker Hub is pulled through a mirror, pinned
+# by tag and digest. This compares each pin with what Docker Hub serves, so a
+# stale pin shows up on pull requests and, through the daily run, on main.
+# Dependabot cannot do it: its anonymous lookups on public.ecr.aws fail with 429.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image-pins:
+    name: Image pins match Docker Hub
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test the image pin check
+        run: python3 -m unittest scripts/test_check_image_pins.py
+      - name: Compare every image pin with Docker Hub
+        run: ./scripts/check-image-pins.py

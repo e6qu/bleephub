@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The container-mode tests' workload images: Amazon ECR Public's copy of
+# Docker's official images, at the index digest Docker Hub serves, because
+# Docker Hub limits anonymous pulls and the shared CI runners exhaust it.
+# scripts/check-image-pins.py keeps the digests current. Backends whose
+# overlays expect the Docker Hub names get the pinned copy tagged with them.
+WORKLOAD_ALPINE_NAME="alpine:3.24"
+WORKLOAD_ALPINE_PIN="public.ecr.aws/docker/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
+WORKLOAD_NGINX_NAME="nginx:alpine"
+WORKLOAD_NGINX_PIN="public.ecr.aws/docker/library/nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2"
+
 log() { echo "=== [bleephub-test] $*"; }
 fail() {
     echo "!!! [bleephub-test] FAIL: $*" >&2
@@ -694,7 +704,7 @@ provision_cloudrun() {
     export SOCKERLESS_GCP_SHARED_VOLUMES="runner-ws=${WORK_DIR}=${ws_bucket}=gcs-sync,runner-externals=/runner/externals=${ext_bucket}=gcs-sync"
 
     # Stage workload base images into the host daemon. The Cloud Run
-    # overlay build rewrites a Docker Hub base (e.g. alpine:3.20) to the
+    # overlay build rewrites a Docker Hub base (e.g. alpine:3.24) to the
     # AR docker-hub pull-through ref via the registry coordinate; the sim
     # serves that ref by hydrating from the local daemon, so the base
     # must be present locally. Pull from the ECR public gallery (no Docker
@@ -702,8 +712,9 @@ provision_cloudrun() {
     # the pull-through maps to.
     log "Staging workload base images (alpine, nginx) into the host daemon…"
     local img src
-    for img in "alpine:3.20" "nginx:alpine"; do
-        src="public.ecr.aws/docker/library/$img"
+    for img in "$WORKLOAD_ALPINE_NAME" "$WORKLOAD_NGINX_NAME"; do
+        src="$WORKLOAD_ALPINE_PIN"
+        [ "$img" = "$WORKLOAD_NGINX_NAME" ] && src="$WORKLOAD_NGINX_PIN"
         local ok=""
         for attempt in 1 2 3 4 5; do
             if docker pull -q "$src" >/dev/null 2>&1; then ok=1; break; fi
@@ -819,8 +830,9 @@ provision_gcf() {
 
     log "Staging workload base images (alpine, nginx) into the host daemon…"
     local img src
-    for img in "alpine:3.20" "nginx:alpine"; do
-        src="public.ecr.aws/docker/library/$img"
+    for img in "$WORKLOAD_ALPINE_NAME" "$WORKLOAD_NGINX_NAME"; do
+        src="$WORKLOAD_ALPINE_PIN"
+        [ "$img" = "$WORKLOAD_NGINX_NAME" ] && src="$WORKLOAD_NGINX_PIN"
         local ok=""
         for attempt in 1 2 3 4 5; do
             if docker pull -q "$src" >/dev/null 2>&1; then ok=1; break; fi
@@ -837,18 +849,16 @@ provision_gcf() {
     log "sockerless-backend-gcf ready (gcs-sync workspace + externals)"
 }
 
-# The container-mode tests' workload images. The ecs backend, the one CI runs,
-# pulls them through the host engine, so there they come from Amazon ECR
-# Public's copy of Docker's official images, at the index digest Docker Hub
-# serves: Docker Hub limits anonymous pulls, and the shared CI runners exhaust
-# it. The other backends build overlays that expect the Docker Hub names, and
-# keep them.
-WORKLOAD_ALPINE="alpine:3.20"
-WORKLOAD_NGINX="nginx:alpine"
+# The ecs backend, the one CI runs, pulls the workload images through the host
+# engine by their pinned references. The other backends build overlays that
+# expect the Docker Hub names; their provisioning stages the pinned copies
+# under those names.
+WORKLOAD_ALPINE="$WORKLOAD_ALPINE_NAME"
+WORKLOAD_NGINX="$WORKLOAD_NGINX_NAME"
 case "${BLEEPHUB_BACKEND:-ecs}" in
     ecs)
-        WORKLOAD_ALPINE="public.ecr.aws/docker/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
-        WORKLOAD_NGINX="public.ecr.aws/docker/library/nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2"
+        WORKLOAD_ALPINE="$WORKLOAD_ALPINE_PIN"
+        WORKLOAD_NGINX="$WORKLOAD_NGINX_PIN"
         provision_ecs
         ;;
     aca) provision_aca ;;
