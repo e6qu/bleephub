@@ -1,9 +1,9 @@
 ARG RUNNER_VERSION=2.337.0
 ARG RUNNER_SOURCE_COMMIT=397b032cbf865e9c3ddfab89d533ec19325e1273
-ARG DOTNET_SDK_VERSION=8.0.424
-ARG DOTNET_RUNTIME_VERSION=8.0.30
+ARG DOTNET_SDK_VERSION=8.0.425
+ARG DOTNET_RUNTIME_VERSION=8.0.31
 
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0.424-bookworm-slim@sha256:bb32ba3ba3ea36e38572d9d8db76fa15f7cbf722f3f886e06bca6d528bd4fba8 AS actions-runner-builder
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0.425-bookworm-slim@sha256:ec9c0a0dc5f60adc2065762050638dd5ed5facfc53716d4580a42d86027c8e80 AS actions-runner-builder
 ARG TARGETARCH
 ARG RUNNER_VERSION
 ARG RUNNER_SOURCE_COMMIT
@@ -105,7 +105,7 @@ RUN cd /bleephub && GOWORK=off go build -tags noui -o /out/bleephub ./cmd/bleeph
 # Amazon ECR Public's copy of Docker's official image, pinned to the digest
 # Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
 # shared CI runners exhaust it.
-FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
+FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 # python3-nacl: the harness seals secrets with the real libsodium
 # sealed-box contract before PUTting them.
