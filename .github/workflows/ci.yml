@@ -818,7 +818,7 @@ jobs:
         with:
           persist-credentials: false
           repository: e6qu/sockerless
-          ref: 5f8763b94e4febb85eddf3a732a9e55980b93830
+          ref: 5502f8afc61b83050ed6d1b329d722336f3dadaa
           path: sockerless
       - name: Exercise the official runner against the real simulator and backend
         # Keep this timeout below the job's timeout-minutes (25) so the suite is
