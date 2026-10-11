@@ -32,16 +32,11 @@ updates:
     cooldown:
       default-days: 1
 
-  # Base images are pinned by digest on the Docker Hub mirrors CI pulls from.
-  - package-ecosystem: docker
-    directories:
-      - /
-      - /test/runner/sockerless
-      - /test/shauth
-    schedule:
-      interval: daily
-    cooldown:
-      default-days: 1
+  # No `docker` entry. Base images are pinned by digest on the Docker Hub
+  # mirrors CI pulls from, and Dependabot's anonymous lookups on public.ecr.aws
+  # exceed ECR Public's one-request-per-second limit and fail with 429; it also
+  # applies no cooldown to either mirror. scripts/check-image-pins.py (the Image
+  # pins workflow, daily on main) keeps those pins current instead.
 
   - package-ecosystem: github-actions
     directory: /

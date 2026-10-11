@@ -21,7 +21,7 @@ RUN bash /usr/local/bin/build-actions-runner
 # Amazon ECR Public's copy of Docker's official image, pinned to the digest
 # Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
 # shared CI runners exhaust it.
-FROM public.ecr.aws/docker/library/golang:1.26.9@sha256:f1f0bcc2c524a3ced375fcb4d1ecb7aa371aa7070e112599aaca45cc02d0101b AS builder
+FROM public.ecr.aws/docker/library/golang:1.26.9@sha256:d7722066f0b60ceccb6c0643cbed1f5f9e15506ac237146c95333504d7805d89 AS builder
 # Re-enable toolchain auto-download (the golang image pins GOTOOLCHAIN=local) so
 # the image builds with whatever toolchain go.mod requires.
 ENV GOTOOLCHAIN=auto
@@ -35,16 +35,16 @@ WORKDIR /src
 # than compiling them here — building the simulators would drag the AWS, Azure
 # and GCP SDKs into this image. Pin every tarball by SHA-256 per architecture.
 ARG TARGETARCH
-ARG SOCKERLESS_CLOUD_VERSION=v0.28.2
+ARG SOCKERLESS_CLOUD_VERSION=v0.30.10
 RUN set -eux; \
     base="https://github.com/e6qu/sockerless-cloud/releases/download/${SOCKERLESS_CLOUD_VERSION}"; \
     case "${TARGETARCH}" in \
-      amd64) aws=a8dc79a1d211690973461e02777fc405f0d0e5be7702c625647e6554eff5fec3; \
-             azure=183aa2907e2f08e72faa5998f6f8de2e851611d89ea332f5ae8d26da9ad2f730; \
-             gcp=41527bcedb6d5367ee90dad1cf895b25b2ed06c078dbd4f155fb7e5529bf7ecb ;; \
-      arm64) aws=7a147eb01c69d5b40f4e981a894a93fd358bc95906fbee0c375df5a5dfd9ebaf; \
-             azure=159a91b4fb19f4b2818eddcbd6ef658c3e671a5fd3440ce2b852e75efb6cb041; \
-             gcp=58b046826be28b888713e304e6412d5d4ee647d0eab0d29a964ec88faceef45d ;; \
+      amd64) aws=d77e60471cb2f44935bddf4f838ceeffab5e03912c7643e608a81fd9dcdffe1b; \
+             azure=92cdc3f79d3bba9d394cb874e6c189cee0d4ca57b8686dbb4007604c86d40033; \
+             gcp=ab569a330298e703ac56467032fd9e41999332266b7f4c53749f541b30c04b27 ;; \
+      arm64) aws=5c408e4ff808b6967df272bcb1dc6f3bf7f167c6a786fa38a807d562cac7c45d; \
+             azure=f7a421ab85adebd67c73fec85930b321a57a0c5e0709b0f7e40270b850d665a2; \
+             gcp=f70897146cee24f947cd6b1072911c4adeec985a46e49e83fa44df8706520fdf ;; \
       *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     mkdir -p /out; \

@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 # Amazon ECR Public's copy of Docker's official image, pinned to the digest
 # Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
 # shared CI runners exhaust it.
-FROM public.ecr.aws/docker/library/golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 AS builder
+FROM public.ecr.aws/docker/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS builder
 # The official golang images pin GOTOOLCHAIN=local; re-enable auto so the
 # image builds with whatever toolchain go.mod requires.
 ENV GOTOOLCHAIN=auto
