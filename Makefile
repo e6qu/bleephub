@@ -73,7 +73,7 @@ shauth-sso-test: build
 runner-sockerless-test:
 	@test -n "$(SOCKERLESS_ROOT)" || { echo "SOCKERLESS_ROOT must point to a Sockerless checkout"; exit 1; }
 	@test -f "$(SOCKERLESS_ROOT)/go.work" || { echo "SOCKERLESS_ROOT is not a Sockerless checkout"; exit 1; }
-	@docker run --rm -v /var/run/docker.sock:/var/run/docker.sock public.ecr.aws/docker/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 true >/dev/null 2>&1 || { echo "runner harness requires a bind-mountable Linux Docker API socket at /var/run/docker.sock"; exit 1; }
+	@docker run --rm -v /var/run/docker.sock:/var/run/docker.sock public.ecr.aws/docker/library/alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf true >/dev/null 2>&1 || { echo "runner harness requires a bind-mountable Linux Docker API socket at /var/run/docker.sock"; exit 1; }
 	docker buildx build --load --build-context sockerless="$(SOCKERLESS_ROOT)" -f test/runner/sockerless/Dockerfile -t bleephub-runner-sockerless:local .
 	rm -rf /tmp/bleephub-runner-sockerless-data
 	mkdir -p /tmp/bleephub-runner-sockerless-data

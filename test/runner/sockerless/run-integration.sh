@@ -7,9 +7,9 @@ set -euo pipefail
 # scripts/check-image-pins.py keeps the digests current. Backends whose
 # overlays expect the Docker Hub names get the pinned copy tagged with them.
 WORKLOAD_ALPINE_NAME="alpine:3.24"
-WORKLOAD_ALPINE_PIN="public.ecr.aws/docker/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
+WORKLOAD_ALPINE_PIN="public.ecr.aws/docker/library/alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf"
 WORKLOAD_NGINX_NAME="nginx:alpine"
-WORKLOAD_NGINX_PIN="public.ecr.aws/docker/library/nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2"
+WORKLOAD_NGINX_PIN="public.ecr.aws/docker/library/nginx:alpine@sha256:7fc0fb4af7bf006aeb31aea88069976060f8f0a0a86b667126742cc17f4e31ae"
 
 log() { echo "=== [bleephub-test] $*"; }
 fail() {
