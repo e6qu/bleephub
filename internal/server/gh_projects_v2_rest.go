@@ -314,7 +314,7 @@ func (s *Server) projectV2JSON(p *store.ProjectV2, owner *store.ProjectV2Owner, 
 	}
 }
 
-func projectV2FieldJSON(f *store.ProjectV2Field, projectURL string) map[string]interface{} {
+func projectV2FieldJSON(f *store.ProjectV2Field, projectURL string, now time.Time) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":          f.ID,
 		"node_id":     f.NodeID,
@@ -337,17 +337,17 @@ func projectV2FieldJSON(f *store.ProjectV2Field, projectURL string) map[string]i
 		out["options"] = options
 	}
 	if f.DataType == store.ProjectV2FieldIteration && f.Iteration != nil {
-		out["configuration"] = projectV2IterationConfigJSON(f.Iteration)
+		out["configuration"] = projectV2IterationConfigJSON(f.Iteration, now)
 	}
 	return out
 }
 
-func projectV2IterationConfigJSON(cfg *store.ProjectV2IterationConfiguration) map[string]interface{} {
+func projectV2IterationConfigJSON(cfg *store.ProjectV2IterationConfiguration, now time.Time) map[string]interface{} {
 	iterations := make([]map[string]interface{}, 0, len(cfg.Iterations))
 	for _, it := range cfg.Iterations {
 		completed := false
 		if start, err := time.Parse("2006-01-02", it.StartDate); err == nil {
-			completed = time.Now().After(start.AddDate(0, 0, it.Duration))
+			completed = now.After(start.AddDate(0, 0, it.Duration))
 		}
 		iterations = append(iterations, map[string]interface{}{
 			"id":         it.ID,
@@ -760,7 +760,7 @@ func (s *Server) serveProjectV2ListFields(w http.ResponseWriter, r *http.Request
 	projectURL := s.projectV2APIURL(r, owner, p.Number)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, f := range page {
-		out = append(out, projectV2FieldJSON(f, projectURL))
+		out = append(out, projectV2FieldJSON(f, projectURL, s.currentTime()))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -843,7 +843,7 @@ func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Reques
 		}
 		startDate := cfg.StartDate
 		if startDate == "" {
-			startDate = time.Now().UTC().Format("2006-01-02")
+			startDate = s.currentTime().UTC().Format("2006-01-02")
 		} else if _, err := time.Parse("2006-01-02", startDate); err != nil {
 			store.WriteGHValidationError(w, "ProjectV2Field", "iteration_configuration", "invalid")
 			return
@@ -880,7 +880,7 @@ func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.emitProjectV2ProjectEdited(p.ID, ghUserFromContext(r.Context()))
-	writeJSON(w, http.StatusCreated, projectV2FieldJSON(field, s.projectV2APIURL(r, owner, p.Number)))
+	writeJSON(w, http.StatusCreated, projectV2FieldJSON(field, s.projectV2APIURL(r, owner, p.Number), s.currentTime()))
 }
 
 func (s *Server) serveProjectV2GetField(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
@@ -898,7 +898,7 @@ func (s *Server) serveProjectV2GetField(w http.ResponseWriter, r *http.Request, 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, projectV2FieldJSON(f, s.projectV2APIURL(r, owner, p.Number)))
+	writeJSON(w, http.StatusOK, projectV2FieldJSON(f, s.projectV2APIURL(r, owner, p.Number), s.currentTime()))
 }
 
 func (s *Server) serveProjectV2ListItems(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {

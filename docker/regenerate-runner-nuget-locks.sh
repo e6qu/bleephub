@@ -22,6 +22,7 @@ locks="$root/docker/runner-nuget-locks"
 # Detached, then waited on: some Docker front ends cannot attach a stream.
 container="$(docker run --detach \
     --volume "$locks:/locks" \
+    --volume "$root/docker/patch-actions-runner.sh:/patch-actions-runner.sh:ro" \
     --env RUNNER_VERSION="$runner_version" \
     --env RUNNER_SOURCE_COMMIT="$runner_commit" \
     --env DOTNET_SDK_VERSION="$sdk_version" \
@@ -32,7 +33,8 @@ container="$(docker run --detach \
         git -C /runner-src checkout --quiet --detach "$RUNNER_SOURCE_COMMIT"
         test "$(git -C /runner-src rev-parse HEAD)" = "$RUNNER_SOURCE_COMMIT"
         sed -i -E "s#(\"version\": \")[0-9]+\\.[0-9]+\\.[0-9]+#\\1${DOTNET_SDK_VERSION}#" /runner-src/src/global.json
-        dotnet restore /runner-src/src/ActionsRunner.sln \
+        bash /patch-actions-runner.sh
+        timeout --kill-after=5 540 dotnet restore /runner-src/src/ActionsRunner.sln \
             -p:RestorePackagesWithLockFile=true -p:RestoreLockedMode=false
         find /locks -name packages.lock.json -type f -delete
         cd /runner-src/src
@@ -42,7 +44,19 @@ container="$(docker run --detach \
             cp "$lock" "/locks/$lock"
         done
     ')"
-status="$(docker wait "$container")"
+cleanup() { docker rm --force "$container" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+# Poll with a deadline so a failed network restore never strands a container.
+deadline=$((SECONDS + 600))
+while [ "$(docker inspect --format '{{.State.Running}}' "$container")" = true ]; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+        docker logs --tail 40 "$container" >&2
+        echo "runner lock regeneration exceeded 600 seconds" >&2
+        exit 1
+    fi
+    sleep 2
+done
+status="$(docker inspect --format '{{.State.ExitCode}}' "$container")"
 docker logs "$container" 2>&1 | tail -n 20
 docker rm "$container" >/dev/null
 test "$status" = 0

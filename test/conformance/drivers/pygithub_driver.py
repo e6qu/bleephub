@@ -818,7 +818,7 @@ def _releases() -> None:
     releases = list(repo.get_releases())
     want(len(releases) >= 1, "at least the release created earlier", len(releases),
          "the release listing is empty")
-    updated = releases[0].update_release(releases[0].title or "conformance", "edited by the PyGithub driver")
+    updated = releases[0].update_release(releases[0].name or "conformance", "edited by the PyGithub driver")
     want(updated.body == "edited by the PyGithub driver", "the new body", updated.body,
          "the release edit did not persist")
 

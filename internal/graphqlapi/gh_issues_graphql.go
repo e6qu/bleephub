@@ -3039,7 +3039,7 @@ func (s *Resolver) projectV2GraphQLTypes() *graphql.Object {
 			fields := s.store.ProjectsV2.FieldsForProject(projectID)
 			nodes := make([]map[string]interface{}, 0, len(fields))
 			for _, f := range fields {
-				nodes = append(nodes, projectV2FieldToGQL(f))
+				nodes = append(nodes, projectV2FieldToGQL(f, s.store.CurrentTime()))
 			}
 			projectV2SortNodes(nodes, p.Args, map[string]string{"NAME": "name", "CREATED_AT": "createdAt"})
 			return paginateGQLMaps(nodes, p.Args), nil
@@ -3188,7 +3188,7 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 	}
 	s.graphqlTypes.projectV2FieldTypeMemo = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "ProjectV2Field",
-		Interfaces: []*graphql.Interface{fieldCommonInterface},
+		Interfaces: []*graphql.Interface{s.graphqlTypes.node, fieldCommonInterface},
 		Fields:     commonFields(),
 	})
 	singleSelectFields := commonFields()
@@ -3204,7 +3204,7 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 	}
 	s.graphqlTypes.projectV2SingleSelectFieldMemo = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "ProjectV2SingleSelectField",
-		Interfaces: []*graphql.Interface{fieldCommonInterface},
+		Interfaces: []*graphql.Interface{s.graphqlTypes.node, fieldCommonInterface},
 		Fields:     singleSelectFields,
 	})
 	multiSelectFields := commonFields()
@@ -3240,7 +3240,7 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 	}
 	s.graphqlTypes.projectV2MultiSelectFieldMemo = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "ProjectV2MultiSelectField",
-		Interfaces: []*graphql.Interface{fieldCommonInterface},
+		Interfaces: []*graphql.Interface{s.graphqlTypes.node, fieldCommonInterface},
 		Fields:     multiSelectFields,
 	})
 	iterationFields := commonFields()
@@ -3256,7 +3256,7 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 	}
 	s.graphqlTypes.projectV2IterationFieldMemo = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "ProjectV2IterationField",
-		Interfaces: []*graphql.Interface{fieldCommonInterface},
+		Interfaces: []*graphql.Interface{s.graphqlTypes.node, fieldCommonInterface},
 		Fields:     iterationFields,
 	})
 	s.graphqlTypes.projectV2FieldConfigUnionMemo = graphql.NewUnion(graphql.UnionConfig{
@@ -3341,7 +3341,7 @@ func (s *Resolver) projectV2ViewConnectionType() *graphql.Object {
 					nodes := make([]map[string]interface{}, 0, len(fieldIDs))
 					for _, fieldID := range fieldIDs {
 						if f := s.store.ProjectsV2.GetField(fieldID); f != nil {
-							nodes = append(nodes, projectV2FieldToGQL(f))
+							nodes = append(nodes, projectV2FieldToGQL(f, s.store.CurrentTime()))
 						}
 					}
 					return paginateGQLMaps(nodes, p.Args), nil
@@ -3476,7 +3476,7 @@ func projectV2ItemNode(it *store.ProjectV2Item, st *store.Store, redactContent b
 		var rendered map[string]interface{}
 		if stored := it.FieldValues[field.ID]; stored != nil {
 			rendered = projectV2FieldValueToGQL(stored, field)
-			rendered["field"] = projectV2FieldToGQL(field)
+			rendered["field"] = projectV2FieldToGQL(field, st.CurrentTime())
 		} else if redactContent {
 			// A content-derived built-in value would leak the private issue/PR.
 			continue
@@ -3645,7 +3645,7 @@ func projectV2SourceID(source interface{}) (int, error) {
 	return id, nil
 }
 
-func projectV2FieldToGQL(f *store.ProjectV2Field) map[string]interface{} {
+func projectV2FieldToGQL(f *store.ProjectV2Field, now time.Time) map[string]interface{} {
 	options := make([]map[string]interface{}, 0, len(f.Options))
 	for _, opt := range f.Options {
 		options = append(options, map[string]interface{}{
@@ -3659,7 +3659,6 @@ func projectV2FieldToGQL(f *store.ProjectV2Field) map[string]interface{} {
 	if f.Iteration != nil {
 		// Split past iterations into completedIterations and report the start
 		// day-of-week (1=Monday … 7=Sunday), as GitHub does.
-		now := time.Now()
 		active := make([]map[string]interface{}, 0, len(f.Iteration.Iterations))
 		completed := make([]map[string]interface{}, 0)
 		for _, it := range f.Iteration.Iterations {

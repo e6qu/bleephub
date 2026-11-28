@@ -1,9 +1,9 @@
 ARG RUNNER_VERSION=2.337.0
 ARG RUNNER_SOURCE_COMMIT=397b032cbf865e9c3ddfab89d533ec19325e1273
-ARG DOTNET_SDK_VERSION=8.0.425
-ARG DOTNET_RUNTIME_VERSION=8.0.31
+ARG DOTNET_SDK_VERSION=8.0.428
+ARG DOTNET_RUNTIME_VERSION=8.0.34
 
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0.425-bookworm-slim@sha256:ec9c0a0dc5f60adc2065762050638dd5ed5facfc53716d4580a42d86027c8e80 AS actions-runner-builder
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0.428-bookworm-slim@sha256:1b955f179b02df4f0eb5fadedaa898cbe44d620a64aab52eec72c8e91d1355b5 AS actions-runner-builder
 ARG TARGETARCH
 ARG RUNNER_VERSION
 ARG RUNNER_SOURCE_COMMIT
@@ -16,12 +16,12 @@ ENV TARGETARCH=$TARGETARCH \
     DOTNET_RUNTIME_VERSION=$DOTNET_RUNTIME_VERSION
 COPY docker/runner-nuget-locks/ /runner-nuget-locks/
 COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
+COPY docker/patch-actions-runner.sh /usr/local/bin/patch-actions-runner.sh
 RUN bash /usr/local/bin/build-actions-runner
 
-# Amazon ECR Public's copy of Docker's official image, pinned to the digest
-# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
-# shared CI runners exhaust it.
-FROM public.ecr.aws/docker/library/golang:1.26.9@sha256:d7722066f0b60ceccb6c0643cbed1f5f9e15506ac237146c95333504d7805d89 AS builder
+# Google's mirror of the exact official image avoids the public ECR quota
+# that shared CI runners exhausted during security qualification.
+FROM mirror.gcr.io/library/golang:1.27.4@sha256:5f1b98fa02fe396ebce2a0227a0e08309e11792915b9dd2e1f71053d7e7e6666 AS builder
 # Re-enable toolchain auto-download (the golang image pins GOTOOLCHAIN=local) so
 # the image builds with whatever toolchain go.mod requires.
 ENV GOTOOLCHAIN=auto
@@ -102,10 +102,9 @@ COPY . /bleephub/
 RUN cd /bleephub && GOWORK=off go build -tags noui -o /out/bleephub ./cmd/bleephub
 
 # --- Runtime stage ---
-# Amazon ECR Public's copy of Docker's official image, pinned to the digest
-# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
-# shared CI runners exhaust it.
-FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
+# Google's mirror of the exact official image avoids the public ECR quota
+# that shared CI runners exhausted during security qualification.
+FROM mirror.gcr.io/library/ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
 # python3-nacl: the harness seals secrets with the real libsodium
 # sealed-box contract before PUTting them.

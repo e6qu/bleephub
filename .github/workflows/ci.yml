@@ -132,7 +132,7 @@ jobs:
         with:
           # setup-go only parses files named go.mod; for a deliberately
           # nonstandard tool module filename, pass its exact directive.
-          go-version: '1.26.9'
+          go-version: '1.27.4'
           cache: false
       # scripts/deadcode.sh and scripts/dupl.sh were written, made executable
       # and then referenced by nothing — no workflow, no Makefile target, no
@@ -202,9 +202,9 @@ jobs:
       - *checkout
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # The analyzers deliberately live in a separate Go 1.26 module so
-          # their release cadence cannot force the product module forward.
-          go-version: '1.26.9'
+          # Analyzer dependencies retain their separate module. Compile them
+          # with the product toolchain so analysis can load the shipped code.
+          go-version: '1.27.4'
           cache: false
       - name: Install age-qualified security analyzers
         run: |
@@ -496,7 +496,7 @@ jobs:
       # exhaust it.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
-          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
       - name: Read the Ubuntu archive state
         id: ubuntu
         run: echo "state=$(./scripts/ubuntu-archive-state.sh)" >> "$GITHUB_OUTPUT"
@@ -607,10 +607,7 @@ jobs:
       - name: Enforce the transitive dependency quarantine window
         run: ./scripts/check-dependency-age.py bun
       - name: Audit the locked web dependency graph
-        # bun audit queries npm's advisory registry over the network. A real
-        # advisory fails the build; an inability to reach the registry (a
-        # ConnectionClosed or a hang, as during an npm incident) is inconclusive
-        # and must not block every merge. web-audit.sh makes that distinction.
+        # Findings and unavailable registry scans both fail closed.
         run: ./scripts/web-audit.sh
       - name: Type-check and test the web application
         run: cd web && bun run typecheck && bun run test:coverage

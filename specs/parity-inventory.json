@@ -414,7 +414,7 @@
       "shared_types": 1817,
       "signature_exact_fields": 8393
     },
-    "introspection_snapshot_sha256": "5f73434807f1ccb347729e098d965eb30004a49f463d711c076ee4a9ef3d0583",
+    "introspection_snapshot_sha256": "fd0d3e2d5457de986acb10363e7ef9e55b25eb723499da08c9d5ba9e0ffc4b5d",
     "official_schema": {
       "content_sha256": "3ed095654b22b1a8e7a88af36af2b28cb6d9613da332e9c57303e30476958d42",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -586,10 +586,25 @@
         "severity": "M",
         "status": "false-positive \u2014 the stated harm cannot occur: an AST scan finds zero single-value type assertions inside any goroutine body (the only context whose panic escapes recovery to crash the binary), and the 60 production assertions all read values the code just constructed, so converting ~1,780 safe assertions to comma-ok is churn with no safety gain \u2014 a fix that should never be made.",
         "status_kind": "false-positive"
+      },
+      {
+        "category": "PAR",
+        "finding": "Upstream REST description d560905bbf50d79e40d6a006ce2e5834cfd86a31 adds 49 operations beyond the pinned 58b1e0c snapshot, covering agent automations/merge enrollment, Copilot policies/customizations, user issue fields/types, issue artifacts, advisory comments, planning statuses and Dependabot runners, with additional existing-operation changes",
+        "id": "PAR-012",
+        "location": "scripts/check-github-openapi-drift.sh, third_party/github-openapi.VERSION",
+        "severity": "B",
+        "status": "open \u2014 implement and qualify the newly documented contracts, then regenerate all pinned descriptions and TypeScript witnesses; the drift gate remains failing and must not be bypassed. Feature-scope confirmation is pending.",
+        "status_kind": "open"
       }
     ],
     "summary": {
       "categories": {
+        "PAR": {
+          "status": {
+            "open": 1
+          },
+          "total": 1
+        },
         "TEST": {
           "status": {
             "false-positive": 1
@@ -604,14 +619,15 @@
         }
       },
       "severity": {
-        "blocker": 0,
+        "blocker": 1,
         "major": 3,
         "minor": 0
       },
       "status": {
-        "false-positive": 3
+        "false-positive": 3,
+        "open": 1
       },
-      "total": 3
+      "total": 4
     }
   },
   "rest": {

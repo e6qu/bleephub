@@ -422,7 +422,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			}
 			s.projectV2EmitProjectEdited(p, proj.ID)
 			return map[string]interface{}{
-				"projectV2Field": projectV2FieldToGQL(field),
+				"projectV2Field": projectV2FieldToGQL(field, s.store.CurrentTime()),
 			}, nil
 		},
 	})
@@ -608,4 +608,33 @@ func resolveContentByNodeID(st *store.Store, nodeID string) (string, int, bool) 
 		return "PullRequest", pr.ID, true
 	}
 	return "", 0, false
+}
+
+// A field's global ID grants no access on its own. Node lookup uses exactly
+// the owning project's visibility decision, including application token grants.
+func (s *Resolver) projectV2FieldNodeByID(ctx context.Context, nodeID string) map[string]interface{} {
+	field := s.store.ProjectsV2.LookupFieldByNodeID(nodeID)
+	if field == nil {
+		return nil
+	}
+	project := s.store.ProjectsV2.GetProject(field.ProjectID)
+	if project == nil {
+		return nil
+	}
+	owner := s.projectV2OwnerByID(project.OwnerID, project.OwnerType)
+	if owner == nil || !s.canReadProjectV2(ctx, s.ghUserFromContext(ctx), owner, project) {
+		return nil
+	}
+	node := projectV2FieldToGQL(field, s.store.CurrentTime())
+	typeName := "ProjectV2Field"
+	switch field.DataType {
+	case store.ProjectV2FieldSingleSelect:
+		typeName = "ProjectV2SingleSelectField"
+	case store.ProjectV2FieldMultiSelect:
+		typeName = "ProjectV2MultiSelectField"
+	case store.ProjectV2FieldIteration:
+		typeName = "ProjectV2IterationField"
+	}
+	node["__typename"] = typeName
+	return node
 }

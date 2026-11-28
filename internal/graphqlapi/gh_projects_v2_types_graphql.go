@@ -222,7 +222,7 @@ func (s *Resolver) addProjectV2FieldLookup(projectType *graphql.Object) {
 			if field == nil {
 				return nil, nil
 			}
-			return projectV2FieldToGQL(field), nil
+			return projectV2FieldToGQL(field, s.store.CurrentTime()), nil
 		},
 	})
 }
@@ -272,7 +272,7 @@ func (s *Resolver) enrichProjectV2ViewType() {
 			nodes := make([]map[string]interface{}, 0, len(ids))
 			for _, id := range ids {
 				if f := s.store.ProjectsV2.GetField(id); f != nil {
-					nodes = append(nodes, projectV2FieldToGQL(f))
+					nodes = append(nodes, projectV2FieldToGQL(f, s.store.CurrentTime()))
 				}
 			}
 			return paginateGQLMaps(nodes, p.Args), nil
@@ -344,7 +344,7 @@ func (s *Resolver) enrichProjectV2ViewType() {
 			}
 			nodes = append(nodes, map[string]interface{}{
 				"direction": entry["direction"],
-				"field":     projectV2FieldToGQL(field),
+				"field":     projectV2FieldToGQL(field, s.store.CurrentTime()),
 			})
 		}
 		return paginateGQLMaps(nodes, p.Args), nil

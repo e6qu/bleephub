@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"testing"
+	"time"
 )
 
 // An iteration named by its id keeps its identity through an
@@ -11,6 +12,7 @@ import (
 func TestProjectsV2IterationKeepsItsIDAcrossReplacement(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
+	s.replaceClockNow(func() time.Time { return time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC) })
 	_, project := s.seedProjectV2Org(t, "pv2-iteration-org", "Iterations")
 
 	data := s.gqlData(t, `mutation($p:ID!){
@@ -38,6 +40,19 @@ func TestProjectsV2IterationKeepsItsIDAcrossReplacement(t *testing.T) {
 		t.Fatalf("renamed iteration = %v, want id %s kept", got, sprintID)
 	}
 
+	// Completing an iteration moves it to the completed connection without
+	// changing the identity referenced by existing project items.
+	s.replaceClockNow(func() time.Time { return time.Date(2026, time.October, 20, 12, 0, 0, 0, time.UTC) })
+	data = s.gqlData(t, `query($id:ID!){node(id:$id){ ... on ProjectV2IterationField {
+		configuration{ iterations{ id } completedIterations{ id title } }
+	}}}`, map[string]interface{}{"id": field["id"]})
+	configuration := data["node"].(map[string]interface{})["configuration"].(map[string]interface{})
+	completed := configuration["completedIterations"].([]interface{})
+	if len(configuration["iterations"].([]interface{})) != 0 || len(completed) != 1 ||
+		completed[0].(map[string]interface{})["id"] != sprintID {
+		t.Fatalf("completed configuration = %v, want original iteration %s", configuration, sprintID)
+	}
+
 	env := s.gqlDo(t, `mutation($f:ID!){
 		updateProjectV2Field(input:{fieldId:$f,
 			iterationConfiguration:{startDate:"2026-10-05",duration:14,iterations:[{id:"notreal1",title:"Sprint X",startDate:"2026-10-05",duration:14}]}}){
@@ -46,5 +61,29 @@ func TestProjectsV2IterationKeepsItsIDAcrossReplacement(t *testing.T) {
 	}`, map[string]interface{}{"f": field["id"]})
 	if errs, _ := env["errors"].([]interface{}); len(errs) == 0 {
 		t.Fatalf("an unknown iteration id was accepted: %v", env)
+	}
+}
+
+func TestProjectV2FieldNodeRequiresProjectReadAccess(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	fixture := s.newGQLProjectAuthzFixture(t, "field-node")
+	query := `query($id:ID!){node(id:$id){id ... on ProjectV2Field {name}}}`
+	vars := map[string]interface{}{"id": fixture.field.NodeID}
+	for _, tc := range []struct {
+		name, token string
+		visible     bool
+	}{
+		{"owner", fixture.ownerToken, true},
+		{"stranger", fixture.strangerToken, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			envelope := s.gqlAuthzPost(t, tc.token, query, vars)
+			requireNoGQLErrors(t, envelope)
+			data := envelope["data"].(map[string]interface{})
+			if (data["node"] != nil) != tc.visible {
+				t.Fatalf("field node visibility = %v, want %v", data["node"], tc.visible)
+			}
+		})
 	}
 }
