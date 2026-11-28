@@ -1,9 +1,9 @@
 ARG RUNNER_VERSION=2.337.0
 ARG RUNNER_SOURCE_COMMIT=397b032cbf865e9c3ddfab89d533ec19325e1273
-ARG DOTNET_SDK_VERSION=8.0.425
-ARG DOTNET_RUNTIME_VERSION=8.0.31
+ARG DOTNET_SDK_VERSION=8.0.428
+ARG DOTNET_RUNTIME_VERSION=8.0.34
 
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0.425-bookworm-slim@sha256:ec9c0a0dc5f60adc2065762050638dd5ed5facfc53716d4580a42d86027c8e80 AS actions-runner-builder
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0.428-bookworm-slim@sha256:1b955f179b02df4f0eb5fadedaa898cbe44d620a64aab52eec72c8e91d1355b5 AS actions-runner-builder
 ARG TARGETARCH
 ARG RUNNER_VERSION
 ARG RUNNER_SOURCE_COMMIT
@@ -16,6 +16,7 @@ ENV TARGETARCH=$TARGETARCH \
     DOTNET_RUNTIME_VERSION=$DOTNET_RUNTIME_VERSION
 COPY docker/runner-nuget-locks/ /runner-nuget-locks/
 COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
+COPY docker/patch-actions-runner.sh /usr/local/bin/patch-actions-runner.sh
 RUN bash /usr/local/bin/build-actions-runner
 
 # Amazon ECR Public's copy of Docker's official image, pinned to the digest

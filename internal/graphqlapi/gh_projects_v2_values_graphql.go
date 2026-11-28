@@ -363,7 +363,7 @@ func (s *Resolver) projectV2ContentDerivedValueTypes() []*graphql.Object {
 func projectV2BuiltInFieldValue(st *store.Store, it *store.ProjectV2Item, field *store.ProjectV2Field) map[string]interface{} {
 	out := map[string]interface{}{
 		"kind":  string(field.DataType),
-		"field": projectV2FieldToGQL(field),
+		"field": projectV2FieldToGQL(field, st.CurrentTime()),
 	}
 	var repoID int
 	var labelIDs, assigneeIDs []int

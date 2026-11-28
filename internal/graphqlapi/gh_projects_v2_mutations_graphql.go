@@ -590,7 +590,7 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 				return nil, &ghNotFoundError{message: "Could not resolve to a field."}
 			}
 			s.projectV2EmitProjectEdited(p, updated.ProjectID)
-			return map[string]interface{}{"projectV2Field": projectV2FieldToGQL(updated)}, nil
+			return map[string]interface{}{"projectV2Field": projectV2FieldToGQL(updated, s.store.CurrentTime())}, nil
 		},
 	})
 
@@ -611,7 +611,7 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 			if err != nil {
 				return nil, err
 			}
-			rendered := projectV2FieldToGQL(field)
+			rendered := projectV2FieldToGQL(field, s.store.CurrentTime())
 			if !s.store.ProjectsV2.DeleteField(field.ID) {
 				return nil, &ghNotFoundError{message: "Could not resolve to a field."}
 			}
@@ -669,7 +669,7 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 				return nil, &ghNotFoundError{message: "Could not resolve to a project."}
 			}
 			s.projectV2EmitProjectEdited(p, project.ID)
-			return map[string]interface{}{"projectV2Field": projectV2FieldToGQL(created)}, nil
+			return map[string]interface{}{"projectV2Field": projectV2FieldToGQL(created, s.store.CurrentTime())}, nil
 		},
 	})
 }

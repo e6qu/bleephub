@@ -300,6 +300,7 @@ func (s *Resolver) initGraphQLSchema() {
 	nodeTypes["ProjectV2View"] = s.graphqlTypes.projectV2ViewTypeMemo
 	nodeTypes["ProjectV2Field"] = s.graphqlTypes.projectV2FieldTypeMemo
 	nodeTypes["ProjectV2SingleSelectField"] = s.graphqlTypes.projectV2SingleSelectFieldMemo
+	nodeTypes["ProjectV2MultiSelectField"] = s.graphqlTypes.projectV2MultiSelectFieldMemo
 	nodeTypes["ProjectV2IterationField"] = s.graphqlTypes.projectV2IterationFieldMemo
 	nodeTypes["ProjectV2StatusUpdate"] = s.graphqlTypes.projectV2StatusUpdateType
 	nodeTypes["ProjectV2Workflow"] = s.graphqlTypes.projectV2WorkflowType
@@ -452,6 +453,9 @@ func (s *Resolver) addNodeFieldsToSchema(queryType *graphql.Object, nodeInterfac
 }
 
 func (s *Resolver) graphQLNodeByID(ctx context.Context, nodeID string) interface{} {
+	if field := s.projectV2FieldNodeByID(ctx, nodeID); field != nil {
+		return field
+	}
 	if user := store.FindUserByNodeID(s.store, nodeID); user != nil {
 		return userToGraphQL(user)
 	}

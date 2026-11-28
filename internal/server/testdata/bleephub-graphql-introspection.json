@@ -15757,12 +15757,16 @@
         "Project",
         "ProjectCard",
         "ProjectColumn",
+        "ProjectV2Field",
         "ProjectV2ItemFieldDateValue",
         "ProjectV2ItemFieldIterationValue",
         "ProjectV2ItemFieldMultiSelectValue",
         "ProjectV2ItemFieldNumberValue",
         "ProjectV2ItemFieldSingleSelectValue",
         "ProjectV2ItemFieldTextValue",
+        "ProjectV2IterationField",
+        "ProjectV2MultiSelectField",
+        "ProjectV2SingleSelectField",
         "PullRequest",
         "ReadyForReviewEvent",
         "Ref",
@@ -20845,6 +20849,7 @@
         }
       },
       "interfaces": [
+        "Node",
         "ProjectV2FieldCommon"
       ]
     },
@@ -21620,6 +21625,7 @@
         }
       },
       "interfaces": [
+        "Node",
         "ProjectV2FieldCommon"
       ]
     },
@@ -21706,6 +21712,7 @@
         }
       },
       "interfaces": [
+        "Node",
         "ProjectV2FieldCommon"
       ]
     },
@@ -21852,6 +21859,7 @@
         }
       },
       "interfaces": [
+        "Node",
         "ProjectV2FieldCommon"
       ]
     },

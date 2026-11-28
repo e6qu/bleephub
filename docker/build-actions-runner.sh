@@ -36,6 +36,8 @@ sed -i -E \
 grep -q "\"version\": \"${DOTNET_SDK_VERSION}\"" \
     "$RUNNER_SOURCE_DIR/src/global.json"
 
+bash "$(dirname "${BASH_SOURCE[0]}")/patch-actions-runner.sh"
+
 cp -a "$RUNNER_NUGET_LOCKS/." "$RUNNER_SOURCE_DIR/src/"
 
 # api.nuget.org resets connections often enough to fail a build outright, and
