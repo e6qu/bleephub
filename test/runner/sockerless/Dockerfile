@@ -19,10 +19,9 @@ COPY docker/build-actions-runner.sh /usr/local/bin/build-actions-runner
 COPY docker/patch-actions-runner.sh /usr/local/bin/patch-actions-runner.sh
 RUN bash /usr/local/bin/build-actions-runner
 
-# Amazon ECR Public's copy of Docker's official image, pinned to the digest
-# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
-# shared CI runners exhaust it.
-FROM public.ecr.aws/docker/library/golang:1.27.4@sha256:5f1b98fa02fe396ebce2a0227a0e08309e11792915b9dd2e1f71053d7e7e6666 AS builder
+# Google's mirror of the exact official image avoids the public ECR quota
+# that shared CI runners exhausted during security qualification.
+FROM mirror.gcr.io/library/golang:1.27.4@sha256:5f1b98fa02fe396ebce2a0227a0e08309e11792915b9dd2e1f71053d7e7e6666 AS builder
 # Re-enable toolchain auto-download (the golang image pins GOTOOLCHAIN=local) so
 # the image builds with whatever toolchain go.mod requires.
 ENV GOTOOLCHAIN=auto
@@ -103,10 +102,9 @@ COPY . /bleephub/
 RUN cd /bleephub && GOWORK=off go build -tags noui -o /out/bleephub ./cmd/bleephub
 
 # --- Runtime stage ---
-# Amazon ECR Public's copy of Docker's official image, pinned to the digest
-# Docker Hub serves: Docker Hub limits anonymous pulls per address, and the
-# shared CI runners exhaust it.
-FROM public.ecr.aws/docker/library/ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
+# Google's mirror of the exact official image avoids the public ECR quota
+# that shared CI runners exhausted during security qualification.
+FROM mirror.gcr.io/library/ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
 # python3-nacl: the harness seals secrets with the real libsodium
 # sealed-box contract before PUTting them.
