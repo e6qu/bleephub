@@ -4,7 +4,7 @@ The completed full-surface audit is preserved in git history (the ledger carried
 all 994 rows through commit `a4f7e61e`). This ledger records current findings and
 standing decisions; new upstream contracts can expose new work after an audit.
 
-4 findings remain: 1 blocker, 3 major, 0 minor. Severity is `B` blocker, `M`
+4 findings remain: 1 blockers, 3 major, 0 minor. Severity is `B` blocker, `M`
 major, `m` minor. Status begins with `open`, `partial`, `fixed`, `deferred`, or
 `false-positive`; the generated parity inventory checks these counts.
 
